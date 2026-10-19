@@ -47,10 +47,12 @@ test('the exit plays before the parent unmounts the window, and the parent hears
     code,
     /const handleOpenChangeComplete = \(nextOpen: boolean\) => \{\s*if \(!nextOpen\) onClose\(\);\s*\};/,
   );
+  // Standalone, the parent hears of a close only once the exit has played.
+  // Embedded in another sheet, that sheet plays the exit, so it is told at once.
   const notifiesParent = code.match(/\bonClose\(\)/g) ?? [];
-  assert.equal(notifiesParent.length, 1, 'onClose() must be called from onOpenChangeComplete and nowhere else');
+  assert.equal(notifiesParent.length, 2, 'onClose() is called from onOpenChangeComplete and, embedded, from closeDialog only');
   // Closing is one state change; nothing times the exit by hand any more.
-  assert.match(code, /const closeDialog = \(\) => setOpen\(false\);/);
+  assert.match(code, /const closeDialog = \(\) => \(embedded \? onClose\(\) : setOpen\(false\)\);/);
   assert.doesNotMatch(code, /DIALOG_EXIT_MS|setTimeout|is-closing|useReducedMotion|useDialogFocus|showModal/);
 });
 

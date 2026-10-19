@@ -14,7 +14,8 @@ test('SOURCE: el feed expone un refresco visible en el primer paper, y pasarse p
 
 test('SOURCE: la píldora no existe para el invitado', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  assert.match(src, /\{!publicMode && papers\.length > 0 && \(\s*<button/, 'sin cuenta no hay píldora');
+  assert.match(src, /\{!publicMode && papers\.length > 0 && \(!source \|\| source\.refresh\) && \(\s*<button/,
+    'sin cuenta no hay píldora, ni en un feed que no se puede refrescar (la capa de Similar)');
   // La captura NO se acota con el literal de las dependencias: cuando cambiaron
   // (el nodo entró en la lista) ese `indexOf` pasó a valer -1 y el slice se
   // comió medio fichero, con lo que estos asserts casaban contra código de otro

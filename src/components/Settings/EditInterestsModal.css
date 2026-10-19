@@ -14,6 +14,7 @@
   max-width: 800px;
   max-height: 90vh;
   max-height: 90dvh;
+  height: min(760px, 90dvh);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
@@ -72,10 +73,65 @@
   }
 }
 
+/* The fields down a rail, the chosen field's topics beside it. The dialog
+   keeps one height whichever field is open (`.eim-modal`): the rail stays
+   put and only the topics scroll, inside their own panel. */
+.eim-body:has(> .eim-rail) {
+  overflow: hidden;
+}
+
+.eim-rail {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  gap: var(--space-6);
+}
+
+.eim-rail-list {
+  flex-direction: column;
+  align-items: stretch;
+  width: auto;
+  height: max-content;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.eim-rail > .eim-area {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-2);
+}
+
+.eim-rail-tab {
+  justify-content: flex-start;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+}
+
+.eim-rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+
 .eim-area {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.eim-area-count {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
 }
 
 .eim-area-header {
@@ -83,37 +139,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-}
-
-.eim-area-toggle-btn {
-  background: transparent;
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
-  padding: 4px 10px;
-  border-radius: var(--radius-2xl);
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .eim-area-toggle-btn:hover {
-    background: var(--bg-glass-hover);
-    color: var(--text-primary);
-    border-color: var(--border-strong);
-  }
-}
-
-.eim-area-icon {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 40px;
-  height: 40px;
-  /* The glyph alone, no tile behind it; its colour comes from the style
-     prop, in the area's own ink. */
-  color: var(--text-primary);
 }
 
 .eim-area-title {
@@ -130,14 +155,12 @@
   gap: var(--space-3);
 }
 
-/* ── INTERACTION: Push-up / Glow / Push-down Pill ── */
-
 /* The pill is the shared Toggle (`ui/toggle.jsx`) wearing this class: its
    utilities live in the `utilities` layer, so these unlayered rules win.
    `height: auto` and `white-space: normal` undo the toggle's fixed row
-   height and nowrap, which the pill never had. */
+   height and nowrap, which the pill never had. Picked, it is filled in ink:
+   the state is the pill itself, with no mark added inside it. */
 .eim-pill {
-  position: relative;
   height: auto;
   white-space: normal;
   background: var(--bg-sunken);
@@ -149,73 +172,46 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   cursor: pointer;
-  overflow: hidden;
-  
-  /* Transition for hover push-up */
-  transition: 
-    transform 0.2s var(--ease-out-expo),
-    background 0.3s ease,
-    border-color 0.3s ease,
-    color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform 160ms var(--ease-out);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .eim-pill:hover {
-    transform: translateY(-2px);
-    background: var(--bg-secondary);
     border-color: var(--border-strong);
     color: var(--text-primary);
   }
 }
 
 .eim-pill:active {
-  /* Push-down on click */
-  transform: translateY(2px) scale(0.96);
-  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: scale(0.97);
 }
 
 .eim-pill[data-pressed] {
-  /* Glow */
-  background: var(--bg-glass-hover);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-  box-shadow: 0 0 15px rgba(17, 19, 24, 0.06), inset 0 0 10px rgba(17, 19, 24, 0.03);
-  text-shadow: 0 0 8px rgba(17, 19, 24, 0.12);
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--bg-card);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .eim-pill[data-pressed]:hover {
-    background: var(--bg-glass-hover);
-    box-shadow: 0 0 20px rgba(17, 19, 24, 0.09), inset 0 0 15px rgba(17, 19, 24, 0.06);
+    border-color: var(--text-primary);
+    color: var(--bg-card);
   }
 }
 
-/* Selected icon checkmark */
-.eim-pill-content {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  position: relative;
-  z-index: 2;
-}
-
-.eim-pill-check {
-  flex-shrink: 0;
-}
-
-.eim-form-error {
-  margin: 0;
-  padding: 0 var(--space-6);
-  color: var(--accent-danger);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
+@media (prefers-reduced-motion: reduce) {
+  .eim-pill:active {
+    transform: none;
+  }
 }
 
 .eim-footer {
   padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -257,7 +253,160 @@
   .eim-header {
     padding: var(--space-4);
   }
-  .eim-form-error {
-    padding: 0 var(--space-4);
-  }
+}
+
+/* ── Phone: the editor is a bottom Drawer, the fields one switcher ── */
+.eim-sheet {
+  display: flex;
+  flex-direction: column;
+  height: min(88dvh, 720px);
+}
+
+.eim-sheet-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+
+.eim-sheet-head > p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.eim-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-4) 0 var(--space-3);
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 150ms var(--ease-out);
+}
+
+.eim-switcher:active {
+  transform: scale(0.98);
+}
+
+.eim-switcher:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.eim-switcher-icon {
+  display: grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.eim-switcher-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.eim-switcher-copy small {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.eim-switcher-copy strong {
+  overflow: hidden;
+  font-size: 1.05rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.eim-switcher > svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.eim-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The switcher already names the field. */
+.eim-sheet-body .eim-area-title {
+  display: none;
+}
+
+.eim-sheet .eim-footer {
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+
+.eim-fields-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+}
+
+.eim-fields-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.eim-fields-list button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.eim-fields-list button.is-active {
+  background: var(--bg-secondary);
+}
+
+.eim-fields-list button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.eim-fields-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.eim-fields-copy strong {
+  font-weight: var(--fw-semibold);
+}
+
+.eim-fields-copy small {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
 }

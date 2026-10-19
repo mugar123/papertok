@@ -17,15 +17,16 @@ const Tooltip = TooltipPrimitive.Root;
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
 /** Same frame as the popover (ui/popover.jsx), a size down, growing from the trigger. */
-function TooltipContent({ className, ...props }: StyledProps<typeof TooltipPrimitive.Popup>) {
+function TooltipContent({ className, align = 'center', ...props }: StyledProps<typeof TooltipPrimitive.Popup> & { align?: 'start' | 'center' | 'end' }) {
   return (
     <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Positioner side="top" sideOffset={6} className="isolate z-[12060]">
+      <TooltipPrimitive.Positioner side="top" align={align} sideOffset={6} className="isolate z-[12060]">
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"
           className={cn(
             'max-w-64 origin-(--transform-origin) rounded-md border border-border bg-card px-2 py-1 text-[0.75rem] text-foreground shadow-[var(--shadow-md)]',
             'motion-safe:[transition:opacity_120ms_ease-out,scale_120ms_var(--ease-out-cubic)]',
+            'motion-safe:data-instant:[transition:none]',
             'data-starting-style:opacity-0 data-starting-style:scale-[0.96] data-ending-style:opacity-0',
             className,
           )}

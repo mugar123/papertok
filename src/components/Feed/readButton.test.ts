@@ -47,7 +47,7 @@ test('SOURCE: every card mount can take a read mark back', async () => {
 
 test('SOURCE: a stored copy from a list opens on the skeleton', async () => {
   const lists = await read('../Lists/ListsPage.tsx');
-  assert.match(lists, /navigate\(path, \{ state: \{ paper, stored: true \} \}\)/);
+  assert.match(lists, /navigate\(path, \{ state: \{ paper, stored: true, pageMotion: 'still' \} \}\)/);
   const palette = await read('../../utils/searchDestinations.ts');
   assert.match(palette, /state: \{ paper \}/, 'the palette hands over the paper itself, which does paint');
 });

@@ -401,7 +401,6 @@
 .pc-authors { --arrive: 2; }
 .pc-abstract { --arrive: 3; }
 .pc-follow-reason { --arrive: 4; }
-.pc-action-bar,
 .pc-side-actions { --arrive: 5; }
 
 .pc-follow-reason,
@@ -411,7 +410,6 @@
 .pc-title,
 .pc-authors,
 .pc-abstract,
-.pc-action-bar,
 .pc-side-actions {
   animation: pcArrive 0.32s var(--ease-out-expo) calc(var(--arrive, 0) * 45ms) backwards;
 }
@@ -448,7 +446,6 @@
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-title,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-authors,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
-:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-action-bar,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-side-actions {
   animation: none;
 }
@@ -468,6 +465,7 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-width: 0;
   /* Without this the body refuses to go below its content height, and a long
      abstract pushes the action row out of a sheet that no longer scrolls. */
@@ -487,14 +485,6 @@
    somewhere to put the rest. */
 .pc-body > * {
   flex-shrink: 0;
-}
-
-.pc-body::before {
-  content: '';
-  width: 34px;
-  height: 3px;
-  margin-bottom: var(--space-4);
-  background: var(--area-accent, var(--accent-primary));
 }
 
 /* ── Debug Panel ── */
@@ -521,31 +511,57 @@
   margin-bottom: 4px;
 }
 
-/* ── Meta row — the machine-read line above the headline ── */
+/* ── Masthead — the field, the year and the citations, above the headline ── */
 .pc-meta {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  gap: 6px;
+  margin-bottom: var(--space-3);
   flex-wrap: wrap;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-secondary);
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
+  color: var(--text-tertiary);
 }
 
-.pc-category-pill {
-  display: inline-flex;
-  align-items: center;
+.pc-masthead-field {
   padding: 0;
-  border: none;
+  border: 0;
   background: none;
+  color: var(--area-accent, var(--text-primary));
   font: inherit;
-  font-weight: 600;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: var(--area-accent, var(--accent-primary));
+  font-weight: var(--fw-semibold);
 }
+
+button.pc-masthead-field:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.pc-masthead-field:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+/* ── The subjects and the status chips, between the masthead and the title ── */
+.pc-filed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 32px;
+  margin-bottom: var(--space-4);
+}
+
+.pc-filed:not(:has(> *)) {
+  display: none;
+}
+
+.pc-filed > .pc-topics,
+.pc-filed > .pc-chips {
+  margin-bottom: 0;
+}
+
 
 .pc-meta-dot {
   color: var(--border-strong);
@@ -684,10 +700,11 @@ a.pc-citations {
    not an alarm, and reaching for red would make every paywalled paper look
    retracted. */
 
-/* A link, not a state: no wash, a quieter ink, and the only chip in the row
+/* A link, not a state: the paper's own ground (so the watermark behind the
+   row does not show through), a quieter ink, and the only chip in the row
    that answers to the pointer. */
 .pc-chip--link {
-  background: transparent;
+  background: var(--bg-card);
   border-color: var(--border-default);
   color: var(--text-tertiary);
   transition: color var(--transition-fast), border-color var(--transition-fast);
@@ -701,32 +718,151 @@ a.pc-citations {
   }
 }
 
+.pc-similar-row {
+  flex-basis: 100%;
+}
+
 /* ── Topic index ──
    The subjects a paper is filed under. Machine data, so it rides in the
    metadata band with the meta line and the status chips; it used to sit in
    the action row, where a paper carrying several concepts pushed the reading
    buttons past the sheet's `overflow-x: hidden` and hid them.
 
-   One line, always: fifteen concepts cost the same height as two, so the
-   headline and the abstract keep their space no matter what the paper
-   carries. Whatever does not fit scrolls — nothing is dropped from the DOM,
-   so every concept stays clickable and reachable by keyboard. The mask is
-   what says there is more: it fades the right edge of the box, which lands on
-   empty ground when the row fits and cuts the last chip when it does not. */
+   The field and one subject, then "+N": two badges cost the same height on
+   every card, and the popover behind "+N" names every one. */
 .pc-topics {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   margin-bottom: var(--space-4);
-  overflow-x: auto;
-  scrollbar-width: none;
-  overscroll-behavior-inline: contain;
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
-  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
 }
 
-.pc-topics::-webkit-scrollbar { display: none; }
+/* One line whatever the subjects are called: they give way with an
+   ellipsis, "+N" keeps its width. */
+.pc-topics > .pc-semantic-tag:not(.pc-topics-more) {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pc-topics-more {
+  border-style: dashed;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.pc-topics-more[data-popup-open] {
+  border-color: var(--area-accent, var(--text-primary));
+  background: var(--area-accent, var(--text-primary));
+  color: var(--text-inverse);
+}
+
+.pc-topics-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The topic tags' hover (`.pc-semantic-tag.pc-topic-link:hover`). */
+@media (hover: hover) and (pointer: fine) {
+  .pc-topics-more:hover {
+    border-color: var(--area-accent, var(--text-primary));
+    background: var(--area-accent, var(--text-primary));
+    color: var(--text-inverse);
+  }
+}
+
+.pc-topics-pop.pc-topics-pop {
+  width: 260px;
+  padding: 6px;
+  border-color: var(--border-ink);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.pc-topics-pop-title {
+  margin: 4px 8px 6px;
+  font: var(--fw-semibold) var(--fs-xs)/1.4 var(--font-body);
+  color: var(--text-tertiary);
+}
+
+.pc-topics-pop-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pc-topics-pop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font: var(--fw-medium) var(--fs-sm)/1.3 var(--font-body);
+  text-align: left;
+}
+
+button.pc-topics-pop-item {
+  cursor: pointer;
+}
+
+button.pc-topics-pop-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.pc-topics-pop-item > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.pc-topics-pop-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pc-topics-pop-name {
+  color: var(--text-primary);
+}
+
+.pc-topics-pop-kind {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  color: var(--text-tertiary);
+}
+
+.pc-topics-sheet .pc-topics-pop-list {
+  overflow-y: auto;
+}
+
+.pc-topics-sheet .pc-topics-pop-item {
+  min-height: 52px;
+  padding-inline: var(--space-2);
+  font-size: 1rem;
+}
+
+.pc-topics-sheet .pc-topics-pop-item:active {
+  background: var(--bg-sunken);
+}
+
+
+
+@media (hover: hover) and (pointer: fine) {
+  button.pc-topics-pop-item:hover {
+    background: var(--bg-sunken);
+  }
+}
 
 .pc-semantic-tag {
   display: inline-flex;
@@ -851,11 +987,6 @@ a.pc-citations {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .pc-category-pill.pc-topic-link:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-
   .pc-semantic-tag.pc-topic-link:hover {
     background: var(--area-accent, var(--text-primary));
     border-color: var(--area-accent, var(--text-primary));
@@ -957,30 +1088,15 @@ a.pc-citations {
 }
 
 /* ── Abstract ── */
-.related-sheet--inline .related-header .related-mode-tabs {
-  margin: 0;
-  --tabs-gap: 2px;
-  --tabs-pad: 2px;
-}
-
-.related-sheet--inline .related-header .related-mode-tabs button {
-  height: 26px;
-  min-height: 26px;
-  padding-inline: 10px;
-  gap: 6px;
-}
-
 .pc-abstract {
-  max-height: min(30em, 46vh);
-  max-height: min(30em, 46dvh);
   overflow: hidden;
   position: relative;
   margin-bottom: var(--space-4);
   /* The one part of the card that yields. Everything else — kicker, badges,
-     title, authors, actions — keeps its natural height; the abstract shrinks
-     into whatever is left, which is what keeps the frame still on a short
-     screen now that the sheet cannot scroll. */
-  flex: 0 1 auto;
+     title, authors, actions — keeps its natural height; the abstract fills
+     whatever is left, and the graph fills the same room when it takes its
+     place (`.pc-slot`), so switching never resizes the block. */
+  flex: 1 1 auto;
   min-height: 0;
   cursor: pointer;
 }
@@ -1025,20 +1141,15 @@ a.pc-citations {
   mask-size: 100% 400%;
 }
 
-/* A record with no abstract: the shared empty state, centred in the room
-   the abstract would have had, across and, where the card gives the abstract
-   the leftover height (tablet and phone), down too. */
-/* The slot and its wrappers take the leftover height only for this state:
-   an abstract is as tall as its words, but an absent one would otherwise
-   leave all the slack under the state. */
-.pc-slot:has(.pc-abstract-empty),
-.pc-slot:has(.pc-abstract-empty) > .pc-slot-track,
-.pc-slot-track > .pc-slot-face:has(.pc-abstract-empty) {
-  flex-grow: 1;
+/* A record with no abstract: the empty state is framed like the graph's
+   panel, which takes its place at its size. */
+.pc-slot--no-abstract .pc-abstract:has(> .pc-abstract-empty) {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
 }
 
 .pc-abstract:has(> .pc-abstract-empty) {
-  flex-grow: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1081,85 +1192,6 @@ a.pc-citations {
   overscroll-behavior: contain;
 }
 
-/* Structural wrappers for the animated linked-resources row (no colour). */
-.pc-linked-resources-slot {
-  display: grid;
-  width: 100%;
-  max-width: 100%;
-}
-
-.pc-linked-resources-slot-inner {
-  width: 100%;
-  min-height: 0;
-  overflow: clip;
-  overflow-clip-margin: 14px;
-}
-
-/* Same reasoning as `.pc-project-badge-motion` above: no 3D transform, no
-   `perspective` ancestor, so `backface-visibility: hidden` had nothing to
-   do here but force a permanent layer. */
-.pc-linked-resources-motion {
-  width: 100%;
-  min-width: 0;
-  transform-origin: left center;
-}
-
-/* ── Linked resources ── */
-.pc-linked-resources {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  margin-bottom: var(--space-4);
-}
-
-.pc-linked-resources-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-}
-
-.pc-linked-resources-list {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  overscroll-behavior-inline: contain;
-}
-
-.pc-linked-resources-list::-webkit-scrollbar { display: none; }
-
-.pc-linked-resource {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  min-height: 26px;
-  padding: 4px 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  text-decoration: none;
-  font: 500 0.6875rem/1.3 var(--font-mono);
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .pc-linked-resource:hover {
-    border-color: var(--border-ink);
-    color: var(--text-primary);
-    text-decoration: none;
-  }
-}
-
 /* The resource kind only tints its icon. */
 .pc-linked-resource--dataset svg { color: var(--gradient-stat); }
 .pc-linked-resource--model svg { color: var(--gradient-physics); }
@@ -1168,25 +1200,41 @@ a.pc-citations {
 .pc-linked-resource--version svg { color: var(--gradient-math); }
 
 /* ── Action bar ── */
+.pc-sheet {
+  height: min(100%, 860px);
+}
+
 .pc-action-bar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  margin-top: var(--space-4);
+  margin-top: auto;
+  padding-top: var(--space-4);
 }
 
-/* The two reading actions wrap onto a second line rather than run off the
-   sheet: their labels cannot compress (`whitespace-nowrap`), and the sheet
-   clips what overflows, so without this the second button was cut away
-   wherever the column got narrow. */
+/* Two fixed slots, so neither reading action moves: the Read label can
+   change after the card is shown (a free copy found, the library's answer)
+   and "Read in plain words" can arrive with that copy, but a label only
+   changes the text inside its own slot. A label too long for its slot is
+   cut with an ellipsis; the accessible name keeps it whole. */
 .pc-action-primary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 14rem));
   gap: var(--space-2);
   min-width: 0;
   margin-right: auto;
+}
+
+.pc-action-primary > button {
+  min-width: 0;
+}
+
+.pc-action-primary .pc-action-label,
+.pc-action-primary .pc-action-label--short {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pc-action-label--short {
@@ -1300,7 +1348,6 @@ a.pc-citations {
   align-items: center;
   gap: var(--space-4);
   z-index: 3;
-  translate: 0 var(--rail-shift, 0px);
 }
 
 .pc-side-btn {
@@ -1549,6 +1596,7 @@ a.pc-citations {
   box-shadow: var(--shadow-xl);
   transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1), height 0.28s var(--ease-out-expo);
   will-change: transform, opacity;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Wider than a phone it is a centred dialog (RelatedPapersSheet.jsx): no
@@ -1576,16 +1624,10 @@ a.pc-citations {
 .related-sheet.related-sheet--inline {
   --bleed: 0px;
   width: 100%;
-  /* One height whatever it shows -- the map, a loading list, an empty or a
-     failed state -- so switching Graph and Similar changes what is inside
-     the block and never the block itself. The popup forms keep the shorter
-     heights per state below. */
-  height: min(560px, 60vh);
-  height: min(560px, 60dvh);
-  max-height: min(560px, 60vh);
-  max-height: min(560px, 60dvh);
+  height: auto;
+  max-height: none;
   transition: none;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   margin-bottom: var(--space-4);
   padding-bottom: 0;
   border-bottom: 1px solid var(--border-default);
@@ -1597,7 +1639,7 @@ a.pc-citations {
 
 /* On a short window the panel only has what the rows above it leave, and at
    1280×600 that was 89px: the Graph/Similar header and a 15px sliver of map.
-   While the connections are open the paper above them steps back instead:
+   While the graph is open the paper above it steps back instead:
    the topic row, the project badge and the accent rule go (the kicker still
    names the field), the title keeps two lines, and the steps between rows
    halve. The panel gets 220px or more there, a funded paper with a two-line
@@ -1609,8 +1651,7 @@ a.pc-citations {
     padding-block: var(--space-4);
   }
 
-  .pc-sheet[data-connections] :is(.pc-topics, .pc-project-badge-slot),
-  .pc-sheet[data-connections] .pc-body::before {
+  .pc-sheet[data-connections] :is(.pc-topics, .pc-project-badge-slot) {
     display: none;
   }
 
@@ -1632,21 +1673,21 @@ a.pc-citations {
   }
 
   .pc-sheet[data-connections] .pc-action-bar {
-    margin-top: var(--space-2);
+    padding-top: var(--space-2);
   }
 }
 
 /* The slot the abstract and the connections share (PaperCard.jsx): a column
-   that passes the card's flex room through to whichever face is up, so the
-   abstract still shrinks into what the title and actions leave. While the
-   faces swap it holds a height and eases to the arriving face's, and clips
-   the two faces sliding past each other. */
+   that takes the room the title and actions leave and passes it whole to
+   whichever face is up, so the abstract, Similar and Graph are one size.
+   While the faces swap it holds a height and eases to the arriving face's,
+   and clips the two faces sliding past each other. */
 .pc-slot,
 .pc-slot-track,
 .pc-slot-face {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -1722,75 +1763,6 @@ a.pc-citations {
   padding: 8px;
 }
 
-.related-mode-tabs {
-  --tabs-gap: 3px;
-  --tabs-pad: 3px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: auto;
-  gap: var(--tabs-gap);
-  margin: 10px 12px 0;
-  padding: var(--tabs-pad);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-}
-
-.related-mode-tabs button {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .related-mode-tabs button:hover:not(:disabled) { color: var(--text-primary); }
-}
-
-.related-mode-tabs button {
-  position: relative;
-  border: 1px solid transparent;
-}
-
-.related-mode-tabs button[data-active] {
-  color: var(--text-primary);
-  font-weight: var(--fw-semibold);
-  box-shadow: none;
-}
-
-/* The chosen mode's chip slides between the two, the way the account menu's
-   theme pill does (Layout/AccountMenu.css): a transform on one element, so a
-   second press retargets it mid-way. */
-.related-mode-pill {
-  position: absolute;
-  top: var(--tabs-pad);
-  bottom: var(--tabs-pad);
-  left: var(--tabs-pad);
-  width: calc((100% - 2 * var(--tabs-pad) - var(--tabs-gap)) / 2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  transform: translateX(calc(var(--mode-index, 0) * (100% + var(--tabs-gap))));
-  transition: transform 250ms var(--ease-out);
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .related-mode-pill { transition: none; }
-}
-
-.related-mode-tabs button:disabled { cursor: default; opacity: 0.4; }
-
 /* ── The citation map ──
    Vertical is time in two bands with their own scale, horizontal is citations
    on a logarithmic axis, and every neighbour converges on the mark that stands
@@ -1842,21 +1814,18 @@ a.pc-citations {
 .graph-edge.is-dimmed { stroke: rgba(17, 19, 24, 0.06); }
 
 /* Hover (RelatedPapersSheet's hoveredKey) and the selected node: the edge
-   takes its paper's ink and thickens, so the connection reads; the hit line
-   is its unpainted, wider twin for the pointer. */
+   takes its paper's ink and thickens, so the connection reads. */
 .graph-edge.is-hovered {
   stroke: var(--edge-accent, var(--accent-primary));
   stroke-width: 2;
   stroke-dasharray: none;
 }
 
-.graph-edge-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 12;
-  pointer-events: stroke;
-  cursor: pointer;
-}
+/* Links are picked by distance (`nearestCitationLink`), not by their 1px
+   stroke, so the lines themselves take no pointer. */
+.graph-lines { pointer-events: none; }
+
+.graph-plot[data-link-hovered] { cursor: pointer; }
 
 .graph-edge.is-gone {
   opacity: 0;
@@ -1925,6 +1894,10 @@ a.pc-citations {
   translate: var(--mark-x, 0) var(--mark-y, 0);
   transition: translate 0.28s var(--ease-out-quad);
   animation: relatedItemIn 0.28s var(--ease-out-expo) 0.14s backwards;
+}
+
+.graph-plot[data-resizing] :is(.graph-mark, .graph-chip) {
+  transition: none;
 }
 
 /* A hop rebuilds the axis under a mark that is already on screen, so its
@@ -2171,6 +2144,37 @@ a.pc-citations {
   transform: translateX(-50%);
 }
 
+/* A narrow plot gives each year a few pixels, so papers of the same year
+   cannot step aside and are left off the map; this row says how many and
+   leads to the list, which has them all. */
+.graph-off-map {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-off-map:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
 /* ── Where you are in the graph ── */
 .graph-trail {
   min-height: 40px;
@@ -2203,13 +2207,6 @@ a.pc-citations {
   }
 }
 
-.graph-trail-label {
-  flex: 0 0 auto;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
 
 .graph-trail-steps {
   min-width: 0;
@@ -2230,6 +2227,7 @@ a.pc-citations {
 
 .graph-crumb {
   max-width: 190px;
+  min-height: 24px;
   overflow: hidden;
   border: 0;
   padding: 0;
@@ -2277,25 +2275,29 @@ a.pc-citations {
 
 .graph-degraded svg { flex: 0 0 auto; }
 
-/* ── The card that rises when you touch a node ── */
+/* ── The strip that rises when you touch a node ── */
 .graph-peek {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 10px;
+  right: 10px;
   /* Its containing block is `.related-sheet`'s PADDING box, whose bottom
      edge sits `--bleed` below the visible viewport edge (see the comment on
      `.related-sheet` above) — an absolute `bottom` never sees the sheet's own
      `padding-bottom` correction, so the offset has to add `--bleed` (and
      `--inset-bottom`, for the safe-area devices the padding also covers)
-     back in, or the card renders under the fold. */
+     back in, or the card renders under the fold. The margin is the inset. */
   bottom: calc(var(--inset-bottom) + var(--bleed));
+  margin-bottom: 10px;
   /* Above every node, the focused one (6) and the travelling dot (8)
-     included: a card laid over the plot must not let a dot through. */
+     included: a strip laid over the plot must not let a dot through. */
   z-index: 9;
-  padding: 15px 18px 16px;
-  border-top: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
   background: var(--bg-card);
-  box-shadow: 0 -10px 28px rgba(17, 19, 24, 0.09);
   animation: graphPeekIn 0.24s var(--ease-out-expo);
 }
 
@@ -2304,35 +2306,12 @@ a.pc-citations {
   pointer-events: none;
 }
 
-.graph-peek-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.graph-peek-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  /* 8px to the title's text, its line's leading included. */
-  margin-top: 6px;
-}
-
-/* The field's chip takes its colour from the paper, as the card's does. */
-.pc-chip.graph-peek-field {
-  border-color: color-mix(in srgb, var(--chip-accent) 32%, transparent);
-  background: color-mix(in srgb, var(--chip-accent) 8%, transparent);
-  color: var(--chip-accent);
-}
-
 .graph-peek-close {
   display: grid;
   flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  margin: -2px -6px 0 auto;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2344,33 +2323,33 @@ a.pc-citations {
   .graph-peek-close:hover { color: var(--text-primary); }
 }
 
+.graph-peek-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
 .graph-peek-title {
   display: block;
-  font-size: 0.9375rem;
-  line-height: 1.32;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
   font-weight: var(--fw-semibold);
   color: var(--text-primary);
-}
-
-.graph-peek-authors {
-  display: block;
-  margin-top: 8px;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font: 500 0.6875rem/1.4 var(--font-mono);
-  text-overflow: ellipsis;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.graph-peek-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
+.graph-peek-byline {
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.graph-peek-open-action,
-.graph-peek-centre,
 .graph-back-button {
   display: inline-flex;
   align-items: center;
@@ -2385,13 +2364,6 @@ a.pc-citations {
   transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.graph-peek-open-action {
-  border: 1px solid var(--accent-primary);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-}
-
-.graph-peek-centre,
 .graph-back-button {
   border: 1px solid var(--border-default);
   background: var(--bg-card);
@@ -2399,33 +2371,12 @@ a.pc-citations {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .graph-peek-open-action:hover:not(:disabled) {
-    background: var(--accent-primary-hover);
-    border-color: var(--accent-primary-hover);
-  }
-
-  .graph-peek-centre:hover:not(:disabled),
   .graph-back-button:hover {
     border-color: var(--border-ink);
     background: var(--bg-secondary);
   }
 }
 
-.graph-peek-open-action:disabled,
-.graph-peek-centre:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.graph-peek-doi {
-  max-width: 230px;
-  margin-left: auto;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font: 500 0.625rem/1.4 var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 
 /* An empty map or list, or one that failed: the shared empty state
@@ -2434,6 +2385,7 @@ a.pc-citations {
    the same height and switching Graph and Similar does not move Petri or
    the title. Petri stands still, like the empty abstract's. */
 .graph-empty {
+  animation: graphEmptyIn 220ms var(--ease-out);
   flex: 1;
   justify-content: center;
   /* Last resort on a very short card: the state scrolls inside the panel
@@ -2444,8 +2396,8 @@ a.pc-citations {
 }
 
 /* The panel's height is whatever the card leaves it, so the state steps down
-   with it instead of running past the bottom: less air first, then the words
-   alone. Measured on the inline panel itself. */
+   with it instead of running past the bottom: less air first, then a smaller
+   Petri. Measured on the inline panel itself. */
 .related-sheet--inline {
   container: related-panel / size;
 }
@@ -2467,9 +2419,15 @@ a.pc-citations {
   }
 }
 
+/* Short panel: Petri stays, smaller, rather than leaving the words alone. */
 @container related-panel (max-height: 250px) {
   .graph-empty .empty-state-art {
-    display: none;
+    margin-bottom: var(--space-1);
+  }
+
+  .graph-empty .empty-state-art > svg {
+    width: 2.5rem;
+    height: 2.5rem;
   }
 }
 
@@ -2541,6 +2499,7 @@ a.pc-citations {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px 0;
   scroll-behavior: smooth;
   animation: relatedContentIn 0.22s ease-out both;
@@ -2826,6 +2785,10 @@ a.pc-citations {
    Everything else the map does reuses a frame the sheet already had. The
    edges and the year line only fade in, and a node that arrives from the
    centre lands rather than appears. */
+@keyframes graphEmptyIn {
+  from { opacity: 0; }
+}
+
 @keyframes graphEdgeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -3043,11 +3006,6 @@ a.pc-citations {
     margin-inline: auto;
   }
 
-  .pc-abstract {
-    flex: 1 1 auto;
-    max-height: none;
-  }
-
   .pc-side-actions {
     position: absolute;
     right: var(--space-2);
@@ -3058,7 +3016,7 @@ a.pc-citations {
        height too low for 0.55 s and jumped up when the property was
        released (measured on 390×844). `translate` composes with the
        animated transform instead. */
-    translate: 0 calc(-50% + var(--rail-shift, 0px));
+    translate: 0 -50%;
     gap: var(--space-3);
   }
 
@@ -3088,18 +3046,13 @@ a.pc-citations {
       margin-bottom: var(--space-2);
     }
 
-    /* The accent rule over the kicker is ornament; the abstract is not. */
-    .pc-body::before {
-      display: none;
-    }
-
     .pc-authors {
       margin-bottom: var(--space-2);
       padding-bottom: var(--space-2);
     }
 
     .pc-action-bar {
-      margin-top: var(--space-2);
+      padding-top: var(--space-2);
     }
 
     /* Petri is decoration; on a card this short the state is its words. */
@@ -3171,11 +3124,9 @@ a.pc-citations {
     display: inline;
   }
 
-  /* On a phone the word is the Read button, and the document glyph goes: it
-     said the same thing twice, it was the part that could not tell reading
-     here from leaving for the source, and the row cannot fit both at 360px. */
-  .pc-action-read svg:not(.spinning) {
-    display: none;
+  .pc-action-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
 
   .pc-action-primary > button {
@@ -3197,14 +3148,6 @@ a.pc-citations {
     inset: 0;
     margin: auto;
   }
-
-  .pc-linked-resources {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .pc-linked-resources-list { width: 100%; }
 
   .related-sheet {
     height: calc(min(74dvh, 620px) + var(--bleed));
@@ -3259,14 +3202,9 @@ a.pc-citations {
   .graph-map { padding: 12px 14px 10px; }
   .graph-node-label { max-width: 84px; }
   .graph-trail { padding: 0 14px; }
+  .graph-off-map { padding: 0 14px; }
   .graph-crumb { max-width: 118px; }
   .graph-degraded { margin: 10px 14px 0; }
-  .graph-peek { padding: 13px 14px 15px; }
-  /* The two actions are new controls rather than a copy of the sheet chrome,
-     so on a phone they take the full 44px. */
-  .graph-peek-open-action,
-  .graph-peek-centre { min-height: 44px; }
-  .graph-peek-doi { display: none; }
   .related-header .graph-view-button { width: 40px; height: 40px; }
 }
 
@@ -3343,7 +3281,6 @@ a.pc-citations {
   .related-item > svg,
   .related-item::before,
   .related-card-back,
-  .related-mode-tabs button,
   .graph-crumb,
   .graph-trail-back,
   .related-header .graph-view-button { transition: none; }

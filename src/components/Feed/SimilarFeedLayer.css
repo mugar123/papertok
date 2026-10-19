@@ -1,0 +1,291 @@
+/* ============================================
+   Similar papers — a feed of its own over the page
+
+   The popup of `ui/dialog` arrives as a centred sheet; the layer is the
+   viewport, so the sheet is undone here, in this unlayered rule, the way the
+   reader undoes it (PaperReader.css). Its header stands exactly where the
+   navbar does (`--nav-total`), so the feed inside lays out as on the page:
+   `.feed-wrapper` and `.feed-empty` already start below that height.
+   ============================================ */
+
+.similar-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 12051;
+  max-width: none;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-secondary);
+  /* The pill's box, from SimilarFeedLayer.jsx: the layer grows out of it and,
+     closed with the X, Escape or Back, folds back into it. */
+  clip-path: inset(0 round 0);
+  transform: translateY(var(--similar-drag, 0px));
+  transition: transform 200ms var(--ease-out-cubic);
+}
+
+.similar-layer.is-dragging {
+  transition: none;
+}
+
+/* An animation, not a transition: Base UI holds the closing popup only while
+   `getAnimations()` reports one on it (design.md, traps). The ground starts
+   as the pill's own tint so the layer reads as the button opening up. */
+.similar-layer[data-open] {
+  animation: similarGrow 420ms var(--ease-out-cubic) both;
+}
+
+.similar-layer[data-closed] {
+  animation: similarFold 320ms var(--ease-in-out) both;
+}
+
+/* Pulled down past the threshold: it carries on the way the finger sent it. */
+.similar-layer[data-closed][data-dropped-by='drag'] {
+  animation: similarDrop 240ms var(--ease-out) both;
+}
+
+/* A link in the layer took the page somewhere else: there is no pill left to
+   fold into, so it only steps aside for the page arriving. */
+.similar-layer[data-closed][data-dropped-by='route'] {
+  animation: fadeOut 160ms var(--ease-out) both;
+}
+
+/* The content waits until the clip has nearly opened: while the clip is still
+   moving tens of pixels a frame, painted borders were measured slipping up to
+   8px past its edge for a frame or two (Chrome, 1280x800). */
+.similar-layer[data-open] :is(.similar-head, .similar-body) {
+  animation: similarContentIn 180ms linear 150ms both;
+}
+
+.similar-layer[data-closed]:not([data-dropped-by='drag']) :is(.similar-head, .similar-body) {
+  animation: similarContentOut 120ms linear both;
+}
+
+@keyframes similarGrow {
+  from { clip-path: var(--similar-origin); background-color: var(--tint-violet-bg); }
+  to { clip-path: inset(0 round 0); background-color: var(--bg-secondary); }
+}
+
+@keyframes similarFold {
+  from { clip-path: inset(0 round 0); background-color: var(--bg-secondary); }
+  to { clip-path: var(--similar-origin); background-color: var(--tint-violet-bg); }
+}
+
+@keyframes similarDrop {
+  from { transform: translateY(var(--similar-drag, 0px)); }
+  to { transform: translateY(100%); }
+}
+
+@keyframes similarContentIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes similarContentOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.similar-scrim[data-open] {
+  animation: fadeIn 300ms var(--ease-out) both;
+}
+
+.similar-scrim[data-closed] {
+  animation: fadeOut 320ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .similar-layer,
+  .similar-layer[data-closed][data-dropped-by='drag'] {
+    transition: none;
+  }
+
+  .similar-layer[data-open],
+  .similar-layer[data-open] :is(.similar-head, .similar-body) {
+    animation: fadeIn 150ms var(--ease-out) both;
+  }
+
+  .similar-layer[data-closed],
+  .similar-layer[data-closed][data-dropped-by='drag'] {
+    animation: fadeOut 140ms var(--ease-out) both;
+  }
+}
+
+/* ── The header, in the navbar's place ── */
+
+.similar-head {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-total);
+  padding: var(--inset-top) var(--space-5) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-default);
+  touch-action: none;
+}
+
+.similar-grab {
+  display: none;
+}
+
+.similar-close {
+  flex: none;
+  gap: var(--space-2);
+}
+
+.similar-context {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border-default);
+}
+
+.similar-kicker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid var(--tint-violet-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-violet-bg);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--tint-violet-fg);
+}
+
+.similar-kicker svg {
+  align-self: center;
+}
+
+.similar-anchor {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.similar-status {
+  flex: none;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The navbar's own ⌘K key (Navbar.css), saying which key closes this. */
+.similar-esc {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font: 500 0.6875rem/1.4 var(--font-mono);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .similar-esc {
+    display: none;
+  }
+}
+
+/* A phone: the X alone, the context on two lines, and a grip that says the
+   header can be pulled down. The bar is 52px here (`--nav-height-mobile`). */
+@media (max-width: 768px) {
+  .similar-head {
+    padding: var(--inset-top) var(--space-4) 0 var(--space-1);
+    gap: var(--space-2);
+  }
+
+  .similar-close {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .similar-close svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .similar-close-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .similar-context {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .similar-kicker {
+    font-size: 0.625rem;
+  }
+
+  .similar-anchor {
+    font-size: 0.9375rem;
+    line-height: 1.25;
+  }
+
+  .similar-status {
+    align-self: flex-start;
+    margin-top: 12px;
+    font-size: 0.625rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .similar-grab {
+    display: block;
+    position: absolute;
+    top: calc(var(--inset-top) + 4px);
+    left: 50%;
+    width: 32px;
+    height: 4px;
+    margin-left: -16px;
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+  }
+}
+
+/* ── The body: the feed, or the wait, or what went wrong ── */
+
+.similar-body {
+  position: absolute;
+  inset: 0;
+}
+
+/* The end card is a status screen standing in a full-height snap slot. */
+.similar-end {
+  height: 100%;
+  margin: 0 auto;
+  padding: var(--space-8);
+  justify-content: center;
+}

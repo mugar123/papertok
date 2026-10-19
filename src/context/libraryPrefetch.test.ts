@@ -86,7 +86,7 @@ test('an empty card means an empty list, not an unfinished read', async () => {
   const source = await read('../components/Lists/ListsPage.tsx');
   const preview = source.slice(
     source.indexOf('<div className="list-card-preview">'),
-    source.indexOf('list-card-preview-title'),
+    source.indexOf('list-card-preview-empty'),
   );
   assert.ok(preview.length > 0, 'expected to have found the card preview');
   assert.match(preview, /paperIds\?\.length \?\? 0\) === 0/,

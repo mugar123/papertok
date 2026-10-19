@@ -345,6 +345,7 @@ export async function fetchPapersByIds(arxivIds: string[] | null | undefined) {
   const idList = arxivIds.join(',');
   const params = new URLSearchParams({
     id_list: idList,
+    max_results: String(Math.min(arxivIds.length, 50)),
   });
 
   const baseUrl = isDev ? ARXIV_DEV : ARXIV_PROD;

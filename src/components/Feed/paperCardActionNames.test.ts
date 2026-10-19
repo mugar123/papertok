@@ -182,8 +182,8 @@ test('SOURCE: a slow library lookup says "Checking", named and pushed', async ()
   assert.match(reduced, /\.pc-action-out \{\s*animation: fadeOut [^;]*;\s*\}/, 'reduced motion still slides the leaving face');
   assert.match(reduced, /\.pc-action-checking \{\s*animation: none;/, 'reduced motion still sweeps the band across "Checking"');
   const movil = css.slice(css.indexOf('@media (max-width: 640px)'), css.indexOf('@media (max-width: 420px)'));
-  assert.match(movil, /\.pc-action-read svg:not\(\.spinning\) \{\s*display: none;\s*\}/,
-    'on the phone the leaving face shows the glyph the arriving one hides');
+  assert.doesNotMatch(movil, /\.pc-action-read svg:not\(\.spinning\) \{\s*display: none;/,
+    'on the phone the Read button keeps its glyph, as "Read in plain words" keeps its sparkle');
 });
 
 test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-label que lo contradiga', async () => {
@@ -213,10 +213,12 @@ test('SOURCE: el nombre del botón de autores empieza por lo que el botón ense�
   // Lo único escrito en los puntos es el «+N»; las iniciales son decoración.
   // El nombre accesible arranca por esa misma plantilla (criterio 2.5.3:
   // quien navega por voz dice lo que ve).
-  const dibujado = boton.match(/aria-hidden="true">\s*\{`(\+[^`]+)`\}/)?.[1];
-  assert.ok(dibujado, 'el botón de autores dejó de dibujar el «+N»');
+  const dots = stripComments(await read('./AuthorDots.tsx'));
+  assert.match(dots, /max = 3/, 'los puntos dejaron de cortar en tres');
+  assert.match(dots, /aria-hidden="true">\s*\{`\+\$\{authors\.length - max\}`\}/, 'el botón de autores dejó de dibujar el «+N»');
+  assert.match(boton, /<AuthorDots authors=\{paper\.authors\} \/>/, 'el botón dejó de dibujar los puntos con el corte por defecto');
   const nombre = boton.match(/\? `(\+[^`]+)`/)?.[1];
-  assert.ok(nombre?.startsWith(dibujado), `el nombre accesible no empieza por «${dibujado}»`);
+  assert.ok(nombre?.startsWith('+${paper.authors.length - 3}'), 'el nombre accesible no empieza por el «+N» que se ve');
   assert.match(boton, /aria-expanded=\{authorsExpanded\}/);
 });
 

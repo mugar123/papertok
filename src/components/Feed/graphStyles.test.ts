@@ -105,3 +105,15 @@ test('SOURCE: la tarjeta inferior del grafo se ancla al borde visible, no al san
     + 'the viewport) instead of the visible fold, and its bottom edge renders under the sheet\'s own edge.',
   );
 });
+
+test('SOURCE: the path crumbs and the off-map row are at least 24px targets, and the list keeps its scroll from the feed', async () => {
+  const css = stripComments(await readFile(new URL(CSS, import.meta.url), 'utf8'));
+  assert.match(ruleBody(css, '.graph-crumb'), /min-height:\s*24px/);
+  assert.match(ruleBody(css, '.graph-off-map'), /min-height:\s*(2[4-9]|[3-9]\d)px/);
+  assert.match(ruleBody(css, '.related-list'), /overscroll-behavior:\s*contain/);
+});
+
+test('SOURCE: the phone sheet, portalled out of the card, clears the tap highlight a link\'s bounding box would fill', async () => {
+  const css = stripComments(await readFile(new URL(CSS, import.meta.url), 'utf8'));
+  assert.match(ruleBody(css, '.related-sheet'), /-webkit-tap-highlight-color:\s*transparent/);
+});

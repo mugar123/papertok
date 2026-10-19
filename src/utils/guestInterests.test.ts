@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORIES } from '../data/categories.ts';
+import { INTEREST_AREAS } from '../data/categories.ts';
 import {
   GUEST_INTERESTS_STORAGE_KEY,
   GUEST_SEED_PER_AREA,
@@ -15,6 +15,7 @@ import {
   readGuestInterests,
   saveGuestInterests,
 } from './guestInterests.ts';
+import { getDomainSourcePlan } from '../services/domainSourceService.ts';
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -33,8 +34,8 @@ test('areas are normalized to known keys, deduped, in taxonomy order', () => {
 });
 
 test('the categories of an area are exactly the schema subcategories', () => {
-  const ids = guestCategoriesForAreas(['cs', 'unknown']);
-  assert.deepEqual(ids, Object.keys(CATEGORIES.cs.subcategories));
+  const ids = guestCategoriesForAreas(['ai', 'unknown']);
+  assert.deepEqual(ids, Object.keys(INTEREST_AREAS.ai.subcategories));
   assert.ok(ids.includes('cs.AI'));
 });
 
@@ -91,7 +92,7 @@ test('a storage that throws never reaches the caller', () => {
 });
 
 test('the seed takes the first five of each area, interleaved across areas', () => {
-  const firstN = (area: string, n: number|undefined) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
+  const firstN = (area: string, n: number|undefined) => Object.keys(INTEREST_AREAS[area].subcategories).slice(0, n);
   const seed = guestSeedCategoriesForAreas(['mech', 'physics', 'eess']);
   assert.equal(GUEST_SEED_PER_AREA, 5);
   assert.equal(seed.length, 15);
@@ -99,40 +100,40 @@ test('the seed takes the first five of each area, interleaved across areas', () 
   // first of every area before any area's second.
   assert.deepEqual(seed.slice(0, 3), [firstN('physics', 1)[0], firstN('eess', 1)[0], firstN('mech', 1)[0]]);
   assert.deepEqual(seed.slice(3, 6), [firstN('physics', 2)[1], firstN('eess', 2)[1], firstN('mech', 2)[1]]);
-  assert.deepEqual(seed.filter(id => id in CATEGORIES.physics.subcategories), firstN('physics', 5));
+  assert.deepEqual(seed.filter(id => id in INTEREST_AREAS.physics.subcategories), firstN('physics', 5));
   assert.equal(new Set(seed).size, 15);
 });
 
 test('a small area contributes what it has, and the seed never reaches the rules cap', () => {
-  assert.deepEqual(guestSeedCategoriesForAreas(['econ']), Object.keys(CATEGORIES.econ.subcategories));
-  const everything = guestSeedCategoriesForAreas(Object.keys(CATEGORIES));
+  assert.deepEqual(guestSeedCategoriesForAreas(['econ']), Object.keys(INTEREST_AREAS.econ.subcategories));
+  const everything = guestSeedCategoriesForAreas(Object.keys(INTEREST_AREAS));
   assert.ok(everything.length <= 100, `${everything.length} preferences would be refused by firestore.rules`);
   assert.deepEqual(guestSeedCategoriesForAreas(['nope']), []);
   assert.deepEqual(guestSeedCategoriesForAreas(null!), []);
-  assert.deepEqual(guestSeedCategoriesForAreas(['cs'], 2), Object.keys(CATEGORIES.cs.subcategories).slice(0, 2));
+  assert.deepEqual(guestSeedCategoriesForAreas(['cs'], 2), Object.keys(INTEREST_AREAS.cs.subcategories).slice(0, 2));
 });
 
 test('topics survive only inside a chosen area, in taxonomy order', () => {
   assert.deepEqual(
-    normalizeGuestTopics(['cs.CV', 'bio.neuro', 'cs.AI', 'cs.AI', 'made.up', 7], ['cs']),
+    normalizeGuestTopics(['cs.CV', 'bio.neuro', 'cs.AI', 'cs.AI', 'made.up', 7], ['ai']),
     ['cs.AI', 'cs.CV'],
   );
-  assert.deepEqual(normalizeGuestTopics('cs.AI', ['cs']), []);
+  assert.deepEqual(normalizeGuestTopics('cs.AI', ['ai']), []);
 });
 
 test('a narrowed area stands for its topics, an untouched one for all of it', () => {
-  const ids = guestCategoriesForAreas(['cs', 'bio'], ['cs.LG', 'cs.CL']);
-  assert.deepEqual(ids, ['cs.LG', 'cs.CL', ...Object.keys(CATEGORIES.bio.subcategories)]);
+  const ids = guestCategoriesForAreas(['ai', 'bio'], ['cs.LG', 'cs.CL']);
+  assert.deepEqual(ids, ['cs.LG', 'cs.CL', ...Object.keys(INTEREST_AREAS.bio.subcategories)]);
 });
 
 test('a pick with topics round-trips, and dropping an area drops its topics', () => {
   const storage = fakeStorage();
-  const stored = saveGuestInterests({ areas: ['physics', 'cs'], topics: ['cs.LG', 'quant-ph', 'bio.neuro'] }, storage);
-  assert.deepEqual(stored, ['physics', 'cs']);
-  assert.deepEqual(readGuestInterests(storage), { areas: ['physics', 'cs'], topics: ['quant-ph', 'cs.LG'], dismissed: false });
+  const stored = saveGuestInterests({ areas: ['physics', 'ai'], topics: ['cs.LG', 'quant-ph', 'bio.neuro'] }, storage);
+  assert.deepEqual(stored, ['physics', 'ai']);
+  assert.deepEqual(readGuestInterests(storage), { areas: ['physics', 'ai'], topics: ['quant-ph', 'cs.LG'], dismissed: false });
 
   // The header chip's sheet saves areas alone: that answer has no topics.
-  saveGuestInterests({ areas: ['cs'], topics: ['cs.LG', 'quant-ph'] }, storage);
+  saveGuestInterests({ areas: ['ai'], topics: ['cs.LG', 'quant-ph'] }, storage);
   assert.deepEqual(readGuestInterests(storage)!.topics, ['cs.LG']);
 });
 
@@ -144,13 +145,13 @@ test('an answer stored before topics existed reads as whole areas', () => {
 });
 
 test('a narrowed area seeds exactly its topics, and the seed stays under the rules cap', () => {
-  const seed = guestSeedCategoriesForAreas(['physics', 'cs'], GUEST_SEED_PER_AREA, ['cs.CL', 'cs.CV']);
-  const physicsFirst = Object.keys(CATEGORIES.physics.subcategories).slice(0, GUEST_SEED_PER_AREA);
+  const seed = guestSeedCategoriesForAreas(['physics', 'ai'], GUEST_SEED_PER_AREA, ['cs.CL', 'cs.CV']);
+  const physicsFirst = Object.keys(INTEREST_AREAS.physics.subcategories).slice(0, GUEST_SEED_PER_AREA);
   assert.deepEqual(seed.filter(id => id.startsWith('cs.')), ['cs.CV', 'cs.CL']);
   assert.deepEqual(seed.filter(id => physicsFirst.includes(id)), physicsFirst, 'an untouched area keeps its bounded five');
 
-  const everyTopic = Object.values(CATEGORIES).flatMap(area => Object.keys(area.subcategories));
-  const all = guestSeedCategoriesForAreas(Object.keys(CATEGORIES), GUEST_SEED_PER_AREA, everyTopic);
+  const everyTopic = Object.values(INTEREST_AREAS).flatMap(area => Object.keys(area.subcategories));
+  const all = guestSeedCategoriesForAreas(Object.keys(INTEREST_AREAS), GUEST_SEED_PER_AREA, everyTopic);
   assert.equal(all.length, GUEST_SEED_MAX, 'every topic ticked still makes a profile the rules accept');
 });
 
@@ -161,9 +162,9 @@ test('the seed cap is the rules cap', async () => {
 
 test('the guest reading choice survives the bridge and is removed with it', () => {
   const storage = fakeStorage();
-  saveGuestInterests({ areas: ['cs'], topics: ['cs.LG'], readingLevel: 'beginner' }, storage);
+  saveGuestInterests({ areas: ['ai'], topics: ['cs.LG'], readingLevel: 'beginner' }, storage);
   assert.deepEqual(readGuestInterests(storage), {
-    areas: ['cs'], topics: ['cs.LG'], dismissed: false, readingLevel: 'beginner',
+    areas: ['ai'], topics: ['cs.LG'], dismissed: false, readingLevel: 'beginner',
   });
   clearGuestInterests(storage);
   assert.equal(readGuestInterests(storage), null);
@@ -201,11 +202,21 @@ test('a university address is neither stored nor read back: the account onboardi
 test('the seed size counts what the answer stands for before the cap', () => {
   // Two whole areas: five each. One area narrowed to three topics: three.
   assert.equal(guestSeedSizeForAreas(['physics', 'cs']), 10);
-  assert.equal(guestSeedSizeForAreas(['physics', 'cs'], 5, ['cs.LG', 'cs.CL', 'cs.CV']), 8);
+  assert.equal(guestSeedSizeForAreas(['physics', 'ai'], 5, ['cs.LG', 'cs.CL', 'cs.CV']), 8);
   // Every topic of every area is more than the cap allows, and the size says
   // so where the capped seed would quietly stop at the cap.
-  const everything = Object.entries(CATEGORIES).flatMap(([, area]) => Object.keys(area.subcategories));
-  const allAreas = Object.keys(CATEGORIES);
+  const everything = Object.entries(INTEREST_AREAS).flatMap(([, area]) => Object.keys(area.subcategories));
+  const allAreas = Object.keys(INTEREST_AREAS);
   assert.ok(guestSeedSizeForAreas(allAreas, 5, everything) > GUEST_SEED_MAX);
   assert.equal(guestSeedCategoriesForAreas(allAreas, 5, everything).length, GUEST_SEED_MAX);
+});
+
+test('Artificial Intelligence picked alone seeds AI topics that reach the AI sources', () => {
+  const seed = guestSeedCategoriesForAreas(['ai']);
+  assert.ok(seed.includes('cs.AI'));
+  assert.equal(seed.some(id => id in INTEREST_AREAS.cs.subcategories), false);
+
+  const plan = getDomainSourcePlan(seed);
+  assert.ok(plan.huggingFace.includes('cs.AI'));
+  assert.ok(plan.openReview.includes('cs.AI'));
 });

@@ -1,0 +1,2539 @@
+[
+  {
+    "rorId": "https://ror.org/02f40zc51",
+    "code": "34BUC_USAL",
+    "source": "worker table, verified 2026-10-13"
+  },
+  {
+    "rorId": "https://ror.org/00cv9y106",
+    "name": "Ghent University",
+    "country": "BE",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu06.alma.exlibrisgroup.com/view/uresolver/32RUG_INST/openurl",
+    "product": "alma",
+    "code": "32RUG_INST",
+    "host": "eu06.alma.exlibrisgroup.com",
+    "evidence": "https://www.ugent.be/nl/univgent/bibliotheek",
+    "notes": "The library page links to libcatalog.ugent.be/nde with vid=32RUG_INST:32RUG_INST, which resolves via CNAME to eu06.primo.exlibrisgroup.com. eu06 is outside the sixteen listed regions; all sixteen returned empty bodies, while eu06 returned uresolver_content with 4 context_service elements (getFullTxt, e.g. SpringerLink) and no full_text_indicator key."
+  },
+  {
+    "rorId": "https://ror.org/05f950310",
+    "name": "KU Leuven",
+    "country": "BE",
+    "source": "zotero",
+    "url": "https://limo.libis.be/services/KULeuven",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/00afp2z80",
+    "name": "University of Liège",
+    "country": "BE",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/1973/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/01r9htc13",
+    "name": "Université Libre de Bruxelles",
+    "country": "BE",
+    "source": "zotero",
+    "url": "https://cibleplus.ulb.ac.be/openurl/32ULDB_U_INST/32ULDB_U_INST:32ULB_VU1",
+    "product": "alma",
+    "code": "32ULDB_U_INST"
+  },
+  {
+    "rorId": "https://ror.org/024d6js02",
+    "name": "Charles University",
+    "country": "CZ",
+    "source": "zotero",
+    "url": "https://cuni.primo.exlibrisgroup.com/openurl/420CKIS_INST/420CKIS_INST:UKAZ",
+    "product": "alma",
+    "code": "420CKIS_INST"
+  },
+  {
+    "rorId": "https://ror.org/03yrrjy16",
+    "name": "University of Southern Denmark",
+    "country": "DK",
+    "source": "zotero",
+    "url": "http://ul2nb3kn6e.search.serialssolutions.com",
+    "product": "360link"
+  },
+  {
+    "rorId": "https://ror.org/040af2s02",
+    "name": "University of Helsinki",
+    "country": "FI",
+    "source": "zotero",
+    "url": "https://helka.helsinki.fi/openurl/358UOH_INST/358UOH_INST:VU1",
+    "product": "alma",
+    "code": "358UOH_INST"
+  },
+  {
+    "rorId": "https://ror.org/00cyydd11",
+    "name": "University of Eastern Finland",
+    "country": "FI",
+    "source": "zotero",
+    "url": "https://primo.uef.fi/openurl/358FIN_UOEF/358FIN_UOEF:VU1",
+    "product": "alma",
+    "code": "358FIN_UOEF"
+  },
+  {
+    "rorId": "https://ror.org/03gnr7b55",
+    "name": "Nantes Université",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://resolver-ebsco-com.bunantes.idm.oclc.org/c/sahui5/result",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/035xkbk20",
+    "name": "Aix-Marseille Université",
+    "country": "FR",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sh2hh6qx2e.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://bu.univ-amu.fr/",
+    "notes": "The library homepage links a Koha catalogue (catalogue.univ-amu.fr), Summon (univ-amu.summon.serialssolutions.com) and the SH2HH6QX2E journal portal. The 360 Link resolver answers for Nature, and no Primo or Alma was found."
+  },
+  {
+    "rorId": "https://ror.org/057qpr032",
+    "name": "Université de Bordeaux",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://babordplus.hosted.exlibrisgroup.com/primo-explore/openurl?&Force_direct=false&vid=33PUDB_UB_VU1&institution=33PUDB_UB&",
+    "product": "alma",
+    "code": "33PUDB_UB"
+  },
+  {
+    "rorId": "https://ror.org/02kzqn938",
+    "name": "Université de Lille",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/33UDLILLE_INST/openurl",
+    "product": "alma",
+    "code": "33UDLILLE_INST",
+    "host": "eu01.alma.exlibrisgroup.com"
+  },
+  {
+    "rorId": "https://ror.org/04vfs2w97",
+    "name": "Université de Lorraine",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://udl.alma.exlibrisgroup.com/view/uresolver/33UDL_INST/openurl",
+    "product": "alma",
+    "code": "33UDL_INST",
+    "host": "udl.alma.exlibrisgroup.com"
+  },
+  {
+    "rorId": "https://ror.org/051escj72",
+    "name": "Université de Montpellier",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://catalogue.scdi-montpellier.fr/openurl/33MON_INST/33MON_INST:33UM_VU1",
+    "product": "alma",
+    "code": "33MON_INST"
+  },
+  {
+    "rorId": "https://ror.org/04xhy8q59",
+    "name": "Université de Poitiers",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://odebuplus.univ-poitiers.fr/openurl/33UDP_INST/33UDP_INST:33UDP",
+    "product": "alma",
+    "code": "33UDP_INST"
+  },
+  {
+    "rorId": "https://ror.org/015m7wh34",
+    "name": "Université de Rennes",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://resolver-ebscohost-com.passerelle.univ-rennes.fr/openurl",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/00pg6eq24",
+    "name": "Université de Strasbourg",
+    "country": "FR",
+    "source": "zotero",
+    "url": "http://scd-sfx.u-strasbg.fr/sfx_test",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/01ahyrz84",
+    "name": "Université de Toulouse",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://archipel-univtoulouse.hosted.exlibrisgroup.com/primo-explore/openurl?institution=33UT3&vid=33UT3_VU1",
+    "product": "alma"
+  },
+  {
+    "rorId": "https://ror.org/029brtt94",
+    "name": "Lyon 1 Université",
+    "country": "FR",
+    "source": "zotero",
+    "url": "http://linksource.ebsco.com.docelec.univ-lyon1.fr/linking.aspx/",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/05f82e368",
+    "name": "Université Paris Cité",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://uspc-upde.primo.exlibrisgroup.com/openurl/33USPC_UPDE/33USPC_UPDE:UPDE",
+    "product": "alma",
+    "code": "33USPC_UPDE"
+  },
+  {
+    "rorId": "https://ror.org/013bkhk48",
+    "name": "Université Paris Nanterre",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://sfx-33upon.hosted.exlibrisgroup.com/33upon",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/03xjwb503",
+    "name": "Université Paris-Saclay",
+    "country": "FR",
+    "source": "zotero",
+    "url": "https://upsaclay.focus.universite-paris-saclay.fr/openurl/33UDPS/33UDPS_VU1",
+    "product": "alma",
+    "code": "33UDPS"
+  },
+  {
+    "rorId": "https://ror.org/01yvrd251",
+    "name": "Université Pierre-et-Marie-Curie",
+    "country": "FR",
+    "source": "zotero",
+    "url": "http://sfxeu06.hosted.exlibrisgroup.com/33UPMC",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/046ak2485",
+    "name": "Freie Universität Berlin",
+    "country": "DE",
+    "source": "zotero",
+    "url": "http://fu-berlin.hosted.exlibrisgroup.com/openurl/FUB/FUB?u.ignore_date_coverage=true",
+    "product": "alma"
+  },
+  {
+    "rorId": "https://ror.org/00f7hpc57",
+    "name": "Friedrich-Alexander-Universität Erlangen-Nürnberg",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://sfx.bib-bvb.de/sfx_uben",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/01hcx6992",
+    "name": "Humboldt-Universität zu Berlin",
+    "country": "DE",
+    "source": "zotero",
+    "url": "http://sfx.kobv.de/sfx_hub",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/023b0x485",
+    "name": "Johannes Gutenberg University Mainz",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://www.redi-bw.de/links/ubmz",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/05591te55",
+    "name": "Ludwig-Maximilians-Universität München",
+    "country": "DE",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sfx.bib-bvb.de/sfx_ubm",
+    "product": "sfx",
+    "evidence": "https://opac.ub.lmu.de/",
+    "notes": "The library homepage links to a VuFind OPAC (opac.ub.lmu.de) whose 'Artikel & mehr' tab is a Primo index search module, not an Alma catalogue. The BVB SFX instance sfx_ubm is live and resolved a Nature 2020 request into a full-text redirect (Gale, LMU Shibboleth)."
+  },
+  {
+    "rorId": "https://ror.org/00ggpsq73",
+    "name": "Otto-von-Guericke-Universität Magdeburg",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://sfx-49gbv.hosted.exlibrisgroup.com/sfx_ubmd",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/01rdrb571",
+    "name": "Philipps University of Marburg",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://www.redi-bw.de/links/unimr",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/04xfq0f34",
+    "name": "RWTH Aachen University",
+    "country": "DE",
+    "source": "zotero",
+    "url": "http://sfx.hbz-nrw.de/sfx_rwth/",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/03v4gjf40",
+    "name": "Technische Universität Berlin",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://tu-berlin.hosted.exlibrisgroup.com/primo-explore/openurl?institution=TUB&vid=TUB",
+    "product": "alma"
+  },
+  {
+    "rorId": "https://ror.org/05n911h24",
+    "name": "Technische Universität Darmstadt",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://www.redi-bw.de/links/tuda",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/02hpadn98",
+    "name": "Bielefeld University",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://ub-bielefeld.digibib.net/openurl",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/04mz5ra38",
+    "name": "University of Duisburg-Essen",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://primo.uni-due.de/openurl/49HBZ_UDE/49HBZ_UDE:UDE",
+    "product": "alma",
+    "code": "49HBZ_UDE"
+  },
+  {
+    "rorId": "https://ror.org/038t36y30",
+    "name": "Heidelberg University",
+    "country": "DE",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://www.redi-bw.de/links/unihd",
+    "product": "other",
+    "evidence": "https://www.ub.uni-heidelberg.de/",
+    "notes": "The library homepage's catalogue is OCLC WorldCat Discovery (uni-heidelberg.on.worldcat.org); no Primo/Alma found. The ReDI resolver from Zotero still exists but redirects to www-fr.redi-bw.de and returns 403 off campus, so a WorldCat link resolver may now replace it."
+  },
+  {
+    "rorId": "https://ror.org/03s7gtk40",
+    "name": "Leipzig University",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://www.redi-bw.de/links/ubl",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/00pd74e08",
+    "name": "University of Münster",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://katalogplus.uni-muenster.de/openurl/49HBZ_ULM/49HBZ_ULM:VU2",
+    "product": "alma",
+    "code": "49HBZ_ULM"
+  },
+  {
+    "rorId": "https://ror.org/01eezs655",
+    "name": "University of Regensburg",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://sfx.bib-bvb.de/sfx_ubr",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/03zdwsf69",
+    "name": "University of Rostock",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://www.redi-bw.de/links/ubro",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/04vnq7t77",
+    "name": "University of Stuttgart",
+    "country": "DE",
+    "source": "zotero",
+    "url": "https://www.redi-bw.de/links/unist",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/02tyrky19",
+    "name": "Trinity College Dublin",
+    "country": "IE",
+    "source": "zotero",
+    "url": "https://elib.tcd.ie/login?url=http://resolver.ebscohost.com/openurl?",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/05m7pjf47",
+    "name": "University College Dublin",
+    "country": "IE",
+    "source": "zotero",
+    "url": "https://jq6am9xs3s.search.serialssolutions.com/",
+    "product": "360link"
+  },
+  {
+    "rorId": "https://ror.org/01nffqt88",
+    "name": "Politecnico di Milano",
+    "country": "IT",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://polimi.alma.exlibrisgroup.com/view/uresolver/39PMI_INST/openurl",
+    "product": "alma",
+    "code": "39PMI_INST",
+    "host": "polimi.alma.exlibrisgroup.com",
+    "evidence": "https://www.biblio.polimi.it/",
+    "notes": "biblio.polimi.it links Primo VE with vid=39PMI_INST:VU1 (redirects to www.bibliosearch.polimi.it). No regional host answered; the custom slug polimi.alma.exlibrisgroup.com (slug guessed, code evidenced) and www.bibliosearch.polimi.it both answered with indicator=true and 7 services. The Zotero SFX entry is stale."
+  },
+  {
+    "rorId": "https://ror.org/01111rn36",
+    "name": "University of Bologna",
+    "country": "IT",
+    "source": "zotero",
+    "url": "https://unibo.primo.exlibrisgroup.com/openurl/39UBO_INST/39UBO_INST:Services",
+    "product": "alma",
+    "code": "39UBO_INST"
+  },
+  {
+    "rorId": "https://ror.org/0107c5v14",
+    "name": "University of Genoa",
+    "country": "IT",
+    "source": "zotero",
+    "url": "https://unopertutto.unige.net/openurl/39GEN_INST/39GEN_INST:39GEN_VU1",
+    "product": "alma",
+    "code": "39GEN_INST"
+  },
+  {
+    "rorId": "https://ror.org/02jjdwm75",
+    "name": "IE University",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://ie.on.worldcat.org/atoztitles/link/",
+    "product": "worldcat"
+  },
+  {
+    "rorId": "https://ror.org/00ne6sr39",
+    "name": "Universidad de Deusto",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/34DEUSTO_INST/openurl",
+    "product": "alma",
+    "code": "34DEUSTO_INST",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "evidence": "https://oceano.biblioteca.deusto.es/primo_library/libweb/webservices/rest/v1/configuration/deusto",
+    "notes": "Océano is classic Primo (primo-explore, institution=DEUSTO, vid=deusto), and the Zotero address redirects into its openurl page. The view configuration maps 34DEUSTO_Alma to 34DEUSTO_INST with api_base deusto.alma.exlibrisgroup.com. The uresolver answered with uresolver_content, a full_text_indicator and 5 context_service elements on eu01 and on deusto.alma.exlibrisgroup.com; eu00 and eu02 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/03yxnpp24",
+    "name": "Universidad de Sevilla",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://fama.us.es/openurl/34CBUA_US/34CBUA_US:VU1",
+    "product": "alma",
+    "code": "34CBUA_US"
+  },
+  {
+    "rorId": "https://ror.org/021018s57",
+    "name": "Universitat de Barcelona",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://cercabib.ub.edu/openurl/34CSUC_UB/34CSUC_UB:VU1",
+    "product": "alma",
+    "code": "34CSUC_UB"
+  },
+  {
+    "rorId": "https://ror.org/03e10x626",
+    "name": "Universitat de les Illes Balears",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://llull.uib.es/resserv",
+    "product": "webbridge",
+    "evidence": "https://llull.uib.es/resserv",
+    "notes": "llull.uib.es is an Innovative Interfaces system (Sierra/Millennium WebBridge): its pages load iii.css and webbridge.js and are titled Resolution Server. An OpenURL for Nature 2020 returned a WebBridge panel with JCR links and a catalogue search link, but no full-text target. Alma probes for 34CSUC_UIB on csuc-uib and for 34UIB_INST on eu00 returned empty bodies. biblioteca.uib.cat returned 503."
+  },
+  {
+    "rorId": "https://ror.org/050c3cw24",
+    "name": "Universitat de Lleida",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://cercatot.udl.cat/openurl/34CSUC_UDL/34CSUC_UDL:UDL",
+    "product": "alma",
+    "code": "34CSUC_UDL"
+  },
+  {
+    "rorId": "https://ror.org/043nxc105",
+    "name": "Universitat de València",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://trobes.uv.es/openurl/34CVA_UV:VU1/34CVA_UV:VU1",
+    "product": "alma",
+    "code": "34CVA_UV"
+  },
+  {
+    "rorId": "https://ror.org/03mb6wj31",
+    "name": "Universitat Politècnica de Catalunya",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://discovery.upc.edu/openurl/34CSUC_UPC/34CSUC_UPC:VU1",
+    "product": "alma",
+    "code": "34CSUC_UPC"
+  },
+  {
+    "rorId": "https://ror.org/04n0g0b29",
+    "name": "Universitat Pompeu Fabra",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://upfinder.upf.edu/discovery/openurl?institution=34CSUC_UPF&vid=34CSUC_UPF:VU1",
+    "product": "alma",
+    "code": "34CSUC_UPF"
+  },
+  {
+    "rorId": "https://ror.org/04p9k2z50",
+    "name": "Universitat Ramon Llull",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://discovery.url.edu/openurl/34CSUC_URL/34CSUC_URL:VU1",
+    "product": "alma",
+    "code": "34CSUC_URL"
+  },
+  {
+    "rorId": "https://ror.org/00g5sqv46",
+    "name": "Universitat Rovira i Virgili",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://cercador.urv.cat/openurl/34CSUC_URV/34CSUC_URV:VU1",
+    "product": "alma",
+    "code": "34CSUC_URV"
+  },
+  {
+    "rorId": "https://ror.org/056d84691",
+    "name": "Karolinska Institutet",
+    "country": "SE",
+    "source": "zotero",
+    "url": "https://ki.alma.exlibrisgroup.com/view/uresolver/46KIB_INST/openurl",
+    "product": "alma",
+    "code": "46KIB_INST",
+    "host": "ki.alma.exlibrisgroup.com"
+  },
+  {
+    "rorId": "https://ror.org/026vcq606",
+    "name": "KTH Royal Institute of Technology",
+    "country": "SE",
+    "source": "zotero",
+    "url": "https://kth-primo.hosted.exlibrisgroup.com/openurl/46KTH/46KTH_services_page",
+    "product": "alma",
+    "code": "46KTH"
+  },
+  {
+    "rorId": "https://ror.org/012a77v79",
+    "name": "Lund University",
+    "country": "SE",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebsco.com/c/ara2f7/result",
+    "product": "ebsco",
+    "evidence": "https://lulinker.lub.lu.se/?rft.genre=article&rft.issn=0028-0836&rft.date=2020",
+    "notes": "lulinker.lub.lu.se redirects through the ludwig.lub.lu.se EZproxy to EBSCO Full Text Finder (resolver.ebsco.com/c/ara2f7). Discovery runs on EDS (finn.lub.lu.se), and no Primo or Alma was found."
+  },
+  {
+    "rorId": "https://ror.org/05f0yaq80",
+    "name": "Stockholm University",
+    "country": "SE",
+    "source": "zotero",
+    "url": "http://sfxeu11.hosted.exlibrisgroup.com/sfxsub",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/02yy8x990",
+    "name": "Swedish University of Agricultural Sciences",
+    "country": "SE",
+    "source": "zotero",
+    "url": "https://slu.primo.exlibrisgroup.com/openurl/46SLUB_INST/46SLUB_INST:SLUB_V1",
+    "product": "alma",
+    "code": "46SLUB_INST"
+  },
+  {
+    "rorId": "https://ror.org/048a87296",
+    "name": "Uppsala University",
+    "country": "SE",
+    "source": "zotero",
+    "url": "https://uub.primo.exlibrisgroup.com/openurl/46LIBRIS_UUB/46LIBRIS_UUB:UUB",
+    "product": "alma",
+    "code": "46LIBRIS_UUB"
+  },
+  {
+    "rorId": "https://ror.org/02s6k3f65",
+    "name": "University of Basel",
+    "country": "CH",
+    "source": "zotero",
+    "url": "https://slsp-ubs.primo.exlibrisgroup.com/openurl/41SLSP_UBS/41SLSP_UBS:live",
+    "product": "alma",
+    "code": "41SLSP_UBS"
+  },
+  {
+    "rorId": "https://ror.org/02k7v4d05",
+    "name": "University of Bern",
+    "country": "CH",
+    "source": "zotero",
+    "url": "https://slsp-ube.primo.exlibrisgroup.com/openurl/41SLSP_UBE/41SLSP_UBE:UBE",
+    "product": "alma",
+    "code": "41SLSP_UBE"
+  },
+  {
+    "rorId": "https://ror.org/01swzsf04",
+    "name": "University of Geneva",
+    "country": "CH",
+    "source": "zotero",
+    "url": "https://slsp-unige.primo.exlibrisgroup.com/openurl/41SLSP_UGE/41SLSP_UGE:VU1",
+    "product": "alma",
+    "code": "41SLSP_UGE"
+  },
+  {
+    "rorId": "https://ror.org/019whta54",
+    "name": "University of Lausanne",
+    "country": "CH",
+    "source": "zotero",
+    "url": "https://renouvaud1.primo.exlibrisgroup.com/openurl/41BCULAUSA_LIB/41BCULAUSA_LIB:VU2",
+    "product": "alma",
+    "code": "41BCULAUSA_LIB"
+  },
+  {
+    "rorId": "https://ror.org/02crff812",
+    "name": "University of Zurich",
+    "country": "CH",
+    "source": "zotero",
+    "url": "https://slsp-uzb.primo.exlibrisgroup.com/openurl/41SLSP_UZB/41SLSP_UZB:UZB",
+    "product": "alma",
+    "code": "41SLSP_UZB"
+  },
+  {
+    "rorId": "https://ror.org/05a28rw58",
+    "name": "ETH Zurich",
+    "country": "CH",
+    "source": "zotero",
+    "url": "https://slsp-eth.primo.exlibrisgroup.com/openurl/41SLSP_ETH/41SLSP_ETH:ETH",
+    "product": "alma",
+    "code": "41SLSP_ETH"
+  },
+  {
+    "rorId": "https://ror.org/03kk7td41",
+    "name": "Cardiff University",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://librarysearch.cardiff.ac.uk/discovery/openurl?institution=44WHELF_CAR&vid=44WHELF_CAR:44WHELF_CAR_VU1",
+    "product": "alma",
+    "code": "44WHELF_CAR"
+  },
+  {
+    "rorId": "https://ror.org/041kmwe10",
+    "name": "Imperial College London",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://library-search.imperial.ac.uk/openurl/44IMP_INST/44IMP_INST:ICL_VU1",
+    "product": "alma",
+    "code": "44IMP_INST"
+  },
+  {
+    "rorId": "https://ror.org/0220mzb33",
+    "name": "King's College London",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://librarysearch.kcl.ac.uk/discovery/openurl?institution=44KCL_INST&vid=44KCL_INST:44KCL_INST",
+    "product": "alma",
+    "code": "44KCL_INST"
+  },
+  {
+    "rorId": "https://ror.org/00hswnk62",
+    "name": "Queen's University Belfast",
+    "country": "GB",
+    "source": "zotero",
+    "url": "http://resolver.ebscohost.com.queens.ezp1.qub.ac.uk/",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/013meh722",
+    "name": "University of Cambridge",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://idiscover.lib.cam.ac.uk/discovery/openurl?institution=44CAM_INST&vid=44CAM_INST:44CAM_PROD",
+    "product": "alma",
+    "code": "44CAM_INST"
+  },
+  {
+    "rorId": "https://ror.org/01nrxwf90",
+    "name": "University of Edinburgh",
+    "country": "GB",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/44UOE_INST/openurl",
+    "product": "alma",
+    "code": "44UOE_INST",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "evidence": "https://lac-edwebtools.is.ed.ac.uk/edweb/discoverededweb.html",
+    "notes": "The DiscoverEd search widget linked from library.ed.ac.uk embeds vid 44UOE_INST:44UOE_VU2. eu01 answers with full_text_indicator=true and 18 context_service elements. The Zotero LibKey entry is a separate layer, not the resolver."
+  },
+  {
+    "rorId": "https://ror.org/03yghzc09",
+    "name": "University of Exeter",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://librarysearch.exeter.ac.uk/discovery/openurl?institution=44UOEX_INST&vid=44UOEX_INST:default",
+    "product": "alma",
+    "code": "44UOEX_INST"
+  },
+  {
+    "rorId": "https://ror.org/04h699437",
+    "name": "University of Leicester",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://librarysearch.le.ac.uk/openurl/44UOLE_INST/44UOLE_INST:VE",
+    "product": "alma",
+    "code": "44UOLE_INST"
+  },
+  {
+    "rorId": "https://ror.org/01ee9ar58",
+    "name": "University of Nottingham",
+    "country": "GB",
+    "source": "zotero",
+    "url": "https://nusearch.nottingham.ac.uk/openurl/44NOTUK/44NOTUK",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/03efmqc40",
+    "name": "Arizona State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.lib.asu.edu/openurl/01ASU",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/02v80fc35",
+    "name": "Auburn University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://resolver.ebscohost.com.spot.lib.auburn.edu/openurl",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/05qwgg493",
+    "name": "Boston University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://bu.primo.exlibrisgroup.com/openurl/01BOSU_INST/01BOSU_INST:BU",
+    "product": "alma",
+    "code": "01BOSU_INST"
+  },
+  {
+    "rorId": "https://ror.org/047rhhm47",
+    "name": "Brigham Young University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://exlibris.lib.byu.edu/sfxlcl3/az/",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/05gq02987",
+    "name": "Brown University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://brown.alma.exlibrisgroup.com/openurl/01BU_INST/01BU_INST:BROWN",
+    "product": "alma",
+    "code": "01BU_INST"
+  },
+  {
+    "rorId": "https://ror.org/05x2bcf33",
+    "name": "Carnegie Mellon University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://cmu.primo.exlibrisgroup.com/openurl/01CMU_INST/01CMU_INST:01CMU",
+    "product": "alma",
+    "code": "01CMU_INST"
+  },
+  {
+    "rorId": "https://ror.org/05bnh6r87",
+    "name": "Cornell University",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://libkey.io/libraries/162/openurl",
+    "product": "libkey",
+    "evidence": "https://resolver.library.cornell.edu/net/openurl/",
+    "notes": "The Zotero resolver URL redirects (via /OPENURL) to libkey.io/libraries/162/openurl. No Primo/Alma catalogue was found; Cornell runs its own catalogue rather than Primo."
+  },
+  {
+    "rorId": "https://ror.org/049s0rh22",
+    "name": "Dartmouth College",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.dartmouth.edu/openurl/01DCL_INST/01DCL_INST:01DCL",
+    "product": "alma",
+    "code": "01DCL_INST"
+  },
+  {
+    "rorId": "https://ror.org/05g3dte14",
+    "name": "Florida State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://fsu-flvc.primo.exlibrisgroup.com/openurl/01FALSC_FSU/01FALSC_FSU:Home",
+    "product": "alma",
+    "code": "01FALSC_FSU"
+  },
+  {
+    "rorId": "https://ror.org/02jqj7156",
+    "name": "George Mason University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://sfx.wrlc.org/gm",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/00y4zzh67",
+    "name": "George Washington University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://sfx.wrlc.org/gw",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/03qt6ba18",
+    "name": "Georgia State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://galileo-gsu.primo.exlibrisgroup.com/openurl/01GALI_GSU/01GALI_GSU:GSU_V1",
+    "product": "alma",
+    "code": "01GALI_GSU"
+  },
+  {
+    "rorId": "https://ror.org/03vek6s52",
+    "name": "Harvard University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/215/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/04rswrd78",
+    "name": "Iowa State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://quicksearch.lib.iastate.edu/openurl/01IASU_INST/01IASU_INST:01IASU",
+    "product": "alma",
+    "code": "01IASU_INST"
+  },
+  {
+    "rorId": "https://ror.org/00za53h95",
+    "name": "Johns Hopkins University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://catalyst.library.jhu.edu/openurl/01JHU_INST/01JHU_INST:JHU",
+    "product": "alma",
+    "code": "01JHU_INST"
+  },
+  {
+    "rorId": "https://ror.org/05p1j8758",
+    "name": "Kansas State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://k-state-primo.hosted.exlibrisgroup.com/openurl/01KSU/01KSU_SERVICES",
+    "product": "alma",
+    "code": "01KSU"
+  },
+  {
+    "rorId": "https://ror.org/04b6x2g63",
+    "name": "Loyola University Chicago",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://luc.primo.exlibrisgroup.com/openurl/01LUC_INST/01LUC_INST:01LUC",
+    "product": "alma",
+    "code": "01LUC_INST"
+  },
+  {
+    "rorId": "https://ror.org/05hs6h993",
+    "name": "Michigan State University",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ezproxy.msu.edu/login?url=https://resolver.ebscohost.com/openurl?",
+    "product": "ebsco",
+    "evidence": "https://lib.msu.edu/FolioAtMSUL",
+    "notes": "MSU Libraries went live on FOLIO (EBSCO-hosted) on 2022-06-30 with discovery through an EDS-based catalogue, consistent with Zotero's EBSCO resolver; not on Alma. The library homepage is JS-rendered, so the resolver URL itself was not re-observed on an MSU page."
+  },
+  {
+    "rorId": "https://ror.org/04tj63d06",
+    "name": "North Carolina State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://findtext.lib.ncsu.edu/",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/04t5xt781",
+    "name": "Northeastern University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/545/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/000e0be47",
+    "name": "Northwestern University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://hopper.library.northwestern.edu/sfx",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/00rs6vg23",
+    "name": "The Ohio State University",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://na08.alma.exlibrisgroup.com/view/uresolver/01OHIOLINK_OSU/openurl",
+    "product": "alma",
+    "code": "01OHIOLINK_OSU",
+    "host": "na08.alma.exlibrisgroup.com",
+    "evidence": "https://search.library.osu.edu/primaws/rest/pub/configuration/vid/01OHIOLINK_OSU:OSU",
+    "notes": "The host is na08, which is not among the sixteen regions; it was found in the Primo VE configuration together with the custom host ohiolink-osu.alma.exlibrisgroup.com, which gives the same answer. The indicator key is present but reads false for Nature 2020, with 13 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/01g9vbr38",
+    "name": "Oklahoma State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://resolver.ebscohost.com/openurl?authtype=ip,sso&profid=ftf&custid=s1181350&groupid=main",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/00ysfqy60",
+    "name": "Oregon State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/135/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/00hx57361",
+    "name": "Princeton University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://princeton.alma.exlibrisgroup.com/discovery/openurl?institution=01PRI_INST&vid=01PRI_INST:Services",
+    "product": "alma",
+    "code": "01PRI_INST"
+  },
+  {
+    "rorId": "https://ror.org/01rtyzb94",
+    "name": "Rensselaer Polytechnic Institute",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://sfx-serv.lib.rpi.edu/locater",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/008zs3103",
+    "name": "Rice University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://linkresolver.library.rice.edu",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/0264fdx42",
+    "name": "San Diego State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://csu-sdsu.primo.exlibrisgroup.com/discovery/openurl?institution=01CALS_SDL&vid=01CALS_SDL:01CALS_SDL",
+    "product": "alma",
+    "code": "01CALS_SDL"
+  },
+  {
+    "rorId": "https://ror.org/01yc7t268",
+    "name": "Washington University in St. Louis",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://je5qh2yg7p.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://je5qh2yg7p.search.serialssolutions.com/?genre=article&issn=0028-0836&date=2020",
+    "notes": "The Zotero 360 Link instance je5qh2yg7p is live and branded 'Get it!' with wustl.edu assets; the crawler's hy2ju6vj2n returns 'Invalid Library'. Discovery is hosted classic Primo (wash-primo.hosted.exlibrisgroup.com, vid=WUSTL) with no Alma institution code; library.wustl.edu was behind a Cloudflare challenge."
+  },
+  {
+    "rorId": "https://ror.org/00f54p054",
+    "name": "Stanford University",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sfx-01stanford.hosted.exlibrisgroup.com/01stanford",
+    "product": "sfx",
+    "evidence": "https://library.stanford.edu/sfx",
+    "notes": "library.stanford.edu/sfx still 308-redirects to Ex Libris hosted SFX (sfx-01stanford), but that endpoint answered 404 to a full OpenURL, so the SFX instance may be retired; SearchWorks returned a bot-check page and no Primo/Alma catalogue was found."
+  },
+  {
+    "rorId": "https://ror.org/025r5qe02",
+    "name": "Syracuse University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.syr.edu/openurl/01SYU_INST/01SYU_INST:SYU",
+    "product": "alma",
+    "code": "01SYU_INST"
+  },
+  {
+    "rorId": "https://ror.org/00kx1jb78",
+    "name": "Temple University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://temple-primo.hosted.exlibrisgroup.com/openurl/01TULI/TULI",
+    "product": "alma"
+  },
+  {
+    "rorId": "https://ror.org/04vmvtb21",
+    "name": "Tulane University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://library.search.tulane.edu/openurl/01TUL_INST/01TUL_INST:Tulane",
+    "product": "alma",
+    "code": "01TUL_INST"
+  },
+  {
+    "rorId": "https://ror.org/03xrrjk67",
+    "name": "University of Alabama",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libdata.lib.ua.edu/login?url=https://resolver.ebscohost.com/openurl?",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/05jbt9m15",
+    "name": "University of Arkansas at Fayetteville",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://onesearch.uark.edu/openurl/01UARK_INST/01UARK_INST:01UARK",
+    "product": "alma",
+    "code": "01UARK_INST"
+  },
+  {
+    "rorId": "https://ror.org/01an7q238",
+    "name": "University of California, Berkeley",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.berkeley.edu/openurl/01UCS_BER/01UCS_BER:UCB",
+    "product": "alma",
+    "code": "01UCS_BER"
+  },
+  {
+    "rorId": "https://ror.org/05rrcem69",
+    "name": "University of California, Davis",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.ucdavis.edu/openurl/01UCD_INST/01UCD_INST:UCD",
+    "product": "alma",
+    "code": "01UCD_INST"
+  },
+  {
+    "rorId": "https://ror.org/04gyf1771",
+    "name": "University of California, Irvine",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://uci.primo.exlibrisgroup.com/openurl/01CDL_IRV_INST/01CDL_IRV_INST:UCI",
+    "product": "alma",
+    "code": "01CDL_IRV_INST"
+  },
+  {
+    "rorId": "https://ror.org/046rm7j60",
+    "name": "University of California, Los Angeles",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.ucla.edu/openurl/01UCS_LAL/01UCS_LAL:UCLA",
+    "product": "alma",
+    "code": "01UCS_LAL"
+  },
+  {
+    "rorId": "https://ror.org/03nawhv43",
+    "name": "University of California, Riverside",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.ucr.edu/openurl/01CDL_RIV_INST/01CDL_RIV_INST:UCR",
+    "product": "alma",
+    "code": "01CDL_RIV_INST"
+  },
+  {
+    "rorId": "https://ror.org/0168r3w48",
+    "name": "University of California San Diego",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search-library.ucsd.edu/openurl/01UCS_SDI/01UCS_SDI:UCSD",
+    "product": "alma",
+    "code": "01UCS_SDI"
+  },
+  {
+    "rorId": "https://ror.org/043mz5j54",
+    "name": "University of California, San Francisco",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.ucsf.edu/openurl/01UCS_SAF/01UCS_SAF:UCSF",
+    "product": "alma",
+    "code": "01UCS_SAF"
+  },
+  {
+    "rorId": "https://ror.org/02t274463",
+    "name": "University of California, Santa Barbara",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.library.ucsb.edu/openurl/01UCSB_INST/01UCSB_INST:UCSB",
+    "product": "alma",
+    "code": "01UCSB_INST"
+  },
+  {
+    "rorId": "https://ror.org/03s65by71",
+    "name": "University of California, Santa Cruz",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://ucsc.primo.exlibrisgroup.com/openurl/01CDL_SCR_INST/01CDL_SCR_INST:USCS",
+    "product": "alma",
+    "code": "01CDL_SCR_INST"
+  },
+  {
+    "rorId": "https://ror.org/036nfer12",
+    "name": "University of Central Florida",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://ucf-flvc.primo.exlibrisgroup.com/openurl/01FALSC_UCF/01FALSC_UCF:UCF",
+    "product": "alma",
+    "code": "01FALSC_UCF"
+  },
+  {
+    "rorId": "https://ror.org/02ttsq026",
+    "name": "University of Colorado Boulder",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/105/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/02y3ad647",
+    "name": "University of Florida",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://na07.alma.exlibrisgroup.com/view/uresolver/01FALSC_UFL/openurl",
+    "product": "alma",
+    "code": "01FALSC_UFL",
+    "host": "na07.alma.exlibrisgroup.com",
+    "evidence": "https://uflib.ufl.edu/",
+    "notes": "The UF Libraries homepage links to ufl-flvc.primo.exlibrisgroup.com with vid=01FALSC_UFL:UFL (FLVC consortium). The Zotero SFX entry (sfx.fcla.edu) is stale; na07 answered with full_text_indicator=true."
+  },
+  {
+    "rorId": "https://ror.org/00te3t702",
+    "name": "University of Georgia",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://www.galileo.usg.edu/sfx_uga",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/02mpq6x41",
+    "name": "University of Illinois Chicago",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://i-share-uic.primo.exlibrisgroup.com/openurl/01CARLI_UIC/01CARLI_UIC:CARLI_UIC",
+    "product": "alma",
+    "code": "01CARLI_UIC"
+  },
+  {
+    "rorId": "https://ror.org/047426m28",
+    "name": "University of Illinois Urbana-Champaign",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://i-share-UIU.primo.exlibrisgroup.com/openurl/01CARLI_UIU/01CARLI_UIU:CARLI_UIU",
+    "product": "alma",
+    "code": "01CARLI_UIU"
+  },
+  {
+    "rorId": "https://ror.org/036jqmy94",
+    "name": "University of Iowa",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://na03.alma.exlibrisgroup.com/view/uresolver/01IOWA_INST/openurl",
+    "product": "alma",
+    "code": "01IOWA_INST",
+    "host": "na03.alma.exlibrisgroup.com",
+    "evidence": "https://search.lib.uiowa.edu/primo_library/libweb/webservices/rest/v1/configuration/01IOWA",
+    "notes": "The homepage links Primo (search.lib.uiowa.edu, vid=01IOWA). The Primo configuration lists uiowa.alma.exlibrisgroup.com/view/uresolver/01IOWA_INST/openurl, and na03 answers with full_text_indicator=true and 16 context_service elements. The Zotero SFX entry is stale."
+  },
+  {
+    "rorId": "https://ror.org/001tmjg57",
+    "name": "University of Kansas",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://resolver.ebsco.com/c/vm27st/result",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/02k3smh20",
+    "name": "University of Kentucky",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://saalck-uky.primo.exlibrisgroup.com/discovery/openurl?institution=01SAA_UKY&vid=01SAA_UKY:UKY",
+    "product": "alma",
+    "code": "01SAA_UKY"
+  },
+  {
+    "rorId": "https://ror.org/01ckdn478",
+    "name": "University of Louisville",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://uofl.on.worldcat.org/atoztitles/link",
+    "product": "worldcat"
+  },
+  {
+    "rorId": "https://ror.org/0072zz521",
+    "name": "University of Massachusetts Amherst",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://silk.library.umass.edu/login?url=https://resolver.ebscohost.com/openurl?",
+    "product": "ebsco"
+  },
+  {
+    "rorId": "https://ror.org/02dgjyy92",
+    "name": "University of Miami",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://miami-primo.hosted.exlibrisgroup.com/openurl/01UOML/01UOML_SERVICES",
+    "product": "alma",
+    "code": "01UOML"
+  },
+  {
+    "rorId": "https://ror.org/00jmfr291",
+    "name": "University of Michigan",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://na04.alma.exlibrisgroup.com/view/uresolver/01UMICH_INST/openurl",
+    "product": "alma",
+    "code": "01UMICH_INST",
+    "host": "na04.alma.exlibrisgroup.com",
+    "evidence": "https://github.com/mlibrary/mgetit/blob/main/lib/link_resolver/alma/service.rb",
+    "notes": "The library's own MGet It resolver source (mlibrary/mgetit) calls na04 /view/uresolver/01UMICH_INST/openurl-UMAA. Plain /openurl also answers with full_text_indicator=true and 15 context_service elements. The Zotero SFX entry is stale."
+  },
+  {
+    "rorId": "https://ror.org/02teq1165",
+    "name": "University of Mississippi",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://ep4my7lr7s.search.serialssolutions.com/",
+    "product": "360link"
+  },
+  {
+    "rorId": "https://ror.org/02ymw8z06",
+    "name": "University of Missouri",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://library.missouri.edu/findit",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/043mer456",
+    "name": "University of Nebraska–Lincoln",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://unl.primo.exlibrisgroup.com/openurl/01UON_LINC/01UON_LINC:UNL",
+    "product": "alma",
+    "code": "01UON_LINC"
+  },
+  {
+    "rorId": "https://ror.org/01keh0577",
+    "name": "University of Nevada, Reno",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/408/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/0130frc33",
+    "name": "University of North Carolina at Chapel Hill",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://vb3lk7eb4t.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://library.unc.edu/",
+    "notes": "The library homepage links to Summon (unc.summon.serialssolutions.com) and to the 360 Link/E-Journal Portal at vb3lk7eb4t.search.serialssolutions.com, which matches Zotero. That resolver answered 200 to an article OpenURL, and the homepage showed no Primo/Alma links."
+  },
+  {
+    "rorId": "https://ror.org/02aqsxs83",
+    "name": "University of Oklahoma",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://ou-primo.hosted.exlibrisgroup.com/openurl/01OKLA_NORMANLAW/OU",
+    "product": "alma",
+    "code": "01OKLA_NORMANLAW"
+  },
+  {
+    "rorId": "https://ror.org/0293rh119",
+    "name": "University of Oregon",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://alliance-uoregon.primo.exlibrisgroup.com/openurl/01ALLIANCE_UO/01ALLIANCE_UO:UO",
+    "product": "alma",
+    "code": "01ALLIANCE_UO"
+  },
+  {
+    "rorId": "https://ror.org/00b30xv10",
+    "name": "University of Pennsylvania",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://elinks.library.upenn.edu/",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/022kthw22",
+    "name": "University of Rochester",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://rochester.primo.exlibrisgroup.com/openurl/01ROCH_INST/01ROCH_INST:UR01",
+    "product": "alma",
+    "code": "01ROCH_INST"
+  },
+  {
+    "rorId": "https://ror.org/03taz7m60",
+    "name": "University of Southern California",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/149/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/020f3ap87",
+    "name": "University of Tennessee at Knoxville",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://libkey.io/libraries/203/openurl",
+    "product": "libkey"
+  },
+  {
+    "rorId": "https://ror.org/00hj54h04",
+    "name": "The University of Texas at Austin",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://search.lib.utexas.edu/openurl/01UTAU_INST/01UTAU_INST:SEARCH",
+    "product": "alma",
+    "code": "01UTAU_INST"
+  },
+  {
+    "rorId": "https://ror.org/049emcs32",
+    "name": "The University of Texas at Dallas",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://utdallas.primo.exlibrisgroup.com/discovery/openurl?institution=01UT_DALLAS&vid=01UT_DALLAS:UTDALMA",
+    "product": "alma",
+    "code": "01UT_DALLAS"
+  },
+  {
+    "rorId": "https://ror.org/03r0ha626",
+    "name": "University of Utah",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://na04.alma.exlibrisgroup.com/view/uresolver/01UTAH_INST/openurl",
+    "product": "alma",
+    "code": "01UTAH_INST",
+    "host": "na04.alma.exlibrisgroup.com"
+  },
+  {
+    "rorId": "https://ror.org/0155zta11",
+    "name": "University of Vermont",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://sfx.uvm.edu/UVM",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/0153tk833",
+    "name": "University of Virginia",
+    "country": "US",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://re5qy4sb7x.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://re5qy4sb7x.search.serialssolutions.com/?rft.genre=article&rft.issn=0028-0836&rft.date=2020",
+    "notes": "Zotero's 360 Link resolver is live and branded for UVA (links via proxy1.library.virginia.edu and back to search.lib.virginia.edu); the library's discovery is Virgo at search.lib.virginia.edu, no Primo/Alma found."
+  },
+  {
+    "rorId": "https://ror.org/00cvxb145",
+    "name": "University of Washington",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://orbiscascade-washington.primo.exlibrisgroup.com/openurl/01ALLIANCE_UW/01ALLIANCE_UW:UW",
+    "product": "alma",
+    "code": "01ALLIANCE_UW"
+  },
+  {
+    "rorId": "https://ror.org/00h6set76",
+    "name": "Utah State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "http://XZ6KG9RB2J.search.serialssolutions.com/",
+    "product": "360link"
+  },
+  {
+    "rorId": "https://ror.org/02vm5rt34",
+    "name": "Vanderbilt University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://catalog.library.vanderbilt.edu/openurl/01VAN_INST/01VAN_INST:vanui",
+    "product": "alma",
+    "code": "01VAN_INST"
+  },
+  {
+    "rorId": "https://ror.org/0207ad724",
+    "name": "Wake Forest University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://wfu.primo.exlibrisgroup.com/openurl/01WAKE_INST/01WAKE_INST:ZSR",
+    "product": "alma",
+    "code": "01WAKE_INST"
+  },
+  {
+    "rorId": "https://ror.org/01070mq45",
+    "name": "Wayne State University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://wayne.alma.exlibrisgroup.com/openurl/01WSUL_INST/01WSUL_INST:Services",
+    "product": "alma",
+    "code": "01WSUL_INST"
+  },
+  {
+    "rorId": "https://ror.org/03v76x132",
+    "name": "Yale University",
+    "country": "US",
+    "source": "zotero",
+    "url": "https://articles.library.yale.edu/openurl/01YALE_INST/01YALE_INST:01YALE_INST",
+    "product": "alma",
+    "code": "01YALE_INST"
+  },
+  {
+    "rorId": "https://ror.org/04p491231",
+    "name": "Pennsylvania State University",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sk8es4mc2l.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://libraries.psu.edu/",
+    "notes": "The library homepage links the Serials Solutions journal portal (libHash SK8ES4MC2L) and catalog.libraries.psu.edu, with no Primo links. The 360 Link resolver answers for Nature with links through ezaccess.libraries.psu.edu."
+  },
+  {
+    "rorId": "https://ror.org/01f5ytq51",
+    "name": "Texas A&M University",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebsco.com/c/isvei7/result",
+    "product": "ebsco",
+    "evidence": "https://library.tamu.edu/",
+    "notes": "The library homepage searches EBSCO Discovery (research.ebsco.com/c/isvei7, custid s8516548) and shows no Primo or Alma. The FTF path for that customer sends visitors to EBSCO login (login_hint c:isvei7). A library page naming it as the 'Full text@TAMU' resolver was not found, and the catalogue appears to be FOLIO."
+  },
+  {
+    "rorId": "https://ror.org/052gg0110",
+    "name": "University of Oxford",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "44OXF_INST",
+    "product": "alma",
+    "host": "eu03.alma.exlibrisgroup.com",
+    "url": "https://eu03.alma.exlibrisgroup.com/view/uresolver/44OXF_INST/openurl",
+    "evidence": "https://solo.bodleian.ox.ac.uk/discovery/search?vid=44OXF_INST:SOLO",
+    "notes": "SOLO (solo.bodleian.ox.ac.uk) redirects to vid=44OXF_INST:SOLO. eu00-eu02 returned empty bodies; eu03 returned uresolver_content with full_text_indicator true and 5 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/00wjc7c48",
+    "name": "University of Milan",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "39UMI_INST",
+    "product": "alma",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/39UMI_INST/openurl",
+    "evidence": "https://minerva.unimi.it/discovery/search?vid=39UMI_INST:VU1",
+    "notes": "The university's Minerva catalogue (minerva.unimi.it) redirects to vid=39UMI_INST:VU1. eu02 answered with full_text_indicator true and 8 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/02dqehb95",
+    "name": "Purdue University West Lafayette",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "01PURDUE_PUWL",
+    "product": "alma",
+    "host": "na03.alma.exlibrisgroup.com",
+    "url": "https://na03.alma.exlibrisgroup.com/view/uresolver/01PURDUE_PUWL/openurl",
+    "evidence": "https://purdue.primo.exlibrisgroup.com/openurl/01PURDUE_PUWL/01PURDUE_PUWL:PURDUE",
+    "notes": "The code comes from Zotero's Primo OpenURL. na01 and na02 returned empty bodies; na03 answered with full_text_indicator true and 29 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/02kkvpp62",
+    "name": "Technical University of Munich",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sfx.bib-bvb.de/sfx_tum",
+    "product": "sfx",
+    "evidence": "https://search.ub.tum.de/vufind/Search/Results?lookfor=nature&type=AllFields&lng=en",
+    "notes": "The TUM catalogue is VuFind (search.ub.tum.de), and its embedded OpenURLs carry SFX-specific parameters (sfx.directlink, bvnummer=localTUM). The BVB SFX instance sfx.bib-bvb.de/sfx_tum answers with an SFX menu, but that URL comes from the BVB naming pattern rather than a TUM page, and no Primo or Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/03angcq70",
+    "name": "University of Birmingham",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "44BIR_INST",
+    "product": "alma",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/44BIR_INST/openurl",
+    "evidence": "https://findit.bham.ac.uk/discovery/search?vid=44BIR_INST:44BIR_VU1",
+    "notes": "FindIt@Bham (findit.bham.ac.uk) redirects to vid=44BIR_INST:44BIR_VU1. eu00 answered with full_text_indicator true and 7 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/03prydq77",
+    "name": "University of Vienna",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "43ACC_UBW",
+    "product": "alma",
+    "host": "obv-at-ubw.alma.exlibrisgroup.com",
+    "url": "https://obv-at-ubw.alma.exlibrisgroup.com/view/uresolver/43ACC_UBW/openurl",
+    "evidence": "https://usearch.univie.ac.at/primo_library/libweb/webservices/rest/v1/configuration/UWI?lang=en_US",
+    "notes": "u:search is classic Primo (vid=UWI), and its public configuration maps 43ACC_UBW to the custom host obv-at-ubw (Austrian OBV consortium). That host answered directly with full_text_indicator true and 11 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/01y2jtd41",
+    "name": "University of Wisconsin–Madison",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "01UWI_MAD",
+    "product": "alma",
+    "host": "na02.alma.exlibrisgroup.com",
+    "url": "https://na02.alma.exlibrisgroup.com/view/uresolver/01UWI_MAD/openurl",
+    "evidence": "https://search.library.wisc.edu/openurl?genre=article&issn=0028-0836&date=2020",
+    "notes": "The library's Zotero resolver (resolver.library.wisconsin.edu/uwmad) redirects to search.library.wisc.edu/openurl, whose page embeds na02 and wisconsin-madison.alma.exlibrisgroup.com uresolver/01UWI_MAD links; both hosts answered with full_text_indicator=true and 12 services."
+  },
+  {
+    "rorId": "https://ror.org/035b05819",
+    "name": "University of Copenhagen",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "45KBDK_KGL",
+    "product": "alma",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/45KBDK_KGL/openurl",
+    "evidence": "https://www.kb.dk/",
+    "notes": "KU's library service is the Royal Danish Library (KB); kb.dk links soeg.kb.dk Primo VE with vid=45KBDK_KGL:KGL and eu01 answered with the indicator key (value false for Nature 2020) and 10 services. The KB code covers KU, but KU's own library pages were not checked for a separate code.",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves both Copenhagen and Aarhus; its answer is institution-wide and does not show which university each licence covers"
+  },
+  {
+    "rorId": "https://ror.org/0524sp257",
+    "name": "University of Bristol",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://bris.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://www.bristol.ac.uk/library/",
+    "notes": "The library homepage's Library Search points to bris.on.worldcat.org (OCLC WorldCat Discovery); its atoztitles/link OpenURL endpoint answered 200. No Primo/Alma catalogue was linked."
+  },
+  {
+    "rorId": "https://ror.org/00vtgdb53",
+    "name": "University of Glasgow",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://gla.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://www.gla.ac.uk/myglasgow/library/",
+    "notes": "The library page links gla.on.worldcat.org (WorldCat Discovery); its atoztitles/link OpenURL redirected to linker2.worldcat.org with institution_id 87506 and a Nature/Springer link, so the resolver works. No Primo/Alma catalogue was found."
+  },
+  {
+    "rorId": "https://ror.org/04t3en479",
+    "name": "Karlsruhe Institute of Technology",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "product": "other",
+    "evidence": "https://katalog.bibliothek.kit.edu/",
+    "notes": "KIT-Katalog is a Koha OPAC (/cgi-bin/koha/opac-search.pl) with an EBSCO EDS plugin and an EZB link (bibid=kit); no Alma/Primo signs. No OpenURL resolver URL was found on the library's pages."
+  },
+  {
+    "rorId": "https://ror.org/02jx3x895",
+    "name": "University College London",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "44UCL_INST",
+    "product": "alma",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/44UCL_INST/openurl",
+    "evidence": "https://ucl.primo.exlibrisgroup.com/discovery/search?vid=44UCL_INST:UCL_VU2",
+    "notes": "ucl.primo.exlibrisgroup.com redirects to vid=44UCL_INST:UCL_VU2 and its session cookie names eu02; CSP also lists the custom domain library-explore.ucl.ac.uk. eu02 returned uresolver_content with full_text_indicator=true."
+  },
+  {
+    "rorId": "https://ror.org/05dxps055",
+    "name": "California Institute of Technology",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8984125&groupid=main&profile=ftf",
+    "product": "ebsco",
+    "evidence": "https://library.caltech.edu/blog/Caltech-Library-Will-Adopt-the-FOLIO-Library-Services-Platform-for-Fall-2021",
+    "notes": "Caltech runs FOLIO with EBSCO Discovery Service; the library homepage searches use EDS custid s8984125. The FTF resolver URL for that custid redirects into the EBSCO auth flow, but no Caltech page publishing it was found, so the resolver URL is inferred."
+  },
+  {
+    "rorId": "https://ror.org/012p63287",
+    "name": "University of Groningen",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://rug.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://www.rug.nl/library/",
+    "notes": "The library homepage search goes to rug.on.worldcat.org (OCLC WorldCat Discovery, SmartCat); no Primo/Alma link was found. The atoztitles/link endpoint answers with a generic JS shell, so the resolver path follows the standard WorldCat pattern but its response was not checked."
+  },
+  {
+    "rorId": "https://ror.org/01ryk1543",
+    "name": "University of Southampton",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://southampton.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://www.southampton.ac.uk/library",
+    "notes": "The library page links its catalogue to southampton.on.worldcat.org/discovery (OCLC WorldCat Discovery); no Primo/Alma link was found. The atoztitles/link endpoint answers with a generic JS shell, so the resolver path follows the standard WorldCat pattern but its response was not checked."
+  },
+  {
+    "rorId": "https://ror.org/00hj8s172",
+    "name": "Columbia University",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://valet.cul.columbia.edu/elink?",
+    "product": "ebsco",
+    "evidence": "https://valet.cul.columbia.edu/elink?rft.genre=article&rft.issn=0028-0836&rft.date=2020",
+    "notes": "Columbia's e-link OpenURL base (valet.cul.columbia.edu/elink) 302-redirects to EBSCO Full Text Finder at resolver.ebsco.com/c/hvnjcg/result. Catalogue is CLIO (Blacklight/FOLIO, behind an Anubis bot challenge); no Primo/Alma found."
+  },
+  {
+    "rorId": "https://ror.org/027m9bs27",
+    "name": "University of Manchester",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "44MAN_INST",
+    "product": "alma",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/44MAN_INST/openurl",
+    "evidence": "https://www.librarysearch.manchester.ac.uk/discovery/search?vid=44MAN_INST:MU_NUI",
+    "notes": "Library homepage links Library Search (Primo VE) with vid=44MAN_INST:MU_NUI; eu00 answered with uresolver_content, full_text_indicator true and 11 context services (eu01-eu05 empty)."
+  },
+  {
+    "rorId": "https://ror.org/02be6w209",
+    "name": "Sapienza University of Rome",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebsco.com/c/2j64g6/result?",
+    "product": "ebsco",
+    "evidence": "https://www.uniroma1.it/it/pagina/sistema-bibliotecario-sapienza",
+    "notes": "Library system page links Discovery Sapienza at research.ebsco.com/c/2j64g6 (EBSCO Discovery) and the Sebina OPAC; no Primo/Alma seen. resolver.ebsco.com/c/2j64g6 exists (redirects to EBSCO auth with login_hint c:2j64g6), but Full Text Finder configuration was not confirmed without authentication."
+  },
+  {
+    "rorId": "https://ror.org/04pp8hn57",
+    "name": "Utrecht University",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://utrechtuniversity.on.worldcat.org/atoztitles/link?",
+    "product": "worldcat",
+    "evidence": "https://www.uu.nl/en/university-library",
+    "notes": "University Library page links WorldCat Discovery at utrechtuniversity.on.worldcat.org; the atoztitles/link OpenURL endpoint answered 200 for the test citation. Not on Alma."
+  },
+  {
+    "rorId": "https://ror.org/041nas322",
+    "name": "University of Bonn",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "49HBZ_ULB",
+    "product": "alma",
+    "host": "eu04.alma.exlibrisgroup.com",
+    "url": "https://eu04.alma.exlibrisgroup.com/view/uresolver/49HBZ_ULB/openurl",
+    "evidence": "https://sam.ulb.uni-bonn.de/bonnus/primo_search.php",
+    "notes": "ULB Bonn's bonnus search (linked from ulb.uni-bonn.de) points to hbz-ulb.primo.exlibrisgroup.com with vid=49HBZ_ULB:DEFAULT. Both eu04 and the custom slug hbz-ulb.alma.exlibrisgroup.com answered with full_text_indicator true and 10 services."
+  },
+  {
+    "rorId": "https://ror.org/051fd9666",
+    "name": "Case Western Reserve University",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "01OHIOLINK_CWRU",
+    "product": "alma",
+    "host": "ohiolink-cwru.alma.exlibrisgroup.com",
+    "url": "https://ohiolink-cwru.alma.exlibrisgroup.com/view/uresolver/01OHIOLINK_CWRU/openurl",
+    "evidence": "https://case.edu/library/",
+    "notes": "case.edu/library links ohiolink-cwru.primo.exlibrisgroup.com with vid=01OHIOLINK_CWRU:CWRUC. None of the 16 regional hosts answered; the custom slug ohiolink-cwru.alma.exlibrisgroup.com (and the Primo host) returned full_text_indicator true with 15 services."
+  },
+  {
+    "rorId": "https://ror.org/017zqws13",
+    "name": "University of Minnesota",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "01UMN_INST",
+    "product": "alma",
+    "host": "na01.alma.exlibrisgroup.com",
+    "url": "https://na01.alma.exlibrisgroup.com/view/uresolver/01UMN_INST/openurl",
+    "evidence": "https://primo.lib.umn.edu/primo-explore/search?vid=TWINCITIES",
+    "notes": "The libguides.umn.edu/Primo link to primo.lib.umn.edu redirects to /discovery/search?vid=01UMN_INST:TWINCITIES; na01 answered with full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/024mw5h28",
+    "name": "University of Chicago",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sfx.lib.uchicago.edu/sfx_local",
+    "product": "sfx",
+    "evidence": "https://guides.lib.uchicago.edu/google-scholar",
+    "notes": "The library guide names the resolver 'Find it! @ UChicago' (also reached through LibKey Nomad); sfx.lib.uchicago.edu/sfx_local is live but sits behind an Anubis bot check, so SFX is inferred from the hostname, not observed in a response. The library site has a Turnstile challenge, and no uchicago Primo host exists."
+  },
+  {
+    "rorId": "https://ror.org/03m2x1q45",
+    "name": "University of Arizona",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "01UA_INST",
+    "product": "alma",
+    "host": "na01.alma.exlibrisgroup.com",
+    "url": "https://na01.alma.exlibrisgroup.com/view/uresolver/01UA_INST/openurl",
+    "evidence": "https://lib.arizona.edu/",
+    "notes": "The library homepage links to arizona-ua.primo.exlibrisgroup.com/discovery/search?vid=01UA_INST:01UA; na01 answered with full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/047s2c258",
+    "name": "University of Maryland, College Park",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "01USMAI_UMCP",
+    "product": "alma",
+    "host": "na04.alma.exlibrisgroup.com",
+    "url": "https://na04.alma.exlibrisgroup.com/view/uresolver/01USMAI_UMCP/openurl",
+    "evidence": "https://usmai-umcp.primo.exlibrisgroup.com/",
+    "notes": "usmai-umcp.primo.exlibrisgroup.com redirects to vid=01USMAI_UMCP:UMCP; the Primo hostname was tried because www.lib.umd.edu returned 400 to scripted requests. na04 returns uresolver_content with 3 context_service elements (Springer Nature, EBSCOhost) but no full_text_indicator key."
+  },
+  {
+    "rorId": "https://ror.org/03zga2b32",
+    "name": "University of Bergen",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "47BIBSYS_UBB",
+    "product": "alma",
+    "host": "bibsys-d.alma.exlibrisgroup.com",
+    "url": "https://bibsys-d.alma.exlibrisgroup.com/view/uresolver/47BIBSYS_UBB/openurl",
+    "evidence": "https://uib.oria.no/",
+    "notes": "uib.oria.no redirects to bibsys-d.primo.exlibrisgroup.com/discovery/search?vid=47BIBSYS_UBB:UBB; the matching custom host bibsys-d.alma.exlibrisgroup.com answered with full_text_indicator (tried first, regions not probed)."
+  },
+  {
+    "rorId": "https://ror.org/05krs5044",
+    "name": "University of Sheffield",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "44SFD_INST",
+    "product": "alma",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/44SFD_INST/openurl",
+    "evidence": "https://find.shef.ac.uk/",
+    "notes": "find.shef.ac.uk (StarPlus) redirects to /discovery/search?vid=44SFD_INST:SP; eu00 answered with full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/05290cv24",
+    "name": "University of Naples Federico II",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "code": "39NAP_INST",
+    "product": "alma",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/39NAP_INST/openurl",
+    "evidence": "http://www.sba.unina.it/",
+    "notes": "The library system (SBA) homepage links to napoli.primo.exlibrisgroup.com/discovery/search?vid=39NAP_INST:39NAP_V1. eu01 returns uresolver_content with 8 context_service elements (Springer, EBSCOhost, free e-journals) but no full_text_indicator key."
+  },
+  {
+    "rorId": "https://ror.org/007rty190",
+    "name": "Consorci de Serveis Universitaris de Catalunya",
+    "source": "census review 2026-10-19",
+    "exclude": "library consortium, not a university; its network code answers for the whole consortium"
+  },
+  {
+    "rorId": "https://ror.org/02bny8r02",
+    "name": "Consorcio de Bibliotecas Universitarias de Andalucía (CBUA)",
+    "source": "census review 2026-10-19",
+    "exclude": "library consortium, not a university; its network code answers for the whole consortium"
+  },
+  {
+    "rorId": "https://ror.org/00vkhbp60",
+    "name": "Universitat Abat Oliba CEU",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CSUC consortium network code (34CSUC_NETWORK), which answers for the whole network, not for this university"
+  },
+  {
+    "rorId": "https://ror.org/053d21744",
+    "name": "Escola Superior de Música de Catalunya",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CSUC consortium network code (34CSUC_NETWORK), which answers for the whole network, not for this school"
+  },
+  {
+    "rorId": "https://ror.org/058nh3n50",
+    "name": "International University of Andalucía",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its library page is the CBUA consortium network code (34CBUA_DNZ), which answers for the whole network, not for this university"
+  },
+  {
+    "rorId": "https://ror.org/01aj84f44",
+    "name": "Aarhus University",
+    "source": "census review 2026-10-19",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves both Copenhagen and Aarhus; its answer is institution-wide and does not show which university each licence covers"
+  },
+  {
+    "rorId": "https://ror.org/02p0gd045",
+    "name": "Universidad Complutense de Madrid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ucm.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://biblioteca.ucm.es/",
+    "notes": "The library home page links its discovery layer and A-Z lists to ucm.on.worldcat.org (OCLC WorldCat Discovery); no Primo or Alma link appeared. The WorldCat link resolver probe for Nature 2020 redirected straight to UCM's EZproxy login for nature.com, so the resolver works and finds full text. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/01cby8j38",
+    "name": "Universidad Autónoma de Madrid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34UAM_INST/openurl",
+    "product": "alma",
+    "code": "34UAM_INST",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://bun.uam.es/discovery/search?vid=34UAM_INST:34UAM_VU1",
+    "notes": "bun.uam.es (Bun!) redirects to Primo VE with vid=34UAM_INST:34UAM_VU1 and its Report-To header names eu02. On eu02 the uresolver answered with uresolver_content, a full_text_indicator and 3 context_service elements; eu01 returned an empty body. biblioteca.uam.es does not resolve in DNS."
+  },
+  {
+    "rorId": "https://ror.org/03n6nwv02",
+    "name": "Universidad Politécnica de Madrid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34UPM_INST/openurl",
+    "product": "alma",
+    "code": "34UPM_INST",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://www.upm.es/biblioteca/",
+    "notes": "The UPM library page links Ingenio at ingenio.upm.es/discovery with vid=34UPM_INST:34UPM_VU1, and that page's Report-To header names eu02. On eu02 the uresolver answered with uresolver_content, a full_text_indicator and 14 context_service elements; eu00, eu01 and eu03 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/000xsnr85",
+    "name": "University of the Basque Country",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ehu.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://www.ehu.eus/es/web/biblioteka",
+    "notes": "The library page points its search box and advanced search to ehu.on.worldcat.org (WorldCat Discovery), with no Primo or Alma link. The atoztitles/link resolver answered 200 with only the WorldCat Discovery JavaScript shell, so the resolved targets were not visible. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/012a91z28",
+    "name": "Universidad de Zaragoza",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://unizar.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://biblioteca.unizar.es/",
+    "notes": "biblioteca.unizar.es links Alcorze (alcorze.unizar.es) and its search, advanced search and course reserves to unizar.on.worldcat.org (WorldCat Discovery). The atoztitles/link resolver answered 200 with the client-side WorldCat Discovery shell, so no resolved content was visible. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/046ffzj20",
+    "name": "Universidad de Cantabria",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://dx7nk9sl6m.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://web.unican.es/buc",
+    "notes": "The BUC page links Summon (unican.summon.serialssolutions.com) and the 360 Link host DX7NK9SL6M.search.serialssolutions.com. The 360 Link probe for Nature 2020 answered with a page naming Nature, a Nature Journals Online target and a nature.com link routed through the university proxy. No Primo or Alma link was found."
+  },
+  {
+    "rorId": "https://ror.org/006gksa02",
+    "name": "Universidad de Oviedo",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "product": "ebsco",
+    "evidence": "https://digibuo.uniovi.es/dspace/handle/10651/66499",
+    "notes": "The catalogue is AbsysNet (absysweb.cpd.uniovi.es). The BUOfind discovery tool embedded in buo.uniovi.es runs on EBSCO Discovery Service since 2019 according to the library's own guide. No EBSCO custid or resolver URL appears in the public pages (the search is a server-side form), so no resolver was probed; no Alma or Primo link exists."
+  },
+  {
+    "rorId": "https://ror.org/01460j859",
+    "name": "Universitat Politècnica de València",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34UPV_INST/openurl",
+    "product": "alma",
+    "code": "34UPV_INST",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "evidence": "https://polibuscador.upv.es/discovery/search?vid=34UPV_INST:bibupv",
+    "notes": "PoliBuscador redirects to Primo VE vid=34UPV_INST:bibupv. On eu00 the probe answered with uresolver_content and 4 context_service elements but no full_text_indicator key; eu01, eu02 and eu03 returned empty bodies. The code is its own 34UPV_INST, not a CVA consortium one."
+  },
+  {
+    "rorId": "https://ror.org/02ws1xc11",
+    "name": "Universitat Jaume I",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34CVA_UJI/openurl",
+    "product": "alma",
+    "code": "34CVA_UJI",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "evidence": "https://cataleg.uji.es/discovery/login?vid=34CVA_UJI:VU1",
+    "notes": "The library page (www.uji.es/serveis/cd/) links the Primo catalogue cataleg.uji.es with vid=34CVA_UJI:VU1. On eu00 the probe answered with uresolver_content and 4 context_service elements but no full_text_indicator key; eu01, eu02 and cva-uji.alma.exlibrisgroup.com returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/03p3aeb86",
+    "name": "Universidad de Murcia",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8387532&groupid=main&profile=ftf",
+    "product": "ebsco",
+    "evidence": "https://www.um.es/web/biblioteca/recursos-informacion/catalogos/xabio",
+    "notes": "Xabio is EBSCO Discovery Service with custid s8387532. The resolver answers 301 to resolver.ebsco.com/result and then 302 to an EBSCO OAuth login that carries a customer login_hint, so the customer is recognised; a fake custid behaves differently. Holdings need IP or guest authentication, so no full-text result was seen. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/01f5wp925",
+    "name": "Universitat Oberta de Catalunya",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://csuc-uoc.alma.exlibrisgroup.com/view/uresolver/34CSUC_UOC/openurl",
+    "product": "alma",
+    "code": "34CSUC_UOC",
+    "host": "csuc-uoc.alma.exlibrisgroup.com",
+    "evidence": "https://biblioteca.uoc.edu/ca",
+    "notes": "The library home page (403 to the census user agent, read with a browser-like one) links Primo at discovery.biblioteca.uoc.edu with vid=34CSUC_UOC:VU1. csuc-uoc.alma.exlibrisgroup.com answered with uresolver_content, a full_text_indicator and 8 context_service elements; eu00 to eu03 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/02z0cah89",
+    "name": "Universidad Pública de Navarra (UPNA)",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8433765&groupid=main&profile=ftf",
+    "product": "ebsco",
+    "evidence": "https://www.unavarra.es/biblioteca",
+    "notes": "The library page has an EBSCO EDS search form (research.ebsco.com, custid s8433765) and a Publications Finder form; the catalogue is AbsysNet at biblioteca.unavarra.es/abnetopac. The EBSCO resolver answers 301 to resolver.ebsco.com and then 302 to an EBSCO OAuth login with a customer login_hint, so the customer is recognised; holdings need institutional authentication. No Alma or Primo was found."
+  },
+  {
+    "rorId": "https://ror.org/01fvbaw18",
+    "name": "Universidad de Valladolid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/34BUC_UVA/openurl",
+    "product": "alma",
+    "code": "34BUC_UVA",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "evidence": "https://almena.uva.es/discovery/search?vid=34BUC_UVA:VU1",
+    "notes": "The library home page links Almena at almena.uva.es with vid=34BUC_UVA:VU1. eu01 answered with uresolver_content, a full_text_indicator and 6 context_service elements; buc-uva.alma.exlibrisgroup.com returned the same content; eu00, eu02 and eu03 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/036b2ww28",
+    "name": "Universidad de Málaga",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UMA/openurl",
+    "product": "alma",
+    "code": "34CBUA_UMA",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://jabega.uma.es/discovery/search?vid=34CBUA_UMA:VU1",
+    "notes": "jabega.uma.es redirects to the Primo VE view vid=34CBUA_UMA:VU1 and its Report-To header names eu02. The eu02 uresolver probe answered with uresolver_content, a full_text_indicator and 9 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/05yc77b46",
+    "name": "University of Córdoba",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UCO/openurl",
+    "product": "alma",
+    "code": "34CBUA_UCO",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://mezquita.uco.es/discovery/search?vid=34CBUA_UCO:VU1",
+    "notes": "mezquita.uco.es redirects to vid=34CBUA_UCO:VU1 and its Report-To header names eu02. The eu02 uresolver probe answered with uresolver_content, a full_text_indicator and 7 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/04mxxkb11",
+    "name": "Universidad de Cádiz",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://fp5qq3tk5q.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://biblioteca.uca.es/",
+    "notes": "The library home page links a Koha OPAC (bibcatalogo.uca.es), Summon (uca.summon.serialssolutions.com) and the 360 E-Journal Portal FP5QQ3TK5Q, so UCA is not on Alma; the 34CBUA_UCA probe on eu02 returned an empty body. The 360 Link probe for Nature 2020 answered 302 through its log redirector to the ProQuest publication page, so the resolver is live."
+  },
+  {
+    "rorId": "https://ror.org/02z749649",
+    "name": "Universidad Pablo de Olavide",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UPO/openurl",
+    "product": "alma",
+    "code": "34CBUA_UPO",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://eureka.upo.es/discovery/search?vid=34CBUA_UPO:VU1",
+    "notes": "www.upo.es/biblioteca/ links eureka.upo.es, which redirects to vid=34CBUA_UPO:VU1, and its Report-To header names eu02. The eu02 uresolver probe answered with uresolver_content, a full_text_indicator and 7 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/0174shg90",
+    "name": "Universidad de Extremadura",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu04.alma.exlibrisgroup.com/view/uresolver/34UEX_INST/openurl",
+    "product": "alma",
+    "code": "34UEX_INST",
+    "host": "eu04.alma.exlibrisgroup.com",
+    "evidence": "https://biblioteca.unex.es/",
+    "notes": "The library home page (403 to curl, read through a browser-like fetch) links the discovery tool Explora at explora.unex.es with vid=34UEX_INST:34UEX. The explora.unex.es Report-To header names eu04, and the eu04 uresolver probe answered with uresolver_content, a full_text_indicator and 6 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/01teme464",
+    "name": "Universidad de Las Palmas de Gran Canaria",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8390106&authtype=ip,guest&groupid=main",
+    "product": "ebsco",
+    "evidence": "https://biblioteca.ulpgc.es/",
+    "notes": "The library home page links Faro (faro.ulpgc.es), which redirects to EBSCO (logon.ebsco.zone), and an EDS link with custid=s8390106; the OPAC (opac.ulpgc.es) answered 403. The EBSCO resolver probe redirected to resolver.ebsco.com/result and then to an EBSCO OAuth login with a customer login_hint, so the custid is recognised but no result is visible without authentication. A guessed 34ULPGC_INST returned empty bodies on eu00 to eu06."
+  },
+  {
+    "rorId": "https://ror.org/014axpa37",
+    "name": "Roskilde University",
+    "source": "census review 2026-10-19",
+    "exclude": "one Alma institution, the Royal Danish Library (45KBDK_KGL), serves Copenhagen, Aarhus and Roskilde; its answer is institution-wide and does not show which university each licence covers"
+  },
+  {
+    "rorId": "https://ror.org/03rmrcq20",
+    "name": "University of British Columbia",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://gw2jh3xr2c.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://search.library.ubc.ca/",
+    "notes": "The public stack is still Summon with 360 Link (gw2jh3xr2c) and the Voyager catalogue (webcat.library.ubc.ca), but 01UBC_INST answers on ca01 with <uresolver_content> (institution 10171), while a bogus control code returns an empty body. For Nature 2020 it reports full_text_indicator=false and zero context_services, so the Alma instance looks provisioned but not yet live. Do not treat it as usable yet. Recorded as 360 Link, the resolver its public catalogue uses; the Alma code is not shipped until the instance serves licences."
+  },
+  {
+    "rorId": "https://ror.org/01pxwe438",
+    "name": "McGill University",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://mcgill.on.worldcat.org/",
+    "product": "worldcat",
+    "evidence": "https://www.mcgill.ca/libraries",
+    "notes": "The library home page links its \"Sofia\" search to mcgill.on.worldcat.org (OCLC WorldCat Discovery, the shared Quebec BCI/PBUQ platform). No Alma, Primo or SFX references were found, and no Alma codes were probed."
+  },
+  {
+    "rorId": "https://ror.org/0161xgx34",
+    "name": "Université de Montréal",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://umontreal.on.worldcat.org/discovery",
+    "product": "worldcat",
+    "evidence": "https://bib.umontreal.ca/",
+    "notes": "bib.umontreal.ca links \"Sofia\" to umontreal.on.worldcat.org (WorldCat Discovery, baseScope wz:11098), the shared BCI platform. No Alma or Primo references were found on the page, and no codes were probed."
+  },
+  {
+    "rorId": "https://ror.org/02fa3aq29",
+    "name": "McMaster University",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ca01.alma.exlibrisgroup.com/view/uresolver/01OCUL_MU/openurl",
+    "product": "alma",
+    "code": "01OCUL_MU",
+    "host": "ca01.alma.exlibrisgroup.com",
+    "evidence": "https://library.mcmaster.ca/",
+    "notes": "Omni links use mcmaster.primo.exlibrisgroup.com with vid=01OCUL_MU:OMNI. The Primo VE configuration endpoint and its Report-To header name ca01. The slug host ocul-mu.alma does not resolve in DNS, and ca01 answered with full_text_indicator and 7 services; 01OCUL_MU is McMaster's own institution code within OCUL, not the network code."
+  },
+  {
+    "rorId": "https://ror.org/04sjchr03",
+    "name": "Université Laval",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ulaval.on.worldcat.org/",
+    "product": "worldcat",
+    "evidence": "https://www.bibl.ulaval.ca/",
+    "notes": "The library home page's Sofia search box points to ulaval.on.worldcat.org (WorldCat Discovery, the shared BCI platform). No Alma or Primo references were found on the page, and no codes were probed."
+  },
+  {
+    "rorId": "https://ror.org/01e6qks80",
+    "name": "Dalhousie University",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ca01.alma.exlibrisgroup.com/view/uresolver/01NOVA_DAL/openurl",
+    "product": "alma",
+    "code": "01NOVA_DAL",
+    "host": "ca01.alma.exlibrisgroup.com",
+    "evidence": "https://libapps.library.dal.ca/librariesSearch/include/search.js",
+    "notes": "The library search widget links to dal.novanet.ca/discovery/jsearch with vid=01NOVA_DAL:DAL. dal.novanet.ca is a CNAME to ca01.primo, and the configuration endpoint's Report-To names ca01. The probe hit with full_text_indicator and 13 services (institutionId 7190 within Novanet customer 7185); this is Dalhousie's own institution code, not the network code."
+  },
+  {
+    "rorId": "https://ror.org/010x8gc63",
+    "name": "University of Saskatchewan",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ca01.alma.exlibrisgroup.com/view/uresolver/01USASK_INST/openurl",
+    "product": "alma",
+    "code": "01USASK_INST",
+    "host": "ca01.alma.exlibrisgroup.com",
+    "evidence": "https://primo-pmtna02.hosted.exlibrisgroup.com/primo_library/libweb/webservices/rest/v1/configuration/USASK",
+    "notes": "library.usask.ca timed out on three attempts. A public USask KB article links USearch to classic Primo (primo-pmtna02, vid=USASK), whose configuration names institution \"01USASK\" and still lists SFX (sfx.usask.ca/usask) and the Sundog catalogue. usask.primo.exlibrisgroup.com is a CNAME to ca01, and the first candidate code, 01USASK_INST, hit on ca01 with full_text_indicator and 6 services (Nature, ProQuest, Gale). The Primo VE vid could not be confirmed."
+  },
+  {
+    "rorId": "https://ror.org/0213rcc28",
+    "name": "Simon Fraser University",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://sfu.alma.exlibrisgroup.com/view/uresolver/01SFUL_INST/openurl",
+    "product": "alma",
+    "code": "01SFUL_INST",
+    "host": "sfu.alma.exlibrisgroup.com",
+    "evidence": "https://sfu.primo.exlibrisgroup.com/primaws/rest/pub/configuration/vid/01SFUL_INST:SFUL",
+    "notes": "www.lib.sfu.ca serves an Anubis bot challenge to curl, so I did not use it. The Primo VE config endpoint on sfu.primo.exlibrisgroup.com confirms institution-code 01SFUL_INST, and its Report-To header names ca01. sfu.alma is a CNAME to ca01.alma, and the probe there returned uresolver_content with full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/0420zvk78",
+    "name": "Concordia University",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://concordiauniversity.on.worldcat.org/discovery",
+    "product": "worldcat",
+    "evidence": "https://library.concordia.ca/",
+    "notes": "The library homepage links search, advanced search and the A-Z journal list to concordiauniversity.on.worldcat.org (Sofia, WorldCat Discovery). I found no Alma or Primo reference, so I probed no codes."
+  },
+  {
+    "rorId": "https://ror.org/002rjbv21",
+    "name": "Université du Québec à Montréal",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://uqam-bib.on.worldcat.org/discovery",
+    "product": "worldcat",
+    "evidence": "https://bibliotheques.uqam.ca/",
+    "notes": "The homepage search box and A-Z titles point to uqam-bib.on.worldcat.org (WorldCat Discovery, baseScope wz:13686). The homepage had no Alma or Primo references."
+  },
+  {
+    "rorId": "https://ror.org/00kybxq39",
+    "name": "Université de Sherbrooke",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://usherbrooke.on.worldcat.org/",
+    "product": "worldcat",
+    "evidence": "https://www.usherbrooke.ca/biblio/",
+    "notes": "The library page links advanced search, course reserves and sign-in to usherbrooke.on.worldcat.org (WorldCat Discovery, baseScope wz:27128). The page had no Alma or Primo references."
+  },
+  {
+    "rorId": "https://ror.org/01gw3d370",
+    "name": "University of Windsor",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://uwindsor.alma.exlibrisgroup.com/view/uresolver/01UTON_UW/openurl",
+    "product": "alma",
+    "code": "01UTON_UW",
+    "host": "uwindsor.alma.exlibrisgroup.com",
+    "evidence": "https://leddy.uwindsor.ca/",
+    "notes": "The Leddy Library homepage links Omni as uwindsor.primo.exlibrisgroup.com with vid=01UTON_UW:UWINDSOR (not 01OCUL_WIN), and Leganto as uwindsor.alma/01UTON_UW. Both uwindsor.alma and ca01.alma returned uresolver_content with full_text_indicator and 8 context services."
+  },
+  {
+    "rorId": "https://ror.org/05f8d4e86",
+    "name": "Polytechnique Montréal",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://polymtl.on.worldcat.org/discovery",
+    "product": "worldcat",
+    "evidence": "https://www.polymtl.ca/biblio/en/services",
+    "notes": "www.polymtl.ca/biblio served an Incapsula bot challenge to curl, and libguides.biblio.polymtl.ca returned a 945-byte page with no catalogue links, so I stopped. A web search snippet of the library's services page lists 'Access to Sofia', the PBUQ WorldCat Discovery tool. The WorldCat SPA polymtl.on.worldcat.org answered 200 where polytechnique.on.worldcat.org answered 500, but its tenant was not confirmed from page content."
+  },
+  {
+    "rorId": "https://ror.org/05nkf0n29",
+    "name": "University of New Brunswick",
+    "country": "CA",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://unb.on.worldcat.org/",
+    "product": "worldcat",
+    "evidence": "https://lib.unb.ca/",
+    "notes": "The lib.unb.ca homepage links search, advanced search and My Account to unb.on.worldcat.org (UNB WorldCat). The homepage had no Primo, Alma or other link-resolver references."
+  },
+  {
+    "rorId": "https://ror.org/01ej9dk98",
+    "name": "The University of Melbourne",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UMB_INST/openurl",
+    "product": "alma",
+    "code": "61UMB_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://librarysearch.unimelb.edu.au/ (redirects to /nde/search?vid=61UMB_INST:NDE)",
+    "notes": "cat.lib.unimelb.edu.au does not resolve. librarysearch.unimelb.edu.au redirects to the Primo VE vid 61UMB_INST:NDE, not 61UNIMELB_INST. The ap02 probe answered with full_text_indicator and 17 services."
+  },
+  {
+    "rorId": "https://ror.org/0384j8v12",
+    "name": "The University of Sydney",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61USYD_INST/openurl",
+    "product": "alma",
+    "code": "61USYD_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://sydney.primo.exlibrisgroup.com/primaws/rest/pub/configuration/vid/61USYD_INST:sydney",
+    "notes": "search.library.sydney.edu.au and usyd.primo do not resolve, and the library homepage builds its links with JS. sydney.primo.exlibrisgroup.com is a CNAME to ap02.primo, and its config endpoint gives institution-code 61USYD_INST. The ap02 probe answered with full_text_indicator and 15 services."
+  },
+  {
+    "rorId": "https://ror.org/02bfwt286",
+    "name": "Monash University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61MONASH_AU/openurl",
+    "product": "alma",
+    "code": "61MONASH_AU",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://monash.primo.exlibrisgroup.com/ (redirects to discovery/search?vid=61MONASH_AU:MONUI)",
+    "notes": "Monash's institution code ends in _AU, not _INST. The ap02 probe answered with full_text_indicator and 7 services."
+  },
+  {
+    "rorId": "https://ror.org/047272k79",
+    "name": "The University of Western Australia",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UWA_INST/openurl",
+    "product": "alma",
+    "code": "61UWA_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://onesearch.library.uwa.edu.au/ (redirects to /nde/search?vid=61UWA_INST:NDE_UWA)",
+    "notes": "OneSearch redirects to the Primo VE vid 61UWA_INST:NDE_UWA. The ap02 probe answered with full_text_indicator and 14 services."
+  },
+  {
+    "rorId": "https://ror.org/00892tw58",
+    "name": "The University of Adelaide",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61ADELAIDE_INST/openurl",
+    "product": "alma",
+    "code": "61ADELAIDE_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://adelaide.primo.exlibrisgroup.com/ (redirects to discovery/search?vid=61ADELAIDE_INST:UOFA)",
+    "notes": "The Primo VE root redirects to vid 61ADELAIDE_INST:UOFA. The ap02 probe answered with full_text_indicator and 10 services."
+  },
+  {
+    "rorId": "https://ror.org/01sf06y89",
+    "name": "Macquarie University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61MACQUARIE_INST/openurl",
+    "product": "alma",
+    "code": "61MACQUARIE_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://multisearch.mq.edu.au/ (redirects to discovery/search?vid=61MACQUARIE_INST:MQ)",
+    "notes": "MultiSearch is Primo VE under a custom domain, with vid 61MACQUARIE_INST:MQ. The ap02 probe answered with full_text_indicator and 18 services."
+  },
+  {
+    "rorId": "https://ror.org/02czsnj07",
+    "name": "Deakin University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://library.deakin.edu.au/",
+    "product": "webbridge",
+    "evidence": "https://library.deakin.edu.au/",
+    "notes": "www.deakin.edu.au/library and deakin.libguides.com redirects answer 403 to curl. The catalogue at library.deakin.edu.au is Innovative Sierra WebPAC: it sends 'Server: III 100' and loads /scripts/webbridge.js, and the Deakin A-Z links EBSCOhost with custid=deakin. deakin.primo/alma hosts do not exist in DNS, and 3 code guesses (61DUL_INST, 61DEAKIN_INST, 61DU_INST) on ap02 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/00eae9z71",
+    "name": "University of Newcastle Australia",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UON_INST/openurl",
+    "product": "alma",
+    "code": "61UON_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UON_INST/openurl?svc_dat=CTO&rft.genre=article&rft.issn=0028-0836&rft.date=2020",
+    "notes": "The library site answers 403 and LibGuides shows no Primo code, so 61UON_INST was a guess. The ap02 probe hit and its resolution_url points to newcastle.alma.exlibrisgroup.com, which ties the code to Newcastle. newcastle.primo.exlibrisgroup.com CNAMEs ap02, but the Primo config call for view 61UON_INST:UON returned 400 (the view name was a guess)."
+  },
+  {
+    "rorId": "https://ror.org/01rxfrp27",
+    "name": "La Trobe University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61LATROBE_INST/openurl",
+    "product": "alma",
+    "code": "61LATROBE_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://latrobe.primo.exlibrisgroup.com/primaws/rest/pub/configuration/vid/61LATROBE_INST:LATROBE",
+    "notes": "The library site answers 403. The guessed vid 61LATROBE_INST:LATROBE returned a 200 Primo VE configuration on latrobe.primo (CNAME to ap02). The ap02 resolver hit and its resolution_url points to latrobe.alma.exlibrisgroup.com."
+  },
+  {
+    "rorId": "https://ror.org/01nfmeh72",
+    "name": "University of Tasmania",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UOT_INST/openurl",
+    "product": "alma",
+    "code": "61UOT_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://utas.libguides.com/srch.php?q=primo",
+    "notes": "The LibGuides search page config names a 'Library Search' Primo source with view_id 61UOT_INST:61UOT_INST, region ap. The ap02 probe hit and its resolution_url is utas.alma.exlibrisgroup.com. The guess 61UTAS_INST returned an empty body first."
+  },
+  {
+    "rorId": "https://ror.org/03t52dk35",
+    "name": "Western Sydney University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UWSTSYD_INST/openurl",
+    "product": "alma",
+    "code": "61UWSTSYD_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://library.westernsydney.edu.au/nav.plain.html",
+    "notes": "The library nav fragment links https://uws.primo.exlibrisgroup.com/discovery/login?vid=61UWSTSYD_INST:UWS_ALMA. The Primo host is uws, not westernsydney. The ap02 probe hit with full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/01p93h210",
+    "name": "University of South Australia",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61USOUTHAUS_INST/openurl",
+    "product": "alma",
+    "code": "61USOUTHAUS_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://unisa.primo.exlibrisgroup.com/primaws/rest/pub/configuration/vid/61USOUTHAUS_INST:UNISA",
+    "notes": "unisa.edu.au/library returned 404, and search.library.unisa.edu.au does not resolve. The Primo VE config for 61USOUTHAUS_INST:UNISA returned 200 and lists that institution's views. The ap02 resolver hit and its resolution_url is unisa.alma.exlibrisgroup.com."
+  },
+  {
+    "rorId": "https://ror.org/04gsp2c11",
+    "name": "James Cook University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61ARL_JCU/openurl",
+    "product": "alma",
+    "code": "61ARL_JCU",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://libguides.jcu.edu.au/home",
+    "notes": "LibGuides links https://jcu.primo.exlibrisgroup.com/discovery/search?vid=61ARL_JCU:JCU. The code uses the ARL prefix but belongs to JCU alone and is not a _NETWORK code. The ap02 probe hit with full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/04r659a56",
+    "name": "University of New England",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UNE_INST/openurl",
+    "product": "alma",
+    "code": "61UNE_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UNE_INST/openurl?svc_dat=CTO&rft.genre=article&rft.issn=0028-0836&rft.date=2020",
+    "notes": "www.une.edu.au/library answered 403 to curl; une.primo.exlibrisgroup.com exists (200). The guessed code 61UNE_INST answered on ap02 with <uresolver_content> and 17 context services, no full_text_indicator; the body has an OpenAthens redirector for une.edu.au and a une.edu.au terms-of-service URL, which confirm the institution."
+  },
+  {
+    "rorId": "https://ror.org/05jhnwe22",
+    "name": "Edith Cowan University",
+    "country": "AU",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ecu.on.worldcat.org/discovery",
+    "product": "worldcat",
+    "evidence": "https://ecu.au.libguides.com/",
+    "notes": "The ECU library site answered 403 to curl and ecu.primo.exlibrisgroup.com does not resolve. ECU's LibGuides links 'ECU Library Search' to ecu.on.worldcat.org/discovery (WorldCat Discovery). The plausible code 61ECU_INST returned empty bodies on ap02 and ap01."
+  },
+  {
+    "rorId": "https://ror.org/01jmxt844",
+    "name": "University of Otago",
+    "country": "NZ",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64OTAGO_INST/openurl",
+    "product": "alma",
+    "code": "64OTAGO_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64OTAGO_INST/openurl?svc_dat=CTO&rft.genre=article&rft.issn=0028-0836&rft.date=2020",
+    "notes": "otago.ac.nz/library answered 403 to curl; otago.primo.exlibrisgroup.com exists (200). The guessed code 64OTAGO_INST answered on ap02 with <uresolver_content>, full_text_indicator and 44 context services; the body contains an otago.ac.nz/library error-form URL, which confirms the institution."
+  },
+  {
+    "rorId": "https://ror.org/0040r6f76",
+    "name": "Victoria University of Wellington",
+    "country": "NZ",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64VUW_INST/openurl",
+    "product": "alma",
+    "code": "64VUW_INST",
+    "host": "ap02.alma.exlibrisgroup.com",
+    "evidence": "https://www.wgtn.ac.nz/library",
+    "notes": "The library page links Te Waharoa at tewaharoa.victoria.ac.nz/discovery/search?vid=64VUW_INST:VUWNUI, and that host's session cookie names ap02. The ap02 probe returned <uresolver_content> with 26 context services (current_access keys present) but no full_text_indicator."
+  },
+  {
+    "rorId": "https://ror.org/052czxv31",
+    "name": "Massey University",
+    "country": "NZ",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://research.ebsco.com/c/4egzpd/search",
+    "product": "ebsco",
+    "evidence": "https://www.massey.ac.nz/study/library/",
+    "notes": "Massey's 'Discover' is EBSCO (research.ebsco.com/c/4egzpd), and holds and checkouts also run through EBSCO, which suggests FOLIO rather than Alma. massey.primo.exlibrisgroup.com does not resolve. The codes 64MASSEY_INST (ap02, ap01) and 64MU_INST (ap02) returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/03y7q9t39",
+    "name": "University of Canterbury",
+    "country": "NZ",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://publications.ebsco.com/?custId=s1165276&groupId=main&profileId=pfui",
+    "product": "ebsco",
+    "evidence": "https://www.canterbury.ac.nz/study/library/search-our-collections",
+    "notes": "The library links a VuFind catalogue (libcat.canterbury.ac.nz, which answered 403 to curl) and EBSCO Publications Finder (custId=s1165276); no Ex Libris host was seen and canterbury.primo.exlibrisgroup.com does not resolve. The codes 64CANTERBURY_INST and 64UC_INST returned empty bodies on ap02."
+  },
+  {
+    "rorId": "https://ror.org/022k4wk35",
+    "name": "Beijing Normal University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://bnu.alma.exlibrisgroup.com/view/uresolver/86BNU_INST/openurl",
+    "product": "alma",
+    "code": "86BNU_INST",
+    "host": "bnu.alma.exlibrisgroup.com"
+  },
+  {
+    "rorId": "https://ror.org/013xs5b60",
+    "name": "Capital Medical University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://sfx-86ali.hosted.exlibrisgroup.com.cn/cmu",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/00js3aw79",
+    "name": "Jilin University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://kp8vy8vz5l.search.serialssolutions.com/",
+    "product": "360link"
+  },
+  {
+    "rorId": "https://ror.org/02v51f717",
+    "name": "Peking University",
+    "country": "CN",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://zm8lp2fe5j.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://zm8lp2fe5j.search.serialssolutions.com/?genre=article&issn=0028-0836&date=2020",
+    "notes": "The directory-listed 360 Link instance is live and is Peking's: the Nature OpenURL page loads pku_link20.js, links to lib.pku.edu.cn CALIS ILL and shows pkusummon@lib.pku.edu.cn. No Primo or Alma reference to PKU was found in searches."
+  },
+  {
+    "rorId": "https://ror.org/0220qvk04",
+    "name": "Shanghai Jiao Tong University",
+    "country": "CN",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://sfx-86sjtu.hosted.exlibrisgroup.com.cn/86sjtu",
+    "product": "sfx",
+    "evidence": "https://sfx-86sjtu.hosted.exlibrisgroup.com.cn/86sjtu?sid=test&genre=article&issn=0028-0836&date=2020&sfx.response_type=simplexml",
+    "notes": "The directory-listed SFX instance is live: a Nature OpenURL with sfx.response_type=simplexml returns 5 getFullTxt targets. The library homepage (lib.sjtu.edu.cn) renders through a Chaoxing JS portal with no static links, so no Alma code or own-page reference to the resolver was found."
+  },
+  {
+    "rorId": "https://ror.org/01vy4gh70",
+    "name": "Shenzhen University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "http://szdnet.cceu.org.cn:3410/szu",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/011ashp19",
+    "name": "Sichuan University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://sfx-86scu.hosted.exlibrisgroup.com.cn/86scu",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/03cve4549",
+    "name": "Tsinghua University",
+    "country": "CN",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://tsinghua.alma.exlibrisgroup.com.cn/view/uresolver/86THU_INST/openurl",
+    "product": "alma",
+    "code": "86THU_INST",
+    "host": "tsinghua.alma.exlibrisgroup.com.cn",
+    "evidence": "https://tsinghua-primo.hosted.exlibrisgroup.com.cn/primo_library/libweb/webservices/rest/v1/configuration/86THU",
+    "notes": "The Primo view config (vid=86THU, hosted at the .com.cn Primo, not the .com host in the directory URL, which no longer resolves) names the resolver tsinghua.alma.exlibrisgroup.com.cn/view/uresolver/86THU_INST/openurl. Nature 2020 returned 14 getFullTxt context services with full_text_indicator; tsinghua.alma.exlibrisgroup.com (.com) answers with an empty body."
+  },
+  {
+    "rorId": "https://ror.org/04mhzgx49",
+    "name": "Tel Aviv University",
+    "country": "IL",
+    "source": "zotero",
+    "url": "https://tau-primo.hosted.exlibrisgroup.com/openurl/TAU/TAU",
+    "product": "alma"
+  },
+  {
+    "rorId": "https://ror.org/03awzbc87",
+    "name": "Northeastern University (Shenyang)",
+    "country": "CN",
+    "source": "census review 2026-10-19",
+    "exclude": "ROR lists neu.edu, an alias of Northeastern University in Boston, under this Chinese university; the code and host found through that domain (01NEU_INST on northeastern.alma…) belong to the Boston library, already in the table under its own ROR id"
+  },
+  {
+    "rorId": "https://ror.org/057zh3y96",
+    "name": "The University of Tokyo",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://vs2ga4mq9g.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.lib.u-tokyo.ac.jp/ja/library/contents/database/",
+    "notes": "The library's database list links UTokyo Article Link to vs2ga4mq9g.search.serialssolutions.com (ProQuest 360 Link), and discovery is Summon (tokyo.summon.serialssolutions.com). A Nature OpenURL to that host returns a UTokyo-branded 360 Link page; the OPAC is the in-house opac.dl.itc.u-tokyo.ac.jp."
+  },
+  {
+    "rorId": "https://ror.org/02kpeqv85",
+    "name": "Kyoto University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://tt2mx4dc7s.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.kulib.kyoto-u.ac.jp/",
+    "notes": "The library homepage links the e-journal list and resolver at tt2mx4dc7s.search.serialssolutions.com (360 Link) and Summon at kyoto.summon.serialssolutions.com. A Nature OpenURL returns a 360 Link page branded with kulib.kyoto-u.ac.jp links; the OPAC is KULINE."
+  },
+  {
+    "rorId": "https://ror.org/01dq60k83",
+    "name": "Tohoku University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://ec2xm3xr4v.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.library.tohoku.ac.jp/search/ejournal/index.php",
+    "notes": "The library's e-journal page links ec2xm3xr4v.search.serialssolutions.com. A Nature OpenURL to it returns a 360 Link page titled 'Tohoku University Library Full Text Finder' that links back to the in-house OPAC's opac_openurl."
+  },
+  {
+    "rorId": "https://ror.org/04h9pn542",
+    "name": "Seoul National University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "code": "82SNU_INST",
+    "product": "alma",
+    "host": "ap01.alma.exlibrisgroup.com",
+    "url": "https://ap01.alma.exlibrisgroup.com/view/uresolver/82SNU_INST/openurl",
+    "evidence": "https://lib.snu.ac.kr/",
+    "notes": "The library homepage embeds ap01.alma.exlibrisgroup.com/view/delivery/thumbnail/82SNU_INST/... and links hosted Primo snu-primo.hosted.exlibrisgroup.com (vid=82SNU). Nature 2020 returned 6 getFullTxt services with full_text_indicator on ap01; snu.alma.exlibrisgroup.com (guessed slug) returned the same body."
+  },
+  {
+    "rorId": "https://ror.org/02e16g702",
+    "name": "Hokkaido University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://jg8gn6xr5x.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.lib.hokudai.ac.jp/e-journals/",
+    "notes": "The library's e-journals page links jg8gn6xr5x.search.serialssolutions.com. A Nature OpenURL returns a 360 Link page with Hokkaido branding (hokkaido/images/link20_header.png); the OPAC is the in-house opac.lib.hokudai.ac.jp."
+  },
+  {
+    "rorId": "https://ror.org/036rp1748",
+    "name": "Universidade de São Paulo",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "product": "other",
+    "evidence": "https://www.ime.usp.br/bib/wp-content/uploads/2020/03/Pesquisa-online.pdf",
+    "notes": "dedalus.usp.br serves an Aleph menu and Busca Integrada is a local Primo at buscaintegrada.usp.br:1701/primo_library/libweb/action/search.do?vid=USP (its HTTPS port timed out from here). The library pages publish no OpenURL resolver; there is no evidence of Alma."
+  },
+  {
+    "rorId": "https://ror.org/00a2xv884",
+    "name": "Zhejiang University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "http://gk4pb6yy8y.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://libweb.zju.edu.cn/",
+    "notes": "The library homepage links to zju.summon.serialssolutions.com and to the Serials Solutions client GK4PB6YY8Y for its e-journal and e-book A-Z lists. The catalogue is Aleph (ZJU01)."
+  },
+  {
+    "rorId": "https://ror.org/05qbk4x57",
+    "name": "University of Chinese Academy of Sciences",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "code": "86UCAS_INST",
+    "product": "alma",
+    "host": "ucas.alma.exlibrisgroup.com.cn",
+    "evidence": "https://lib.ucas.ac.cn/?noWireless",
+    "notes": "The library homepage links to ucas.primo.exlibrisgroup.com.cn/nde/home?vid=86UCAS_INST:UCAS, and that page's Report-To header names cn01.alma.exlibrisgroup.com.cn. The Nature query returned 5 getFullTxt services with full_text_indicator=true on both ucas.alma.exlibrisgroup.com.cn and cn01.alma.exlibrisgroup.com.cn. The China hosts use .com.cn, not .com."
+  },
+  {
+    "rorId": "https://ror.org/035t8zc32",
+    "name": "The University of Osaka",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://resolver.ebsco.com/c/f4r4fk/result",
+    "product": "ebsco",
+    "evidence": "https://www.library.osaka-u.ac.jp/",
+    "notes": "The library homepage links to resolver.ebsco.com/c/f4r4fk/result, publications.ebsco.com/c/6zefm4 and EDS search. Its OPAC is a domestic system, not Primo or Alma."
+  },
+  {
+    "rorId": "https://ror.org/04chrp450",
+    "name": "Nagoya University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://resolver.ebsco.com/c/5qyzs6",
+    "product": "ebsco",
+    "evidence": "https://www.nul.nagoya-u.ac.jp/search/ej_guide/nulink/",
+    "notes": "The NULink page (Nagoya University Link Service) links to resolver.ebsco.com/c/5qyzs6/revise-request. Discovery runs on EBSCO (research.ebsco.com/c/yih5zg) and the OPAC on iLiswave (iwjs0023opc)."
+  },
+  {
+    "rorId": "https://ror.org/01tgyzw49",
+    "name": "National University of Singapore",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "product": "360link",
+    "evidence": "https://libfaq.nus.edu.sg/faq/71480",
+    "notes": "The NUS FAQ describes Find It! as 360Link, and the guides link to nus.summon.serialssolutions.com. linc.nus.edu.sg is an Innovative WebPAC. I did not find the 360 Link client code, and the main library site is behind Incapsula bot protection."
+  },
+  {
+    "rorId": "https://ror.org/013q1eq08",
+    "name": "Fudan University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://sfx-86fdu.hosted.exlibrisgroup.com.cn/86fdu",
+    "product": "sfx",
+    "evidence": "https://library.fudan.edu.cn/",
+    "notes": "The library homepage links to sfx-86fdu.hosted.exlibrisgroup.com.cn/cgi-bin/86fdu/ej.cgi and fudan-primo.hosted.exlibrisgroup.com.cn/primo-explore (institution=FDU, which is not an Alma code). The SFX base URL answered HTTP 200; I did not inspect its content."
+  },
+  {
+    "rorId": "https://ror.org/01tmp8f25",
+    "name": "Universidad Nacional Autónoma de México",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "product": "other",
+    "evidence": "https://bidi.unam.mx/",
+    "notes": "BiDi UNAM and DGB link to Aleph catalogues (librunam.dgb.unam.mx, seriunam.dgb.unam.mx) and to EDS (profid=eds). I found no published OpenURL resolver and no evidence of Alma."
+  },
+  {
+    "rorId": "https://ror.org/04nbhqj75",
+    "name": "Hasselt University",
+    "country": "BE",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its e-resources page (32EUC_INST on ec-europa-finder.alma…) is the European Commission library Find-eR, which the page links to, not the university's own resolver"
+  }
+]

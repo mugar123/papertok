@@ -4,7 +4,8 @@ import type { PaperSearchFilters } from './adapters/index.ts';
 import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { searchPapers as searchArxivPapers } from './arxivService.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
-import { rankPaperSearchResults } from '../utils/searchRelevance.ts';
+import { rankPaperSearchResults, scorePaperSearchMatch, normalizeSearchText } from '../utils/searchRelevance.ts';
+import { getPaperKey } from '../utils/publicNavigation.ts';
 import { settleWithin } from '../utils/asyncTiming.ts';
 
 /**
@@ -38,7 +39,7 @@ export const ARXIV_SEARCH_TIMEOUT_MS = 5_000;
 const openAlexAdapter = new OpenAlexAdapter();
 
 export const DEFAULT_PAPER_SEARCH_PROVIDERS = Object.freeze({
-  searchOpenAlex: (query: string, options: PaperSearchFilters) => openAlexAdapter.search(query, 1, { ...options, types: OPENALEX_SEARCH_TYPES }),
+  searchOpenAlex: (query: string, options: PaperSearchFilters) => openAlexAdapter.search(query, 1, { ...options, types: OPENALEX_SEARCH_TYPES, typeahead: true }),
   searchArxiv: (query: string, limit: number) => searchArxivPapers(query, 0, limit),
 });
 
@@ -52,34 +53,39 @@ function papersFrom(value: Paper[] | { papers: Paper[] } | void) {
   return Array.isArray(value?.papers) ? value.papers : [];
 }
 
-function settle<T>(promise: () => Promise<T>): Promise<PromiseSettledResult<T>> {
-  return Promise.resolve()
-    .then(() => promise())
-    .then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }));
-}
-
 export async function searchPapersAcrossSources(query: unknown, {
   signal,
   providers = DEFAULT_PAPER_SEARCH_PROVIDERS,
   arxivTimeoutMs = ARXIV_SEARCH_TIMEOUT_MS,
+  openAlexTimeoutMs = 5_000,
   arxivLimit = ARXIV_SEARCH_LIMIT,
   limit = PAPER_SEARCH_LIMIT,
-}: { signal?: AbortSignal; providers?: PaperSearchProviders; arxivTimeoutMs?: number; arxivLimit?: number; limit?: number } = {}) {
+}: { signal?: AbortSignal; providers?: PaperSearchProviders; arxivTimeoutMs?: number; openAlexTimeoutMs?: number; arxivLimit?: number; limit?: number } = {}) {
   const term = String(query || '').trim();
   if (!term) return [];
 
+  const openAlexController = new AbortController();
+  const openAlexSignal = signal ? AbortSignal.any([signal, openAlexController.signal]) : openAlexController.signal;
   const [openAlex, arxiv] = await Promise.all([
-    settle(() => providers.searchOpenAlex(term, { signal })),
+    settleWithin(Promise.resolve().then(() => providers.searchOpenAlex(term, { signal: openAlexSignal, priority: true })), openAlexTimeoutMs)
+      .then(result => {
+        if (result.status === 'timed_out') openAlexController.abort(new DOMException('Paper search timed out', 'TimeoutError'));
+        return result;
+      }),
     settleWithin(Promise.resolve().then(() => providers.searchArxiv(term, arxivLimit)), arxivTimeoutMs),
   ]);
 
   const openAlexPapers = openAlex.status === 'fulfilled' ? papersFrom(openAlex.value) : [];
   const arxivPapers = arxiv.status === 'fulfilled' ? papersFrom(arxiv.value) : [];
   if (openAlex.status === 'rejected' && arxivPapers.length === 0) throw openAlex.reason;
+  if (openAlex.status === 'timed_out' && arxivPapers.length === 0) throw new DOMException('Paper search timed out', 'TimeoutError');
 
   // OpenAlex first: `deduplicate` keeps the position of the first record of a
   // group, so a paper both sources found stays where OpenAlex ranked it and
   // only the arXiv-only papers are appended, before the title ranking runs.
   const merged = PaperBuilder.deduplicate([...openAlexPapers, ...arxivPapers]);
-  return rankPaperSearchResults(term, merged).slice(0, limit);
+  const comparableTitle = normalizeSearchText(term) && !getPaperKey(term);
+  return rankPaperSearchResults(term, merged)
+    .filter(paper => !comparableTitle || scorePaperSearchMatch(term, paper) >= 80)
+    .slice(0, limit);
 }

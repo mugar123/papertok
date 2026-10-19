@@ -30,6 +30,7 @@ import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
   ArrowLeft,
+  ArrowRight,
   ArrowSquareOut,
   BookmarkSimple,
   Brain,
@@ -65,15 +66,18 @@ import {
   Prohibit,
   ShareNetwork,
   Sigma,
+  Intersect,
   Sparkle,
   TrendUp,
   UserCheck,
   X,
 } from '@phosphor-icons/react';
+import { useSimilarFeed } from '../../hooks/useSimilarFeed.ts';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
 import { useIsPageArriving } from '../../hooks/usePageArrival.ts';
 import ScientificText from '../ScientificText.ts';
 import { Button } from '../ui/button.tsx';
+import AuthorDots from './AuthorDots.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import { Toggle } from '../ui/toggle.tsx';
@@ -87,7 +91,8 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // Before the card's own stylesheet on purpose: PaperCard.css restates a few
 // of the drawer's box declarations for the two sheets and has to come later
 // in the cascade to win them.
-import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../ui/popover.tsx';
 import AbstractSheet from './AbstractSheet.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import SharePanel from './SharePanel.tsx';
@@ -202,6 +207,7 @@ const RESOURCE_KIND_CONFIG = {
   material: { label: { en: 'Material' }, Icon: Package },
   version: { label: { en: 'Version' }, Icon: ClockCounterClockwise },
 };
+const SUBJECTS_ON_CARD = 2;
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const SECONDARY_NETWORK_DELAY_MS = 900;
 const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
@@ -413,6 +419,7 @@ const PaperCard = memo(function PaperCard({
   const heartTimer = useRef<number | null>(null);
   useEffect(() => () => clearTimeout(heartTimer.current!), []);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
+  const [topicsOpen, setTopicsOpen] = useState(false);
   // On a desktop the dots unfold every author under them; a phone
   // keeps the sheet (a tap on the row).
   const [authorsExpanded, setAuthorsExpanded] = useState(false);
@@ -428,6 +435,10 @@ const PaperCard = memo(function PaperCard({
   // a phone has no room for them there and keeps the bottom sheet.
   const isPhone = useIsPhone();
   const relatedInline = showRelated && !isPhone;
+  // The slot holds one face at a time: the abstract or the graph. The papers
+  // like this one open as a feed of their own (SimilarFeedLayer.jsx).
+  const slotAway = relatedInline;
+  const { openSimilar } = useSimilarFeed();
   // Once the connections have stood in the slot, the abstract coming back is
   // a swap, not the card's arrival: it slides in and does not replay that.
   const [slotSwapped, setSlotSwapped] = useState(false);
@@ -462,9 +473,6 @@ const PaperCard = memo(function PaperCard({
   // The face the primary button is pushing out (PaperCard.css, `.pc-action-out`)
   // and which way: forward to "Checking" or the library, back to the record.
   const [actionPush, setActionPush] = useState<{ from: 'record' | 'checking'; dir: 'forward' | 'back' } | null>(null);
-  const readButtonRef = useRef<HTMLButtonElement | null>(null);
-  // The button's width before its label changes, for the push to travel from.
-  const readButtonFrom = useRef<number | null>(null);
   const [linkedResources, setLinkedResources] = useState<{ paperId: string | null; items: PaperResearchResource[] }>({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
@@ -750,7 +758,7 @@ const PaperCard = memo(function PaperCard({
      shrinks back from the bottom; once that has finished everything is where
      it started, and the pins are let go. */
   const sheetRef = useRef<HTMLDivElement | null>(null);
-  const sheetGrown = expanded || authorsExpanded || relatedInline;
+  const sheetGrown = expanded || authorsExpanded || slotAway;
   const pinSheet = () => {
     const sheet = sheetRef.current;
     const frame = sheet?.parentElement;
@@ -841,7 +849,7 @@ const PaperCard = memo(function PaperCard({
       track.style.height = '';
     }, SLOT_MORPH_MS + 60);
     return () => clearTimeout(land);
-  }, [relatedInline, prefersReducedMotion]);
+  }, [slotAway, prefersReducedMotion]);
 
   const toggleExpanded = (e: SyntheticEvent, newState: boolean) => {
     e.stopPropagation();
@@ -884,11 +892,10 @@ const PaperCard = memo(function PaperCard({
       transition: { duration: prefersReducedMotion ? 0.08 : 0.18, ease: EASE_OUT },
     },
   };
-  /* The map slides in from the right as the abstract leaves to the left;
-     `popLayout` lifts the leaving face out of the flow, so the slot measures
-     only the arriving one. Going back is a return, not an arrival: the
-     abstract is simply there again and the map goes at once, and only the
-     slot's height eases. Reduced motion keeps the fade and drops the travel. */
+  /* The map slides in from the right as the abstract leaves to the left, and
+     closing reverses it. `popLayout` lifts the leaving face out of the flow,
+     so the slot measures only the arriving one. Reduced motion keeps the fade
+     and drops the travel. */
   const slotSlide = {
     enter: (direction: number) => ({
       opacity: 0,
@@ -899,13 +906,11 @@ const PaperCard = memo(function PaperCard({
       transform: 'translateX(0px)',
       transition: { duration: prefersReducedMotion ? 0.12 : SLOT_MORPH_MS / 1000, ease: EASE_IN_OUT },
     },
-    exit: (direction: number) => (direction < 0
-      ? { opacity: 0, transition: { duration: 0 } }
-      : {
-        opacity: 0,
-        transform: `translateX(${prefersReducedMotion ? 0 : -40}px)`,
-        transition: { duration: prefersReducedMotion ? 0.08 : 0.2, ease: EASE_OUT },
-      }),
+    exit: (direction: number) => ({
+      opacity: 0,
+      transform: `translateX(${prefersReducedMotion ? 0 : direction * -40}px)`,
+      transition: { duration: prefersReducedMotion ? 0.08 : 0.2, ease: EASE_OUT },
+    }),
   };
   const abstractKey = abstractText
     ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
@@ -940,7 +945,7 @@ const PaperCard = memo(function PaperCard({
       settleAbstractResize.current?.();
     };
     // The panel is a new node each time the connections give its place back.
-  }, [relatedInline]);
+  }, [slotAway]);
 
   /**
    * Whether the collapsed panel is hiding words, which is the only thing that
@@ -969,7 +974,7 @@ const PaperCard = memo(function PaperCard({
     }
     // With the connections up the abstract is only leaving: the verdict it
     // had stays, or its button blinks on the face sliding out.
-    if (relatedInline) return undefined;
+    if (slotAway) return undefined;
     let alive = true;
     let settleTimer: number | null = null;
     const read = () => {
@@ -1011,42 +1016,7 @@ const PaperCard = memo(function PaperCard({
       observer?.disconnect();
       window.removeEventListener('resize', settle);
     };
-  }, [abstractKey, abstractText, relatedInline]);
-
-  /* A card with no abstract shows the empty state in the middle of the room
-     the abstract would take, which is lower than the card's centre, where the
-     rail sits. The rail follows the state instead (`--rail-shift`, applied as
-     a `translate` in PaperCard.css), kept inside the card. Every other card
-     keeps its rail at the centre. */
-  useLayoutEffect(() => {
-    const card = cardRef.current;
-    if (!card) return undefined;
-    if (abstractText || relatedInline) {
-      card.style.removeProperty('--rail-shift');
-      return undefined;
-    }
-    const measure = () => {
-      const state = card.querySelector<HTMLElement>('.pc-abstract-empty .empty-state');
-      const rail = card.querySelector<HTMLElement>('.pc-side-actions');
-      if (!state || !rail) {
-        card.style.removeProperty('--rail-shift');
-        return;
-      }
-      const box = card.getBoundingClientRect();
-      const words = state.getBoundingClientRect();
-      const room = Math.max(0, (box.height - rail.offsetHeight) / 2 - 8);
-      const shift = (words.top + words.height / 2) - (box.top + box.height / 2);
-      card.style.setProperty('--rail-shift', `${Math.round(Math.max(-room, Math.min(room, shift)))}px`);
-    };
-    measure();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    observer?.observe(card);
-    // The state keeps its size while the rows above it settle (chips, a
-    // late badge) and move it; the box around it is what resizes then.
-    const room = card.querySelector<HTMLElement>('.pc-abstract');
-    if (room) observer?.observe(room);
-    return () => observer?.disconnect();
-  }, [abstractText, relatedInline]);
+  }, [abstractKey, abstractText, slotAway]);
 
   /**
    * The other half of the swap: the panel eases between the height it had and
@@ -1276,6 +1246,18 @@ const PaperCard = memo(function PaperCard({
     [paper.categories, paper.concepts, paper.primaryCategory]
   );
 
+  // The field leads the masthead; under it, two subjects and "+N", whose
+  // popover lists every one, the field included.
+  const topicItems = useMemo(() => [
+    ...(categoryLabel ? [{ key: 'primary', label: categoryLabel, topic: primaryTopic, lang: undefined, external: false }] : []),
+    ...paperTopicTags.flatMap((tag) => {
+      const topic = resolvePaperTopic(tag.value);
+      return topic ? [{ key: tag.key, label: tag.label, topic, lang: tag.lang, external: tag.source === 'concept' && !topic.reliable }] : [];
+    }),
+  ], [categoryLabel, paperTopicTags, primaryTopic]);
+  const subjectItems = topicItems.filter((item) => item.key !== 'primary');
+  const hiddenTopics = Math.max(0, subjectItems.length - SUBJECTS_ON_CARD);
+
   const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
     event.stopPropagation();
     const path = publicMode
@@ -1288,6 +1270,38 @@ const PaperCard = memo(function PaperCard({
     });
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
+  const topicsList = (
+    <ul className="pc-topics-pop-list">
+      {topicItems.map((item) => (
+        <li key={item.key}>
+          {item.topic ? (
+            <button
+              type="button"
+              className="pc-topics-pop-item"
+              lang={item.lang}
+              onClick={(event) => {
+                setTopicsOpen(false);
+                openTopic(event, item.topic!);
+              }}
+            >
+              <span className="pc-topics-pop-copy">
+                <span className="pc-topics-pop-name">{item.label}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+              </span>
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          ) : (
+            <span className="pc-topics-pop-item">
+              <span className="pc-topics-pop-copy">
+                <span className="pc-topics-pop-name">{item.label}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+              </span>
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 
   /* The watermark for the paper's branch of science.
    *
@@ -1415,10 +1429,8 @@ const PaperCard = memo(function PaperCard({
     }
     const paperId = paper.id;
     const { domain } = institution;
-    // Every label change is a push, and records the button's width first
-    // for the layout effect below to travel from.
+    // Every label change is a push.
     const push = (from: 'record' | 'checking', dir: 'forward' | 'back') => {
-      readButtonFrom.current = readButtonRef.current?.offsetWidth || null;
       setActionPush({ from, dir });
     };
     let checkingSince = 0;
@@ -1575,18 +1587,6 @@ const PaperCard = memo(function PaperCard({
   const primaryActionShortLabel = libraryLabel ? restingActionLabel : restingActionLabel.split(' ')[0];
   const actionFace = libraryLabel ? 'library' : isCheckingLibrary ? 'checking' : 'record';
   const actionFaceClass = isCheckingLibrary ? ' pc-action-checking' : '';
-  /* A label change changes the button's width, and "Read in plain words"
-     beside it jumped in one frame. The button travels from the width it had
-     to the one it lands on, on the push's clock; the sibling rides on the
-     layout. `overflow: hidden` keeps the arriving word inside a box still
-     narrower than it. Reduced motion keeps the jump and the cross-fade. */
-  useLayoutEffect(() => {
-    const button = readButtonRef.current;
-    const from = readButtonFrom.current;
-    readButtonFrom.current = null;
-    if (!button || from == null || prefersReducedMotion) return;
-    animateSize(button, 'width', from, 280, EASE_IN_OUT, { overflow: 'hidden' });
-  }, [actionFace, prefersReducedMotion]);
   /* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
    `.pc-action-label` es `display: none` (PaperCard.css), y eso no
    esconde el texto: lo saca del árbol de accesibilidad, así que el
@@ -1600,7 +1600,6 @@ const PaperCard = memo(function PaperCard({
    icono servía para leer aquí y para salir a la fuente. */
   const readAction = (
     <Button
-      ref={readButtonRef}
       className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
       onClick={handleOpenPaper}
       disabled={isResolvingAccess}
@@ -1729,24 +1728,24 @@ const PaperCard = memo(function PaperCard({
           {primaryTopic ? (
             <button
               type="button"
-              className="pc-category-pill pc-topic-link"
+              className="pc-masthead-field pc-topic-link"
               onClick={(event) => openTopic(event, primaryTopic)}
               title={`${'Explore'} ${categoryLabel}`}
             >
               {categoryLabel}
             </button>
-          ) : (
-            <span className="pc-category-pill">{categoryLabel}</span>
+          ) : categoryLabel && (
+            <span className="pc-masthead-field">{categoryLabel}</span>
           )}
+          {categoryLabel && <span className="pc-meta-dot">·</span>}
           {hasFollowedAuthor && (
             <>
-              <span className="pc-meta-dot">·</span>
               <span className="pc-followed-badge">
                 <UserCheck size={12} /> {'Followed author'}
               </span>
+              <span className="pc-meta-dot">·</span>
             </>
           )}
-          <span className="pc-meta-dot">·</span>
           <span className="pc-date">{paper.year}</span>
 
           {(paper.citationCountKnown || paper.citationCount! > 0) && (
@@ -1764,101 +1763,147 @@ const PaperCard = memo(function PaperCard({
                   onClick={(event) => event.stopPropagation()}
                   aria-label={`${paper.citationCount} ${'citations on Scopus'}`}
                 >
-                  {paper.citationCount} {'Citations on Scopus'}
+                  {paper.citationCount} {'citations on Scopus'}
                 </a>
               ) : (
                 <span className="pc-citations">
-                  {paper.citationCount} {'Citations'}
+                  {paper.citationCount} {'citations'}
                 </span>
               )}
             </>
           )}
         </div>
 
-        {/* What the paper is filed under. Machine data, so it belongs with the
-            meta line above the headline — not in the
-            action row, where a paper with many concepts used to push the
-            reading buttons past the sheet and out of sight. */}
-        {paperTopicTags.length > 0 && (
-          <div
-            className="pc-topics"
-            role="group"
-            aria-label={'Paper topics'}
-          >
-            {paperTopicTags.map((tag) => {
-              const topic = resolvePaperTopic(tag.value);
-              if (!topic) return null;
-              return (
+        {/* Under the masthead, over the title: the paper's subjects, then what
+            it is and whether it opens. */}
+        <div className="pc-filed">
+          {subjectItems.length > 0 && (
+            <div className="pc-topics" role="group" aria-label={'Paper topics'}>
+              {subjectItems.slice(0, SUBJECTS_ON_CARD).map((item) => (item.topic ? (
                 <button
-                  key={tag.key}
+                  key={item.key}
                   type="button"
-                  className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
-                  lang={tag.lang}
-                  onClick={(event) => openTopic(event, topic)}
-                  title={`${'Explore'} ${topic.label}`}
+                  className={`pc-semantic-tag pc-topic-link ${item.external ? 'pc-topic-link--external' : ''}`}
+                  lang={item.lang}
+                  onClick={(event) => openTopic(event, item.topic!)}
+                  title={`${'Explore'} ${item.topic.label}`}
                 >
-                  {tag.label}
+                  {item.label}
                 </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Their own line under the topic tags: what this paper is, whether it
-            opens, and where the record of it lives. Each chip carries the
-            sentence behind its word in `title`, because "Preprint" is not a
-            word a reader outside academia arrives knowing. */}
-        <div className="pc-chips">
-          {reviewTag && (() => {
-            const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
-            return (
-              <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
-                <Glyph size={12} weight="bold" /> {reviewTag.label}
-              </span>
-            );
-          })()}
-
-          {/* The availability chip resolves late: a paper with no readable copy
-              of its own goes to Unpaywall after the card settles, and the answer
-              can turn Closed access into Open version a second in. Swapping the
-              word outright reads as a glitch, so the slot cross-fades. */}
-          <AnimatePresence mode="wait" initial={false}>
-            {accessTag && (() => {
-              const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
+              ) : (
+                <span key={item.key} className="pc-semantic-tag">{item.label}</span>
+              )))}
+              {hiddenTopics > 0 && (isPhone ? (
+                <Drawer open={topicsOpen} onOpenChange={setTopicsOpen}>
+                  <DrawerTrigger
+                    render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
+                  >
+                    {`+${hiddenTopics} more`}
+                  </DrawerTrigger>
+                  {/* On a phone the list is a sheet under the thumb; its clicks
+                      stay out of the card, whose double tap is a like. */}
+                  <DrawerContent
+                    className="pc-authors-modal-sheet pc-topics-sheet"
+                    viewportProps={{ onClick: (event) => event.stopPropagation() }}
+                    style={{ '--area-accent': areaAccentForPaper(paper) }}
+                  >
+                    <DrawerHandle />
+                    <div className="pc-authors-modal-header">
+                      <DrawerTitle render={<h3 />}>{'Topics'}</DrawerTitle>
+                      <DrawerClose render={<Button variant="ghost" size="icon-sm" aria-label={'Close topics'} />}>
+                        <X size={16} aria-hidden="true" />
+                      </DrawerClose>
+                    </div>
+                    {topicsList}
+                  </DrawerContent>
+                </Drawer>
+              ) : (
+                <Popover open={topicsOpen} onOpenChange={setTopicsOpen}>
+                  <PopoverTrigger
+                    render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
+                  >
+                    {`+${hiddenTopics} more`}
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="pc-topics-pop" style={{ '--area-accent': areaAccentForPaper(paper) }}>
+                    <PopoverTitle className="pc-topics-pop-title">{'Topics'}</PopoverTitle>
+                    {topicsList}
+                  </PopoverContent>
+                </Popover>
+              ))}
+            </div>
+          )}
+          <div className="pc-chips">
+            {reviewTag && (() => {
+              const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
               return (
-                <motion.span
-                  key={accessTag.key}
-                  className="pc-chip"
-                  data-tone={accessTag.tone}
-                  title={accessTag.hint}
-                  // Full transform strings, not the `scale` shorthand: this lands
-                  // mid-scroll and has to stay on the compositor.
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
-                  animate={{ opacity: 1, transform: 'scale(1)' }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
-                  transition={{
-                    duration: prefersReducedMotion ? 0.1 : 0.24,
-                    ease: EASE_OUT_EXPO,
-                  }}
-                >
-                  <Glyph size={12} weight="bold" /> {accessTag.label}
-                </motion.span>
+                <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
+                  <Glyph size={12} weight="bold" /> {reviewTag.label}
+                </span>
               );
             })()}
-          </AnimatePresence>
 
-          {paper.doi && (
-            <a
-              className="pc-chip pc-chip--link"
-              href={safeDoiUrl(paper.doi)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title={'Open the DOI record'}
-            >
-              <ArrowSquareOut size={12} /> DOI
-            </a>
-          )}
+            <AnimatePresence mode="wait" initial={false}>
+              {accessTag && (() => {
+                const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
+                return (
+                  <motion.span
+                    key={accessTag.key}
+                    className="pc-chip"
+                    data-tone={accessTag.tone}
+                    title={accessTag.hint}
+                    initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+                    animate={{ opacity: 1, transform: 'scale(1)' }}
+                    exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+                    transition={{
+                      duration: prefersReducedMotion ? 0.1 : 0.24,
+                      ease: EASE_OUT_EXPO,
+                    }}
+                  >
+                    <Glyph size={12} weight="bold" /> {accessTag.label}
+                  </motion.span>
+                );
+              })()}
+            </AnimatePresence>
+
+            {paper.doi && (
+              <a
+                className="pc-chip pc-chip--link"
+                href={safeDoiUrl(paper.doi)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title={'Open the DOI record'}
+              >
+                <ArrowSquareOut size={12} /> DOI
+              </a>
+            )}
+
+            <AnimatePresence initial={false}>
+              {researchResources.map((resource) => {
+                const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
+                const ResourceIcon = config.Icon;
+                const resourceLabel = config.label[language];
+                return (
+                  <motion.a
+                    key={resource.id || `${resource.kind}:${resource.url || resource.title}`}
+                    className={`pc-chip pc-chip--link pc-linked-resource--${resource.kind}`}
+                    href={safeExternalUrl(resource.url) || undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    title={resource.title}
+                    aria-label={`${resourceLabel}: ${resource.title}`}
+                    initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+                    animate={{ opacity: 1, transform: 'scale(1)' }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: prefersReducedMotion ? 0.1 : 0.24, ease: EASE_OUT_EXPO }}
+                  >
+                    <ResourceIcon size={12} /> {resourceLabel}
+                  </motion.a>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         </div>
 
         <AnimatePresence initial={false}>
@@ -1983,16 +2028,7 @@ const PaperCard = memo(function PaperCard({
                 ? `+${paper.authors.length - 3} authors, show all ${paper.authors.length} authors`
                 : `Show the ${paper.authors.length === 1 ? 'author' : `${paper.authors.length} authors`}`}
             >
-              {paper.authors.slice(0, 3).map((author, i) => (
-                <span key={i} className="pc-author-avatar" style={{ '--i': i }} aria-hidden="true">
-                  {((author as PaperAuthor).name || author as string).charAt(0).toUpperCase()}
-                </span>
-              ))}
-              {paper.authors.length > 3 && (
-                <span className="pc-author-avatar" style={{ '--i': 3 }} aria-hidden="true">
-                  {`+${paper.authors.length - 3}`}
-                </span>
-              )}
+              <AuthorDots authors={paper.authors} />
             </button>
           )}
           {(paper.authors || []).length > 0 && (
@@ -2035,11 +2071,27 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </div>
           )}
+          {hasRelated && !publicMode && (
+            <div className="pc-similar-row">
+              <Button
+                variant="similar"
+                size="sm"
+                aria-haspopup="dialog"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openSimilar(paper, event.currentTarget);
+                }}
+              >
+                <Intersect size={14} aria-hidden="true" />
+                {'Similar papers'}
+              </Button>
+            </div>
+          )}
         </div>
 
-        <div ref={slotRef} className="pc-slot">
+        <div ref={slotRef} className={`pc-slot${abstractText ? '' : ' pc-slot--no-abstract'}`}>
         <div ref={slotTrackRef} className="pc-slot-track">
-        <AnimatePresence mode="popLayout" initial={false} custom={relatedInline ? 1 : -1}>
+        <AnimatePresence mode="popLayout" initial={false} custom={slotAway ? 1 : -1}>
         {relatedInline ? (
           <motion.div
             key="connections"
@@ -2066,7 +2118,7 @@ const PaperCard = memo(function PaperCard({
           className="pc-slot-face"
           variants={slotSlide}
           custom={-1}
-          initial={false}
+          initial="enter"
           animate="center"
           exit="exit"
         >
@@ -2148,97 +2200,6 @@ const PaperCard = memo(function PaperCard({
         </div>
         </div>
 
-        <AnimatePresence initial={false}>
-          {researchResources.length > 0 && (
-            <motion.div
-              key={`linked-resources-${paperViewKey}`}
-              className="pc-linked-resources-slot"
-              // This used to be the same choreography as
-              // `.pc-project-badge-slot` above; it no longer is. That badge
-              // moved to 200ms on the compositor (task 12) and this block
-              // still runs the older shape they once shared: a measured
-              // `height: 0 -> auto` tween at 0.45s, and inside it the whole
-              // label-and-chips block on `y`/`scale` after a 300ms delay --
-              // main-thread motion inside the feed, knowingly left as-is
-              // here (a follow-up task, not this one, owns bringing it to
-              // the badge's 200ms shape). Reserving the height in one layout
-              // pass made everything below jolt down in a single frame, and
-              // that snap -- not the easing -- read as abrupt; the measured
-              // tween eases the space open instead, and the block only fades
-              // in once the space has mostly opened. No overflow clip here
-              // either -- the resource chips are links whose
-              // `:focus-visible` ring overhangs by 4px -- so it is the fade
-              // delay that keeps content from ghosting over what sits below
-              // while the space opens.
-              initial={prefersReducedMotion
-                ? { opacity: 0 }
-                : { height: 0 }}
-              animate={prefersReducedMotion
-                ? { opacity: 1 }
-                : { height: 'auto' }}
-              exit={prefersReducedMotion
-                ? { opacity: 0 }
-                : { height: 0, opacity: 0 }}
-              transition={prefersReducedMotion
-                ? { duration: 0.12 }
-                : { duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
-            >
-              <div className="pc-linked-resources-slot-inner">
-                <motion.div
-                  className="pc-linked-resources-motion"
-                  initial={prefersReducedMotion
-                    ? false
-                    : { opacity: 0, transform: 'translateY(10px) scale(0.98)' }}
-                  animate={{ opacity: 1, transform: 'translateY(0px) scale(1)' }}
-                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                  transition={prefersReducedMotion
-                    ? { duration: 0.12 }
-                    : {
-                      opacity: { delay: 0.3, duration: 0.5, ease: 'easeOut' },
-                      default: { delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
-                    }}
-                >
-                  <div className="pc-linked-resources" aria-label={'Associated research resources'}>
-                    <span className="pc-linked-resources-label"><Database size={14} /> {'Resources'}</span>
-                    <div className="pc-linked-resources-list">
-                      {researchResources.map((resource, index) => {
-                        const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
-                        const ResourceIcon = config.Icon;
-                        const resourceLabel = config.label[language];
-                        const resourceKey = resource.id || `${resource.kind}:${resource.url || resource.title}`;
-                        return (
-                          <motion.a
-                            key={resourceKey}
-                            className={`pc-linked-resource pc-linked-resource--${resource.kind}`}
-                            href={safeExternalUrl(resource.url) || undefined}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                            title={resource.title}
-                            aria-label={`${resourceLabel}: ${resource.title}`}
-                            initial={prefersReducedMotion ? false : { opacity: 0, transform: 'translateY(3px)' }}
-                            animate={{ opacity: 1, transform: 'translateY(0px)' }}
-                            transition={prefersReducedMotion
-                              ? { duration: 0.12 }
-                              // Base delay sits just after the block starts
-                              // fading in (0.3s) -- earlier and the chips
-                              // would animate under a still-transparent
-                              // parent, wasting the cascade.
-                              : { duration: 0.3, delay: 0.42 + Math.min(index, 4) * 0.05, ease: EASE_OUT_EXPO }}
-                          >
-                            <ResourceIcon size={13} />
-                            <span>{resourceLabel}</span>
-                            <ArrowSquareOut size={11} />
-                          </motion.a>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Two reading actions first, then the utilities behind a rule: what to
             read is the decision, sharing and related work are afterthoughts. */}

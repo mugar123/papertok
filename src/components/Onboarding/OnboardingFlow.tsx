@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
-import { CATEGORIES } from '../../data/categories.ts';
+import { INTEREST_AREAS } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import InstitutionLink from '../Institution/InstitutionLink.tsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../Public/WelcomeShell.tsx';
@@ -254,7 +254,7 @@ export default function OnboardingFlow() {
     // An area let go takes its topics with it, so ticking it again starts
     // from the whole area rather than from a narrowing nobody can see.
     if (removing) {
-      const ofArea = new Set(Object.keys(CATEGORIES[key].subcategories));
+      const ofArea = new Set(Object.keys(INTEREST_AREAS[key].subcategories));
       setSelectedTopics(previous => new Set([...previous].filter(id => !ofArea.has(id))));
     }
   };

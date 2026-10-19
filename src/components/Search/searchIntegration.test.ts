@@ -21,13 +21,14 @@ async function readCode(relativePath: string|URL) {
 const page = await readCode('./SearchPage.tsx');
 const palette = await readCode('./SearchCommand.tsx');
 const paletteSearch = await readCode('../../hooks/useEntitySearch.ts');
+const paletteSources = await readCode('../../services/entitySearchService.ts');
 
 // The palette is checked as one body of code: the component owns what is
 // painted and the hook owns what is queried, and every rule here is about the
 // pair.
 const SURFACES = [
   { name: 'the search page', code: page },
-  { name: 'the command palette', code: `${palette}\n${paletteSearch}` },
+  { name: 'the command palette', code: `${palette}\n${paletteSearch}\n${paletteSources}` },
 ];
 
 test('the search never announces itself as unavailable', () => {
@@ -40,65 +41,18 @@ test('the search never announces itself as unavailable', () => {
   }
 });
 
-test('both surfaces settle once', () => {
-  // Results used to be revealed in two phases — whatever had arrived by 520 ms,
-  // then every straggler painting on its own — which assembled the search on
-  // screen over several seconds and reshuffled the ranking as it went.
-  //
-  // The page was fixed first and the palette was deliberately left out, with
-  // the reason written down right here: it "opens over the feed with no
-  // skeleton to hide behind", so waiting on the slowest of six sources before
-  // showing anything was the worse trade there. That reason is gone — the
-  // palette has a skeleton now, which is exactly what buys the wait — and the
-  // exception went with it.
-  for (const [name, code] of [['the page', page], ['the palette', paletteSearch]]) {
-    assert.doesNotMatch(code, /SEARCH_INITIAL_REVEAL_MS/, name);
-    assert.doesNotMatch(code, /Promise\.race/, `${name}: no partial reveal race`);
-    assert.match(code, /await Promise\.all\(tasks\)/, `${name}: one settle for the whole fan-out`);
-  }
+test('both surfaces report analytics only after their search settles', () => {
+  assert.match(page, /await Promise\.all\(tasks\)/);
+  assert.match(paletteSources, /await Promise\.all\(SEARCH_SECTIONS\.map/);
+  assert.ok(paletteSearch.indexOf('await searchEntities(') < paletteSearch.indexOf("trackEvent('search_performed'"));
+  assert.match(paletteSearch, /if \(controller\.signal\.aborted\) return;/);
 });
 
-test('neither surface paints a section while an answer is still owed', () => {
-  // The five sources land in one commit, and nothing paints before it: a
-  // section arriving on its own would push everything down under a reader who
-  // had already started reading.
-  assert.match(page, /hasVisibleResults && !searchPending/, 'the page gates its sections');
-  assert.match(palette, /!isPending && renderedSections/, 'the palette gates its sections');
-  // Owed from the first keystroke, whatever is already on screen: the debounce
-  // is part of the wait. Otherwise a first query shows a blank sheet before its
-  // skeleton, and a later one keeps the previous query's rows up, where Enter
-  // still opens one of them.
-  assert.match(
-    paletteSearch,
-    /const isPending = isSearching\s*\|\|\s*\(Boolean\(typedTerm\) && resultsTerm !== typedTerm\)/,
-  );
-  assert.match(palette, /\{isPending && \(\s*<div className="sc-skeleton"/, 'the skeleton stands in from the first keystroke');
-  assert.match(palette, /hasSearched && !isPending && totalResults === 0/, 'and the last "No results" does not show through the debounce');
-  // And what it gates is the real list, not some other variable that happens to
-  // be named like one: `renderedSections` is built from the ranked order.
-  assert.match(
-    palette,
-    /const renderedSections = orderedSections\.map\(/,
-    'the gated value is the ranked section list',
-  );
-  // And what stands in the gap is a skeleton, not an empty sheet: waiting for
-  // every source is only tolerable if the wait has a shape.
-  assert.match(page, /className="search-loading-state"/, 'the page shows a skeleton while it waits');
-  assert.match(palette, /className="sc-skeleton"/, 'the palette shows a skeleton while it waits');
-});
-
-test('a search never paints on top of the last one', () => {
-  // The reveal used to apply only the sections that had resolved, on top of
-  // whatever the previous query had left on screen. A source that ran out its
-  // timeout never wrote its section, so its old rows survived the whole next
-  // search: proteins under Papers, quantum physics under Authors, and nothing
-  // on screen saying they answered different questions.
-  assert.match(
-    paletteSearch,
-    /const revealedResults = \{ \.\.\.EMPTY_RESULTS \};/,
-    'a search paints from empty, never on top of the last one',
-  );
-  assert.match(paletteSearch, /setResults\(revealedResults\);/, 'and in one commit');
+test('the palette hides stale queries while providers collect independent sections', () => {
+  assert.match(page, /hasVisibleResults && !searchPending/);
+  assert.match(paletteSearch, /answer\?\.term === query\.trim\(\)/);
+  assert.match(paletteSources, /if \(!signal\.aborted\) onUpdate\(snapshot\)/);
+  assert.match(paletteSources, /pending: snapshot\.pending\.filter/);
 });
 
 test('both surfaces build their section values in one place', () => {
@@ -179,7 +133,10 @@ function reducedMotionBlocks(css: string) {
   return blocks;
 }
 
-for (const stylesheet of ['./SearchPage.css', './SearchCommand.css']) {
+// Neither stylesheet hides content behind an entrance today (the page has no
+// entrance animations; the palette's hold their first frame through the fill,
+// pinned by paletteMotion.test.ts). One added later is still checked.
+for (const [stylesheet, hidesStatically] of [['./SearchPage.css', false], ['./SearchCommand.css', false]] as const) {
   test(`${stylesheet.replace('./', '')} keeps its content visible without motion`, async () => {
     const css = withoutComments(await readFile(new URL(stylesheet, import.meta.url), 'utf8'));
 
@@ -194,7 +151,7 @@ for (const stylesheet of ['./SearchPage.css', './SearchCommand.css']) {
       .filter(rule => /opacity:\s*0\s*;/.test(rule.body) && /animation:/.test(rule.body))
       .flatMap(rule => rule.selectors);
 
-    assert.ok(atRisk.length > 0, 'expected to have found the animated entrances at all');
+    if (hidesStatically) assert.ok(atRisk.length > 0, 'expected to have found the animated entrances at all');
     for (const selector of atRisk) {
       assert.ok(
         restored.has(selector),
@@ -498,4 +455,101 @@ test('the search row and the explorer build a project name with the same helper'
     /project\.acronym \|\| project\.title/,
     'the acronym-only name, which orphaned the follow, is gone from the page',
   );
+});
+
+// Execute the actual grouping renderer with React elements, without mounting
+// providers or adding a production API for the test.
+import * as React from 'react';
+import ts from 'typescript';
+import vm from 'node:vm';
+
+const componentSource = await readFile(new URL('./SearchCommand.tsx', import.meta.url), 'utf8');
+const groupingSource = componentSource.slice(componentSource.indexOf("  let firstResultValue = '';"), componentSource.indexOf('  const hasQuery ='));
+const compileGrouping = ts.transpileModule(`(function () { ${groupingSource}; return renderedSections; })()`, {
+  compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+
+function groupedRows(activeSection = 'all') {
+  let chosen = activeSection;
+  const data = { papers: Array.from({ length: 10 }, (_, id) => ({ id })), authors: Array.from({ length: 6 }, (_, id) => ({ id })), topics: [], institutions: [], projects: [] };
+  const elements = vm.runInNewContext(compileGrouping, {
+    React, results: data,
+    rankedSections: Object.keys(data), activeSection,
+    SECTION_ICONS: Object.fromEntries(Object.keys(data).map(key => [key, 'svg'])),
+    copy: { papers: 'Papers', authors: 'Authors', topics: 'Topics', institutions: 'Institutions', projects: 'Projects' },
+    sectionContent: Object.fromEntries(Object.entries(data).map(([section, items]) => [section, () => items.map(item => React.createElement('row', { key: item.id, value: `${section}-${item.id}` }))])),
+    CommandGroup: 'group', CommandItem: 'row', ArrowRight: 'svg', changeSection: (value: string) => { chosen = value; },
+  }) as React.ReactElement<{ children: React.ReactNode }>[];
+  return { groups: elements.filter(Boolean), chosen: () => chosen };
+}
+
+test('All caps each section at four rows and Show all opens that type without navigation', () => {
+  const rendered = groupedRows();
+  assert.equal(rendered.groups.length, 2);
+  const papers = React.Children.toArray(rendered.groups[0].props.children) as React.ReactElement<{ value: string; onSelect: () => void; children?: React.ReactNode }>[];
+  assert.deepEqual(papers.slice(0, 4).map(row => row.props.value), ['papers-0', 'papers-1', 'papers-2', 'papers-3']);
+  assert.equal(papers.length, 5);
+  assert.equal(papers[4].props.value, 'show-all-papers');
+  papers[4].props.onSelect();
+  assert.equal(rendered.chosen(), 'papers');
+  const expanded = groupedRows('papers');
+  assert.equal(expanded.groups.length, 1);
+  assert.equal(React.Children.toArray(expanded.groups[0].props.children).length, 10);
+});
+
+test('the type strip retains all sections when a settled count is zero', () => {
+  const strip = palette.slice(palette.indexOf('<TabsList'), palette.indexOf('</TabsList>'));
+  assert.match(strip, /\['all', \.\.\.orderedSections\]/);
+  assert.doesNotMatch(strip, /\.filter\(/);
+  assert.doesNotMatch(strip, /disabled=/, 'empty types remain available for the next query');
+  assert.match(strip, /pending \? '—' : count/);
+  assert.match(strip, /aria-label=/);
+});
+
+test('recents cannot display another account or save suggestions and unanswered queries', () => {
+  assert.match(palette, /recentOwner\.uid === uid \? recentOwner\.queries : \[\]/);
+  assert.match(palette, /recentOwner\.uid !== uid/);
+  assert.match(palette, /!typedQuery\.current/);
+  assert.match(palette, /resultsTerm !== query\.trim\(\)/);
+  assert.match(palette, /totalResults === 0/);
+  assert.match(palette, /setRecentOwner\(\{ uid, queries: \[\] \}\)/);
+});
+
+test('changing account clears recent queries before a closed palette can save them to the next UID', () => {
+  const remember = componentSource.slice(componentSource.indexOf('  const rememberQuery ='), componentSource.indexOf('  // Cleared on the way in'));
+  const openingEffect = componentSource.match(/useLayoutEffect\(\(\) => \{([\s\S]*?)\n {2}\}, \[open, reset, uid, recentOwner.uid\]\);/)?.[1];
+  assert.ok(openingEffect);
+  const code = ts.transpileModule(`${remember} ${openingEffect}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  for (const uid of ['bob', undefined]) {
+    let memory: { uid?: string; queries: string[] } = { uid: 'alice', queries: ['Private Alice query'] };
+    const writes: string[] = [];
+    vm.runInNewContext(code, {
+      uid, open: false, recentOwner: memory, typedQuery: { current: true },
+      hasSearched: true, resultsTerm: 'Private Alice query', query: 'Private Alice query', totalResults: 3, isPending: false,
+      useEffectEvent: (callback: () => void) => callback,
+      setRecentOwner: (value: typeof memory) => { memory = value; },
+      updateRecentSearches: (owner: string) => { writes.push(owner); return ['Private Alice query']; },
+    });
+    assert.equal(memory.uid, uid);
+    assert.equal(memory.queries.length, 0);
+    assert.deepEqual(writes, []);
+  }
+});
+
+
+test('the default keyboard target follows the selected view, preserving manual choices and touch deselection', () => {
+  const expression = componentSource.match(/value: (hasQuery && !manualSelection[^,]+),/)?.[1];
+  assert.ok(expression);
+  const state = { hasQuery: true, firstResultValue: 'author-karpathy', selectedValue: 'paper-earlier' };
+  assert.equal(vm.runInNewContext(expression, { ...state, manualSelection: false }), 'author-karpathy');
+  assert.equal(vm.runInNewContext(expression, { ...state, manualSelection: true }), 'paper-earlier');
+  assert.equal(vm.runInNewContext(expression, { ...state, selectedValue: '', manualSelection: false }), '');
+});
+
+
+test('typing preserves the selected type and the type strip is available before a query', () => {
+  const changeQuery = componentSource.slice(componentSource.indexOf('  const changeQuery ='), componentSource.indexOf('  const renderFollow ='));
+  assert.doesNotMatch(changeQuery, /setActiveSection/);
+  const aboveStrip = componentSource.slice(componentSource.indexOf('</CommandInput>'), componentSource.indexOf('<TabsList'));
+  assert.doesNotMatch(aboveStrip, /hasQuery/);
 });

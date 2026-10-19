@@ -1,5 +1,5 @@
-import type { Dispatch, KeyboardEvent, MouseEvent, PropsWithChildren, ReactElement, SetStateAction } from 'react';
-import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { Dispatch, MouseEvent, PropsWithChildren, ReactElement, SetStateAction } from 'react';
+import type { Paper } from '../../models/Paper.ts';
 import type { FollowInput } from '../../utils/following.ts';
 import type { useEntitySearch } from '../../hooks/useEntitySearch.ts';
 type SearchResults = ReturnType<typeof useEntitySearch>['results'];
@@ -8,11 +8,11 @@ import { Children, useState, useEffect, useMemo, useRef, useCallback } from 'rea
 import {
   ArrowClockwise,
   ArrowLeft,
+  CaretDown,
+  Funnel,
   Briefcase,
   Buildings,
   Check,
-  CircleNotch,
-  Compass,
   FileText,
   Lightbulb,
   MagnifyingGlass,
@@ -21,6 +21,7 @@ import {
   TrendUp,
   Users,
   WarningCircle,
+  X,
 } from '@phosphor-icons/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -47,11 +48,17 @@ import {
   outageAffectsFilter,
 } from '../../utils/searchOutage.ts';
 import PaperCard from '../Feed/PaperCard.tsx';
+import Petri from '../Onboarding/Petri.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import { Button } from '../ui/button.tsx';
+import { ListRow, ListRowAuthors, PaperListRow } from '../Lists/ListRow.tsx';
 import PaperOverlay from '../Feed/PaperOverlay.tsx';
 import PDFViewer from '../PDF/PDFViewer.tsx';
-import ScientificText from '../ScientificText.ts';
 import { Input } from '../ui/input.tsx';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
+import useIsPhone from '../../hooks/useIsPhone.ts';
+import '../Feed/SharePanel.css';
 import { Toggle } from '../ui/toggle.tsx';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
 import { getProjectDisplayName } from '../../utils/entityMetadata.ts';
@@ -78,6 +85,71 @@ const SEARCH_FILTER_OPTIONS = [
   { id: 'projects', label: 'Projects', Icon: Briefcase },
   { id: 'topics', label: 'Topics', Icon: Lightbulb },
 ];
+
+// The field already opens on a magnifier, so "everything" takes a funnel
+// rather than looking like a second search button.
+const SCOPE_OPTIONS = SEARCH_FILTER_OPTIONS.map(option => (
+  option.id === 'all' ? { ...option, label: 'Everything', Icon: Funnel } : option
+));
+
+/**
+ * What the query searches: a select at the end of the field on desktop. On a
+ * phone the field keeps its width for the query, so the scope collapses to its
+ * icon and opens a bottom drawer of thumb-sized rows.
+ */
+function SearchScope({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const isPhone = useIsPhone();
+  const current = SCOPE_OPTIONS.find(option => option.id === value) ?? SCOPE_OPTIONS[0];
+  if (isPhone) {
+    return (
+      <Drawer>
+        <DrawerTrigger className="search-scope-icon-trigger" aria-label={`Search in: ${current.label}`}>
+          <current.Icon size={18} aria-hidden="true" />
+          <CaretDown size={12} aria-hidden="true" />
+        </DrawerTrigger>
+        <DrawerContent className="pc-share-sheet">
+          <DrawerHandle />
+          <DrawerTitle render={<h2 />} className="pc-share-sheet-title">{'Search in'}</DrawerTitle>
+          <ul className="pc-share-list">
+            {SCOPE_OPTIONS.map(({ id, label, Icon }) => (
+              <li key={id}>
+                <DrawerClose
+                  className="pc-share-row search-scope-row"
+                  aria-current={id === value ? 'true' : undefined}
+                  onClick={() => onChange(id)}
+                >
+                  <Icon size={20} aria-hidden="true" />
+                  {label}
+                  {id === value && <Check size={18} aria-hidden="true" className="search-scope-row-check" />}
+                </DrawerClose>
+              </li>
+            ))}
+          </ul>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+  return (
+    <Select
+      items={SCOPE_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
+      value={value}
+      onValueChange={(next) => onChange(String(next))}
+    >
+      <SelectTrigger size="sm" className="search-scope-trigger" aria-label={'Search in'}>
+        <current.Icon size={15} aria-hidden="true" />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end" alignItemWithTrigger={false}>
+        {SCOPE_OPTIONS.map(({ id, label, Icon }) => (
+          <SelectItem key={id} value={id}>
+            <Icon size={15} aria-hidden="true" />
+            {label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
 const wait = (delayMs: number) => new Promise(resolve => setTimeout(resolve, delayMs));
 
@@ -106,27 +178,11 @@ function settleSearch<T>(promise: Promise<T[]>, fallback: T[] = [], timeoutMs = 
   });
 }
 
-function handleSearchItemKeyDown(event: KeyboardEvent, action: () => void) {
-  if (event.target !== event.currentTarget) return;
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    action();
-  }
-}
-
 /**
  * Ranks the sections by moving them in the DOM, so what a screen reader hears
  * and what a keyboard walks match what everyone else sees.
- *
- * Moving a node does cancel and restart its CSS animations — `insertBefore`
- * detaches the element first, and a subtree that leaves the document loses its
- * running animations. That used to blank a section that was already on screen
- * and re-enter it row by row, several times per search, because the ranking was
- * recomputed as each straggling source landed. The fix is upstream: the page
- * now settles once, so this comparator runs on a result set that no longer
- * changes underneath it. Expressing the rank with flexbox `order` instead would
- * also stop the restarts, but at the price of a reading order that no longer
- * matches the visual one.
+ * Flexbox `order` would rank them too, but with a reading order that no
+ * longer matches the visual one.
  */
 function OrderedSearchSections({ children, preferredSection }: PropsWithChildren<{ preferredSection: string | null }>) {
   return (Children.toArray(children) as ReactElement<{ 'data-section': string }>[]).sort((left, right) => (
@@ -155,21 +211,23 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: Fo
       aria-label={label}
       title={label}
     >
-      {following
-        ? <Check size={14} aria-hidden="true" />
-        : <Plus size={14} aria-hidden="true" />}
-      <span>{label}</span>
+      {following ? (
+        <>
+          <Check size={14} aria-hidden="true" className="search-follow-rest" />
+          <span className="search-follow-rest">{label}</span>
+          {/* Shown on pointer hover: what pressing it now does. Keyboard focus
+              keeps "Following", the button's accessible name. */}
+          <X size={14} aria-hidden="true" className="search-follow-undo" />
+          <span className="search-follow-undo" aria-hidden="true">{'Unfollow'}</span>
+        </>
+      ) : (
+        <>
+          <Plus size={14} aria-hidden="true" />
+          <span>{label}</span>
+        </>
+      )}
     </Toggle>
   );
-}
-
-function formatPaperDate(paper: Paper, locale: string) {
-  const dateValue = paper.published || paper.publishedDate;
-  if (dateValue) {
-    const date = new Date(dateValue);
-    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString(locale);
-  }
-  return paper.year ? String(paper.year) : null;
 }
 
 export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?: (paper: Paper) => void }) {
@@ -190,7 +248,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // whole of the wiring.
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState<string | null>(null);
   const [activeSearchFilter, setActiveSearchFilter] = useState('all');
@@ -581,20 +639,31 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     ? formatRetryDelay(outageRetryAt - outageNow)
     : null;
 
-  // The notice names whoever went down and what is missing because of it, in
-  // the same words the filter pills use.
-  const sectionWord = (section: string) => {
-    const option = SEARCH_FILTER_OPTIONS.find(entry => entry.id === section);
-    return option ? (option.label).toLowerCase() : null;
-  };
+  // The notice names whoever went down.
   const outageSourceNames = joinNames(
     (searchIssue?.sources || []).map(source => SOURCE_LABELS[source]),
   );
-  // Every failed section, not just OpenAlex's: a simultaneous OpenAIRE failure
-  // used to vanish behind the OpenAlex headline.
-  const outageSectionNames = joinNames(
-    (searchIssue?.sections || []).map(sectionWord),
+  const outageShown = Boolean(searchIssue) && !searchPending && outageAffectsFilter(searchIssue, activeSearchFilter);
+  // With nothing to show, the outage is the whole page: Petri says it in the
+  // panel. With some results, it is a strip over them.
+  const outageEmptied = outageShown && !hasVisibleResults;
+  // No retry while OpenAlex is throttling us with a known wait: the client
+  // short-circuits without touching the network, so it could only fail again.
+  const canRetryOutage = !(searchIssue?.rateLimited && openAlexRetryLabel);
+  // One notice, always naming the provider that actually went down. The page
+  // never claims "the search is unavailable": it knows it is running.
+  // Which scopes the strip's results are missing, in the words the scope
+  // picker uses, so a partial page says what it lacks.
+  const outageSections = joinNames(
+    (searchIssue?.sections || []).map(section => SEARCH_FILTER_OPTIONS.find(option => option.id === section)?.label.toLowerCase() ?? null),
   );
+  const outageDetail = [
+    outageSections && `${outageSections.charAt(0).toUpperCase()}${outageSections.slice(1)} may be incomplete.`,
+    searchIssue?.rateLimited && openAlexRetryLabel && `Back in about ${openAlexRetryLabel}.`,
+  ].filter(Boolean).join(' ');
+  const outageTitle = searchIssue?.rateLimited
+    ? 'OpenAlex is temporarily unavailable'
+    : `${outageSourceNames} did not respond`;
   const suggestedQueries = [
     {
       label: 'Cosmology',
@@ -661,18 +730,16 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const clearSearch = () => {
     updateQuery('', null, 'all');
   };
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Focus goes back to the field: the control that was pressed unmounts while
+  // the search runs.
+  const retrySearch = () => {
+    performSearch(query.trim());
+    searchInputRef.current?.focus();
+  };
 
   return (
-    // The page is the Tabs root: the filter bar is its list and the results
-    // its one panel, so Base UI can wire `aria-controls` / `aria-labelledby`
-    // between them and give the pills arrow-key navigation.
-    // Rendered as the page's <main>, with its h1: the route had neither.
-    <Tabs
-      render={<main />}
-      className="search-page-container"
-      value={activeSearchFilter}
-      onValueChange={handleSearchFilterChange}
-    >
+    <main className="search-page-container">
       <h1 className="visually-hidden">{'Search PaperTok'}</h1>
       <div className="search-header">
         <div className="search-header-main">
@@ -691,6 +758,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
               className="search-input"
               placeholder={'Search PaperTok...'}
               aria-label={'Search PaperTok'}
+              ref={searchInputRef}
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -699,45 +767,54 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
               autoComplete="off"
               autoFocus
             />
-            {searchPending && (
-              <span className="search-input-loader" role="status" aria-live="polite">
-                <CircleNotch size={17} aria-hidden="true" />
-                <span className="visually-hidden">{'Searching'}</span>
-              </span>
+            {/* Mounted with the field, so the wait is spoken; the results
+                region shows it, so the field draws nothing for it. */}
+            <span className="visually-hidden" role="status">{searchPending ? 'Searching' : ''}</span>
+            {query && (
+              <button
+                type="button"
+                className="search-clear-btn"
+                onClick={() => { clearSearch(); searchInputRef.current?.focus(); }}
+                aria-label={'Clear search'}
+                title={'Clear search'}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
             )}
+            {/* The scope is part of the query, so it is chosen inside the field. */}
+            <span className="search-scope-rule" aria-hidden="true" />
+            <SearchScope value={activeSearchFilter} onChange={handleSearchFilterChange} />
           </div>
         </div>
-        {/* `line`: the active pill is underlined in the brand yellow, the one
-            mark the yellow is for (design.md, rule 3). */}
-        <TabsList
-          variant="line"
-          className="search-filter-bar"
-          aria-label={'Filter search results'}
-        >
-          {SEARCH_FILTER_OPTIONS.map(({ id, label, Icon }) => {
-            return (
-              <TabsTrigger
-                key={id}
-                id={`search-filter-${id}`}
-                value={id}
-                className="search-filter-pill"
-                title={label}
-              >
-                <Icon size={15} aria-hidden="true" />
-                <span>{label}</span>
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-
       </div>
 
+      {/* Shown on the scopes the outage is actually true for. Switching to
+          Papers during an OpenAlex outage keeps it — that IS the scope it
+          describes. Clearing the notice on every filter change traded one
+          lie for another. */}
+      {outageShown && !outageEmptied && (
+        <div className="search-service-state" role="status">
+          <WarningCircle size={20} aria-hidden="true" />
+          <p className="search-service-copy">
+            <strong>{outageTitle}</strong>
+            {outageDetail && <span>{outageDetail}</span>}
+          </p>
+          {canRetryOutage && (
+            <button
+              type="button"
+              className="search-retry-btn"
+              onClick={retrySearch}
+              aria-label={'Retry search'}
+              title={'Retry search'}
+            >
+              <ArrowClockwise size={17} />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="search-results custom-scrollbar">
-        {/* One panel for every pill: it takes the active value, so it is
-            always the panel of the tab that is on. */}
-        <TabsContent
-          value={activeSearchFilter}
-          id="search-results-panel"
+        <div
           className="search-results-list"
           aria-busy={searchPending}
         >
@@ -747,7 +824,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             {!query.trim() && !isSearching && (
               <div className="search-initial-state">
                 <div className="search-initial-hero">
-                  <Compass size={48} className="search-initial-icon" />
+                  <Petri pose="compass" className="search-initial-petri" />
                   <h2>{'Explore knowledge'}</h2>
                   <p>{'Search papers, researchers, topics, institutions, and funded projects.'}</p>
                 </div>
@@ -771,47 +848,28 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
               </div>
             )}
 
-            {/* Shown on the pills the outage is actually true for. Switching to
-                Papers during an OpenAlex outage keeps it — that IS the pill it
-                describes. Clearing the notice on every filter change traded one
-                lie for another. */}
-            {searchIssue && !searchPending && outageAffectsFilter(searchIssue, activeSearchFilter) && (
-              <div className="search-service-state" role="status">
-                <WarningCircle size={20} aria-hidden="true" />
-                <div className="search-service-copy">
-                  {/* One notice, always naming the provider that actually went
-                      down. The page never claims "the search is unavailable":
-                      it is the page itself, it knows perfectly well that it is
-                      running, and it used to say that over a list of results. */}
-                  <strong>{searchIssue.rateLimited
-                    ? ('OpenAlex is temporarily unavailable')
-                    : (`${outageSourceNames} did not respond`)}</strong>
-                  <span>{[
-                    // Only a real rate limit can promise a time; a timeout gets
-                    // no invented estimate.
-                    searchIssue.rateLimited && (openAlexRetryLabel
-                      ? (`It is estimated to be back in ${openAlexRetryLabel}.`)
-                      : ('It has not said when it will be back.')),
-                    outageSectionNames
-                      ? (`Meanwhile ${outageSectionNames} may be limited.`)
-                      : ('Searches may come back incomplete.'),
-                  ].filter(Boolean).join(' ')}</span>
-                </div>
-                {/* No retry while OpenAlex is throttling us with a known wait:
-                    the client short-circuits without touching the network, so
-                    the button could only fail again, instantly. */}
-                {!(searchIssue.rateLimited && openAlexRetryLabel) && (
-                  <button
-                    type="button"
-                    className="search-retry-btn"
-                    onClick={() => performSearch(query.trim())}
-                    aria-label={'Retry search'}
-                    title={'Retry search'}
-                  >
-                    <ArrowClockwise size={17} />
-                  </button>
+            {outageEmptied && (
+              <EmptyState
+                role="status"
+                className="search-outage-state"
+                art={<Petri pose="upset" className="search-outage-petri" />}
+                title={outageTitle}
+                actions={canRetryOutage && (
+                  <Button variant="outline" onClick={retrySearch}>
+                    <ArrowClockwise size={16} aria-hidden="true" />
+                    {'Try again'}
+                  </Button>
                 )}
-              </div>
+              >
+                {[
+                  activeSearchFilter === 'all'
+                    ? 'No other source found anything for this search.'
+                    : `${activeFilterOption.label} come from ${outageSourceNames}, so none can be shown until it answers.`,
+                  searchIssue?.rateLimited && openAlexRetryLabel
+                    ? `It should be back in about ${openAlexRetryLabel}.`
+                    : 'It usually comes back in a moment.',
+                ].join(' ')}
+              </EmptyState>
             )}
 
             {searchPending && (
@@ -819,10 +877,11 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
               // announces "Searching" for assistive technology, so this
               // skeleton does not need to repeat it as a second live region.
               <div className="search-loading-state" aria-hidden="true">
-                {[0, 1, 2].map(index => (
-                  <div className="search-loading-row" key={index} style={{ '--loading-row-index': index }}>
-                    <span className="search-loading-icon" />
-                    <span className="search-loading-copy">
+                {/* The finished row's silhouette (ListRow): meta, title, byline. */}
+                {[0, 1, 2, 3].map(index => (
+                  <div className="list-row search-loading-row" key={index}>
+                    <span className="list-row-content search-loading-copy">
+                      <span className="search-loading-line search-loading-line--meta" />
                       <span className="search-loading-line search-loading-line--title" />
                       <span className="search-loading-line search-loading-line--detail" />
                     </span>
@@ -853,24 +912,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {cleanOrcid && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
                   <div className="search-section" style={{ order: 0 }}>
                     <h3 className="search-section-title">{'Direct ORCID search'}</h3>
-                    <div
-                      className="search-item"
-                      role="link"
-                      tabIndex={0}
-                      onClick={() => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`)}
-                      onKeyDown={event => handleSearchItemKeyDown(
-                        event,
-                        () => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`),
-                      )}
+                    <ListRow
+                      meta={['ORCID', cleanOrcid]}
+                      title={'View ORCID profile'}
+                      onOpen={() => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`)}
                     >
-                      <div className="search-item-icon" style={{ background: '#a6ce39', color: 'white' }}>
-                        <Users size={22} />
-                      </div>
-                      <div className="search-item-info">
-                        <h4 style={{ color: '#a6ce39' }}>{'View ORCID profile'} {cleanOrcid}</h4>
-                        <p>{'Explore the author and their work through a verified unique identifier'}</p>
-                      </div>
-                    </div>
+                      <p className="list-row-byline">{'Explore the author and their work through a verified unique identifier'}</p>
+                    </ListRow>
                   </div>
                 )}
 
@@ -878,28 +926,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             {institutionResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'institutions') && (
               <div className="search-section" data-section="institutions">
                 <h3 className="search-section-title">{'Universities and institutions'}</h3>
-                {institutionResults.map((inst, index) => {
-                  const localizedName = getLocalizedInstitutionName(inst);
-                  return (
-                    <div
-                      key={inst.id}
-                      className="search-item search-item-enter"
-                      style={{ '--search-item-index': Math.min(index, 6) }}
-                      onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
-                    >
-                      <div className="search-item-icon"><Buildings size={22} /></div>
-                      <div className="search-item-info">
-                        <h4>
-                          <button
-                            type="button"
-                            className="search-item-title-btn"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/institution/${inst.id.split('/').pop()}`); }}
-                          >
-                            {localizedName}
-                          </button>
-                        </h4>
-                        <p>{inst.country_code || ('Unknown country')} • {'Academic institution'}</p>
-                      </div>
+                {institutionResults.map((inst) => (
+                  <ListRow
+                    key={inst.id}
+                    meta={['Institution', inst.country_code || ('Unknown country')]}
+                    title={getLocalizedInstitutionName(inst)}
+                    onOpen={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
+                    actions={(
                       <FollowButton
                         entity={{
                           type: 'institution',
@@ -913,42 +946,34 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         isPending={isFollowPending}
                         onToggle={handleToggleFollow}
                       />
-                    </div>
-                  );
-                })}
+                    )}
+                  />
+                ))}
               </div>
             )}
 
             {projectResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'projects') && (
               <div className="search-section" data-section="projects">
                 <h3 className="search-section-title">{'Research projects'}</h3>
-                {projectResults.map((project, index) => (
-                  <div
+                {projectResults.map((project) => (
+                  <ListRow
                     key={project.id}
-                    className="search-item search-item-enter"
-                    style={{ '--search-item-index': Math.min(index, 6) }}
-                    onClick={() => navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`)}
+                    meta={['Project', project.funder]}
+                    title={getProjectDisplayName(project)}
+                    onOpen={() => navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`)}
+                    actions={(
+                      <FollowButton
+                        entity={{ type: 'project', id: project.id, displayName: getProjectDisplayName(project), source: 'openaire', metadata: { funder: project.funder } }}
+                        isFollowing={isFollowing}
+                        isPending={isFollowPending}
+                        onToggle={handleToggleFollow}
+                      />
+                    )}
                   >
-                    <div className="search-item-icon"><Briefcase size={22} /></div>
-                    <div className="search-item-info">
-                      <h4>
-                        <button
-                          type="button"
-                          className="search-item-title-btn"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`); }}
-                        >
-                          {getProjectDisplayName(project)}
-                        </button>
-                      </h4>
-                      <p>{project.funder}{project.budget! > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!)}`; } catch { return ` • ${project.budget!.toLocaleString(locale)} €`; } })() : ''}</p>
-                    </div>
-                    <FollowButton
-                      entity={{ type: 'project', id: project.id, displayName: getProjectDisplayName(project), source: 'openaire', metadata: { funder: project.funder } }}
-                      isFollowing={isFollowing}
-                      isPending={isFollowPending}
-                      onToggle={handleToggleFollow}
-                    />
-                  </div>
+                    {project.budget! > 0 && (
+                      <p className="list-row-byline">{(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!); } catch { return `${project.budget!.toLocaleString(locale)} €`; } })()}</p>
+                    )}
+                  </ListRow>
                 ))}
               </div>
             )}
@@ -956,55 +981,32 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             {conceptResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'topics') && (
               <div className="search-section" data-section="topics">
                 <h3 className="search-section-title">{'Topics and areas'}</h3>
-                {conceptResults.map((concept, index) => (
-                  <div
+                {conceptResults.map((concept) => (
+                  <ListRow
                     key={concept.id}
-                    className="search-item search-topic-item search-item-enter"
-                    style={{ '--search-item-index': Math.min(index, 6) }}
-                    onClick={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`)}
-                  >
-                    <div className="search-item-icon search-topic-icon"><Lightbulb size={22} /></div>
-                    <div className="search-item-info">
-                      <h4>
-                        <button
-                          type="button"
-                          className="search-item-title-btn"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`); }}
-                        >
-                          {concept.display_name}
-                        </button>
-                      </h4>
-                      <p>
-                        {concept._localTopic && concept.level === 0
-                          ? `${concept.subcategoryCount || 0} ${'related topics'}`
-                          : concept._localTopic
-                            ? `${'Topic in'} ${concept.parent_display_name || ('PaperTok taxonomy')}`
-                            : [
-                                concept.field_display_name || ('OpenAlex topic'),
-                                Number.isFinite(concept.works_count)
-                                  ? `${concept.works_count!.toLocaleString(locale)} ${'works'}`
-                                  : '',
-                              ].filter(Boolean).join(' • ')}
-                      </p>
-                    </div>
-                    <FollowButton
-                      entity={{
-                        type: 'topic',
-                        id: concept.id,
-                        displayName: concept.display_name,
-                        source: concept._localTopic ? 'papertok' : 'openalex',
-                        metadata: {
-                          categoryIds: concept.categoryIds,
-                          // Persisted on the follow; the key predates the
-                          // English-only interface and stays for the readers.
-                          labelEn: concept.label,
-                        },
-                      }}
-                      isFollowing={isFollowing}
-                      isPending={isFollowPending}
-                      onToggle={handleToggleFollow}
-                    />
-                  </div>
+                    meta={['Topic', concept._localTopic ? concept.parent_display_name : concept.field_display_name]}
+                    title={concept.display_name}
+                    onOpen={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`)}
+                    actions={(
+                      <FollowButton
+                        entity={{
+                          type: 'topic',
+                          id: concept.id,
+                          displayName: concept.display_name,
+                          source: concept._localTopic ? 'papertok' : 'openalex',
+                          metadata: {
+                            categoryIds: concept.categoryIds,
+                            // Persisted on the follow; the key predates the
+                            // English-only interface and stays for the readers.
+                            labelEn: concept.label,
+                          },
+                        }}
+                        isFollowing={isFollowing}
+                        isPending={isFollowPending}
+                        onToggle={handleToggleFollow}
+                      />
+                    )}
+                  />
                 ))}
               </div>
             )}
@@ -1012,72 +1014,37 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             {authorResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
               <div className="search-section" data-section="authors">
                 <h3 className="search-section-title">{'Authors'}</h3>
-                {authorResults.map((author, index) => {
-                  const authorFollow = { type: 'author' as const, id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
-                  const authorInstitution = getLocalizedInstitutionName(
-                    author.institutionData || { display_name: author.institution },
-                  );
-                  return (
-                    <div
-                      key={author.id}
-                      className="search-item search-item-enter"
-                      style={{ '--search-item-index': Math.min(index, 6) }}
-                      onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
-                    >
-                      <div className="search-item-avatar">
-                        {author.display_name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="search-item-info">
-                        <h4>
-                          <button
-                            type="button"
-                            className="search-item-title-btn"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${author.id.split('/').pop()}`); }}
-                          >
-                            {author.display_name}
-                          </button>
-                        </h4>
-                        <p>{authorInstitution || ('Unknown institution')}</p>
-                      </div>
+                {authorResults.map((author) => (
+                  <ListRow
+                    key={author.id}
+                    meta={['Author']}
+                    title={author.display_name}
+                    onOpen={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
+                    actions={(
                       <FollowButton
-                        entity={authorFollow}
+                        entity={{ type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } }}
                         isFollowing={isFollowing}
                         isPending={isFollowPending}
                         onToggle={handleToggleFollow}
                       />
-                    </div>
-                  );
-                })}
+                    )}
+                  >
+                    <p className="list-row-byline">
+                      {getLocalizedInstitutionName(author.institutionData || { display_name: author.institution }) || ('Unknown institution')}
+                    </p>
+                  </ListRow>
+                ))}
               </div>
             )}
 
             {paperResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'papers') && (
               <div className="search-section" data-section="papers">
                 <h3 className="search-section-title">{'Publications'}</h3>
-                {paperResults.map((paper, index) => {
-                  const authors = (paper.authors || []).map(author => (author as PaperAuthor).name || author as string);
+                {paperResults.map((paper) => {
                   return (
-                    <div
-                      key={paper.id}
-                      className="search-item paper-item search-item-enter"
-                      style={{ '--search-item-index': Math.min(index, 6) }}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedPaper(paper)}
-                      onKeyDown={event => handleSearchItemKeyDown(
-                        event,
-                        () => setSelectedPaper(paper),
-                      )}
-                    >
-                      <div className="search-item-icon"><FileText size={22} /></div>
-                      <div className="search-item-info">
-                        <h4 lang="en"><ScientificText>{paper.title}</ScientificText></h4>
-                        <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
-                        <span className="search-item-meta">
-                          {formatPaperDate(paper, locale) || ('Unknown date')} • {paper.primaryCategory || paper.journal || 'Paper'}
-                        </span>
-                      </div>
-                    </div>
+                    <PaperListRow key={paper.id} paper={paper} onOpen={() => setSelectedPaper(paper)}>
+                      {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+                    </PaperListRow>
                   );
                 })}
               </div>
@@ -1085,7 +1052,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 </OrderedSearchSections>
               </div>
             )}
-        </TabsContent>
+        </div>
       </div>
 
       {/* Paper Card Overlay */}
@@ -1119,6 +1086,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
       {pdfPaper && (
         <PDFViewer paper={pdfPaper} closeRef={pdfCloseRef} onClose={() => setPdfPaper(null)} />
       )}
-    </Tabs>
+    </main>
   );
 }

@@ -10,6 +10,11 @@ test('prefers DOI and normalizes provider prefixes for related papers', () => {
   assert.equal(getSemanticScholarPaperId({}), null);
 });
 
+test('asks for an arXiv paper by its arXiv id, not by the arXiv DOI Semantic Scholar cannot resolve', () => {
+  assert.equal(getSemanticScholarPaperId({ doi: '10.48550/arxiv.2005.14165', arxivId: '2005.14165v4' }), 'ARXIV:2005.14165');
+  assert.equal(getSemanticScholarPaperId({ doi: 'https://doi.org/10.48550/arXiv.2005.14165' }), 'ARXIV:2005.14165');
+});
+
 const WORKER = 'https://papertok-report-api.example';
 
 test('loads recommendations for a normalized Semantic Scholar paper without external identifiers', async () => {
@@ -170,4 +175,58 @@ test('gives the Worker eleven seconds before giving up, not eight', async t => {
   await flush();
   assert.ok(outcome, 'must have settled once eleven seconds are up -- a longer budget would leave this null');
   assert.match(String((outcome as { error: Error }).error), /aborted/, 'must abort, not resolve');
+});
+
+function rateLimited(retryAfter: string) {
+  return new Response(JSON.stringify({ code: 'UPSTREAM_RATE_LIMITED' }), { status: 429, headers: { 'retry-after': retryAfter } });
+}
+
+const drainMicrotasks = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
+
+test('waits out the Worker\'s two-second rate limit, so the first press loads (PAP-49)', async t => {
+  clearRelatedPapersCache();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let calls = 0;
+  const fetchWorker = async () => {
+    calls += 1;
+    return calls === 1 ? rateLimited('2') : twentyRecommendations();
+  };
+  let outcome: { value?: unknown[]; error?: unknown } | null = null;
+  getRelatedPapers({ id: 'arxiv:2607.12345', arxivId: '2607.12345' }, 20, { fetchWorker, apiBase: WORKER })
+    .then(value => { outcome = { value }; }, error => { outcome = { error }; });
+
+  await drainMicrotasks();
+  t.mock.timers.tick(1_999);
+  await drainMicrotasks();
+  assert.equal(calls, 1, 'asks again only once the retry-after has passed');
+
+  t.mock.timers.tick(1);
+  await drainMicrotasks();
+  assert.equal(calls, 2);
+  assert.equal((outcome as { value?: unknown[] } | null)?.value?.length, 20);
+});
+
+test('does not wait out a refusal measured in minutes, and gives up after two short retries', async t => {
+  clearRelatedPapersCache();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let minuteCalls = 0;
+  await assert.rejects(() => getRelatedPapers({ id: 'arxiv:2607.11111', arxivId: '2607.11111' }, 8, {
+    fetchWorker: async () => { minuteCalls += 1; return rateLimited('60'); },
+    apiBase: WORKER,
+  }), /429/);
+  assert.equal(minuteCalls, 1);
+
+  let busyCalls = 0;
+  let outcome: { error?: unknown } | null = null;
+  getRelatedPapers({ id: 'arxiv:2607.22222', arxivId: '2607.22222' }, 8, {
+    fetchWorker: async () => { busyCalls += 1; return rateLimited('1'); },
+    apiBase: WORKER,
+  }).then(() => { outcome = {}; }, error => { outcome = { error }; });
+  for (let i = 0; i < 4; i += 1) {
+    await drainMicrotasks();
+    t.mock.timers.tick(1_000);
+  }
+  await drainMicrotasks();
+  assert.equal(busyCalls, 3, 'the first request and two retries, no more');
+  assert.match(String((outcome as { error?: unknown } | null)?.error), /429/);
 });

@@ -38,6 +38,13 @@ const ORGANISATION_WORDS = /\b(?:(?:universi|institut|istitut|laborat|hochschul|
 
 const PROJECT_WORDS = /\b(?:project|projects|proyecto|proyectos|projeto|projet|projekt|grant|grants|horizon|horizonte|erc)\b/;
 
+function getSearchQueryIntent(query: string = '') {
+  const normalized = normalizeSearchText(query);
+  if (ORGANISATION_WORDS.test(normalized) || /^[A-Z]{2,6}$/.test(query.trim())) return 'institutions';
+  if (PROJECT_WORDS.test(normalized)) return 'projects';
+  return null;
+}
+
 export function normalizeSearchText(value: unknown = '') {
   return String(value)
     .normalize('NFD')
@@ -118,6 +125,11 @@ export function institutionProminenceWeight(institution: EntityMetrics) {
   return prominenceWeight(institution);
 }
 
+export function authorSearchValues(author: Partial<Pick<OpenAlexAuthor, 'display_name'>>) {
+  const words = normalizeSearchText(author.display_name).split(' ');
+  return [author.display_name, words.filter((word, index) => index === 0 || index === words.length - 1 || word.length > 1).join(' ')];
+}
+
 export function scoreSearchMatch(query: string|undefined, values: unknown[] = []) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return 0;
@@ -136,6 +148,7 @@ export function scoreSearchMatch(query: string|undefined, values: unknown[] = []
       bestScore = Math.max(bestScore, 94);
       return;
     }
+    bestScore = Math.max(bestScore, approximatePhraseScore(normalizedQuery, normalizedValue));
     if (normalizedValue.includes(normalizedQuery)) {
       bestScore = Math.max(bestScore, 88);
       return;
@@ -153,6 +166,42 @@ export function scoreSearchMatch(query: string|undefined, values: unknown[] = []
 /** Whole-word containment on already-normalised text: "sam" does not find "samples". */
 function containsPhrase(normalizedText: string, normalizedPhrase: string) {
   return ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
+}
+
+export function withinOneEdit(left: string, right: string, minimumLength = 5, allowDigits = false) {
+  if (left === right) return true;
+  if (!(allowDigits ? /^[a-z0-9]+$/ : /^[a-z]+$/).test(left) || left.length < minimumLength || Math.abs(left.length - right.length) > 1) return false;
+  let i = 0;
+  while (i < Math.min(left.length, right.length) && left[i] === right[i]) i += 1;
+  if (left.length === right.length) {
+    return left.slice(i + 1) === right.slice(i + 1)
+      || (left[i] === right[i + 1] && left[i + 1] === right[i]
+        && left.slice(i + 2) === right.slice(i + 2));
+  }
+  return left.length > right.length
+    ? left.slice(i + 1) === right.slice(i)
+    : left.slice(i) === right.slice(i + 1);
+}
+
+/** Match adjacent words, allowing the final word to still be in progress. */
+function approximatePhraseScore(query: string, value: string) {
+  const words = query.split(' ');
+  const target = value.split(' ');
+  let best = 0;
+  for (let start = 0; start + words.length <= target.length; start += 1) {
+    let edits = 0;
+    const matches = words.every((word, index) => {
+      const candidate = target[start + index];
+      if (word === candidate) return true;
+      if (index === words.length - 1 && /^[a-z]+$/.test(word)
+        && word.length >= (words.length > 1 ? 2 : 4) && candidate.startsWith(word)) return true;
+      if (!withinOneEdit(word, candidate)) return false;
+      edits += 1;
+      return edits <= 2;
+    });
+    if (matches) best = Math.max(best, (edits ? 82 : 90) + 3 * words.length / target.length);
+  }
+  return best;
 }
 
 /**
@@ -173,9 +222,11 @@ function containsPhrase(normalizedText: string, normalizedPhrase: string) {
  *   100  the title IS the query
  * 94-99  the title starts with the query ("Llama 2: Open Foundation...")
  * 88-93  the title contains the query as a phrase, whole words
- *    60  the abstract contains the query as a phrase -- how a paper known by
+ *    80  the abstract contains the query as a phrase -- how a paper known by
  *        an acronym its title never uses (FC-CLIP) still beats a title that
- *        shares one word with the query
+ *        only shares scattered words with the query
+ * 82-87  a bounded approximate title phrase
+ * 90-93  an unfinished title prefix
  *  0-70  the share of query tokens the title has, as words
  *
  * Inside the two phrase tiers the score rises with the share of the title the
@@ -201,13 +252,18 @@ export function scorePaperSearchMatch(query: string|undefined, paper: Partial<Pa
     : 0;
   if (title.startsWith(`${normalizedQuery} `)) return 94 + 5 * coveredShare;
   if (containsPhrase(title, normalizedQuery)) return 88 + 5 * coveredShare;
+  if (queryTokens.some(token => /^[a-z]{5,}$/.test(token))
+    && /^[a-z]+$/.test(queryTokens.at(-1)!)
+    && title.startsWith(normalizedQuery)) return 90 + 3 * queryTokens.length / titleTokenList.length;
+  const approximate = approximatePhraseScore(normalizedQuery, title);
+  if (approximate) return approximate;
 
   const titleTokens = new Set(titleTokenList);
   const coverage = queryTokens.filter(token => titleTokens.has(token)).length / queryTokens.length;
   const tokenScore = Math.round(coverage * 70);
 
   const abstract = normalizeSearchText(paper?.abstract);
-  if (abstract && containsPhrase(abstract, normalizedQuery)) return Math.max(tokenScore, 60);
+  if (abstract && containsPhrase(abstract, normalizedQuery)) return Math.max(tokenScore, 80);
   return tokenScore;
 }
 
@@ -290,7 +346,7 @@ export function buildSearchSectionValues({
       concept.label,
       concept.label,
     ])),
-    authors: clean(authors.map(author => author.display_name)),
+    authors: clean(authors.flatMap(authorSearchValues)),
     institutions: clean(institutions.flatMap(institutionSearchValues)),
     projects: clean(projects.flatMap(project => [project.acronym, project.title])),
   };
@@ -324,8 +380,9 @@ export function resolvePreferredSearchSection({
   // is still the strongest signal about WHICH result was meant. What the query's
   // wording decides is only who gets asked first when several sections can all
   // claim an exact match on the same string.
-  const organisationQuery = ORGANISATION_WORDS.test(normalizedQuery);
-  const projectQuery = PROJECT_WORDS.test(normalizedQuery);
+  const intent = getSearchQueryIntent(query);
+  const organisationQuery = intent === 'institutions';
+  const projectQuery = intent === 'projects';
 
   const exactPriority = organisationQuery
     ? ['institutions', 'topics', 'authors', 'projects', 'papers']
@@ -344,6 +401,11 @@ export function resolvePreferredSearchSection({
   if (organisationQuery && availableSections.has('institutions')) return 'institutions';
   if (projectQuery && availableSections.has('projects')) return 'projects';
 
+  const closest = DEFAULT_SECTION_ORDER
+    .filter(section => availableSections.has(section))
+    .map(section => ({ section, score: scoreSearchMatch(query, sectionValues[section]) }))
+    .sort((left, right) => right.score - left.score)[0];
+  if (closest && closest.score >= 82) return closest.section;
   return DEFAULT_SECTION_ORDER.find(section => availableSections.has(section)) || null;
 }
 

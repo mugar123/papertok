@@ -4,7 +4,7 @@ import type { OpenAlexJsonOptions } from './openAlexClient.ts';
 
 type Enrichment = Partial<Paper> & { related_works?: string[] };
 type Entity = OpenAlexAuthor | OpenAlexInstitution | OpenAlexTopic;
-type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnError?: boolean; timeoutMs?: number; limit?: number };
+type RequestOptions = { language?: string; signal?: AbortSignal | null; throwOnError?: boolean; timeoutMs?: number; limit?: number; typeahead?: boolean };
 type InstitutionProminence = Pick<OpenAlexInstitution, 'ror' | 'works_count' | 'cited_by_count' | 'summary_stats'>;
 type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<InstitutionProminence>>) => Promise<OpenAlexPage<InstitutionProminence>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
@@ -20,6 +20,7 @@ export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact
  * Handles semantic enrichment, concept extraction, and citation graphs.
  */
 
+import { openAlexTypeaheadExpression } from './openAlexSearchQuery.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory, openAlexFilterForArea } from '../utils/areaAccent.ts';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.ts';
@@ -58,6 +59,8 @@ import {
   filterRelevantSearchResults,
   institutionProminenceWeight,
   institutionSearchValues,
+  scoreSearchMatch,
+  authorSearchValues,
 } from '../utils/searchRelevance.ts';
 
 const CACHE = new Map<string, Enrichment>();
@@ -751,12 +754,46 @@ export async function enrichAuthorInstitutionLocalization<T extends OpenAlexAuth
   };
 }
 
+/** Author-name search does not support fuzzy operators; work bylines do. */
+async function searchAuthorSuggestions(query: string, options: RequestOptions): Promise<OpenAlexAuthor[]> {
+  const expression = openAlexTypeaheadExpression(query) || JSON.stringify(query);
+  const url = new URL('https://api.openalex.org/works');
+  url.searchParams.set('filter', `raw_author_name.search:${expression}`);
+  url.searchParams.set('per-page', '25');
+  url.searchParams.set('select', 'id,authorships');
+  // A short exact surname can otherwise fill the page with fuzzy first names
+  // before a well-established surname completion reaches the client.
+  url.searchParams.set('sort', 'cited_by_count:desc');
+  try {
+    const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url.toString(), {
+      timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal: options.signal,
+    });
+    const authors = new Map<string, OpenAlexAuthor>();
+    for (const work of data.results || []) {
+      for (const authorship of work.authorships || []) {
+        const author = authorship.author;
+        if (!author?.id || !author.display_name || authors.has(author.id)) continue;
+        const institution = authorship.institutions?.[0];
+        authors.set(author.id, {
+          id: author.id, display_name: author.display_name,
+          institution: institution?.display_name || null,
+          institutionData: institution,
+          works_count: null, cited_by_count: null,
+        });
+      }
+    }
+    return filterRelevantSearchResults(query, [...authors.values()], authorSearchValues, { minimumScore: 80 }).slice(0, 10);
+  } catch (error) {
+    if (options.throwOnError) throw error;
+    return [];
+  }
+}
+
 export async function searchAuthors(query: string, options: RequestOptions = {}) {
   if (!query) return [];
   const normalizedQuery = query.trim();
-  const cleanName = encodeURIComponent(normalizedQuery);
-  const url = `https://api.openalex.org/authors?search=${cleanName}&per-page=10`;
-  
+  if (options.typeahead) return searchAuthorSuggestions(normalizedQuery, options);
+  const url = `https://api.openalex.org/authors?search=${encodeURIComponent(normalizedQuery)}&per-page=10`;
   try {
     const data = await openAlexJson<OpenAlexPage<OpenAlexAuthor>>(url, {
       timeoutMs: 7000,
@@ -942,6 +979,8 @@ function scoreTopicMatch(query: string, values: Array<string | undefined>) {
     const normalizedValue = normalizeTopicSearchValue(value);
     if (!normalizedValue) return;
     const sourceWeight = Math.max(0, 4 - index);
+    const approximate = scoreSearchMatch(normalizedQuery, [normalizedValue]);
+    if (approximate >= 82) bestScore = Math.max(bestScore, approximate + sourceWeight);
     if (normalizedValue === normalizedQuery) {
       bestScore = Math.max(bestScore, 100 + sourceWeight);
     } else if (normalizedValue.startsWith(normalizedQuery)) {
@@ -1022,13 +1061,15 @@ export async function searchConcepts(query: string, options: RequestOptions = {}
   const localTopics = searchLocalTopics(normalizedQuery, limit);
 
   try {
+    // Keep the existing free autocomplete endpoint. The existing taxonomy can
+    // correct a known topic before the one request, without a second search.
     const url = new URL('https://api.openalex.org/autocomplete/topics');
-    url.searchParams.set('q', normalizedQuery);
+    url.searchParams.set('q', localTopics[0]?.display_name || normalizedQuery);
     const data = await openAlexJson<OpenAlexPage<OpenAlexTopic> & { topics?: OpenAlexTopic[] }>(url.toString(), {
       timeoutMs: 3500,
       retries: 0,
       cacheTtlMs: 30 * 60 * 1000,
-      persistentKey: `topic-search:${normalizedQuery.toLowerCase()}`,
+      persistentKey: `topic-autocomplete:${url.searchParams.get('q')!.toLowerCase()}`,
       persistentTtlMs: 7 * 24 * 60 * 60 * 1000,
       staleIfError: true,
       signal: options.signal,
@@ -1059,8 +1100,9 @@ export async function searchConcepts(query: string, options: RequestOptions = {}
       }];
     });
 
-    return [...localTopics, ...remoteTopics].slice(0, limit);
-  } catch {
+    return [...localTopics, ...filterRelevantSearchResults(normalizedQuery, remoteTopics, topic => [topic.display_name])].slice(0, limit);
+  } catch (error) {
+    if (options.throwOnError && localTopics.length === 0) throw error;
     return localTopics;
   }
 }
@@ -1735,7 +1777,7 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     authors,
     institutions,
     year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
-    publicationType: work.primary_location?.source?.type || 'journal',
+    publicationType: work.type || work.primary_location?.source?.type || 'journal',
     publicationStatus: openAlexPublicationStatus(work),
     openAccess: work.open_access?.is_oa,
     pdfUrl: work.open_access?.oa_url,

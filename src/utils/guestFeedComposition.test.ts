@@ -8,7 +8,7 @@ import {
 } from './guestFeedComposition.ts';
 
 const PAGE = 12;
-const CS_MED = { key: 'cs+med', areas: ['cs', 'med'] };
+const AI_MED = { key: 'ai+med', areas: ['ai', 'med'] };
 const DEFAULT_PLAN = { key: 'default', areas: [] };
 
 // Papers as the four guest branches deliver them: arXiv tags the requested
@@ -31,7 +31,7 @@ const areasOf = (page: Parameters<typeof areaOfPaper>[0][]) => page.map(areaOfPa
 const count = (page: Parameters<typeof guestPageReady>[0], area: string) => areasOf(page).filter(value => value === area).length;
 
 test('a paper belongs to the area of its category', () => {
-  assert.equal(areaOfPaper({ primaryCategory: 'cs.AI' }), 'cs');
+  assert.equal(areaOfPaper({ primaryCategory: 'cs.AI' }), 'ai');
   assert.equal(areaOfPaper({ primaryCategory: 'med.cardio' }), 'med');
   assert.equal(areaOfPaper({ primaryCategory: 'astro-ph.CO' }), 'physics');
   assert.equal(areaOfPaper({ primaryCategory: 'Oncology', categories: ['Humans', 'med.onco'] }), 'med');
@@ -40,31 +40,31 @@ test('a paper belongs to the area of its category', () => {
 });
 
 test('two areas share the page, alternating, as soon as both have answered', () => {
-  const page = composeGuestPage([...arxiv, ...domain, ...pubmed], CS_MED, PAGE);
+  const page = composeGuestPage([...arxiv, ...domain, ...pubmed], AI_MED, PAGE);
 
   assert.equal(page.length, PAGE);
-  assert.equal(count(page, 'cs'), 6);
+  assert.equal(count(page, 'ai'), 6);
   assert.equal(count(page, 'med'), 6);
-  assert.deepEqual(areasOf(page).slice(0, 4), ['cs', 'med', 'cs', 'med']);
+  assert.deepEqual(areasOf(page).slice(0, 4), ['ai', 'med', 'ai', 'med']);
 });
 
 test('inside an area the sources take turns, so one fast source cannot fill it', () => {
-  const page = composeGuestPage([...arxiv, ...domain, ...pubmed], CS_MED, PAGE);
-  const csSources = page.filter(paper => areaOfPaper(paper) === 'cs').map(paper => paper.sources!.primary);
+  const page = composeGuestPage([...arxiv, ...domain, ...pubmed], AI_MED, PAGE);
+  const csSources = page.filter(paper => areaOfPaper(paper) === 'ai').map(paper => paper.sources!.primary);
 
   assert.deepEqual(csSources, ['arxiv', 'openreview', 'huggingface', 'arxiv', 'openreview', 'huggingface']);
 });
 
 test('an area that has answered alone gets its share, not the whole page', () => {
-  const early = composeGuestPage(domain, CS_MED, PAGE);
+  const early = composeGuestPage(domain, AI_MED, PAGE);
 
   assert.equal(early.length, 6);
-  assert.equal(count(early, 'cs'), 6);
+  assert.equal(count(early, 'ai'), 6);
 });
 
 test('the area that answers late is added after the cards already shown, which do not move', () => {
-  const early = composeGuestPage(domain, CS_MED, PAGE);
-  const extended = extendGuestPage(early, [...domain, ...pubmed], CS_MED, PAGE);
+  const early = composeGuestPage(domain, AI_MED, PAGE);
+  const extended = extendGuestPage(early, [...domain, ...pubmed], AI_MED, PAGE);
 
   assert.equal(extended.length, PAGE);
   assert.deepEqual(extended.slice(0, early.length), early);
@@ -72,19 +72,19 @@ test('the area that answers late is added after the cards already shown, which d
 });
 
 test('an area with too little to fill its share leaves the rest to the others', () => {
-  const extended = extendGuestPage(composeGuestPage(domain, CS_MED, PAGE), [...domain, ...pubmed.slice(0, 2)], CS_MED, PAGE);
+  const extended = extendGuestPage(composeGuestPage(domain, AI_MED, PAGE), [...domain, ...pubmed.slice(0, 2)], AI_MED, PAGE);
 
   assert.equal(extended.length, PAGE);
   assert.equal(count(extended, 'med'), 2);
-  assert.equal(count(extended, 'cs'), 10);
+  assert.equal(count(extended, 'ai'), 10);
 });
 
 test('papers from an area nobody chose only fill what the chosen areas cannot', () => {
   const physics = papers('arxiv', ['astro-ph.CO'], 5, 'physics');
-  const full = extendGuestPage([], [...physics, ...arxiv, ...pubmed], CS_MED, PAGE);
+  const full = extendGuestPage([], [...physics, ...arxiv, ...pubmed], AI_MED, PAGE);
   assert.equal(count(full, 'physics'), 0);
 
-  const short = extendGuestPage([], [...physics, ...arxiv.slice(0, 3), ...pubmed.slice(0, 3)], CS_MED, PAGE);
+  const short = extendGuestPage([], [...physics, ...arxiv.slice(0, 3), ...pubmed.slice(0, 3)], AI_MED, PAGE);
   assert.equal(short.length, 11);
   assert.equal(count(short, 'physics'), 5);
   assert.deepEqual(areasOf(short).slice(-5), ['physics', 'physics', 'physics', 'physics', 'physics']);
@@ -97,9 +97,9 @@ test('without chosen areas the page is what the sources returned, in order', () 
 });
 
 test('the first paint waits for every chosen area, and only for four papers without areas', () => {
-  assert.equal(guestPageReady(domain, CS_MED, PAGE), false);
-  assert.equal(guestPageReady([...domain, ...pubmed.slice(0, 1)], CS_MED, PAGE), false);
-  assert.equal(guestPageReady([...domain, ...pubmed.slice(0, 2)], CS_MED, PAGE), true);
+  assert.equal(guestPageReady(domain, AI_MED, PAGE), false);
+  assert.equal(guestPageReady([...domain, ...pubmed.slice(0, 1)], AI_MED, PAGE), false);
+  assert.equal(guestPageReady([...domain, ...pubmed.slice(0, 2)], AI_MED, PAGE), true);
   assert.equal(guestPageReady(arxiv.slice(0, 3), DEFAULT_PLAN, PAGE), false);
   assert.equal(guestPageReady(arxiv.slice(0, 4), DEFAULT_PLAN, PAGE), true);
 });
@@ -122,12 +122,12 @@ for (const scenario of SCENARIOS) {
     let early = null;
     for (const step of scenario.steps) {
       answered.push(...step);
-      if (!early && guestPageReady(answered, CS_MED, PAGE)) early = composeGuestPage(answered, CS_MED, PAGE);
+      if (!early && guestPageReady(answered, AI_MED, PAGE)) early = composeGuestPage(answered, AI_MED, PAGE);
     }
-    const page = extendGuestPage(early || [], answered, CS_MED, PAGE);
+    const page = extendGuestPage(early || [], answered, AI_MED, PAGE);
 
     assert.equal(page.length, PAGE);
-    assert.ok(count(page, 'cs') >= 5, `cs: ${count(page, 'cs')}`);
+    assert.ok(count(page, 'ai') >= 5, `ai: ${count(page, 'ai')}`);
     assert.ok(count(page, 'med') >= 5, `med: ${count(page, 'med')}`);
   });
 }

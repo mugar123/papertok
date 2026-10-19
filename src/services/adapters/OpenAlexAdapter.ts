@@ -11,6 +11,8 @@ import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.ts';
 import { usableOpenAlexConcepts } from '../../utils/openAlexConcepts.ts';
 import { normalizePmid } from '../../utils/publicNavigation.ts';
 import { openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
+import { normalizeSearchText } from '../../utils/searchRelevance.ts';
+import { openAlexTypeaheadExpression } from '../openAlexSearchQuery.ts';
 
 // The top-level fields `mapToStandard` and `getArxivIdFromWork` read, and
 // the only ones a search asks for (`select=`). A works page used to arrive
@@ -48,7 +50,7 @@ export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
 // silently returning journal articles alone -- "Segment Anything" (ICCV 2023)
 // and every other NeurIPS/CVPR/ICCV paper was invisible to the feed and to the
 // search. `scripts/diagnostics/search-coverage-check.mjs` re-runs the probe.
-export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper']);
+export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-paper', 'review']);
 
 // What a paper SEARCH accepts. A reader looking up a specific paper expects the
 // arXiv preprint when that is the record OpenAlex carries -- FC-CLIP's most
@@ -56,7 +58,7 @@ export const OPENALEX_PUBLISHED_TYPES = Object.freeze(['article', 'conference-pa
 // a survey. Category discovery also includes economics and finance preprints,
 // whose working papers may have no arXiv copy. Queries without those categories
 // keep the narrower list; datasets, theses, and paratext are still left out here.
-export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint', 'review']);
+export const OPENALEX_SEARCH_TYPES = Object.freeze([...OPENALEX_PUBLISHED_TYPES, 'preprint']);
 
 export class OpenAlexAdapter {
   declare name: string;
@@ -68,11 +70,20 @@ export class OpenAlexAdapter {
     this.mailto = 'app@papertok.io';
   }
 
-  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [] }: PaperSearchFilters = {}) {
+  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [], typeahead = false }: PaperSearchFilters = {}) {
     const perPage = 25;
 
-    // Convert query to OpenAlex default.search format
-    const searchParam = encodeURIComponent(query);
+    let searchField = 'default.search';
+    let expression = String(query);
+    const words = normalizeSearchText(query).split(' ').filter(Boolean);
+    const expanded = typeahead ? openAlexTypeaheadExpression(String(query)) : null;
+    if (expanded) {
+      const titleQuery = words.some(word => /^[a-z]{5,}$/.test(word))
+        || (words.length === 1 && /^[a-z]{4,}$/.test(String(query).trim()));
+      searchField = titleQuery ? 'title.search.exact' : 'default.search.exact';
+      expression = titleQuery ? expanded : `"${words.join(' ')}"`;
+    }
+    const searchParam = encodeURIComponent(expression);
 
     const economicCategories = internalCategories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) as string));
     const workTypes = types || (economicCategories
@@ -80,7 +91,7 @@ export class OpenAlexAdapter {
       : OPENALEX_PUBLISHED_TYPES);
     const typeFilter = `type:${workTypes.join('|')}`;
 
-    return `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
+    return `${this.baseUrl}?filter=${searchField}:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
   }
 
   async search(query: string, page = 1, filters: PaperSearchFilters = {}): Promise<PaperSearchResult> {
@@ -91,6 +102,9 @@ export class OpenAlexAdapter {
         timeoutMs: 10000,
         cacheTtlMs: 10 * 60 * 1000,
         staleIfError: true,
+        // Suggestions share their exact/fuzzy/prefix branches in one request.
+        // Retrying each keystroke on an outage would multiply provider use.
+        ...(filters.typeahead ? { retries: 0 } : {}),
         signal: filters.signal,
         // The feed's main search: ahead of the entity lookups sharing the queue.
         priority: filters.priority === true,

@@ -47,7 +47,9 @@
   border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: var(--text-secondary);
-  font: 500 0.625rem/1.5 var(--font-mono);
+  font: 500 0.75rem/1.5 var(--font-body);
+  height: 28px;
+  min-height: 28px;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: border-color var(--transition-fast), color var(--transition-fast);
@@ -222,12 +224,7 @@
     grid-row: 1;
     min-height: 32px;
     padding: 6px 10px;
-    font-size: 0.6875rem;
-  }
-
-  /* The wait, at the height of the rows it stands in for. */
-  .sc-skeleton-row {
-    min-height: 52px;
+    font-size: 0.75rem;
   }
 
   /* Empty state and footnote: the same inset the rows have, so nothing on
@@ -237,38 +234,46 @@
   }
 }
 
-/* ─── Skeleton ───
-   The palette waits for every source before it paints anything, so the wait
-   needs a shape. A lone spinner over an empty sheet reads as nothing
-   happening, and a sheet that fills from nothing shifts every row under the
-   cursor the moment the answer lands. These are the height of a real row. */
+/* ─── The wait ───
+   A view is published only once every source it waits for has answered
+   (useEntitySearch), so the wait can run for seconds. It is drawn in the
+   answer's shape: a heading where the first section's heading will be,
+   saying what is being searched, then rows at a paper row's size, a title
+   over its byline and the numbers at the far edge. Measured on the real
+   rows: 54px at 1280px, 52.9px on a 390px phone. The old rows were 36px on
+   both, so the answer pushed everything under it down as it landed.
 
-.sc-skeleton {
-  display: flex;
-  flex-direction: column;
+   The wait arrives at rest, as the feed's SkeletonCard does: it is there the
+   moment a key is pressed, and the entrance below belongs to the answer. */
+
+.sc-loading {
   padding: var(--space-1);
+}
+
+/* The box `CommandGroup` gives a section heading (ui/command.tsx), whose
+   label inherits the sheet's 1.5 line height rather than the token's 1. */
+.sc-loading-heading {
+  margin: 0;
+  padding: 0.375rem var(--space-2);
+  font: var(--mono-label);
+  line-height: var(--lh-normal);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 .sc-skeleton-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 36px;
+  align-items: flex-start;
+  gap: var(--space-3);
   padding: var(--space-2);
-  opacity: 0;
-  animation: fadeIn 200ms ease-out forwards;
 }
 
-/* The stagger lives in the stylesheet rather than in an inline custom property,
-   because the count is fixed here and a `style={{ '--index': n }}` would owe
-   `src/styles/designTokens.test.js` an entry in INJECTED_PROPERTIES. */
-.sc-skeleton-row:nth-child(2) { animation-delay: 45ms; }
-.sc-skeleton-row:nth-child(3) { animation-delay: 90ms; }
-.sc-skeleton-row:nth-child(4) { animation-delay: 135ms; }
-.sc-skeleton-row:nth-child(5) { animation-delay: 180ms; }
-
-.sc-skeleton-row > span {
-  height: 9px;
+.sc-skeleton-icon,
+.sc-skeleton-title,
+.sc-skeleton-byline,
+.sc-skeleton-meta {
+  display: block;
   border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
@@ -280,83 +285,187 @@
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
-/* The same three columns a painted row has: the 14px icon slot, the label, and
-   the mono meta pushed to the edge. */
+/* The 14px icon, level with the top of the title like the real one. */
 .sc-skeleton-icon {
   flex: 0 0 14px;
   height: 14px;
 }
 
-.sc-skeleton-line {
-  flex: 1 1 auto;
-  max-width: 62%;
+/* A 20px title line over an 18px byline line, each bar about a cap height
+   tall in the middle of its line. The rows differ in length so the wait does
+   not read as a ruled form. */
+.sc-skeleton-text {
+  display: flex;
+  flex: 0 1 72%;
+  flex-direction: column;
+  min-width: 0;
 }
+
+.sc-skeleton-title {
+  height: 10px;
+  margin-block: 5px;
+}
+
+.sc-skeleton-byline {
+  width: 52%;
+  height: 8px;
+  margin-block: 5px;
+}
+
+.sc-skeleton-row:nth-of-type(2) .sc-skeleton-text { flex-basis: 56%; }
+.sc-skeleton-row:nth-of-type(3) .sc-skeleton-text { flex-basis: 80%; }
+.sc-skeleton-row:nth-of-type(4) .sc-skeleton-text { flex-basis: 48%; }
+.sc-skeleton-row:nth-of-type(5) .sc-skeleton-text { flex-basis: 64%; }
 
 .sc-skeleton-meta {
-  flex: 0 0 18%;
+  flex: 0 0 88px;
+  height: 9px;
+  margin-left: auto;
+  align-self: center;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  /* The row starts at `opacity: 0` and only reaches 1 through the animation
-     just cancelled above. Turning the motion off must not turn the content off
-     with it — the same trap already documented in `SearchPage.css`. */
+/* After the base rules on purpose. The phone block near the top of this file
+   comes before them, and the 52px it used to set lost to the 36px declared
+   here later: the rows stayed 36px on a phone. There a row sits 12px in from
+   the edge, its title line is 1.35 × 14px, and the numbers move under the
+   title, leaving nothing at the far edge to stand in for. */
+@media (max-width: 640px) {
   .sc-skeleton-row {
-    opacity: 1;
-    animation: none;
+    padding: var(--space-2) var(--space-3);
   }
 
-  .sc-skeleton-row > span {
-    animation: none;
+  .sc-skeleton-title {
+    margin-block: 4.5px;
+  }
+
+  .sc-skeleton-meta {
+    display: none;
   }
 }
 
 /* ─── The answer arriving ───
-   Everything lands in one commit, so without this the skeleton vanishes and a
-   finished sheet is simply there. Each heading and row rises into place on a
-   single cascade that runs down the whole list — see `renderedSections` in
-   `SearchCommand.jsx`, which is where the index comes from.
+   The answer composes in the way a feed card does (PaperCard.css, "The
+   arrival"): in reading order, on the card's 320ms settle, with a step of
+   its own, 32ms rather than the card's 45ms, because a list has more pieces
+   than a card. A section's heading slides in from the side it reads from,
+   like the card's follow reason, and its rows rise the card's 8px one after
+   another. One sequence runs down the whole list rather than one per
+   section, so the second heading waits for the rows above it: each group
+   carries the step it starts on (`--sc-arrive`, SearchCommand.tsx) and each
+   row adds its place in the group. From the eighth step on everything shares
+   the last delay, so a long answer has landed in about half a second and the
+   part of it out of view does not keep moving.
 
-   6px and 260ms: far enough that the eye reads it as arriving, short enough
-   that the first row is legible before the last one has landed.
+   The wait leaves in the frame the answer mounts, and an answer fading up
+   from zero left the list blank for two frames between them (measured). So
+   each piece starts at a fifth of its opacity, about the weight of the wait
+   it replaces, and reaches full opacity on its step. Opacity runs on a
+   straight line and the travel on the curve, since on opacity the card's
+   expo reads as a flash with a tail. `backwards`, as on the card, holds the
+   first frame through the delay and leaves nothing applied after the run,
+   so a row's own opacity (a disabled one's 50%) still holds once it lands.
 
-   The same cascade also carries the sheet's own opening, top to bottom: the
-   field at index 0, the `Sugerencias` heading at 1, the four suggestions at
-   2–5, the hint at 6. Two of those were added late. Before, the opening ran in
-   three tiers at once — the sheet travelling, the suggestion rows rising, and
-   the field and the hint frozen at full opacity between them — which is why it
-   read as a box being switched on with some of its contents animated, rather
-   than as one thing arriving.
+   A view is published once and not changed afterwards (useEntitySearch), so
+   this runs once per answer. A row still on screen when a type tab changes
+   the view stays mounted and does not arrive again; the rows the tab adds
+   arrive under it. */
 
-   The 6px is a lag, not a counter-motion, and it is worth being explicit about
-   which: the sheet comes down from -24px, so a row that starts 6px BELOW its
-   resting place is at -18px absolute and therefore travels less far than the
-   sheet it sits in. Flip the sign to "start above" and the rows would overtake
-   the sheet on the way down, which is what parallax is not. */
-
-@keyframes scEnterRise {
+@keyframes scDevelop {
   from {
-    opacity: 0;
-    transform: translateY(6px);
+    opacity: 0.2;
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
-.sc-enter {
-  opacity: 0;
-  animation: scEnterRise 260ms var(--ease-out-expo) forwards;
-  animation-delay: calc(var(--sc-enter-index, 0) * 24ms);
+@keyframes scArrive {
+  from {
+    transform: translateY(8px);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes scArriveAside {
+  from {
+    transform: translateX(-10px);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+.sc-group [cmdk-group-heading],
+.sc-group [cmdk-item],
+.sc-sheet [cmdk-empty],
+.sc-status--warn {
+  animation: scDevelop 200ms linear backwards, scArrive 320ms var(--ease-out-expo) backwards;
+  animation-delay: calc(min(var(--sc-arrive, 0) + var(--sc-step, 0), 8) * 32ms);
+}
+
+.sc-group [cmdk-group-heading] {
+  animation-name: scDevelop, scArriveAside;
+}
+
+.sc-group [cmdk-group-items] > :nth-child(1) { --sc-step: 1; }
+.sc-group [cmdk-group-items] > :nth-child(2) { --sc-step: 2; }
+.sc-group [cmdk-group-items] > :nth-child(3) { --sc-step: 3; }
+.sc-group [cmdk-group-items] > :nth-child(4) { --sc-step: 4; }
+.sc-group [cmdk-group-items] > :nth-child(5) { --sc-step: 5; }
+.sc-group [cmdk-group-items] > :nth-child(6) { --sc-step: 6; }
+.sc-group [cmdk-group-items] > :nth-child(7) { --sc-step: 7; }
+.sc-group [cmdk-group-items] > :nth-child(n + 8) { --sc-step: 8; }
+
+/* The numbers arrive with the answer they count, on its first step: the
+   result count beside the field, and each type's count, which mounts afresh
+   when it stops being a dash (SearchCommand.tsx keys it). */
+.sc-result-count,
+.sc-count--arrived {
+  animation: scDevelop 200ms linear backwards;
+}
+
+/* The sheet follows its answer down instead of jumping to it (measured: 401px
+   of wait, then 667px in one frame). cmdk measures the list's content into
+   `--cmdk-list-height` after every resize; until it has, the declaration is
+   invalid and the height stays `auto`, so an opening never animates from
+   zero. `content-box` because the variable is the content alone and the list
+   has the `p-1` of its utility class around it. The `min()` repeats the
+   list's `max-h-[60svh]` (ui/command.tsx) so the transition ends at the
+   clamp: aimed at a 1005px answer, the height reached the clamp 27ms in and
+   the growth read as a jump. Not on a phone, where the list fills the screen.
+   Not under reduced motion either: cmdk writes the variable a frame after the
+   content changes, and without the transition that frame would show the
+   answer clipped to the wait's height, so the list keeps its `auto`. */
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  .sc-sheet [cmdk-list] {
+    box-sizing: content-box;
+    height: min(var(--cmdk-list-height), 60svh);
+    transition: height 220ms var(--ease-out-cubic);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The row starts at `opacity: 0` and only reaches 1 through the animation
-     being cancelled here. Turning the motion off must not turn the answer off
-     with it — the same trap `SearchPage.css` documents for `.search-item-enter`. */
-  .sc-enter {
-    opacity: 1;
+  /* The pieces hold their first frame only through the animation's fill,
+     never a static opacity, so without the animation the answer is there at
+     full opacity. */
+  .sc-group [cmdk-group-heading],
+  .sc-group [cmdk-item],
+  .sc-sheet [cmdk-empty],
+  .sc-status--warn,
+  .sc-result-count,
+  .sc-count--arrived {
+    animation: none;
+  }
+
+  .sc-skeleton-icon,
+  .sc-skeleton-title,
+  .sc-skeleton-byline,
+  .sc-skeleton-meta {
     animation: none;
   }
 }
@@ -500,4 +609,104 @@
   .sc-footer {
     display: none;
   }
+}
+
+/* DOM order is input, types, clear, cancel, then results. The grid keeps field
+   actions on the first row while Tab reaches the type strip first. */
+.sc-index {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 0;
+  min-height: 0;
+}
+
+.sc-input-row {
+  grid-column: 1;
+  grid-row: 1;
+  height: 48px;
+  min-width: 0;
+  padding-block: 0;
+}
+
+.sc-input { min-width: 0; flex: 1; }
+.sc-result-count, .sc-count, .sc-suggestion-type, .sc-sources {
+  font: var(--mono-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+.sc-result-count { flex-shrink: 0; }
+
+.sc-clear-slot, .sc-cancel-slot {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-default);
+}
+.sc-clear-slot { grid-column: 2; }
+.sc-clear { margin-right: var(--space-2); }
+.sc-cancel-slot { grid-column: 3; }
+
+.sc-types {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-inline: contain;
+  padding-inline: var(--space-2);
+}
+.sc-types::-webkit-scrollbar, .sc-list::-webkit-scrollbar { display: none; }
+.sc-types [role='tab'] { flex-shrink: 0; }
+/* The rule under the active type sits inside the strip's scroll box, as on
+   SearchPage.css's filter bar. At the shared `bottom: -1px` it overhung the
+   box by a pixel, and that pixel made the strip scroll vertically too: on a
+   phone, a vertical drag over the types slid them up and down. */
+.sc-types [data-slot='tabs-indicator'] { bottom: 0; }
+.sc-types [role='tab']:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+.sc-panel { grid-column: 1 / -1; grid-row: 3; min-height: 0; }
+.sc-footer { grid-column: 1 / -1; grid-row: 4; flex-wrap: wrap; }
+.sc-footer .sc-sources { margin-left: auto; }
+
+.sc-sheet [cmdk-item] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  row-gap: 0;
+}
+.sc-sheet [cmdk-item] > .sc-icon { grid-column: 1; grid-row: 1; }
+.sc-sheet [cmdk-item] > .sc-label { grid-column: 2; grid-row: 1; }
+.sc-sheet [cmdk-item] > .sc-meta { grid-column: 2; grid-row: 2; max-width: none; }
+.sc-sheet [cmdk-item] > .sc-meta:empty { display: none; }
+.sc-sheet [cmdk-item] > .sc-follow { grid-column: 3; grid-row: 1 / 3; }
+.sc-suggestion-type, .sc-remove { grid-column: 3; grid-row: 1; }
+.sc-paper-text { grid-column: 2; grid-row: 1 / 3; min-width: 0; }
+.sc-paper-text > .sc-label { display: block; }
+.sc-paper-detail { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.sc-author { font: 400 0.75rem/1.5 var(--font-body); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-paper-numbers { font: var(--mono-label); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-tertiary); }
+.sc-paper-numbers--desktop { grid-column: 3; grid-row: 1 / 3; }
+.sc-paper-numbers--mobile { display: none; }
+.sc-show-all > span { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: var(--space-2); }
+
+@media (max-width: 640px) {
+  .sc-index { flex: 1; min-height: 0; }
+  .sc-input-row { height: 56px; padding-inline: var(--space-3) var(--space-1); }
+  .sc-result-count { font-size: 0.625rem; }
+  .sc-clear { height: 44px; width: 32px; margin-right: 0; }
+  .sc-cancel { margin-right: 0; padding-inline: var(--space-2); }
+  .sc-remove { min-width: 44px; min-height: 44px; }
+  .sc-types { mask-image: linear-gradient(to right, black calc(100% - var(--space-4)), transparent); padding-right: var(--space-4); }
+  .sc-types [role='tab'] { min-height: 44px; }
+  .sc-panel { display: flex; flex-direction: column; }
+  .sc-list { scrollbar-width: none; }
+  .sc-paper-text > .sc-label { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.35; }
+  .sc-paper-detail { flex-wrap: wrap; column-gap: var(--space-2); row-gap: 0; }
+  .sc-paper-numbers--desktop { display: none; }
+  .sc-paper-numbers--mobile { display: inline; }
 }

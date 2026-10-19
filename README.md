@@ -46,7 +46,11 @@ The current look comes from an editorial redesign — serif headlines, ruled sec
 
 **A citation map on every paper.** Papers with an identifier get a *Paper connections* view: the paper on a timeline rule, what it cites above, what cites it below, citations on a logarithmic axis. Walk the graph node by node with a breadcrumb trail back. Works with unknown data are counted honestly instead of being invented into a position.
 
-**Search that always lands.** Press `/` anywhere: papers, authors, institutions, topics and projects, and every result leads to a real destination — a paper opens its public page instantly, entities open their explorer profiles.
+**Search papers and entities.** Press `/` anywhere to search papers, authors, institutions, topics and projects. Results open paper pages or explorer profiles.
+
+The feed palette uses one OpenAlex request per existing search branch: title search for papers, work bylines for author suggestions, and the existing free autocomplete endpoint for topics. Paper and author queries include bounded spelling variants and an unfinished final word in the same request; it does not issue a second autocomplete request or build a local index. Titles already loaded in the feed contribute candidates to the settled paper answer. Exact names rank ahead of prefixes and one-edit matches; unrelated candidates are discarded. Topic spelling recovery reuses the existing taxonomy before its single autocomplete request; unknown topic misspellings remain limited by provider matching. Author suggestions retain canonical author IDs from bylines; author-level work and citation totals remain unknown until profile loading. Candidate limits and provider coverage still apply, so very short or ambiguous fragments cannot guarantee a particular result.
+
+The palette publishes each view once: All waits for every category to settle; a type tab waits only for its category. Rows and counts stay fixed as background requests finish. Type tabs are available before typing and remain selected when the query changes. Switching tabs uses the same in-flight responses, without starting another search. Empty categories remain selectable; unavailable categories are identified separately from zero results. Searches retain bounded deadlines and section-specific errors. Projects use the OpenAIRE Graph projects endpoint with bounded acronym/title recovery within a five-second budget. This recovery does not query OpenAlex.
 
 **A personal library, in color.** Lists carry one of eight colors generated under three constraints (shared lightness, capped chroma, minimum contrast), visible from the library to the lists you share.
 
@@ -67,7 +71,15 @@ Core sources include:
 - **NIH iCite** — citation and translation metrics for PubMed-indexed papers
 - **Hugging Face Hub** — AI papers and their linked models, datasets, code and project pages
 
-Economics and quantitative finance use arXiv in both the personalized and guest feeds. Their category searches also include OpenAlex preprints, so working papers can appear even when they have no arXiv copy. Paper status follows the provider metadata. Queries without economics or finance categories keep the article and conference-paper filter for OpenAlex discovery.
+Economics and quantitative finance use arXiv in both the personalized and guest feeds. Their category searches also include OpenAlex preprints, so working papers can appear even when they have no arXiv copy. Paper status follows the provider metadata. OpenAlex discovery includes articles, conference papers and scientific reviews in every field.
+
+Both feeds recover missing OpenAlex abstracts from linked arXiv records before admitting each page, including pagination and refresh. Preparation waits at most six seconds for recovery and metadata enrichment. The current cards remain readable while another page is prepared. Late responses can update citations and access metadata, but cannot change a displayed abstract or missing-abstract state. Older snapshots are refreshed; new snapshots store the prepared text. Recovery uses the supplied arXiv identifier and preserves existing abstracts, publication metadata and access status. If arXiv cannot supply the text, the card keeps its missing-abstract state.
+
+For missing abstracts with a DOI but no arXiv identifier, both feeds query INSPIRE's public API directly, without credentials. Recovery requires an exact DOI match and copies only the abstract, with INSPIRE provenance. It runs before display, uses one request at a time per tab, and allows at most two batches of twenty DOIs within six seconds, including queue time and response bodies. The tab caches up to 500 results for seven days, or six hours for confirmed absence. Failures pause new requests for at least one minute and honor longer `Retry-After` values. Truncated or conflicting results do not supply text. No generated summary substitutes for a missing abstract.
+
+Both feeds check OpenAlex candidates' document types by DOI against Crossref before displaying them. Confirmed books and bibliographic book reviews are excluded; scientific reviews, book chapters and research without abstracts remain eligible. Identifier-specific corrections cover the reviews of Lang's and Semple–Roth's *Introduction to Algebraic Geometry* ([JSTOR 1965](https://www.jstor.org/stable/i314912), [JSTOR 1951](https://www.jstor.org/stable/i314811)), Todd's [*Methods of Algebraic Geometry*](https://www.nature.com/articles/162006a0), and OpenAlex `W1503277431`, Oda's [*Convex Bodies and Algebraic Geometry*](https://link.springer.com/book/9783642725494). Crossref's generic journal-article type cannot identify those reviews, and the Oda record has no DOI. These corrections do not match titles or infer publication type from a missing abstract. This policy applies to feed admission, not search results or saved library records.
+
+Crossref classification uses its public API directly, with no credentials: one request at a time per tab, starts at least 200 ms apart, and a two-second deadline covering each candidate batch (at most four requests of twenty DOI lookups). The tab caches up to 500 DOI results for seven days, or six hours when Crossref has no matching record. DOIs containing the API filter delimiter (a comma) or longer than 240 characters are left unverified. Timeouts, invalid responses and provider failures are not cached as classifications; unverified candidates retain their existing type. A 429 or 503 pauses new lookups for `Retry-After`, or one minute when the browser cannot read that header. Feed snapshots created before this policy are refreshed instead of restoring unchecked cards.
 
 The project also contains integrations and enrichment tools for additional scientific services and domain-specific sources.
 
@@ -135,6 +147,11 @@ what never is, lives in `src/services/analyticsService.ts`.
 A **Cloudflare Worker** is used for server-side functionality such as caching scientific queries, protecting provider credentials and proxying APIs that should not be called directly from the browser. It also serves the AI features — plain-words rewriting and passage explanations — behind a server-enforced daily allowance that reserves usage before the model runs and refunds it on failure.
 
 This keeps the main application lightweight while allowing integrations that require server-side secrets.
+
+The command palette stores up to five successful typed queries locally per signed-in
+user under `papertok_recentSearches_<uid>`. Queries are saved when a result opens or the
+palette closes, can be removed in the palette, and are never sent as analytics. Guests
+have no recent-search history; switching accounts clears the in-memory list.
 
 ## Running PaperTok locally
 

@@ -2086,6 +2086,9 @@ test('/related relays a Semantic Scholar refusal with its code, its status and a
   // Semantic Scholar names no wait and its window is one second: a minute here
   // is fifty-nine seconds of a reader waiting for a slot that opened long ago.
   assert.equal(response.headers.get('retry-after'), '2');
+  // And the page can read it: unexposed, a browser hands the client `null`
+  // and the two-second wait is indistinguishable from a failure (PAP-49).
+  assert.match(response.headers.get('access-control-expose-headers') || '', /\bretry-after\b/);
 });
 
 test('/related names a stalled Semantic Scholar instead of dressing it as a generic failure', async () => {

@@ -35,9 +35,10 @@ test('the first paint waits for every chosen area', () => {
 test('the early page is dealt by area, and the late pool extends it without moving it', () => {
   assert.match(
     load,
-    /const early = composeGuestPage\(\s*dedupePapers\(PaperBuilder\.deduplicate\(fulfilledPaperLists\(await first\)\)\),\s*requestedPlan,\s*GUEST_PAGE_SIZE,\s*\);/,
+    /const early = await preparePage\(composeGuestPage\(\s*dedupePapers\(PaperBuilder\.deduplicate\(fulfilledPaperLists\(await first\)\)\),\s*requestedPlan,\s*GUEST_PAGE_SIZE,\s*\)\);/,
   );
-  assert.match(load, /setPapers\(extendGuestPage\(\[\], late, requestedPlan, GUEST_PAGE_SIZE\)\);/);
-  assert.match(load, /setPapers\(\(current\) => extendGuestPage\(current, late, requestedPlan, GUEST_PAGE_SIZE\)\);/);
+  assert.match(load, /const additions = extendGuestPage\(early, late, requestedPlan, GUEST_PAGE_SIZE\)/);
+  assert.match(load, /const ready = await preparePage\(additions\);/);
+  assert.match(load, /setPapers\(current => extendGuestPage\(current, ready, requestedPlan, GUEST_PAGE_SIZE\)\);/);
   assert.doesNotMatch(load, /\.slice\(0, GUEST_PAGE_SIZE\)/);
 });

@@ -105,23 +105,22 @@ test('the search asks OpenAlex for the fields the mapper reads, and nothing else
   assert.equal(url.searchParams.get('select'), OPENALEX_WORK_SEARCH_FIELDS.join(','));
   assert.equal(url.searchParams.get('page'), '3');
   assert.equal(url.searchParams.get('per-page'), '25');
-  assert.match(url.searchParams.get('filter')!, /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper$/);
+  assert.match(url.searchParams.get('filter')!, /^default\.search:"Quantum Physics" OR "Cosmology",type:article\|conference-paper\|review$/);
 });
 
 // OpenAlex renamed the type: `proceedings-article` matches nothing there any
 // more, so a filter carrying it dropped every conference paper without an
-// error. The feed's default asks for articles and conference papers; the paper
-// search widens to preprints and reviews, which is where an arXiv-only paper
-// or a survey lives.
+// error. Discovery also accepts scientific reviews; paper search widens this
+// list to include preprints.
 test('the type filter speaks OpenAlex\'s current vocabulary and never the retired one', () => {
   const adapter = new OpenAlexAdapter();
   const feedFilter = new URL(adapter.buildSearchUrl('segment anything')).searchParams.get('filter');
-  assert.equal(feedFilter, 'default.search:segment anything,type:article|conference-paper');
+  assert.equal(feedFilter, 'default.search:segment anything,type:article|conference-paper|review');
   assert.doesNotMatch(feedFilter, /proceedings-article/);
 
   const searchFilter = new URL(adapter.buildSearchUrl('segment anything', 1, { types: OPENALEX_SEARCH_TYPES }))
     .searchParams.get('filter');
-  assert.equal(searchFilter, 'default.search:segment anything,type:article|conference-paper|preprint|review');
+  assert.equal(searchFilter, 'default.search:segment anything,type:article|conference-paper|review|preprint');
 });
 
 test('a conference paper maps to the conference source type', () => {
@@ -191,14 +190,14 @@ test('economics and finance discovery includes preprints without changing other 
 
   for (const internalCategories of [['econ.EM'], ['q-fin.RM'], ['cs.LG', 'q-fin.PM']]) {
     assert.equal(filterFor({ internalCategories }),
-      'default.search:risk management,type:article|conference-paper|preprint');
+      'default.search:risk management,type:article|conference-paper|review|preprint');
   }
   assert.equal(filterFor({ internalCategories: ['cs.LG'] }),
-    'default.search:risk management,type:article|conference-paper');
+    'default.search:risk management,type:article|conference-paper|review');
   assert.equal(filterFor({ internalCategories: ['econ.GN'], types: ['article'] }),
     'default.search:risk management,type:article');
   assert.equal(filterFor({ internalCategories: ['q-fin.RM'], types: OPENALEX_SEARCH_TYPES }),
-    'default.search:risk management,type:article|conference-paper|preprint|review');
+    'default.search:risk management,type:article|conference-paper|review|preprint');
 });
 
 test('category discovery returns working papers and preserves their preprint status', async (t) => {
@@ -331,4 +330,30 @@ test('a closed search result takes its abstract from Europe PMC by that id and s
   assert.equal(merged.landingPageUrl, 'https://doi.org/10.1006/meth.2001.1262');
   assert.ok(Object.is(untouched, huber), 'a paper with no PubMed id is left as it was');
   assert.equal(untouched.abstract, 'No abstract available.');
+});
+
+test('title suggestions combine exact, fuzzy and prefix retrieval in one request', async t => {
+  const requests: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL, options: { retries?: number }) => {
+    requests.push(String(url));
+    assert.equal(options.retries, 0, 'no automatic retry can multiply a suggestion request');
+    return Response.json({ meta: { count: 0 }, results: [] });
+  });
+  await new OpenAlexAdapter().search('Segment Anythign', 1, { typeahead: true });
+  assert.equal(requests.length, 1);
+  assert.equal(new URL(requests[0]).searchParams.get('filter'),
+    'title.search.exact:"segment anythign" OR (segment~1 AND anythign~1) OR (segment~1 AND anythign*),type:article|conference-paper|review');
+});
+
+test('suggestion expansion preserves acronym phrases, numbers and default feed queries', () => {
+  const adapter = new OpenAlexAdapter();
+  const filter = (query: string, typeahead = true) => new URL(adapter.buildSearchUrl(query, 1, { typeahead })).searchParams.get('filter')!;
+  assert.equal(filter('FC-CLIP'), 'default.search.exact:"fc clip",type:article|conference-paper|review');
+  assert.equal(filter('risk management', false), 'default.search:risk management,type:article|conference-paper|review');
+  assert.doesNotMatch(filter('Llama 2'), /2[~*]/);
+  assert.match(filter('attention is all you ne'), /OR \(attention~1 AND is AND all AND you\)/);
+  assert.match(filter('Convolutions Die Hard: Open-Vocabulary Segmentation'), /^title.search.exact:/);
+  assert.match(filter('10.48550/arXiv.1706.03762'), /^default.search:10.48550\/arXiv.1706.03762,/);
+  assert.doesNotMatch(filter('C++'), /[~*]/);
+  assert.match(filter('atte'), /atte\*/);
 });

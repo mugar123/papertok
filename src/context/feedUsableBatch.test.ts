@@ -8,10 +8,16 @@ import { ARXIV_FEED_AREAS } from '../services/arxivService.ts';
 import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '../utils/asyncTiming.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
-import { takeFeedPage } from '../utils/feedEnrichment.ts';
+import { takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { readProfileSignals } from '../utils/interactionProfile.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
+import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+
+import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
+import { mergeICiteEnrichment } from '../services/iCiteService.ts';
+import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
+import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
@@ -22,7 +28,7 @@ assert.ok(start >= 0 && end > start, 'the feed loader callback must exist');
 const callback = stripTypeScriptTypes(source.slice(start, end) + '\n  }');
 const ref = <T>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-type FeedRecord = Pick<Paper, 'id' | 'title' | 'authors' | 'primaryCategory'>;
+type FeedRecord = Pick<Paper, 'id' | 'title' | 'authors' | 'primaryCategory'> & Partial<Paper>;
 const records = (prefix: string, count = 15): FeedRecord[] => Array.from({ length: count }, (_, index) => ({
   id: `${prefix}-${index}`,
   title: `${prefix} scientific research finding number ${index}`,
@@ -57,6 +63,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
     settleSourcesForFirstPaint: (promises: Iterable<unknown[]|PromiseLike<unknown[]>>, ms: number, ready: ((papers: unknown[]) => boolean)|undefined) => settleSourcesForFirstPaint(promises, ms, ready, { allTimeoutMs: 200 }),
     resolveWithin, fulfilledPaperLists, PaperBuilder, lateSourceCandidates, shouldAbortFeedLoad,
+    classifyFeedPublications, isFeedPublication,
     boredomLevel: ref(0), getBoredomThreshold: () => 5,
     likedPaperIdsRef: ref(new Set(known)), savedPaperIdsRef: ref(new Set()),
     readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
@@ -67,7 +74,9 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
     fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
-    awaitWithinGate: () => Promise.resolve([null, null, null]),
+    awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract, recoverFeedAbstracts: async (papers: Paper[]) => papers,
+    mergeOpenAlexEnrichment, preserveFeedAbstracts, mergeFeedAbstracts, mergeEuropePmcEnrichment, mergeICiteEnrichment,
+    scheduleFeedSnapshotWrite: () => {},
     logRankingBatch: () => {}, saveSeenPaperIds: () => {}, activeUserId: ref('test-user'),
     autoRetryUsedRef: ref(false), feedCache: ref({}),
     feedPreferenceSignature: (values: string[]) => values.join('|'), pendingSnapshotWritesRef: ref(new Map()),
@@ -80,6 +89,35 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   };
   return { state, env, run };
 }
+
+test('the signed-in loader excludes the video books and book review before display, including pagination', async t => {
+  const video: Paper[] = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+    { id: 'W1998067413', doi: '10.2307/2309205', title: 'Introduction to Algebraic Geometry.' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  for (const page of [0, 1]) {
+    const { state, run } = feed({ fast: [], slow: video, page });
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), ['W3029239115', 'scientific-review']);
+  }
+});
+
+test('an entirely excluded page advances pagination without restoring books through the seen bypass', async () => {
+  const books = [{ ...records('book', 1)[0], publicationType: 'book' }];
+  const { state, run } = feed({ fast: books });
+  await run(true);
+  await tick();
+  assert.deepEqual(state.papers, []);
+  assert.equal(state.continuations.length, 1);
+});
 
 test('a complete unseen page paints without waiting for a slower source', async () => {
   const slow = deferred();
@@ -220,3 +258,59 @@ for (const [name, preference, boredom] of [
       'the finance paper must reach the displayed batch');
   });
 }
+
+for (const existing of [[], records('already-visible', 15)]) {
+  test(`abstract recovery finishes before ${existing.length ? 'pagination' : 'first paint'} publishes the screenshot paper`, async () => {
+    const record = { ...records('electron', 1)[0], id: 'W2020715063', title: 'Effective action for strongly correlated electron systems', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
+    const { state, env, run } = feed({ fast: [record], papers: existing });
+    const pending = deferred();
+    env.recoverFeedAbstracts = async () => await pending.promise as Paper[];
+    let saved: Paper[] = [];
+    Object.assign(env, { writeFeedSnapshot: (_uid: string, _key: string, snapshot: { papers: Paper[] }) => { saved = snapshot.papers; } });
+    const loading = run(existing.length === 0);
+    await tick();
+    assert.deepEqual(state.papers, existing);
+    pending.resolve([{ ...record, abstract: 'Recovered source text.' }]);
+    await loading;
+    assert.equal(state.error, null);
+    assert.equal((state.papers.at(-1) as Paper).abstract, 'Recovered source text.');
+    assert.equal(saved.at(-1)?.abstract, 'Recovered source text.');
+  });
+}
+
+for (const stale of ['request', 'account'] as const) {
+  test(`an abstract response from a stale ${stale} cannot publish its page`, async () => {
+    const { state, env, run } = feed();
+    const pending = deferred();
+    env.recoverFeedAbstracts = async () => await pending.promise as Paper[];
+    const loading = run(true);
+    await tick();
+    if (stale === 'request') env.feedRequestId.current += 1;
+    else env.feedSessionId.current += 1;
+    pending.resolve(records('stale'));
+    await loading;
+    assert.deepEqual(state.papers, []);
+  });
+}
+
+test('signed-in Europe PMC recovery is visible on first paint and late responses cannot change text', async () => {
+  for (const late of [false, true]) {
+    const record = { ...records('pubmed', 1)[0], pmid: '123', abstract: '', sources: { primary: 'pubmed', enrichedBy: [] } };
+    const { state, env, run } = feed({ fast: [record] });
+    let deliver!: (records: Map<string, Partial<Paper> & { pmid: string }>) => void;
+    const pending = new Promise<Map<string, Partial<Paper> & { pmid: string }>>(resolve => { deliver = resolve; });
+    const response = new Map([['123', { pmid: '123', abstract: 'Europe PMC source text.', citationCount: 16, openAccess: true }]]);
+    env.enrichPubmedIds = () => late ? pending : Promise.resolve(response);
+    Object.assign(env, { awaitWithinGate: (promises: unknown[]) => awaitWithinGate(promises, { maxWaitMs: 10 }) });
+    await run(true);
+    assert.equal(state.error, null);
+    const initial = state.papers[0].abstract;
+    assert.equal(hasUsableAIAbstract(initial), !late);
+    if (!late) assert.equal(initial, 'Europe PMC source text.');
+    deliver(response);
+    await tick();
+    assert.equal(state.papers[0].abstract, initial);
+    assert.equal(state.papers[0].citationCount, 16);
+    assert.equal(state.papers[0].openAccess, true);
+  }
+});

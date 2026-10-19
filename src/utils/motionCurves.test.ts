@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from './motionCurves.ts';
+import { EASE_DRAWER, EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from './motionCurves.ts';
 
 const token = (css: string, name: string) => {
   const match = css.match(new RegExp(`${name}:\\s*cubic-bezier\\(([^)]+)\\)`));
@@ -14,6 +14,7 @@ test('the JS curves are the CSS tokens', async () => {
   assert.deepEqual([...EASE_OUT], token(css, '--ease-out'));
   assert.deepEqual([...EASE_OUT_EXPO], token(css, '--ease-out-expo'));
   assert.deepEqual([...EASE_IN_OUT], token(css, '--ease-in-out'));
+  assert.deepEqual([...EASE_DRAWER], token(css, '--ease-drawer'));
 });
 
 test('animateSize travels from the measured size to the new one, and skips a change under 2px', () => {

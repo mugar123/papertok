@@ -2,8 +2,11 @@ import type { ComponentProps } from 'react';
 
 import PetriBell from './PetriBell.tsx';
 import PetriBlankPage from './PetriBlankPage.tsx';
+import PetriCompass from './PetriCompass.tsx';
 import PetriFlask from './PetriFlask.tsx';
 import PetriKey from './PetriKey.tsx';
+import PetriLetGo from './PetriLetGo.tsx';
+import PetriLost from './PetriLost.tsx';
 import PetriProfile from './PetriProfile.tsx';
 import PetriReading from './PetriReading.tsx';
 import PetriStar from './PetriStar.tsx';
@@ -26,14 +29,17 @@ const POSES = {
   blankPage: PetriBlankPage,
   upset: PetriUpset,
   star: PetriStar,
+  compass: PetriCompass,
+  letGo: PetriLetGo,
+  lost: PetriLost,
 };
 
 /**
  * Petri, the mascot: `<Petri pose="flask" label="…" />`. The pose's own props
- * (`name`, `level`, `visibility`) pass through. With a `label` the drawing is
+ * (`name`, `level`, `visibility`, `code`) pass through. With a `label` the drawing is
  * an image of that name; without one it is decoration.
  */
-export default function Petri({ pose, ...props }: ComponentProps<typeof PetriWelcome> & ComponentProps<typeof PetriReading> & ComponentProps<typeof PetriProfile> & { pose: keyof typeof POSES }) {
+export default function Petri({ pose, ...props }: ComponentProps<typeof PetriWelcome> & ComponentProps<typeof PetriReading> & ComponentProps<typeof PetriProfile> & ComponentProps<typeof PetriLost> & { pose: keyof typeof POSES }) {
   const Pose = POSES[pose];
   return <Pose {...props} />;
 }

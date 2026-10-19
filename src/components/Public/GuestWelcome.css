@@ -17,11 +17,13 @@
   width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
+  isolation: isolate;
 
   background: transparent;
 }
 
 
+.gw::before,
 .gw-bar::before,
 .gw-foot::before {
   content: '';

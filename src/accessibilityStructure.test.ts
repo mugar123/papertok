@@ -674,7 +674,7 @@ test('/search is a <main> with an h1', async () => {
   const search = await readSource(new URL('./components/Search/SearchPage.tsx', import.meta.url));
   assert.match(
     search,
-    /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"[\s\S]{0,300}?>\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<div className="search-header">/,
+    /<main className="search-page-container">\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<div className="search-header">/,
   );
 });
 

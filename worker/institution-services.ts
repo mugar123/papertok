@@ -1,16 +1,19 @@
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery, InstitutionResolver, LookupOptions } from './institution-access.ts';
 
-type ServiceEntry = typeof SERVICE_CATALOGUE[number];
-type ServiceSubscription = { collection: string | null | undefined; ownPlatform: boolean };
+interface ServiceEntry {
+  id: string; packageHint: string; name: string; publisher: string; url: string;
+  monogram: string; color: string; issn: string; year: number; doi?: string;
+}
+type ServiceSubscription = { collection: string | null | undefined; ownPlatform: boolean; accessUrl?: string };
 type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | typeof UNCHECKED;
 
 
 /**
- * Which publisher platforms a reader's library subscribes to.
+ * Publications and publisher platforms found through the library.
  *
  * Each platform in the catalogue is probed with the same providers, in the
- * same order, as `/access`: GetFTR with a paywalled DOI from that platform,
+ * same order, as `/access`: GetFTR when a paywalled probe DOI is available,
  * then the library's link resolver with the ISSN and year of one of its
  * journals. The catalogue already knows the journal, so Crossref is not asked.
  * A platform is listed when its probe is entitled; the list describes the
@@ -20,8 +23,9 @@ type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | t
 import {
   ACCESS_CACHE_SECONDS,
   GETFTR_BATCH_SIZE,
-  INSTITUTION_RESOLVERS,
   InstitutionAccessError,
+  RESOLVER_READING,
+  findResolver,
   readInstitutionQuery,
   askGetFtrBatch,
   askResolver,
@@ -33,20 +37,8 @@ import { cacheResponse } from './provider-runtime.ts';
 export const INSTITUTION_SERVICES_PATH = '/institution/services';
 const SERVICES_PARTIAL_CACHE_SECONDS = 60 * 60;
 
-export async function handleInstitutionServices(request: Request, env: WorkerEnv) {
-  const url = new URL(request.url);
-  const origin = request.headers.get('origin') || '';
-  const query = readInstitutionQuery(url.searchParams);
-  const ttl = (payload: { partial: boolean }) => (payload.partial ? SERVICES_PARTIAL_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
-  return cacheResponse(request, origin, env, ttl, () => lookupInstitutionServices(query, { env }), {
-    canonicalParams: servicesCacheParams(query, env),
-  });
-}
-
-// One deadline for every probe together. The whole catalogue must not run
-// past the browser's wait (measured with 66 platforms against USAL's resolver
-// on 2026-10-14: 3.2 s), and a probe cut short is reported as `partial`
-// rather than as a platform the library lacks.
+// Each page must finish before the browser's 15 s request deadline.
+// Timeouts remain partial results rather than evidence of absent access.
 const SERVICES_DEADLINE_MS = 12000;
 const PROBE_CONCURRENCY = 4;
 // How many requests one lookup may send upstream. A Worker invocation on the
@@ -57,15 +49,17 @@ const PROBE_CONCURRENCY = 4;
 // a few requests; the resolver answers one journal per request, so without a
 // key the platforms past the budget are reported as unchecked, not absent.
 export const SUBREQUEST_BUDGET = 40;
+// Leaves room for two GetFTR batches even when every DOI needs a resolver fallback.
+const SERVICES_PAGE_SIZE = 36;
 const FAILED = Symbol('failed');
 const UNCHECKED = Symbol('unchecked');
 
 // `color` and `monogram` are brand data for the tile the client draws; the
-// publishers' logos and favicons are trademarks and are not fetched.
+// publishers' logos and favicons are trademarks and are not fetched at runtime.
 // `issn` and `year` name a flagship journal for the resolver, `doi` a
 // paywalled article of it for GetFTR; none of the three leaves the Worker.
 // The DOI must stay closed: GetFTR says yes to open content for anyone, which
-// would list the platform for every library. Each was closed in Unpaywall
+// would list the platform for every library. Each probe DOI was closed in Unpaywall
 // (`is_oa: false`) and matched its ISSN and year in Crossref on 2026-10-13;
 // the platforms from JSTOR on were checked the same way through OpenAlex's
 // `open_access.is_oa` (Unpaywall's data) on 2026-10-14, after 19 university
@@ -77,7 +71,7 @@ const UNCHECKED = Symbol('unchecked');
 // `packageHint` is the word a library's own package for the platform carries
 // ("Wiley Online Library All Journals"): a package without it is an
 // aggregator's (ProQuest, EBSCO), and the row says so.
-export const SERVICE_CATALOGUE = Object.freeze([
+export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
   { id: 'springerlink', packageHint: 'SpringerLink', name: 'SpringerLink', publisher: 'Springer Nature', url: 'https://link.springer.com', monogram: 'SL', color: '#2B5E9B', issn: '0022-2461', year: 2021, doi: '10.1007/s10853-021-06462-4' },
@@ -144,15 +138,41 @@ export const SERVICE_CATALOGUE = Object.freeze([
   { id: 'edinburghup', packageHint: 'Edinburgh', name: 'Edinburgh University Press Journals', publisher: 'Edinburgh University Press', url: 'https://www.euppublishing.com', monogram: 'EUP', color: '#1D1D1B', issn: '0036-9241', year: 2021, doi: '10.3366/shr.2021.0533' },
   { id: 'brepols', packageHint: 'Brepols', name: 'Brepols Online', publisher: 'Brepols', url: 'https://www.brepolsonline.net', monogram: 'B', color: '#8B1E2B', issn: '0083-5897', year: 2021, doi: '10.1484/j.viator.5.130876' },
   { id: 'msp', packageHint: 'Mathematical Sciences Publishers', name: 'Mathematical Sciences Publishers', publisher: 'MSP', url: 'https://msp.org', monogram: 'MSP', color: '#2B4C7E', issn: '1465-3060', year: 2021, doi: '10.2140/gt.2021.25.2195' },
+  // Candidates from MIT's news guide and publisher title lists (see worker/README.md).
+  // No invented article DOI: these are resolved by ISSN for the last complete year.
+  { id: 'economist', packageHint: 'Economist', name: 'The Economist', publisher: 'The Economist Group', url: 'https://www.economist.com', monogram: 'E', color: '#E3120B', issn: '0013-0613', year: 2025 },
+  { id: 'financialtimes', packageHint: 'Financial Times', name: 'Financial Times', publisher: 'Financial Times', url: 'https://www.ft.com', monogram: 'FT', color: '#FFF1E5', issn: '0307-1766', year: 2025 },
+  { id: 'wsj', packageHint: 'Wall Street Journal', name: 'The Wall Street Journal', publisher: 'Dow Jones', url: 'https://www.wsj.com', monogram: 'WSJ', color: '#1C1C1C', issn: '0099-9660', year: 2025 },
+  { id: 'nytimes', packageHint: 'New York Times', name: 'The New York Times', publisher: 'The New York Times Company', url: 'https://www.nytimes.com', monogram: 'NYT', color: '#1C1C1C', issn: '0362-4331', year: 2025 },
+  { id: 'newyorker', packageHint: 'New Yorker', name: 'The New Yorker', publisher: 'Condé Nast', url: 'https://www.newyorker.com', monogram: 'NY', color: '#1C1C1C', issn: '0028-792X', year: 2025 },
+  { id: 'guardian', packageHint: 'Guardian', name: 'The Guardian', publisher: 'Guardian News & Media', url: 'https://www.theguardian.com', monogram: 'G', color: '#052962', issn: '0261-3077', year: 2025 },
+  { id: 'hbr', packageHint: 'Harvard Business', name: 'Harvard Business Review', publisher: 'Harvard Business Publishing', url: 'https://hbr.org', monogram: 'HBR', color: '#C8102E', issn: '0017-8012', year: 2025 },
+  { id: 'businessweek', packageHint: 'Bloomberg', name: 'Bloomberg Businessweek', publisher: 'Bloomberg', url: 'https://www.bloomberg.com/businessweek', monogram: 'BW', color: '#1C1C1C', issn: '0007-7135', year: 2025 },
 ].map(entry => Object.freeze(entry)));
+
+export async function handleInstitutionServices(request: Request, env: WorkerEnv) {
+  const url = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  const query = readInstitutionQuery(url.searchParams);
+  const rawOffset = url.searchParams.get('offset');
+  const offset = rawOffset === null ? undefined : Number(rawOffset);
+  if (rawOffset !== null && (!/^\d+$/.test(rawOffset) || !Number.isSafeInteger(offset)
+    || offset! < 0 || offset! >= SERVICE_CATALOGUE.length || offset! % SERVICES_PAGE_SIZE !== 0)) {
+    throw new InstitutionAccessError('INVALID_SERVICES_OFFSET', 400);
+  }
+  const ttl = (payload: { partial: boolean }) => (payload.partial ? SERVICES_PARTIAL_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
+  return cacheResponse(request, origin, env, ttl, () => lookupInstitutionServices(query, { env, offset }), {
+    canonicalParams: servicesCacheParams(query, env, offset),
+  });
+}
 
 /**
  * A short fingerprint of what a list depends on besides the library: the
- * catalogue entries and the budget. FNV-1a over the ids and DOIs, as hex.
+ * catalogue entries, paging and the budget. Includes ISSN/year and displayed metadata.
  */
-export function catalogueFingerprint(entries: ReadonlyArray<Pick<ServiceEntry, 'id' | 'doi'>>, budget: number) {
+export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budget: number) {
   let hash = 0x811c9dc5;
-  for (const char of `${budget}|${entries.map(entry => `${entry.id}:${entry.doi}`).join(',')}`) {
+  for (const char of JSON.stringify([budget, SERVICES_PAGE_SIZE, entries])) {
     hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, '0');
@@ -165,8 +185,8 @@ export function catalogueFingerprint(entries: ReadonlyArray<Pick<ServiceEntry, '
  * Seen on 2026-10-14: the catalogue grew from 14 to 66 platforms and USAL
  * kept seeing yesterday's 12 until the entry expired.
  */
-export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv) {
-  return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET) };
+export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv, offset?: number) {
+  return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET), reading: RESOLVER_READING, ...(offset === undefined ? {} : { offset: String(offset) }) };
 }
 
 /** Whether a package name is the platform's or its publisher's own. */
@@ -190,31 +210,41 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
   const paid = answer.services.filter(service => service.url && !service.free);
   const own = paid.find(service => namesPlatform(service.name, entry));
   const subscription = own || paid[0];
-  return subscription ? { collection: subscription.name, ownPlatform: Boolean(own) } : null;
+  if (subscription) return {
+    collection: subscription.name,
+    ownPlatform: Boolean(own),
+    // Press titles may only be available through an aggregator, whose library
+    // link must be used instead of sending the reader to the publisher paywall.
+    ...(!entry.doi ? { accessUrl: subscription.url! } : {}),
+  };
+  // A service hidden by an IP or group filter is one this probe cannot see:
+  // the platform is unchecked, not absent.
+  return answer.restricted ? UNCHECKED : null;
 }
 
 /**
- * GetFTR on the whole catalogue, a batch of DOIs per request. Fills
+ * GetFTR on the requested entries with DOIs, a batch per request. Fills
  * `outcomes` with `{ collection: null, ownPlatform: true }`, null, or leaves
  * a platform undefined for the resolver to decide (GetFTR's `maybe`, a
  * publisher outside it) — UNCHECKED when there is no resolver to ask. A
  * request that fails leaves its platforms to the resolver too, or FAILED
  * without one. Returns the number of requests made.
  */
-async function askGetFtrForCatalogue(outcomes: ServiceOutcome[], { resolver, entityId, rorId, env, fetchImpl, signal }: Pick<InstitutionQuery, 'entityId' | 'rorId'> & { resolver: InstitutionResolver | null | undefined; env: WorkerEnv; fetchImpl: typeof fetch; signal: AbortSignal }) {
+async function askGetFtrForCatalogue(entries: readonly ServiceEntry[], outcomes: ServiceOutcome[], { resolver, entityId, rorId, env, fetchImpl, signal }: Pick<InstitutionQuery, 'entityId' | 'rorId'> & { resolver: InstitutionResolver | null | undefined; env: WorkerEnv; fetchImpl: typeof fetch; signal: AbortSignal }) {
+  const candidates = entries.flatMap((entry, index) => entry.doi ? [{ index, doi: entry.doi }] : []);
   const batches = [];
-  for (let start = 0; start < SERVICE_CATALOGUE.length; start += GETFTR_BATCH_SIZE) {
-    batches.push(SERVICE_CATALOGUE.slice(start, start + GETFTR_BATCH_SIZE).map((entry, offset): [number, ServiceEntry] => [start + offset, entry]));
+  for (let start = 0; start < candidates.length; start += GETFTR_BATCH_SIZE) {
+    batches.push(candidates.slice(start, start + GETFTR_BATCH_SIZE));
   }
   await Promise.all(batches.map(async (batch) => {
     let verdicts = null;
     try {
-      verdicts = await askGetFtrBatch({ dois: batch.map(([, entry]) => entry.doi), entityId, rorId }, env, fetchImpl, signal);
+      verdicts = await askGetFtrBatch({ dois: batch.map(({ doi }) => doi), entityId, rorId }, env, fetchImpl, signal);
     } catch {
       // Left null: the resolver takes the batch, or it counts as failed.
     }
-    for (const [index, entry] of batch) {
-      const verdict = verdicts ? verdicts.get(entry.doi) : null;
+    for (const { index, doi } of batch) {
+      const verdict = verdicts ? verdicts.get(doi) : null;
       if (verdict) outcomes[index] = verdict.status === 'entitled' ? { collection: null, ownPlatform: true } : null;
       else if (resolver) outcomes[index] = undefined;
       else outcomes[index] = verdicts ? UNCHECKED : FAILED;
@@ -225,19 +255,20 @@ async function askGetFtrForCatalogue(outcomes: ServiceOutcome[], { resolver, ent
 
 export async function lookupInstitutionServices(
   { domain, entityId = null, rorId = null }: InstitutionQuery,
-  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now }: LookupOptions = {},
+  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now, offset }: LookupOptions & { offset?: number } = {},
 ) {
-  const resolver = Object.hasOwn(INSTITUTION_RESOLVERS, domain) ? INSTITUTION_RESOLVERS[domain] : null;
+  const resolver = findResolver({ domain, rorId });
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
   const signal = AbortSignal.timeout(SERVICES_DEADLINE_MS);
+  const entries = offset === undefined ? SERVICE_CATALOGUE : SERVICE_CATALOGUE.slice(offset, offset + SERVICES_PAGE_SIZE);
 
   // `undefined` is a platform still to be asked about (filled: a hole would
   // be skipped by the iteration below).
-  const outcomes = new Array<ServiceOutcome>(SERVICE_CATALOGUE.length).fill(undefined);
+  const outcomes = new Array<ServiceOutcome>(entries.length).fill(undefined);
   let budget = SUBREQUEST_BUDGET;
   if (getFtr) {
-    budget -= await askGetFtrForCatalogue(outcomes, { resolver, entityId, rorId, env, fetchImpl, signal });
+    budget -= await askGetFtrForCatalogue(entries, outcomes, { resolver, entityId, rorId, env, fetchImpl, signal });
   }
 
   // The resolver, one journal per request, for what is still undecided and
@@ -253,7 +284,7 @@ export async function lookupInstitutionServices(
   const drain = async () => {
     while (next < pending.length) {
       const index = pending[next++];
-      outcomes[index] = await probeResolver(SERVICE_CATALOGUE[index], resolver!, fetchImpl, signal).catch(() => FAILED);
+      outcomes[index] = await probeResolver(entries[index], resolver!, fetchImpl, signal).catch(() => FAILED);
     }
   };
   await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
@@ -263,10 +294,10 @@ export async function lookupInstitutionServices(
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
   const services: Array<Pick<ServiceEntry, 'id' | 'name' | 'publisher' | 'url' | 'monogram' | 'color'> & ServiceSubscription> = [];
-  SERVICE_CATALOGUE.forEach(({ id, name, publisher, url, monogram, color }, index) => {
+  entries.forEach(({ id, name, publisher, url, monogram, color }, index) => {
     const outcome = outcomes[index];
     if (outcome && outcome !== FAILED && outcome !== UNCHECKED) {
-      services.push({ id, name, publisher, url, monogram, color, collection: outcome.collection, ownPlatform: outcome.ownPlatform });
+      services.push({ id, name, publisher, url: outcome.accessUrl || url, monogram, color, collection: outcome.collection, ownPlatform: outcome.ownPlatform });
     }
   });
   return {
@@ -274,5 +305,8 @@ export async function lookupInstitutionServices(
     partial: outcomes.includes(FAILED),
     unchecked: outcomes.filter(outcome => outcome === UNCHECKED).length,
     checkedAt: new Date(now()).toISOString(),
+    ...(offset === undefined ? {} : {
+      nextOffset: offset + entries.length < SERVICE_CATALOGUE.length ? offset + entries.length : null,
+    }),
   };
 }

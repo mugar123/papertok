@@ -1,6 +1,45 @@
 import type { Paper } from '../models/Paper.ts';
 
 import { PaperBuilder } from '../services/PaperBuilder.ts';
+import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
+import { normalizeArxivId, normalizeDoi } from './publicNavigation.ts';
+
+export function getMissingArxivAbstractIds(papers: Paper[]) {
+  return [...new Set(papers
+    .filter(paper => paper.sources.primary === 'openalex' && !hasUsableAIAbstract(paper.abstract))
+    .map(paper => normalizeArxivId(paper.arxivId).replace(/v\d+$/, ''))
+    .filter(Boolean))].sort();
+}
+
+export function getMissingAbstractDois(papers: Paper[]) {
+  return [...new Set(papers
+    .filter(paper => paper.sources.primary === 'openalex'
+      && !hasUsableAIAbstract(paper.abstract) && !normalizeArxivId(paper.arxivId))
+    .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
+}
+
+export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
+  const abstracts = new Map(records
+    .filter(paper => paper.sources?.primary === 'arxiv')
+    .filter(paper => hasUsableAIAbstract(paper.abstract))
+    .map(paper => [normalizeArxivId(paper.arxivId).replace(/v\d+$/, ''), paper.abstract]));
+  const doiAbstracts = new Map(records
+    .filter(paper => paper.sources?.primary === 'inspire' && hasUsableAIAbstract(paper.abstract))
+    .map(paper => [normalizeDoi(paper.doi), paper.abstract]));
+  let changed = false;
+  const merged = papers.map(paper => {
+    if (paper.sources.primary !== 'openalex' || hasUsableAIAbstract(paper.abstract)) return paper;
+    const id = normalizeArxivId(paper.arxivId).replace(/v\d+$/, '');
+    const arxivAbstract = id && abstracts.get(id);
+    const doi = normalizeDoi(paper.doi);
+    const abstract = arxivAbstract || (doi && doiAbstracts.get(doi));
+    if (!abstract) return paper;
+    changed = true;
+    // Recovery supplies only text; it must not replace publication or access metadata.
+    return PaperBuilder.merge(paper, { abstract }, arxivAbstract ? 'arxiv' : 'inspire');
+  });
+  return changed ? merged : papers;
+}
 
 export function getOpenAlexEnrichmentId(paperOrId: string | Partial<Paper> | null | undefined) {
   const candidates = typeof paperOrId === 'string'
@@ -90,5 +129,16 @@ export function mergeOpenAlexEnrichment(papers: Paper[], enrichmentById: Record<
     // a late enrichment pass if a no-op merge hands back the exact same
     // object paper had before, not just a freshly-built lookalike.
     return paperFieldsEqual(merged, paper) ? paper : merged;
+  });
+}
+
+// Metadata can arrive after admission; the text the reader saw must stay stable.
+export function preserveFeedAbstracts(current: Paper[], enriched: Paper[]) {
+  if (current === enriched) return current;
+  return enriched.map((paper, index) => {
+    const previous = current[index];
+    if (paper.abstract === previous.abstract && paper.summary === previous.summary) return paper;
+    const stable = { ...paper, abstract: previous.abstract, summary: previous.summary };
+    return paperFieldsEqual(stable, previous) ? previous : stable;
   });
 }

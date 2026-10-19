@@ -1,7 +1,7 @@
 .following-settings-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 104px 24px 72px;
+  padding: calc(var(--nav-total) + var(--space-10)) var(--space-6) var(--space-16);
   background: var(--bg-primary);
 }
 
@@ -10,67 +10,100 @@
   margin: 0 auto;
 }
 
-/* Four chips, not a four-column table: the counts differ by an order of
-   magnitude and the labels by a word, so equal columns wasted the row and
-   still truncated "Instituciones". */
+.following-settings-layout {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: var(--space-12);
+  align-items: start;
+}
+
+.following-settings-back {
+  margin: 0 0 var(--space-3) -11px;
+}
+
+.following-settings-heading {
+  margin-bottom: var(--space-10);
+}
+
+.following-settings-heading h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(1.9rem, 4.2vw, 2.6rem);
+  font-weight: var(--fw-semibold);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.following-settings-heading p {
+  max-width: 40rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
 .following-settings-tabs {
+  position: sticky;
+  top: calc(var(--nav-total) + var(--space-6));
   display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-bottom: var(--space-5);
+  flex-direction: column;
+  gap: 2px;
 }
 
 .following-settings-tabs button {
-  display: inline-flex;
-  min-height: 44px;
+  display: flex;
+  min-height: 40px;
   align-items: center;
-  gap: 8px;
-  padding: 9px 13px;
-  border: 1px solid var(--border-default);
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-lg);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: var(--fw-bold);
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.following-settings-tabs button > svg {
+  flex: 0 0 auto;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .following-settings-tabs button:hover {
-    border-color: var(--border-strong);
     color: var(--text-primary);
+    background: var(--bg-sunken);
   }
 }
 
 .following-settings-tabs button.is-active {
-  border-color: var(--border-ink);
   color: var(--text-primary);
   background: var(--bg-secondary);
+  font-weight: var(--fw-semibold);
+}
+
+.following-settings-tabs button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .following-settings-tabs button span {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .following-settings-tabs button small {
-  display: grid;
-  min-width: 18px;
-  height: 18px;
-  place-items: center;
-  padding: 0 5px;
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  background: var(--bg-secondary);
+  color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: var(--fw-semibold);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .following-settings-tabs button.is-active small {
-  color: var(--text-inverse);
-  background: var(--accent-primary);
+  color: var(--text-primary);
 }
 
 .following-settings-feedback {
@@ -81,122 +114,96 @@
 }
 
 .following-settings-list {
-  border-top: 1px solid var(--border-default);
-  border-bottom: 1px solid var(--border-default);
+  display: grid;
 }
 
 .following-settings-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px;
-  align-items: stretch;
-  min-height: 76px;
-  overflow: hidden;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.following-settings-item:last-child {
-  border-bottom: 0;
-}
-
-.following-settings-link {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 13px;
-  min-width: 0;
-  padding: 13px 14px 13px 4px;
-  color: inherit;
+  gap: var(--space-3);
+  min-height: 56px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-1);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
   transition: background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .following-settings-link:hover {
+  .following-settings-item:hover {
     background: var(--bg-sunken);
   }
 }
 
-.following-settings-link > svg {
-  color: var(--text-tertiary);
-  transition: color var(--transition-fast), transform var(--transition-fast);
+.following-settings-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .following-settings-link:hover > svg {
-    color: var(--gradient-physics);
-    transform: translateX(2px);
-  }
+.following-settings-link:hover {
+  text-decoration: none;
 }
 
-.following-settings-entity-icon {
+.following-settings-initials {
   display: grid;
-  width: 40px;
-  height: 40px;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-full);
+  font: var(--fw-semibold) 12px/1 var(--font-mono);
+  letter-spacing: 0.02em;
 }
 
-.following-settings-entity-icon.is-author {
+.following-settings-initials.is-author {
   color: var(--tint-green-fg);
   background: var(--tint-green-bg);
 }
 
-.following-settings-entity-icon.is-topic {
+.following-settings-initials.is-topic {
   color: var(--gradient-physics);
   background: var(--bg-secondary);
 }
 
-.following-settings-entity-icon.is-institution {
+.following-settings-initials.is-institution {
   color: var(--gradient-qfin);
   background: rgba(6, 182, 212, 0.07);
 }
 
-.following-settings-entity-icon.is-project {
+.following-settings-initials.is-project {
   color: var(--tint-amber-fg);
   background: rgba(245, 158, 11, 0.07);
 }
 
-.following-settings-entity-copy {
+.following-settings-entity-name {
+  display: -webkit-box;
   min-width: 0;
-}
-
-.following-settings-entity-copy strong,
-.following-settings-entity-copy small {
-  display: block;
   overflow: hidden;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.following-settings-entity-copy strong {
   color: var(--text-primary);
   font-size: 14px;
-}
-
-.following-settings-entity-copy small {
-  margin-top: 4px;
-  color: var(--text-tertiary);
-  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .following-settings-unfollow {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-self: center;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
-  color: var(--text-tertiary);
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .following-settings-unfollow:hover {
-    border-color: rgba(239, 68, 68, 0.22);
-    color: var(--tint-red-fg);
-    background: rgba(239, 68, 68, 0.065);
+  .following-settings-unfollow {
+    opacity: 0;
+  }
+
+  .following-settings-item:hover .following-settings-unfollow,
+  .following-settings-item:focus-within .following-settings-unfollow {
+    opacity: 1;
   }
 }
 
@@ -204,17 +211,12 @@
   opacity: 0.55;
 }
 
-.following-settings-unfollow svg {
-  animation: none;
-}
-
 .following-settings-unfollow:disabled svg,
 .following-settings-loading svg {
   animation: followingSettingsSpin 0.85s linear infinite;
 }
 
-.following-settings-loading,
-.following-settings-empty {
+.following-settings-loading {
   display: grid;
   justify-items: center;
   min-height: 280px;
@@ -230,52 +232,28 @@
   font-size: 13px;
 }
 
-.following-settings-empty > svg {
-  color: var(--gradient-physics);
-}
-
-.following-settings-empty h2 {
-  margin-top: 14px;
-  font-size: 19px;
-  letter-spacing: 0;
-}
-
-.following-settings-empty p {
-  max-width: 420px;
-  margin-top: 7px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.following-settings-empty button {
-  min-height: 39px;
-  margin-top: 18px;
-  padding: 8px 14px;
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-lg);
-  color: var(--accent-primary);
-  background: var(--bg-secondary);
-  font-size: 12px;
-  font-weight: 700;
+.petri.following-settings-empty-petri .onboarding-petri-body {
+  animation: none;
 }
 
 @keyframes followingSettingsSpin {
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 700px) {
-  .following-settings-page {
-    padding: 88px 16px 52px;
+@media (max-width: 900px) {
+  .following-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
   }
 
-  /* One scrolling row rather than a wrapped grid of chips: two ragged rows
-     of four cost more vertical space than the list below deserves. */
   .following-settings-tabs {
-    flex-wrap: nowrap;
-    margin: 0 -16px var(--space-5);
-    padding: 0 16px;
+    position: static;
+    flex-direction: row;
+    gap: var(--space-1);
+    margin: 0 -24px;
+    padding: 0 24px;
     overflow-x: auto;
+    overscroll-behavior-inline: contain;
     scrollbar-width: none;
   }
 
@@ -284,7 +262,35 @@
   }
 
   .following-settings-tabs button {
+    min-height: 44px;
     flex: 0 0 auto;
+    gap: var(--space-2);
+  }
+}
+
+@media (max-width: 700px) {
+  .following-settings-page {
+    padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-12);
+  }
+
+  .following-settings-heading {
+    margin-bottom: var(--space-5);
+  }
+
+  .following-settings-tabs {
+    margin: 0 -16px;
+    padding: 0 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .following-settings-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    overflow: visible;
   }
 }
 
@@ -293,22 +299,80 @@
     padding-right: 12px;
     padding-left: 12px;
   }
+}
 
-  .following-settings-link {
-    grid-template-columns: 38px minmax(0, 1fr) 18px;
-    gap: 10px;
+@media (pointer: coarse) {
+  .following-settings-unfollow {
+    width: 44px;
+    height: 44px;
   }
+}
 
-  .following-settings-entity-icon {
-    width: 36px;
-    height: 36px;
-  }
+.following-unfollow-dialog,
+.following-unfollow-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+.following-unfollow-dialog {
+  padding: var(--space-6);
+}
+
+.following-unfollow-sheet {
+  padding: var(--space-3) var(--space-3) 0;
+}
+
+.petri.following-unfollow-petri {
+  width: 6rem;
+  height: auto;
+  margin: 0 0 var(--space-2);
+}
+
+.petri.following-unfollow-petri .onboarding-petri-body {
+  animation: none;
+}
+
+.following-unfollow-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+}
+
+.following-unfollow-dialog [data-slot='alert-dialog-description'],
+.following-unfollow-description {
+  max-width: 40ch;
+  margin: 0;
+}
+
+.following-unfollow-description {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.following-unfollow-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.following-unfollow-sheet .following-unfollow-actions {
+  align-self: stretch;
+}
+
+.following-unfollow-sheet .following-unfollow-actions > * {
+  flex: 1;
+  height: 44px;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .following-settings-tabs button,
-  .following-settings-tabs button small,
-  .following-settings-link > svg,
+  .following-settings-item,
   .following-settings-unfollow,
   .following-settings-unfollow:disabled svg,
   .following-settings-loading svg {

@@ -1,5 +1,5 @@
 export type GuestFeedPlan = ReturnType<typeof buildGuestFeedPlan>;
-import { CATEGORIES } from '../data/categories.ts';
+import { CATEGORIES, INTEREST_AREAS, getCategoryArea } from '../data/categories.ts';
 import { ARXIV_FEED_AREAS } from '../services/arxivService.ts';
 import { guestCategoriesForAreas, guestTopicListsForAreas, normalizeGuestAreas, normalizeGuestTopics } from './guestInterests.ts';
 
@@ -52,6 +52,8 @@ export function buildGuestDiscoveryQuery(categories = GUEST_CATEGORIES) {
 }
 
 const PUBMED_AREAS = new Set(['bio', 'med']);
+
+const taxonomyArea = (key: string) => getCategoryArea(Object.keys(INTEREST_AREAS[key].subcategories)[0]) ?? key;
 
 // One query each. The signed-in feed sends five categories to arXiv, five to
 // OpenAlex and three to PubMed per page; a guest who picked four areas should
@@ -106,8 +108,8 @@ export function buildGuestFeedPlan(areas: readonly string[] = [], topics: readon
     });
   }
 
-  const arxivAreas = chosen.filter(key => ARXIV_FEED_AREAS.includes(key));
-  const pubmedAreas = chosen.filter(key => PUBMED_AREAS.has(key));
+  const arxivAreas = chosen.filter(key => ARXIV_FEED_AREAS.includes(taxonomyArea(key)));
+  const pubmedAreas = chosen.filter(key => PUBMED_AREAS.has(taxonomyArea(key)));
   const pubmedCategories = interleaveAreaCategories(pubmedAreas, GUEST_PUBMED_CAP, chosenTopics);
 
   return Object.freeze({

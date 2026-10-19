@@ -36,7 +36,8 @@ function normalize(pathname: string) {
 }
 
 export function routeLabel(pathname: string) {
-  return LABELS[normalize(pathname)] || null
+  const normalized = normalize(pathname)
+  return LABELS[normalized] || null
 }
 
 export function routeTitle(pathname: string) {

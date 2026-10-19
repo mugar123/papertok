@@ -6,7 +6,9 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
   BookOpen,
+  CaretDown,
   CaretRight,
+  Check,
   CircleNotch,
   Compass,
   Flask,
@@ -28,7 +30,7 @@ import { useEmailNotifications } from '../../context/EmailNotificationsContext.t
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
-import { CATEGORIES } from '../../data/categories.ts';
+import { INTEREST_AREAS } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService.ts';
 import GoogleMark from '../Public/GoogleMark.tsx';
 import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
@@ -42,6 +44,8 @@ import { GithubMark } from '../ui/GithubMark.tsx';
 import { Label } from '../ui/label.tsx';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
+import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import useIsPhone from '../../hooks/useIsPhone.ts';
 import './SettingsPage.css';
 
 /**
@@ -49,11 +53,11 @@ import './SettingsPage.css';
  * no scroll position to track and nothing to spy on. Order is the rail's.
  */
 const SETTINGS_PAGES = [
-  { slug: 'profile', label: 'Account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', Icon: Sparkle },
-  { slug: 'notifications', label: 'Notifications', Icon: Bell },
-  { slug: 'privacy', label: 'Privacy', Icon: ShieldCheck },
+  { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
+  { slug: 'discovery', label: 'Discovery', summary: 'Follows and scientific interests', Icon: Compass },
+  { slug: 'reading', label: 'Reading & AI', summary: 'Default level for AI explanations', Icon: Sparkle },
+  { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
+  { slug: 'privacy', label: 'Privacy', summary: 'Anonymous usage analytics', Icon: ShieldCheck },
 ];
 
 const LEVEL_DETAILS = {
@@ -78,6 +82,7 @@ const SETTINGS_COPY = {
   title: 'Settings',
   subtitle: 'Your account, discovery preferences, and reading tools.',
   pagesLabel: 'Settings pages',
+  settingsPage: 'Settings page',
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
   followedContent: 'Following',
@@ -377,7 +382,7 @@ function DiscoveryPage() {
 
   const selectedAreas = useMemo(() => {
     const selected = new Set(userPreferences || []);
-    return Object.entries(CATEGORIES)
+    return Object.entries(INTEREST_AREAS)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
         return count > 0 ? { id, label: area!.label, accent: area.gradient, count } : null;
@@ -526,6 +531,8 @@ export default function SettingsPage({ page = 'profile' }) {
   // Brought in just clear of the strip's fading edge (`scroll-padding-inline`,
   // SettingsPage.css).
   const indexListRef = useRef<HTMLDivElement | null>(null);
+  const isPhone = useIsPhone();
+  const [pagesOpen, setPagesOpen] = useState(false);
   useLayoutEffect(() => {
     indexListRef.current?.querySelector('a.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [activeIndex]);
@@ -551,6 +558,55 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
+          {isPhone ? (
+            <>
+              <button
+                type="button"
+                className="settings-switcher"
+                aria-haspopup="dialog"
+                aria-expanded={pagesOpen}
+                onClick={() => setPagesOpen(true)}
+              >
+                <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
+                <span className="settings-switcher-copy">
+                  <small>{copy.settingsPage}</small>
+                  <strong>{active.label}</strong>
+                </span>
+                <CaretDown size={16} aria-hidden="true" />
+              </button>
+              <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
+                <DrawerContent className="settings-pages-sheet">
+                  <DrawerHandle />
+                  <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
+                  <nav aria-label={copy.pagesLabel}>
+                    <ul className="settings-pages-list">
+                      {SETTINGS_PAGES.map(entry => (
+                        <li key={entry.slug}>
+                          <NavLink
+                            to={`/settings/${entry.slug}`}
+                            replace
+                            className={({ isActive }) => (isActive ? 'is-active' : '')}
+                            onClick={() => setPagesOpen(false)}
+                          >
+                            {({ isActive }) => (
+                              <>
+                                <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                                <span className="settings-pages-copy">
+                                  <strong>{entry.label}</strong>
+                                  <small>{entry.summary}</small>
+                                </span>
+                                {isActive && <Check size={16} aria-hidden="true" />}
+                              </>
+                            )}
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
+                </DrawerContent>
+              </Drawer>
+            </>
+          ) : (
           <nav className="settings-index" aria-label={copy.pagesLabel}>
             <div ref={indexListRef} className="settings-index-list">
               {SETTINGS_PAGES.map(entry => (
@@ -572,6 +628,7 @@ export default function SettingsPage({ page = 'profile' }) {
               ))}
             </div>
           </nav>
+          )}
 
           <div className="settings-content">
             <Page />

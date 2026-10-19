@@ -23,7 +23,7 @@
   min-height: 100dvh;
   background: rgb(17, 19, 24);
   opacity: calc(var(--backdrop-opacity) * (1 - var(--drawer-swipe-progress)));
-  transition: opacity var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: opacity var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, var(--ease-drawer));
 }
 
 .ui-drawer-backdrop[data-starting-style],
@@ -83,7 +83,7 @@
   overscroll-behavior: contain;
   will-change: transform;
   transform: translateY(var(--drawer-swipe-movement-y));
-  transition: transform var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, cubic-bezier(0.32, 0.72, 0, 1));
+  transition: transform var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, var(--ease-drawer));
 }
 
 .ui-drawer-popup[data-starting-style],

@@ -1,34 +1,7 @@
 /**
- * The wait that keeps the citation count from appearing after the feed.
- *
- * The feed paints before its enrichment on purpose — `// Paint now.` in
- * FeedContext — and OpenAlex, iCite and Europe PMC all arrive later carrying
- * `citationCount`. The `N Citas` chip in a card's metadata row (PaperCard)
- * therefore used to be inserted into a row that was already on screen. On a
- * phone, where that row wraps, that is not a chip appearing: it is a line
- * appearing, and everything under it moves. Reported 2026-09-20.
- *
- * So the first paint of a feed waits for those requests — but under a
- * ceiling, and the ceiling is the whole point. OpenAlex alone is allowed
- * 6500ms (`OPENALEX_FEED_REQUEST_TIMEOUT_MS`), so an ungated wait would turn
- * a bad upstream day into six seconds of loading veil. This waits for what a
- * normal response takes and then gives up and paints, and whatever was still
- * in flight merges late exactly as it did before.
- *
- * This is only for a feed's FIRST paint. Pagination must never come through
- * here: the reader is mid-feed looking at a card, there is no veil to hold,
- * and waiting would only stall the infinite scroll.
- */
-
-/**
- * How long the veil may be held for citations.
- *
- * 1200ms is a little over twice the median enrichment response and well under
- * the point where a loading screen stops reading as loading. The trade is
- * deliberately asymmetric: the cost of waiting too long is a slower start the
- * reader can see, and the cost of waiting too little is the chip landing late
- * — which still has the fade in PaperCard.css under it, so it degrades into
- * the old behaviour made gentler rather than into a bug.
+ * Snapshot provider responses before admitting a feed page. The default budget
+ * is for first-screen citations; callers with missing abstracts use a longer,
+ * bounded wait. Results after the gate closes cannot enter this snapshot.
  */
 export const CITATION_GATE_MAX_WAIT_MS = 1200;
 

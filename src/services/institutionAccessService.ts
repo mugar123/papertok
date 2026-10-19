@@ -2,7 +2,7 @@ import type { LinkedInstitution } from './institutionService.ts';
 type InstitutionInput = Partial<LinkedInstitution>;
 interface AccessOperations { request?: typeof authenticatedWorkerFetch; apiBase?: string }
 interface AccessPayload { code?: string; status?: string; url?: unknown; collection?: unknown }
-interface ServicesPayload { code?: string; services?: Array<Record<string, unknown>>; unchecked?: number; partial?: boolean }
+interface ServicesPayload { code?: string; services?: Array<Record<string, unknown>>; unchecked?: number; partial?: boolean; nextOffset?: unknown }
 type InstitutionAccess = NonNullable<ReturnType<typeof normalizeInstitutionAccess>>;
 type ServicesAnswer = (NonNullable<ReturnType<typeof normalizeInstitutionServices>> & { unsupported?: false }) | (typeof UNSUPPORTED_SERVICES & { unchecked?: never });
 
@@ -22,7 +22,7 @@ type ServicesAnswer = (NonNullable<ReturnType<typeof normalizeInstitutionService
 import { authenticatedWorkerFetch, workerSourceUrl } from './workerApiClient.ts';
 import { normalizeDoi } from './unpaywallService.ts';
 import { safeExternalUrl } from '../utils/externalUrl.ts';
-import { withRequestDeadline } from '../utils/requestDeadline.ts';
+import { withEnforcedDeadline, withRequestDeadline } from '../utils/requestDeadline.ts';
 
 const DEFINITE_TTL = 7 * 24 * 60 * 60 * 1000;
 const UNKNOWN_TTL = 6 * 60 * 60 * 1000;
@@ -155,31 +155,59 @@ function normalizeInstitutionServices(payload: ServicesPayload | null) {
 }
 
 async function lookUpServices(api: ReturnType<typeof operations>, institution: InstitutionInput & { domain: string }) {
-  const url = workerSourceUrl('/institution/services', {
-    domain: institution.domain,
-    entityId: cleanString(institution.entityId),
-    rorId: cleanString(institution.rorId),
-  }, api.apiBase);
-  if (!url) return null;
+  const answer: NonNullable<ReturnType<typeof normalizeInstitutionServices>> = { services: [], partial: false, unchecked: 0 };
+  const seen = new Set<string>();
+  const signal = AbortSignal.timeout(45000);
+  let offset = 0;
+  let received = false;
   try {
-    const response = await api.request(url, withRequestDeadline({ headers: { accept: 'application/json' } }, SERVICES_TIMEOUT_MS));
-    const payload = await response.json().catch(() => null) as ServicesPayload | null;
-    if (!response.ok) {
-      if (response.status === 404 && payload?.code === 'INSTITUTION_NOT_SUPPORTED') {
-        unsupportedDomains.add(institution.domain);
-        return UNSUPPORTED_SERVICES;
+    // A bad continuation cannot keep the browser probing indefinitely.
+    for (let page = 0; page < 10; page += 1) {
+      const url = workerSourceUrl('/institution/services', {
+        domain: institution.domain,
+        entityId: cleanString(institution.entityId),
+        rorId: cleanString(institution.rorId),
+        offset: String(offset),
+      }, api.apiBase);
+      if (!url) return null;
+      signal.throwIfAborted();
+      const response = await api.request(url, withEnforcedDeadline({ headers: { accept: 'application/json' }, signal }, SERVICES_TIMEOUT_MS));
+      const payload = await response.json().catch(() => null) as ServicesPayload | null;
+      if (!response.ok) {
+        if (!received && response.status === 404 && payload?.code === 'INSTITUTION_NOT_SUPPORTED') {
+          unsupportedDomains.add(institution.domain);
+          return UNSUPPORTED_SERVICES;
+        }
+        throw new Error('library page unavailable');
       }
-      return null;
+      const batch = normalizeInstitutionServices(payload);
+      if (!batch) throw new Error('invalid library page');
+      const next = payload?.nextOffset;
+      // Older Workers omit the continuation and still return their bounded list.
+      if (next != null && (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= offset)) {
+        throw new Error('invalid library continuation');
+      }
+      received = true;
+      for (const service of batch.services) {
+        if (!seen.has(service.id)) answer.services.push(service);
+        seen.add(service.id);
+      }
+      answer.unchecked += batch.unchecked;
+      answer.partial ||= batch.partial;
+      if (next == null) {
+        const ttl = answer.partial ? PARTIAL_SERVICES_TTL : SERVICES_TTL;
+        serviceAnswers.set(institution.domain, { answer, expiresAt: Date.now() + ttl });
+        return answer;
+      }
+      offset = next as number;
     }
-    const answer = normalizeInstitutionServices(payload);
-    if (answer) {
-      const ttl = answer.partial ? PARTIAL_SERVICES_TTL : SERVICES_TTL;
-      serviceAnswers.set(institution.domain, { answer, expiresAt: Date.now() + ttl });
-    }
-    return answer;
   } catch {
-    return null;
+    // Keep earlier results if a later page fails, without claiming a complete list.
   }
+  if (!received) return null;
+  answer.partial = true;
+  serviceAnswers.set(institution.domain, { answer, expiresAt: Date.now() + PARTIAL_SERVICES_TTL });
+  return answer;
 }
 
 /**
