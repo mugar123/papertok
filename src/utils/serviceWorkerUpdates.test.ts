@@ -272,7 +272,7 @@ test('a route-change reload waits until Firestore has acknowledged the writes al
   await reloadIfBehindDeploy('/following', async () => {})
   assert.equal(tab.reloads, 2)
 
-  // A paper opened while the writes settled holds it too.
+  // A paper already open holds it too.
   tab.pathname = '/feed'
   tab.dialog = {}
   await reloadIfBehindDeploy('/feed', async () => {})
@@ -282,6 +282,30 @@ test('a route-change reload waits until Firestore has acknowledged the writes al
   await reloadIfBehindDeploy('/lists', async () => {})
   assert.equal(tab.reloads, 3)
 
+  // So does a paper opened while a write settles.
+  let acknowledgeSave!: () => void
+  const save = new Promise<void>((resolve) => { acknowledgeSave = resolve })
+  tab.session.clear()
+  tab.pathname = '/following'
+  const opened = reloadIfBehindDeploy('/following', () => save)
+  await settle()
+  tab.dialog = {}
+  acknowledgeSave()
+  await opened
+  assert.equal(tab.reloads, 3)
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+  tab.dialog = null
+
+  // And a wait that rejects, as Firestore's does when the signed-in user
+  // changes.
+  tab.pathname = '/feed'
+  await reloadIfBehindDeploy('/feed', () => Promise.reject(new Error('user changed')))
+  assert.equal(tab.reloads, 3)
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+  tab.pathname = '/lists'
+  await reloadIfBehindDeploy('/lists', async () => {})
+  assert.equal(tab.reloads, 4)
+
   // A redirect while a write settles, back to the page the deploy found the
   // tab on, still ends in the reload.
   let acknowledgeLike!: () => void
@@ -290,8 +314,8 @@ test('a route-change reload waits until Firestore has acknowledged the writes al
   const redirected = reloadIfBehindDeploy('/search', () => like)
   tab.pathname = '/feed'
   await reloadIfBehindDeploy('/feed', () => like)
-  assert.equal(tab.reloads, 3)
+  assert.equal(tab.reloads, 4)
   acknowledgeLike()
   await redirected
-  assert.equal(tab.reloads, 4)
+  assert.equal(tab.reloads, 5)
 })

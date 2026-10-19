@@ -144,8 +144,9 @@ const WRITES_SETTLE_MS = 1_000
  * unacknowledged writes in memory only (services/firebase.ts), so a reload
  * would drop them, and a route change can follow one closely: onboarding
  * sends the email opt-in without awaiting it, then navigates to the feed.
- * Writes still pending after WRITES_SETTLE_MS, or a dialog opened during the
- * wait, leave the reload to the next route change.
+ * Writes still pending after WRITES_SETTLE_MS, a rejected wait (Firestore
+ * rejects it when the signed-in user changes), or a dialog open when the wait
+ * ends leave the reload to the next route change.
  * A further route change during the wait, such as a redirect, does not: the
  * reload opens the page the tab is on by then.
  *
