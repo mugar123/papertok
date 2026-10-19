@@ -168,10 +168,15 @@ function xmlKey(xml: string, id: string) {
  * `entitled` until 2026-10-19), so it is left out. A filter for any other
  * reason (an IP range, a user group) hides a service the Worker cannot judge
  * from outside, so `restricted` says the answer may be incomplete.
+ * `matched` says whether Alma resolved the journal to a record of its own
+ * (`rft.mms_id`): an answer without one lists nothing because the journal,
+ * or the library's data, is not where it was asked for, not because the
+ * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
   const indicator = xmlKey(String(xml), 'full_text_indicator');
   if (indicator !== 'true' && indicator !== 'false') return null;
+  const matched = xmlKey(String(xml), 'rft.mms_id') !== null;
   const services = [];
   let restricted = false;
   for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
@@ -187,7 +192,7 @@ export function parseResolverAnswer(xml: unknown) {
       url: resolution ? httpsUrl(unescapeXml(resolution[1].trim())) : null,
     });
   }
-  return { fullText: indicator === 'true', services, restricted };
+  return { fullText: indicator === 'true', matched, services, restricted };
 }
 
 /** The most DOIs one GetFTR request may carry (Entitlement API v2.7). */
@@ -292,9 +297,11 @@ const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null }
 
 /**
  * The parameters a lookup actually sends upstream, for the edge cache key:
- * the library asked (its institution code, since every mail domain of a
- * university reaches the same resolver), or the domain when there is none,
- * and the institution ids only with a GetFTR key, since only GetFTR gets them.
+ * the library asked (its institution code and the host it is asked on,
+ * since every mail domain of a university reaches the same resolver, and a
+ * regional host may answer for a code without the library's data), or the
+ * domain when there is none, and the institution ids only with a GetFTR
+ * key, since only GetFTR gets them.
  */
 export function upstreamParams(query: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
   const { doi = null, domain, entityId = null, rorId = null } = query;
@@ -302,7 +309,7 @@ export function upstreamParams(query: InstitutionQuery & { doi?: string | null }
   const resolver = findResolver(query);
   return {
     ...(doi ? { doi } : {}),
-    ...(resolver ? { library: resolver.institution } : { domain }),
+    ...(resolver ? { library: resolver.institution, host: resolver.host } : { domain }),
     ...(getFtr && entityId ? { entityId } : {}),
     ...(getFtr && rorId ? { rorId } : {}),
   };
