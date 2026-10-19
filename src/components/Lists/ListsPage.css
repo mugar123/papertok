@@ -449,6 +449,9 @@
   letter-spacing: -0.02em;
   color: var(--text-primary);
   overflow-wrap: anywhere;
+  /* The serif sits high in its line box; trimmed to cap height and baseline,
+     the letters centre on the icon and the actions beside them. */
+  text-box: trim-both cap alphabetic;
 }
 
 .lists-expanded-header:has(+ .lists-expanded-meta) {
