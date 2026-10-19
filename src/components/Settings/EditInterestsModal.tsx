@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { CaretDown, CaretLeft, Check } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
-import { CATEGORIES } from '../../data/categories.ts';
+import { INTEREST_AREAS } from '../../data/categories.ts';
 import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
@@ -27,8 +28,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   const { userPreferences, updatePreferences } = useAuth();
   const [selected, setSelected] = useState(new Set<string>());
   const [isSaving, setIsSaving] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [activeArea, setActiveArea] = useState(Object.keys(CATEGORIES)[0]);
+  const [activeArea, setActiveArea] = useState(Object.keys(INTEREST_AREAS)[0]);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const switcherRef = useRef<HTMLButtonElement | null>(null);
   const backRef = useRef<HTMLButtonElement | null>(null);
@@ -40,11 +40,10 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     if (isOpen && userPreferences) {
       const timeoutId = setTimeout(() => {
         setSelected(new Set(userPreferences));
-        setFormError('');
-        const firstFollowed = Object.keys(CATEGORIES).find(areaKey => (
-          Object.keys(CATEGORIES[areaKey].subcategories).some(subKey => userPreferences.includes(subKey))
+        const firstFollowed = Object.keys(INTEREST_AREAS).find(areaKey => (
+          Object.keys(INTEREST_AREAS[areaKey].subcategories).some(subKey => userPreferences.includes(subKey))
         ));
-        setActiveArea(firstFollowed || Object.keys(CATEGORIES)[0]);
+        setActiveArea(firstFollowed || Object.keys(INTEREST_AREAS)[0]);
         setFieldsOpen(false);
       }, 0);
       return () => clearTimeout(timeoutId);
@@ -65,7 +64,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   };
 
   const toggleArea = (areaKey: string) => {
-    const subKeys = Object.keys(CATEGORIES[areaKey].subcategories);
+    const subKeys = Object.keys(INTEREST_AREAS[areaKey].subcategories);
     const allSelected = subKeys.every(k => selected.has(k));
     
     setSelected((prev) => {
@@ -81,43 +80,20 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
 
   const handleSave = async () => {
     if (selected.size === 0) {
-      // A clear immediately followed by the same-tick set is not enough:
-      // React 18+ batches both calls from one click into a single commit, and
-      // when the resulting text matches what was already committed (a repeat
-      // click with nothing selected), react-dom's own prop diff skips the DOM
-      // write ('next === last' short-circuits before touching textContent) —
-      // confirmed by reading react-dom-client's updateProperties and by a
-      // jsdom repro with a MutationObserver: same-tick clear+set produced no
-      // mutation and no re-announcement on the second click.
-      // The failure branch below does not have this problem only because the
-      // `await` separates its clear from its set into two distinct commits —
-      // the element actually unmounts (formError is '', falsy) and remounts
-      // fresh, which is a real, always-observable mutation. `setTimeout(0)`
-      // recreates that same separation here, on the same tick-deferral this
-      // file already uses elsewhere (see the init effect).
-      setFormError('');
-      setTimeout(() => {
-        setFormError('Select at least one research area.');
-      }, 0);
+      toast.error('Select at least one research area.', { id: 'eim-error' });
       return;
     }
     if (selected.size > USER_PREFERENCES_MAX) {
-      // Same tick-deferral as the empty case above, for the same reason: a
-      // repeat click must re-announce the error, not be swallowed by the diff.
-      setFormError('');
-      setTimeout(() => {
-        setFormError(`At most ${USER_PREFERENCES_MAX} interests: drop ${selected.size - USER_PREFERENCES_MAX}.`);
-      }, 0);
+      toast.error(`At most ${USER_PREFERENCES_MAX} interests: drop ${selected.size - USER_PREFERENCES_MAX}.`, { id: 'eim-error' });
       return;
     }
-    setFormError('');
     setIsSaving(true);
     try {
       await updatePreferences(Array.from(selected));
       onClose();
     } catch (error) {
       console.error('Error saving preferences:', error);
-      setFormError('We could not save your changes. Try again.');
+      toast.error('We could not save your changes. Try again.', { id: 'eim-error' });
     } finally {
       setIsSaving(false);
     }
@@ -134,11 +110,11 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     setFieldsOpen(false);
   };
 
-  const counted = (areaKey: string) => Object.keys(CATEGORIES[areaKey].subcategories).filter(k => selected.has(k)).length;
+  const counted = (areaKey: string) => Object.keys(INTEREST_AREAS[areaKey].subcategories).filter(k => selected.has(k)).length;
 
   /** One field's topics, with its count and its Select all. */
   const fieldTopics = (areaKey: string) => {
-    const area = CATEGORIES[areaKey];
+    const area = INTEREST_AREAS[areaKey];
     const subKeys = Object.keys(area.subcategories);
     const count = counted(areaKey);
     const allSelected = count === subKeys.length;
@@ -175,12 +151,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     );
   };
 
-  const errorAndFooter = (
-    <>
-    {formError && (
-      <p className="eim-form-error" role="alert">{formError}</p>
-    )}
-
+  const footer = (
     <div className="eim-footer">
       <span className="eim-selected-count">
         {`${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`}
@@ -195,11 +166,10 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
         {isSaving ? ('Saving...') : ('Save changes')}
       </Button>
     </div>
-    </>
   );
 
   if (isPhone) {
-    const area = CATEGORIES[activeArea];
+    const area = INTEREST_AREAS[activeArea];
     return (
       <Drawer open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}>
         <DrawerContent className="eim-sheet">
@@ -213,7 +183,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
                 <DrawerTitle render={<h2 />}>{'Research fields'}</DrawerTitle>
               </div>
               <ul className="eim-fields-list" data-base-ui-swipe-ignore="">
-                {Object.entries(CATEGORIES).map(([areaKey, entry]) => {
+                {Object.entries(INTEREST_AREAS).map(([areaKey, entry]) => {
                   const picked = counted(areaKey);
                   const isActive = areaKey === activeArea;
                   return (
@@ -224,7 +194,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
                         aria-current={isActive ? 'true' : undefined}
                         onClick={() => { setActiveArea(areaKey); leaveFields(); }}
                       >
-                        <entry.icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                        <entry.icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" style={picked ? { color: entry.gradient } : undefined} />
                         <span className="eim-fields-copy">
                           <strong>{entry.label}</strong>
                           <small>
@@ -263,7 +233,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
               <div className="eim-area eim-sheet-body" data-base-ui-swipe-ignore="">
                 {fieldTopics(activeArea)}
               </div>
-              {errorAndFooter}
+              {footer}
             </>
           )}
         </DrawerContent>
@@ -290,14 +260,14 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
               topics beside it. */}
           <Tabs value={activeArea} onValueChange={value => setActiveArea(value as string)} orientation="vertical" className="eim-rail">
             <TabsList variant="pill" className="eim-rail-list" aria-label={'Research fields'}>
-              {Object.entries(CATEGORIES).map(([areaKey, area]) => (
+              {Object.entries(INTEREST_AREAS).map(([areaKey, area]) => (
                 <TabsTrigger key={areaKey} value={areaKey} className="eim-rail-tab">
-                  <area.icon size={18} aria-hidden="true" />
+                  <area.icon size={18} aria-hidden="true" style={counted(areaKey) ? { color: area.gradient } : undefined} />
                   <span className="eim-rail-label">{area.label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
-            {Object.keys(CATEGORIES).map(areaKey => (
+            {Object.keys(INTEREST_AREAS).map(areaKey => (
               <TabsContent key={areaKey} value={areaKey} className="eim-area">
                 {fieldTopics(areaKey)}
               </TabsContent>
@@ -305,7 +275,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
           </Tabs>
         </div>
 
-        {errorAndFooter}
+        {footer}
       </DialogContent>
     </Dialog>
   );

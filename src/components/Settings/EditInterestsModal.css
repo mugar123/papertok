@@ -209,14 +209,6 @@
   }
 }
 
-.eim-form-error {
-  margin: 0;
-  padding: 0 var(--space-6);
-  color: var(--accent-danger);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-}
-
 .eim-footer {
   padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--border-subtle);
@@ -260,9 +252,6 @@
   }
   .eim-header {
     padding: var(--space-4);
-  }
-  .eim-form-error {
-    padding: 0 var(--space-4);
   }
 }
 
@@ -364,10 +353,6 @@
 
 .eim-sheet .eim-footer {
   padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
-}
-
-.eim-sheet .eim-form-error {
-  padding: var(--space-2) var(--space-4) 0;
 }
 
 .eim-fields-head {

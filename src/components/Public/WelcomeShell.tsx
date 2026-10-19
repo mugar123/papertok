@@ -13,7 +13,7 @@ interface WelcomeShellProps extends PropsWithChildren {
 import { useCallback, useLayoutEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CaretDown, Check, SkipForward } from '@phosphor-icons/react';
-import { CATEGORIES } from '../../data/categories.ts';
+import { INTEREST_AREAS } from '../../data/categories.ts';
 import ThemeToggle from '../Layout/ThemeToggle.tsx';
 import ProgressDots from './ProgressDots.tsx';
 import { Button } from '../ui/button.tsx';
@@ -53,7 +53,7 @@ import './GuestWelcome.css';
 // <WelcomeCopy>. The shell moves focus to that heading whenever a new screen
 // mounts, but not on first paint (see `focusNewHeading`).
 
-const AREA_ENTRIES = Object.entries(CATEGORIES);
+const AREA_ENTRIES = Object.entries(INTEREST_AREAS);
 
 // How many of an area's topics show before "Show more": two rows of the
 // three-column grid. An area with only a couple past that shows them all —

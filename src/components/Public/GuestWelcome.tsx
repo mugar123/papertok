@@ -14,7 +14,7 @@ import {
   Sparkle,
   UserPlus,
 } from '@phosphor-icons/react';
-import { CATEGORIES } from '../../data/categories.ts';
+import { INTEREST_AREAS } from '../../data/categories.ts';
 import { Button } from '../ui/button.tsx';
 import { GithubMark } from '../ui/GithubMark.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
@@ -345,7 +345,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
     // An area let go takes its topics with it, so ticking it again starts
     // from the whole area rather than from a narrowing nobody can see.
     if (removing) {
-      const ofArea = new Set(Object.keys(CATEGORIES[key].subcategories));
+      const ofArea = new Set(Object.keys(INTEREST_AREAS[key].subcategories));
       setSelectedTopics(previous => new Set([...previous].filter(id => !ofArea.has(id))));
     }
   };
