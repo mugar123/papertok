@@ -310,13 +310,17 @@ async function probeHost(host, code, journal) {
  * nothing is asked about the next journal; a library with nothing for
  * either is recorded as `answers-without-services`, not shipped.
  */
-async function probeRegions(code, { region = null, primoSlug = null, domains = [] } = {}) {
+async function probeRegions(code, { host: known = null, region = null, primoSlug = null, domains = [], country = null } = {}) {
   const codeSlug = code.replace(/^\d+/, '').toLowerCase().replace(/_/g, '-');
   const labels = domains.map(domain => domain.split('.')[0]).filter(label => label.length > 2);
   const slugs = [...new Set([primoSlug, region, codeSlug, ...labels, ...ALMA_REGIONS].filter(Boolean))];
+  // Alma in mainland China lives under exlibrisgroup.com.cn (Tsinghua answers on
+  // tsinghua.alma.exlibrisgroup.com.cn and on no .com host, 2026-10-19), so a
+  // known host is probed as given, and a Chinese institution's slugs on both.
+  const hosts = [known, ...slugs.map(slug => `${slug}.alma.exlibrisgroup.com`)];
+  if (country === 'CN') hosts.push(...slugs.map(slug => `${slug}.alma.exlibrisgroup.com.cn`), 'cn01.alma.exlibrisgroup.com.cn');
   let resolved = null;
-  for (const slug of slugs) {
-    const host = `${slug}.alma.exlibrisgroup.com`;
+  for (const host of [...new Set(hosts.filter(Boolean))]) {
     for (const journal of PROBE_JOURNALS) {
       const probe = await probeHost(host, code, journal);
       if (!probe) break;
@@ -402,15 +406,18 @@ async function processInstitution(institution, record, seeds, verifyOnly) {
   // A directory address without a code is read even in a verify run.
   if (!code && (!verifyOnly || (seed?.url && almaLike))) await discover();
   if (!code) {
-    const status = seed?.url ? (almaLike ? 'address-located' : 'compatibility-pending') : 'unresolved';
+    // A product seen on the library's pages places the institution even
+    // when no resolver address was published (NUS, USP, UNAM on 2026-10-19).
+    const status = seed?.product && !almaLike ? 'compatibility-pending' : seed?.url ? 'address-located' : 'unresolved';
     return { ...entry, code: null, host: null, status };
   }
-  let probe = await probeRegions(code, { region, primoSlug, domains: entry.domains });
+  const known = seed?.host || record?.host || null;
+  let probe = await probeRegions(code, { host: known, region, primoSlug, domains: entry.domains, country: entry.country });
   // A host that lists nothing may be the regional one standing in for the
   // library's own: the library's pages name that host through its Primo.
   if (probe?.status !== 'verified' && !primoSlug) {
     await discover();
-    if (primoSlug) probe = await probeRegions(code, { region, primoSlug, domains: entry.domains });
+    if (primoSlug) probe = await probeRegions(code, { host: known, region, primoSlug, domains: entry.domains, country: entry.country });
   }
   if (!probe) return { ...entry, code, route, host: null, primoSlug, status: 'code-without-region' };
   return {
