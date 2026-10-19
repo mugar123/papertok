@@ -1592,7 +1592,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (requestId !== feedRequestId.current) return;
 
       // Only types this browser already knows exclude a paper here. The
-      // chosen page is checked against Crossref once it is on screen.
+      // chosen page is sent to Crossref below; answers that arrive before it
+      // is shown apply then, later ones once it is on screen.
       newPapers = applyKnownPublicationTypes(newPapers);
 
       // Keep the raw candidates until here: an entirely excluded page still
@@ -1701,6 +1702,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (gatedOpenAlex) filtered = mergeOpenAlexEnrichment(filtered, gatedOpenAlex);
       if (gatedICite) filtered = mergeICiteEnrichment(filtered, gatedICite);
       if (gatedEuropePmc) filtered = mergeEuropePmcEnrichment(filtered, gatedEuropePmc);
+      // Crossref may have answered during the wait. Its books leave before
+      // display; an emptied page continues like any short first screen below.
+      filtered = applyKnownPublicationTypes(filtered).filter(isFeedPublication);
       // Only cards this load adds may wait. The seen bypass and a follow
       // change can offer a card that is already on screen, and its settled
       // state must not turn back into "Loading abstract".

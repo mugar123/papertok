@@ -85,7 +85,7 @@ function guestLoader(batch: Paper[], late?: Promise<Paper[]>) {
     abstractsInFlight, mergeEuropePmcEnrichment,
     enrichPapersBatch: async () => ({}), enrichPubmedIds: (async () => new Map()) as (ids: string[]) => Promise<Map<string, Partial<Paper> & { pmid: string }>>,
     recoverFeedAbstracts: (async () => []) as (papers: Paper[]) => Promise<Partial<Paper>[]>,
-    classifyFeedPublications, dropUnreachedPublications,
+    classifyFeedPublications, dropUnreachedPublications, applyKnownPublicationTypes, isFeedPublication,
     openAbstractWait, setAbstractWaits: (update: (current: typeof state.abstractWaits) => typeof state.abstractWaits) => { state.abstractWaits = update(state.abstractWaits); },
     awaitWithinGate,
   };
@@ -202,6 +202,25 @@ test('a guest card confirmed as a book leaves only if the guest has not reached 
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.deepEqual(state.papers.map(paper => paper.id), kept);
   }
+});
+
+test('a Crossref answer that lands during the first guest wait keeps its books off the first paint', async t => {
+  const article = (id: string, doi = `10.5555/${id}`) => PaperBuilder.create({ id, title: `Synthetic article ${id}`, doi, categories: ['math.AG'], abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } });
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const publications = await import(new URL('../services/feedPublicationService.ts?guest-answered-during-wait', import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
+  const { state, env, run } = guestLoader([article('book', '10.1007/978-3-540-76956-9'), electron, article('third')]);
+  Object.assign(env, publications);
+  // Recovery for the electron paper is still running, so the first batch waits its whole budget.
+  const recovery = pendingRecords();
+  env.recoverFeedAbstracts = async papers => papers.length ? recovery.promise : [];
+  await run();
+  assert.equal(state.error, null);
+  assert.ok(state.frames.every(frame => !frame.some(paper => paper.id === 'book')), JSON.stringify(state.frames.map(frame => frame.map(paper => paper.id))));
+  assert.deepEqual(state.papers.map(paper => paper.id).sort(), [electron.id, 'third'].sort());
+  recovery.resolve([]);
 });
 
 test('a refreshed guest page drops the books the guest has not reached, though the ref still names a card of the old list', async t => {

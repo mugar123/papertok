@@ -61,8 +61,8 @@ function startGuestCandidateRequests(plan: GuestFeedPlan, { refresh = false } = 
       internalCategories: plan.pubmedCategories,
     }).then(result => result.papers));
   }
-  // Types this browser already knows exclude a paper before display; the
-  // Crossref lookup for the shown batch runs after it is on screen.
+  // Types this browser already knows exclude a paper here; the batch chosen
+  // from these candidates is sent to Crossref when it is prepared.
   return requests.map(request => request.then(papers => applyKnownPublicationTypes(papers).filter(isFeedPublication)));
 }
 
@@ -154,6 +154,8 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
         let papers = recovered ? mergeFeedAbstracts(batch, recovered) : batch;
         if (gatedOpenAlex) papers = mergeOpenAlexEnrichment(papers, gatedOpenAlex);
         if (gatedEuropePmc) papers = mergeEuropePmcEnrichment(papers, gatedEuropePmc);
+        // Crossref may have answered during the wait: its books leave before display.
+        papers = applyKnownPublicationTypes(papers).filter(isFeedPublication);
         const abstractsComing = abstractsInFlight(papers, { openAlex: !gatedOpenAlex, europePmc: !gatedEuropePmc, recovery: !recovered });
         const follow = () => {
           const loadingAbstracts = openAbstractWait(setAbstractWaits, abstractsComing, [openAlex, europePmc, recovery]);

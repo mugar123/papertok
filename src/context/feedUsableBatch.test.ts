@@ -160,6 +160,44 @@ test('the signed-in loader shows a page before Crossref answers, then drops only
   }
 });
 
+test('a Crossref answer that lands during the first-screen wait keeps its books off the first paint', async t => {
+  const page = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  const books = new Set(['W568341909', 'W93572185']);
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  for (const [name, slow, shown] of [
+    ['an article among books', page, ['W3029239115']],
+    ['only books', page.filter(paper => books.has(paper.id)), []],
+  ] as const) {
+    const { state, env, run } = feed({ fast: [], slow: [...slow] });
+    Object.assign(env, await freshPublications(`answered-during-wait-${shown.length}`));
+    // Recovery is still running, so the first screen waits its whole budget.
+    const recovery = pendingRecords();
+    env.recoverFeedAbstracts = () => recovery.promise;
+    env.CITATION_GATE_MAX_WAIT_MS = 300;
+    const paints: string[][] = [];
+    const setPapers = env.setPapers;
+    env.setPapers = value => {
+      if (Array.isArray(value)) paints.push(value.map(paper => paper.id));
+      setPapers(value);
+    };
+    await run(true);
+    await wait(20);
+    assert.equal(state.error, null, name);
+    assert.ok(paints.every(ids => !ids.some(id => books.has(id))), `${name}: ${JSON.stringify(paints)}`);
+    assert.deepEqual(state.papers.map(paper => paper.id), shown, name);
+    // A short or emptied first page asks for the next one instead of ending the feed.
+    assert.deepEqual(state.continuations, [[false, 'top', false, 1]], name);
+    recovery.resolve([]);
+  }
+});
+
 test('a card dismissed before Crossref answers leaves its successor where the reader is, even if it is a book', async t => {
   const page = [
     { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },

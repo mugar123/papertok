@@ -153,7 +153,8 @@ async function crossrefTypes(dois: string[], signal: AbortSignal) {
 
 /**
  * Look up candidates' types on Crossref, then apply what is known. The feeds
- * call this after display; unavailable evidence leaves types unchanged.
+ * call this for each page they choose, without waiting for it; unavailable
+ * evidence leaves types unchanged.
  */
 export async function classifyFeedPublications(papers: Paper[]): Promise<Paper[]> {
   restore();
