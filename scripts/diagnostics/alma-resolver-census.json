@@ -12374,7 +12374,7 @@
       "country": "CA",
       "worksCount": 384012,
       "homepage": "https://www.ubc.ca/",
-      "probedAt": "2026-10-19T11:04:32.937Z",
+      "probedAt": "2026-10-19T11:36:16.224Z",
       "domains": [
         "ubc.ca"
       ],
@@ -12384,7 +12384,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://gw2jh3xr2c.search.serialssolutions.com/",
+      "product": "360link"
     },
     "https://ror.org/01ej9dk98": {
       "rorId": "https://ror.org/01ej9dk98",
@@ -12392,7 +12395,7 @@
       "country": "AU",
       "worksCount": 347551,
       "homepage": "https://www.unimelb.edu.au",
-      "probedAt": "2026-10-19T11:04:32.938Z",
+      "probedAt": "2026-10-19T11:36:21.181Z",
       "domains": [
         "unimelb.edu.au"
       ],
@@ -12400,9 +12403,18 @@
         "https://www.unimelb.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61UMB_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UMB_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 17,
+      "packages": [
+        "Nature - Springer Nature",
+        "SpringerLink Journals - AutoHoldings"
+      ]
     },
     "https://ror.org/01pxwe438": {
       "rorId": "https://ror.org/01pxwe438",
@@ -12410,7 +12422,7 @@
       "country": "CA",
       "worksCount": 304099,
       "homepage": "https://www.mcgill.ca",
-      "probedAt": "2026-10-19T11:04:32.938Z",
+      "probedAt": "2026-10-19T11:36:16.275Z",
       "domains": [
         "mcgill.ca"
       ],
@@ -12420,7 +12432,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://mcgill.on.worldcat.org/",
+      "product": "worldcat"
     },
     "https://ror.org/0384j8v12": {
       "rorId": "https://ror.org/0384j8v12",
@@ -12428,7 +12443,7 @@
       "country": "AU",
       "worksCount": 338084,
       "homepage": "https://www.sydney.edu.au",
-      "probedAt": "2026-10-19T11:04:32.938Z",
+      "probedAt": "2026-10-19T11:36:22.879Z",
       "domains": [
         "sydney.edu.au"
       ],
@@ -12436,9 +12451,18 @@
         "https://www.sydney.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61USYD_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61USYD_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 15,
+      "packages": [
+        "Nature",
+        "Biological Science Collection"
+      ]
     },
     "https://ror.org/02bfwt286": {
       "rorId": "https://ror.org/02bfwt286",
@@ -12446,7 +12470,7 @@
       "country": "AU",
       "worksCount": 284566,
       "homepage": "https://www.monash.edu",
-      "probedAt": "2026-10-19T11:04:32.938Z",
+      "probedAt": "2026-10-19T11:36:24.537Z",
       "domains": [
         "monash.edu"
       ],
@@ -12454,9 +12478,18 @@
         "https://www.monash.edu"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61MONASH_AU",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61MONASH_AU/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 7,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale General OneFile"
+      ]
     },
     "https://ror.org/0161xgx34": {
       "rorId": "https://ror.org/0161xgx34",
@@ -12464,7 +12497,7 @@
       "country": "CA",
       "worksCount": 191491,
       "homepage": "https://www.umontreal.ca",
-      "probedAt": "2026-10-19T11:04:51.443Z",
+      "probedAt": "2026-10-19T11:36:16.328Z",
       "domains": [
         "umontreal.ca"
       ],
@@ -12474,7 +12507,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://umontreal.on.worldcat.org/discovery",
+      "product": "worldcat"
     },
     "https://ror.org/0160cpw27": {
       "rorId": "https://ror.org/0160cpw27",
@@ -12602,7 +12638,7 @@
       "country": "CA",
       "worksCount": 185930,
       "homepage": "https://www.mcmaster.ca",
-      "probedAt": "2026-10-19T11:04:59.110Z",
+      "probedAt": "2026-10-19T11:36:16.377Z",
       "domains": [
         "mcmaster.ca"
       ],
@@ -12610,9 +12646,18 @@
         "https://www.mcmaster.ca"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "01OCUL_MU",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ca01.alma.exlibrisgroup.com/view/uresolver/01OCUL_MU/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 7,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale OneFile: CPI.Q"
+      ]
     },
     "https://ror.org/01aff2v68": {
       "rorId": "https://ror.org/01aff2v68",
@@ -12644,7 +12689,7 @@
       "country": "CA",
       "worksCount": 135653,
       "homepage": "https://www.ulaval.ca",
-      "probedAt": "2026-10-19T11:05:06.867Z",
+      "probedAt": "2026-10-19T11:36:17.392Z",
       "domains": [
         "ulaval.ca"
       ],
@@ -12654,7 +12699,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ulaval.on.worldcat.org/",
+      "product": "worldcat"
     },
     "https://ror.org/019wvm592": {
       "rorId": "https://ror.org/019wvm592",
@@ -12782,7 +12830,7 @@
       "country": "CA",
       "worksCount": 107849,
       "homepage": "https://www.dal.ca",
-      "probedAt": "2026-10-19T11:05:11.714Z",
+      "probedAt": "2026-10-19T11:36:17.441Z",
       "domains": [
         "dal.ca"
       ],
@@ -12790,9 +12838,18 @@
         "https://www.dal.ca"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "01NOVA_DAL",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ca01.alma.exlibrisgroup.com/view/uresolver/01NOVA_DAL/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 13,
+      "packages": [
+        "Agricultural &amp; Environmental Science Collection",
+        "Biological Science Database"
+      ]
     },
     "https://ror.org/047272k79": {
       "rorId": "https://ror.org/047272k79",
@@ -12800,7 +12857,7 @@
       "country": "AU",
       "worksCount": 165134,
       "homepage": "https://www.uwa.edu.au",
-      "probedAt": "2026-10-19T11:05:01.061Z",
+      "probedAt": "2026-10-19T11:36:26.144Z",
       "domains": [
         "uwa.edu.au"
       ],
@@ -12808,9 +12865,18 @@
         "https://www.uwa.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61UWA_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UWA_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 14,
+      "packages": [
+        "Nature publishing group",
+        "ProQuest Central"
+      ]
     },
     "https://ror.org/02sc3r913": {
       "rorId": "https://ror.org/02sc3r913",
@@ -12860,7 +12926,7 @@
       "country": "CA",
       "worksCount": 95373,
       "homepage": "https://www.usask.ca/",
-      "probedAt": "2026-10-19T11:05:43.730Z",
+      "probedAt": "2026-10-19T11:36:18.390Z",
       "domains": [
         "usask.ca"
       ],
@@ -12868,9 +12934,18 @@
         "https://www.usask.ca/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "01USASK_INST",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ca01.alma.exlibrisgroup.com/view/uresolver/01USASK_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 6,
+      "packages": [
+        "Nature",
+        "ProQuest Central Premium"
+      ]
     },
     "https://ror.org/03f0f6041": {
       "rorId": "https://ror.org/03f0f6041",
@@ -12926,7 +13001,7 @@
       "country": "AU",
       "worksCount": 93365,
       "homepage": "https://www.deakin.edu.au",
-      "probedAt": "2026-10-19T11:05:51.497Z",
+      "probedAt": "2026-10-19T11:36:31.443Z",
       "domains": [
         "deakin.edu.au"
       ],
@@ -12936,7 +13011,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://library.deakin.edu.au/",
+      "product": "webbridge"
     },
     "https://ror.org/00892tw58": {
       "rorId": "https://ror.org/00892tw58",
@@ -12944,7 +13022,7 @@
       "country": "AU",
       "worksCount": 149400,
       "homepage": "https://www.adelaide.edu.au",
-      "probedAt": "2026-10-19T11:05:05.096Z",
+      "probedAt": "2026-10-19T11:36:27.718Z",
       "domains": [
         "adelaide.edu.au"
       ],
@@ -12952,9 +13030,18 @@
         "https://www.adelaide.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61ADELAIDE_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61ADELAIDE_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 10,
+      "packages": [
+        "Nature",
+        "Gale Academic OneFile"
+      ]
     },
     "https://ror.org/05fq50484": {
       "rorId": "https://ror.org/05fq50484",
@@ -13010,7 +13097,7 @@
       "country": "AU",
       "worksCount": 98346,
       "homepage": "https://www.mq.edu.au",
-      "probedAt": "2026-10-19T11:05:12.030Z",
+      "probedAt": "2026-10-19T11:36:29.659Z",
       "domains": [
         "mq.edu.au"
       ],
@@ -13018,9 +13105,18 @@
         "https://www.mq.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61MACQUARIE_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61MACQUARIE_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 18,
+      "packages": [
+        "Nature",
+        "SpringerLink - Journals"
+      ]
     },
     "https://ror.org/04ttjf776": {
       "rorId": "https://ror.org/04ttjf776",
@@ -13076,7 +13172,7 @@
       "country": "CA",
       "worksCount": 87253,
       "homepage": "https://www.sfu.ca",
-      "probedAt": "2026-10-19T11:06:10.817Z",
+      "probedAt": "2026-10-19T11:36:19.105Z",
       "domains": [
         "sfu.ca"
       ],
@@ -13084,9 +13180,18 @@
         "https://www.sfu.ca"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "01SFUL_INST",
+      "host": "sfu.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://sfu.alma.exlibrisgroup.com/view/uresolver/01SFUL_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 9,
+      "packages": [
+        "EBSCOhost MAS Ultra - School Edition",
+        "Nature"
+      ]
     },
     "https://ror.org/02qtvee93": {
       "rorId": "https://ror.org/02qtvee93",
@@ -13118,7 +13223,7 @@
       "country": "NZ",
       "worksCount": 91012,
       "homepage": "http://www.otago.ac.nz/",
-      "probedAt": "2026-10-19T11:06:10.795Z",
+      "probedAt": "2026-10-19T11:36:46.064Z",
       "domains": [
         "otago.ac.nz"
       ],
@@ -13126,9 +13231,18 @@
         "http://www.otago.ac.nz/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "64OTAGO_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64OTAGO_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 44,
+      "packages": [
+        "EBSCOhost MAS Ultra - School Edition",
+        "EBSCOhost Psychology and Behavioral Sciences Collection"
+      ]
     },
     "https://ror.org/04s5mat29": {
       "rorId": "https://ror.org/04s5mat29",
@@ -13160,7 +13274,7 @@
       "country": "CA",
       "worksCount": 77654,
       "homepage": "https://www.concordia.ca/",
-      "probedAt": "2026-10-19T11:06:18.787Z",
+      "probedAt": "2026-10-19T11:36:20.009Z",
       "domains": [
         "concordia.ca"
       ],
@@ -13170,7 +13284,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://concordiauniversity.on.worldcat.org/discovery",
+      "product": "worldcat"
     },
     "https://ror.org/01rxfrp27": {
       "rorId": "https://ror.org/01rxfrp27",
@@ -13178,7 +13295,7 @@
       "country": "AU",
       "worksCount": 83574,
       "homepage": "http://www.latrobe.edu.au/",
-      "probedAt": "2026-10-19T11:06:15.681Z",
+      "probedAt": "2026-10-19T11:36:33.143Z",
       "domains": [
         "latrobe.edu.au"
       ],
@@ -13186,9 +13303,18 @@
         "http://www.latrobe.edu.au/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61LATROBE_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61LATROBE_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 22,
+      "packages": [
+        "Nature Journals",
+        "Access Online"
+      ]
     },
     "https://ror.org/01kpzv902": {
       "rorId": "https://ror.org/01kpzv902",
@@ -13220,7 +13346,7 @@
       "country": "AU",
       "worksCount": 84224,
       "homepage": "https://www.newcastle.edu.au",
-      "probedAt": "2026-10-19T11:06:14.622Z",
+      "probedAt": "2026-10-19T11:36:31.498Z",
       "domains": [
         "newcastle.edu.au"
       ],
@@ -13228,9 +13354,18 @@
         "https://www.newcastle.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61UON_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UON_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 7,
+      "packages": [
+        "Nature",
+        "ProQuest Central"
+      ]
     },
     "https://ror.org/031rekg67": {
       "rorId": "https://ror.org/031rekg67",
@@ -13262,7 +13397,7 @@
       "country": "CA",
       "worksCount": 63004,
       "homepage": "https://uqam.ca",
-      "probedAt": "2026-10-19T11:06:28.474Z",
+      "probedAt": "2026-10-19T11:36:20.065Z",
       "domains": [
         "uqam.ca"
       ],
@@ -13272,7 +13407,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://uqam-bib.on.worldcat.org/discovery",
+      "product": "worldcat"
     },
     "https://ror.org/04haebc03": {
       "rorId": "https://ror.org/04haebc03",
@@ -13304,7 +13442,7 @@
       "country": "NZ",
       "worksCount": 60710,
       "homepage": "https://www.wgtn.ac.nz/",
-      "probedAt": "2026-10-19T11:06:34.114Z",
+      "probedAt": "2026-10-19T11:36:48.219Z",
       "domains": [
         "vuw.ac.nz"
       ],
@@ -13312,9 +13450,18 @@
         "https://www.wgtn.ac.nz/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "64VUW_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "answers-without-indicator",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/64VUW_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 26,
+      "packages": [
+        "Nature Journals",
+        "SpringerLink Journals"
+      ]
     },
     "https://ror.org/01nfmeh72": {
       "rorId": "https://ror.org/01nfmeh72",
@@ -13322,7 +13469,7 @@
       "country": "AU",
       "worksCount": 73177,
       "homepage": "https://www.utas.edu.au",
-      "probedAt": "2026-10-19T11:06:26.613Z",
+      "probedAt": "2026-10-19T11:36:35.122Z",
       "domains": [
         "utas.edu.au"
       ],
@@ -13330,9 +13477,18 @@
         "https://www.utas.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61UOT_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UOT_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 10,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale General OneFile"
+      ]
     },
     "https://ror.org/05g13zd79": {
       "rorId": "https://ror.org/05g13zd79",
@@ -13364,7 +13520,7 @@
       "country": "AU",
       "worksCount": 62663,
       "homepage": "https://www.westernsydney.edu.au/",
-      "probedAt": "2026-10-19T11:06:30.420Z",
+      "probedAt": "2026-10-19T11:36:36.768Z",
       "domains": [
         "westernsydney.edu.au"
       ],
@@ -13372,9 +13528,18 @@
         "https://www.westernsydney.edu.au/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61UWSTSYD_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UWSTSYD_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 13,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals"
+      ]
     },
     "https://ror.org/00kybxq39": {
       "rorId": "https://ror.org/00kybxq39",
@@ -13382,7 +13547,7 @@
       "country": "CA",
       "worksCount": 58898,
       "homepage": "https://www.usherbrooke.ca",
-      "probedAt": "2026-10-19T11:06:36.737Z",
+      "probedAt": "2026-10-19T11:36:20.120Z",
       "domains": [
         "usherbrooke.ca"
       ],
@@ -13392,7 +13557,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://usherbrooke.on.worldcat.org/",
+      "product": "worldcat"
     },
     "https://ror.org/01p93h210": {
       "rorId": "https://ror.org/01p93h210",
@@ -13400,7 +13568,7 @@
       "country": "AU",
       "worksCount": 55611,
       "homepage": "https://www.unisa.edu.au/",
-      "probedAt": "2026-10-19T11:06:42.095Z",
+      "probedAt": "2026-10-19T11:36:38.497Z",
       "domains": [
         "unisa.edu.au"
       ],
@@ -13408,9 +13576,18 @@
         "https://www.unisa.edu.au/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61USOUTHAUS_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61USOUTHAUS_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 9,
+      "packages": [
+        "Nature",
+        "Springer Journals"
+      ]
     },
     "https://ror.org/03y7q9t39": {
       "rorId": "https://ror.org/03y7q9t39",
@@ -13418,7 +13595,7 @@
       "country": "NZ",
       "worksCount": 52186,
       "homepage": "https://www.canterbury.ac.nz",
-      "probedAt": "2026-10-19T11:06:43.362Z",
+      "probedAt": "2026-10-19T11:36:53.236Z",
       "domains": [
         "canterbury.ac.nz"
       ],
@@ -13428,7 +13605,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://publications.ebsco.com/?custId=s1165276&groupId=main&profileId=pfui",
+      "product": "ebsco"
     },
     "https://ror.org/052czxv31": {
       "rorId": "https://ror.org/052czxv31",
@@ -13436,7 +13616,7 @@
       "country": "NZ",
       "worksCount": 53088,
       "homepage": "https://www.massey.ac.nz",
-      "probedAt": "2026-10-19T11:06:42.973Z",
+      "probedAt": "2026-10-19T11:36:53.182Z",
       "domains": [
         "massey.ac.nz"
       ],
@@ -13446,7 +13626,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://research.ebsco.com/c/4egzpd/search",
+      "product": "ebsco"
     },
     "https://ror.org/01gw3d370": {
       "rorId": "https://ror.org/01gw3d370",
@@ -13454,7 +13637,7 @@
       "country": "CA",
       "worksCount": 38929,
       "homepage": "https://www.uwindsor.ca",
-      "probedAt": "2026-10-19T11:06:46.490Z",
+      "probedAt": "2026-10-19T11:36:20.175Z",
       "domains": [
         "uwindsor.ca"
       ],
@@ -13462,9 +13645,18 @@
         "https://www.uwindsor.ca"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "01UTON_UW",
+      "host": "uwindsor.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://uwindsor.alma.exlibrisgroup.com/view/uresolver/01UTON_UW/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 8,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale OneFile: CPI.Q"
+      ]
     },
     "https://ror.org/04gsp2c11": {
       "rorId": "https://ror.org/04gsp2c11",
@@ -13472,7 +13664,7 @@
       "country": "AU",
       "worksCount": 50621,
       "homepage": "http://www.jcu.edu.au/",
-      "probedAt": "2026-10-19T11:06:45.558Z",
+      "probedAt": "2026-10-19T11:36:41.876Z",
       "domains": [
         "jcu.edu.au"
       ],
@@ -13480,9 +13672,18 @@
         "http://www.jcu.edu.au/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61ARL_JCU",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61ARL_JCU/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 7,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale General OneFile"
+      ]
     },
     "https://ror.org/05f8d4e86": {
       "rorId": "https://ror.org/05f8d4e86",
@@ -13490,7 +13691,7 @@
       "country": "CA",
       "worksCount": 38464,
       "homepage": "https://polymtl.ca",
-      "probedAt": "2026-10-19T11:06:54.453Z",
+      "probedAt": "2026-10-19T11:36:21.075Z",
       "domains": [
         "polymtl.ca"
       ],
@@ -13500,7 +13701,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://polymtl.on.worldcat.org/discovery",
+      "product": "worldcat"
     },
     "https://ror.org/00r4sry34": {
       "rorId": "https://ror.org/00r4sry34",
@@ -13532,7 +13736,7 @@
       "country": "AU",
       "worksCount": 32277,
       "homepage": "http://www.ecu.edu.au/",
-      "probedAt": "2026-10-19T11:07:04.269Z",
+      "probedAt": "2026-10-19T11:36:46.012Z",
       "domains": [
         "ecu.edu.au"
       ],
@@ -13542,7 +13746,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ecu.on.worldcat.org/discovery",
+      "product": "worldcat"
     },
     "https://ror.org/05nkf0n29": {
       "rorId": "https://ror.org/05nkf0n29",
@@ -13550,7 +13757,7 @@
       "country": "CA",
       "worksCount": 34896,
       "homepage": "https://unb.ca",
-      "probedAt": "2026-10-19T11:06:59.931Z",
+      "probedAt": "2026-10-19T11:36:21.127Z",
       "domains": [
         "unb.ca"
       ],
@@ -13560,7 +13767,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://unb.on.worldcat.org/",
+      "product": "worldcat"
     },
     "https://ror.org/04r659a56": {
       "rorId": "https://ror.org/04r659a56",
@@ -13568,7 +13778,7 @@
       "country": "AU",
       "worksCount": 32490,
       "homepage": "https://www.une.edu.au",
-      "probedAt": "2026-10-19T11:07:02.830Z",
+      "probedAt": "2026-10-19T11:36:43.524Z",
       "domains": [
         "une.edu.au"
       ],
@@ -13576,9 +13786,18 @@
         "https://www.une.edu.au"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "61UNE_INST",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "status": "answers-without-indicator",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ap02.alma.exlibrisgroup.com/view/uresolver/61UNE_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 17,
+      "packages": [
+        "Nature.com",
+        "Advanced Technologies &amp; Aerospace Database"
+      ]
     },
     "https://ror.org/05p6qqk79": {
       "rorId": "https://ror.org/05p6qqk79",
@@ -16895,5 +17114,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-19T11:22:03.977Z"
+  "generatedAt": "2026-10-19T11:36:53.236Z"
 }
