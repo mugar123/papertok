@@ -85,7 +85,7 @@
   flex: 1;
   display: flex;
   align-items: center;
-  background: var(--bg-sunken);
+  background: transparent;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 0 var(--space-3);
@@ -94,7 +94,6 @@
 }
 
 .search-input-wrapper:focus-within {
-  background: var(--bg-card);
   border-color: var(--border-ink);
 }
 
@@ -222,7 +221,7 @@
 .search-results {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-4);
+  padding: var(--space-6) var(--space-4) var(--space-4);
 }
 
 .search-results-list {
@@ -578,7 +577,7 @@
   }
 
   .search-results {
-    padding: var(--space-4) var(--space-3);
+    padding: var(--space-6) var(--space-3) var(--space-4);
   }
 
   .search-follow-btn {
