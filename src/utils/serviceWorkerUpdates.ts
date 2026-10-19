@@ -68,28 +68,56 @@ export async function runsPrecachedBuild(entryUrl: string, scope: string, cacheS
     return Boolean(await cacheStorage.match(entryUrl, { cacheName: `workbox-precache-v2-${scope}`, ignoreSearch: true }))
   } catch {
     // An unreadable precache proves nothing, so the page counts as behind and
-    // the reload waits for the next route change.
+    // the reload waits for one of the moments below.
     return false
   }
 }
 
 /**
- * Whether a route change is the moment to reload into a deploy this page is
- * behind on. `behindSince` is the path the reader was on when that deploy's
- * worker took control, or null when the page already runs its build.
+ * How long the tab has to have been hidden for coming back to it to count as
+ * a moment for the deploy reload. A glance at another app does not count. It
+ * stays under the feed snapshot's 15 minutes (FeedContext.tsx), so the reload
+ * can still bring back the papers the reader left.
+ */
+const RETURN_AFTER_MS = 5 * 60_000
+
+interface DeployMoment {
+  /** The path the reader is on. */
+  pathname: string
+  online: boolean
+  /** Set when the moment is the tab becoming visible again: how long it was hidden. */
+  returnedAfterMs?: number
+  /** Whether a modal dialog is open: the reader, the PDF viewer, a form. */
+  modalOpen?: boolean
+}
+
+/**
+ * Whether this is the moment to reload into a deploy this page is behind on.
+ * `behindSince` is the path the reader was on when that deploy's worker took
+ * control, or null when the page already runs its build.
+ *
  * Reloading under that page would close an open reader or PDF and cut off an
- * AI explanation; a route change means the reader is leaving it anyway.
+ * AI explanation. Two moments avoid that:
+ *   - a route change, because the reader is leaving the page anyway;
+ *   - coming back to the tab after RETURN_AFTER_MS with no modal open, before
+ *     the reader has started again. Without it a tab that stays on the feed
+ *     would keep the old build, and keep calling Worker routes that a later
+ *     deploy may retire: its lazy chunks are mostly loaded or cached, so
+ *     `vite:preloadError` rarely fires there.
  *
  * Offline the reload waits. The page request would fail, the worker would
  * answer with a cached document, and that fresh boot has no Firestore cache
  * to read the profile from, so the reader would get the profile error screen
  * in place of a session that still works.
  */
-export function shouldReloadForDeploy(behindSince: string | null, { pathname, online }: { pathname: string; online: boolean }) {
-  return behindSince !== null && online && pathname !== behindSince
+export function shouldReloadForDeploy(behindSince: string | null, { pathname, online, returnedAfterMs, modalOpen = false }: DeployMoment) {
+  if (behindSince === null || !online) return false
+  if (returnedAfterMs === undefined) return pathname !== behindSince
+  return returnedAfterMs >= RETURN_AFTER_MS && !modalOpen
 }
 
 let behindSince: string | null = null
+let hiddenAt: number | null = null
 
 /**
  * `registerSW`'s `onNeedReload`, which replaces Workbox's immediate reload on
@@ -103,12 +131,7 @@ export async function noteDeployActivated(entryUrl: string) {
   behindSince ??= pathname
 }
 
-/**
- * Called on every route change. A hidden tab is not used as the moment: a
- * phone can suspend the page before the reload runs, and the forced-reload
- * mark expires after a minute (appReload.ts), so the feed would start over.
- * Hiding the tab is also how a reader switches apps with a paper open.
- */
+/** Called on every route change. */
 export function reloadIfBehindDeploy(pathname: string) {
   if (behindSince === null) return
   if (shouldReloadForDeploy(behindSince, { pathname, online: navigator.onLine !== false })) {
@@ -119,4 +142,31 @@ export function reloadIfBehindDeploy(pathname: string) {
   // An offline route change still left the page, so the next one is the
   // moment.
   behindSince = pathname
+}
+
+/**
+ * The document's `visibilitychange`. Hiding the tab is never the moment
+ * itself: a phone can suspend the page before the reload runs, and the
+ * forced-reload mark expires after a minute (appReload.ts), so the feed would
+ * start over. Hiding is also how a reader switches apps with a paper open.
+ * Coming back can be the moment, and then the reload starts while the page
+ * is visible.
+ */
+export function reloadOnReturnIfBehindDeploy() {
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now()
+    return
+  }
+  if (hiddenAt === null) return
+  const returnedAfterMs = Date.now() - hiddenAt
+  hiddenAt = null
+  if (!shouldReloadForDeploy(behindSince, {
+    pathname: window.location.pathname,
+    online: navigator.onLine !== false,
+    returnedAfterMs,
+    // The probe searchShortcut.ts and FeedContainer already use.
+    modalOpen: Boolean(document.querySelector('[aria-modal="true"]')),
+  })) return
+  markAppForcedReload()
+  window.location.reload()
 }

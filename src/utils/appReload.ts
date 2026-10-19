@@ -9,7 +9,8 @@
  *   - `main.jsx` reloads on `vite:preloadError`, when a deploy has taken away
  *     the chunk an `import()` was reaching for;
  *   - a tab that a deploy left on an older build reloads at the next route
- *     change (`utils/serviceWorkerUpdates.ts`).
+ *     change, or when the reader comes back to it after a while
+ *     (`utils/serviceWorkerUpdates.ts`).
  *
  * The reader asked for neither. Dropping them at the top of a freshly ranked
  * feed afterwards reads as the whole app having lost their place, which is
