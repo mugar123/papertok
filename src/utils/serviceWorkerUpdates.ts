@@ -59,8 +59,17 @@ export function watchServiceWorkerUpdates(registration: UpdateRegistration | nul
  * deletes the previous build's entries before the worker reaches `activated`,
  * so the page's entry chunk is still there only when both run the same build.
  * The runtime asset cache is not consulted: it can still hold an older build's
- * entry chunk. One URL is enough because the entry chunk's hash changes with
- * the rest of the build (checked with a stylesheet-only change).
+ * entry chunk.
+ *
+ * One URL stands for the build because the entry chunk's name changes with
+ * the rest of it. Vite adds the names of a chunk's own stylesheets to its hash
+ * (`augmentChunkHash` in vite:css-post, active while `build.cssCodeSplit`
+ * keeps its default), and the entry chunk names the chunks and route
+ * stylesheets it loads. With vite 8.0.16, changing one declaration in
+ * styles/global.css, components/ui/button.css or Reader/PaperReader.css
+ * renamed the entry chunk each time. A deploy that changes only revisioned
+ * public files (icons, manifest) keeps the entry URL and counts as the same
+ * build; the page does not run those files.
  */
 export async function runsPrecachedBuild(entryUrl: string, scope: string, cacheStorage: Pick<CacheStorage, 'match'>) {
   try {
