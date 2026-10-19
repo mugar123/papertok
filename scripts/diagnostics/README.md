@@ -489,7 +489,9 @@ libraries on another product, candidates still unverified, exclusions, unresolve
 quotes a table that can be regenerated after any run.
 
 Institutions come from OpenAlex (`type:education`, by works count; each request spends its
-free daily budget), their domains from ROR. Every host is asked at most once per second with
+free daily budget), their domains from ROR. A row's `domains` are ROR's only: a student or staff
+mail domain ROR does not list (alumnos.uc3m.es) goes, with its source page, in `CHECKED_MAIL_DOMAINS`
+in `worker/institution-link.ts`, and a reader linked from it reaches the row by ROR id. Every host is asked at most once per second with
 an identifying user agent. `--debug` prints each request; `--only <ror>` restricts a run;
 `--skip-known` leaves out the institutions already in the census, so a wider `--limit` only
 probes the new ones.
