@@ -292,6 +292,50 @@ test('refuses other methods and a Worker without the service account', async () 
   }
 });
 
+// ROR's record for the Autónoma de Madrid: students write from
+// estudiante.uam.es, which ROR does not list (checked 2026-10-19).
+const ROR_UAM = {
+  number_of_results: 1,
+  items: [{
+    id: 'https://ror.org/01cby8j38',
+    domains: ['uam.es'],
+    names: [{ value: 'Universidad Autónoma de Madrid', types: ['ror_display', 'label'] }, { value: 'UAM', types: ['acronym'] }],
+  }],
+};
+
+test('a student subdomain links through the university\'s own domain, and keeps its own', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Auam.es') ? ROR_UAM : { items: [] }), { status: 200 }),
+    mdq: (url) => new Response(JSON.stringify(url.includes('q=uam.es') ? [{ entityID: 'https://idp.uam.es/entity', scope: 'uam.es' }] : []), { status: 200 }),
+  });
+  try {
+    const institution = await resolveInstitution('estudiante.uam.es', { cache: undefined });
+    assert.deepEqual(institution, {
+      domain: 'estudiante.uam.es',
+      rorId: 'https://ror.org/01cby8j38',
+      name: 'Universidad Autónoma de Madrid',
+      acronym: 'UAM',
+      entityId: 'https://idp.uam.es/entity',
+    });
+    assert.deepEqual(
+      upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).map(url => decodeURIComponent(url.split('query.advanced=')[1])),
+      ['domains:estudiante.uam.es', 'domains:uam.es'],
+    );
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('a domain with no record up its parents is not found, after a bounded number of questions', async () => {
+  const upstream = stubUpstreams({ ror: () => new Response(JSON.stringify({ items: [] }), { status: 200 }) });
+  try {
+    await rejectsWith(resolveInstitution('mail.students.nowhere.example', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
+    assert.equal(upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).length, 3);
+  } finally {
+    upstream.restore();
+  }
+});
+
 test('a resolved institution is served from the cache; a miss is not remembered', async () => {
   const store = new Map<string, Response>();
   const cache = {

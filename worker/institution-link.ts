@@ -85,28 +85,43 @@ function rorName(record: RorRecord, type: string) {
   return typeof match?.value === 'string' && match.value.trim() ? match.value.trim() : null;
 }
 
+// How many domains are asked about for one address: the address's own, then
+// its parents. ROR registers a university's primary domain and students
+// write from a subdomain of it (estudiante.uam.es, alumnos.upm.es,
+// g.ucla.edu, terpmail.umd.edu, checked 2026-10-19), which the university
+// controls as much as the primary one.
+const ROR_DOMAIN_ATTEMPTS = 3;
+
 /**
- * The ROR record whose registered domains include this one. ROR's search is
- * a text query, so the answer is filtered again on the `domains` field: a
- * record that merely mentions the domain somewhere is not a match.
+ * The ROR record whose registered domains include this one or a parent of
+ * it, with the domain that matched. ROR's search is a text query, so the
+ * answer is filtered again on the `domains` field: a record that merely
+ * mentions the domain somewhere is not a match. A parent with no record
+ * (`ac.uk`, `edu.au`) is simply a miss on the way to not found.
  */
 async function lookupRor(domain: string, fetchImpl: typeof fetch) {
-  const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${domain}`)}`;
-  let payload;
-  try {
-    payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl);
-  } catch {
-    throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+  const labels = domain.split('.');
+  const candidates = [];
+  for (let start = 0; start < labels.length - 1 && candidates.length < ROR_DOMAIN_ATTEMPTS; start += 1) {
+    candidates.push(labels.slice(start).join('.'));
   }
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  const record = items.find(item => Array.isArray(item?.domains)
-    && item.domains.some(value => String(value).toLowerCase() === domain));
-  if (!record || typeof record.id !== 'string') {
-    throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
+  for (const candidate of candidates) {
+    const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${candidate}`)}`;
+    let payload;
+    try {
+      payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl);
+    } catch {
+      throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+    }
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const record = items.find(item => Array.isArray(item?.domains)
+      && item.domains.some(value => String(value).toLowerCase() === candidate));
+    if (!record || typeof record.id !== 'string') continue;
+    const name = rorName(record, 'ror_display') || rorName(record, 'label');
+    if (!name) continue;
+    return { rorId: record.id, name, acronym: rorName(record, 'acronym'), matchedDomain: candidate };
   }
-  const name = rorName(record, 'ror_display') || rorName(record, 'label');
-  if (!name) throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
-  return { rorId: record.id, name, acronym: rorName(record, 'acronym') };
+  throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
 }
 
 /**
@@ -143,8 +158,12 @@ export async function resolveInstitution(domain: string, { fetchImpl = fetch, ca
   const cached = cache ? await cache.match(key) : null;
   if (cached) return cached.json<ResolvedInstitution>();
 
-  const ror = await lookupRor(domain, fetchImpl);
-  const institution = { domain, ...ror, entityId: await lookupEntityId(domain, fetchImpl) };
+  const { matchedDomain, ...ror } = await lookupRor(domain, fetchImpl);
+  // The federation lists the identity provider by the university's own
+  // scope, which a student subdomain may not be.
+  const entityId = await lookupEntityId(domain, fetchImpl)
+    ?? (matchedDomain !== domain ? await lookupEntityId(matchedDomain, fetchImpl) : null);
+  const institution = { domain, ...ror, entityId };
   if (cache) {
     await cache.put(key, new Response(JSON.stringify(institution), {
       headers: {

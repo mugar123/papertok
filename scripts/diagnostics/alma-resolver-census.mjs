@@ -30,7 +30,9 @@
  * `compatibility-pending`, with the product kept for a later adapter.
  * `--only <ror>` restricts a run to one institution; `--dry` probes without
  * writing anything. `--skip-known` leaves out the institutions the census has
- * already met, so a wider `--limit` only probes the new ones.
+ * already met, so a wider `--limit` only probes the new ones. `--inventory`
+ * prints the coverage inventory (per country: met, shipped, and where the
+ * rest stand) from the census record, without any request.
  *
  * Every host is asked at most once per second, with an identifying user agent.
  * Only public endpoints are used: OpenAlex, ROR, library web pages and the
@@ -417,9 +419,54 @@ async function processInstitution(institution, record, seeds, verifyOnly) {
   };
 }
 
+/**
+ * The coverage inventory, as Markdown, from the census record alone: per
+ * country, how many institutions were met, how many ship, and where the
+ * rest stand (an Alma answer the Worker cannot read, another product, a
+ * candidate still unverified, nothing found). Reproducible: a report that
+ * quotes it can be regenerated after any run.
+ */
+function inventory(census) {
+  const all = Object.values(census.institutions);
+  const statusGroup = (entry) => {
+    if (entry.status === 'verified') return 'shipped';
+    if (entry.status === 'answers-without-indicator' || entry.status === 'answers-without-services') return 'almaUnreadable';
+    if (entry.status === 'compatibility-pending') return 'otherProduct';
+    if (entry.status === 'address-located' || entry.status === 'code-without-region') return 'candidate';
+    if (entry.status === 'excluded') return 'excluded';
+    return 'unresolved';
+  };
+  const rows = new Map();
+  for (const entry of all) {
+    const row = rows.get(entry.country) || { total: 0, shipped: 0, almaUnreadable: 0, otherProduct: 0, candidate: 0, excluded: 0, unresolved: 0, products: {} };
+    row.total += 1;
+    row[statusGroup(entry)] += 1;
+    if (entry.status === 'compatibility-pending' && entry.product) row.products[entry.product] = (row.products[entry.product] || 0) + 1;
+    rows.set(entry.country, row);
+  }
+  const lines = [
+    `Census of ${all.length} institutions, generated ${new Date().toISOString().slice(0, 10)} from alma-resolver-census.json.`,
+    '',
+    '| Country | Met | Shipped | Alma, unreadable answer | Other product | Candidate, unverified | Excluded | Unresolved |',
+    '|---|---|---|---|---|---|---|---|',
+  ];
+  for (const [country, row] of [...rows].sort((a, b) => b[1].shipped - a[1].shipped || b[1].total - a[1].total)) {
+    const products = Object.entries(row.products).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name} ${count}`).join(', ');
+    lines.push(`| ${country || '?'} | ${row.total} | ${row.shipped} | ${row.almaUnreadable} | ${row.otherProduct}${products ? ` (${products})` : ''} | ${row.candidate} | ${row.excluded} | ${row.unresolved} |`);
+  }
+  const totals = [...rows.values()].reduce((sum, row) => { for (const key of Object.keys(sum)) sum[key] += row[key]; return sum; }, { total: 0, shipped: 0, almaUnreadable: 0, otherProduct: 0, candidate: 0, excluded: 0, unresolved: 0 });
+  lines.push(`| **All** | ${totals.total} | ${totals.shipped} | ${totals.almaUnreadable} | ${totals.otherProduct} | ${totals.candidate} | ${totals.excluded} | ${totals.unresolved} |`);
+  lines.push('', 'Shipped rows answered a live probe with a service listed. "Alma, unreadable answer" is a library on Alma whose answer the Worker cannot read yet (no indicator, or nothing listed for either probe journal). "Other product" is the resolver product the library publishes instead (SFX, EBSCO, 360 Link, WorldCat, LibKey). "Candidate" is an address or code still without a verified host. Excluded rows are consortia or shared libraries, with the reason in the seeds.');
+  return lines.join('\n');
+}
+
 async function main() {
   const census = await readJson(CENSUS_FILE, { institutions: {} });
   const seeds = new Map((await readJson(SEEDS_FILE, [])).map(seed => [seed.rorId, seed]));
+  if (args.inventory) {
+    console.log(inventory(census));
+    return;
+  }
 
   let targets;
   if (args.verify) {
