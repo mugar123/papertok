@@ -174,8 +174,10 @@ test('SOURCE: the app marks every reload it gives itself, and applies the policy
   assert.ok(policyAt > 0 && renderAt > policyAt, 'the policy is applied before the first render');
 });
 
-test('SOURCE: the app applies a pending deploy on route changes', async () => {
+test('SOURCE: the app applies a pending deploy on route changes, once the debounced interaction aggregate is written too', async () => {
   const { readFile } = await import('node:fs/promises');
   const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /useEffect\(\(\) => \{\s*void reloadIfBehindDeploy\(location\.pathname, \(\) => waitForPendingWrites\(db\)\)\s*\}, \[location\.pathname\]\)/);
+  // Waiting only for the writes already issued would leave the aggregate, and
+  // with it the liked, saved and read lists, to the unload the reload causes.
+  assert.match(app, /useEffect\(\(\) => \{\s*void reloadIfBehindDeploy\(location\.pathname, \(\) => Promise\.all\(\[flushAllInteractionProfiles\(\), waitForPendingWrites\(db\)\]\)\)\s*\}, \[location\.pathname\]\)/);
 });

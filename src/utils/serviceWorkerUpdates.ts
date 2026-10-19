@@ -139,11 +139,13 @@ const WRITES_SETTLE_MS = 1_000
 
 /**
  * Called on every route change. `writesSettled` resolves once Firestore has
- * acknowledged the writes issued so far. Firestore keeps those in memory only
- * (services/firebase.ts), so a reload would drop them, and a route change can
- * follow one closely: onboarding sends the email opt-in without awaiting it,
- * then navigates to the feed. Writes still pending after WRITES_SETTLE_MS, or
- * a dialog opened during the wait, leave the reload to the next route change.
+ * acknowledged the writes issued so far, after issuing the interaction
+ * aggregate still waiting on its debounce (App.tsx). Firestore keeps
+ * unacknowledged writes in memory only (services/firebase.ts), so a reload
+ * would drop them, and a route change can follow one closely: onboarding
+ * sends the email opt-in without awaiting it, then navigates to the feed.
+ * Writes still pending after WRITES_SETTLE_MS, or a dialog opened during the
+ * wait, leave the reload to the next route change.
  * A further route change during the wait, such as a redirect, does not: the
  * reload opens the page the tab is on by then.
  *

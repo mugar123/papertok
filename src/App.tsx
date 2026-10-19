@@ -6,6 +6,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { AnimatePresence } from 'framer-motion'
 import { waitForPendingWrites } from 'firebase/firestore'
 import { db } from './services/firebase.ts'
+import { flushAllInteractionProfiles } from './services/interactionProfileStore.ts'
 import PageTransition from './components/Layout/PageTransition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom.ts'
 import { useOverlayHistory } from './hooks/useOverlayHistory.ts'
@@ -137,10 +138,13 @@ function AppContent() {
   }, [])
   const location = useLocation()
   // A deploy this tab is behind on is applied when the reader changes page,
-  // after Firestore has acknowledged the writes already issued
-  // (utils/serviceWorkerUpdates.ts).
+  // after Firestore has acknowledged the app's writes
+  // (utils/serviceWorkerUpdates.ts). The interaction aggregate, which the
+  // liked, saved and read lists load from after the reload, waits on a
+  // debounce. It is issued first: otherwise only pagehide would issue it,
+  // while the reload unloads the page.
   useEffect(() => {
-    void reloadIfBehindDeploy(location.pathname, () => waitForPendingWrites(db))
+    void reloadIfBehindDeploy(location.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
   }, [location.pathname])
   // The ONE place this is computed. Every PageTransition reads it from the
   // provider below, and AnimatePresence hands it to the page on its way out —
