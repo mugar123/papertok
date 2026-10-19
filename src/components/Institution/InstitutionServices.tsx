@@ -9,13 +9,13 @@ import './Institution.css';
 
 const COPY = {
   kicker: 'Through your library',
-  count: (count: number) => `${count} ${count === 1 ? 'platform' : 'platforms'}`,
+  count: (count: number) => `${count} ${count === 1 ? 'source' : 'sources'}`,
   found: (count: number) => `${COPY.count(count)} through your library.`,
   unchecked: (count: number) => `${COPY.count(count)} could not be checked.`,
   loading: 'Checking your library…',
-  empty: 'Your library has none of the platforms PaperTok checks. Papers may still open through other collections.',
+  empty: 'No access found among the publications and platforms checked. Individual articles may still be available.',
   partial: 'PaperTok could only check part of the catalogue. Try again later.',
-  unsupported: 'PaperTok cannot check this library\'s platforms yet.',
+  unsupported: 'PaperTok cannot check this library yet.',
   error: 'Your library could not be checked.',
   retry: 'Retry',
   newTab: ' (opens in a new tab)',

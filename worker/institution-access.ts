@@ -40,6 +40,7 @@ export interface ResolverCitation {
  */
 
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { cacheResponse } from './provider-runtime.ts';
 
 // A library's holdings change slowly; `unknown` (no ISSN, or GetFTR down with
@@ -50,6 +51,10 @@ const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
 // asked about the journal and year alone, and its link went to the journal's
 // home page. Those answers would otherwise be served for a week more.
 const RESOLVER_CITATION = 'article';
+// How the resolver's answer is read, in the cache keys of both routes that
+// read one: until 2026-10-19 a service Alma had filtered out for the date
+// still counted as access, and answers read that way must not be served on.
+export const RESOLVER_READING = 'filtered-services';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -57,17 +62,24 @@ export async function handleInstitutionAccess(request: Request, env: WorkerEnv) 
   const query = readAccessQuery(url.searchParams);
   const ttl = (payload: { status: string }) => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
   return cacheResponse(request, origin, env, ttl, () => lookupInstitutionAccess(query, { env }), {
-    canonicalParams: { ...upstreamParams(query, env), citation: RESOLVER_CITATION },
+    canonicalParams: { ...upstreamParams(query, env), citation: RESOLVER_CITATION, reading: RESOLVER_READING },
   });
 }
 
 export const INSTITUTION_ACCESS_PATH = '/access';
 
-// Two configuration strings per library; no public registry maps a ROR id to
-// its Alma instance, so each institution is added here by hand.
-export const INSTITUTION_RESOLVERS: Readonly<Partial<Record<string, InstitutionResolver>>> = Object.freeze({
-  'usal.es': { host: 'eu01.alma.exlibrisgroup.com', institution: '34BUC_USAL' },
-});
+/**
+ * The library's Alma link resolver for an institution, or null. The ROR id
+ * comes first: one university answers to several mail domains, and the link
+ * flow records the id with the domain. No public registry maps a university
+ * to its Alma instance, so the table is a census (`INSTITUTION_RESOLVERS`),
+ * grown by running `scripts/diagnostics/alma-resolver-census.mjs`.
+ */
+export function findResolver({ domain, rorId = null }: Pick<InstitutionQuery, 'domain' | 'rorId'>): InstitutionResolver | null {
+  const entry = (rorId && INSTITUTION_RESOLVERS.find(row => row.rorId === rorId))
+    || INSTITUTION_RESOLVERS.find(row => row.domains.includes(domain));
+  return entry ? { host: entry.host, institution: entry.institution } : null;
+}
 
 // One deadline for the whole lookup, not one per fetch: a Crossref call and
 // two resolver calls at six seconds each would run past the browser's own
@@ -148,13 +160,31 @@ function xmlKey(xml: string, id: string) {
 /**
  * The resolver's `svc_dat=CTO` answer. Null when it carries no
  * `full_text_indicator`, which is not an answer about the journal at all.
+ *
+ * Alma lists every full-text service it knows and marks the ones it ruled
+ * out for this request (`Filtered`, with a `Filter reason`), link included.
+ * A service filtered for the date is a collection whose coverage ends before
+ * the year asked about (Pau, Nature 2020: one package until 2012, answered
+ * `entitled` until 2026-10-19), so it is left out. A filter for any other
+ * reason (an IP range, a user group) hides a service the Worker cannot judge
+ * from outside, so `restricted` says the answer may be incomplete.
+ * `matched` says whether Alma resolved the journal to a record of its own
+ * (`rft.mms_id`): an answer without one lists nothing because the journal,
+ * or the library's data, is not where it was asked for, not because the
+ * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
   const indicator = xmlKey(String(xml), 'full_text_indicator');
   if (indicator !== 'true' && indicator !== 'false') return null;
+  const matched = xmlKey(String(xml), 'rft.mms_id') !== null;
   const services = [];
+  let restricted = false;
   for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
     if (!/\bservice_type="getFullTxt"/.test(attributes)) continue;
+    if (xmlKey(body, 'Filtered') === 'true') {
+      if (!/date/i.test(xmlKey(body, 'Filter reason') || '')) restricted = true;
+      continue;
+    }
     const resolution = body.match(/<resolution_url>([^<]*)<\/resolution_url>/);
     services.push({
       name: xmlKey(body, 'package_public_name'),
@@ -162,7 +192,7 @@ export function parseResolverAnswer(xml: unknown) {
       url: resolution ? httpsUrl(unescapeXml(resolution[1].trim())) : null,
     });
   }
-  return { fullText: indicator === 'true', services };
+  return { fullText: indicator === 'true', matched, services, restricted };
 }
 
 /** The most DOIs one GetFTR request may carry (Entitlement API v2.7). */
@@ -267,14 +297,19 @@ const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null }
 
 /**
  * The parameters a lookup actually sends upstream, for the edge cache key:
- * the institution ids only reach GetFTR, so without a key they must not
- * split the cache, and the domain only picks a resolver.
+ * the library asked (its institution code and the host it is asked on,
+ * since every mail domain of a university reaches the same resolver, and a
+ * regional host may answer for a code without the library's data), or the
+ * domain when there is none, and the institution ids only with a GetFTR
+ * key, since only GetFTR gets them.
  */
-export function upstreamParams({ doi = null, domain, entityId = null, rorId = null }: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
+export function upstreamParams(query: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
+  const { doi = null, domain, entityId = null, rorId = null } = query;
   const getFtr = Boolean(env.GETFTR_API_KEY);
+  const resolver = findResolver(query);
   return {
     ...(doi ? { doi } : {}),
-    domain,
+    ...(resolver ? { library: resolver.institution, host: resolver.host } : { domain }),
     ...(getFtr && entityId ? { entityId } : {}),
     ...(getFtr && rorId ? { rorId } : {}),
   };
@@ -284,7 +319,7 @@ export async function lookupInstitutionAccess(
   { doi, domain, entityId = null, rorId = null }: InstitutionQuery & { doi: string },
   { fetchImpl = (...args) => fetch(...args), env = {} }: LookupOptions = {},
 ) {
-  const resolver = Object.hasOwn(INSTITUTION_RESOLVERS, domain) ? INSTITUTION_RESOLVERS[domain] : null;
+  const resolver = findResolver({ domain, rorId });
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
   const signal = AbortSignal.timeout(LOOKUP_DEADLINE_MS);
@@ -333,6 +368,9 @@ export async function lookupInstitutionAccess(
       const best = usable.find(service => !service.free) || usable[0];
       return { status: 'entitled', collection: best.name, url: best.url };
     }
+    // A service hidden by an IP or group filter may be the library's own
+    // subscription: no answer, rather than a refusal.
+    if (answer.restricted) continue;
     if (!answer.fullText) refusals += 1;
   }
   return issns.length && refusals === issns.length

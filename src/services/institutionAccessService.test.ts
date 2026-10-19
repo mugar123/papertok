@@ -267,3 +267,55 @@ test('a failed platform check is null and asked again next time', async () => {
     assert.equal(api.urls.length, 2);
   }
 });
+
+
+const servicesPage = (id: string, nextOffset: unknown, partial = false, unchecked = 0) => ({
+  status: 200, body: { services: [{ id, name: id }], nextOffset, partial, unchecked },
+});
+
+test('follows the catalogue pages once, combines their results, and caches the whole list', async () => {
+  const api = worker(servicesPage('nature', 36, false, 2), servicesPage('economist', 72, true, 1), servicesPage('hbr', null));
+  const library = institution('paged.es');
+  const answer = await findInstitutionServices(library, { ...api, apiBase: API });
+  assert.deepEqual(answer!.services.map(service => service.id), ['nature', 'economist', 'hbr']);
+  assert.equal(answer!.partial, true);
+  assert.equal(answer!.unchecked, 3);
+  assert.deepEqual(api.urls.map(url => new URL(url).searchParams.get('offset')), ['0', '36', '72']);
+  assert.equal(await findInstitutionServices(library, { ...api, apiBase: API }), answer);
+  assert.equal(api.urls.length, 3);
+});
+
+test('an unavailable later page preserves earlier results as partial, with the short cache lifetime', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const api = worker(servicesPage('economist', 36), { status: 502, body: {} }, servicesPage('guardian', null));
+  const library = institution('later-failure.es');
+  const answer = await findInstitutionServices(library, { ...api, apiBase: API });
+  assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
+  assert.equal(answer!.partial, true);
+  t.mock.timers.tick(HOUR + 1);
+  const retry = await findInstitutionServices(library, { ...api, apiBase: API });
+  assert.equal(retry!.partial, false);
+  assert.deepEqual(retry!.services.map(service => service.id), ['guardian']);
+});
+
+test('malformed or repeating continuations do not start an unbounded catalogue scan', async () => {
+  for (const next of [0, -1, 1.5, '36', {}, Number.MAX_SAFE_INTEGER + 1]) {
+    const api = worker(servicesPage('economist', next));
+    const answer = await findInstitutionServices(institution(`invalid-page-${typeof next}-${String(next).replace(/[^a-z0-9]/gi, '')}.es`), { ...api, apiBase: API });
+    assert.equal(answer, null);
+    assert.equal(api.urls.length, 1);
+  }
+  const api = worker(servicesPage('economist', 36), servicesPage('guardian', 36));
+  const answer = await findInstitutionServices(institution('repeated-page.es'), { ...api, apiBase: API });
+  assert.equal(answer!.partial, true);
+  assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
+  assert.equal(api.urls.length, 2);
+});
+
+test('duplicate entries across pages are shown once and a later unsupported response preserves results', async () => {
+  const api = worker(servicesPage('economist', 36), servicesPage('economist', 72), { status: 404, body: { code: 'INSTITUTION_NOT_SUPPORTED' } });
+  const answer = await findInstitutionServices(institution('overlap.es'), { ...api, apiBase: API });
+  assert.equal(answer!.partial, true);
+  assert.equal(answer!.unsupported, undefined);
+  assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
+});
