@@ -474,9 +474,6 @@ const PaperCard = memo(function PaperCard({
   // The face the primary button is pushing out (PaperCard.css, `.pc-action-out`)
   // and which way: forward to "Checking" or the library, back to the record.
   const [actionPush, setActionPush] = useState<{ from: 'record' | 'checking'; dir: 'forward' | 'back' } | null>(null);
-  const readButtonRef = useRef<HTMLButtonElement | null>(null);
-  // The button's width before its label changes, for the push to travel from.
-  const readButtonFrom = useRef<number | null>(null);
   const [linkedResources, setLinkedResources] = useState<{ paperId: string | null; items: PaperResearchResource[] }>({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   // Whether the clippings are lit. Deliberately NOT `isCardVisible`: the two
@@ -1412,10 +1409,8 @@ const PaperCard = memo(function PaperCard({
     }
     const paperId = paper.id;
     const { domain } = institution;
-    // Every label change is a push, and records the button's width first
-    // for the layout effect below to travel from.
+    // Every label change is a push.
     const push = (from: 'record' | 'checking', dir: 'forward' | 'back') => {
-      readButtonFrom.current = readButtonRef.current?.offsetWidth || null;
       setActionPush({ from, dir });
     };
     let checkingSince = 0;
@@ -1572,18 +1567,6 @@ const PaperCard = memo(function PaperCard({
   const primaryActionShortLabel = libraryLabel ? restingActionLabel : restingActionLabel.split(' ')[0];
   const actionFace = libraryLabel ? 'library' : isCheckingLibrary ? 'checking' : 'record';
   const actionFaceClass = isCheckingLibrary ? ' pc-action-checking' : '';
-  /* A label change changes the button's width, and "Read in plain words"
-     beside it jumped in one frame. The button travels from the width it had
-     to the one it lands on, on the push's clock; the sibling rides on the
-     layout. `overflow: hidden` keeps the arriving word inside a box still
-     narrower than it. Reduced motion keeps the jump and the cross-fade. */
-  useLayoutEffect(() => {
-    const button = readButtonRef.current;
-    const from = readButtonFrom.current;
-    readButtonFrom.current = null;
-    if (!button || from == null || prefersReducedMotion) return;
-    animateSize(button, 'width', from, 280, EASE_IN_OUT, { overflow: 'hidden' });
-  }, [actionFace, prefersReducedMotion]);
   /* El `aria-label` repite EL MISMO rótulo, no uno mejor. En móvil
    `.pc-action-label` es `display: none` (PaperCard.css), y eso no
    esconde el texto: lo saca del árbol de accesibilidad, así que el
@@ -1597,7 +1580,6 @@ const PaperCard = memo(function PaperCard({
    icono servía para leer aquí y para salir a la fuente. */
   const readAction = (
     <Button
-      ref={readButtonRef}
       className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
       onClick={handleOpenPaper}
       disabled={isResolvingAccess}

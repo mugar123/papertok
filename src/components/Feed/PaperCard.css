@@ -401,7 +401,6 @@
 .pc-authors { --arrive: 2; }
 .pc-abstract { --arrive: 3; }
 .pc-follow-reason { --arrive: 4; }
-.pc-action-bar,
 .pc-side-actions { --arrive: 5; }
 
 .pc-follow-reason,
@@ -411,7 +410,6 @@
 .pc-title,
 .pc-authors,
 .pc-abstract,
-.pc-action-bar,
 .pc-side-actions {
   animation: pcArrive 0.32s var(--ease-out-expo) calc(var(--arrive, 0) * 45ms) backwards;
 }
@@ -448,7 +446,6 @@
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-title,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-authors,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
-:is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-action-bar,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-side-actions {
   animation: none;
 }
@@ -1203,17 +1200,28 @@ button.pc-topics-pop-item:focus-visible {
   padding-top: var(--space-4);
 }
 
-/* The two reading actions wrap onto a second line rather than run off the
-   sheet: their labels cannot compress (`whitespace-nowrap`), and the sheet
-   clips what overflows, so without this the second button was cut away
-   wherever the column got narrow. */
+/* Two fixed slots, so neither reading action moves: the Read label can
+   change after the card is shown (a free copy found, the library's answer)
+   and "Read in plain words" can arrive with that copy, but a label only
+   changes the text inside its own slot. A label too long for its slot is
+   cut with an ellipsis; the accessible name keeps it whole. */
 .pc-action-primary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 14rem));
   gap: var(--space-2);
   min-width: 0;
   margin-right: auto;
+}
+
+.pc-action-primary > button {
+  min-width: 0;
+}
+
+.pc-action-primary .pc-action-label,
+.pc-action-primary .pc-action-label--short {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pc-action-label--short {
@@ -3072,11 +3080,9 @@ button.pc-topics-pop-item:focus-visible {
     display: inline;
   }
 
-  /* On a phone the word is the Read button, and the document glyph goes: it
-     said the same thing twice, it was the part that could not tell reading
-     here from leaving for the source, and the row cannot fit both at 360px. */
-  .pc-action-read svg:not(.spinning) {
-    display: none;
+  .pc-action-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
 
   .pc-action-primary > button {
