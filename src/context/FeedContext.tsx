@@ -641,10 +641,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [userPreferences, followedEntities]);
 
   // The card the reader is on, as FeedContainer reports it (on the restore
-  // after a reload and on every scroll), or the successor markNotInterested
-  // moves it to. A ref, not state: it moves on every scroll event and nothing
-  // needs to re-render for it — reRankFeed reads it inside its functional
-  // setPapers.
+  // after a reload and on every scroll), the successor markNotInterested
+  // moves it to, or none after a refresh. A ref, not state: it moves on every
+  // scroll event and nothing needs to re-render for it — reRankFeed reads it
+  // inside its functional setPapers.
   //
   // A preferences-change reset replaces the list without resetting this ref or
   // scrolling to top, so it can name a paper no longer in papers — then
@@ -2019,7 +2019,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // Force a minimum visual delay of 800ms so the UI has time to show the spinner
     try {
       await Promise.all([
-        loadPapersRef.current?.(true, null, true), // reset=true, mode=null, randomizeStart=true
+        // reset=true, mode=null, randomizeStart=true. FeedContainer jumps to
+        // the top for a refresh, and its scroll event can arrive before the
+        // new cards and name an old one: the reader is on the first card.
+        loadPapersRef.current?.(true, null, true)?.then(() => { visiblePaperIdRef.current = null; }),
         new Promise((resolve) => setTimeout(resolve, 800))
       ]);
     } finally {

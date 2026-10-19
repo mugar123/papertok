@@ -195,13 +195,29 @@ test('a guest card confirmed as a book leaves only if the guest has not reached 
     const publications = await import(new URL(`../services/feedPublicationService.ts?guest-${visible}`, import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
     const { state, env, run } = guestLoader(page);
     Object.assign(env, publications);
-    env.visiblePaperIdRef.current = visible;
     await run();
     assert.deepEqual(state.papers.map(paper => paper.id), ['first', 'second', 'third', 'book']);
+    env.visiblePaperIdRef.current = visible;
     answer();
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.deepEqual(state.papers.map(paper => paper.id), kept);
   }
+});
+
+test('a refreshed guest page drops the books the guest has not reached, though the ref still names a card of the old list', async t => {
+  const article = (id: string, doi = `10.5555/${id}`) => PaperBuilder.create({ id, title: `Synthetic article ${id}`, doi, categories: ['math.AG'], abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } });
+  const page = [article('first'), article('second'), article('third'), article('book', '10.1007/978-3-540-76956-9')];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const publications = await import(new URL('../services/feedPublicationService.ts?guest-refreshed', import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
+  const { state, env, run } = guestLoader(page);
+  Object.assign(env, publications);
+  env.visiblePaperIdRef.current = 'card-of-the-previous-plan';
+  await run();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(state.papers.map(paper => paper.id), ['first', 'second', 'third']);
 });
 
 const dismissStart = source.indexOf('const dismissPaper = useCallback(');
@@ -221,9 +237,9 @@ test('a guest Skip before Crossref answers leaves the next card where the guest 
   const publications = await import(new URL('../services/feedPublicationService.ts?guest-dismissed', import.meta.url).href) as typeof import('../services/feedPublicationService.ts');
   const { state, env, run } = guestLoader(page);
   Object.assign(env, publications);
-  env.visiblePaperIdRef.current = 'third';
   await run();
   assert.deepEqual(state.papers.map(paper => paper.id), page.map(paper => paper.id));
+  env.visiblePaperIdRef.current = 'third';
   const dismissPaper = new Function(...Object.keys(env), 'dropPaperById', `return (${dismissCode});`)(...Object.values(env), dropPaperById);
   dismissPaper('third');
   answer();

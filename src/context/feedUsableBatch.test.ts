@@ -38,6 +38,7 @@ function componentCallback(name: string, deps: string) {
 const followCallback = componentCallback('followShownPapers', 'scheduleFeedSnapshotWrite');
 const restoreCallback = componentCallback('restoreFeedSnapshot', 'followShownPapers');
 const notInterestedCallback = componentCallback('markNotInterested', 'withInteractionId, reRankFeed, recordProfileEvent, user?.uid');
+const refreshCallback = componentCallback('refreshFeed', '');
 const ref = <T>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -114,8 +115,12 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     ...env, user: null, IS_DEMO: true, demoSet: () => {}, withInteractionId: <T>(value: T) => value,
     setNotInterestedIds: () => {}, papersRef: ref(state.papers), recordProfileEvent: () => {}, reRankFeed: () => {},
   })(paper);
+  // Pull to refresh, with its 800 ms minimum.
+  const refresh = () => build(refreshCallback, {
+    ...env, setIsRefreshing: () => {}, clearCache: () => {}, loadPapersRef: ref(run),
+  })();
   const loadingAbstracts = () => abstractWaitIds(state.abstractWaits);
-  return { state, env, run, restore, dismiss, loadingAbstracts };
+  return { state, env, run, restore, dismiss, refresh, loadingAbstracts };
 }
 
 test('the signed-in loader shows a page before Crossref answers, then drops only the books the reader has not reached', async t => {
@@ -182,6 +187,32 @@ test('a card dismissed before Crossref answers leaves its successor where the re
   await wait(20);
   // The first book now fills the dismissed card's place; the second is two cards further.
   assert.deepEqual(state.papers.map(paper => paper.id), ['read-0', 'read-1', 'W568341909', 'W3029239115', 'scientific-review']);
+});
+
+test('a refreshed page drops the books the reader has not reached, though the scroll reported a card of the old list', async t => {
+  const page = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  const old = records('old', 8);
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const { state, env, refresh } = feed({ fast: [], slow: page, page: 2, papers: [...old] });
+  Object.assign(env, await freshPublications('refreshed-page'));
+  const refreshing = refresh();
+  // FeedContainer's jump to the top reports the old list's first card.
+  env.visiblePaperIdRef.current = old[0].id;
+  await refreshing;
+  assert.deepEqual(state.papers.map(paper => paper.id), page.map(paper => paper.id));
+  answer();
+  await wait(20);
+  assert.deepEqual(state.papers.map(paper => paper.id), ['W568341909', 'W3029239115', 'scientific-review']);
 });
 
 test('an entirely excluded page advances pagination without restoring books through the seen bypass', async () => {

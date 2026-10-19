@@ -187,6 +187,9 @@ export function useGuestFeed({ areas = [], topics = [], enabled = true }: { area
       if (requestId !== requestIdRef.current) return;
 
       if (early.papers.length > 0) {
+        // A replaced list is read from its first card: a refresh jumps there.
+        // An old card's id would leave a late Crossref answer removing no book.
+        visiblePaperIdRef.current = null;
         setPapers(early.papers);
         early.follow();
         setLoading(false);
