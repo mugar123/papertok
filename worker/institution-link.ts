@@ -2,7 +2,7 @@ import type { WorkerEnv, WorkerGlobals } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
 
-interface RorRecord { id?: unknown; domains?: unknown[]; links?: Array<{ type?: unknown; value?: unknown }>; names?: Array<{ types?: unknown[]; value?: unknown }> }
+interface RorRecord { id?: unknown; domains?: unknown[]; names?: Array<{ types?: unknown[]; value?: unknown }> }
 export interface ResolvedInstitution { domain: string; rorId: string; name: string; acronym: string | null; entityId: string | null }
 interface InstitutionLinkOptions {
   admin?: Pick<FirestoreAdmin, 'name'> & { commit(writes: FirestoreWrite[]): Promise<unknown> };
@@ -98,37 +98,32 @@ function rorName(record: RorRecord, type: string) {
 const ROR_DOMAIN_ATTEMPTS = 3;
 
 /**
- * Whether a ROR record's domain claims are its own: its website is under
- * one of the domains it lists. ROR lists `neu.edu`, Northeastern University
- * in Boston's alias, under Northeastern University in Shenyang, whose
- * website is neu.edu.cn (2026-10-19); a record like that must not link an
- * address in that domain to the wrong university, and a record with no
- * website gives nothing to check against.
+ * Domains ROR lists under a record they do not belong to. ROR lists
+ * `neu.edu`, Northeastern University in Boston's alias, under Northeastern
+ * University in Shenyang (checked 2026-10-19; the federation lists it under
+ * Boston's provider). A domain's registry or a record's website is no
+ * evidence either way: ROR lists insead.edu under a French record and ie.edu
+ * under a Spanish one, and Birmingham writes from bham.ac.uk while publishing
+ * at birmingham.ac.uk. Only a checked case goes here.
  */
-function ownsItsDomains(record: RorRecord) {
-  const website = (Array.isArray(record.links) ? record.links : []).find(link => link?.type === 'website');
-  if (typeof website?.value !== 'string') return true;
-  let host;
-  try {
-    host = new URL(website.value).hostname.toLowerCase();
-  } catch {
-    return true;
-  }
-  return (record.domains || []).some((value) => {
-    const domain = String(value).toLowerCase();
-    return host === domain || host.endsWith(`.${domain}`);
-  });
+const MISLISTED_DOMAINS: Record<string, readonly string[]> = {
+  'https://ror.org/03awzbc87': ['neu.edu'],
+};
+
+/** Whether a ROR record's claim to a domain is one we know to be wrong. */
+function mislistsDomain(record: RorRecord, domain: string) {
+  return (MISLISTED_DOMAINS[String(record.id)] || []).includes(domain);
 }
 
 /**
  * The ROR record whose registered domains include this one or a parent of
  * it, with the domain that matched. ROR's search is a text query, so the
  * answer is filtered again on the `domains` field: a record that merely
- * mentions the domain somewhere is not a match, and a record that does not
- * own its domains (`ownsItsDomains`) is not one either. A parent with no
- * record (`ac.uk`, `edu.au`) is simply a miss on the way to not found. A
- * budget that runs out is the registry being unavailable, not a miss, and
- * no further question is started past it.
+ * mentions the domain somewhere is not a match, and a record whose claim to
+ * the domain is known to be wrong (`mislistsDomain`) is not one either. A
+ * parent with no record (`ac.uk`, `edu.au`) is simply a miss on the way to
+ * not found. A budget that runs out is the registry being unavailable, not
+ * a miss, and no further question is started past it.
  */
 async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
   const labels = domain.split('.');
@@ -148,7 +143,7 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortS
     const items = Array.isArray(payload?.items) ? payload.items : [];
     const record = items.find(item => Array.isArray(item?.domains)
       && item.domains.some(value => String(value).toLowerCase() === candidate)
-      && ownsItsDomains(item));
+      && !mislistsDomain(item, candidate));
     if (!record || typeof record.id !== 'string') continue;
     const name = rorName(record, 'ror_display') || rorName(record, 'label');
     if (!name) continue;

@@ -329,8 +329,8 @@ test('a student subdomain links through the university\'s own domain, and keeps 
 });
 
 // ROR's record for Northeastern University in Shenyang lists neu.edu, which is
-// an alias of Northeastern University in Boston; its own website is neu.edu.cn
-// (checked 2026-10-19). The federation lists neu.edu under Boston's provider.
+// an alias of Northeastern University in Boston (checked 2026-10-19). The
+// federation lists neu.edu under Boston's provider.
 const ROR_NEU_SHENYANG = {
   number_of_results: 1,
   items: [{
@@ -342,7 +342,7 @@ const ROR_NEU_SHENYANG = {
 };
 const MDQ_NEU_BOSTON = [{ title: 'Northeastern University', entityID: 'https://neuidmsso.neu.edu/idp/shibboleth', scope: 'neu.edu' }];
 
-test('a record whose own website is not under the domain it claims does not link an address in that domain', async () => {
+test('a record known to list a domain that is not its own does not link an address in that domain', async () => {
   const upstream = stubUpstreams({
     users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@husky.neu.edu', emailVerified: true } },
     ror: (url) => new Response(JSON.stringify(url.includes('domains%3Aneu.edu') ? ROR_NEU_SHENYANG : { items: [] }), { status: 200 }),
@@ -359,8 +359,41 @@ test('a record whose own website is not under the domain it claims does not link
   }
 });
 
-test('a record is trusted for every domain it lists once one of them is its own website\'s', async () => {
-  // HKUST lists hkust.edu.hk and ust.hk; its website is under the first.
+// Universities whose website is not under their mail domain, as ROR lists
+// them (checked 2026-10-19).
+const ROR_BIRMINGHAM = {
+  items: [{
+    id: 'https://ror.org/03angcq70',
+    domains: ['bham.ac.uk'],
+    links: [{ type: 'website', value: 'http://www.birmingham.ac.uk/index.aspx' }],
+    names: [{ value: 'University of Birmingham', types: ['ror_display', 'label'] }],
+  }],
+};
+const ROR_SYRACUSE = {
+  items: [{
+    id: 'https://ror.org/025r5qe02',
+    domains: ['syr.edu'],
+    links: [{ type: 'website', value: 'https://www.syracuse.edu' }],
+    names: [{ value: 'Syracuse University', types: ['ror_display', 'label'] }],
+  }],
+};
+
+test('a university whose website lives on another domain still links by its mail domain', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Abham.ac.uk') ? ROR_BIRMINGHAM : url.includes('domains%3Asyr.edu') ? ROR_SYRACUSE : { items: [] }), { status: 200 }),
+    mdq: () => new Response('[]', { status: 200 }),
+  });
+  try {
+    assert.equal((await resolveInstitution('bham.ac.uk', { cache: undefined })).rorId, 'https://ror.org/03angcq70');
+    assert.equal((await resolveInstitution('student.bham.ac.uk', { cache: undefined })).rorId, 'https://ror.org/03angcq70');
+    assert.equal((await resolveInstitution('syr.edu', { cache: undefined })).rorId, 'https://ror.org/025r5qe02');
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('a record links through every domain it lists', async () => {
+  // HKUST lists hkust.edu.hk and ust.hk.
   const record = {
     items: [{
       id: 'https://ror.org/00q4vv597',
