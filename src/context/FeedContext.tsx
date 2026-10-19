@@ -1640,7 +1640,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (gatedOpenAlex) filtered = mergeOpenAlexEnrichment(filtered, gatedOpenAlex);
       if (gatedICite) filtered = mergeICiteEnrichment(filtered, gatedICite);
       if (gatedEuropePmc) filtered = mergeEuropePmcEnrichment(filtered, gatedEuropePmc);
-      const abstractsComing = abstractsInFlight(filtered, {
+      // Only cards this load adds may wait. The seen bypass and a follow
+      // change can offer a card that is already on screen, and its settled
+      // state must not turn back into "Loading abstract".
+      const shownIds = new Set((reset && !keepThroughVisible ? [] : papers).map(paper => paper.id));
+      const abstractsComing = abstractsInFlight(filtered.filter(paper => !shownIds.has(paper.id)), {
         openAlex: !gatedOpenAlex, europePmc: !gatedEuropePmc, recovery: !recovered,
       });
 

@@ -316,6 +316,24 @@ test('a later page is shown without waiting for recovery, and its card says the 
   assert.deepEqual([...loadingAbstracts()], []);
 });
 
+test('a card already shown with no abstract keeps it when a later page offers it again through the seen bypass', async t => {
+  const existing = records('already-visible', 3).map(paper => ({ ...paper, sources: { primary: 'arxiv', enrichedBy: [] } }));
+  const shown = [...existing, electron];
+  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: shown, seen: shown.map(paper => paper.id) });
+  t.mock.method(console, 'log', () => {});
+  const recovery = pendingRecords();
+  env.recoverFeedAbstracts = () => recovery.promise;
+  const loading = run(false);
+  await wait(100);
+  assert.deepEqual(state.papers.map(paper => paper.id), shown.map(paper => paper.id));
+  assert.deepEqual([...loadingAbstracts()], []);
+  recovery.resolve([{ arxivId: '1109.5103', abstract: 'Late recovered text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
+  await loading;
+  await tick();
+  assert.equal(state.error, null);
+  assert.equal(state.papers.at(-1)!.abstract, '');
+});
+
 test('the first screen waits only its short budget for a missing abstract, then settles on none if recovery finds nothing', async () => {
   const { state, env, run, loadingAbstracts } = feed({ fast: [electron] });
   const recovery = pendingRecords();
