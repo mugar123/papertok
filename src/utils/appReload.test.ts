@@ -145,16 +145,33 @@ test('the policy clears on a reader reload and leaves everything alone otherwise
   assert.equal(session.getItem(`${FEED_RESUME_STORAGE_PREFIX}forYou`), '{"index":7}');
 });
 
-test('SOURCE: main.tsx marks both of the reloads the app gives itself, and applies the policy before rendering', async () => {
+test('SOURCE: the app marks every reload it gives itself, and applies the policy before rendering', async () => {
   const { readFile } = await import('node:fs/promises');
-  const main = await readFile(new URL('../main.tsx', import.meta.url), 'utf8');
-  // The chunk-gone reload.
-  assert.match(main, /markAppForcedReload\(\)\s*\n\s*window\.location\.reload\(\)/);
-  // The service worker's, which workbox performs for us and we only recognise.
-  assert.match(main, /addEventListener\('controllerchange', \(\) => \{\s*markAppForcedReload\(\)/);
+  const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  const main = stripComments(await readFile(new URL('../main.tsx', import.meta.url), 'utf8'));
+  const updates = stripComments(await readFile(new URL('./serviceWorkerUpdates.ts', import.meta.url), 'utf8'));
+  // The chunk-gone reload in main.tsx, and the deploy reload the service
+  // worker's `onNeedReload` defers to a route change.
+  for (const code of [main, updates]) {
+    const reloads = code.match(/window\.location\.reload\(\)/g) ?? [];
+    const marked = code.match(/markAppForcedReload\(\)\s*\n\s*window\.location\.reload\(\)/g) ?? [];
+    assert.ok(reloads.length > 0, 'the reload is still there to check');
+    assert.equal(marked.length, reloads.length, 'every reload is marked as the app\'s own');
+  }
+  // Workbox's own reload is replaced, so nothing marks a reload ahead of time:
+  // a mark left for a reload that never happened would make the reader's next
+  // reload within a minute keep the old feed.
+  assert.match(main, /registerSW\(\{[\s\S]*?onNeedReload\(\) \{\s*void noteDeployActivated\(import\.meta\.url\)/);
+  assert.doesNotMatch(main, /controllerchange/);
   // And the policy runs before React mounts, because the feed reads storage on
   // its first render.
   const policyAt = main.indexOf('applyReloadPolicy()');
   const renderAt = main.indexOf('ReactDOM.createRoot');
   assert.ok(policyAt > 0 && renderAt > policyAt, 'the policy is applied before the first render');
+});
+
+test('SOURCE: the app applies a pending deploy on route changes', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /useEffect\(\(\) => \{\s*reloadIfBehindDeploy\(location\.pathname\)\s*\}, \[location\.pathname\]\)/);
 });

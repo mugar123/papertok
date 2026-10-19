@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { watchServiceWorkerUpdates } from './serviceWorkerUpdates.ts'
+import { runsPrecachedBuild, shouldReloadForDeploy, watchServiceWorkerUpdates } from './serviceWorkerUpdates.ts'
 
 function setup(update = async () => {}) {
   const windowTarget = new EventTarget() as EventTarget & { setInterval(callback: () => void, delay: number): number; clearInterval(id: number): void }
@@ -108,4 +108,52 @@ test('navigation does not race cached HTML against a slow successful network req
   assert.ok(navigation.includes("cacheName: 'papertok-html'"))
   assert.doesNotMatch(navigation, /networkTimeoutSeconds\s*:/)
   assert.ok(navigation.includes('handlerDidError:'))
+})
+
+// Cache Storage as a browser holds it once a deploy's worker has activated.
+// The cache names are Workbox's: its precache is `workbox-precache-v2-<scope>`.
+const SCOPE = 'https://papertok.app/'
+const PRECACHE = `workbox-precache-v2-${SCOPE}`
+const OLD_ENTRY = 'https://papertok.app/assets/index-CfK2jTtr.js'
+const NEW_ENTRY = 'https://papertok.app/assets/index-C43svN_0.js'
+
+function cacheStorage(caches: Record<string, string[]>) {
+  return {
+    async match(request: RequestInfo | URL, options: MultiCacheQueryOptions = {}) {
+      const key = (url: string) => (options.ignoreSearch ? url.split('?')[0] : url)
+      const names = options.cacheName ? [options.cacheName] : Object.keys(caches)
+      const found = names.some((name) => (caches[name] ?? []).some((url) => key(url) === key(String(request))))
+      return found ? new Response('') : undefined
+    },
+  }
+}
+
+test('a page that booted the build the new worker precaches owes no reload', async () => {
+  const storage = cacheStorage({ [PRECACHE]: [NEW_ENTRY, `${SCOPE}favicon.svg?__WB_REVISION__=b01d`] })
+  assert.equal(await runsPrecachedBuild(NEW_ENTRY, SCOPE, storage), true)
+  // Also when the entry was precached with a revision query.
+  const revisioned = cacheStorage({ [PRECACHE]: [`${NEW_ENTRY}?__WB_REVISION__=1a2b`] })
+  assert.equal(await runsPrecachedBuild(NEW_ENTRY, SCOPE, revisioned), true)
+})
+
+test('a tab still on the previous build is behind, even with its chunk in the runtime cache', async () => {
+  // A page that booted a new build under the previous worker fetched its entry
+  // chunk through the CacheFirst rule, so `papertok-assets` keeps it after the
+  // precache has moved on to a later deploy.
+  const storage = cacheStorage({ [PRECACHE]: [NEW_ENTRY], 'papertok-assets': [OLD_ENTRY] })
+  assert.equal(await runsPrecachedBuild(OLD_ENTRY, SCOPE, storage), false)
+})
+
+test('an unreadable precache counts as behind instead of failing', async () => {
+  const storage = { match: async () => { throw new Error('SecurityError') } }
+  assert.equal(await runsPrecachedBuild(NEW_ENTRY, SCOPE, storage), false)
+})
+
+test('a deploy the page is behind on waits until the reader leaves the page they were on', () => {
+  assert.equal(shouldReloadForDeploy(null, '/feed'), false)
+  assert.equal(shouldReloadForDeploy(null, '/lists'), false)
+  // Behind since /feed: re-renders and remounts on /feed do not reload.
+  assert.equal(shouldReloadForDeploy('/feed', '/feed'), false)
+  assert.equal(shouldReloadForDeploy('/feed', '/lists'), true)
+  assert.equal(shouldReloadForDeploy('/feed', '/public/paper/10.1234%2Fabc'), true)
 })

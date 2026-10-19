@@ -8,12 +8,12 @@
  *
  *   - `main.jsx` reloads on `vite:preloadError`, when a deploy has taken away
  *     the chunk an `import()` was reaching for;
- *   - the service worker takes control on `activated` after a deploy and
- *     workbox reloads the page itself (see the long note in `main.jsx`).
+ *   - a tab that a deploy left on an older build reloads at the next route
+ *     change (`utils/serviceWorkerUpdates.ts`).
  *
- * Either can land mid-reading-session. Dropping the reader at the top of a
- * freshly ranked feed there reads as the whole app having lost their place,
- * which is the bug the continuity was built to fix.
+ * The reader asked for neither. Dropping them at the top of a freshly ranked
+ * feed afterwards reads as the whole app having lost their place, which is
+ * the bug the continuity was built to fix.
  *
  * But it also caught the reload the reader DID ask for. Pressing the browser's
  * reload button and getting the same paper back is the opposite failure: the

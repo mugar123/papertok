@@ -32,6 +32,7 @@ import AuthPrompt from './components/Public/AuthPrompt.tsx'
 import { normalizeAuthReason } from './components/Public/authPromptCopy.ts'
 import { getPublicPaperPath } from './utils/publicNavigation.ts'
 import { lazyWithPreload } from './utils/lazyPreload.ts'
+import { reloadIfBehindDeploy } from './utils/serviceWorkerUpdates.ts'
 import './App.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
@@ -133,6 +134,11 @@ function AppContent() {
     setSearchOpen(true)
   }, [])
   const location = useLocation()
+  // A deploy this tab is behind on is applied when the reader changes page
+  // (utils/serviceWorkerUpdates.ts).
+  useEffect(() => {
+    reloadIfBehindDeploy(location.pathname)
+  }, [location.pathname])
   // The ONE place this is computed. Every PageTransition reads it from the
   // provider below, and AnimatePresence hands it to the page on its way out —
   // which cannot work it out for itself, because it is kept mounted inside a
