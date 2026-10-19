@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { runsPrecachedBuild, shouldReloadForDeploy, watchServiceWorkerUpdates } from './serviceWorkerUpdates.ts'
+import { runsPrecachedBuild, shouldReloadForDeploy, watchServiceWorkerUpdates, watchWorkerActivations } from './serviceWorkerUpdates.ts'
 
 function setup(update = async () => {}) {
   const windowTarget = new EventTarget() as EventTarget & { setInterval(callback: () => void, delay: number): number; clearInterval(id: number): void }
@@ -167,4 +167,44 @@ test('offline, the deploy reload waits for a route change taken online', () => {
   assert.equal(shouldReloadForDeploy('/lists', { pathname: '/lists', online: true }), false)
   assert.equal(shouldReloadForDeploy('/lists', { pathname: '/following', online: true }), true)
   assert.equal(shouldReloadForDeploy('/lists', { pathname: '/feed', online: true }), true)
+})
+
+// What a tab sees when a deploy's worker claims it: `controllerchange` while
+// the worker is still activating, then its `statechange` to `activated`.
+function workerContainer() {
+  const container = Object.assign(new EventTarget(), {
+    controller: null as (EventTarget & { name: string; state: ServiceWorkerState }) | null,
+  })
+  const claim = (name: string) => {
+    const worker = Object.assign(new EventTarget(), { name, state: 'activating' as ServiceWorkerState })
+    container.controller = worker
+    container.dispatchEvent(new Event('controllerchange'))
+    return (state: ServiceWorkerState) => {
+      worker.state = state
+      worker.dispatchEvent(new Event('statechange'))
+    }
+  }
+  return { container, claim }
+}
+
+test('every deploy that takes control of a long-lived tab is checked, once its worker has activated', () => {
+  const { container, claim } = workerContainer()
+  const checked: string[] = []
+  watchWorkerActivations(container, () => checked.push(container.controller!.name))
+  for (const name of ['B', 'C', 'D']) {
+    const finish = claim(name)
+    // The previous build's precache entries are still being deleted.
+    assert.equal(checked.includes(name), false)
+    finish('activated')
+  }
+  assert.deepEqual(checked, ['B', 'C', 'D'])
+})
+
+test('a worker that never finishes activating is not checked', () => {
+  const { container, claim } = workerContainer()
+  const checked: string[] = []
+  watchWorkerActivations(container, () => checked.push(container.controller!.name))
+  claim('B')('redundant')
+  claim('C')('activated')
+  assert.deepEqual(checked, ['C'])
 })

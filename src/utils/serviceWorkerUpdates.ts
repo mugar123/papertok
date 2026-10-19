@@ -89,11 +89,38 @@ export function shouldReloadForDeploy(behindSince: string | null, { pathname, on
   return behindSince !== null && online && pathname !== behindSince
 }
 
+type ActivatingWorker = Pick<ServiceWorker, 'state' | 'addEventListener' | 'removeEventListener'>
+type WorkerContainer = Pick<EventTarget, 'addEventListener'> & { readonly controller: ActivatingWorker | null }
+
+/**
+ * Calls `onActivated` each time a new service worker takes control of this
+ * page and finishes activating, a first install included. The worker claims
+ * every open tab (`clientsClaim`, vite.config.ts), so `controllerchange`
+ * reaches each tab on every deploy. workbox-window's `activated` does not: once
+ * it attributes an update to another page it stops listening for updates
+ * (`_onUpdateFound`), so a tab that skipped one reload would never hear of a
+ * later deploy. Activation is awaited because Workbox deletes the previous
+ * build's precache entries while the worker activates.
+ */
+export function watchWorkerActivations(container: WorkerContainer | undefined, onActivated: () => void) {
+  container?.addEventListener('controllerchange', () => {
+    const worker = container.controller
+    if (!worker) return
+    const settle = () => {
+      if (worker.state !== 'activated' && worker.state !== 'redundant') return
+      worker.removeEventListener('statechange', settle)
+      if (worker.state === 'activated') onActivated()
+    }
+    worker.addEventListener('statechange', settle)
+    settle()
+  })
+}
+
 let behindSince: string | null = null
 
 /**
- * `registerSW`'s `onNeedReload`, which replaces Workbox's immediate reload on
- * `activated`. `entryUrl` is the entry module's `import.meta.url`.
+ * Records whether the worker that just activated precaches a build other than
+ * the one this page runs. `entryUrl` is the entry module's `import.meta.url`.
  */
 export async function noteDeployActivated(entryUrl: string) {
   if (behindSince !== null) return

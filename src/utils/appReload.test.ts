@@ -150,19 +150,23 @@ test('SOURCE: the app marks every reload it gives itself, and applies the policy
   const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const main = stripComments(await readFile(new URL('../main.tsx', import.meta.url), 'utf8'));
   const updates = stripComments(await readFile(new URL('./serviceWorkerUpdates.ts', import.meta.url), 'utf8'));
-  // The chunk-gone reload in main.tsx, and the deploy reload the service
-  // worker's `onNeedReload` defers to a route change.
+  // The chunk-gone reload in main.tsx, and the deploy reload a tab behind a
+  // deploy takes at the next route change.
   for (const code of [main, updates]) {
     const reloads = code.match(/window\.location\.reload\(\)/g) ?? [];
+    const marks = code.match(/markAppForcedReload\(\)/g) ?? [];
     const marked = code.match(/markAppForcedReload\(\)\s*\n\s*window\.location\.reload\(\)/g) ?? [];
     assert.ok(reloads.length > 0, 'the reload is still there to check');
     assert.equal(marked.length, reloads.length, 'every reload is marked as the app\'s own');
+    // Nothing marks a reload ahead of time: a mark left for a reload that never
+    // happened would make the reader's next reload within a minute keep the old
+    // feed.
+    assert.equal(marks.length, marked.length, 'every mark is followed by its reload');
   }
-  // Workbox's own reload is replaced, so nothing marks a reload ahead of time:
-  // a mark left for a reload that never happened would make the reader's next
-  // reload within a minute keep the old feed.
-  assert.match(main, /registerSW\(\{[\s\S]*?onNeedReload\(\) \{\s*void noteDeployActivated\(import\.meta\.url\)/);
-  assert.doesNotMatch(main, /controllerchange/);
+  // The plugin's own reload on `activated` is off; each worker that takes
+  // control is checked against the page's entry chunk instead.
+  assert.match(main, /registerSW\(\{[\s\S]*?onNeedReload\(\) \{\}/);
+  assert.match(main, /const entryUrl = import\.meta\.url\s*\n\s*watchWorkerActivations\(navigator\.serviceWorker, \(\) => \{\s*void noteDeployActivated\(entryUrl\)/);
   // And the policy runs before React mounts, because the feed reads storage on
   // its first render.
   const policyAt = main.indexOf('applyReloadPolicy()');

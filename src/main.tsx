@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
-import { noteDeployActivated, watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.ts'
+import { noteDeployActivated, watchServiceWorkerUpdates, watchWorkerActivations } from './utils/serviceWorkerUpdates.ts'
 import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.ts'
 import { applyLegacyHashRoute } from './utils/legacyHashRoute.ts'
 import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.ts'
@@ -66,10 +66,11 @@ import './styles/global.css'
 // booted it a second time a few seconds later. It is still needed
 // for a tab that stays open across a deploy: that page's lazy `import()`
 // calls ask for chunks by their old content hash, which the new deploy no
-// longer serves. `onNeedReload` below skips the reload when the page runs
-// the build the new worker precaches, and otherwise holds it until the
-// reader changes page (utils/serviceWorkerUpdates.ts). A chunk that fails
-// before then is caught by `vite:preloadError` below.
+// longer serves. Below, `onNeedReload` turns the plugin's reload off, and each
+// worker that takes control is checked instead: nothing happens when the
+// page runs the build that worker precaches, and otherwise the reload waits
+// until the reader changes page (utils/serviceWorkerUpdates.ts). A chunk that
+// fails before then is caught by `vite:preloadError` below.
 //
 // No `immediate: true` here, deliberately: that option calls
 // `navigator.serviceWorker.register()` right away, which starts the new
@@ -138,11 +139,15 @@ registerSW({
   onRegisteredSW(_url, registration) {
     watchServiceWorkerUpdates(registration)
   },
-  onNeedReload() {
-    // Read here, in the entry module: this is the entry chunk's URL, which
-    // names the build. In any other module it could name a shared chunk.
-    void noteDeployActivated(import.meta.url)
-  },
+  // Replaces the plugin's own reload on `activated`. The activation watch
+  // below decides instead.
+  onNeedReload() {},
+})
+// Read here, in the entry module: this is the entry chunk's URL, which names
+// the build. In any other module it could name a shared chunk.
+const entryUrl = import.meta.url
+watchWorkerActivations(navigator.serviceWorker, () => {
+  void noteDeployActivated(entryUrl)
 })
 
 // The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.ts):
