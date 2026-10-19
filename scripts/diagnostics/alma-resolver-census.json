@@ -57,7 +57,7 @@
       "country": "ES",
       "worksCount": 178156,
       "homepage": "https://www.ucm.es",
-      "probedAt": "2026-10-19T10:15:31.066Z",
+      "probedAt": "2026-10-19T11:13:10.485Z",
       "domains": [
         "ucm.es"
       ],
@@ -67,7 +67,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ucm.on.worldcat.org/atoztitles/link",
+      "product": "worldcat"
     },
     "https://ror.org/052g8jq94": {
       "rorId": "https://ror.org/052g8jq94",
@@ -5652,7 +5655,7 @@
       "country": "ES",
       "worksCount": 123638,
       "homepage": "https://www.uam.es",
-      "probedAt": "2026-10-19T10:15:31.067Z",
+      "probedAt": "2026-10-19T11:13:10.529Z",
       "domains": [
         "uam.es"
       ],
@@ -5660,9 +5663,18 @@
         "https://www.uam.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34UAM_INST",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34UAM_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 3,
+      "packages": [
+        "ProQuest Research Library",
+        "SpringerLink Journals"
+      ]
     },
     "https://ror.org/028rypz17": {
       "rorId": "https://ror.org/028rypz17",
@@ -6304,7 +6316,7 @@
       "country": "ES",
       "worksCount": 102668,
       "homepage": "https://www.ehu.eus",
-      "probedAt": "2026-10-19T10:15:31.645Z",
+      "probedAt": "2026-10-19T11:13:12.669Z",
       "domains": [
         "ehu.eus"
       ],
@@ -6314,7 +6326,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://ehu.on.worldcat.org/atoztitles/link",
+      "product": "worldcat"
     },
     "https://ror.org/05n3x4p02": {
       "rorId": "https://ror.org/05n3x4p02",
@@ -6860,7 +6875,7 @@
       "country": "ES",
       "worksCount": 87596,
       "homepage": "https://www.unizar.es",
-      "probedAt": "2026-10-19T10:15:32.325Z",
+      "probedAt": "2026-10-19T11:13:12.716Z",
       "domains": [
         "unizar.es"
       ],
@@ -6870,7 +6885,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://unizar.on.worldcat.org/atoztitles/link",
+      "product": "worldcat"
     },
     "https://ror.org/05ynxx418": {
       "rorId": "https://ror.org/05ynxx418",
@@ -7160,7 +7178,7 @@
       "country": "ES",
       "worksCount": 79533,
       "homepage": "https://www.upm.es",
-      "probedAt": "2026-10-19T10:15:33.409Z",
+      "probedAt": "2026-10-19T11:13:11.086Z",
       "domains": [
         "upm.es"
       ],
@@ -7168,9 +7186,18 @@
         "https://www.upm.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34UPM_INST",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34UPM_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 14,
+      "packages": [
+        "Advanced Technologies &amp; Aerospace Database",
+        "Advanced Technologies &amp; Aerospace Database - Proquest"
+      ]
     },
     "https://ror.org/0220k9r37": {
       "rorId": "https://ror.org/0220k9r37",
@@ -7419,7 +7446,7 @@
       "country": "ES",
       "worksCount": 80110,
       "homepage": "https://www.upv.es",
-      "probedAt": "2026-10-19T10:15:32.565Z",
+      "probedAt": "2026-10-19T11:13:13.344Z",
       "domains": [
         "upv.es"
       ],
@@ -7427,9 +7454,18 @@
         "https://www.upv.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34UPV_INST",
+      "host": "eu00.alma.exlibrisgroup.com",
+      "status": "answers-without-indicator",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34UPV_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 4,
+      "packages": [
+        "Nature",
+        "Earth, Atmospheric &amp; Aquatic Science Collection"
+      ]
     },
     "https://ror.org/037wpkx04": {
       "rorId": "https://ror.org/037wpkx04",
@@ -7961,7 +7997,7 @@
       "country": "ES",
       "worksCount": 61358,
       "homepage": "https://www.um.es",
-      "probedAt": "2026-10-19T10:15:35.424Z",
+      "probedAt": "2026-10-19T11:13:17.124Z",
       "domains": [
         "um.es"
       ],
@@ -7971,7 +8007,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://resolver.ebscohost.com/openurl?custid=s8387532&groupid=main&profile=ftf",
+      "product": "ebsco"
     },
     "https://ror.org/01tevnk56": {
       "rorId": "https://ror.org/01tevnk56",
@@ -8039,7 +8078,7 @@
       "country": "ES",
       "worksCount": 60019,
       "homepage": "https://www.uniovi.es",
-      "probedAt": "2026-10-19T10:15:35.557Z",
+      "probedAt": "2026-10-19T11:13:54.652Z",
       "domains": [
         "uniovi.es"
       ],
@@ -8049,7 +8088,9 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "unresolved",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "product": "ebsco"
     },
     "https://ror.org/02n742c10": {
       "rorId": "https://ror.org/02n742c10",
@@ -8115,7 +8156,7 @@
       "country": "ES",
       "worksCount": 59392,
       "homepage": "https://www.uma.es",
-      "probedAt": "2026-10-19T10:15:35.661Z",
+      "probedAt": "2026-10-19T11:13:18.795Z",
       "domains": [
         "uma.es"
       ],
@@ -8123,9 +8164,18 @@
         "https://www.uma.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CBUA_UMA",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UMA/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 9,
+      "packages": [
+        "Health &amp; Medical Collection",
+        "Nature"
+      ]
     },
     "https://ror.org/041zkgm14": {
       "rorId": "https://ror.org/041zkgm14",
@@ -8763,7 +8813,7 @@
       "country": "ES",
       "worksCount": 47304,
       "homepage": "https://www.uco.es",
-      "probedAt": "2026-10-19T10:15:40.355Z",
+      "probedAt": "2026-10-19T11:13:19.420Z",
       "domains": [
         "uco.es"
       ],
@@ -8771,9 +8821,18 @@
         "https://www.uco.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CBUA_UCO",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UCO/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 7,
+      "packages": [
+        "Health &amp; Medical Collection",
+        "Nursing &amp; Allied Health Database"
+      ]
     },
     "https://ror.org/03ths8210": {
       "rorId": "https://ror.org/03ths8210",
@@ -8877,7 +8936,7 @@
       "country": "ES",
       "worksCount": 37043,
       "homepage": "https://www.unex.es",
-      "probedAt": "2026-10-19T10:15:46.929Z",
+      "probedAt": "2026-10-19T11:13:20.754Z",
       "domains": [
         "unex.es"
       ],
@@ -8885,9 +8944,18 @@
         "https://www.unex.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34UEX_INST",
+      "host": "eu04.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu04.alma.exlibrisgroup.com/view/uresolver/34UEX_INST/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 6,
+      "packages": [
+        "Biodiversity Heritage Library",
+        "EBSCOhost Psychology and Behavioral Sciences Collection"
+      ]
     },
     "https://ror.org/046ffzj20": {
       "rorId": "https://ror.org/046ffzj20",
@@ -8895,7 +8963,7 @@
       "country": "ES",
       "worksCount": 34128,
       "homepage": "https://web.unican.es",
-      "probedAt": "2026-10-19T10:15:51.356Z",
+      "probedAt": "2026-10-19T11:13:12.761Z",
       "domains": [
         "unican.es"
       ],
@@ -8905,7 +8973,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://dx7nk9sl6m.search.serialssolutions.com/",
+      "product": "360link"
     },
     "https://ror.org/01qckj285": {
       "rorId": "https://ror.org/01qckj285",
@@ -8937,7 +9008,7 @@
       "country": "ES",
       "worksCount": 31503,
       "homepage": "https://www.uca.es",
-      "probedAt": "2026-10-19T10:15:51.668Z",
+      "probedAt": "2026-10-19T11:13:20.086Z",
       "domains": [
         "uca.es"
       ],
@@ -8947,7 +9018,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://fp5qq3tk5q.search.serialssolutions.com/",
+      "product": "360link"
     },
     "https://ror.org/02ws1xc11": {
       "rorId": "https://ror.org/02ws1xc11",
@@ -8955,7 +9029,7 @@
       "country": "ES",
       "worksCount": 30696,
       "homepage": "https://www.uji.es",
-      "probedAt": "2026-10-19T10:15:54.139Z",
+      "probedAt": "2026-10-19T11:13:15.417Z",
       "domains": [
         "uji.es"
       ],
@@ -8963,9 +9037,18 @@
         "https://www.uji.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CVA_UJI",
+      "host": "eu00.alma.exlibrisgroup.com",
+      "status": "answers-without-indicator",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34CVA_UJI/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 4,
+      "packages": [
+        "Text complet a ProQuest Central",
+        "Text complet a SpringerLink Journals"
+      ]
     },
     "https://ror.org/01r9z8p25": {
       "rorId": "https://ror.org/01r9z8p25",
@@ -8997,21 +9080,21 @@
       "country": "ES",
       "worksCount": 31161,
       "homepage": "https://www.uib.cat/",
-      "probedAt": "2026-10-19T10:33:05.079Z",
+      "probedAt": "2026-10-19T11:13:17.176Z",
       "domains": [
         "uib.es"
       ],
       "links": [
         "https://www.uib.cat/"
       ],
-      "source": "zotero",
+      "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://llull.uib.es/resserv",
       "adapter": "other",
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "address-located",
-      "product": "other"
+      "status": "compatibility-pending",
+      "product": "webbridge"
     },
     "https://ror.org/01teme464": {
       "rorId": "https://ror.org/01teme464",
@@ -9019,7 +9102,7 @@
       "country": "ES",
       "worksCount": 25501,
       "homepage": "https://www.ulpgc.es",
-      "probedAt": "2026-10-19T10:15:56.929Z",
+      "probedAt": "2026-10-19T11:13:21.808Z",
       "domains": [
         "ulpgc.es"
       ],
@@ -9029,7 +9112,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://resolver.ebscohost.com/openurl?custid=s8390106&authtype=ip,guest&groupid=main",
+      "product": "ebsco"
     },
     "https://ror.org/01xdxns91": {
       "rorId": "https://ror.org/01xdxns91",
@@ -9135,7 +9221,7 @@
       "country": "ES",
       "worksCount": 21095,
       "homepage": "https://www.upo.es",
-      "probedAt": "2026-10-19T10:16:01.156Z",
+      "probedAt": "2026-10-19T11:13:20.138Z",
       "domains": [
         "upo.es"
       ],
@@ -9143,9 +9229,18 @@
         "https://www.upo.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CBUA_UPO",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UPO/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 7,
+      "packages": [
+        "Earth, Atmospheric &amp; Aquatic Science Collection",
+        "Health &amp; Medical Collection (ProQuest)"
+      ]
     },
     "https://ror.org/01azzms13": {
       "rorId": "https://ror.org/01azzms13",
@@ -9177,7 +9272,7 @@
       "country": "ES",
       "worksCount": 20060,
       "homepage": "https://www.unavarra.es",
-      "probedAt": "2026-10-19T10:16:02.241Z",
+      "probedAt": "2026-10-19T11:13:17.968Z",
       "domains": [
         "unavarra.es"
       ],
@@ -9187,7 +9282,10 @@
       "evidence": null,
       "code": null,
       "host": null,
-      "status": "unresolved"
+      "status": "compatibility-pending",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://resolver.ebscohost.com/openurl?custid=s8433765&groupid=main&profile=ftf",
+      "product": "ebsco"
     },
     "https://ror.org/01f5wp925": {
       "rorId": "https://ror.org/01f5wp925",
@@ -9195,7 +9293,7 @@
       "country": "ES",
       "worksCount": 15966,
       "homepage": "https://www.uoc.edu",
-      "probedAt": "2026-10-19T10:16:06.481Z",
+      "probedAt": "2026-10-19T11:13:17.226Z",
       "domains": [
         "uoc.edu"
       ],
@@ -9203,9 +9301,18 @@
         "https://www.uoc.edu"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CSUC_UOC",
+      "host": "csuc-uoc.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://csuc-uoc.alma.exlibrisgroup.com/view/uresolver/34CSUC_UOC/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 8,
+      "packages": [
+        "Nature Complete",
+        "ProQuest Central"
+      ]
     },
     "https://ror.org/03kpps236": {
       "rorId": "https://ror.org/03kpps236",
@@ -9380,21 +9487,27 @@
       "country": "ES",
       "worksCount": 10926,
       "homepage": "https://www.deusto.es",
-      "probedAt": "2026-10-19T10:33:05.150Z",
+      "probedAt": "2026-10-19T11:13:12.806Z",
       "domains": [
         "deusto.es"
       ],
       "links": [
         "https://www.deusto.es"
       ],
-      "source": "zotero",
-      "resolverUrl": "https://oceano.biblioteca.deusto.es/openurl/DEUSTO/deusto",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu01.alma.exlibrisgroup.com/view/uresolver/34DEUSTO_INST/openurl",
       "adapter": "other",
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "address-located",
-      "product": "other"
+      "code": "34DEUSTO_INST",
+      "host": "eu01.alma.exlibrisgroup.com",
+      "status": "verified",
+      "product": "alma",
+      "route": "seed",
+      "services": 5,
+      "packages": [
+        "ProQuest Central",
+        "SpringerLink Journals"
+      ]
     },
     "https://ror.org/04dp46240": {
       "rorId": "https://ror.org/04dp46240",
@@ -9506,7 +9619,7 @@
       "country": "ES",
       "worksCount": 47965,
       "homepage": "https://www.uva.es",
-      "probedAt": "2026-10-19T10:15:38.497Z",
+      "probedAt": "2026-10-19T11:13:18.021Z",
       "domains": [
         "uva.es"
       ],
@@ -9514,9 +9627,18 @@
         "https://www.uva.es"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34BUC_UVA",
+      "host": "eu01.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (Opus subagent, 2026-10-19)",
+      "resolverUrl": "https://eu01.alma.exlibrisgroup.com/view/uresolver/34BUC_UVA/openurl",
+      "product": "alma",
+      "route": "seed",
+      "services": 6,
+      "packages": [
+        "Agricultural &amp; Environmental Science Collection",
+        "Nature"
+      ]
     },
     "https://ror.org/04eqgej32": {
       "rorId": "https://ror.org/04eqgej32",
@@ -12212,7 +12334,4555 @@
       "code": null,
       "host": null,
       "status": "unresolved"
+    },
+    "https://ror.org/03dbr7087": {
+      "rorId": "https://ror.org/03dbr7087",
+      "name": "University of Toronto",
+      "country": "CA",
+      "worksCount": 580394,
+      "homepage": "https://www.utoronto.ca",
+      "probedAt": "2026-10-19T11:04:32.935Z",
+      "domains": [
+        "utoronto.ca"
+      ],
+      "links": [
+        "https://www.utoronto.ca"
+      ],
+      "evidence": "https://library.utoronto.ca/",
+      "code": "01UTORONTO_INST",
+      "route": "subdomain",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "services": 57,
+      "packages": [
+        "Internet Archive",
+        "Internet Archive"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03rmrcq20": {
+      "rorId": "https://ror.org/03rmrcq20",
+      "name": "University of British Columbia",
+      "country": "CA",
+      "worksCount": 384012,
+      "homepage": "https://www.ubc.ca/",
+      "probedAt": "2026-10-19T11:04:32.937Z",
+      "domains": [
+        "ubc.ca"
+      ],
+      "links": [
+        "https://www.ubc.ca/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01ej9dk98": {
+      "rorId": "https://ror.org/01ej9dk98",
+      "name": "The University of Melbourne",
+      "country": "AU",
+      "worksCount": 347551,
+      "homepage": "https://www.unimelb.edu.au",
+      "probedAt": "2026-10-19T11:04:32.938Z",
+      "domains": [
+        "unimelb.edu.au"
+      ],
+      "links": [
+        "https://www.unimelb.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01pxwe438": {
+      "rorId": "https://ror.org/01pxwe438",
+      "name": "McGill University",
+      "country": "CA",
+      "worksCount": 304099,
+      "homepage": "https://www.mcgill.ca",
+      "probedAt": "2026-10-19T11:04:32.938Z",
+      "domains": [
+        "mcgill.ca"
+      ],
+      "links": [
+        "https://www.mcgill.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0384j8v12": {
+      "rorId": "https://ror.org/0384j8v12",
+      "name": "The University of Sydney",
+      "country": "AU",
+      "worksCount": 338084,
+      "homepage": "https://www.sydney.edu.au",
+      "probedAt": "2026-10-19T11:04:32.938Z",
+      "domains": [
+        "sydney.edu.au"
+      ],
+      "links": [
+        "https://www.sydney.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02bfwt286": {
+      "rorId": "https://ror.org/02bfwt286",
+      "name": "Monash University",
+      "country": "AU",
+      "worksCount": 284566,
+      "homepage": "https://www.monash.edu",
+      "probedAt": "2026-10-19T11:04:32.938Z",
+      "domains": [
+        "monash.edu"
+      ],
+      "links": [
+        "https://www.monash.edu"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0161xgx34": {
+      "rorId": "https://ror.org/0161xgx34",
+      "name": "Université de Montréal",
+      "country": "CA",
+      "worksCount": 191491,
+      "homepage": "https://www.umontreal.ca",
+      "probedAt": "2026-10-19T11:04:51.443Z",
+      "domains": [
+        "umontreal.ca"
+      ],
+      "links": [
+        "https://www.umontreal.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0160cpw27": {
+      "rorId": "https://ror.org/0160cpw27",
+      "name": "University of Alberta",
+      "country": "CA",
+      "worksCount": 267115,
+      "homepage": "https://www.ualberta.ca",
+      "probedAt": "2026-10-19T11:04:50.898Z",
+      "domains": [
+        "ualberta.ca"
+      ],
+      "links": [
+        "https://www.ualberta.ca"
+      ],
+      "evidence": "https://search.library.ualberta.ca/nde/search?vid=01UOA_INST%3AUOA_NDE",
+      "code": "01UOA_INST",
+      "route": "subdomain",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "services": 10,
+      "packages": [
+        "Nature",
+        "Earth, Atmospheric &amp; Aquatic Science Collection"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/00rqy9422": {
+      "rorId": "https://ror.org/00rqy9422",
+      "name": "The University of Queensland",
+      "country": "AU",
+      "worksCount": 278971,
+      "homepage": "https://www.uq.edu.au",
+      "probedAt": "2026-10-19T11:04:46.102Z",
+      "domains": [
+        "uq.edu.au"
+      ],
+      "links": [
+        "https://www.uq.edu.au"
+      ],
+      "evidence": "https://search.library.uq.edu.au/discovery/search?vid=61UQ_INST:61UQ",
+      "code": "61UQ_INST",
+      "route": "subdomain",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 6,
+      "packages": [
+        "Nature",
+        "Research Library"
+      ],
+      "status": "answers-without-indicator"
+    },
+    "https://ror.org/03yjb2x39": {
+      "rorId": "https://ror.org/03yjb2x39",
+      "name": "University of Calgary",
+      "country": "CA",
+      "worksCount": 198717,
+      "homepage": "https://www.ucalgary.ca",
+      "probedAt": "2026-10-19T11:04:51.432Z",
+      "domains": [
+        "ucalgary.ca"
+      ],
+      "links": [
+        "https://www.ucalgary.ca"
+      ],
+      "evidence": "https://library.ucalgary.ca/",
+      "code": "01UCALG_INST",
+      "route": "homepage>link",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "services": 16,
+      "packages": [
+        "Nature",
+        "Gale OneFile: CPI.Q"
+      ],
+      "status": "answers-without-indicator"
+    },
+    "https://ror.org/03r8z3t63": {
+      "rorId": "https://ror.org/03r8z3t63",
+      "name": "UNSW Sydney",
+      "country": "AU",
+      "worksCount": 275103,
+      "homepage": "https://www.unsw.edu.au/",
+      "probedAt": "2026-10-19T11:04:48.539Z",
+      "domains": [
+        "unsw.edu.au"
+      ],
+      "links": [
+        "https://www.unsw.edu.au/"
+      ],
+      "evidence": "https://www.library.unsw.edu.au/",
+      "code": "61UNSW_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Springer Nature Journals",
+        "ProQuest Central"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03c4mmv16": {
+      "rorId": "https://ror.org/03c4mmv16",
+      "name": "University of Ottawa",
+      "country": "CA",
+      "worksCount": 167574,
+      "homepage": "https://www.uottawa.ca",
+      "probedAt": "2026-10-19T11:05:00.528Z",
+      "domains": [
+        "uottawa.ca"
+      ],
+      "links": [
+        "https://www.uottawa.ca"
+      ],
+      "evidence": "https://www.uottawa.ca/library/",
+      "code": "01OCUL_UO",
+      "route": "homepage>link",
+      "host": "ocul-uo.alma.exlibrisgroup.com",
+      "services": 8,
+      "packages": [
+        "SpringerLink Journals",
+        "Gale OneFile: CPI.Q"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02fa3aq29": {
+      "rorId": "https://ror.org/02fa3aq29",
+      "name": "McMaster University",
+      "country": "CA",
+      "worksCount": 185930,
+      "homepage": "https://www.mcmaster.ca",
+      "probedAt": "2026-10-19T11:04:59.110Z",
+      "domains": [
+        "mcmaster.ca"
+      ],
+      "links": [
+        "https://www.mcmaster.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01aff2v68": {
+      "rorId": "https://ror.org/01aff2v68",
+      "name": "University of Waterloo",
+      "country": "CA",
+      "worksCount": 157289,
+      "homepage": "https://uwaterloo.ca/",
+      "probedAt": "2026-10-19T11:05:02.666Z",
+      "domains": [
+        "uwaterloo.ca"
+      ],
+      "links": [
+        "https://uwaterloo.ca/"
+      ],
+      "evidence": "https://lib.uwaterloo.ca/web/",
+      "code": "01OCUL_WTL",
+      "route": "subdomain",
+      "host": "ocul-wtl.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale OneFile: CPI.Q"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/04sjchr03": {
+      "rorId": "https://ror.org/04sjchr03",
+      "name": "Université Laval",
+      "country": "CA",
+      "worksCount": 135653,
+      "homepage": "https://www.ulaval.ca",
+      "probedAt": "2026-10-19T11:05:06.867Z",
+      "domains": [
+        "ulaval.ca"
+      ],
+      "links": [
+        "https://www.ulaval.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/019wvm592": {
+      "rorId": "https://ror.org/019wvm592",
+      "name": "Australian National University",
+      "country": "AU",
+      "worksCount": 191227,
+      "homepage": "https://www.anu.edu.au",
+      "probedAt": "2026-10-19T11:04:58.801Z",
+      "domains": [
+        "anu.edu.au"
+      ],
+      "links": [
+        "https://www.anu.edu.au"
+      ],
+      "evidence": "https://anulib.anu.edu.au/using-library/library-branches",
+      "code": "61ANU_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 5,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale General OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03b94tp07": {
+      "rorId": "https://ror.org/03b94tp07",
+      "name": "University of Auckland",
+      "country": "NZ",
+      "worksCount": 139814,
+      "homepage": "https://www.auckland.ac.nz/en.html",
+      "probedAt": "2026-10-19T11:05:05.891Z",
+      "domains": [
+        "auckland.ac.nz"
+      ],
+      "links": [
+        "https://www.auckland.ac.nz/en.html"
+      ],
+      "evidence": "https://www.auckland.ac.nz/en.html",
+      "code": "64UAUCK_INST",
+      "route": "homepage",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 12,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02grkyz14": {
+      "rorId": "https://ror.org/02grkyz14",
+      "name": "Western University",
+      "country": "CA",
+      "worksCount": 174463,
+      "homepage": "https://uwo.ca",
+      "probedAt": "2026-10-19T11:04:59.809Z",
+      "domains": [
+        "uwo.ca"
+      ],
+      "links": [
+        "https://uwo.ca"
+      ],
+      "evidence": "https://www.lib.uwo.ca/",
+      "code": "01OCUL_UWO",
+      "route": "subdomain",
+      "host": "ocul-uwo.alma.exlibrisgroup.com",
+      "services": 6,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale OneFile: CPI.Q"
+      ],
+      "status": "answers-without-indicator"
+    },
+    "https://ror.org/02y72wh86": {
+      "rorId": "https://ror.org/02y72wh86",
+      "name": "Queen's University",
+      "country": "CA",
+      "worksCount": 122164,
+      "homepage": "https://www.queensu.ca/",
+      "probedAt": "2026-10-19T11:05:10.535Z",
+      "domains": [
+        "queensu.ca"
+      ],
+      "links": [
+        "https://www.queensu.ca/"
+      ],
+      "evidence": "https://library.queensu.ca/",
+      "code": "01OCUL_QU",
+      "route": "homepage>link",
+      "host": "ocul-qu.alma.exlibrisgroup.com",
+      "services": 8,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale OneFile: CPI.Q"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02gfys938": {
+      "rorId": "https://ror.org/02gfys938",
+      "name": "University of Manitoba",
+      "country": "CA",
+      "worksCount": 119514,
+      "homepage": "https://umanitoba.ca",
+      "probedAt": "2026-10-19T11:05:11.562Z",
+      "domains": [
+        "umanitoba.ca"
+      ],
+      "links": [
+        "https://umanitoba.ca"
+      ],
+      "evidence": "https://umanitoba.ca/libraries/",
+      "code": "01UMB_INST",
+      "route": "homepage>link",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "services": 14,
+      "packages": [
+        "HathiTrust Access with possible download restrictions Free",
+        "Biodiversity Heritage Library Free"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/01e6qks80": {
+      "rorId": "https://ror.org/01e6qks80",
+      "name": "Dalhousie University",
+      "country": "CA",
+      "worksCount": 107849,
+      "homepage": "https://www.dal.ca",
+      "probedAt": "2026-10-19T11:05:11.714Z",
+      "domains": [
+        "dal.ca"
+      ],
+      "links": [
+        "https://www.dal.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/047272k79": {
+      "rorId": "https://ror.org/047272k79",
+      "name": "The University of Western Australia",
+      "country": "AU",
+      "worksCount": 165134,
+      "homepage": "https://www.uwa.edu.au",
+      "probedAt": "2026-10-19T11:05:01.061Z",
+      "domains": [
+        "uwa.edu.au"
+      ],
+      "links": [
+        "https://www.uwa.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02sc3r913": {
+      "rorId": "https://ror.org/02sc3r913",
+      "name": "Griffith University",
+      "country": "AU",
+      "worksCount": 96092,
+      "homepage": "https://www.griffith.edu.au",
+      "probedAt": "2026-10-19T11:05:13.199Z",
+      "domains": [
+        "griffith.edu.au"
+      ],
+      "links": [
+        "https://www.griffith.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02n415q13": {
+      "rorId": "https://ror.org/02n415q13",
+      "name": "Curtin University",
+      "country": "AU",
+      "worksCount": 95765,
+      "homepage": "https://www.curtin.edu.au",
+      "probedAt": "2026-10-19T11:05:21.123Z",
+      "domains": [
+        "curtin.edu.au"
+      ],
+      "links": [
+        "https://www.curtin.edu.au"
+      ],
+      "evidence": "https://www.curtin.edu.au/library/",
+      "code": "61CUR_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Nature",
+        "ProQuest Central (Alumni)"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/010x8gc63": {
+      "rorId": "https://ror.org/010x8gc63",
+      "name": "University of Saskatchewan",
+      "country": "CA",
+      "worksCount": 95373,
+      "homepage": "https://www.usask.ca/",
+      "probedAt": "2026-10-19T11:05:43.730Z",
+      "domains": [
+        "usask.ca"
+      ],
+      "links": [
+        "https://www.usask.ca/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03f0f6041": {
+      "rorId": "https://ror.org/03f0f6041",
+      "name": "University of Technology Sydney",
+      "country": "AU",
+      "worksCount": 93667,
+      "homepage": "https://www.uts.edu.au",
+      "probedAt": "2026-10-19T11:05:44.143Z",
+      "domains": [
+        "uts.edu.au"
+      ],
+      "links": [
+        "https://www.uts.edu.au"
+      ],
+      "evidence": "https://www.lib.uts.edu.au/",
+      "code": "61UTS_INST",
+      "route": "subdomain",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 25,
+      "packages": [
+        "Advanced Technologies &amp; Computer Science Collection",
+        "ProQuest Central Premium"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/01r7awg59": {
+      "rorId": "https://ror.org/01r7awg59",
+      "name": "University of Guelph",
+      "country": "CA",
+      "worksCount": 93255,
+      "homepage": "https://www.uoguelph.ca",
+      "probedAt": "2026-10-19T11:06:01.785Z",
+      "domains": [
+        "uoguelph.ca"
+      ],
+      "links": [
+        "https://www.uoguelph.ca"
+      ],
+      "evidence": "https://www.lib.uoguelph.ca/",
+      "code": "01OCUL_GUE",
+      "route": "subdomain",
+      "host": "ocul-gue.alma.exlibrisgroup.com",
+      "services": 13,
+      "packages": [
+        "Nature",
+        "Gale Academic OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02czsnj07": {
+      "rorId": "https://ror.org/02czsnj07",
+      "name": "Deakin University",
+      "country": "AU",
+      "worksCount": 93365,
+      "homepage": "https://www.deakin.edu.au",
+      "probedAt": "2026-10-19T11:05:51.497Z",
+      "domains": [
+        "deakin.edu.au"
+      ],
+      "links": [
+        "https://www.deakin.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00892tw58": {
+      "rorId": "https://ror.org/00892tw58",
+      "name": "The University of Adelaide",
+      "country": "AU",
+      "worksCount": 149400,
+      "homepage": "https://www.adelaide.edu.au",
+      "probedAt": "2026-10-19T11:05:05.096Z",
+      "domains": [
+        "adelaide.edu.au"
+      ],
+      "links": [
+        "https://www.adelaide.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05fq50484": {
+      "rorId": "https://ror.org/05fq50484",
+      "name": "York University",
+      "country": "CA",
+      "worksCount": 91024,
+      "homepage": "https://www.yorku.ca",
+      "probedAt": "2026-10-19T11:06:09.596Z",
+      "domains": [
+        "yorku.ca"
+      ],
+      "links": [
+        "https://www.yorku.ca"
+      ],
+      "evidence": "https://www.library.yorku.ca/web/",
+      "code": "01OCUL_YOR",
+      "route": "homepage>link",
+      "host": "ocul-yor.alma.exlibrisgroup.com",
+      "services": 8,
+      "packages": [
+        "SpringerLink Journals",
+        "Nursing &amp; Allied Health Premium"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03pnv4752": {
+      "rorId": "https://ror.org/03pnv4752",
+      "name": "Queensland University of Technology",
+      "country": "AU",
+      "worksCount": 91990,
+      "homepage": "https://www.qut.edu.au/",
+      "probedAt": "2026-10-19T11:06:05.730Z",
+      "domains": [
+        "qut.edu.au"
+      ],
+      "links": [
+        "https://www.qut.edu.au/"
+      ],
+      "evidence": "https://www.library.qut.edu.au/",
+      "code": "61QUT_INST",
+      "route": "subdomain",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 17,
+      "packages": [
+        "Nature",
+        "Springer Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/01sf06y89": {
+      "rorId": "https://ror.org/01sf06y89",
+      "name": "Macquarie University",
+      "country": "AU",
+      "worksCount": 98346,
+      "homepage": "https://www.mq.edu.au",
+      "probedAt": "2026-10-19T11:05:12.030Z",
+      "domains": [
+        "mq.edu.au"
+      ],
+      "links": [
+        "https://www.mq.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04ttjf776": {
+      "rorId": "https://ror.org/04ttjf776",
+      "name": "RMIT University",
+      "country": "AU",
+      "worksCount": 85039,
+      "homepage": "https://www.rmit.edu.au/",
+      "probedAt": "2026-10-19T11:06:12.422Z",
+      "domains": [
+        "rmit.edu.au"
+      ],
+      "links": [
+        "https://www.rmit.edu.au/"
+      ],
+      "evidence": "https://www.rmit.edu.au/library",
+      "code": "61RMIT_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Nature Online Journals",
+        "ProQuest Central"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/00jtmb277": {
+      "rorId": "https://ror.org/00jtmb277",
+      "name": "University of Wollongong",
+      "country": "AU",
+      "worksCount": 83214,
+      "homepage": "https://www.uow.edu.au",
+      "probedAt": "2026-10-19T11:06:17.515Z",
+      "domains": [
+        "uow.edu.au"
+      ],
+      "links": [
+        "https://www.uow.edu.au"
+      ],
+      "evidence": "https://www.uow.edu.au/library/",
+      "code": "61UOW_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 8,
+      "packages": [
+        "Nature",
+        "ProQuest Central Premium"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0213rcc28": {
+      "rorId": "https://ror.org/0213rcc28",
+      "name": "Simon Fraser University",
+      "country": "CA",
+      "worksCount": 87253,
+      "homepage": "https://www.sfu.ca",
+      "probedAt": "2026-10-19T11:06:10.817Z",
+      "domains": [
+        "sfu.ca"
+      ],
+      "links": [
+        "https://www.sfu.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02qtvee93": {
+      "rorId": "https://ror.org/02qtvee93",
+      "name": "Carleton University",
+      "country": "CA",
+      "worksCount": 77286,
+      "homepage": "https://carleton.ca",
+      "probedAt": "2026-10-19T11:06:22.882Z",
+      "domains": [
+        "carleton.ca"
+      ],
+      "links": [
+        "https://carleton.ca"
+      ],
+      "evidence": "https://library.carleton.ca/",
+      "code": "01OCUL_CRL",
+      "route": "homepage>link",
+      "host": "ocul-crl.alma.exlibrisgroup.com",
+      "services": 11,
+      "packages": [
+        "Nature",
+        "Advanced Technologies &amp; Computer Science Collection"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/01jmxt844": {
+      "rorId": "https://ror.org/01jmxt844",
+      "name": "University of Otago",
+      "country": "NZ",
+      "worksCount": 91012,
+      "homepage": "http://www.otago.ac.nz/",
+      "probedAt": "2026-10-19T11:06:10.795Z",
+      "domains": [
+        "otago.ac.nz"
+      ],
+      "links": [
+        "http://www.otago.ac.nz/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04s5mat29": {
+      "rorId": "https://ror.org/04s5mat29",
+      "name": "University of Victoria",
+      "country": "CA",
+      "worksCount": 74151,
+      "homepage": "https://www.uvic.ca",
+      "probedAt": "2026-10-19T11:06:25.915Z",
+      "domains": [
+        "uvic.ca"
+      ],
+      "links": [
+        "https://www.uvic.ca"
+      ],
+      "evidence": "https://www.uvic.ca/library/",
+      "code": "01VIC_INST",
+      "route": "homepage>link",
+      "host": "uvic.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Gale OneFile: CPI.Q",
+        "Nature"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0420zvk78": {
+      "rorId": "https://ror.org/0420zvk78",
+      "name": "Concordia University",
+      "country": "CA",
+      "worksCount": 77654,
+      "homepage": "https://www.concordia.ca/",
+      "probedAt": "2026-10-19T11:06:18.787Z",
+      "domains": [
+        "concordia.ca"
+      ],
+      "links": [
+        "https://www.concordia.ca/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01rxfrp27": {
+      "rorId": "https://ror.org/01rxfrp27",
+      "name": "La Trobe University",
+      "country": "AU",
+      "worksCount": 83574,
+      "homepage": "http://www.latrobe.edu.au/",
+      "probedAt": "2026-10-19T11:06:15.681Z",
+      "domains": [
+        "latrobe.edu.au"
+      ],
+      "links": [
+        "http://www.latrobe.edu.au/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01kpzv902": {
+      "rorId": "https://ror.org/01kpzv902",
+      "name": "Flinders University",
+      "country": "AU",
+      "worksCount": 67952,
+      "homepage": "https://www.flinders.edu.au",
+      "probedAt": "2026-10-19T11:06:28.234Z",
+      "domains": [
+        "flinders.edu.au"
+      ],
+      "links": [
+        "https://www.flinders.edu.au"
+      ],
+      "evidence": "https://library.flinders.edu.au/",
+      "code": "61FUL_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 8,
+      "packages": [
+        "SpringerLink Journals",
+        "Nature Publishing Group"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/00eae9z71": {
+      "rorId": "https://ror.org/00eae9z71",
+      "name": "University of Newcastle Australia",
+      "country": "AU",
+      "worksCount": 84224,
+      "homepage": "https://www.newcastle.edu.au",
+      "probedAt": "2026-10-19T11:06:14.622Z",
+      "domains": [
+        "newcastle.edu.au"
+      ],
+      "links": [
+        "https://www.newcastle.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/031rekg67": {
+      "rorId": "https://ror.org/031rekg67",
+      "name": "Swinburne University of Technology",
+      "country": "AU",
+      "worksCount": 59249,
+      "homepage": "https://www.swinburne.edu.au/",
+      "probedAt": "2026-10-19T11:06:34.168Z",
+      "domains": [
+        "swinburne.edu.au"
+      ],
+      "links": [
+        "https://www.swinburne.edu.au/"
+      ],
+      "evidence": "https://www.swinburne.edu.au/library/",
+      "code": "61SUT_INST",
+      "route": "homepage>link",
+      "host": "swinburne.alma.exlibrisgroup.com",
+      "services": 13,
+      "packages": [
+        "Nature Journals",
+        "Gale Academic OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/002rjbv21": {
+      "rorId": "https://ror.org/002rjbv21",
+      "name": "Université du Québec à Montréal",
+      "country": "CA",
+      "worksCount": 63004,
+      "homepage": "https://uqam.ca",
+      "probedAt": "2026-10-19T11:06:28.474Z",
+      "domains": [
+        "uqam.ca"
+      ],
+      "links": [
+        "https://uqam.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04haebc03": {
+      "rorId": "https://ror.org/04haebc03",
+      "name": "Memorial University of Newfoundland",
+      "country": "CA",
+      "worksCount": 58354,
+      "homepage": "https://mun.ca",
+      "probedAt": "2026-10-19T11:06:38.639Z",
+      "domains": [
+        "mun.ca"
+      ],
+      "links": [
+        "https://mun.ca"
+      ],
+      "evidence": "https://www.library.mun.ca/",
+      "code": "01MUN_INST",
+      "route": "homepage>link",
+      "host": "mun.alma.exlibrisgroup.com",
+      "services": 18,
+      "packages": [
+        "Nature",
+        "AAdvanced Technologies &amp; Aerospace Database (subscription)"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0040r6f76": {
+      "rorId": "https://ror.org/0040r6f76",
+      "name": "Victoria University of Wellington",
+      "country": "NZ",
+      "worksCount": 60710,
+      "homepage": "https://www.wgtn.ac.nz/",
+      "probedAt": "2026-10-19T11:06:34.114Z",
+      "domains": [
+        "vuw.ac.nz"
+      ],
+      "links": [
+        "https://www.wgtn.ac.nz/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01nfmeh72": {
+      "rorId": "https://ror.org/01nfmeh72",
+      "name": "University of Tasmania",
+      "country": "AU",
+      "worksCount": 73177,
+      "homepage": "https://www.utas.edu.au",
+      "probedAt": "2026-10-19T11:06:26.613Z",
+      "domains": [
+        "utas.edu.au"
+      ],
+      "links": [
+        "https://www.utas.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05g13zd79": {
+      "rorId": "https://ror.org/05g13zd79",
+      "name": "Toronto Metropolitan University",
+      "country": "CA",
+      "worksCount": 53302,
+      "homepage": "https://www.torontomu.ca",
+      "probedAt": "2026-10-19T11:06:42.596Z",
+      "domains": [
+        "torontomu.ca"
+      ],
+      "links": [
+        "https://www.torontomu.ca"
+      ],
+      "evidence": "https://library.torontomu.ca/",
+      "code": "01OCUL_TMU",
+      "route": "homepage>link",
+      "host": "ca01.alma.exlibrisgroup.com",
+      "services": 9,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03t52dk35": {
+      "rorId": "https://ror.org/03t52dk35",
+      "name": "Western Sydney University",
+      "country": "AU",
+      "worksCount": 62663,
+      "homepage": "https://www.westernsydney.edu.au/",
+      "probedAt": "2026-10-19T11:06:30.420Z",
+      "domains": [
+        "westernsydney.edu.au"
+      ],
+      "links": [
+        "https://www.westernsydney.edu.au/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00kybxq39": {
+      "rorId": "https://ror.org/00kybxq39",
+      "name": "Université de Sherbrooke",
+      "country": "CA",
+      "worksCount": 58898,
+      "homepage": "https://www.usherbrooke.ca",
+      "probedAt": "2026-10-19T11:06:36.737Z",
+      "domains": [
+        "usherbrooke.ca"
+      ],
+      "links": [
+        "https://www.usherbrooke.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01p93h210": {
+      "rorId": "https://ror.org/01p93h210",
+      "name": "University of South Australia",
+      "country": "AU",
+      "worksCount": 55611,
+      "homepage": "https://www.unisa.edu.au/",
+      "probedAt": "2026-10-19T11:06:42.095Z",
+      "domains": [
+        "unisa.edu.au"
+      ],
+      "links": [
+        "https://www.unisa.edu.au/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03y7q9t39": {
+      "rorId": "https://ror.org/03y7q9t39",
+      "name": "University of Canterbury",
+      "country": "NZ",
+      "worksCount": 52186,
+      "homepage": "https://www.canterbury.ac.nz",
+      "probedAt": "2026-10-19T11:06:43.362Z",
+      "domains": [
+        "canterbury.ac.nz"
+      ],
+      "links": [
+        "https://www.canterbury.ac.nz"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/052czxv31": {
+      "rorId": "https://ror.org/052czxv31",
+      "name": "Massey University",
+      "country": "NZ",
+      "worksCount": 53088,
+      "homepage": "https://www.massey.ac.nz",
+      "probedAt": "2026-10-19T11:06:42.973Z",
+      "domains": [
+        "massey.ac.nz"
+      ],
+      "links": [
+        "https://www.massey.ac.nz"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01gw3d370": {
+      "rorId": "https://ror.org/01gw3d370",
+      "name": "University of Windsor",
+      "country": "CA",
+      "worksCount": 38929,
+      "homepage": "https://www.uwindsor.ca",
+      "probedAt": "2026-10-19T11:06:46.490Z",
+      "domains": [
+        "uwindsor.ca"
+      ],
+      "links": [
+        "https://www.uwindsor.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04gsp2c11": {
+      "rorId": "https://ror.org/04gsp2c11",
+      "name": "James Cook University",
+      "country": "AU",
+      "worksCount": 50621,
+      "homepage": "http://www.jcu.edu.au/",
+      "probedAt": "2026-10-19T11:06:45.558Z",
+      "domains": [
+        "jcu.edu.au"
+      ],
+      "links": [
+        "http://www.jcu.edu.au/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05f8d4e86": {
+      "rorId": "https://ror.org/05f8d4e86",
+      "name": "Polytechnique Montréal",
+      "country": "CA",
+      "worksCount": 38464,
+      "homepage": "https://polymtl.ca",
+      "probedAt": "2026-10-19T11:06:54.453Z",
+      "domains": [
+        "polymtl.ca"
+      ],
+      "links": [
+        "https://polymtl.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00r4sry34": {
+      "rorId": "https://ror.org/00r4sry34",
+      "name": "Murdoch University",
+      "country": "AU",
+      "worksCount": 35703,
+      "homepage": "https://www.murdoch.edu.au",
+      "probedAt": "2026-10-19T11:06:54.700Z",
+      "domains": [
+        "murdoch.edu.au"
+      ],
+      "links": [
+        "https://www.murdoch.edu.au"
+      ],
+      "evidence": "https://www.murdoch.edu.au/library",
+      "code": "61MUN_INST",
+      "route": "homepage>link",
+      "host": "ap02.alma.exlibrisgroup.com",
+      "services": 10,
+      "packages": [
+        "Nature Journals Online",
+        "Springer Nature Link Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/05jhnwe22": {
+      "rorId": "https://ror.org/05jhnwe22",
+      "name": "Edith Cowan University",
+      "country": "AU",
+      "worksCount": 32277,
+      "homepage": "http://www.ecu.edu.au/",
+      "probedAt": "2026-10-19T11:07:04.269Z",
+      "domains": [
+        "ecu.edu.au"
+      ],
+      "links": [
+        "http://www.ecu.edu.au/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05nkf0n29": {
+      "rorId": "https://ror.org/05nkf0n29",
+      "name": "University of New Brunswick",
+      "country": "CA",
+      "worksCount": 34896,
+      "homepage": "https://unb.ca",
+      "probedAt": "2026-10-19T11:06:59.931Z",
+      "domains": [
+        "unb.ca"
+      ],
+      "links": [
+        "https://unb.ca"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04r659a56": {
+      "rorId": "https://ror.org/04r659a56",
+      "name": "University of New England",
+      "country": "AU",
+      "worksCount": 32490,
+      "homepage": "https://www.une.edu.au",
+      "probedAt": "2026-10-19T11:07:02.830Z",
+      "domains": [
+        "une.edu.au"
+      ],
+      "links": [
+        "https://www.une.edu.au"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05p6qqk79": {
+      "rorId": "https://ror.org/05p6qqk79",
+      "name": "University of Tampere",
+      "country": "FI",
+      "worksCount": 51246,
+      "homepage": "http://www.uta.fi/en/",
+      "probedAt": "2026-10-19T11:07:31.746Z",
+      "domains": [],
+      "links": [
+        "http://www.uta.fi/en/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0102mm775": {
+      "rorId": "https://ror.org/0102mm775",
+      "name": "Nicolaus Copernicus University",
+      "country": "PL",
+      "worksCount": 50950,
+      "homepage": "https://www.umk.pl",
+      "probedAt": "2026-10-19T11:07:31.746Z",
+      "domains": [
+        "umk.pl"
+      ],
+      "links": [
+        "https://www.umk.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/033003e23": {
+      "rorId": "https://ror.org/033003e23",
+      "name": "Tampere University",
+      "country": "FI",
+      "worksCount": 49827,
+      "homepage": "https://www.tuni.fi/en",
+      "probedAt": "2026-10-19T11:07:34.434Z",
+      "domains": [
+        "tuni.fi"
+      ],
+      "links": [
+        "https://www.tuni.fi/en"
+      ],
+      "evidence": "https://www.tuni.fi/en/library",
+      "code": "358FIN_TAMPO",
+      "route": "homepage>link",
+      "host": "fin-tampo.alma.exlibrisgroup.com",
+      "services": 13,
+      "packages": [
+        "Advanced Technologies &amp; Computer Science Collection",
+        "Gale General OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03kjmz544": {
+      "rorId": "https://ror.org/03kjmz544",
+      "name": "Université de Nantes",
+      "country": "FR",
+      "worksCount": 49434,
+      "homepage": null,
+      "probedAt": "2026-10-19T11:07:40.453Z",
+      "domains": [],
+      "links": [],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03kqpb082": {
+      "rorId": "https://ror.org/03kqpb082",
+      "name": "Czech Technical University in Prague",
+      "country": "CZ",
+      "worksCount": 51090,
+      "homepage": "https://www.cvut.cz",
+      "probedAt": "2026-10-19T11:07:31.746Z",
+      "domains": [
+        "cvut.cz"
+      ],
+      "links": [
+        "https://www.cvut.cz"
+      ],
+      "evidence": "https://primo.cvut.cz/nde/search?vid=420CARDS_CVUT%3ACVUT",
+      "code": "420CARDS_CVUT",
+      "route": "subdomain",
+      "host": "eu06.alma.exlibrisgroup.com",
+      "services": 3,
+      "packages": [
+        "SpringerLink Journals - AutoHoldings",
+        "Springer Nature - Complete Springer Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0234wmv40": {
+      "rorId": "https://ror.org/0234wmv40",
+      "name": "University of Bayreuth",
+      "country": "DE",
+      "worksCount": 49817,
+      "homepage": "https://www.uni-bayreuth.de",
+      "probedAt": "2026-10-19T11:07:38.095Z",
+      "domains": [
+        "uni-bayreuth.de"
+      ],
+      "links": [
+        "https://www.uni-bayreuth.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01se4f844": {
+      "rorId": "https://ror.org/01se4f844",
+      "name": "University of Wales",
+      "country": "GB",
+      "worksCount": 51444,
+      "homepage": "https://www.wales.ac.uk/",
+      "probedAt": "2026-10-19T11:07:31.745Z",
+      "domains": [
+        "wales.ac.uk"
+      ],
+      "links": [
+        "https://www.wales.ac.uk/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05cq64r17": {
+      "rorId": "https://ror.org/05cq64r17",
+      "name": "University of Łódź",
+      "country": "PL",
+      "worksCount": 50019,
+      "homepage": "https://www.uni.lodz.pl",
+      "probedAt": "2026-10-19T11:07:31.746Z",
+      "domains": [
+        "uni.lodz.pl"
+      ],
+      "links": [
+        "https://www.uni.lodz.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02q2d2610": {
+      "rorId": "https://ror.org/02q2d2610",
+      "name": "University of Brescia",
+      "country": "IT",
+      "worksCount": 48833,
+      "homepage": "https://www.unibs.it",
+      "probedAt": "2026-10-19T11:07:41.160Z",
+      "domains": [
+        "unibs.it"
+      ],
+      "links": [
+        "https://www.unibs.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02nkf1q06": {
+      "rorId": "https://ror.org/02nkf1q06",
+      "name": "University of Essex",
+      "country": "GB",
+      "worksCount": 48879,
+      "homepage": "https://www.essex.ac.uk",
+      "probedAt": "2026-10-19T11:07:40.804Z",
+      "domains": [
+        "essex.ac.uk"
+      ],
+      "links": [
+        "https://www.essex.ac.uk"
+      ],
+      "evidence": "https://library.essex.ac.uk/home",
+      "code": "44UOES_INST",
+      "route": "subdomain",
+      "host": "eu03.alma.exlibrisgroup.com",
+      "services": 5,
+      "packages": [
+        "Free E- Journals",
+        "Factiva - Classic"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/033n9gh91": {
+      "rorId": "https://ror.org/033n9gh91",
+      "name": "Carl von Ossietzky Universität Oldenburg",
+      "country": "DE",
+      "worksCount": 48603,
+      "homepage": "https://uol.de",
+      "probedAt": "2026-10-19T11:07:41.272Z",
+      "domains": [
+        "uol.de"
+      ],
+      "links": [
+        "https://uol.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04b8v1s79": {
+      "rorId": "https://ror.org/04b8v1s79",
+      "name": "Tilburg University",
+      "country": "NL",
+      "worksCount": 48031,
+      "homepage": "https://www.tilburguniversity.edu/",
+      "probedAt": "2026-10-19T11:07:44.469Z",
+      "domains": [
+        "tilburguniversity.edu"
+      ],
+      "links": [
+        "https://www.tilburguniversity.edu/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05ggc9x40": {
+      "rorId": "https://ror.org/05ggc9x40",
+      "name": "Université Paris-Est Créteil",
+      "country": "FR",
+      "worksCount": 47813,
+      "homepage": "https://www.u-pec.fr",
+      "probedAt": "2026-10-19T11:07:46.022Z",
+      "domains": [
+        "u-pec.fr"
+      ],
+      "links": [
+        "https://www.u-pec.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02w42ss30": {
+      "rorId": "https://ror.org/02w42ss30",
+      "name": "Budapest University of Technology and Economics",
+      "country": "HU",
+      "worksCount": 47003,
+      "homepage": "https://www.bme.hu",
+      "probedAt": "2026-10-19T11:07:51.106Z",
+      "domains": [
+        "bme.hu"
+      ],
+      "links": [
+        "https://www.bme.hu"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00r1edq15": {
+      "rorId": "https://ror.org/00r1edq15",
+      "name": "Universität Greifswald",
+      "country": "DE",
+      "worksCount": 48172,
+      "homepage": "https://www.uni-greifswald.de",
+      "probedAt": "2026-10-19T11:07:42.277Z",
+      "domains": [
+        "uni-greifswald.de"
+      ],
+      "links": [
+        "https://www.uni-greifswald.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03bea9k73": {
+      "rorId": "https://ror.org/03bea9k73",
+      "name": "Ollscoil na Gaillimhe – University of Galway",
+      "country": "IE",
+      "worksCount": 51214,
+      "homepage": "https://www.universityofgalway.ie",
+      "probedAt": "2026-10-19T11:07:31.746Z",
+      "domains": [
+        "universityofgalway.ie"
+      ],
+      "links": [
+        "https://www.universityofgalway.ie"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/051kpcy16": {
+      "rorId": "https://ror.org/051kpcy16",
+      "name": "Université de Caen Normandie",
+      "country": "FR",
+      "worksCount": 45913,
+      "homepage": "https://www.unicaen.fr",
+      "probedAt": "2026-10-19T11:07:57.299Z",
+      "domains": [
+        "unicaen.fr"
+      ],
+      "links": [
+        "https://www.unicaen.fr"
+      ],
+      "evidence": "https://bibliotheque.unicaen.fr/",
+      "code": "33PNU_UDC_INST",
+      "route": "homepage>link",
+      "host": "eu01.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Nature (archives)",
+        "ISTEX"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0587ef340": {
+      "rorId": "https://ror.org/0587ef340",
+      "name": "Comenius University Bratislava",
+      "country": "SK",
+      "worksCount": 46192,
+      "homepage": "https://uniba.sk/",
+      "probedAt": "2026-10-19T11:07:57.073Z",
+      "domains": [
+        "uniba.sk"
+      ],
+      "links": [
+        "https://uniba.sk/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0546hnb39": {
+      "rorId": "https://ror.org/0546hnb39",
+      "name": "University of Konstanz",
+      "country": "DE",
+      "worksCount": 48088,
+      "homepage": "https://www.uni-konstanz.de",
+      "probedAt": "2026-10-19T11:07:44.414Z",
+      "domains": [
+        "uni-konstanz.de"
+      ],
+      "links": [
+        "https://www.uni-konstanz.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04mghma93": {
+      "rorId": "https://ror.org/04mghma93",
+      "name": "Heriot-Watt University",
+      "country": "GB",
+      "worksCount": 46084,
+      "homepage": "https://www.hw.ac.uk/",
+      "probedAt": "2026-10-19T11:07:57.141Z",
+      "domains": [
+        "hw.ac.uk"
+      ],
+      "links": [
+        "https://www.hw.ac.uk/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04nkhwh30": {
+      "rorId": "https://ror.org/04nkhwh30",
+      "name": "University of Hull",
+      "country": "GB",
+      "worksCount": 46951,
+      "homepage": "https://www.hull.ac.uk",
+      "probedAt": "2026-10-19T11:07:56.870Z",
+      "domains": [
+        "hull.ac.uk"
+      ],
+      "links": [
+        "https://www.hull.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00t3r8h32": {
+      "rorId": "https://ror.org/00t3r8h32",
+      "name": "University of Lübeck",
+      "country": "DE",
+      "worksCount": 44990,
+      "homepage": "https://www.uni-luebeck.de/",
+      "probedAt": "2026-10-19T11:08:01.654Z",
+      "domains": [
+        "uni-luebeck.de"
+      ],
+      "links": [
+        "https://www.uni-luebeck.de/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02aj0kh94": {
+      "rorId": "https://ror.org/02aj0kh94",
+      "name": "Université Joseph Fourier",
+      "country": "FR",
+      "worksCount": 44173,
+      "homepage": "https://www.ujf-grenoble.fr/?language=en",
+      "probedAt": "2026-10-19T11:08:08.709Z",
+      "domains": [],
+      "links": [
+        "https://www.ujf-grenoble.fr/?language=en"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03z77qz90": {
+      "rorId": "https://ror.org/03z77qz90",
+      "name": "University of Tartu",
+      "country": "EE",
+      "worksCount": 48335,
+      "homepage": "https://ut.ee",
+      "probedAt": "2026-10-19T11:07:41.490Z",
+      "domains": [
+        "ut.ee"
+      ],
+      "links": [
+        "https://ut.ee"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00crteh33": {
+      "rorId": "https://ror.org/00crteh33",
+      "name": "Université Rennes 1",
+      "country": "FR",
+      "worksCount": 44052,
+      "homepage": null,
+      "probedAt": "2026-10-19T11:08:09.563Z",
+      "domains": [],
+      "links": [],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01j9p1r26": {
+      "rorId": "https://ror.org/01j9p1r26",
+      "name": "University of L'Aquila",
+      "country": "IT",
+      "worksCount": 44366,
+      "homepage": "https://www.univaq.it",
+      "probedAt": "2026-10-19T11:08:05.685Z",
+      "domains": [
+        "univaq.it"
+      ],
+      "links": [
+        "https://www.univaq.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03mkjjy25": {
+      "rorId": "https://ror.org/03mkjjy25",
+      "name": "Université de Versailles Saint-Quentin-en-Yvelines",
+      "country": "FR",
+      "worksCount": 45734,
+      "homepage": "https://www.uvsq.fr",
+      "probedAt": "2026-10-19T11:08:01.530Z",
+      "domains": [
+        "uvsq.fr"
+      ],
+      "links": [
+        "https://www.uvsq.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03pt86f80": {
+      "rorId": "https://ror.org/03pt86f80",
+      "name": "Innsbruck Medical University",
+      "country": "AT",
+      "worksCount": 44022,
+      "homepage": "https://www.i-med.ac.at/",
+      "probedAt": "2026-10-19T11:08:10.774Z",
+      "domains": [
+        "i-med.ac.at"
+      ],
+      "links": [
+        "https://www.i-med.ac.at/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03nadee84": {
+      "rorId": "https://ror.org/03nadee84",
+      "name": "Vilnius University",
+      "country": "LT",
+      "worksCount": 44338,
+      "homepage": "https://vu.lt",
+      "probedAt": "2026-10-19T11:08:06.520Z",
+      "domains": [
+        "vu.lt"
+      ],
+      "links": [
+        "https://vu.lt"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04zmssz18": {
+      "rorId": "https://ror.org/04zmssz18",
+      "name": "École Normale Supérieure de Lyon",
+      "country": "FR",
+      "worksCount": 44164,
+      "homepage": "https://www.ens-lyon.fr/",
+      "probedAt": "2026-10-19T11:08:09.037Z",
+      "domains": [
+        "ens-lyon.fr"
+      ],
+      "links": [
+        "https://www.ens-lyon.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04g2vpn86": {
+      "rorId": "https://ror.org/04g2vpn86",
+      "name": "Royal Holloway University of London",
+      "country": "GB",
+      "worksCount": 43121,
+      "homepage": "https://www.royalholloway.ac.uk/",
+      "probedAt": "2026-10-19T11:08:14.257Z",
+      "domains": [
+        "royalholloway.ac.uk"
+      ],
+      "links": [
+        "https://www.royalholloway.ac.uk/"
+      ],
+      "evidence": "https://www.royalholloway.ac.uk/about-us/the-library/",
+      "code": "44ROY_INST",
+      "route": "homepage>link",
+      "host": "eu00.alma.exlibrisgroup.com",
+      "services": 1,
+      "packages": [
+        "Gale Academic OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02n0bts35": {
+      "rorId": "https://ror.org/02n0bts35",
+      "name": "Medical University of Graz",
+      "country": "AT",
+      "worksCount": 43186,
+      "homepage": "https://www.medunigraz.at/",
+      "probedAt": "2026-10-19T11:08:11.617Z",
+      "domains": [
+        "medunigraz.at"
+      ],
+      "links": [
+        "https://www.medunigraz.at/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05sbt2524": {
+      "rorId": "https://ror.org/05sbt2524",
+      "name": "Institut polytechnique de Grenoble",
+      "country": "FR",
+      "worksCount": 43342,
+      "homepage": "https://www.grenoble-inp.fr/",
+      "probedAt": "2026-10-19T11:08:11.488Z",
+      "domains": [
+        "grenoble-inp.fr"
+      ],
+      "links": [
+        "https://www.grenoble-inp.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/049e6bc10": {
+      "rorId": "https://ror.org/049e6bc10",
+      "name": "Northumbria University",
+      "country": "GB",
+      "worksCount": 42727,
+      "homepage": "https://www.northumbria.ac.uk/",
+      "probedAt": "2026-10-19T11:08:16.704Z",
+      "domains": [
+        "northumbria.ac.uk"
+      ],
+      "links": [
+        "https://www.northumbria.ac.uk/"
+      ],
+      "evidence": "https://librarysearch.northumbria.ac.uk/discovery/search?vid=44UON_INST%3Anorthumbria&fromRedirectFilter=true&lang=en",
+      "code": "44UON_INST",
+      "route": "homepage>link>primo",
+      "host": "eu.alma.exlibrisgroup.com",
+      "services": 3,
+      "packages": [
+        "Health Research Premium Collection",
+        "Nexis Uni"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02dyjk442": {
+      "rorId": "https://ror.org/02dyjk442",
+      "name": "Silesian University of Technology",
+      "country": "PL",
+      "worksCount": 44531,
+      "homepage": "https://www.polsl.pl",
+      "probedAt": "2026-10-19T11:08:02.133Z",
+      "domains": [
+        "polsl.pl"
+      ],
+      "links": [
+        "https://www.polsl.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0558j5q12": {
+      "rorId": "https://ror.org/0558j5q12",
+      "name": "Universitatea Națională de Știință și Tehnologie Politehnica București",
+      "country": "RO",
+      "worksCount": 41989,
+      "homepage": "https://upb.ro",
+      "probedAt": "2026-10-19T11:08:18.988Z",
+      "domains": [
+        "upb.ro"
+      ],
+      "links": [
+        "https://upb.ro"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/019tgvf94": {
+      "rorId": "https://ror.org/019tgvf94",
+      "name": "Université Côte d'Azur",
+      "country": "FR",
+      "worksCount": 42185,
+      "homepage": "https://univ-cotedazur.fr/",
+      "probedAt": "2026-10-19T11:08:17.125Z",
+      "domains": [
+        "univ-cotedazur.fr"
+      ],
+      "links": [
+        "https://univ-cotedazur.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/046b3cj80": {
+      "rorId": "https://ror.org/046b3cj80",
+      "name": "École Pratique des Hautes Études",
+      "country": "FR",
+      "worksCount": 41890,
+      "homepage": "https://www.ephe.psl.eu",
+      "probedAt": "2026-10-19T11:08:19.914Z",
+      "domains": [
+        "ephe.psl.eu"
+      ],
+      "links": [
+        "https://www.ephe.psl.eu"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04p2y4s44": {
+      "rorId": "https://ror.org/04p2y4s44",
+      "name": "Medical University of Warsaw",
+      "country": "PL",
+      "worksCount": 42354,
+      "homepage": "https://www.wum.edu.pl",
+      "probedAt": "2026-10-19T11:08:16.932Z",
+      "domains": [
+        "wum.edu.pl"
+      ],
+      "links": [
+        "https://www.wum.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00340yn33": {
+      "rorId": "https://ror.org/00340yn33",
+      "name": "Keele University",
+      "country": "GB",
+      "worksCount": 41723,
+      "homepage": "https://www.keele.ac.uk",
+      "probedAt": "2026-10-19T11:08:25.005Z",
+      "domains": [
+        "keele.ac.uk"
+      ],
+      "links": [
+        "https://www.keele.ac.uk"
+      ],
+      "evidence": "https://keele.primo.exlibrisgroup.com/discovery/search?vid=44KLE_INST%3A44KLE_V1&sortby=rank&lang=en",
+      "code": "44KLE_INST",
+      "route": "homepage>link>primo",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "services": 6,
+      "packages": [
+        "Nature",
+        "ProQuest Natural Science Collection"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/05ht0mh31": {
+      "rorId": "https://ror.org/05ht0mh31",
+      "name": "University of Udine",
+      "country": "IT",
+      "worksCount": 41775,
+      "homepage": "https://www.uniud.it",
+      "probedAt": "2026-10-19T11:08:24.281Z",
+      "domains": [
+        "uniud.it"
+      ],
+      "links": [
+        "https://www.uniud.it"
+      ],
+      "evidence": "https://udiscover.uniud.it/discovery/search?vid=39UDN_INST:39UDN_VIEW",
+      "code": "39UDN_INST",
+      "route": "homepage>link",
+      "host": "eu01.alma.exlibrisgroup.com",
+      "services": 2,
+      "packages": [
+        "Nature",
+        "Nexis Uni"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/052r2xn60": {
+      "rorId": "https://ror.org/052r2xn60",
+      "name": "Johannes Kepler University of Linz",
+      "country": "AT",
+      "worksCount": 41532,
+      "homepage": "https://www.jku.at",
+      "probedAt": "2026-10-19T11:08:25.755Z",
+      "domains": [
+        "jku.at"
+      ],
+      "links": [
+        "https://www.jku.at"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01yp9g959": {
+      "rorId": "https://ror.org/01yp9g959",
+      "name": "University of Ulster",
+      "country": "GB",
+      "worksCount": 42119,
+      "homepage": "https://www.ulster.ac.uk",
+      "probedAt": "2026-10-19T11:08:17.243Z",
+      "domains": [
+        "ulster.ac.uk"
+      ],
+      "links": [
+        "https://www.ulster.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/040f08y74": {
+      "rorId": "https://ror.org/040f08y74",
+      "name": "St George's, University of London",
+      "country": "GB",
+      "worksCount": 41720,
+      "homepage": "https://www.sgul.ac.uk",
+      "probedAt": "2026-10-19T11:08:25.321Z",
+      "domains": [
+        "sgul.ac.uk"
+      ],
+      "links": [
+        "https://www.sgul.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02rc97e94": {
+      "rorId": "https://ror.org/02rc97e94",
+      "name": "University of Calabria",
+      "country": "IT",
+      "worksCount": 42956,
+      "homepage": "https://www.unical.it",
+      "probedAt": "2026-10-19T11:08:15.020Z",
+      "domains": [
+        "unical.it"
+      ],
+      "links": [
+        "https://www.unical.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02wwzvj46": {
+      "rorId": "https://ror.org/02wwzvj46",
+      "name": "Université de Tours",
+      "country": "FR",
+      "worksCount": 40193,
+      "homepage": "https://www.univ-tours.fr",
+      "probedAt": "2026-10-19T11:08:33.281Z",
+      "domains": [],
+      "links": [
+        "https://www.univ-tours.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00x69rs40": {
+      "rorId": "https://ror.org/00x69rs40",
+      "name": "Marche Polytechnic University",
+      "country": "IT",
+      "worksCount": 41043,
+      "homepage": "https://univpm.it",
+      "probedAt": "2026-10-19T11:08:32.098Z",
+      "domains": [
+        "univpm.it"
+      ],
+      "links": [
+        "https://univpm.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03nhjew95": {
+      "rorId": "https://ror.org/03nhjew95",
+      "name": "Université de Rouen Normandie",
+      "country": "FR",
+      "worksCount": 41026,
+      "homepage": "https://www.univ-rouen.fr",
+      "probedAt": "2026-10-19T11:08:32.480Z",
+      "domains": [
+        "univ-rouen.fr"
+      ],
+      "links": [
+        "https://www.univ-rouen.fr"
+      ],
+      "evidence": "https://catalogue.univ-rouen.fr/discovery/search?vid=33UDR_INST:URN",
+      "code": "33UDR_INST",
+      "route": "subdomain",
+      "host": "eu01.alma.exlibrisgroup.com",
+      "services": 4,
+      "packages": [
+        "view full text",
+        "Nature (Archives de revues)"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/050jn9y42": {
+      "rorId": "https://ror.org/050jn9y42",
+      "name": "Institut National des Sciences Appliquées de Lyon",
+      "country": "FR",
+      "worksCount": 39973,
+      "homepage": "https://www.insa-lyon.fr",
+      "probedAt": "2026-10-19T11:08:34.898Z",
+      "domains": [
+        "insa-lyon.fr"
+      ],
+      "links": [
+        "https://www.insa-lyon.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/008n7pv89": {
+      "rorId": "https://ror.org/008n7pv89",
+      "name": "University of Plymouth",
+      "country": "GB",
+      "worksCount": 39813,
+      "homepage": "https://www.plymouth.ac.uk/",
+      "probedAt": "2026-10-19T11:08:37.768Z",
+      "domains": [
+        "plymouth.ac.uk"
+      ],
+      "links": [
+        "https://www.plymouth.ac.uk/"
+      ],
+      "evidence": "https://primo.plymouth.ac.uk/nde/search?vid=44PLY_INST%3AUoP_NDE",
+      "code": "44PLY_INST",
+      "route": "subdomain",
+      "host": "eu.alma.exlibrisgroup.com",
+      "services": 1,
+      "packages": [
+        "Nature"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/05srvzs48": {
+      "rorId": "https://ror.org/05srvzs48",
+      "name": "Warsaw University of Life Sciences",
+      "country": "PL",
+      "worksCount": 41147,
+      "homepage": "https://www.sggw.edu.pl/",
+      "probedAt": "2026-10-19T11:08:29.744Z",
+      "domains": [
+        "sggw.edu.pl"
+      ],
+      "links": [
+        "https://www.sggw.edu.pl/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00dr28g20": {
+      "rorId": "https://ror.org/00dr28g20",
+      "name": "University of Crete",
+      "country": "GR",
+      "worksCount": 39812,
+      "homepage": "https://www.uoc.gr",
+      "probedAt": "2026-10-19T11:08:38.552Z",
+      "domains": [
+        "uoc.gr"
+      ],
+      "links": [
+        "https://www.uoc.gr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05vf0dg29": {
+      "rorId": "https://ror.org/05vf0dg29",
+      "name": "Roma Tre University",
+      "country": "IT",
+      "worksCount": 41298,
+      "homepage": "https://www.uniroma3.it",
+      "probedAt": "2026-10-19T11:08:27.687Z",
+      "domains": [
+        "uniroma3.it"
+      ],
+      "links": [
+        "https://www.uniroma3.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/022fs9h90": {
+      "rorId": "https://ror.org/022fs9h90",
+      "name": "University of Fribourg",
+      "country": "CH",
+      "worksCount": 39759,
+      "homepage": "https://www.unifr.ch",
+      "probedAt": "2026-10-19T11:08:40.729Z",
+      "domains": [
+        "unifr.ch"
+      ],
+      "links": [
+        "https://www.unifr.ch"
+      ],
+      "evidence": "https://www.unifr.ch/biblio/fr/",
+      "code": "41SLSP_BCUFR",
+      "route": "homepage>link",
+      "host": "slsp-bcufr.alma.exlibrisgroup.com",
+      "services": 6,
+      "packages": [
+        "Nature Branded",
+        "Open Access: Biodiversity Heritage Library"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0104rcc94": {
+      "rorId": "https://ror.org/0104rcc94",
+      "name": "University of Silesia in Katowice",
+      "country": "PL",
+      "worksCount": 39160,
+      "homepage": "https://us.edu.pl/",
+      "probedAt": "2026-10-19T11:08:42.503Z",
+      "domains": [
+        "us.edu.pl"
+      ],
+      "links": [
+        "https://us.edu.pl/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01gyxrk03": {
+      "rorId": "https://ror.org/01gyxrk03",
+      "name": "Université de Picardie Jules Verne",
+      "country": "FR",
+      "worksCount": 39184,
+      "homepage": "https://www.u-picardie.fr/",
+      "probedAt": "2026-10-19T11:08:41.931Z",
+      "domains": [
+        "u-picardie.fr"
+      ],
+      "links": [
+        "https://www.u-picardie.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04wez5e68": {
+      "rorId": "https://ror.org/04wez5e68",
+      "name": "Université Paris 8",
+      "country": "FR",
+      "worksCount": 38912,
+      "homepage": "https://www.univ-paris8.fr",
+      "probedAt": "2026-10-19T11:08:43.569Z",
+      "domains": [
+        "univ-paris8.fr"
+      ],
+      "links": [
+        "https://www.univ-paris8.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00syn5v21": {
+      "rorId": "https://ror.org/00syn5v21",
+      "name": "National Technical University of Ukraine “Igor Sikorsky Kyiv Polytechnic Institute”",
+      "country": "UA",
+      "worksCount": 40048,
+      "homepage": "https://www.kpi.ua",
+      "probedAt": "2026-10-19T11:08:34.170Z",
+      "domains": [
+        "kpi.ua"
+      ],
+      "links": [
+        "https://www.kpi.ua"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04zrf7b53": {
+      "rorId": "https://ror.org/04zrf7b53",
+      "name": "University of Kaiserslautern",
+      "country": "DE",
+      "worksCount": 38334,
+      "homepage": "http://www.uni-kl.de/no_cache/en/home/",
+      "probedAt": "2026-10-19T11:08:48.719Z",
+      "domains": [
+        "uni-kl.de"
+      ],
+      "links": [
+        "http://www.uni-kl.de/no_cache/en/home/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01a8ajp46": {
+      "rorId": "https://ror.org/01a8ajp46",
+      "name": "Université Clermont Auvergne",
+      "country": "FR",
+      "worksCount": 39251,
+      "homepage": "https://www.uca.fr",
+      "probedAt": "2026-10-19T11:08:41.106Z",
+      "domains": [
+        "uca.fr"
+      ],
+      "links": [
+        "https://www.uca.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01qg3j183": {
+      "rorId": "https://ror.org/01qg3j183",
+      "name": "University of Ioannina",
+      "country": "GR",
+      "worksCount": 38126,
+      "homepage": "https://uoi.gr",
+      "probedAt": "2026-10-19T11:08:52.397Z",
+      "domains": [
+        "uoi.gr"
+      ],
+      "links": [
+        "https://uoi.gr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05j0ve876": {
+      "rorId": "https://ror.org/05j0ve876",
+      "name": "Aston University",
+      "country": "GB",
+      "worksCount": 38743,
+      "homepage": "https://www.aston.ac.uk",
+      "probedAt": "2026-10-19T11:08:46.346Z",
+      "domains": [
+        "aston.ac.uk"
+      ],
+      "links": [
+        "https://www.aston.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00s8fpf52": {
+      "rorId": "https://ror.org/00s8fpf52",
+      "name": "Lodz University of Technology",
+      "country": "PL",
+      "worksCount": 38976,
+      "homepage": "https://p.lodz.pl",
+      "probedAt": "2026-10-19T11:08:42.829Z",
+      "domains": [
+        "p.lodz.pl"
+      ],
+      "links": [
+        "https://p.lodz.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0370htr03": {
+      "rorId": "https://ror.org/0370htr03",
+      "name": "UCL Queen Square Institute of Neurology",
+      "country": "GB",
+      "worksCount": 37391,
+      "homepage": "https://www.ucl.ac.uk/ion/ucl-queen-square-institute-neurology",
+      "probedAt": "2026-10-19T11:08:57.160Z",
+      "domains": [],
+      "links": [
+        "https://www.ucl.ac.uk/ion/ucl-queen-square-institute-neurology"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04489at23": {
+      "rorId": "https://ror.org/04489at23",
+      "name": "City, University of London",
+      "country": "GB",
+      "worksCount": 38571,
+      "homepage": "https://www.city.ac.uk",
+      "probedAt": "2026-10-19T11:08:46.985Z",
+      "domains": [
+        "city.ac.uk"
+      ],
+      "links": [
+        "https://www.city.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00qjgza05": {
+      "rorId": "https://ror.org/00qjgza05",
+      "name": "University of Chieti-Pescara",
+      "country": "IT",
+      "worksCount": 37237,
+      "homepage": "https://www.unich.it",
+      "probedAt": "2026-10-19T11:08:58.268Z",
+      "domains": [
+        "unich.it"
+      ],
+      "links": [
+        "https://www.unich.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/011dv8m48": {
+      "rorId": "https://ror.org/011dv8m48",
+      "name": "University of Gdańsk",
+      "country": "PL",
+      "worksCount": 36967,
+      "homepage": "https://ug.edu.pl",
+      "probedAt": "2026-10-19T11:09:01.420Z",
+      "domains": [
+        "ug.edu.pl"
+      ],
+      "links": [
+        "https://ug.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/006jb1a24": {
+      "rorId": "https://ror.org/006jb1a24",
+      "name": "Bangor University",
+      "country": "GB",
+      "worksCount": 37382,
+      "homepage": "https://www.bangor.ac.uk",
+      "probedAt": "2026-10-19T11:08:57.474Z",
+      "domains": [
+        "bangor.ac.uk"
+      ],
+      "links": [
+        "https://www.bangor.ac.uk"
+      ],
+      "evidence": "https://library.bangor.ac.uk/discovery/search?vid=44WHELF_BANG:44WHELF_BANG_VU4",
+      "code": "44WHELF_BANG",
+      "route": "subdomain",
+      "host": "eu.alma.exlibrisgroup.com",
+      "services": 4,
+      "packages": [
+        "Nature Journals",
+        "Gale Academic OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03ykbk197": {
+      "rorId": "https://ror.org/03ykbk197",
+      "name": "University of Portsmouth",
+      "country": "GB",
+      "worksCount": 36708,
+      "homepage": "https://www.port.ac.uk",
+      "probedAt": "2026-10-19T11:09:01.818Z",
+      "domains": [
+        "port.ac.uk"
+      ],
+      "links": [
+        "https://www.port.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01tmqtf75": {
+      "rorId": "https://ror.org/01tmqtf75",
+      "name": "University of Salford",
+      "country": "GB",
+      "worksCount": 36319,
+      "homepage": "https://www.salford.ac.uk",
+      "probedAt": "2026-10-19T11:09:06.173Z",
+      "domains": [
+        "salford.ac.uk"
+      ],
+      "links": [
+        "https://www.salford.ac.uk"
+      ],
+      "evidence": "https://www.salford.ac.uk/library",
+      "code": "44SAL_INST",
+      "route": "homepage>link",
+      "host": "eu00.alma.exlibrisgroup.com",
+      "services": 16,
+      "packages": [
+        "SpringerLink Journals - AutoHoldings",
+        "Nature"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0199hds37": {
+      "rorId": "https://ror.org/0199hds37",
+      "name": "Université Sorbonne Paris Nord",
+      "country": "FR",
+      "worksCount": 38114,
+      "homepage": "https://www.univ-spn.fr",
+      "probedAt": "2026-10-19T11:08:52.865Z",
+      "domains": [
+        "univ-paris13.fr"
+      ],
+      "links": [
+        "https://www.univ-spn.fr"
+      ],
+      "evidence": "https://catalogue.univ-paris13.fr/discovery/search?vid=33USPC_BUP13:BUP13",
+      "code": "33USPC_BUP13",
+      "route": "subdomain",
+      "host": "eu.alma.exlibrisgroup.com",
+      "services": 1,
+      "packages": [
+        "Nature (ISTEX)"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02cp04407": {
+      "rorId": "https://ror.org/02cp04407",
+      "name": "Université de Limoges",
+      "country": "FR",
+      "worksCount": 36604,
+      "homepage": "https://www.unilim.fr",
+      "probedAt": "2026-10-19T11:09:04.596Z",
+      "domains": [
+        "unilim.fr"
+      ],
+      "links": [
+        "https://www.unilim.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02rmd1t30": {
+      "rorId": "https://ror.org/02rmd1t30",
+      "name": "Babeș-Bolyai University",
+      "country": "RO",
+      "worksCount": 36428,
+      "homepage": "https://www.ubbcluj.ro",
+      "probedAt": "2026-10-19T11:09:05.068Z",
+      "domains": [
+        "ubbcluj.ro"
+      ],
+      "links": [
+        "https://www.ubbcluj.ro"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04zfme737": {
+      "rorId": "https://ror.org/04zfme737",
+      "name": "Liverpool John Moores University",
+      "country": "GB",
+      "worksCount": 37850,
+      "homepage": "https://www.ljmu.ac.uk/",
+      "probedAt": "2026-10-19T11:08:53.273Z",
+      "domains": [
+        "ljmu.ac.uk"
+      ],
+      "links": [
+        "https://www.ljmu.ac.uk/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04qxnmv42": {
+      "rorId": "https://ror.org/04qxnmv42",
+      "name": "Palacký University Olomouc",
+      "country": "CZ",
+      "worksCount": 37473,
+      "homepage": "https://www.upol.cz",
+      "probedAt": "2026-10-19T11:08:56.856Z",
+      "domains": [
+        "upol.cz"
+      ],
+      "links": [
+        "https://www.upol.cz"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05cncd958": {
+      "rorId": "https://ror.org/05cncd958",
+      "name": "Cranfield University",
+      "country": "GB",
+      "worksCount": 35652,
+      "homepage": "https://www.cranfield.ac.uk",
+      "probedAt": "2026-10-19T11:09:12.127Z",
+      "domains": [
+        "cranfield.ac.uk"
+      ],
+      "links": [
+        "https://www.cranfield.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02x2v6p15": {
+      "rorId": "https://ror.org/02x2v6p15",
+      "name": "University of Bucharest",
+      "country": "RO",
+      "worksCount": 35163,
+      "homepage": "https://unibuc.ro",
+      "probedAt": "2026-10-19T11:09:13.173Z",
+      "domains": [
+        "unibuc.ro"
+      ],
+      "links": [
+        "https://unibuc.ro"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01b8h3982": {
+      "rorId": "https://ror.org/01b8h3982",
+      "name": "Université de Bretagne Occidentale",
+      "country": "FR",
+      "worksCount": 34905,
+      "homepage": "https://www.univ-brest.fr",
+      "probedAt": "2026-10-19T11:09:21.596Z",
+      "domains": [],
+      "links": [
+        "https://www.univ-brest.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/037b5pv06": {
+      "rorId": "https://ror.org/037b5pv06",
+      "name": "University of Pecs",
+      "country": "HU",
+      "worksCount": 35126,
+      "homepage": "https://pte.hu",
+      "probedAt": "2026-10-19T11:09:17.049Z",
+      "domains": [
+        "pte.hu"
+      ],
+      "links": [
+        "https://pte.hu"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0542q3127": {
+      "rorId": "https://ror.org/0542q3127",
+      "name": "Lviv Polytechnic National University",
+      "country": "UA",
+      "worksCount": 36154,
+      "homepage": "http://www.lp.edu.ua/en",
+      "probedAt": "2026-10-19T11:09:08.696Z",
+      "domains": [
+        "lpnu.ua"
+      ],
+      "links": [
+        "http://www.lp.edu.ua/en"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/045wgfr59": {
+      "rorId": "https://ror.org/045wgfr59",
+      "name": "University of Stirling",
+      "country": "GB",
+      "worksCount": 34850,
+      "homepage": "https://www.stir.ac.uk",
+      "probedAt": "2026-10-19T11:09:22.459Z",
+      "domains": [
+        "stir.ac.uk"
+      ],
+      "links": [
+        "https://www.stir.ac.uk"
+      ],
+      "evidence": "https://www.stir.ac.uk/about/professional-services/information-services-and-library/",
+      "code": "44UST_INST",
+      "route": "subdomain",
+      "host": "eu03.alma.exlibrisgroup.com",
+      "services": 8,
+      "packages": [
+        "Springer Nature Read and Publish 2026-2028 Nature Reading List",
+        "Springer Nature - Complete Nature.com"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/058kzsd48": {
+      "rorId": "https://ror.org/058kzsd48",
+      "name": "Paderborn University",
+      "country": "DE",
+      "worksCount": 35706,
+      "homepage": "https://www.uni-paderborn.de/",
+      "probedAt": "2026-10-19T11:09:11.598Z",
+      "domains": [
+        "uni-paderborn.de"
+      ],
+      "links": [
+        "https://www.uni-paderborn.de/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02mb95055": {
+      "rorId": "https://ror.org/02mb95055",
+      "name": "Birkbeck, University of London",
+      "country": "GB",
+      "worksCount": 35071,
+      "homepage": "https://www.bbk.ac.uk",
+      "probedAt": "2026-10-19T11:09:19.897Z",
+      "domains": [
+        "bbk.ac.uk"
+      ],
+      "links": [
+        "https://www.bbk.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00a0n9e72": {
+      "rorId": "https://ror.org/00a0n9e72",
+      "name": "University of Limerick",
+      "country": "IE",
+      "worksCount": 34377,
+      "homepage": "https://www.ul.ie",
+      "probedAt": "2026-10-19T11:09:23.982Z",
+      "domains": [
+        "ul.ie"
+      ],
+      "links": [
+        "https://www.ul.ie"
+      ],
+      "evidence": "https://www.ul.ie/library",
+      "code": "353UOL_INST",
+      "route": "homepage>link",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "services": 5,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03pcc9z86": {
+      "rorId": "https://ror.org/03pcc9z86",
+      "name": "Université de Franche-Comté",
+      "country": "FR",
+      "worksCount": 34290,
+      "homepage": "http://www.univ-fcomte.fr/",
+      "probedAt": "2026-10-19T11:09:24.868Z",
+      "domains": [],
+      "links": [
+        "http://www.univ-fcomte.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02kbmgc12": {
+      "rorId": "https://ror.org/02kbmgc12",
+      "name": "AgroParisTech",
+      "country": "FR",
+      "worksCount": 34303,
+      "homepage": "https://www.agroparistech.fr",
+      "probedAt": "2026-10-19T11:09:24.359Z",
+      "domains": [
+        "agroparistech.fr"
+      ],
+      "links": [
+        "https://www.agroparistech.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/006x4sc24": {
+      "rorId": "https://ror.org/006x4sc24",
+      "name": "Gdańsk University of Technology",
+      "country": "PL",
+      "worksCount": 34082,
+      "homepage": "https://pg.edu.pl",
+      "probedAt": "2026-10-19T11:09:26.670Z",
+      "domains": [
+        "pg.edu.pl"
+      ],
+      "links": [
+        "https://pg.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05s4feg49": {
+      "rorId": "https://ror.org/05s4feg49",
+      "name": "University of Warmia and Mazury in Olsztyn",
+      "country": "PL",
+      "worksCount": 33954,
+      "homepage": "https://uwm.edu.pl",
+      "probedAt": "2026-10-19T11:09:30.120Z",
+      "domains": [
+        "uwm.edu.pl"
+      ],
+      "links": [
+        "https://uwm.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00vs8d940": {
+      "rorId": "https://ror.org/00vs8d940",
+      "name": "University of Bradford",
+      "country": "GB",
+      "worksCount": 34015,
+      "homepage": "https://www.bradford.ac.uk/external",
+      "probedAt": "2026-10-19T11:09:27.365Z",
+      "domains": [
+        "bradford.ac.uk"
+      ],
+      "links": [
+        "https://www.bradford.ac.uk/external"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04yrqp957": {
+      "rorId": "https://ror.org/04yrqp957",
+      "name": "Université d'Angers",
+      "country": "FR",
+      "worksCount": 33629,
+      "homepage": "https://www.univ-angers.fr/",
+      "probedAt": "2026-10-19T11:09:33.773Z",
+      "domains": [
+        "univ-angers.fr"
+      ],
+      "links": [
+        "https://www.univ-angers.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02zbb2597": {
+      "rorId": "https://ror.org/02zbb2597",
+      "name": "Poznan University of Medical Sciences",
+      "country": "PL",
+      "worksCount": 33657,
+      "homepage": "https://pums.ump.edu.pl/",
+      "probedAt": "2026-10-19T11:09:32.138Z",
+      "domains": [
+        "ump.edu.pl"
+      ],
+      "links": [
+        "https://pums.ump.edu.pl/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/015h0qg34": {
+      "rorId": "https://ror.org/015h0qg34",
+      "name": "Maria Curie-Skłodowska University",
+      "country": "PL",
+      "worksCount": 34205,
+      "homepage": "https://www.umcs.pl",
+      "probedAt": "2026-10-19T11:09:25.992Z",
+      "domains": [
+        "umcs.pl"
+      ],
+      "links": [
+        "https://www.umcs.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03613d656": {
+      "rorId": "https://ror.org/03613d656",
+      "name": "Brno University of Technology",
+      "country": "CZ",
+      "worksCount": 33040,
+      "homepage": "https://www.vut.cz",
+      "probedAt": "2026-10-19T11:09:37.433Z",
+      "domains": [
+        "vutbr.cz"
+      ],
+      "links": [
+        "https://www.vut.cz"
+      ],
+      "evidence": "https://discovery.vut.cz/nde/search?vid=420CARDS_VUT%3AVUT",
+      "code": "420CARDS_VUT",
+      "route": "subdomain",
+      "host": "eu06.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Hospital Premium Collection",
+        "Natural Science Collection"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02hstj355": {
+      "rorId": "https://ror.org/02hstj355",
+      "name": "Manchester Metropolitan University",
+      "country": "GB",
+      "worksCount": 36051,
+      "homepage": "https://www.mmu.ac.uk",
+      "probedAt": "2026-10-19T11:09:08.739Z",
+      "domains": [
+        "mmu.ac.uk"
+      ],
+      "links": [
+        "https://www.mmu.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/005k7hp45": {
+      "rorId": "https://ror.org/005k7hp45",
+      "name": "Medical University of Silesia",
+      "country": "PL",
+      "worksCount": 33049,
+      "homepage": "https://sum.edu.pl",
+      "probedAt": "2026-10-19T11:09:35.123Z",
+      "domains": [
+        "sum.edu.pl"
+      ],
+      "links": [
+        "https://sum.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04yzxz566": {
+      "rorId": "https://ror.org/04yzxz566",
+      "name": "Ca' Foscari University of Venice",
+      "country": "IT",
+      "worksCount": 32933,
+      "homepage": "https://www.unive.it",
+      "probedAt": "2026-10-19T11:09:39.793Z",
+      "domains": [
+        "unive.it"
+      ],
+      "links": [
+        "https://www.unive.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02t4ekc95": {
+      "rorId": "https://ror.org/02t4ekc95",
+      "name": "Medical University of Lodz",
+      "country": "PL",
+      "worksCount": 33031,
+      "homepage": "https://umed.pl",
+      "probedAt": "2026-10-19T11:09:39.642Z",
+      "domains": [
+        "umed.pl"
+      ],
+      "links": [
+        "https://umed.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04a1a1e81": {
+      "rorId": "https://ror.org/04a1a1e81",
+      "name": "Dublin City University",
+      "country": "IE",
+      "worksCount": 32743,
+      "homepage": "https://www.dcu.ie",
+      "probedAt": "2026-10-19T11:09:43.053Z",
+      "domains": [
+        "dcu.ie"
+      ],
+      "links": [
+        "https://www.dcu.ie"
+      ],
+      "evidence": "https://www.dcu.ie/library",
+      "code": "353DCU_INST",
+      "route": "homepage>link",
+      "host": "eu04.alma.exlibrisgroup.com",
+      "services": 3,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/01db6h964": {
+      "rorId": "https://ror.org/01db6h964",
+      "name": "University of Iceland",
+      "country": "IS",
+      "worksCount": 32675,
+      "homepage": "https://www.hi.is",
+      "probedAt": "2026-10-19T11:09:43.365Z",
+      "domains": [
+        "hi.is"
+      ],
+      "links": [
+        "https://www.hi.is"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02jv3k292": {
+      "rorId": "https://ror.org/02jv3k292",
+      "name": "Sofia University \"St. Kliment Ohridski\"",
+      "country": "BG",
+      "worksCount": 32839,
+      "homepage": "https://www.uni-sofia.bg/",
+      "probedAt": "2026-10-19T11:09:42.991Z",
+      "domains": [
+        "uni-sofia.bg"
+      ],
+      "links": [
+        "https://www.uni-sofia.bg/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01gmqr298": {
+      "rorId": "https://ror.org/01gmqr298",
+      "name": "Vita-Salute San Raffaele University",
+      "country": "IT",
+      "worksCount": 32660,
+      "homepage": "https://www.unisr.it",
+      "probedAt": "2026-10-19T11:09:43.465Z",
+      "domains": [
+        "unisr.it"
+      ],
+      "links": [
+        "https://www.unisr.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03fc1k060": {
+      "rorId": "https://ror.org/03fc1k060",
+      "name": "University of Salento",
+      "country": "IT",
+      "worksCount": 32421,
+      "homepage": "https://unisalento.it",
+      "probedAt": "2026-10-19T11:09:46.556Z",
+      "domains": [
+        "unisalento.it"
+      ],
+      "links": [
+        "https://unisalento.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04v4g9h31": {
+      "rorId": "https://ror.org/04v4g9h31",
+      "name": "University of Thessaly",
+      "country": "GR",
+      "worksCount": 32641,
+      "homepage": "https://www.uth.gr",
+      "probedAt": "2026-10-19T11:09:44.721Z",
+      "domains": [
+        "uth.gr"
+      ],
+      "links": [
+        "https://www.uth.gr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04ex24z53": {
+      "rorId": "https://ror.org/04ex24z53",
+      "name": "Collège de France",
+      "country": "FR",
+      "worksCount": 32382,
+      "homepage": "http://www.college-de-france.fr/site/college/index.htm",
+      "probedAt": "2026-10-19T11:09:51.378Z",
+      "domains": [
+        "college-de-france.fr"
+      ],
+      "links": [
+        "http://www.college-de-france.fr/site/college/index.htm"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/014zrew76": {
+      "rorId": "https://ror.org/014zrew76",
+      "name": "Université d'Orléans",
+      "country": "FR",
+      "worksCount": 31878,
+      "homepage": "https://www.univ-orleans.fr",
+      "probedAt": "2026-10-19T11:09:53.805Z",
+      "domains": [
+        "univ-orleans.fr"
+      ],
+      "links": [
+        "https://www.univ-orleans.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00613ak93": {
+      "rorId": "https://ror.org/00613ak93",
+      "name": "University of Wuppertal",
+      "country": "DE",
+      "worksCount": 32083,
+      "homepage": "https://www.uni-wuppertal.de",
+      "probedAt": "2026-10-19T11:09:52.307Z",
+      "domains": [
+        "uni-wuppertal.de"
+      ],
+      "links": [
+        "https://www.uni-wuppertal.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01s7y5e82": {
+      "rorId": "https://ror.org/01s7y5e82",
+      "name": "Lviv University",
+      "country": "UA",
+      "worksCount": 34468,
+      "homepage": "https://lnu.edu.ua/",
+      "probedAt": "2026-10-19T11:09:23.465Z",
+      "domains": [
+        "lnu.edu.ua"
+      ],
+      "links": [
+        "https://lnu.edu.ua/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/057ff4y42": {
+      "rorId": "https://ror.org/057ff4y42",
+      "name": "BOKU University",
+      "country": "AT",
+      "worksCount": 31698,
+      "homepage": "https://boku.ac.at",
+      "probedAt": "2026-10-19T11:09:58.685Z",
+      "domains": [
+        "boku.ac.at"
+      ],
+      "links": [
+        "https://boku.ac.at"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00b1c9541": {
+      "rorId": "https://ror.org/00b1c9541",
+      "name": "University of Hohenheim",
+      "country": "DE",
+      "worksCount": 31730,
+      "homepage": "https://www.uni-hohenheim.de",
+      "probedAt": "2026-10-19T11:09:55.632Z",
+      "domains": [
+        "uni-hohenheim.de"
+      ],
+      "links": [
+        "https://www.uni-hohenheim.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04gqg1a07": {
+      "rorId": "https://ror.org/04gqg1a07",
+      "name": "Université Savoie Mont Blanc",
+      "country": "FR",
+      "worksCount": 31654,
+      "homepage": "https://www.univ-smb.fr/",
+      "probedAt": "2026-10-19T11:10:00.789Z",
+      "domains": [
+        "univ-smb.fr"
+      ],
+      "links": [
+        "https://www.univ-smb.fr/"
+      ],
+      "evidence": "https://catalogue.univ-smb.fr/discovery/search?vid=33USMB_INST:cacogite",
+      "code": "33USMB_INST",
+      "route": "subdomain",
+      "host": "eu04.alma.exlibrisgroup.com",
+      "services": 2,
+      "packages": [
+        "Nature Research",
+        "PBSC Psychology Behavioral Sciences Collection"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/04sppb023": {
+      "rorId": "https://ror.org/04sppb023",
+      "name": "Copenhagen Business School",
+      "country": "DK",
+      "worksCount": 31502,
+      "homepage": "https://www.cbs.dk",
+      "probedAt": "2026-10-19T11:10:02.174Z",
+      "domains": [
+        "cbs.dk"
+      ],
+      "links": [
+        "https://www.cbs.dk"
+      ],
+      "evidence": "https://www.cbs.dk/bibliotek",
+      "code": "45KBDK_CBS",
+      "route": "homepage>link",
+      "host": "kbdk-cbs.alma.exlibrisgroup.com",
+      "services": 2,
+      "packages": [
+        "PressReader",
+        "Academic Search Elite"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02nwvxz07": {
+      "rorId": "https://ror.org/02nwvxz07",
+      "name": "École nationale des ponts et chaussées",
+      "country": "FR",
+      "worksCount": 32283,
+      "homepage": "https://ecoledesponts.fr",
+      "probedAt": "2026-10-19T11:09:51.606Z",
+      "domains": [
+        "enpc.fr"
+      ],
+      "links": [
+        "https://ecoledesponts.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00a208s56": {
+      "rorId": "https://ror.org/00a208s56",
+      "name": "Chemnitz University of Technology",
+      "country": "DE",
+      "worksCount": 31255,
+      "homepage": "https://www.tu-chemnitz.de/index.html.en",
+      "probedAt": "2026-10-19T11:10:05.183Z",
+      "domains": [
+        "tu-chemnitz.de"
+      ],
+      "links": [
+        "https://www.tu-chemnitz.de/index.html.en"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/055khg266": {
+      "rorId": "https://ror.org/055khg266",
+      "name": "Institut Universitaire de France",
+      "country": "FR",
+      "worksCount": 30590,
+      "homepage": "http://iuf.amue.fr/",
+      "probedAt": "2026-10-19T11:10:10.715Z",
+      "domains": [],
+      "links": [
+        "http://iuf.amue.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01d5jce07": {
+      "rorId": "https://ror.org/01d5jce07",
+      "name": "University of Maribor",
+      "country": "SI",
+      "worksCount": 30921,
+      "homepage": "https://www.um.si",
+      "probedAt": "2026-10-19T11:10:05.885Z",
+      "domains": [
+        "um.si"
+      ],
+      "links": [
+        "https://www.um.si"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04xyxjd90": {
+      "rorId": "https://ror.org/04xyxjd90",
+      "name": "Nottingham Trent University",
+      "country": "GB",
+      "worksCount": 30615,
+      "homepage": "https://www.ntu.ac.uk",
+      "probedAt": "2026-10-19T11:10:08.484Z",
+      "domains": [
+        "ntu.ac.uk"
+      ],
+      "links": [
+        "https://www.ntu.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/015m2p889": {
+      "rorId": "https://ror.org/015m2p889",
+      "name": "Aberystwyth University",
+      "country": "GB",
+      "worksCount": 31426,
+      "homepage": "https://www.aber.ac.uk",
+      "probedAt": "2026-10-19T11:10:02.471Z",
+      "domains": [
+        "aber.ac.uk"
+      ],
+      "links": [
+        "https://www.aber.ac.uk"
+      ],
+      "evidence": "https://primo.aber.ac.uk/nde/search?vid=44WHELF_ABW%3A44WHELF_ABW_NDE",
+      "code": "44WHELF_ABW",
+      "route": "subdomain",
+      "host": "eu.alma.exlibrisgroup.com",
+      "services": 4,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale General OneFile"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/04zc7p361": {
+      "rorId": "https://ror.org/04zc7p361",
+      "name": "University of Kassel",
+      "country": "DE",
+      "worksCount": 31933,
+      "homepage": "https://www.uni-kassel.de/uni",
+      "probedAt": "2026-10-19T11:09:52.639Z",
+      "domains": [
+        "uni-kassel.de"
+      ],
+      "links": [
+        "https://www.uni-kassel.de/uni"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03p14d497": {
+      "rorId": "https://ror.org/03p14d497",
+      "name": "University of Augsburg",
+      "country": "DE",
+      "worksCount": 31375,
+      "homepage": "https://www.uni-augsburg.de",
+      "probedAt": "2026-10-19T11:10:03.092Z",
+      "domains": [
+        "uni-a.de",
+        "uni-augsburg.de"
+      ],
+      "links": [
+        "https://www.uni-augsburg.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01bnjbv91": {
+      "rorId": "https://ror.org/01bnjbv91",
+      "name": "University of Sassari",
+      "country": "IT",
+      "worksCount": 30233,
+      "homepage": "https://www.uniss.it",
+      "probedAt": "2026-10-19T11:10:11.684Z",
+      "domains": [
+        "uniss.it"
+      ],
+      "links": [
+        "https://www.uniss.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03a62bv60": {
+      "rorId": "https://ror.org/03a62bv60",
+      "name": "University of Malta",
+      "country": "MT",
+      "worksCount": 30125,
+      "homepage": "https://www.um.edu.mt",
+      "probedAt": "2026-10-19T11:10:13.871Z",
+      "domains": [
+        "um.edu.mt"
+      ],
+      "links": [
+        "https://www.um.edu.mt"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0267vjk41": {
+      "rorId": "https://ror.org/0267vjk41",
+      "name": "University of Hertfordshire",
+      "country": "GB",
+      "worksCount": 29803,
+      "homepage": "https://www.herts.ac.uk",
+      "probedAt": "2026-10-19T11:10:16.172Z",
+      "domains": [
+        "herts.ac.uk"
+      ],
+      "links": [
+        "https://www.herts.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00p7p3302": {
+      "rorId": "https://ror.org/00p7p3302",
+      "name": "Poznań University of Technology",
+      "country": "PL",
+      "worksCount": 30268,
+      "homepage": "https://put.poznan.pl",
+      "probedAt": "2026-10-19T11:10:11.189Z",
+      "domains": [
+        "put.poznan.pl"
+      ],
+      "links": [
+        "https://put.poznan.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00qhdy563": {
+      "rorId": "https://ror.org/00qhdy563",
+      "name": "Université Paul-Valéry Montpellier",
+      "country": "FR",
+      "worksCount": 29308,
+      "homepage": "https://www.univ-montp3.fr/",
+      "probedAt": "2026-10-19T11:10:20.723Z",
+      "domains": [],
+      "links": [
+        "https://www.univ-montp3.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0561ghm58": {
+      "rorId": "https://ror.org/0561ghm58",
+      "name": "Slovak University of Technology in Bratislava",
+      "country": "SK",
+      "worksCount": 29644,
+      "homepage": "https://www.stuba.sk",
+      "probedAt": "2026-10-19T11:10:16.631Z",
+      "domains": [
+        "stuba.sk"
+      ],
+      "links": [
+        "https://www.stuba.sk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03hypw319": {
+      "rorId": "https://ror.org/03hypw319",
+      "name": "Université de Reims Champagne-Ardenne",
+      "country": "FR",
+      "worksCount": 29405,
+      "homepage": "https://www.univ-reims.fr",
+      "probedAt": "2026-10-19T11:10:18.327Z",
+      "domains": [
+        "univ-reims.fr"
+      ],
+      "links": [
+        "https://www.univ-reims.fr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/043jzw605": {
+      "rorId": "https://ror.org/043jzw605",
+      "name": "Institute of Cancer Research",
+      "country": "GB",
+      "worksCount": 29027,
+      "homepage": "http://www.icr.ac.uk/",
+      "probedAt": "2026-10-19T11:10:21.364Z",
+      "domains": [
+        "icr.ac.uk"
+      ],
+      "links": [
+        "http://www.icr.ac.uk/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05gs8cd61": {
+      "rorId": "https://ror.org/05gs8cd61",
+      "name": "University of Salzburg",
+      "country": "AT",
+      "worksCount": 29817,
+      "homepage": "https://www.plus.ac.at/",
+      "probedAt": "2026-10-19T11:10:15.140Z",
+      "domains": [
+        "plus.ac.at"
+      ],
+      "links": [
+        "https://www.plus.ac.at/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01qpw1b93": {
+      "rorId": "https://ror.org/01qpw1b93",
+      "name": "Wroclaw Medical University",
+      "country": "PL",
+      "worksCount": 28941,
+      "homepage": "https://www.umw.edu.pl",
+      "probedAt": "2026-10-19T11:10:21.702Z",
+      "domains": [
+        "umw.edu.pl"
+      ],
+      "links": [
+        "https://www.umw.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02azyry73": {
+      "rorId": "https://ror.org/02azyry73",
+      "name": "University of Siegen",
+      "country": "DE",
+      "worksCount": 30132,
+      "homepage": "https://www.uni-siegen.de",
+      "probedAt": "2026-10-19T11:10:13.389Z",
+      "domains": [
+        "uni-siegen.de"
+      ],
+      "links": [
+        "https://www.uni-siegen.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03ftejk10": {
+      "rorId": "https://ror.org/03ftejk10",
+      "name": "V. N. Karazin Kharkiv National University",
+      "country": "UA",
+      "worksCount": 29130,
+      "homepage": "https://karazin.ua",
+      "probedAt": "2026-10-19T11:10:21.255Z",
+      "domains": [
+        "karazin.ua"
+      ],
+      "links": [
+        "https://karazin.ua"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01tgmhj36": {
+      "rorId": "https://ror.org/01tgmhj36",
+      "name": "Coventry University",
+      "country": "GB",
+      "worksCount": 28730,
+      "homepage": "https://www.coventry.ac.uk/",
+      "probedAt": "2026-10-19T11:10:26.143Z",
+      "domains": [
+        "coventry.ac.uk"
+      ],
+      "links": [
+        "https://www.coventry.ac.uk/"
+      ],
+      "evidence": "https://www.coventry.ac.uk/study-at-coventry/student-support/academic-support/lanchester-library/",
+      "code": "44COV_INST",
+      "route": "homepage>link",
+      "host": "eu00.alma.exlibrisgroup.com",
+      "services": 5,
+      "packages": [
+        "Nursing &amp; Allied Health Database",
+        "ProQuest Central"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/019sbgd69": {
+      "rorId": "https://ror.org/019sbgd69",
+      "name": "Gdańsk Medical University",
+      "country": "PL",
+      "worksCount": 28776,
+      "homepage": "https://gumed.edu.pl/",
+      "probedAt": "2026-10-19T11:10:26.011Z",
+      "domains": [
+        "gumed.edu.pl"
+      ],
+      "links": [
+        "https://gumed.edu.pl/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00965bg92": {
+      "rorId": "https://ror.org/00965bg92",
+      "name": "University of Nis",
+      "country": "RS",
+      "worksCount": 28327,
+      "homepage": "https://www.ni.ac.rs/",
+      "probedAt": "2026-10-19T11:10:27.953Z",
+      "domains": [
+        "ni.ac.rs"
+      ],
+      "links": [
+        "https://www.ni.ac.rs/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03z6jp965": {
+      "rorId": "https://ror.org/03z6jp965",
+      "name": "Université Sorbonne Nouvelle",
+      "country": "FR",
+      "worksCount": 28090,
+      "homepage": "http://www.univ-paris3.fr/",
+      "probedAt": "2026-10-19T11:10:28.687Z",
+      "domains": [],
+      "links": [
+        "http://www.univ-paris3.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00s409261": {
+      "rorId": "https://ror.org/00s409261",
+      "name": "University of Insubria",
+      "country": "IT",
+      "worksCount": 28009,
+      "homepage": "https://www.uninsubria.eu/",
+      "probedAt": "2026-10-19T11:10:30.560Z",
+      "domains": [
+        "uninsubria.it"
+      ],
+      "links": [
+        "https://www.uninsubria.eu/"
+      ],
+      "evidence": "https://www.uninsubria.eu/",
+      "code": "39INS_INST",
+      "route": "homepage",
+      "host": "eu00.alma.exlibrisgroup.com",
+      "services": 5,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/04ezk3x31": {
+      "rorId": "https://ror.org/04ezk3x31",
+      "name": "Université Toulouse - Jean Jaurès",
+      "country": "FR",
+      "worksCount": 28497,
+      "homepage": "https://www.univ-tlse2.fr/",
+      "probedAt": "2026-10-19T11:10:27.863Z",
+      "domains": [
+        "univ-tlse2.fr"
+      ],
+      "links": [
+        "https://www.univ-tlse2.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05ggn0a85": {
+      "rorId": "https://ror.org/05ggn0a85",
+      "name": "University of Chemistry and Technology, Prague",
+      "country": "CZ",
+      "worksCount": 27759,
+      "homepage": "https://www.vscht.cz",
+      "probedAt": "2026-10-19T11:10:31.546Z",
+      "domains": [
+        "vscht.cz"
+      ],
+      "links": [
+        "https://www.vscht.cz"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02nwg5t34": {
+      "rorId": "https://ror.org/02nwg5t34",
+      "name": "University of the West of England",
+      "country": "GB",
+      "worksCount": 28289,
+      "homepage": "https://www.uwe.ac.uk",
+      "probedAt": "2026-10-19T11:10:28.349Z",
+      "domains": [
+        "uwe.ac.uk"
+      ],
+      "links": [
+        "https://www.uwe.ac.uk"
+      ],
+      "evidence": "https://www.uwe.ac.uk/study/library",
+      "code": "44UWE_INST",
+      "route": "homepage>link",
+      "host": "eu04.alma.exlibrisgroup.com",
+      "services": 4,
+      "packages": [
+        "SpringerLink Journals - AutoHoldings",
+        "Nexis Uni"
+      ],
+      "status": "answers-without-indicator"
+    },
+    "https://ror.org/04fm87419": {
+      "rorId": "https://ror.org/04fm87419",
+      "name": "Carol Davila University of Medicine and Pharmacy",
+      "country": "RO",
+      "worksCount": 27430,
+      "homepage": "https://umfcd.ro",
+      "probedAt": "2026-10-19T11:10:37.135Z",
+      "domains": [
+        "umfcd.ro"
+      ],
+      "links": [
+        "https://umfcd.ro"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01frn9647": {
+      "rorId": "https://ror.org/01frn9647",
+      "name": "Université de Pau et des Pays de l'Adour",
+      "country": "FR",
+      "worksCount": 27616,
+      "homepage": "https://www.univ-pau.fr/",
+      "probedAt": "2026-10-19T11:10:32.867Z",
+      "domains": [
+        "univ-pau.fr"
+      ],
+      "links": [
+        "https://www.univ-pau.fr/"
+      ],
+      "evidence": "https://bibliotheques.univ-pau.fr/fr/index.html",
+      "code": "33BUPAU_INST",
+      "route": "homepage>link",
+      "host": "eu03.alma.exlibrisgroup.com",
+      "services": 1,
+      "packages": [
+        "Nature revues Istex"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/02qjrjx09": {
+      "rorId": "https://ror.org/02qjrjx09",
+      "name": "University of Cyprus",
+      "country": "CY",
+      "worksCount": 27508,
+      "homepage": "https://www.ucy.ac.cy",
+      "probedAt": "2026-10-19T11:10:34.515Z",
+      "domains": [
+        "ucy.ac.cy"
+      ],
+      "links": [
+        "https://www.ucy.ac.cy"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04qmmjx98": {
+      "rorId": "https://ror.org/04qmmjx98",
+      "name": "Osnabrück University",
+      "country": "DE",
+      "worksCount": 27389,
+      "homepage": "https://www.uni-osnabrueck.de/",
+      "probedAt": "2026-10-19T11:10:37.254Z",
+      "domains": [
+        "uni-osnabrueck.de"
+      ],
+      "links": [
+        "https://www.uni-osnabrueck.de/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/02k9vew78": {
+      "rorId": "https://ror.org/02k9vew78",
+      "name": "Université Nice Sophia Antipolis",
+      "country": "FR",
+      "worksCount": 27122,
+      "homepage": "http://unice.fr/",
+      "probedAt": "2026-10-19T11:10:44.561Z",
+      "domains": [],
+      "links": [
+        "http://unice.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/016st3p78": {
+      "rorId": "https://ror.org/016st3p78",
+      "name": "Luleå University of Technology",
+      "country": "SE",
+      "worksCount": 27228,
+      "homepage": "https://www.ltu.se",
+      "probedAt": "2026-10-19T11:10:40.714Z",
+      "domains": [
+        "ltu.se"
+      ],
+      "links": [
+        "https://www.ltu.se"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00vasag41": {
+      "rorId": "https://ror.org/00vasag41",
+      "name": "University of Neuchâtel",
+      "country": "CH",
+      "worksCount": 27262,
+      "homepage": "https://unine.ch",
+      "probedAt": "2026-10-19T11:10:40.408Z",
+      "domains": [
+        "unine.ch"
+      ],
+      "links": [
+        "https://unine.ch"
+      ],
+      "evidence": "https://www.unine.ch/bibliotheque",
+      "code": "41SLSP_UNE",
+      "route": "homepage>link",
+      "host": "slsp-une.alma.exlibrisgroup.com",
+      "services": 5,
+      "packages": [
+        "Nature",
+        "Open Access: Free E- Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/016f61126": {
+      "rorId": "https://ror.org/016f61126",
+      "name": "Medical University of Lublin",
+      "country": "PL",
+      "worksCount": 29319,
+      "homepage": "http://www.umlub.pl",
+      "probedAt": "2026-10-19T11:10:18.746Z",
+      "domains": [
+        "umlub.pl"
+      ],
+      "links": [
+        "http://www.umlub.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/031bsb921": {
+      "rorId": "https://ror.org/031bsb921",
+      "name": "University of Mannheim",
+      "country": "DE",
+      "worksCount": 27671,
+      "homepage": "https://www.uni-mannheim.de/en/",
+      "probedAt": "2026-10-19T11:10:31.788Z",
+      "domains": [
+        "uni-mannheim.de"
+      ],
+      "links": [
+        "https://www.uni-mannheim.de/en/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04a1mvv97": {
+      "rorId": "https://ror.org/04a1mvv97",
+      "name": "Norwegian University of Life Sciences",
+      "country": "NO",
+      "worksCount": 26149,
+      "homepage": "https://www.nmbu.no",
+      "probedAt": "2026-10-19T11:10:45.235Z",
+      "domains": [
+        "nmbu.no"
+      ],
+      "links": [
+        "https://www.nmbu.no"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/014axpa37": {
+      "rorId": "https://ror.org/014axpa37",
+      "name": "Roskilde University",
+      "country": "DK",
+      "worksCount": 26526,
+      "homepage": "https://ruc.dk",
+      "probedAt": "2026-10-19T11:10:45.187Z",
+      "domains": [
+        "ruc.dk"
+      ],
+      "links": [
+        "https://ruc.dk"
+      ],
+      "evidence": "https://ruc.dk/roskilde-universitetsbibliotek",
+      "code": "45KBDK_KGL",
+      "route": "homepage>link",
+      "host": "kbdk-kgl.alma.exlibrisgroup.com",
+      "services": 9,
+      "packages": [
+        "Nature",
+        "Nature"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/00yq55g44": {
+      "rorId": "https://ror.org/00yq55g44",
+      "name": "Witten/Herdecke University",
+      "country": "DE",
+      "worksCount": 26006,
+      "homepage": "https://www.uni-wh.de",
+      "probedAt": "2026-10-19T11:10:46.045Z",
+      "domains": [
+        "uni-wh.de"
+      ],
+      "links": [
+        "https://www.uni-wh.de"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05vmz5070": {
+      "rorId": "https://ror.org/05vmz5070",
+      "name": "University of Szczecin",
+      "country": "PL",
+      "worksCount": 25972,
+      "homepage": "https://usz.edu.pl",
+      "probedAt": "2026-10-19T11:10:47.723Z",
+      "domains": [
+        "usz.edu.pl"
+      ],
+      "links": [
+        "https://usz.edu.pl"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/029pk6x14": {
+      "rorId": "https://ror.org/029pk6x14",
+      "name": "Åbo Akademi University",
+      "country": "FI",
+      "worksCount": 25882,
+      "homepage": "https://www.abo.fi",
+      "probedAt": "2026-10-19T11:10:49.555Z",
+      "domains": [
+        "abo.fi"
+      ],
+      "links": [
+        "https://www.abo.fi"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05x8mcb75": {
+      "rorId": "https://ror.org/05x8mcb75",
+      "name": "VSB - Technical University of Ostrava",
+      "country": "CZ",
+      "worksCount": 24823,
+      "homepage": "https://www.vsb.cz",
+      "probedAt": "2026-10-19T11:10:51.596Z",
+      "domains": [
+        "vsb.cz"
+      ],
+      "links": [
+        "https://www.vsb.cz"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/00m31ft63": {
+      "rorId": "https://ror.org/00m31ft63",
+      "name": "University of Split",
+      "country": "HR",
+      "worksCount": 24556,
+      "homepage": "https://www.unist.hr",
+      "probedAt": "2026-10-19T11:10:52.202Z",
+      "domains": [
+        "unist.hr"
+      ],
+      "links": [
+        "https://www.unist.hr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/01hxy9878": {
+      "rorId": "https://ror.org/01hxy9878",
+      "name": "Royal College of Surgeons in Ireland",
+      "country": "IE",
+      "worksCount": 26604,
+      "homepage": "https://www.rcsi.com",
+      "probedAt": "2026-10-19T11:10:44.963Z",
+      "domains": [
+        "rcsi.com"
+      ],
+      "links": [
+        "https://www.rcsi.com"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/019wt1929": {
+      "rorId": "https://ror.org/019wt1929",
+      "name": "Sheffield Hallam University",
+      "country": "GB",
+      "worksCount": 24090,
+      "homepage": "https://www.shu.ac.uk",
+      "probedAt": "2026-10-19T11:10:56.646Z",
+      "domains": [
+        "shu.ac.uk"
+      ],
+      "links": [
+        "https://www.shu.ac.uk"
+      ],
+      "evidence": "https://libguides.shu.ac.uk/pages/library",
+      "code": "44SHU_INST",
+      "route": "subdomain",
+      "host": "shu.alma.exlibrisgroup.com",
+      "services": 6,
+      "packages": [
+        "Nature",
+        "Proquest Central"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/03bfqnx40": {
+      "rorId": "https://ror.org/03bfqnx40",
+      "name": "Democritus University of Thrace",
+      "country": "GR",
+      "worksCount": 25909,
+      "homepage": "https://duth.gr",
+      "probedAt": "2026-10-19T11:10:49.261Z",
+      "domains": [
+        "duth.gr"
+      ],
+      "links": [
+        "https://duth.gr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04387x656": {
+      "rorId": "https://ror.org/04387x656",
+      "name": "Università degli Studi del Piemonte Orientale “Amedeo Avogadro”",
+      "country": "IT",
+      "worksCount": 25338,
+      "homepage": "https://www.uniupo.it",
+      "probedAt": "2026-10-19T11:10:50.246Z",
+      "domains": [
+        "uniupo.it"
+      ],
+      "links": [
+        "https://www.uniupo.it"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05t1h8f27": {
+      "rorId": "https://ror.org/05t1h8f27",
+      "name": "University of Huddersfield",
+      "country": "GB",
+      "worksCount": 23482,
+      "homepage": "https://www.hud.ac.uk",
+      "probedAt": "2026-10-19T11:10:59.021Z",
+      "domains": [
+        "hud.ac.uk"
+      ],
+      "links": [
+        "https://www.hud.ac.uk"
+      ],
+      "evidence": "https://librarysearch.hud.ac.uk/nde/search?vid=44HUD_INST%3AHUD",
+      "code": "44HUD_INST",
+      "route": "subdomain",
+      "host": "eu02.alma.exlibrisgroup.com",
+      "services": 3,
+      "packages": [
+        "Nature",
+        "SpringerNature Journals"
+      ],
+      "status": "verified"
+    },
+    "https://ror.org/0443cwa12": {
+      "rorId": "https://ror.org/0443cwa12",
+      "name": "Tallinn University of Technology",
+      "country": "EE",
+      "worksCount": 23550,
+      "homepage": "https://taltech.ee",
+      "probedAt": "2026-10-19T11:10:58.592Z",
+      "domains": [
+        "taltech.ee"
+      ],
+      "links": [
+        "https://taltech.ee"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05g3mes96": {
+      "rorId": "https://ror.org/05g3mes96",
+      "name": "University of Latvia",
+      "country": "LV",
+      "worksCount": 23825,
+      "homepage": "https://www.lu.lv",
+      "probedAt": "2026-10-19T11:10:58.578Z",
+      "domains": [
+        "lu.lv"
+      ],
+      "links": [
+        "https://www.lu.lv"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0119hgk08": {
+      "rorId": "https://ror.org/0119hgk08",
+      "name": "Université Blaise Pascal",
+      "country": "FR",
+      "worksCount": 23289,
+      "homepage": null,
+      "probedAt": "2026-10-19T11:11:04.042Z",
+      "domains": [],
+      "links": [],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0415vcw02": {
+      "rorId": "https://ror.org/0415vcw02",
+      "name": "Czech University of Life Sciences Prague",
+      "country": "CZ",
+      "worksCount": 24164,
+      "homepage": "https://www.czu.cz",
+      "probedAt": "2026-10-19T11:10:55.920Z",
+      "domains": [
+        "czu.cz"
+      ],
+      "links": [
+        "https://www.czu.cz"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05r8dqr10": {
+      "rorId": "https://ror.org/05r8dqr10",
+      "name": "University of Rijeka",
+      "country": "HR",
+      "worksCount": 23279,
+      "homepage": "https://uniri.hr",
+      "probedAt": "2026-10-19T11:11:04.655Z",
+      "domains": [
+        "uniri.hr"
+      ],
+      "links": [
+        "https://uniri.hr"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03rth4p18": {
+      "rorId": "https://ror.org/03rth4p18",
+      "name": "Université Lumière Lyon 2",
+      "country": "FR",
+      "worksCount": 23402,
+      "homepage": "http://www.univ-lyon2.fr/",
+      "probedAt": "2026-10-19T11:10:59.271Z",
+      "domains": [
+        "univ-lyon2.fr"
+      ],
+      "links": [
+        "http://www.univ-lyon2.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04nbhqj75": {
+      "rorId": "https://ror.org/04nbhqj75",
+      "name": "Hasselt University",
+      "country": "BE",
+      "worksCount": 23081,
+      "homepage": "https://www.uhasselt.be",
+      "probedAt": "2026-10-19T11:11:08.021Z",
+      "domains": [
+        "uhasselt.be"
+      ],
+      "links": [
+        "https://www.uhasselt.be"
+      ],
+      "evidence": "https://www.uhasselt.be/nl/universiteitsbibliotheek/e-bronnenlijst?Discoveryservice=beschikbaar%20via%20uhasselt%20discovery%20service",
+      "code": "32EUC_INST",
+      "route": "subdomain>link",
+      "host": "eu06.alma.exlibrisgroup.com",
+      "services": 2,
+      "packages": [
+        "SpringerLink Journals - AH (IP)",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "status": "answers-without-indicator"
+    },
+    "https://ror.org/02ba3pt07": {
+      "rorId": "https://ror.org/02ba3pt07",
+      "name": "Tampere University of Technology",
+      "country": "FI",
+      "worksCount": 22754,
+      "homepage": "http://www.tut.fi/en/",
+      "probedAt": "2026-10-19T11:11:14.435Z",
+      "domains": [],
+      "links": [
+        "http://www.tut.fi/en/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/05sw4wc49": {
+      "rorId": "https://ror.org/05sw4wc49",
+      "name": "University of Osijek",
+      "country": "HR",
+      "worksCount": 22818,
+      "homepage": "https://www.unios.hr/",
+      "probedAt": "2026-10-19T11:11:13.522Z",
+      "domains": [
+        "unios.hr"
+      ],
+      "links": [
+        "https://www.unios.hr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/04v2twj65": {
+      "rorId": "https://ror.org/04v2twj65",
+      "name": "Oxford Brookes University",
+      "country": "GB",
+      "worksCount": 23319,
+      "homepage": "https://www.brookes.ac.uk/",
+      "probedAt": "2026-10-19T11:11:02.535Z",
+      "domains": [
+        "brookes.ac.uk"
+      ],
+      "links": [
+        "https://www.brookes.ac.uk/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/0312pnr83": {
+      "rorId": "https://ror.org/0312pnr83",
+      "name": "De Montfort University",
+      "country": "GB",
+      "worksCount": 23287,
+      "homepage": "https://www.dmu.ac.uk",
+      "probedAt": "2026-10-19T11:11:04.472Z",
+      "domains": [
+        "dmu.ac.uk"
+      ],
+      "links": [
+        "https://www.dmu.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/048nfjm95": {
+      "rorId": "https://ror.org/048nfjm95",
+      "name": "National University of Ireland, Maynooth",
+      "country": "IE",
+      "worksCount": 22401,
+      "homepage": "https://www.maynoothuniversity.ie/",
+      "probedAt": "2026-10-19T11:11:16.950Z",
+      "domains": [
+        "mu.ie"
+      ],
+      "links": [
+        "https://www.maynoothuniversity.ie/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/033p9g875": {
+      "rorId": "https://ror.org/033p9g875",
+      "name": "Institut National Polytechnique de Toulouse",
+      "country": "FR",
+      "worksCount": 22288,
+      "homepage": "https://www.inp-toulouse.fr/",
+      "probedAt": "2026-10-19T11:11:17.587Z",
+      "domains": [
+        "inp-toulouse.fr"
+      ],
+      "links": [
+        "https://www.inp-toulouse.fr/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/03tth1e03": {
+      "rorId": "https://ror.org/03tth1e03",
+      "name": "Poznań University of Life Sciences",
+      "country": "PL",
+      "worksCount": 22541,
+      "homepage": "https://www.up.poznan.pl/",
+      "probedAt": "2026-10-19T11:11:16.276Z",
+      "domains": [
+        "up.poznan.pl"
+      ],
+      "links": [
+        "https://www.up.poznan.pl/"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/010jbqd54": {
+      "rorId": "https://ror.org/010jbqd54",
+      "name": "University of Lancashire",
+      "country": "GB",
+      "worksCount": 23325,
+      "homepage": "https://www.lancashire.ac.uk",
+      "probedAt": "2026-10-19T11:11:01.129Z",
+      "domains": [
+        "lancashire.ac.uk",
+        "uclan.ac.uk"
+      ],
+      "links": [
+        "https://www.lancashire.ac.uk"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
+    },
+    "https://ror.org/022kvet57": {
+      "rorId": "https://ror.org/022kvet57",
+      "name": "Alexandru Ioan Cuza University",
+      "country": "RO",
+      "worksCount": 22560,
+      "homepage": "https://www.uaic.ro",
+      "probedAt": "2026-10-19T11:11:16.237Z",
+      "domains": [
+        "uaic.ro"
+      ],
+      "links": [
+        "https://www.uaic.ro"
+      ],
+      "evidence": null,
+      "code": null,
+      "host": null,
+      "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-19T10:33:25.088Z"
+  "generatedAt": "2026-10-19T11:13:54.655Z"
 }

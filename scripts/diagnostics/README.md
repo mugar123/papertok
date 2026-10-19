@@ -476,4 +476,6 @@ node scripts/diagnostics/alma-resolver-census.mjs --verify
 
 Institutions come from OpenAlex (`type:education`, by works count; each request spends its
 free daily budget), their domains from ROR. Every host is asked at most once per second with
-an identifying user agent. `--debug` prints each request; `--only <ror>` restricts a run.
+an identifying user agent. `--debug` prints each request; `--only <ror>` restricts a run;
+`--skip-known` leaves out the institutions already in the census, so a wider `--limit` only
+probes the new ones.

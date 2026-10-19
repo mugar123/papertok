@@ -25,11 +25,12 @@
  * host?, url?, product? }` and are verified here like any other: a `url` is
  * read first when there is no code and a `host` is probed first. `product`
  * is what the directory lists (alma, sfx, 360link, ebsco, worldcat, libkey,
- * other); a product other than Alma does not prove the library lacks an Alma
+ * webbridge, other); a product other than Alma does not prove the library lacks an Alma
  * resolver, so discovery still runs, and an institution left without one is
  * `compatibility-pending`, with the product kept for a later adapter.
  * `--only <ror>` restricts a run to one institution; `--dry` probes without
- * writing anything.
+ * writing anything. `--skip-known` leaves out the institutions the census has
+ * already met, so a wider `--limit` only probes the new ones.
  *
  * Every host is asked at most once per second, with an identifying user agent.
  * Only public endpoints are used: OpenAlex, ROR, library web pages and the
@@ -378,6 +379,7 @@ async function main() {
     const countries = (args.countries || '').split(',').flatMap(code => (code.toUpperCase() === 'EU' ? EUROPE : [code.toUpperCase()])).filter(Boolean);
     if (!countries.length) throw new Error('pass --countries (ISO codes or EU) or --verify');
     targets = await listInstitutions(countries, args.limit ? Number(args.limit) : 0);
+    if (args['skip-known']) targets = targets.filter(entry => !census.institutions[entry.rorId]);
   }
   // A seed the census has never met is processed in every run, so that a
   // code found by hand reaches the table without waiting for its country.

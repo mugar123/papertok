@@ -163,8 +163,8 @@ test('is unavailable when every probe fails', async () => {
 
 test('refuses an institution no provider can answer for, without asking anyone', async () => {
   for (const [params, env] of [
-    [{ domain: 'uam.es', entityId: ENTITY_ID }, {}],
-    [{ domain: 'uam.es' }, GETFTR_ENV],
+    [{ domain: 'nowhere.example', entityId: ENTITY_ID }, {}],
+    [{ domain: 'nowhere.example' }, GETFTR_ENV],
   ] as Array<[InstitutionQuery, WorkerEnv]>) {
     const stub = upstreams();
     await assert.rejects(
@@ -187,7 +187,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
       vor: [{ contentType: 'html', url: `https://www.nature.com/articles/${doi}` }],
     })),
   });
-  const result = await lookupInstitutionServices({ domain: 'uam.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  const result = await lookupInstitutionServices({ domain: 'nowhere.example', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, [
     { id: 'nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', collection: null, ownPlatform: true },
   ]);
@@ -227,7 +227,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
   const stub = upstreams({
     getftr: getftrAnswering((doi: string|number) => undecided[doi] || { statusCode: 200, entitled: 'no' }),
   });
-  const result = await lookupInstitutionServices({ domain: 'uam.es', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  const result = await lookupInstitutionServices({ domain: 'nowhere.example', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
   assert.equal(result.unchecked, 4);
   assert.equal(result.partial, false);
@@ -257,7 +257,7 @@ test('a GetFTR yes or no is final: the resolver is not asked about it', async ()
 test('a GetFTR outage with no resolver behind it is a failure, not an empty library', async () => {
   const stub = upstreams({ getftr: () => jsonResponse({}, 503) });
   await assert.rejects(
-    lookupInstitutionServices({ domain: 'uam.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV }),
+    lookupInstitutionServices({ domain: 'nowhere.example', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV }),
     error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
   );
 });

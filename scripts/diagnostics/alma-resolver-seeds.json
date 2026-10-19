@@ -415,9 +415,13 @@
     "rorId": "https://ror.org/00ne6sr39",
     "name": "Universidad de Deusto",
     "country": "ES",
-    "source": "zotero",
-    "url": "https://oceano.biblioteca.deusto.es/openurl/DEUSTO/deusto",
-    "product": "other"
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/34DEUSTO_INST/openurl",
+    "product": "alma",
+    "code": "34DEUSTO_INST",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "evidence": "https://oceano.biblioteca.deusto.es/primo_library/libweb/webservices/rest/v1/configuration/deusto",
+    "notes": "Océano is classic Primo (primo-explore, institution=DEUSTO, vid=deusto), and the Zotero address redirects into its openurl page. The view configuration maps 34DEUSTO_Alma to 34DEUSTO_INST with api_base deusto.alma.exlibrisgroup.com. The uresolver answered with uresolver_content, a full_text_indicator and 5 context_service elements on eu01 and on deusto.alma.exlibrisgroup.com; eu00 and eu02 returned empty bodies."
   },
   {
     "rorId": "https://ror.org/03yxnpp24",
@@ -441,9 +445,11 @@
     "rorId": "https://ror.org/03e10x626",
     "name": "Universitat de les Illes Balears",
     "country": "ES",
-    "source": "zotero",
+    "source": "manual (Opus subagent, 2026-10-19)",
     "url": "https://llull.uib.es/resserv",
-    "product": "other"
+    "product": "webbridge",
+    "evidence": "https://llull.uib.es/resserv",
+    "notes": "llull.uib.es is an Innovative Interfaces system (Sierra/Millennium WebBridge): its pages load iii.css and webbridge.js and are titled Resolution Server. An OpenURL for Nature 2020 returned a WebBridge panel with JCR links and a catalogue search link, but no full-text target. Alma probes for 34CSUC_UIB on csuc-uib and for 34UIB_INST on eu00 returned empty bodies. biblioteca.uib.cat returned 503."
   },
   {
     "rorId": "https://ror.org/050c3cw24",
@@ -1706,5 +1712,214 @@
     "name": "Consorcio de Bibliotecas Universitarias de Andalucía (CBUA)",
     "source": "census review 2026-10-19",
     "exclude": "library consortium, not a university; its network code answers for the whole consortium"
+  },
+  {
+    "rorId": "https://ror.org/02p0gd045",
+    "name": "Universidad Complutense de Madrid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ucm.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://biblioteca.ucm.es/",
+    "notes": "The library home page links its discovery layer and A-Z lists to ucm.on.worldcat.org (OCLC WorldCat Discovery); no Primo or Alma link appeared. The WorldCat link resolver probe for Nature 2020 redirected straight to UCM's EZproxy login for nature.com, so the resolver works and finds full text. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/01cby8j38",
+    "name": "Universidad Autónoma de Madrid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34UAM_INST/openurl",
+    "product": "alma",
+    "code": "34UAM_INST",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://bun.uam.es/discovery/search?vid=34UAM_INST:34UAM_VU1",
+    "notes": "bun.uam.es (Bun!) redirects to Primo VE with vid=34UAM_INST:34UAM_VU1 and its Report-To header names eu02. On eu02 the uresolver answered with uresolver_content, a full_text_indicator and 3 context_service elements; eu01 returned an empty body. biblioteca.uam.es does not resolve in DNS."
+  },
+  {
+    "rorId": "https://ror.org/03n6nwv02",
+    "name": "Universidad Politécnica de Madrid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34UPM_INST/openurl",
+    "product": "alma",
+    "code": "34UPM_INST",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://www.upm.es/biblioteca/",
+    "notes": "The UPM library page links Ingenio at ingenio.upm.es/discovery with vid=34UPM_INST:34UPM_VU1, and that page's Report-To header names eu02. On eu02 the uresolver answered with uresolver_content, a full_text_indicator and 14 context_service elements; eu00, eu01 and eu03 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/000xsnr85",
+    "name": "University of the Basque Country",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://ehu.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://www.ehu.eus/es/web/biblioteka",
+    "notes": "The library page points its search box and advanced search to ehu.on.worldcat.org (WorldCat Discovery), with no Primo or Alma link. The atoztitles/link resolver answered 200 with only the WorldCat Discovery JavaScript shell, so the resolved targets were not visible. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/012a91z28",
+    "name": "Universidad de Zaragoza",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://unizar.on.worldcat.org/atoztitles/link",
+    "product": "worldcat",
+    "evidence": "https://biblioteca.unizar.es/",
+    "notes": "biblioteca.unizar.es links Alcorze (alcorze.unizar.es) and its search, advanced search and course reserves to unizar.on.worldcat.org (WorldCat Discovery). The atoztitles/link resolver answered 200 with the client-side WorldCat Discovery shell, so no resolved content was visible. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/046ffzj20",
+    "name": "Universidad de Cantabria",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://dx7nk9sl6m.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://web.unican.es/buc",
+    "notes": "The BUC page links Summon (unican.summon.serialssolutions.com) and the 360 Link host DX7NK9SL6M.search.serialssolutions.com. The 360 Link probe for Nature 2020 answered with a page naming Nature, a Nature Journals Online target and a nature.com link routed through the university proxy. No Primo or Alma link was found."
+  },
+  {
+    "rorId": "https://ror.org/006gksa02",
+    "name": "Universidad de Oviedo",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "product": "ebsco",
+    "evidence": "https://digibuo.uniovi.es/dspace/handle/10651/66499",
+    "notes": "The catalogue is AbsysNet (absysweb.cpd.uniovi.es). The BUOfind discovery tool embedded in buo.uniovi.es runs on EBSCO Discovery Service since 2019 according to the library's own guide. No EBSCO custid or resolver URL appears in the public pages (the search is a server-side form), so no resolver was probed; no Alma or Primo link exists."
+  },
+  {
+    "rorId": "https://ror.org/01460j859",
+    "name": "Universitat Politècnica de València",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34UPV_INST/openurl",
+    "product": "alma",
+    "code": "34UPV_INST",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "evidence": "https://polibuscador.upv.es/discovery/search?vid=34UPV_INST:bibupv",
+    "notes": "PoliBuscador redirects to Primo VE vid=34UPV_INST:bibupv. On eu00 the probe answered with uresolver_content and 4 context_service elements but no full_text_indicator key; eu01, eu02 and eu03 returned empty bodies. The code is its own 34UPV_INST, not a CVA consortium one."
+  },
+  {
+    "rorId": "https://ror.org/02ws1xc11",
+    "name": "Universitat Jaume I",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu00.alma.exlibrisgroup.com/view/uresolver/34CVA_UJI/openurl",
+    "product": "alma",
+    "code": "34CVA_UJI",
+    "host": "eu00.alma.exlibrisgroup.com",
+    "evidence": "https://cataleg.uji.es/discovery/login?vid=34CVA_UJI:VU1",
+    "notes": "The library page (www.uji.es/serveis/cd/) links the Primo catalogue cataleg.uji.es with vid=34CVA_UJI:VU1. On eu00 the probe answered with uresolver_content and 4 context_service elements but no full_text_indicator key; eu01, eu02 and cva-uji.alma.exlibrisgroup.com returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/03p3aeb86",
+    "name": "Universidad de Murcia",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8387532&groupid=main&profile=ftf",
+    "product": "ebsco",
+    "evidence": "https://www.um.es/web/biblioteca/recursos-informacion/catalogos/xabio",
+    "notes": "Xabio is EBSCO Discovery Service with custid s8387532. The resolver answers 301 to resolver.ebsco.com/result and then 302 to an EBSCO OAuth login that carries a customer login_hint, so the customer is recognised; a fake custid behaves differently. Holdings need IP or guest authentication, so no full-text result was seen. No Alma code was found."
+  },
+  {
+    "rorId": "https://ror.org/01f5wp925",
+    "name": "Universitat Oberta de Catalunya",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://csuc-uoc.alma.exlibrisgroup.com/view/uresolver/34CSUC_UOC/openurl",
+    "product": "alma",
+    "code": "34CSUC_UOC",
+    "host": "csuc-uoc.alma.exlibrisgroup.com",
+    "evidence": "https://biblioteca.uoc.edu/ca",
+    "notes": "The library home page (403 to the census user agent, read with a browser-like one) links Primo at discovery.biblioteca.uoc.edu with vid=34CSUC_UOC:VU1. csuc-uoc.alma.exlibrisgroup.com answered with uresolver_content, a full_text_indicator and 8 context_service elements; eu00 to eu03 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/02z0cah89",
+    "name": "Universidad Pública de Navarra (UPNA)",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8433765&groupid=main&profile=ftf",
+    "product": "ebsco",
+    "evidence": "https://www.unavarra.es/biblioteca",
+    "notes": "The library page has an EBSCO EDS search form (research.ebsco.com, custid s8433765) and a Publications Finder form; the catalogue is AbsysNet at biblioteca.unavarra.es/abnetopac. The EBSCO resolver answers 301 to resolver.ebsco.com and then 302 to an EBSCO OAuth login with a customer login_hint, so the customer is recognised; holdings need institutional authentication. No Alma or Primo was found."
+  },
+  {
+    "rorId": "https://ror.org/01fvbaw18",
+    "name": "Universidad de Valladolid",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu01.alma.exlibrisgroup.com/view/uresolver/34BUC_UVA/openurl",
+    "product": "alma",
+    "code": "34BUC_UVA",
+    "host": "eu01.alma.exlibrisgroup.com",
+    "evidence": "https://almena.uva.es/discovery/search?vid=34BUC_UVA:VU1",
+    "notes": "The library home page links Almena at almena.uva.es with vid=34BUC_UVA:VU1. eu01 answered with uresolver_content, a full_text_indicator and 6 context_service elements; buc-uva.alma.exlibrisgroup.com returned the same content; eu00, eu02 and eu03 returned empty bodies."
+  },
+  {
+    "rorId": "https://ror.org/036b2ww28",
+    "name": "Universidad de Málaga",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UMA/openurl",
+    "product": "alma",
+    "code": "34CBUA_UMA",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://jabega.uma.es/discovery/search?vid=34CBUA_UMA:VU1",
+    "notes": "jabega.uma.es redirects to the Primo VE view vid=34CBUA_UMA:VU1 and its Report-To header names eu02. The eu02 uresolver probe answered with uresolver_content, a full_text_indicator and 9 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/05yc77b46",
+    "name": "University of Córdoba",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UCO/openurl",
+    "product": "alma",
+    "code": "34CBUA_UCO",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://mezquita.uco.es/discovery/search?vid=34CBUA_UCO:VU1",
+    "notes": "mezquita.uco.es redirects to vid=34CBUA_UCO:VU1 and its Report-To header names eu02. The eu02 uresolver probe answered with uresolver_content, a full_text_indicator and 7 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/04mxxkb11",
+    "name": "Universidad de Cádiz",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://fp5qq3tk5q.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://biblioteca.uca.es/",
+    "notes": "The library home page links a Koha OPAC (bibcatalogo.uca.es), Summon (uca.summon.serialssolutions.com) and the 360 E-Journal Portal FP5QQ3TK5Q, so UCA is not on Alma; the 34CBUA_UCA probe on eu02 returned an empty body. The 360 Link probe for Nature 2020 answered 302 through its log redirector to the ProQuest publication page, so the resolver is live."
+  },
+  {
+    "rorId": "https://ror.org/02z749649",
+    "name": "Universidad Pablo de Olavide",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu02.alma.exlibrisgroup.com/view/uresolver/34CBUA_UPO/openurl",
+    "product": "alma",
+    "code": "34CBUA_UPO",
+    "host": "eu02.alma.exlibrisgroup.com",
+    "evidence": "https://eureka.upo.es/discovery/search?vid=34CBUA_UPO:VU1",
+    "notes": "www.upo.es/biblioteca/ links eureka.upo.es, which redirects to vid=34CBUA_UPO:VU1, and its Report-To header names eu02. The eu02 uresolver probe answered with uresolver_content, a full_text_indicator and 7 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/0174shg90",
+    "name": "Universidad de Extremadura",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://eu04.alma.exlibrisgroup.com/view/uresolver/34UEX_INST/openurl",
+    "product": "alma",
+    "code": "34UEX_INST",
+    "host": "eu04.alma.exlibrisgroup.com",
+    "evidence": "https://biblioteca.unex.es/",
+    "notes": "The library home page (403 to curl, read through a browser-like fetch) links the discovery tool Explora at explora.unex.es with vid=34UEX_INST:34UEX. The explora.unex.es Report-To header names eu04, and the eu04 uresolver probe answered with uresolver_content, a full_text_indicator and 6 context_service elements."
+  },
+  {
+    "rorId": "https://ror.org/01teme464",
+    "name": "Universidad de Las Palmas de Gran Canaria",
+    "country": "ES",
+    "source": "manual (Opus subagent, 2026-10-19)",
+    "url": "https://resolver.ebscohost.com/openurl?custid=s8390106&authtype=ip,guest&groupid=main",
+    "product": "ebsco",
+    "evidence": "https://biblioteca.ulpgc.es/",
+    "notes": "The library home page links Faro (faro.ulpgc.es), which redirects to EBSCO (logon.ebsco.zone), and an EDS link with custid=s8390106; the OPAC (opac.ulpgc.es) answered 403. The EBSCO resolver probe redirected to resolver.ebsco.com/result and then to an EBSCO OAuth login with a customer login_hint, so the custid is recognised but no result is visible without authentication. A guessed 34ULPGC_INST returned empty bodies on eu00 to eu06."
   }
 ]

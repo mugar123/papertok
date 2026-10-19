@@ -311,7 +311,7 @@ test('the cache key names the library asked, or the domain when there is none', 
   // Every mail domain of a university reaches the same resolver, so its
   // answers are shared through the institution code, not split by domain.
   assert.deepEqual(upstreamParams({ doi: DOI, domain: 'alumni.usal.es', rorId: ROR_ID }, {}), { doi: DOI, library: '34BUC_USAL' });
-  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'uam.es', rorId: OTHER_ROR_ID }, {}), { doi: DOI, domain: 'uam.es' });
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'nowhere.example', rorId: OTHER_ROR_ID }, {}), { doi: DOI, domain: 'nowhere.example' });
 });
 
 test('the resolver is found by ROR id first, then by mail domain', async () => {
@@ -319,8 +319,8 @@ test('the resolver is found by ROR id first, then by mail domain', async () => {
   const usal = { host: 'eu01.alma.exlibrisgroup.com', institution: '34BUC_USAL' };
   assert.deepEqual(findResolver({ domain: 'usal.es' }), usal);
   assert.deepEqual(findResolver({ domain: 'alumni.usal.es', rorId: ROR_ID }), usal);
-  assert.equal(findResolver({ domain: 'uam.es', rorId: OTHER_ROR_ID }), null);
-  assert.equal(findResolver({ domain: 'uam.es' }), null);
+  assert.equal(findResolver({ domain: 'nowhere.example', rorId: OTHER_ROR_ID }), null);
+  assert.equal(findResolver({ domain: 'nowhere.example' }), null);
 });
 
 test('ignores date coverage when Crossref gives no year', async () => {
@@ -362,7 +362,7 @@ test('is unavailable when Crossref or the resolver fails or times out', async ()
 test('refuses a domain no provider can answer for, without asking anyone', async () => {
   const stub = upstreams();
   await rejectsWith(
-    lookupInstitutionAccess({ doi: DOI, domain: 'uam.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl }),
+    lookupInstitutionAccess({ doi: DOI, domain: 'nowhere.example', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl }),
     'INSTITUTION_NOT_SUPPORTED',
     404,
   );
@@ -470,7 +470,7 @@ test('GetFTR maybe, an unsupported publisher or an outage leave the question to 
 test('a GetFTR outage for a library without a resolver is unknown, not an error', async () => {
   const stub = upstreams({ getftr: () => jsonResponse({}, 503) });
   const result = await lookupInstitutionAccess(
-    { doi: DOI, domain: 'uam.es', rorId: OTHER_ROR_ID },
+    { doi: DOI, domain: 'nowhere.example', rorId: OTHER_ROR_ID },
     { fetchImpl: stub.fetchImpl, env: GETFTR_ENV },
   );
   assert.deepEqual(result, { status: 'unknown', collection: null, url: null });
@@ -549,7 +549,7 @@ test('the route refuses a request without a session before reaching any provider
 test('the route maps validation, unsupported institutions and outages to codes it does not cache', async () => {
   for (const [search, options, status, code] of [
     ['doi=nope&domain=usal.es', {}, 400, 'INVALID_DOI'],
-    [`doi=${encodeURIComponent(DOI)}&domain=uam.es`, {}, 404, 'INSTITUTION_NOT_SUPPORTED'],
+    [`doi=${encodeURIComponent(DOI)}&domain=nowhere.example`, {}, 404, 'INSTITUTION_NOT_SUPPORTED'],
     [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => new Response('down', { status: 503 }) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
   ] as Array<[string, AccessOptions, number, string]>) {
     const { response, body, accessPuts } = await requestAccess(search, options);
