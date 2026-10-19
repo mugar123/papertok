@@ -281,4 +281,17 @@ test('a route-change reload waits until Firestore has acknowledged the writes al
   tab.pathname = '/lists'
   await reloadIfBehindDeploy('/lists', async () => {})
   assert.equal(tab.reloads, 3)
+
+  // A redirect while a write settles, back to the page the deploy found the
+  // tab on, still ends in the reload.
+  let acknowledgeLike!: () => void
+  const like = new Promise<void>((resolve) => { acknowledgeLike = resolve })
+  tab.pathname = '/search'
+  const redirected = reloadIfBehindDeploy('/search', () => like)
+  tab.pathname = '/feed'
+  await reloadIfBehindDeploy('/feed', () => like)
+  assert.equal(tab.reloads, 3)
+  acknowledgeLike()
+  await redirected
+  assert.equal(tab.reloads, 4)
 })

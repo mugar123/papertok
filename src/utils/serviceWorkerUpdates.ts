@@ -144,7 +144,8 @@ const WRITES_SETTLE_MS = 1_000
  * follow one closely: onboarding sends the email opt-in without awaiting it,
  * then navigates to the feed. Writes still pending after WRITES_SETTLE_MS, or
  * a dialog opened during the wait, leave the reload to the next route change.
- * A route change during the wait makes its own decision.
+ * A further route change during the wait, such as a redirect, does not: the
+ * reload opens the page the tab is on by then.
  *
  * A hidden tab is not used as the moment: a phone can suspend the page before
  * the reload runs, and the forced-reload mark expires after a minute
@@ -155,8 +156,7 @@ export async function reloadIfBehindDeploy(pathname: string, writesSettled: () =
   if (behindSince === null) return
   if (shouldReloadForDeploy(behindSince, { pathname, online: navigator.onLine !== false })) {
     const writes = await settleWithin(writesSettled(), WRITES_SETTLE_MS)
-    if (writes.status === 'fulfilled' && window.location.pathname === pathname
-      && !document.querySelector('[aria-modal="true"]')) {
+    if (writes.status === 'fulfilled' && !document.querySelector('[aria-modal="true"]')) {
       markAppForcedReload()
       window.location.reload()
       return
