@@ -137,6 +137,36 @@ test('the publisher\'s own package outranks an aggregator listed before it', asy
   assert.deepEqual(result.services.map(service => [service.id, service.collection, service.ownPlatform]), [['nature', 'Nature', true]]);
 });
 
+// The first package of `ctoWith` marked as filtered out by Alma, with the
+// indicator the resolver sends along: false when nothing is left, true when a
+// live package follows. The date reason is Alma's own wording (captured for
+// Pau on 2026-10-19); the other reasons' wording is a stand-in.
+const ctoFiltered = (reason: string, ...packages: string[]) => ctoWith(...packages)
+  .replace('<key id="Is_free">0</key>', `<key id="Is_free">0</key>\n        <key id="Filtered">true</key>\n        <key id="Filter reason">${reason}</key>`)
+  .replace('<key id="full_text_indicator">true</key>', `<key id="full_text_indicator">${packages.length > 1 ? 'true' : 'false'}</key>`);
+
+test('a platform whose only service Alma filtered out for the date is not listed', async () => {
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? ctoFiltered('Date Filter', 'Nature') : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services, []);
+  assert.equal(result.partial, false);
+  assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET);
+});
+
+test('a live package next to a filtered one is listed, under the live package', async () => {
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? ctoFiltered('Date Filter', 'Nature', 'Proquest Central') : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services.map(service => [service.id, service.collection, service.ownPlatform]), [['nature', 'Proquest Central', false]]);
+});
+
+test('a service filtered for a reason other than the date leaves the platform unchecked, not absent', async () => {
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? ctoFiltered('IP Filter', 'Nature') : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services, []);
+  assert.equal(result.partial, false);
+  assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET + 1);
+});
+
 test('a probe cut short leaves its platform out and marks the list partial', async () => {
   const stub = upstreams({
     resolver: (issn: string) => (issn === ISSN_OF.wiley ? timeout() : xml(issn === ISSN_OF.ieee || issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE)),
@@ -342,7 +372,9 @@ test('the route caches a complete list for seven days under the library', async 
   // catalogue is not served from a week-old list.
   assert.deepEqual([...new URL(servicePuts[0].key).searchParams], [
     ['library', '34BUC_USAL'],
+    ['host', 'eu01.alma.exlibrisgroup.com'],
     ['catalogue', catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET)],
+    ['reading', 'filtered-services'],
   ]);
   assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
@@ -355,10 +387,10 @@ test('the cache key changes with the catalogue and the budget, and with nothing 
   assert.notEqual(catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET + 30), fingerprint);
   const swapped = SERVICE_CATALOGUE.map((entry, index) => (index === 0 ? { ...entry, doi: '10.1016/j.other.2021.1' } : entry));
   assert.notEqual(catalogueFingerprint(swapped, SUBREQUEST_BUDGET), fingerprint);
-  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', catalogue: fingerprint });
+  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'filtered-services' });
   assert.deepEqual(
     servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, GETFTR_ENV),
-    { library: '34BUC_USAL', entityId: ENTITY_ID, catalogue: fingerprint },
+    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'filtered-services' },
   );
 });
 
