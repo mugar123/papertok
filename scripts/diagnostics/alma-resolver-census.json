@@ -10238,7 +10238,7 @@
       "country": "ES",
       "worksCount": 9540,
       "homepage": "https://uvic-ucc.cat/",
-      "probedAt": "2026-10-19T10:16:15.539Z",
+      "probedAt": "2026-10-19T22:32:54.658Z",
       "domains": [
         "uvic-ucc.cat"
       ],
@@ -10246,9 +10246,20 @@
         "https://uvic-ucc.cat/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CSUC_UVIC",
+      "host": "csuc-uvic.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://csuc-uvic.primo.exlibrisgroup.com/openurl/34CSUC_UVIC/34CSUC_UVIC:VU1",
+      "product": "alma",
+      "route": "seed",
+      "primoSlug": null,
+      "services": 7,
+      "packages": [
+        "SpringerNature Complete",
+        "SpringerLink Journals"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/023d5h353": {
       "rorId": "https://ror.org/023d5h353",
@@ -15346,7 +15357,7 @@
       "country": "AT",
       "worksCount": 41532,
       "homepage": "https://www.jku.at",
-      "probedAt": "2026-10-19T11:08:25.755Z",
+      "probedAt": "2026-10-19T22:33:09.369Z",
       "domains": [
         "jku.at"
       ],
@@ -15354,9 +15365,20 @@
         "https://www.jku.at"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "43ACC_UBL",
+      "host": "obv-at-ubl.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://obv-at-ubl.userservices.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl",
+      "product": "alma",
+      "route": "seed",
+      "primoSlug": null,
+      "services": 5,
+      "packages": [
+        "Nature",
+        "view full text"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/01yp9g959": {
       "rorId": "https://ror.org/01yp9g959",
@@ -21495,16 +21517,26 @@
       "country": "CL",
       "worksCount": 87302,
       "homepage": "https://www.uc.cl/",
-      "probedAt": "2026-10-19T17:13:52.321Z",
+      "probedAt": "2026-10-19T22:33:20.589Z",
       "domains": [
         "uc.cl"
       ],
       "links": [
         "https://www.uc.cl/"
       ],
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "56PUC_INST",
+      "host": "puc.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "libraries.org",
+      "product": "alma",
+      "route": "seed",
+      "primoSlug": null,
+      "services": 6,
+      "packages": [
+        "Nature",
+        "Nursing &amp; Allied Health Database"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/01tjs6929": {
       "rorId": "https://ror.org/01tjs6929",
@@ -22220,5 +22252,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-19T17:49:43.041Z"
+  "generatedAt": "2026-10-19T22:33:21.415Z"
 }

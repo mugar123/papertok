@@ -2535,5 +2535,38 @@
     "country": "BE",
     "source": "census review 2026-10-19",
     "exclude": "the code found on its e-resources page (32EUC_INST on ec-europa-finder.alma…) is the European Commission library Find-eR, which the page links to, not the university's own resolver"
+  },
+  {
+    "rorId": "https://ror.org/006zjws59",
+    "name": "Universitat de Vic - Universitat Central de Catalunya",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://csuc-uvic.primo.exlibrisgroup.com/openurl/34CSUC_UVIC/34CSUC_UVIC:VU1",
+    "product": "alma",
+    "code": "34CSUC_UVIC",
+    "host": "csuc-uvic.alma.exlibrisgroup.com",
+    "notes": "The directory lists the Primo VE OpenURL entry point; the seed asks the same slug under alma.exlibrisgroup.com, where the Universitat Oberta de Catalunya row (csuc-uoc) also answers."
+  },
+  {
+    "rorId": "https://ror.org/052r2xn60",
+    "name": "Johannes Kepler University of Linz",
+    "country": "AT",
+    "source": "zotero",
+    "url": "https://obv-at-ubl.userservices.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl",
+    "product": "alma",
+    "code": "43ACC_UBL",
+    "host": "obv-at-ubl.alma.exlibrisgroup.com",
+    "notes": "The directory lists the resolver on obv-at-ubl.userservices.exlibrisgroup.com; the seed asks the same slug under alma.exlibrisgroup.com, where the University of Vienna row (obv-at-ubw) also answers."
+  },
+  {
+    "rorId": "https://ror.org/04teye511",
+    "name": "Pontificia Universidad Católica de Chile",
+    "country": "CL",
+    "source": "libraries.org",
+    "product": "alma",
+    "code": "56PUC_INST",
+    "host": "puc.alma.exlibrisgroup.com",
+    "evidence": "https://librarytechnology.org/library/45378",
+    "notes": "The libraries.org entry for Bibliotecas UC (read 2026-10-19) lists Alma as the library system since 2016 and an online catalogue link on todosibuc.uc.cl with institution=56PUC_INST&vid=56PUC_INST. The entry names no Alma host; puc.alma.exlibrisgroup.com is the host that answered for this code with services listed."
   }
 ]
