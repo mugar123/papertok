@@ -1,22 +1,25 @@
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { deleteApp, initializeApp } from 'firebase/app';
-import { inMemoryPersistence, initializeAuth } from 'firebase/auth';
-import type { Auth, PopupRedirectResolver } from 'firebase/auth';
-import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
+import { connectAuthEmulator, inMemoryPersistence, initializeAuth, signOut } from 'firebase/auth';
+import type { Auth, Persistence, PopupRedirectResolver } from 'firebase/auth';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver, prepareWhileSignedOut } from './popupRedirectResolver.ts';
 
 /**
- * Firebase's browser resolver as Auth sees it on a phone or in Safari: it asks
- * to be loaded while Auth starts. By default the load (Google's gapi scripts)
- * never finishes, as on a stalled connection. Each load request is recorded.
+ * Firebase's browser resolver as Auth sees it. On a phone or in Safari it asks
+ * to be loaded while Auth starts; on other desktop browsers it does not. By
+ * default the load (Google's gapi scripts) never finishes, as on a stalled
+ * connection. Each load request is recorded.
  */
-function phoneResolver(load: () => Promise<unknown> = () => new Promise(() => {})) {
+function firebaseResolver({ phone = true, load = () => new Promise(() => {}) }: { phone?: boolean; load?: () => Promise<unknown> } = {}) {
   const loads: Auth[] = [];
-  class PhoneResolver {
+  class FirebaseResolver {
     _redirectPersistence = inMemoryPersistence;
     get _shouldInitProactively() {
-      return true;
+      return phone;
     }
     _initialize(auth: Auth) {
       loads.push(auth);
@@ -27,16 +30,66 @@ function phoneResolver(load: () => Promise<unknown> = () => new Promise(() => {}
     }
     _overrideRedirectResult() {}
   }
-  return { resolver: PhoneResolver as unknown as PopupRedirectResolver, loads };
+  return { resolver: FirebaseResolver as unknown as PopupRedirectResolver, loads };
 }
 
+const config = { apiKey: 'test-key', authDomain: 'papertok.test', projectId: 'papertok-test' };
 let apps = 0;
 // Firebase's own Auth start-up, in its Node build, with the given resolver.
 function startAuth(t: TestContext, popupRedirectResolver: PopupRedirectResolver | undefined) {
   apps += 1;
-  const app = initializeApp({ apiKey: 'test-key', authDomain: 'papertok.test', projectId: 'papertok-test' }, `popup-resolver-${apps}`);
+  const app = initializeApp(config, `popup-resolver-${apps}`);
   t.after(() => deleteApp(app));
   return initializeAuth(app, { persistence: inMemoryPersistence, popupRedirectResolver });
+}
+
+// A device that kept a session: Auth restores the stored reader and checks it
+// with accounts:lookup, which a local stand-in for the Auth API answers.
+async function startSignedIn(t: TestContext, popupRedirectResolver: PopupRedirectResolver | undefined) {
+  const api = createServer((request, response) => {
+    request.resume();
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }] }));
+  });
+  await new Promise<void>(resolve => api.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    api.closeAllConnections();
+    api.close();
+  });
+
+  apps += 1;
+  const name = `popup-resolver-${apps}`;
+  const stored = new Map<string, unknown>([[`firebase:authUser:${config.apiKey}:${name}`, {
+    uid: 'reader',
+    email: 'reader@example.com',
+    emailVerified: true,
+    isAnonymous: false,
+    stsTokenManager: { refreshToken: 'refresh-token', accessToken: 'id-token', expirationTime: Date.now() + 3_600_000 },
+  }]]);
+  class StoredSession {
+    static type = 'LOCAL';
+    type = 'LOCAL';
+    async _isAvailable() {
+      return true;
+    }
+    async _set(key: string, value: unknown) {
+      stored.set(key, value);
+    }
+    async _get(key: string) {
+      return stored.get(key) ?? null;
+    }
+    async _remove(key: string) {
+      stored.delete(key);
+    }
+    _addListener() {}
+    _removeListener() {}
+  }
+
+  const app = initializeApp(config, name);
+  t.after(() => deleteApp(app));
+  const auth = initializeAuth(app, { persistence: StoredSession as unknown as Persistence, popupRedirectResolver });
+  connectAuthEmulator(auth, `http://127.0.0.1:${(api.address() as AddressInfo).port}`, { disableWarnings: true });
+  return auth;
 }
 
 function settlesWithin(promise: Promise<unknown>, ms: number) {
@@ -46,15 +99,17 @@ function settlesWithin(promise: Promise<unknown>, ms: number) {
   ]);
 }
 
+const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+
 test('Auth reports the session without waiting for the popup resolver to load', async (t) => {
   // What `getAuth` does on a phone: Firebase's resolver holds the session
   // until its scripts arrive.
-  const eager = phoneResolver();
+  const eager = firebaseResolver();
   const held = startAuth(t, eager.resolver);
   assert.equal(await settlesWithin(held.authStateReady(), 300), false);
   assert.equal(eager.loads.length, 1);
 
-  const deferred = phoneResolver();
+  const deferred = firebaseResolver();
   const auth = startAuth(t, deferPopupRedirectResolver(deferred.resolver));
   assert.equal(await settlesWithin(auth.authStateReady(), 2000), true);
   assert.equal(auth.currentUser, null);
@@ -67,15 +122,55 @@ test('preparing loads the resolver of the given Auth, and a failed load is left 
   process.on('unhandledRejection', onUnhandled);
   t.after(() => process.off('unhandledRejection', onUnhandled));
 
-  const phone = phoneResolver(async () => {
-    throw new Error('apis.google.com unreachable');
+  const phone = firebaseResolver({
+    load: async () => {
+      throw new Error('apis.google.com unreachable');
+    },
   });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   await auth.authStateReady();
 
   preparePopupRedirectResolver(auth);
-  await new Promise(resolve => setImmediate(resolve));
+  await nextTurn();
 
   assert.deepEqual(phone.loads, [auth]);
   assert.deepEqual(unhandled, []);
+});
+
+test('where Firebase loads the resolver at the tap, preparing leaves it to the tap', async (t) => {
+  const desktop = firebaseResolver({ phone: false });
+  const auth = startAuth(t, deferPopupRedirectResolver(desktop.resolver));
+  await auth.authStateReady();
+
+  preparePopupRedirectResolver(auth);
+  await nextTurn();
+
+  assert.deepEqual(desktop.loads, []);
+});
+
+test('with nobody signed in, the resolver loads once Auth has reported the session', async (t) => {
+  const phone = firebaseResolver();
+  const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
+  t.after(prepareWhileSignedOut(auth));
+
+  assert.equal(await settlesWithin(auth.authStateReady(), 2000), true);
+  await nextTurn();
+
+  assert.equal(auth.currentUser, null);
+  assert.deepEqual(phone.loads, [auth]);
+});
+
+test('a restored session does not load the resolver, and signing out does', async (t) => {
+  const phone = firebaseResolver();
+  const auth = await startSignedIn(t, deferPopupRedirectResolver(phone.resolver));
+  t.after(prepareWhileSignedOut(auth));
+
+  assert.equal(await settlesWithin(auth.authStateReady(), 2000), true);
+  await nextTurn();
+  assert.equal(auth.currentUser?.uid, 'reader');
+  assert.deepEqual(phone.loads, []);
+
+  await signOut(auth);
+  await nextTurn();
+  assert.deepEqual(phone.loads, [auth]);
 });

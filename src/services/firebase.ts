@@ -22,7 +22,7 @@ import {
 import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.ts';
 import { createStreamRecovery } from '../utils/streamRecovery.ts';
-import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver, prepareWhileSignedOut } from './popupRedirectResolver.ts';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -46,21 +46,24 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-// What `getAuth` sets up, with a popup resolver that loads its scripts when a
-// sign-in needs them instead of before Auth reports the session
-// (popupRedirectResolver.ts). Every popup and redirect call still finds it on
-// `auth`, so none of them passes a resolver.
+// What `getAuth` sets up, with a popup resolver that loads its scripts after
+// Auth reports the session instead of before (popupRedirectResolver.ts).
+// Popup and redirect calls pass no resolver, so they use this one. Passing
+// `browserPopupRedirectResolver` would get a separate instance that nothing
+// has loaded ahead of the tap.
 const auth = initializeAuth(app, {
   persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
   popupRedirectResolver: deferPopupRedirectResolver(browserPopupRedirectResolver),
 });
 
-// Starts loading what a Google or GitHub popup needs. Call it when buttons
-// that open one appear: on phones and in Safari, a popup whose load is still
-// running at the tap can open too late and be blocked.
+// Starts loading what a Google or GitHub popup needs, on phones and in Safari,
+// where a window opened after a load that is still running at the tap can be
+// blocked. Without a session it starts by itself (below). A screen that opens
+// a popup for a signed-in reader calls this when it appears.
 export function preparePopupSignIn() {
   if (!IS_DEMO) preparePopupRedirectResolver(auth);
 }
+if (!IS_DEMO) prepareWhileSignedOut(auth);
 
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();
