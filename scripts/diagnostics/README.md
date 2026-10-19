@@ -458,7 +458,9 @@ so the script finds each institution code on the library's own pages (its Primo 
 carries it as `vid=<CODE>:<VIEW>`, on the homepage, a catalogue link or a library subdomain)
 and then the Alma host by probing: the slug of the library's Primo (`unipv.primo…` → `unipv.alma…`),
 the region a Primo page names in its `Report-To` header, a host named after the code
-(`ohiolink-cwru.alma…`), the mail domain's label, then every region. A host counts when its answer
+(`ohiolink-cwru.alma…`), the mail domain's label, then every region; a host a seed names is probed as given, and a Chinese
+institution's slugs are tried under `alma.exlibrisgroup.com.cn` too (Tsinghua and UCAS answer only
+there). A host counts when its answer
 is one the Worker reads (`parseResolverAnswer`) and lists a service for Nature 2020 or, failing
 that, for the Journal of Materials Science 2021: a regional host can know the code without the
 library's data (eu03 answered for Pavia with no `rft.mms_id` and nothing listed while
@@ -477,7 +479,13 @@ node scripts/diagnostics/alma-resolver-census.mjs --countries US --limit 150
 node scripts/diagnostics/alma-resolver-census.mjs --countries EU --limit 250
 node scripts/diagnostics/alma-resolver-census.mjs --countries ES
 node scripts/diagnostics/alma-resolver-census.mjs --verify
+node scripts/diagnostics/alma-resolver-census.mjs --inventory
 ```
+
+`--inventory` prints the coverage inventory as Markdown from the census record alone (per
+country: institutions met, rows shipped, Alma libraries whose answer the Worker cannot read,
+libraries on another product, candidates still unverified, exclusions, unresolved), so a report
+quotes a table that can be regenerated after any run.
 
 Institutions come from OpenAlex (`type:education`, by works count; each request spends its
 free daily budget), their domains from ROR. Every host is asked at most once per second with
