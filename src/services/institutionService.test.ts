@@ -1,10 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { deleteApp, initializeApp } from 'firebase/app';
+import { inMemoryPersistence, initializeAuth } from 'firebase/auth';
+import type { PopupRedirectResolver } from 'firebase/auth';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
+import { deferPopupRedirectResolver } from './popupRedirectResolver.ts';
 import {
   InstitutionLinkError,
   institutionLabel,
+  institutionLinkReadiness,
   linkInstitution,
   needsUniversityProof,
   normalizeInstitution,
@@ -148,10 +153,60 @@ test('needsUniversityProof says whether linking that address opens Google\'s win
 });
 
 // The proof's sign-in must not outlive the tab. The second instance starts in
-// memory, rather than switching to it at the press.
-test('SOURCE: the second instance keeps its sign-in in memory from the start', async () => {
+// memory, rather than switching to it at the press. It takes the shared
+// resolver, whose scripts load when institutionLinkReadiness asks; Firebase's
+// own would load them while the instance starts, where nothing waits for them.
+// Firebase's Node build has no browser resolver, so this is read from source.
+test('SOURCE: the second instance starts in memory, with the shared deferred resolver', async () => {
   const code = await readFile(new URL('./institutionService.ts', import.meta.url), 'utf8');
-  assert.match(code, /initializeAuth\(initializeApp\(app\.options, SECONDARY_APP_NAME\), \{\s*persistence: inMemoryPersistence,/);
+  assert.match(code, /initializeAuth\(initializeApp\(app\.options, SECONDARY_APP_NAME\), \{\s*persistence: inMemoryPersistence,\s*popupRedirectResolver,\s*\}\);/);
+  assert.match(code, /^import app, \{[^}]*\bpopupRedirectResolver\b[^}]*\} from '\.\/firebase\.ts';$/m);
+  const firebase = await readFile(new URL('./firebase.ts', import.meta.url), 'utf8');
+  assert.match(firebase, /^export const popupRedirectResolver = deferPopupRedirectResolver\(browserPopupRedirectResolver\);$/m);
+});
+
+/**
+ * The link's window opens on the second instance, which loads its own popup
+ * scripts, so the form has to wait for that load and not the main instance's.
+ * The instance is found by its app name; registering it first with a phone's
+ * resolver whose load the test finishes lets the test hold that load.
+ */
+test('the link waits for the second instance\'s own popup load', async (t) => {
+  let finish = () => {};
+  const load = new Promise<void>((resolve) => { finish = resolve; });
+  const loads: unknown[] = [];
+  class PhoneResolver {
+    _redirectPersistence = inMemoryPersistence;
+    get _shouldInitProactively() {
+      return true;
+    }
+    _initialize(instance: unknown) {
+      loads.push(instance);
+      return load;
+    }
+    async _completeRedirectFn() {
+      return null;
+    }
+    _overrideRedirectResult() {}
+  }
+  const app = initializeApp({ apiKey: 'test-key', authDomain: 'papertok.test', projectId: 'papertok-test' }, 'institution-link');
+  t.after(() => deleteApp(app));
+  const second = initializeAuth(app, {
+    persistence: inMemoryPersistence,
+    popupRedirectResolver: deferPopupRedirectResolver(PhoneResolver as unknown as PopupRedirectResolver),
+  });
+
+  const readiness = institutionLinkReadiness();
+  await second.authStateReady();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(loads.length, 1);
+  assert.equal(loads[0], second, 'the second instance loads its own scripts');
+  assert.equal(readiness.ready, false, 'not ready while they load');
+
+  const ready = new Promise<void>(resolve => readiness.subscribe(resolve));
+  finish();
+  await ready;
+  assert.equal(readiness.ready, true);
 });
 
 test('an existing account used as proof is signed out of the second instance, not deleted', async () => {
