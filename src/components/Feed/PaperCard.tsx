@@ -89,7 +89,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // Before the card's own stylesheet on purpose: PaperCard.css restates a few
 // of the drawer's box declarations for the two sheets and has to come later
 // in the cascade to win them.
-import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../ui/popover.tsx';
 import AbstractSheet from './AbstractSheet.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
@@ -1268,6 +1268,39 @@ const PaperCard = memo(function PaperCard({
     });
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
+  // The overflow topics, in a popover on desktop and a sheet on a phone.
+  const topicsList = (
+    <ul className="pc-topics-pop-list">
+      {topicItems.map((item) => (
+        <li key={item.key}>
+          {item.topic ? (
+            <button
+              type="button"
+              className="pc-topics-pop-item"
+              lang={item.lang}
+              onClick={(event) => {
+                setTopicsOpen(false);
+                openTopic(event, item.topic!);
+              }}
+            >
+              <span className="pc-topics-pop-copy">
+                <span className="pc-topics-pop-name">{item.label}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+              </span>
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          ) : (
+            <span className="pc-topics-pop-item">
+              <span className="pc-topics-pop-copy">
+                <span className="pc-topics-pop-name">{item.label}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+              </span>
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 
   /* The watermark for the paper's branch of science.
    *
@@ -1759,7 +1792,31 @@ const PaperCard = memo(function PaperCard({
               ) : (
                 <span key={item.key} className="pc-semantic-tag">{item.label}</span>
               )))}
-              {hiddenTopics > 0 && (
+              {hiddenTopics > 0 && (isPhone ? (
+                <Drawer open={topicsOpen} onOpenChange={setTopicsOpen}>
+                  <DrawerTrigger
+                    render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
+                  >
+                    {`+${hiddenTopics} more`}
+                  </DrawerTrigger>
+                  {/* On a phone the list is a sheet under the thumb; its clicks
+                      stay out of the card, whose double tap is a like. */}
+                  <DrawerContent
+                    className="pc-authors-modal-sheet pc-topics-sheet"
+                    viewportProps={{ onClick: (event) => event.stopPropagation() }}
+                    style={{ '--area-accent': areaAccentForPaper(paper) }}
+                  >
+                    <DrawerHandle />
+                    <div className="pc-authors-modal-header">
+                      <DrawerTitle render={<h3 />}>{'Topics'}</DrawerTitle>
+                      <DrawerClose render={<Button variant="ghost" size="icon-sm" aria-label={'Close topics'} />}>
+                        <X size={16} aria-hidden="true" />
+                      </DrawerClose>
+                    </div>
+                    {topicsList}
+                  </DrawerContent>
+                </Drawer>
+              ) : (
                 <Popover open={topicsOpen} onOpenChange={setTopicsOpen}>
                   <PopoverTrigger
                     render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
@@ -1768,39 +1825,10 @@ const PaperCard = memo(function PaperCard({
                   </PopoverTrigger>
                   <PopoverContent align="start" className="pc-topics-pop" style={{ '--area-accent': areaAccentForPaper(paper) }}>
                     <PopoverTitle className="pc-topics-pop-title">{'Topics'}</PopoverTitle>
-                    <ul className="pc-topics-pop-list">
-                      {topicItems.map((item) => (
-                        <li key={item.key}>
-                          {item.topic ? (
-                            <button
-                              type="button"
-                              className="pc-topics-pop-item"
-                              lang={item.lang}
-                              onClick={(event) => {
-                                setTopicsOpen(false);
-                                openTopic(event, item.topic!);
-                              }}
-                            >
-                              <span className="pc-topics-pop-copy">
-                                <span className="pc-topics-pop-name">{item.label}</span>
-                                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
-                              </span>
-                              <ArrowRight size={14} aria-hidden="true" />
-                            </button>
-                          ) : (
-                            <span className="pc-topics-pop-item">
-                              <span className="pc-topics-pop-copy">
-                                <span className="pc-topics-pop-name">{item.label}</span>
-                                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
-                              </span>
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    {topicsList}
                   </PopoverContent>
                 </Popover>
-              )}
+              ))}
             </div>
           )}
           <div className="pc-chips">
