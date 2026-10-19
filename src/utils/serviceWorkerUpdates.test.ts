@@ -131,7 +131,7 @@ function cacheStorage(caches: Record<string, string[]>) {
   }
 }
 
-test('a page that booted the build the new worker precaches owes no reload', async () => {
+test('a page that booted the build the new worker precaches finds its entry chunk in that precache', async () => {
   const storage = cacheStorage({ [PRECACHE]: [NEW_ENTRY, `${SCOPE}favicon.svg?__WB_REVISION__=b01d`] })
   assert.equal(await runsPrecachedBuild(NEW_ENTRY, SCOPE, storage), true)
   // Also when the entry was precached with a revision query.
@@ -221,11 +221,11 @@ function stubGlobal(t: TestContext, name: string, value: unknown) {
   })
 }
 
-// A tab on the old build whose new worker precaches the next one, as far as
-// the module reads the browser: the location, the precache, the session
+// A tab whose new worker precaches NEW_ENTRY's build, as far as the module
+// reads the browser: the location, the connection, the precache, the session
 // storage that holds the forced-reload mark, and any open dialog.
-function tabBehindDeploy(t: TestContext, pathname: string) {
-  const tab = { pathname, reloads: 0, dialog: null as object | null, session: new Map<string, string>() }
+function tabAfterDeploy(t: TestContext, pathname: string) {
+  const tab = { pathname, online: true, reloads: 0, dialog: null as object | null, session: new Map<string, string>() }
   stubGlobal(t, 'window', {
     location: { get pathname() { return tab.pathname }, reload: () => { tab.reloads++ } },
     caches: cacheStorage({ [PRECACHE]: [NEW_ENTRY] }),
@@ -235,14 +235,25 @@ function tabBehindDeploy(t: TestContext, pathname: string) {
       removeItem: (key: string) => { tab.session.delete(key) },
     },
   })
-  stubGlobal(t, 'navigator', { onLine: true, serviceWorker: { ready: Promise.resolve({ scope: SCOPE }) } })
+  stubGlobal(t, 'navigator', { get onLine() { return tab.online }, serviceWorker: { ready: Promise.resolve({ scope: SCOPE }) } })
   stubGlobal(t, 'document', { querySelector: (selector: string) => (selector === '[aria-modal="true"]' ? tab.dialog : null) })
   return tab
 }
 
-test('a route-change reload waits until Firestore has acknowledged the writes already issued', async (t) => {
+// `behindSince` is module state: only a precache miss sets it, and nothing in
+// this file clears it, so this test has to run before the one below.
+test('a page already running the build the new worker precaches does not reload at route changes', async (t) => {
+  const tab = tabAfterDeploy(t, '/feed')
+  await noteDeployActivated(NEW_ENTRY)
+  tab.pathname = '/lists'
+  await reloadIfBehindDeploy('/lists', async () => {})
+  assert.equal(tab.reloads, 0)
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+})
+
+test('a tab behind a deploy reloads at a route change taken online, once the writes already issued are acknowledged', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] })
-  const tab = tabBehindDeploy(t, '/onboarding')
+  const tab = tabAfterDeploy(t, '/onboarding')
   await noteDeployActivated(OLD_ENTRY)
 
   // Finishing onboarding: the email opt-in is still unacknowledged when the
@@ -318,4 +329,17 @@ test('a route-change reload waits until Firestore has acknowledged the writes al
   acknowledgeLike()
   await redirected
   assert.equal(tab.reloads, 5)
+
+  // Offline, a route change does not reload, but it still leaves the page:
+  // the next route change taken online reloads, back to /feed included.
+  tab.session.clear()
+  tab.online = false
+  tab.pathname = '/lists'
+  await reloadIfBehindDeploy('/lists', async () => {})
+  assert.equal(tab.reloads, 5)
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+  tab.online = true
+  tab.pathname = '/feed'
+  await reloadIfBehindDeploy('/feed', async () => {})
+  assert.equal(tab.reloads, 6)
 })
