@@ -74,11 +74,9 @@
 }
 
 .search-back-btn:focus-visible,
-.search-filter-pill:focus-visible,
 .search-suggestion-chip:focus-visible,
 .search-follow-btn:focus-visible,
-.search-retry-btn:focus-visible,
-.search-item:focus-visible {
+.search-retry-btn:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
@@ -134,107 +132,93 @@
 }
 
 .search-input::-webkit-search-cancel-button {
-  -webkit-appearance: searchfield-cancel-button;
-  cursor: pointer;
-  opacity: 0.62;
-}
-
-.search-input-loader {
-  width: 22px;
-  height: 22px;
-  margin-left: var(--space-2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-  animation: searchInputSpin 720ms linear infinite;
-}
-
-@keyframes searchInputSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ─── Filter pills ───
-   A ui TabsList (`line`): a scrolling row of pills over a hairline, and the
-   active one underlined in the brand yellow by the primitive's indicator,
-   which slides between tabs on a transition. */
-.search-filter-bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-width: 0;
-  overflow-x: auto;
-  padding: 1px 2px 5px;
-  border-bottom: 1px solid var(--border-default);
-  overscroll-behavior-inline: contain;
-  scrollbar-width: none;
-}
-
-.search-filter-bar::-webkit-scrollbar {
   display: none;
 }
 
-/* The rule under the active pill has to sit inside the scroll box, or the
-   overflow clips it: on the padding edge, just above the hairline. */
-.search-filter-bar [data-slot='tabs-indicator'] {
-  bottom: 0;
-}
-
-.search-filter-pill {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  white-space: nowrap;
-  cursor: pointer;
+/* The field's own clear, drawn rather than the browser's cancel glyph. */
+.search-clear-btn {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.search-filter-pill svg {
+  width: 32px;
+  height: 32px;
+  margin-left: var(--space-1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
   color: var(--text-tertiary);
-  transition: color var(--transition-fast);
-}
-
-/* The bar is a tablist, and rule 3 of `design.md` reserves the yellow for
-   exactly this: the active nav or tab item. The yellow is the underline the
-   Tabs indicator draws; the pill itself firms up to ink so the tab is not
-   marked twice. `data-active` is what Base UI writes on the active tab. */
-.search-filter-pill[data-active] {
-  border-color: var(--border-ink);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-weight: var(--fw-semibold);
-}
-
-.search-filter-pill[data-active] svg {
-  color: var(--text-primary);
+  cursor: pointer;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .search-filter-pill:hover {
-    border-color: var(--border-strong);
+  .search-clear-btn:hover {
     color: var(--text-primary);
+    background: var(--bg-secondary);
   }
+}
 
-  .search-filter-pill:hover svg {
-    color: var(--text-secondary);
-  }
+.search-clear-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* ─── Scope ───
+   Which kind of result the query asks for, chosen at the end of the field
+   behind a hairline: part of the query, not a second row of chrome. */
+.search-scope-rule {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-2);
+  background: var(--border-default);
+}
+
+.search-input-wrapper:has(.search-scope-trigger) {
+  padding-right: var(--space-1);
+}
+
+.search-scope-trigger {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+}
+
+.search-input-wrapper:has(.search-scope-icon-trigger) {
+  padding-right: 0;
+}
+
+/* Phone: the scope as its icon, a full-height thumb target at the field's end. */
+.search-scope-icon-trigger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: stretch;
+  min-width: 48px;
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.search-scope-icon-trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.search-scope-row[aria-current='true'] {
+  font-weight: var(--fw-semibold);
+}
+
+.search-scope-row[aria-current='true'] svg {
+  color: var(--text-primary);
+}
+
+.search-scope-row-check {
+  margin-left: auto;
 }
 
 /* ─── Results container ─── */
@@ -261,43 +245,26 @@
 .search-loading-state {
   display: flex;
   flex-direction: column;
-  gap: 0;
   width: 100%;
-  border-top: 1px solid var(--border-default);
 }
 
 .search-loading-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 74px;
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-card);
-  opacity: 0;
-  animation: searchLoadingRowIn 240ms ease-out forwards;
-  animation-delay: calc(var(--loading-row-index, 0) * 45ms);
+  cursor: default;
 }
 
-.search-loading-icon {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
+@media (hover: hover) and (pointer: fine) {
+  .search-loading-row:hover {
+    background: none;
+  }
 }
 
 .search-loading-copy {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 9px;
-  min-width: 0;
 }
 
 .search-loading-line {
   display: block;
-  height: 10px;
   border-radius: var(--radius-sm);
   background: linear-gradient(
     90deg,
@@ -309,8 +276,11 @@
   animation: searchLoadingShimmer 1.15s ease-in-out infinite;
 }
 
-.search-loading-line--title { width: min(58%, 440px); }
-.search-loading-line--detail { width: min(36%, 280px); }
+/* Each bar is the height of the line it stands in for, so the rows do not
+   jump when the results land. */
+.search-loading-line--meta { width: min(28%, 140px); height: 11px; margin-bottom: 10px; }
+.search-loading-line--title { width: min(72%, 480px); height: 18px; margin-bottom: 10px; }
+.search-loading-line--detail { width: min(44%, 280px); height: 12px; }
 
 /* ─── Empty / degraded ─── */
 .search-empty {
@@ -328,13 +298,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 58px;
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--tint-amber-line);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--tint-amber-line);
   background: var(--tint-amber-bg);
   color: var(--tint-amber-fg);
-  animation: searchSectionIn 0.2s ease-out both;
 }
 
 /* The red `.is-error` variant is gone with the sentence it carried ("the search
@@ -365,8 +332,8 @@
 }
 
 .search-retry-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -377,14 +344,13 @@
   background: var(--bg-card);
   color: var(--text-primary);
   cursor: pointer;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .search-retry-btn:hover {
     border-color: var(--border-ink);
     background: var(--bg-secondary);
-    transform: rotate(20deg);
   }
 }
 
@@ -399,22 +365,16 @@
 }
 
 /* ─── Sections ─── */
-/* Ruled rows rather than floating cards: the list reads as a machine-generated
-   index, which is the whole point of the language. Gap 0, hairline separators,
-   and the section opens on a rule of its own. */
 .search-section {
   display: flex;
   flex-direction: column;
   gap: 0;
-  animation: searchSectionIn 0.24s var(--ease-out-expo) both;
-  border-bottom: 1px solid var(--border-default);
 }
 
 .search-filtered-results {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  animation: searchFilterResultsIn 220ms var(--ease-out-expo) both;
 }
 
 .search-section-title {
@@ -426,136 +386,6 @@
   align-items: center;
   gap: 6px;
   color: var(--text-tertiary);
-}
-
-/* ─── Items ─── */
-.search-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  background: var(--bg-card);
-  /* Every row opens with its own rule and the section closes with one. */
-  border-top: 1px solid var(--border-default);
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
-  cursor: pointer;
-  transition: background-color var(--transition-fast);
-  gap: var(--space-3);
-}
-
-/* The short field rule down the inner edge, as in `.explorer-list-item`. No
-   `--area-accent` is set on this page — search rows carry no field — so it
-   falls back to ink, which is what `--gradient-brand` is. */
-.search-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: var(--space-4);
-  width: 3px;
-  height: 28px;
-  background: var(--area-accent, var(--accent-primary));
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .search-item:hover {
-    background: var(--bg-secondary);
-  }
-}
-
-.search-item-enter {
-  opacity: 0;
-  animation: searchItemIn 320ms var(--ease-out-expo) forwards;
-  animation-delay: calc(var(--search-item-index, 0) * 34ms);
-}
-
-.search-item.paper-item {
-  align-items: flex-start;
-}
-
-.search-item-icon {
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-subtle);
-  padding: 9px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-.search-topic-icon {
-  color: var(--accent-violet);
-  background: var(--accent-violet-soft);
-  border-color: var(--accent-violet-line);
-}
-
-/* An author's monogram where the other rows open with an icon. */
-.search-item-avatar {
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 1.05rem;
-  font-weight: var(--fw-semibold);
-  flex-shrink: 0;
-}
-
-.search-item-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-}
-
-/* Prose voice: a paper title and an entity name are both read, not scanned.
-   Mirrors `.eli-title` in the Explorer. */
-.search-item-info h4 {
-  margin: 0 0 4px 0;
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1.28;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.search-section[data-section="projects"] .search-item-info h4 {
-  overflow-wrap: anywhere;
-}
-
-.search-item-info p {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.search-item-authors {
-  color: var(--text-secondary) !important;
-  margin-bottom: 4px !important;
-  font-size: var(--fs-sm) !important;
-  -webkit-line-clamp: 1;
-}
-
-/* Machine data: years, counts, source names. Mono, per rule 1. */
-.search-item-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-  margin-top: 6px;
 }
 
 /* ─── Follow button ───
@@ -595,10 +425,21 @@
   border-color: var(--tint-green-line);
   background: var(--tint-green-bg);
   color: var(--tint-green-fg);
-  animation: followConfirmed 0.38s var(--ease-out-expo);
+}
+
+.search-follow-btn .search-follow-undo {
+  display: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .search-follow-btn.following:hover .search-follow-rest {
+    display: none;
+  }
+
+  .search-follow-btn.following:hover .search-follow-undo {
+    display: inline;
+  }
+
   .search-follow-btn.following:hover {
     border-color: var(--tint-red-line);
     background: var(--tint-red-bg);
@@ -610,42 +451,6 @@
   opacity: 0.78;
   cursor: default;
   pointer-events: none;
-}
-
-.search-follow-btn.is-pending:not(.following) {
-  animation: followReleased 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes followConfirmed {
-  0% { transform: scale(0.88); }
-  55% { transform: scale(1.08); }
-  100% { transform: scale(1); }
-}
-
-@keyframes followReleased {
-  0% { transform: scale(1); }
-  45% { transform: scale(0.92); }
-  100% { transform: scale(1); }
-}
-
-@keyframes searchSectionIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes searchFilterResultsIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes searchItemIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes searchLoadingRowIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes searchLoadingShimmer {
@@ -680,10 +485,19 @@
   max-width: 400px;
 }
 
-.search-initial-icon {
-  color: var(--text-tertiary);
-  margin: 0 auto var(--space-4) auto;
+.search-initial-petri {
   display: block;
+  width: 7rem;
+  height: 7rem;
+  margin: 0 auto var(--space-4);
+  overflow: visible;
+  color: var(--text-primary);
+}
+
+/* Petri holds still here: the search page carries no motion. */
+.petri.search-initial-petri .onboarding-petri-body,
+.petri.search-outage-petri .onboarding-petri-body {
+  animation: none;
 }
 
 .search-initial-hero h2 {
@@ -763,19 +577,8 @@
     gap: var(--space-2);
   }
 
-  .search-filter-bar {
-    margin-inline: -2px;
-    width: calc(100% + 4px);
-    padding-inline: 2px;
-  }
-
   .search-results {
     padding: var(--space-4) var(--space-3);
-  }
-
-  .search-item {
-    gap: 10px;
-    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   }
 
   .search-follow-btn {
@@ -789,15 +592,6 @@
 
   .search-initial-state {
     padding-inline: var(--space-1);
-  }
-
-  .search-service-state {
-    align-items: flex-start;
-  }
-
-  .search-filter-pill {
-    min-height: 32px;
-    padding-inline: 11px;
   }
 }
 
@@ -816,50 +610,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .search-section,
-  .search-filtered-results,
-  .search-item-enter,
-  .search-loading-row,
-  .search-loading-line,
-  .search-follow-btn.following,
-  .search-follow-btn.is-pending:not(.following) {
+  .search-loading-line {
     animation: none;
-  }
-
-  /* Both start at `opacity: 0` and reach 1 only through the animation that was
-     just cancelled above — so with reduced motion every result row and every
-     skeleton row was invisible. Turning the motion off must not turn the
-     content off with it. */
-  .search-item-enter,
-  .search-loading-row {
-    opacity: 1;
-  }
-
-  .search-input-loader {
-    animation: none;
-  }
-
-  .search-service-state {
-    animation: none;
-  }
-
-  .search-filter-pill {
-    transition: none;
   }
 }
 
-/* ─── Result title as a button (F9 / M20) ───
-   The row's title used to be text inside the whole-row role="link", with a
-   FollowButton nested in the same control — a control inside a control, which
-   screen readers in browse mode cannot represent. The title is now its own
-   <button> inside the <h4>, and the global button reset in global.css strips
-   font, color and padding down to nothing, so all three are restored here:
-   inherited from the surrounding .search-item-info h4 rather than the reset's
-   own values, no padding (the reset already zeroes it; stated for clarity),
-   left-aligned rather than the UA default of centred button text. */
-.search-item-title-btn {
-  font: inherit;
-  color: inherit;
-  padding: 0;
-  text-align: left;
+.search-section[data-section="projects"] .list-row-title {
+  overflow-wrap: anywhere;
+}
+
+.search-outage-state {
+  flex: 1;
+  justify-content: center;
+  min-height: 50dvh;
 }

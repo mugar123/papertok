@@ -3,28 +3,22 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 /**
- * The search page's filter bar is a ui Tabs (line variant): Base UI wires
- * `aria-controls` / `aria-labelledby` between pills and panel and gives the
- * pills arrow keys, so none of that is written by hand any more; the active
- * pill is marked by the indicator's yellow rule, the one mark the yellow is
- * for (design.md, rule 3).
+ * The search page's filter is a scope chosen inside the field: a ui Select
+ * on desktop, a bottom drawer of rows on a phone, both bound to the active
+ * filter. The page is a plain <main>; the results are one region.
  */
 
 const jsxFile = readFile(new URL('./SearchPage.tsx', import.meta.url), 'utf8');
-const cssFile = readFile(new URL('./SearchPage.css', import.meta.url), 'utf8');
 
-test('the filter bar is a Tabs root with a line list, and the results are its panel', async () => {
+test('the field ends in the scope, a named Select on desktop and a drawer on a phone', async () => {
   const jsx = await jsxFile;
-  const css = await cssFile;
-  // Rendered as the page's <main> (accessibilityStructure.test.ts).
-  assert.match(jsx, /<Tabs\s+render=\{<main \/>\}\s+className="search-page-container"\s+value=\{activeSearchFilter\}\s+onValueChange=\{handleSearchFilterChange\}/);
-  assert.match(jsx, /<TabsList\s+variant="line"\s+className="search-filter-bar"\s+aria-label=\{'Filter search results'\}/);
-  assert.match(jsx, /<TabsTrigger[\s\S]*?value=\{id\}\s+className="search-filter-pill"/);
-  assert.match(jsx, /<TabsContent\s+value=\{activeSearchFilter\}\s+id="search-results-panel"/);
-  assert.doesNotMatch(jsx, /role="tab"|role="tablist"|aria-selected=/, 'Base UI writes the tab roles and states');
-  assert.match(css, /\.search-filter-pill\[data-active\]/);
-  assert.doesNotMatch(css, /\.search-filter-pill\.active/);
-  assert.match(css, /\.search-filter-bar \[data-slot='tabs-indicator'\]/, 'the yellow rule sits inside the scroll box');
+  const field = jsx.slice(jsx.indexOf('<div className={`search-input-wrapper'), jsx.indexOf('{/* Shown on the scopes'));
+  assert.match(field, /<SearchScope value=\{activeSearchFilter\} onChange=\{handleSearchFilterChange\} \/>/);
+  const scope = jsx.slice(jsx.indexOf('function SearchScope('), jsx.indexOf('export default function SearchPage'));
+  assert.match(scope, /if \(isPhone\) \{[\s\S]*?<Drawer>[\s\S]*?aria-label=\{`Search in: \$\{current\.label\}`\}/);
+  assert.match(scope, /<DrawerClose[\s\S]*?aria-current=\{id === value \? 'true' : undefined\}/, 'the current scope is marked in the drawer');
+  assert.match(scope, /<SelectTrigger[^>]*aria-label=\{'Search in'\}/);
+  assert.doesNotMatch(jsx, /<Tabs\b|<TabsList|<TabsTrigger|<TabsContent/, 'no tab widget is left without its tabs');
 });
 
 test('the search field is the ui Input with a name, and follow is a Toggle', async () => {

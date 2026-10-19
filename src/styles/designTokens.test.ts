@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
  *
  * Growing beyond the stylesheets F1 owned needed the allowlist below, for the
  * locally-scoped properties components inject through
- * `style={{ '--search-item-index': n }}`. Those are not design tokens and must not
+ * `style={{ '--area-accent': value }}`. Those are not design tokens and must not
  * be defined in variables.css — but they are also not the bug, so the check has
  * to be able to tell the two apart instead of skipping whole files.
  */
@@ -22,8 +22,6 @@ import { readFile } from 'node:fs/promises';
  * quietly become cover for a genuinely missing token.
  */
 const INJECTED_PROPERTIES = new Map([
-  ['--loading-row-index', '../components/Search/SearchPage.tsx'],
-  ['--search-item-index', '../components/Search/SearchPage.tsx'],
   // A row takes the research field of its paper, the same way a card or an
   // entity header does, so its rules are tinted by the data rather than by a
   // decorative default. The lists page sets it per row.

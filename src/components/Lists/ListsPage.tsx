@@ -33,6 +33,7 @@ import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.tsx';
 import SaveToListModal from './SaveToListModal.tsx';
 import ListNote from './ListNote.tsx';
+import { ListRow, ListRowAuthors } from './ListRow.tsx';
 import { Button } from '../ui/button.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu.tsx';
 import {
@@ -47,7 +48,6 @@ import RailMenu from '../Feed/RailMenu.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { EASE_DRAWER, EASE_OUT, animateSize } from '../../utils/motionCurves.ts';
 import useIsPhone from '../../hooks/useIsPhone.ts';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
@@ -1779,7 +1779,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       <motion.div
                         {...rowMotion}
                         key={paperId}
-                        className="lists-paper-item lists-paper-item--skeleton"
+                        className="list-row lists-paper-item--skeleton"
                         aria-hidden={pendingPaperIds.has(paperId) ? 'true' : undefined}
                       >
                         {/* This paper's own id, not the list's loading flag.
@@ -1799,67 +1799,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
                           </div>
                         ) : (
-                          <p className="lists-paper-title lists-paper-placeholder">
+                          <p className="list-row-title lists-paper-placeholder">
                             {'The title could not be loaded'}
                           </p>
                         )}
                       </motion.div>
                     );
                     return (
-                      <motion.div {...rowMotion} key={paperId} className="lists-paper-item"
+                      <ListRow {...rowMotion} key={paperId}
                         style={{ '--area-accent': areaAccentForPaper(paper) }}
-                        onClick={() => openPaperCard(paper)}>
-                        <div className="lists-paper-item-content">
-                          <div className="lists-paper-head">
-                            {(paper.categories?.length ?? 0) > 0 && (
-                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories![0])}</span>
-                            )}
-                            {(paper.categories?.length ?? 0) > 0 && paper.year && <span className="lists-paper-dot" aria-hidden="true">·</span>}
-                            {paper.year && <span className="lists-paper-date">{paper.year}</span>}
-                          </div>
-                          <p className="lists-paper-title" lang="en">
-                            <button
-                              type="button"
-                              className="lists-paper-title-btn"
-                              onClick={(e) => { e.stopPropagation(); openPaperCard(paper); }}
-                            >
-                              <ScientificText>{paper.title}</ScientificText>
-                            </button>
-                          </p>
-                          {(paper.authors?.length ?? 0) > 0 && (() => {
-                            const names = paper.authors!.map(a => (typeof a === 'string' ? a : a.name)).filter(Boolean).join(', ');
-                            if (isPhone) return (
-                              <button
-                                type="button"
-                                className="pc-author-avatars lists-paper-authors lists-paper-authors-btn"
-                                aria-label={`Authors: ${names}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setAuthorsSheet(paper);
-                                  setAuthorsOpen(true);
-                                }}
-                              >
-                                <AuthorDots authors={paper.authors!} />
-                              </button>
-                            );
-                            return (
-                              <Tooltip>
-                                <TooltipTrigger render={<p className="pc-author-avatars lists-paper-authors" />}>
-                                  <AuthorDots authors={paper.authors!} />
-                                  <span className="visually-hidden">{names}</span>
-                                </TooltipTrigger>
-                                <TooltipContent align="start" className="lists-authors-tooltip" aria-hidden="true">{names}</TooltipContent>
-                              </Tooltip>
-                            );
-                          })()}
-                          {(record?.tags?.length as number) > 0 && (
-                            <div className="lists-paper-tags">
-                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
-                            </div>
-                          )}
-                          {record?.note && <ListNote note={record.note} />}
-                        </div>
-                        <div className="lists-paper-actions">
+                        meta={[
+                          (paper.categories?.length ?? 0) > 0 && getCategoryLabel(paper.categories![0]),
+                          paper.year ? String(paper.year) : null,
+                        ]}
+                        title={<ScientificText>{paper.title}</ScientificText>}
+                        titleLang="en"
+                        onOpen={() => openPaperCard(paper)}
+                        actions={(
+                          <>
                           {/* The stored id, not the merged paper's: the list
                               and the library key this paper by `paperId`, and
                               the modal's membership check and note record
@@ -1906,8 +1863,34 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             </Button>
                             </>
                           )}
-                        </div>
-                      </motion.div>
+                          </>
+                        )}
+                      >
+                          {(paper.authors?.length ?? 0) > 0 && (() => {
+                            const names = paper.authors!.map(a => (typeof a === 'string' ? a : a.name)).filter(Boolean).join(', ');
+                            if (isPhone) return (
+                              <button
+                                type="button"
+                                className="pc-author-avatars list-row-authors lists-paper-authors-btn"
+                                aria-label={`Authors: ${names}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAuthorsSheet(paper);
+                                  setAuthorsOpen(true);
+                                }}
+                              >
+                                <AuthorDots authors={paper.authors!} />
+                              </button>
+                            );
+                            return <ListRowAuthors authors={paper.authors!} />;
+                          })()}
+                          {(record?.tags?.length as number) > 0 && (
+                            <div className="lists-paper-tags">
+                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
+                            </div>
+                          )}
+                          {record?.note && <ListNote note={record.note} />}
+                      </ListRow>
                     );
                   })}
                   </AnimatePresence>

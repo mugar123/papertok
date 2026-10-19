@@ -68,7 +68,7 @@ test('SOURCE: the lists screen asks by encoded name and keys what comes back by 
 
 test('SOURCE: a row whose paper never came says so instead of printing the id', async () => {
   const code = stripComments(await read('./ListsPage.tsx'));
-  const placeholder = bounded(code, 'className="lists-paper-title lists-paper-placeholder"', '</p>', 'the placeholder row', 4);
+  const placeholder = bounded(code, 'className="list-row-title lists-paper-placeholder"', '</p>', 'the placeholder row', 4);
   assert.doesNotMatch(placeholder, /\{paperId\}/, 'a document id is not a title');
 });
 
