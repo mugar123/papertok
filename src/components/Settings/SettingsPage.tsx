@@ -32,7 +32,6 @@ import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
 import { INTEREST_AREAS } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService.ts';
-import { preparePopupSignIn } from '../../services/firebase.ts';
 import GoogleMark from '../Public/GoogleMark.tsx';
 import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
 import InstitutionPill from '../Institution/InstitutionPill.tsx';
@@ -212,12 +211,6 @@ function ProfileAccountPage() {
   const [linking, setLinking] = useState<string | null>(null);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
-
-  // Popups opened from this page need Firebase's sign-in scripts loaded
-  // before the tap (preparePopupSignIn).
-  useEffect(() => {
-    preparePopupSignIn();
-  }, []);
 
   const gitHubLinked = signInProviders.includes(SIGN_IN_PROVIDERS.github);
   const googleLinked = signInProviders.includes(SIGN_IN_PROVIDERS.google);

@@ -22,7 +22,7 @@ import {
 import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.ts';
 import { createStreamRecovery } from '../utils/streamRecovery.ts';
-import { deferPopupRedirectResolver, preparePopupRedirectResolver, prepareWhileSignedOut } from './popupRedirectResolver.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -55,15 +55,8 @@ const auth = initializeAuth(app, {
   persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
   popupRedirectResolver: deferPopupRedirectResolver(browserPopupRedirectResolver),
 });
-
-// Starts loading what a Google or GitHub popup needs, on phones and in Safari,
-// where a window opened after a load that is still running at the tap can be
-// blocked. Without a session it starts by itself (below). A screen that opens
-// a popup for a signed-in reader calls this when it appears.
-export function preparePopupSignIn() {
-  if (!IS_DEMO) preparePopupRedirectResolver(auth);
-}
-if (!IS_DEMO) prepareWhileSignedOut(auth);
+// Demo mode opens no popups, so it skips the load.
+if (!IS_DEMO) preparePopupRedirectResolver(auth);
 
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();

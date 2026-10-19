@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { deleteApp, initializeApp } from 'firebase/app';
-import { connectAuthEmulator, inMemoryPersistence, initializeAuth, signOut } from 'firebase/auth';
+import { connectAuthEmulator, inMemoryPersistence, initializeAuth, onAuthStateChanged } from 'firebase/auth';
 import type { Auth, Persistence, PopupRedirectResolver } from 'firebase/auth';
-import { deferPopupRedirectResolver, preparePopupRedirectResolver, prepareWhileSignedOut } from './popupRedirectResolver.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
 /**
  * Firebase's browser resolver as Auth sees it. On a phone or in Safari it asks
@@ -130,7 +130,8 @@ test('preparing loads the resolver of the given Auth, and a failed load is left 
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   await auth.authStateReady();
 
-  preparePopupRedirectResolver(auth);
+  await preparePopupRedirectResolver(auth);
+  // A rejection nobody handled is reported after this turn.
   await nextTurn();
 
   assert.deepEqual(phone.loads, [auth]);
@@ -140,37 +141,49 @@ test('preparing loads the resolver of the given Auth, and a failed load is left 
 test('where Firebase loads the resolver at the tap, preparing leaves it to the tap', async (t) => {
   const desktop = firebaseResolver({ phone: false });
   const auth = startAuth(t, deferPopupRedirectResolver(desktop.resolver));
-  await auth.authStateReady();
-
-  preparePopupRedirectResolver(auth);
-  await nextTurn();
+  await preparePopupRedirectResolver(auth);
 
   assert.deepEqual(desktop.loads, []);
 });
 
-test('with nobody signed in, the resolver loads once Auth has reported the session', async (t) => {
-  const phone = firebaseResolver();
+// What Auth had reported each time the resolver started loading, and a load
+// that never finishes.
+function recordReports(t: TestContext) {
+  const reports: string[] = [];
+  const atLoad: string[][] = [];
+  return {
+    atLoad,
+    load: () => {
+      atLoad.push([...reports]);
+      return new Promise(() => {});
+    },
+    listen(auth: Auth) {
+      t.after(onAuthStateChanged(auth, user => reports.push(user?.uid ?? 'nobody')));
+    },
+  };
+}
+
+test('with nobody signed in, the resolver loads after Auth has reported the session', async (t) => {
+  const reported = recordReports(t);
+  const phone = firebaseResolver({ load: reported.load });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
-  t.after(prepareWhileSignedOut(auth));
+  reported.listen(auth);
 
-  assert.equal(await settlesWithin(auth.authStateReady(), 2000), true);
-  await nextTurn();
+  assert.equal(await settlesWithin(preparePopupRedirectResolver(auth), 2000), true);
 
-  assert.equal(auth.currentUser, null);
   assert.deepEqual(phone.loads, [auth]);
+  assert.deepEqual(reported.atLoad, [['nobody']]);
 });
 
-test('a restored session does not load the resolver, and signing out does', async (t) => {
-  const phone = firebaseResolver();
+test('a restored session loads the resolver too, after Auth has reported the reader', async (t) => {
+  const reported = recordReports(t);
+  const phone = firebaseResolver({ load: reported.load });
   const auth = await startSignedIn(t, deferPopupRedirectResolver(phone.resolver));
-  t.after(prepareWhileSignedOut(auth));
+  reported.listen(auth);
 
-  assert.equal(await settlesWithin(auth.authStateReady(), 2000), true);
-  await nextTurn();
+  assert.equal(await settlesWithin(preparePopupRedirectResolver(auth), 2000), true);
+
   assert.equal(auth.currentUser?.uid, 'reader');
-  assert.deepEqual(phone.loads, []);
-
-  await signOut(auth);
-  await nextTurn();
   assert.deepEqual(phone.loads, [auth]);
+  assert.deepEqual(reported.atLoad, [['reader']]);
 });

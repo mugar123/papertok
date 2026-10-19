@@ -5,7 +5,6 @@ type InstitutionLinkProps = {
 } & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { preparePopupSignIn } from '../../services/firebase.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
@@ -67,11 +66,6 @@ export default function InstitutionLink({
     if (pendingFocus.current === 'unlink' && institution) unlinkRef.current?.focus();
     if (pendingFocus.current === 'input' && !institution) inputRef.current?.focus();
     pendingFocus.current = null;
-  }, [institution]);
-  // The form's Google window opens on a second Auth instance
-  // (institutionService.ts), which reuses the Google scripts loaded here.
-  useEffect(() => {
-    if (!institution) preparePopupSignIn();
   }, [institution]);
   const inputId = `${idPrefix}-email`;
   const hintId = `${idPrefix}-hint`;
