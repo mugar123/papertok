@@ -1,3 +1,11 @@
+import economist from '../../assets/publishers/economist.ico';
+import financialtimes from '../../assets/publishers/financialtimes.svg';
+import wsj from '../../assets/publishers/wsj.ico';
+import nytimes from '../../assets/publishers/nytimes.ico';
+import newyorker from '../../assets/publishers/newyorker.ico';
+import guardian from '../../assets/publishers/guardian.png';
+import hbr from '../../assets/publishers/hbr.png';
+import businessweek from '../../assets/publishers/businessweek.ico';
 import aaa from '../../assets/publishers/aaa.png';
 import aacr from '../../assets/publishers/aacr.svg';
 import aap from '../../assets/publishers/aap.svg';
@@ -68,6 +76,15 @@ import worldscientific from '../../assets/publishers/worldscientific.png';
 // Keyed by the Worker catalogue's platform id. Each import is named after its
 // file, which `publisherLogos.test.ts` relies on to check the map from source.
 const LOGOS = {
+  economist,
+  financialtimes,
+  wsj,
+  nytimes,
+  newyorker,
+  guardian,
+  hbr,
+  businessweek,
+
   aaa,
   aacr,
   aap,

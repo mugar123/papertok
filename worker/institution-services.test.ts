@@ -206,7 +206,7 @@ test('refuses an institution no provider can answer for, without asking anyone',
 });
 
 // With a key, the catalogue goes to GetFTR twenty DOIs per request.
-const GETFTR_BATCHES = Math.ceil(SERVICE_CATALOGUE.length / GETFTR_BATCH_SIZE);
+const GETFTR_BATCHES = Math.ceil(SERVICE_CATALOGUE.filter(entry => entry.doi).length / GETFTR_BATCH_SIZE);
 
 test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and its yes carries no collection', async () => {
   const nature = SERVICE_CATALOGUE.find(entry => entry.id === 'nature');
@@ -222,7 +222,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
     { id: 'nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', collection: null, ownPlatform: true },
   ]);
   assert.equal(result.partial, false);
-  assert.equal(result.unchecked, 0);
+  assert.equal(result.unchecked, 8); // Titles without a DOI need a resolver.
   const bodies = stub.calls.map(call => JSON.parse(call.init.body as string));
   assert.equal(bodies.length, GETFTR_BATCHES);
   assert.ok(bodies.length < SUBREQUEST_BUDGET);
@@ -230,7 +230,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
     assert.deepEqual(body.org, { entityID: ENTITY_ID });
     assert.ok(body.dois.length > 0 && body.dois.length <= GETFTR_BATCH_SIZE);
   }
-  assert.deepEqual(bodies.flatMap(body => body.dois), SERVICE_CATALOGUE.map(entry => entry.doi));
+  assert.deepEqual(bodies.flatMap(body => body.dois), SERVICE_CATALOGUE.flatMap(entry => entry.doi ? [entry.doi] : []));
 });
 
 test('a GetFTR outage falls through to the resolver when the library has one', async () => {
@@ -249,17 +249,17 @@ test('a GetFTR outage falls through to the resolver when the library has one', a
 
 test('a GetFTR answer that decides nothing, with no resolver behind it, is unchecked rather than absent', async () => {
   const undecided = {
-    [SERVICE_CATALOGUE[0].doi]: { statusCode: 200, entitled: 'maybe' },
-    [SERVICE_CATALOGUE[1].doi]: { statusCode: 200, entitled: 'no', source: 'publisher_not_supported' },
-    [SERVICE_CATALOGUE[2].doi]: { statusCode: 404 },
-    [SERVICE_CATALOGUE[3].doi]: { statusCode: 200, entitled: 'yes' },
+    [SERVICE_CATALOGUE[0].doi!]: { statusCode: 200, entitled: 'maybe' },
+    [SERVICE_CATALOGUE[1].doi!]: { statusCode: 200, entitled: 'no', source: 'publisher_not_supported' },
+    [SERVICE_CATALOGUE[2].doi!]: { statusCode: 404 },
+    [SERVICE_CATALOGUE[3].doi!]: { statusCode: 200, entitled: 'yes' },
   };
   const stub = upstreams({
     getftr: getftrAnswering((doi: string|number) => undecided[doi] || { statusCode: 200, entitled: 'no' }),
   });
   const result = await lookupInstitutionServices({ domain: 'nowhere.example', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
-  assert.equal(result.unchecked, 4);
+  assert.equal(result.unchecked, 12); // Four undecided DOIs and eight titles without DOIs.
   assert.equal(result.partial, false);
 });
 
@@ -273,15 +273,16 @@ test('a GetFTR maybe goes to the resolver when the library has one, which decide
   assert.equal(result.unchecked, SERVICE_CATALOGUE.length - (SUBREQUEST_BUDGET - GETFTR_BATCHES));
 });
 
-test('a GetFTR yes or no is final: the resolver is not asked about it', async () => {
+test('GetFTR verdicts are final for DOIs; publications without DOIs still use the resolver', async () => {
   const stub = upstreams({
     getftr: getftrAnswering(() => ({ statusCode: 200, entitled: 'no' })),
-    resolver: () => xml(CTO_WILEY),
+    resolver: () => xml(CTO_NONE),
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
   assert.equal(result.unchecked, 0);
-  assert.equal(stub.calls.length, GETFTR_BATCHES);
+  assert.equal(stub.calls.length, GETFTR_BATCHES + 8);
+  assert.deepEqual(stub.calls.filter(call => call.url.host === 'eu01.alma.exlibrisgroup.com').map(call => call.url.searchParams.get('rft.issn')), ['0013-0613', '0307-1766', '0099-9660', '0362-4331', '0028-792X', '0261-3077', '0017-8012', '0007-7135']);
 });
 
 test('a GetFTR outage with no resolver behind it is a failure, not an empty library', async () => {
@@ -307,15 +308,17 @@ test('without GetFTR the resolver is asked the budget\'s worth of platforms, fou
   assert.equal(result.partial, false);
 });
 
-test('every catalogue entry names a distinct, well-formed journal and DOI', () => {
+test('catalogue identifiers are distinct and well-formed, with DOI optional for press', () => {
   const issns = SERVICE_CATALOGUE.map(entry => entry.issn);
-  const dois = SERVICE_CATALOGUE.map(entry => entry.doi);
+  const dois = SERVICE_CATALOGUE.flatMap(entry => entry.doi ? [entry.doi] : []);
   const ids = SERVICE_CATALOGUE.map(entry => entry.id);
   for (const list of [issns, dois, ids]) assert.equal(new Set(list).size, list.length);
   for (const entry of SERVICE_CATALOGUE) {
     assert.match(entry.issn, /^\d{4}-\d{3}[\dX]$/, entry.id);
-    assert.match(entry.doi, /^10\.\d{4,9}\/\S+$/, entry.id);
-    assert.equal(entry.doi, entry.doi.toLowerCase(), entry.id);
+    if (entry.doi) {
+      assert.match(entry.doi, /^10\.\d{4,9}\/\S+$/, entry.id);
+      assert.equal(entry.doi, entry.doi.toLowerCase(), entry.id);
+    }
     assert.ok(Number.isInteger(entry.year), entry.id);
     assert.match(entry.url, /^https:\/\//, entry.id);
     assert.match(entry.color, /^#[0-9A-F]{6}$/, entry.id);
@@ -416,5 +419,71 @@ test('the route refuses a missing session or a malformed domain before any provi
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.equal(servicePuts.length, 0);
     if (upstreamCalls) assert.deepEqual(calls, upstreamCalls);
+  }
+});
+
+
+test('following pages checks the entire catalogue without exceeding the upstream budget', async () => {
+  const stub = upstreams({ resolver: issn => xml(issn === '0007-7135' ? ctoWith('EBSCOhost Business Source Complete') : CTO_NONE) });
+  const found: string[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const before = stub.calls.length;
+    const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl, offset });
+    assert.ok(stub.calls.length - before <= 40);
+    assert.equal(result.unchecked, 0);
+    assert.equal(result.partial, false);
+    found.push(...result.services.map(service => service.name));
+    offset = result.nextOffset!;
+  }
+  assert.deepEqual(found, ['Bloomberg Businessweek']);
+  assert.deepEqual(stub.calls.map(call => call.url.searchParams.get('rft.issn')), SERVICE_CATALOGUE.map(entry => entry.issn));
+  assert.equal(stub.maxInFlight(), 4);
+});
+
+test('a paged GetFTR outage leaves enough budget to probe every title in the page', async () => {
+  const stub = upstreams({ getftr: () => jsonResponse({}, 503) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV, offset: 0 });
+  assert.equal(result.nextOffset, 36);
+  assert.equal(result.unchecked, 0);
+  assert.equal(result.partial, false);
+  assert.equal(stub.calls.length, 38);
+});
+
+test('press is checked by ISSN and year; a free Guardian service is not library access', async () => {
+  const stub = upstreams({ resolver: issn => xml(issn === '0013-0613' ? ctoWith('ABI/INFORM Collection') : CTO_FREE_ONLY) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl, offset: 36 });
+  assert.deepEqual(result.services.map(service => [service.id, service.ownPlatform, service.collection]), [['economist', false, 'ABI/INFORM Collection']]);
+  assert.match(result.services[0].url, /^https:\/\/buc-usal\.alma\.exlibrisgroup\.com\/view\/action\/uresolver\.do\?/);
+  assert.equal(new URL(result.services[0].url).searchParams.get('institutionId'), '5773');
+  const guardian = stub.calls.find(call => call.url.searchParams.get('rft.issn') === '0261-3077')!;
+  assert.equal(guardian.url.searchParams.get('rft.date'), '2025');
+  assert.equal(result.unchecked, 0);
+});
+
+test('paged responses and their cache keys keep offsets separate and canonical', async () => {
+  const first = await requestServices('domain=usal.es&offset=00');
+  const next = await requestServices('domain=usal.es&offset=36');
+  assert.equal(first.body.services.length, 36);
+  assert.equal(first.body.nextOffset, 36);
+  assert.equal(first.body.unchecked, 0);
+  assert.equal(next.body.nextOffset, 72);
+  assert.equal(new URL(first.servicePuts[0].key).searchParams.get('offset'), '0');
+  assert.equal(new URL(next.servicePuts[0].key).searchParams.get('offset'), '36');
+  assert.notEqual(first.servicePuts[0].key, next.servicePuts[0].key);
+  for (const raw of ['', '-1', '1.5', '1', 'NaN', '108', '9007199254740992']) {
+    const result = await requestServices(`domain=usal.es&offset=${raw}`);
+    assert.equal(result.response.status, 400, raw);
+    assert.deepEqual(result.body, { code: 'INVALID_SERVICES_OFFSET' });
+    assert.ok(!result.calls.includes('eu01.alma.exlibrisgroup.com'));
+    assert.equal(result.servicePuts.length, 0);
+  }
+});
+
+test('ISSN, coverage year, package matching and displayed changes invalidate the catalogue cache', () => {
+  const original = catalogueFingerprint(SERVICE_CATALOGUE, 40);
+  for (const change of [{ issn: '1234-5678' }, { year: 2025 }, { packageHint: 'Other' }, { name: 'Other name' }, { url: 'https://other.example' }]) {
+    const changed = SERVICE_CATALOGUE.map((entry, index) => index === 0 ? { ...entry, ...change } : entry);
+    assert.notEqual(catalogueFingerprint(changed, 40), original);
   }
 });

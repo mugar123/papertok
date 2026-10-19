@@ -113,3 +113,21 @@ to 4 px. `lyell.svg` is the one vector file of this batch.
 | `edinburghup.png` | https://edinburghuniversitypress.com/media/logo/stores/1/edinburgh-university-press-logo.png (page via https://web.archive.org/web/20261012055710/https://edinburghuniversitypress.com/) | Trimmed |
 | `microbiologysociety.png` | https://www.microbiologyresearch.org/images/hybrid/logo/MBS_logo_full_size_desktop_hi-res.png | Trimmed |
 | `msp.png` | https://msp.org/msp_org/static/img/msp-logo.png | 4 px margin added |
+
+
+## News and business publications
+
+Retrieved 2026-10-19. These identify the publication; its library route may be
+an aggregator rather than the publisher website. ICO files retain the original
+publisher favicon; PNG files and the Financial Times SVG are unchanged.
+
+| File | Source |
+| --- | --- |
+| `economist.ico` | https://www.economist.com/favicon.ico |
+| `financialtimes.svg` | [Wikimedia Commons, public-domain text logo](https://commons.wikimedia.org/wiki/File:Financial_Times_corporate_logo_(alternative).svg) |
+| `wsj.ico` | https://www.wsj.com/favicon.ico |
+| `nytimes.ico` | https://www.nytimes.com/favicon.ico |
+| `newyorker.ico` | https://www.newyorker.com/verso/static/thenewyorker-us/assets/favicon.ico |
+| `guardian.png` | https://assets.guim.co.uk/static/frontend/icons/homescreen/apple-touch-icon-120.png |
+| `hbr.png` | https://hbr.org/resources/images/apple-touch-icon.png |
+| `businessweek.ico` | https://www.bloomberg.com/favicon.ico |
