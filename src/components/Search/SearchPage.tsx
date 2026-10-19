@@ -248,8 +248,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // whole of the wiring.
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
-  // A query seeded from the URL is already a search in flight: the skeleton
-  // shows from the first paint instead of a blank panel during the debounce.
   const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState<string | null>(null);
