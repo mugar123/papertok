@@ -224,7 +224,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
                         aria-current={isActive ? 'true' : undefined}
                         onClick={() => { setActiveArea(areaKey); leaveFields(); }}
                       >
-                        <entry.icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                        <entry.icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" style={picked ? { color: entry.gradient } : undefined} />
                         <span className="eim-fields-copy">
                           <strong>{entry.label}</strong>
                           <small>
@@ -292,7 +292,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
             <TabsList variant="pill" className="eim-rail-list" aria-label={'Research fields'}>
               {Object.entries(INTEREST_AREAS).map(([areaKey, area]) => (
                 <TabsTrigger key={areaKey} value={areaKey} className="eim-rail-tab">
-                  <area.icon size={18} aria-hidden="true" />
+                  <area.icon size={18} aria-hidden="true" style={counted(areaKey) ? { color: area.gradient } : undefined} />
                   <span className="eim-rail-label">{area.label}</span>
                 </TabsTrigger>
               ))}
