@@ -105,3 +105,10 @@ test('SOURCE: la tarjeta inferior del grafo se ancla al borde visible, no al san
     + 'the viewport) instead of the visible fold, and its bottom edge renders under the sheet\'s own edge.',
   );
 });
+
+test('SOURCE: the path crumbs and the off-map link are 24px targets, and the list keeps its scroll from the feed', async () => {
+  const css = stripComments(await readFile(new URL(CSS, import.meta.url), 'utf8'));
+  assert.match(ruleBody(css, '.graph-crumb'), /min-height:\s*24px/);
+  assert.match(ruleBody(css, '.graph-off-map'), /min-height:\s*24px/);
+  assert.match(ruleBody(css, '.related-list'), /overscroll-behavior:\s*contain/);
+});

@@ -2125,6 +2125,30 @@ button.pc-topics-pop-item:focus-visible {
   transform: translateX(-50%);
 }
 
+/* A narrow plot gives each year a few pixels, so papers of the same year
+   cannot step aside and are left off the map; this says how many and leads
+   to the list, which has them all. */
+.graph-off-map {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  margin-top: 2px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-off-map:hover { color: var(--text-primary); }
+}
+
 /* ── Where you are in the graph ── */
 .graph-trail {
   min-height: 40px;
@@ -2177,6 +2201,7 @@ button.pc-topics-pop-item:focus-visible {
 
 .graph-crumb {
   max-width: 190px;
+  min-height: 24px;
   overflow: hidden;
   border: 0;
   padding: 0;
@@ -2448,6 +2473,9 @@ button.pc-topics-pop-item:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* In the card, a flick past the last row must not carry on into the feed
+     and snap to the next paper. */
+  overscroll-behavior: contain;
   padding: 6px 0;
   scroll-behavior: smooth;
   animation: relatedContentIn 0.22s ease-out both;

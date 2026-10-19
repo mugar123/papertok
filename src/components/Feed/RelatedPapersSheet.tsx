@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CaretRight,
   Crosshair,
+  DownloadSimple,
   GitBranch,
   Graph,
   Stack,
@@ -14,7 +15,8 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { useReducedMotion } from 'framer-motion';
-import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
+import { citationGraphExportPapers, getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService.ts';
+import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import { isSignInRequiredError } from '../../utils/signInRequired.ts';
 import { CITATION_MAP_GEOMETRY, buildCitationMapLayout } from '../../utils/citationMap.ts';
 import { STAR_PATH } from '../../utils/starPath.ts';
@@ -174,6 +176,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
   const mountedRef = useRef(false);
   const pendingSelectionRef = useRef<{ paper: Paper; key: string } | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const viewToggleRef = useRef<HTMLButtonElement | null>(null);
   const walkTimersRef = useRef<number[]>([]);
   const walkingRef = useRef(false);
   const resizeRef = useRef<{ disconnect: () => void } | null>(null);
@@ -332,6 +335,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     references: buildRelatedPaperEntries(graph.references),
     citations: buildRelatedPaperEntries(graph.citations),
   }), [graph]);
+  const offMapCount = listEntries.references.length + listEntries.citations.length - layout.nodes.length;
   const focusedListPaper = useMemo(() => {
     if (focusedNode) return focusedNode.paper;
     const all = [...listEntries.references, ...listEntries.citations];
@@ -531,6 +535,13 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
     );
   };
 
+  // The link goes with the map, so focus lands on the switch it pressed.
+  const showList = () => {
+    setHasSwitched(true);
+    setView('list');
+    viewToggleRef.current?.focus();
+  };
+
   const renderMap = () => (
     <div className={`graph-map ${isMapReturning ? 'is-returning' : ''}`}>
       <div className="graph-plot" ref={measurePlot} data-lit={hoveredKey || focusedKey ? '' : undefined}>
@@ -646,6 +657,12 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
           <span key={`year-${tick.year}`} className="graph-axis-tick" style={{ left: `${tick.x}px` }}>{tick.year}</span>
         ))}
       </div>
+      {graphStatus === 'ready' && layout.ready && offMapCount > 0 && (
+        <button type="button" className="graph-off-map" onClick={showList}>
+          {offMapCount === 1 ? '1 more paper in the list' : `${offMapCount} more papers in the list`}
+          <ArrowRight size={13} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 
@@ -736,9 +753,21 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
               }}
               aria-label={'List view'}
               title={'List view'}
+              ref={viewToggleRef}
             >
               <Stack size={17} />
             </Toggle>
+            {graphStatus === 'ready' && (
+              <button
+                type="button"
+                className="graph-view-button"
+                onClick={() => downloadCitationFile(citationGraphExportPapers(graph), 'bibtex', 'papertok-citations')}
+                aria-label={'Download these papers as BibTeX'}
+                title={'Download BibTeX'}
+              >
+                <DownloadSimple size={17} />
+              </button>
+            )}
             {!inline && <span className="related-header-divider" aria-hidden="true" />}
             {!inline && (
               <Close

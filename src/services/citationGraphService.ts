@@ -137,6 +137,16 @@ export function mapCitationGraphPayload(payload: GraphPayload | null) {
   };
 }
 
+/**
+ * Every neighbour the graph loaded, ready for a citation file. PaperBuilder
+ * fills a missing year with the current one, and the Worker sends `published`
+ * whenever it knows the year, so a neighbour without it has no known year.
+ */
+export function citationGraphExportPapers(graph: CitationGraph): Partial<Paper>[] {
+  return [...graph.references, ...graph.citations]
+    .map(paper => (paper.published ? paper : { ...paper, year: undefined }));
+}
+
 async function requestCitationGraph(doi: string, safeLimit: number, cacheKey: string, dependencies: GraphDependencies) {
   const workerFetch = dependencies.authenticatedWorkerFetch || authenticatedWorkerFetch;
   const configured = dependencies.apiBase ?? import.meta.env?.VITE_PAPER_API_BASE_URL;
