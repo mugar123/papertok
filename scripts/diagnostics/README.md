@@ -484,8 +484,8 @@ node scripts/diagnostics/alma-resolver-census.mjs --inventory
 ```
 
 `--inventory` prints the coverage inventory as Markdown from the census record alone (per
-country: institutions met, rows shipped, Alma libraries whose answer the Worker cannot read,
-libraries on another product, candidates still unverified, exclusions, unresolved), so a report
+country: institutions met, rows shipped, Alma libraries whose answer lists nothing for either
+probe journal, libraries on another product, candidates still unverified, exclusions, unresolved), so a report
 quotes a table that can be regenerated after any run.
 
 Institutions come from OpenAlex (`type:education`, by works count; each request spends its
