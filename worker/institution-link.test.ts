@@ -12,6 +12,7 @@ import {
 } from './institution-link.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/requestDeadline.ts';
+import { findResolver } from './institution-access.ts';
 
 const UID = 'alice-uid';
 const PROJECT_ID = 'papertok-168df';
@@ -342,10 +343,60 @@ const ROR_NEU_SHENYANG = {
 };
 const MDQ_NEU_BOSTON = [{ title: 'Northeastern University', entityID: 'https://neuidmsso.neu.edu/idp/shibboleth', scope: 'neu.edu' }];
 
-test('a record known to list a domain that is not its own does not link an address in that domain', async () => {
+const ROR_NEU_BOSTON = {
+  items: [{
+    id: 'https://ror.org/04t5xt781',
+    domains: ['northeastern.edu'],
+    names: [{ value: 'Northeastern University', types: ['ror_display', 'label'] }],
+  }],
+};
+
+test('a verified Northeastern legacy address links to Boston and selects its library', async () => {
   const upstream = stubUpstreams({
     users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@husky.neu.edu', emailVerified: true } },
-    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Aneu.edu') ? ROR_NEU_SHENYANG : { items: [] }), { status: 200 }),
+    ror: (url) => {
+      const domain = new URL(url).searchParams.get('query.advanced');
+      return Response.json(domain === 'domains:northeastern.edu' ? ROR_NEU_BOSTON
+        : domain === 'domains:neu.edu' ? ROR_NEU_SHENYANG : { items: [] });
+    },
+    mdq: (url) => Response.json(new URL(url).searchParams.get('q') === 'neu.edu' ? MDQ_NEU_BOSTON : []),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.domain, 'husky.neu.edu');
+    assert.equal(institution!.rorId, 'https://ror.org/04t5xt781');
+    assert.equal(institution!.entityId, 'https://neuidmsso.neu.edu/idp/shibboleth');
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(findResolver(institution!), { host: 'na03.alma.exlibrisgroup.com', institution: '01NEU_INST' });
+    assert.deepEqual(upstream.calls.filter(url => url.startsWith('https://api.ror.org/'))
+      .map(url => new URL(url).searchParams.get('query.advanced')),
+    ['domains:husky.neu.edu', 'domains:northeastern.edu']);
+    assert.equal((await resolveInstitution('neu.edu', { cache: null })).rorId, institution!.rorId);
+    assert.equal((await resolveInstitution('northeastern.edu', { cache: null })).rorId, institution!.rorId);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('similar domains do not use the Northeastern alias', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:northeastern.edu' ? ROR_NEU_BOSTON : { items: [] }),
+  });
+  try {
+    for (const domain of ['husky.new.edu', 'neu.edu.cn', 'notneu.edu', 'neu.edu.evil.example']) {
+      await rejectsWith(resolveInstitution(domain, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+    }
+    assert.ok(upstream.calls.every(url => !url.includes('domains%3Anortheastern.edu')));
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('the Shenyang record cannot satisfy the canonical Boston domain lookup', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@husky.neu.edu', emailVerified: true } },
+    ror: () => Response.json(ROR_NEU_SHENYANG),
     mdq: () => new Response(JSON.stringify(MDQ_NEU_BOSTON), { status: 200 }),
   });
   const admin = memoryAdmin();
