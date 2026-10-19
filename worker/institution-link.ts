@@ -98,29 +98,25 @@ function rorName(record: RorRecord, type: string) {
 const ROR_DOMAIN_ATTEMPTS = 3;
 
 /**
- * Domains ROR lists under a record they do not belong to. ROR lists
- * `neu.edu`, Northeastern University in Boston's alias, under Northeastern
- * University in Shenyang (checked 2026-10-19; the federation lists it under
- * Boston's provider). A domain's registry or a record's website is no
- * evidence either way: ROR lists insead.edu under a French record and ie.edu
- * under a Spanish one, and Birmingham writes from bham.ac.uk while publishing
- * at birmingham.ac.uk. Only a checked case goes here.
+ * Verified mail aliases whose ROR lookup must use the university's current
+ * domain. ROR mislists neu.edu under Shenyang, while northeastern.edu resolves
+ * to Boston (04t5xt781). Northeastern documents both its legacy domain and
+ * husky.neu.edu: https://www.northeastern.edu/privacy-information/ and
+ * https://cssh.northeastern.edu/writingcenter/tutoring/first-visit/
+ * Checked 2026-10-19. Only the ROR query changes; the verified mail domain and
+ * federation scope stay intact. Website/mail-domain differences alone do not
+ * establish an alias.
  */
-const MISLISTED_DOMAINS: Record<string, readonly string[]> = {
-  'https://ror.org/03awzbc87': ['neu.edu'],
+const ROR_DOMAIN_ALIASES: Record<string, string> = {
+  'neu.edu': 'northeastern.edu',
 };
-
-/** Whether a ROR record's claim to a domain is one we know to be wrong. */
-function mislistsDomain(record: RorRecord, domain: string) {
-  return (MISLISTED_DOMAINS[String(record.id)] || []).includes(domain);
-}
 
 /**
  * The ROR record whose registered domains include this one or a parent of
  * it, with the domain that matched. ROR's search is a text query, so the
  * answer is filtered again on the `domains` field: a record that merely
- * mentions the domain somewhere is not a match, and a record whose claim to
- * the domain is known to be wrong (`mislistsDomain`) is not one either. A
+ * mentions the domain somewhere is not a match. Verified aliases are looked
+ * up by their canonical domain, and that domain must match the record. A
  * parent with no record (`ac.uk`, `edu.au`) is simply a miss on the way to
  * not found. A budget that runs out is the registry being unavailable, not
  * a miss, and no further question is started past it.
@@ -133,7 +129,8 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortS
   }
   for (const candidate of candidates) {
     if (budget.aborted) throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
-    const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${candidate}`)}`;
+    const lookupDomain = ROR_DOMAIN_ALIASES[candidate] || candidate;
+    const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${lookupDomain}`)}`;
     let payload;
     try {
       payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl, budget);
@@ -142,8 +139,7 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortS
     }
     const items = Array.isArray(payload?.items) ? payload.items : [];
     const record = items.find(item => Array.isArray(item?.domains)
-      && item.domains.some(value => String(value).toLowerCase() === candidate)
-      && !mislistsDomain(item, candidate));
+      && item.domains.some(value => String(value).toLowerCase() === lookupDomain));
     if (!record || typeof record.id !== 'string') continue;
     const name = rorName(record, 'ror_display') || rorName(record, 'label');
     if (!name) continue;
