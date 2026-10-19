@@ -40,6 +40,7 @@ export interface ResolverCitation {
  */
 
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { cacheResponse } from './provider-runtime.ts';
 
 // A library's holdings change slowly; `unknown` (no ISSN, or GetFTR down with
@@ -63,11 +64,18 @@ export async function handleInstitutionAccess(request: Request, env: WorkerEnv) 
 
 export const INSTITUTION_ACCESS_PATH = '/access';
 
-// Two configuration strings per library; no public registry maps a ROR id to
-// its Alma instance, so each institution is added here by hand.
-export const INSTITUTION_RESOLVERS: Readonly<Partial<Record<string, InstitutionResolver>>> = Object.freeze({
-  'usal.es': { host: 'eu01.alma.exlibrisgroup.com', institution: '34BUC_USAL' },
-});
+/**
+ * The library's Alma link resolver for an institution, or null. The ROR id
+ * comes first: one university answers to several mail domains, and the link
+ * flow records the id with the domain. No public registry maps a university
+ * to its Alma instance, so the table is a census (`INSTITUTION_RESOLVERS`),
+ * grown by running `scripts/diagnostics/alma-resolver-census.mjs`.
+ */
+export function findResolver({ domain, rorId = null }: Pick<InstitutionQuery, 'domain' | 'rorId'>): InstitutionResolver | null {
+  const entry = (rorId && INSTITUTION_RESOLVERS.find(row => row.rorId === rorId))
+    || INSTITUTION_RESOLVERS.find(row => row.domains.includes(domain));
+  return entry ? { host: entry.host, institution: entry.institution } : null;
+}
 
 // One deadline for the whole lookup, not one per fetch: a Crossref call and
 // two resolver calls at six seconds each would run past the browser's own
@@ -267,14 +275,17 @@ const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null }
 
 /**
  * The parameters a lookup actually sends upstream, for the edge cache key:
- * the institution ids only reach GetFTR, so without a key they must not
- * split the cache, and the domain only picks a resolver.
+ * the library asked (its institution code, since every mail domain of a
+ * university reaches the same resolver), or the domain when there is none,
+ * and the institution ids only with a GetFTR key, since only GetFTR gets them.
  */
-export function upstreamParams({ doi = null, domain, entityId = null, rorId = null }: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
+export function upstreamParams(query: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
+  const { doi = null, domain, entityId = null, rorId = null } = query;
   const getFtr = Boolean(env.GETFTR_API_KEY);
+  const resolver = findResolver(query);
   return {
     ...(doi ? { doi } : {}),
-    domain,
+    ...(resolver ? { library: resolver.institution } : { domain }),
     ...(getFtr && entityId ? { entityId } : {}),
     ...(getFtr && rorId ? { rorId } : {}),
   };
@@ -284,7 +295,7 @@ export async function lookupInstitutionAccess(
   { doi, domain, entityId = null, rorId = null }: InstitutionQuery & { doi: string },
   { fetchImpl = (...args) => fetch(...args), env = {} }: LookupOptions = {},
 ) {
-  const resolver = Object.hasOwn(INSTITUTION_RESOLVERS, domain) ? INSTITUTION_RESOLVERS[domain] : null;
+  const resolver = findResolver({ domain, rorId });
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
   const signal = AbortSignal.timeout(LOOKUP_DEADLINE_MS);

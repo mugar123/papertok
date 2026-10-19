@@ -449,3 +449,31 @@ La trampa que costó una pasada entera: `Network.emulateNetworkConditions` con
 target. Con el servidor vivo el worker conserva la red, así que la sonda mide lo
 que responde el servidor y da todo verde sin que la última oportunidad corra nunca.
 Por eso apaga el servidor en vez de emular.
+
+## `alma-resolver-census.mjs` — the library resolvers behind "Via <university>" (2026-10-19)
+
+Generates `worker/institution-resolvers.ts`, the table that tells `/access` which Alma link
+resolver to ask for a reader's university. No registry maps a university to its Alma instance,
+so the script finds each institution code on the library's own pages (its Primo catalogue
+carries it as `vid=<CODE>:<VIEW>`, on the homepage, a catalogue link or a library subdomain)
+and then the Alma region by probing the sixteen regions: only the right one answers with a
+`full_text_indicator`; a Primo page's `Report-To` header names the region first, and consortium
+members often answer only on a host named after their code (`ohiolink-cwru.alma…`). Codes found
+by hand or in Zotero's public directory of OpenURL resolvers (zotero.org/openurl_resolvers) go
+in `alma-resolver-seeds.json` as `{ rorId, source, code?, host?, url?, product?, exclude? }` and
+are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
+worldcat, libkey) without assuming the library lacks Alma, and `exclude` keeps a library
+consortium out of the table. The census record, misses included, is `alma-resolver-census.json`:
+`verified` rows ship, `answers-without-indicator` rows are Alma libraries whose answer the Worker's
+parser cannot read yet, `compatibility-pending` rows only have a resolver of another product.
+
+```bash
+node scripts/diagnostics/alma-resolver-census.mjs --countries US --limit 150
+node scripts/diagnostics/alma-resolver-census.mjs --countries EU --limit 250
+node scripts/diagnostics/alma-resolver-census.mjs --countries ES
+node scripts/diagnostics/alma-resolver-census.mjs --verify
+```
+
+Institutions come from OpenAlex (`type:education`, by works count; each request spends its
+free daily budget), their domains from ROR. Every host is asked at most once per second with
+an identifying user agent. `--debug` prints each request; `--only <ror>` restricts a run.

@@ -20,8 +20,8 @@ type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | t
 import {
   ACCESS_CACHE_SECONDS,
   GETFTR_BATCH_SIZE,
-  INSTITUTION_RESOLVERS,
   InstitutionAccessError,
+  findResolver,
   readInstitutionQuery,
   askGetFtrBatch,
   askResolver,
@@ -227,7 +227,7 @@ export async function lookupInstitutionServices(
   { domain, entityId = null, rorId = null }: InstitutionQuery,
   { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now }: LookupOptions = {},
 ) {
-  const resolver = Object.hasOwn(INSTITUTION_RESOLVERS, domain) ? INSTITUTION_RESOLVERS[domain] : null;
+  const resolver = findResolver({ domain, rorId });
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
   const signal = AbortSignal.timeout(SERVICES_DEADLINE_MS);

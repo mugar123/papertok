@@ -227,7 +227,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
   const stub = upstreams({
     getftr: getftrAnswering((doi: string|number) => undecided[doi] || { statusCode: 200, entitled: 'no' }),
   });
-  const result = await lookupInstitutionServices({ domain: 'uam.es', rorId: 'https://ror.org/02f40zc51' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  const result = await lookupInstitutionServices({ domain: 'uam.es', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
   assert.equal(result.unchecked, 4);
   assert.equal(result.partial, false);
@@ -329,7 +329,7 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
   }
 }
 
-test('the route caches a complete list for seven days under the normalized domain', async () => {
+test('the route caches a complete list for seven days under the library', async () => {
   const { response, body, servicePuts } = await requestServices('domain=USAL.es&entityId=https%3A%2F%2Fidp.usal.es%2Fentity');
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://papertok.app');
@@ -341,7 +341,7 @@ test('the route caches a complete list for seven days under the normalized domai
   // split the cache; the catalogue's fingerprint does, so a changed
   // catalogue is not served from a week-old list.
   assert.deepEqual([...new URL(servicePuts[0].key).searchParams], [
-    ['domain', 'usal.es'],
+    ['library', '34BUC_USAL'],
     ['catalogue', catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET)],
   ]);
   assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
@@ -355,10 +355,10 @@ test('the cache key changes with the catalogue and the budget, and with nothing 
   assert.notEqual(catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET + 30), fingerprint);
   const swapped = SERVICE_CATALOGUE.map((entry, index) => (index === 0 ? { ...entry, doi: '10.1016/j.other.2021.1' } : entry));
   assert.notEqual(catalogueFingerprint(swapped, SUBREQUEST_BUDGET), fingerprint);
-  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { domain: 'usal.es', catalogue: fingerprint });
+  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', catalogue: fingerprint });
   assert.deepEqual(
     servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, GETFTR_ENV),
-    { domain: 'usal.es', entityId: ENTITY_ID, catalogue: fingerprint },
+    { library: '34BUC_USAL', entityId: ENTITY_ID, catalogue: fingerprint },
   );
 });
 

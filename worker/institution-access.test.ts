@@ -172,6 +172,8 @@ const DOI = '10.1016/j.cell.2020.01.001';
 const ELSEVIER_URL = 'https://buc-usal.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=8714574410005773&institutionId=5773&customerId=5770';
 const ENTITY_ID = 'https://idp.usal.es/entity';
 const ROR_ID = 'https://ror.org/02f40zc51';
+// A well-formed ROR id that no census will ever list.
+const OTHER_ROR_ID = 'https://ror.org/0nowher00';
 const GETFTR_ENV = { GETFTR_API_KEY: 'getftr-test-key' };
 
 const xml = (body: BodyInit|null|undefined) => new Response(body, { status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' } });
@@ -299,9 +301,26 @@ test('a resolver answer that cannot be read is an outage, not an unknown to reme
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
   const { upstreamParams } = await import('./institution-access.ts');
   const query = { doi: DOI, domain: 'usal.es', entityId: 'https://idp.usal.es/entity', rorId: 'https://ror.org/02f40zc51' };
-  assert.deepEqual(upstreamParams(query, {}), { doi: DOI, domain: 'usal.es' });
-  assert.deepEqual(upstreamParams(query, { GETFTR_API_KEY: 'k' }), query);
-  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'usal.es', entityId: null, rorId: null }, { GETFTR_API_KEY: 'k' }), { doi: DOI, domain: 'usal.es' });
+  assert.deepEqual(upstreamParams(query, {}), { doi: DOI, library: '34BUC_USAL' });
+  assert.deepEqual(upstreamParams(query, { GETFTR_API_KEY: 'k' }), { doi: DOI, library: '34BUC_USAL', entityId: query.entityId, rorId: query.rorId });
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'usal.es', entityId: null, rorId: null }, { GETFTR_API_KEY: 'k' }), { doi: DOI, library: '34BUC_USAL' });
+});
+
+test('the cache key names the library asked, or the domain when there is none', async () => {
+  const { upstreamParams } = await import('./institution-access.ts');
+  // Every mail domain of a university reaches the same resolver, so its
+  // answers are shared through the institution code, not split by domain.
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'alumni.usal.es', rorId: ROR_ID }, {}), { doi: DOI, library: '34BUC_USAL' });
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'uam.es', rorId: OTHER_ROR_ID }, {}), { doi: DOI, domain: 'uam.es' });
+});
+
+test('the resolver is found by ROR id first, then by mail domain', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const usal = { host: 'eu01.alma.exlibrisgroup.com', institution: '34BUC_USAL' };
+  assert.deepEqual(findResolver({ domain: 'usal.es' }), usal);
+  assert.deepEqual(findResolver({ domain: 'alumni.usal.es', rorId: ROR_ID }), usal);
+  assert.equal(findResolver({ domain: 'uam.es', rorId: OTHER_ROR_ID }), null);
+  assert.equal(findResolver({ domain: 'uam.es' }), null);
 });
 
 test('ignores date coverage when Crossref gives no year', async () => {
@@ -451,7 +470,7 @@ test('GetFTR maybe, an unsupported publisher or an outage leave the question to 
 test('a GetFTR outage for a library without a resolver is unknown, not an error', async () => {
   const stub = upstreams({ getftr: () => jsonResponse({}, 503) });
   const result = await lookupInstitutionAccess(
-    { doi: DOI, domain: 'uam.es', rorId: ROR_ID },
+    { doi: DOI, domain: 'uam.es', rorId: OTHER_ROR_ID },
     { fetchImpl: stub.fetchImpl, env: GETFTR_ENV },
   );
   assert.deepEqual(result, { status: 'unknown', collection: null, url: null });
@@ -509,14 +528,14 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
   }
 }
 
-test('the route answers a signed-in reader and caches under the normalized DOI and domain', async () => {
+test('the route answers a signed-in reader and caches under the normalized DOI and the library', async () => {
   const { response, body, accessPuts } = await requestAccess(`doi=${encodeURIComponent('10.1016/J.CELL.2020.01.001')}&domain=USAL.es&ignored=1`);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://papertok.app');
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['domain', 'usal.es'], ['citation', 'article']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['citation', 'article']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
