@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
-import { noteDeployActivated, reloadOnReturnIfBehindDeploy, watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.ts'
+import { noteDeployActivated, watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.ts'
 import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.ts'
 import { applyLegacyHashRoute } from './utils/legacyHashRoute.ts'
 import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.ts'
@@ -68,9 +68,8 @@ import './styles/global.css'
 // calls ask for chunks by their old content hash, which the new deploy no
 // longer serves. `onNeedReload` below skips the reload when the page runs
 // the build the new worker precaches, and otherwise holds it until the
-// reader changes page or comes back to the tab after a while
-// (utils/serviceWorkerUpdates.ts). A chunk that fails before then is caught
-// by `vite:preloadError` below.
+// reader changes page (utils/serviceWorkerUpdates.ts). A chunk that fails
+// before then is caught by `vite:preloadError` below.
 //
 // No `immediate: true` here, deliberately: that option calls
 // `navigator.serviceWorker.register()` right away, which starts the new
@@ -145,7 +144,6 @@ registerSW({
     void noteDeployActivated(import.meta.url)
   },
 })
-document.addEventListener('visibilitychange', reloadOnReturnIfBehindDeploy)
 
 // The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.ts):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own

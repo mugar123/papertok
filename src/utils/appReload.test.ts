@@ -150,8 +150,8 @@ test('SOURCE: the app marks every reload it gives itself, and applies the policy
   const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   const main = stripComments(await readFile(new URL('../main.tsx', import.meta.url), 'utf8'));
   const updates = stripComments(await readFile(new URL('./serviceWorkerUpdates.ts', import.meta.url), 'utf8'));
-  // The chunk-gone reload in main.tsx, and the deploy reloads the service
-  // worker's `onNeedReload` defers to a route change or a return to the tab.
+  // The chunk-gone reload in main.tsx, and the deploy reload the service
+  // worker's `onNeedReload` defers to a route change.
   for (const code of [main, updates]) {
     const reloads = code.match(/window\.location\.reload\(\)/g) ?? [];
     const marked = code.match(/markAppForcedReload\(\)\s*\n\s*window\.location\.reload\(\)/g) ?? [];
@@ -170,10 +170,8 @@ test('SOURCE: the app marks every reload it gives itself, and applies the policy
   assert.ok(policyAt > 0 && renderAt > policyAt, 'the policy is applied before the first render');
 });
 
-test('SOURCE: the app applies a pending deploy on route changes and on a return to the tab', async () => {
+test('SOURCE: the app applies a pending deploy on route changes', async () => {
   const { readFile } = await import('node:fs/promises');
   const app = await readFile(new URL('../App.tsx', import.meta.url), 'utf8');
   assert.match(app, /useEffect\(\(\) => \{\s*reloadIfBehindDeploy\(location\.pathname\)\s*\}, \[location\.pathname\]\)/);
-  const main = await readFile(new URL('../main.tsx', import.meta.url), 'utf8');
-  assert.match(main, /document\.addEventListener\('visibilitychange', reloadOnReturnIfBehindDeploy\)/);
 });

@@ -168,19 +168,3 @@ test('offline, the deploy reload waits for a route change taken online', () => {
   assert.equal(shouldReloadForDeploy('/lists', { pathname: '/following', online: true }), true)
   assert.equal(shouldReloadForDeploy('/lists', { pathname: '/feed', online: true }), true)
 })
-
-test('a tab that stays on the feed takes the deploy when the reader comes back to it after a while', () => {
-  const minutes = (n: number) => n * 60_000
-  const online = true
-  // Back on the same page, after a long time away: the reader has not started again yet.
-  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online, returnedAfterMs: minutes(6) }), true)
-  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online, returnedAfterMs: minutes(90) }), true)
-  // A glance at another app is not a return.
-  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online, returnedAfterMs: 20_000 }), false)
-  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online, returnedAfterMs: minutes(2) }), false)
-  // Not with the reader, the PDF viewer or a form left open, and not offline.
-  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online, returnedAfterMs: minutes(30), modalOpen: true }), false)
-  assert.equal(shouldReloadForDeploy('/feed', { pathname: '/feed', online: false, returnedAfterMs: minutes(30) }), false)
-  // Nothing to take when the page already runs the deploy.
-  assert.equal(shouldReloadForDeploy(null, { pathname: '/feed', online, returnedAfterMs: minutes(30) }), false)
-})
