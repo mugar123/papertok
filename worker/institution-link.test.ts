@@ -6,10 +6,12 @@ import {
   INSTITUTION_LINK_PATH,
   INSTITUTION_UNLINK_PATH,
   InstitutionLinkError,
+  LINK_LOOKUP_BUDGET_MS,
   handleInstitutionLinkRequest,
   resolveInstitution,
 } from './institution-link.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
+import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/requestDeadline.ts';
 
 const UID = 'alice-uid';
 const PROJECT_ID = 'papertok-168df';
@@ -324,6 +326,110 @@ test('a student subdomain links through the university\'s own domain, and keeps 
   } finally {
     upstream.restore();
   }
+});
+
+// ROR's record for Northeastern University in Shenyang lists neu.edu, which is
+// an alias of Northeastern University in Boston; its own website is neu.edu.cn
+// (checked 2026-10-19). The federation lists neu.edu under Boston's provider.
+const ROR_NEU_SHENYANG = {
+  number_of_results: 1,
+  items: [{
+    id: 'https://ror.org/03awzbc87',
+    domains: ['neu.edu'],
+    links: [{ type: 'website', value: 'https://www.neu.edu.cn' }],
+    names: [{ value: 'Northeastern University', types: ['ror_display', 'label'] }],
+  }],
+};
+const MDQ_NEU_BOSTON = [{ title: 'Northeastern University', entityID: 'https://neuidmsso.neu.edu/idp/shibboleth', scope: 'neu.edu' }];
+
+test('a record whose own website is not under the domain it claims does not link an address in that domain', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@husky.neu.edu', emailVerified: true } },
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Aneu.edu') ? ROR_NEU_SHENYANG : { items: [] }), { status: 200 }),
+    mdq: () => new Response(JSON.stringify(MDQ_NEU_BOSTON), { status: 200 }),
+  });
+  const admin = memoryAdmin();
+  try {
+    await rejectsWith(resolveInstitution('husky.neu.edu', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
+    await rejectsWith(resolveInstitution('neu.edu', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
+    await rejectsWith(handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin }), 'INSTITUTION_NOT_FOUND', 404);
+    assert.equal(admin.commits.length, 0, 'nothing is written for a contradicted identity');
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('a record is trusted for every domain it lists once one of them is its own website\'s', async () => {
+  // HKUST lists hkust.edu.hk and ust.hk; its website is under the first.
+  const record = {
+    items: [{
+      id: 'https://ror.org/00q4vv597',
+      domains: ['hkust.edu.hk', 'ust.hk'],
+      links: [{ type: 'website', value: 'https://hkust.edu.hk/' }],
+      names: [{ value: 'Hong Kong University of Science and Technology', types: ['ror_display', 'label'] }],
+    }],
+  };
+  const upstream = stubUpstreams({
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Aust.hk') ? record : { items: [] }), { status: 200 }),
+    mdq: () => new Response('[]', { status: 200 }),
+  });
+  try {
+    const institution = await resolveInstitution('ust.hk', { cache: undefined });
+    assert.equal(institution.rorId, 'https://ror.org/00q4vv597');
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('an exact match ends the search before any parent is asked about', async () => {
+  const upstream = stubUpstreams({ ror: () => new Response(JSON.stringify(ROR_UAM), { status: 200 }), mdq: () => new Response('[]', { status: 200 }) });
+  try {
+    const institution = await resolveInstitution('uam.es', { cache: undefined });
+    assert.equal(institution.rorId, 'https://ror.org/01cby8j38');
+    assert.equal(upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).length, 1);
+  } finally {
+    upstream.restore();
+  }
+});
+
+/** A fetch that never answers until its signal aborts, counting what was started. */
+function stalledFetch(onCall: (url: string) => void = () => {}) {
+  const started: string[] = [];
+  const fetchImpl: typeof fetch = (url, init) => new Promise((resolve, reject) => {
+    started.push(String(url));
+    onCall(String(url));
+    const signal = init?.signal;
+    const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort', abort);
+  });
+  return { fetchImpl, started };
+}
+
+test('a lookup whose budget runs out is unavailable, not a missing institution, and starts nothing more', async () => {
+  const controller = new AbortController();
+  const { fetchImpl, started } = stalledFetch(() => controller.abort());
+  await rejectsWith(resolveInstitution('mail.students.uam.es', { fetchImpl, cache: undefined, signal: controller.signal }), 'INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+  assert.equal(started.length, 1, 'the second ROR question is never asked after the budget is gone');
+});
+
+test('the identity provider lookup is skipped when the budget is gone, and the confirmed institution still links', async () => {
+  const controller = new AbortController();
+  const started: string[] = [];
+  const fetchImpl: typeof fetch = async (url) => {
+    started.push(String(url));
+    // ROR answers at once; what is left of the budget is spent by the time the federation would be asked.
+    controller.abort();
+    return new Response(JSON.stringify(ROR_UAM), { status: 200 });
+  };
+  const institution = await resolveInstitution('uam.es', { fetchImpl, cache: undefined, signal: controller.signal });
+  assert.equal(institution.rorId, 'https://ror.org/01cby8j38');
+  assert.equal(institution.entityId, null);
+  assert.deepEqual(started.filter(url => url.startsWith('https://md.seamlessaccess.org/')), []);
+});
+
+test('the lookup budget leaves the browser\'s wait room for the identity checks and the write', () => {
+  assert.ok(LINK_LOOKUP_BUDGET_MS <= DEFAULT_REQUEST_TIMEOUT_MS - 4000, `${LINK_LOOKUP_BUDGET_MS} against a ${DEFAULT_REQUEST_TIMEOUT_MS} ms wait`);
 });
 
 test('a domain with no record up its parents is not found, after a bounded number of questions', async () => {

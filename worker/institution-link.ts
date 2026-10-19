@@ -2,7 +2,7 @@ import type { WorkerEnv, WorkerGlobals } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
 
-interface RorRecord { id?: unknown; domains?: unknown[]; names?: Array<{ types?: unknown[]; value?: unknown }> }
+interface RorRecord { id?: unknown; domains?: unknown[]; links?: Array<{ type?: unknown; value?: unknown }>; names?: Array<{ types?: unknown[]; value?: unknown }> }
 export interface ResolvedInstitution { domain: string; rorId: string; name: string; acronym: string | null; entityId: string | null }
 interface InstitutionLinkOptions {
   admin?: Pick<FirestoreAdmin, 'name'> & { commit(writes: FirestoreWrite[]): Promise<unknown> };
@@ -47,6 +47,11 @@ export const INSTITUTION_PATHS = new Set([INSTITUTION_LINK_PATH, INSTITUTION_UNL
 // A Firebase ID token runs to about a kilobyte; the body carries at most one.
 const BODY_LIMIT_BYTES = 16_384;
 const LOOKUP_TIMEOUT_MS = 6000;
+// One budget for every registry question of a link: the browser waits 15 s
+// for the whole request, which also verifies one or two tokens and writes
+// the document, and up to three ROR and two federation questions at 6 s
+// each would outrun it (seen with mail.students.uam.es on 2026-10-19).
+export const LINK_LOOKUP_BUDGET_MS = 10_000;
 const ROR_API = 'https://api.ror.org/v2/organizations';
 // SeamlessAccess publishes the eduGAIN metadata as a query service: each entry
 // carries the email `scope` its identity provider authenticates.
@@ -69,10 +74,10 @@ export class InstitutionLinkError extends Error {
  * Reads the body inside the deadline as well: a registry that sends its
  * headers and then stalls is as unavailable as one that never answered.
  */
-async function fetchJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
+async function fetchJson<T>(url: string, fetchImpl: typeof fetch, budget: AbortSignal): Promise<T> {
   const response = await fetchImpl(url, {
     headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    signal: AbortSignal.any([budget, AbortSignal.timeout(LOOKUP_TIMEOUT_MS)]),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`${url} returned ${response.status}`);
@@ -93,29 +98,57 @@ function rorName(record: RorRecord, type: string) {
 const ROR_DOMAIN_ATTEMPTS = 3;
 
 /**
+ * Whether a ROR record's domain claims are its own: its website is under
+ * one of the domains it lists. ROR lists `neu.edu`, Northeastern University
+ * in Boston's alias, under Northeastern University in Shenyang, whose
+ * website is neu.edu.cn (2026-10-19); a record like that must not link an
+ * address in that domain to the wrong university, and a record with no
+ * website gives nothing to check against.
+ */
+function ownsItsDomains(record: RorRecord) {
+  const website = (Array.isArray(record.links) ? record.links : []).find(link => link?.type === 'website');
+  if (typeof website?.value !== 'string') return true;
+  let host;
+  try {
+    host = new URL(website.value).hostname.toLowerCase();
+  } catch {
+    return true;
+  }
+  return (record.domains || []).some((value) => {
+    const domain = String(value).toLowerCase();
+    return host === domain || host.endsWith(`.${domain}`);
+  });
+}
+
+/**
  * The ROR record whose registered domains include this one or a parent of
  * it, with the domain that matched. ROR's search is a text query, so the
  * answer is filtered again on the `domains` field: a record that merely
- * mentions the domain somewhere is not a match. A parent with no record
- * (`ac.uk`, `edu.au`) is simply a miss on the way to not found.
+ * mentions the domain somewhere is not a match, and a record that does not
+ * own its domains (`ownsItsDomains`) is not one either. A parent with no
+ * record (`ac.uk`, `edu.au`) is simply a miss on the way to not found. A
+ * budget that runs out is the registry being unavailable, not a miss, and
+ * no further question is started past it.
  */
-async function lookupRor(domain: string, fetchImpl: typeof fetch) {
+async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
   const labels = domain.split('.');
   const candidates = [];
   for (let start = 0; start < labels.length - 1 && candidates.length < ROR_DOMAIN_ATTEMPTS; start += 1) {
     candidates.push(labels.slice(start).join('.'));
   }
   for (const candidate of candidates) {
+    if (budget.aborted) throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
     const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${candidate}`)}`;
     let payload;
     try {
-      payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl);
+      payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl, budget);
     } catch {
       throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
     }
     const items = Array.isArray(payload?.items) ? payload.items : [];
     const record = items.find(item => Array.isArray(item?.domains)
-      && item.domains.some(value => String(value).toLowerCase() === candidate));
+      && item.domains.some(value => String(value).toLowerCase() === candidate)
+      && ownsItsDomains(item));
     if (!record || typeof record.id !== 'string') continue;
     const name = rorName(record, 'ror_display') || rorName(record, 'label');
     if (!name) continue;
@@ -130,9 +163,11 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch) {
  * federation, or a metadata service that is down, leaves it null rather than
  * blocking the link. Null here means "not found now", not "has none".
  */
-async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
+async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
+  // Optional, so a budget already spent on the registry is not spent again.
+  if (budget.aborted) return null;
   try {
-    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl);
+    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl, budget);
     const entry = (Array.isArray(entries) ? entries : []).find(candidate => String(candidate?.scope || '')
       .split(',')
       .map(scope => scope.trim().toLowerCase())
@@ -143,26 +178,29 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
   }
 }
 
+// The cache's second generation: the first could hold a record that does
+// not own its domain (neu.edu resolved to Shenyang until 2026-10-19).
 function cacheRequest(domain: string) {
-  return new Request(`https://papertok.internal/institution/${encodeURIComponent(domain)}`);
+  return new Request(`https://papertok.internal/institution/v2/${encodeURIComponent(domain)}`);
 }
 
 /**
  * What a domain resolves to. Cached a week on success: the registries change
  * slowly and every member of one institution asks the same question. Not
  * found and unavailable are not cached, so a registry outage or a record
- * added tomorrow is not remembered as a refusal.
+ * added tomorrow is not remembered as a refusal. Every registry question
+ * shares one `budget`, `LINK_LOOKUP_BUDGET_MS` by default.
  */
-export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> = {}): Promise<ResolvedInstitution> {
+export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default, signal: budget = AbortSignal.timeout(LINK_LOOKUP_BUDGET_MS) }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> & { signal?: AbortSignal } = {}): Promise<ResolvedInstitution> {
   const key = cacheRequest(domain);
   const cached = cache ? await cache.match(key) : null;
   if (cached) return cached.json<ResolvedInstitution>();
 
-  const { matchedDomain, ...ror } = await lookupRor(domain, fetchImpl);
+  const { matchedDomain, ...ror } = await lookupRor(domain, fetchImpl, budget);
   // The federation lists the identity provider by the university's own
   // scope, which a student subdomain may not be.
-  const entityId = await lookupEntityId(domain, fetchImpl)
-    ?? (matchedDomain !== domain ? await lookupEntityId(matchedDomain, fetchImpl) : null);
+  const entityId = await lookupEntityId(domain, fetchImpl, budget)
+    ?? (matchedDomain !== domain ? await lookupEntityId(matchedDomain, fetchImpl, budget) : null);
   const institution = { domain, ...ror, entityId };
   if (cache) {
     await cache.put(key, new Response(JSON.stringify(institution), {
