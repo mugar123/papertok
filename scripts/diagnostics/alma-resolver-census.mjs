@@ -40,6 +40,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { promises as dns } from 'node:dns';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The Worker's own reading of a resolver answer: a row is verified only by
+// an answer the Worker would read as one.
+import { parseResolverAnswer } from '../../worker/institution-access.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CENSUS_FILE = path.join(HERE, 'alma-resolver-census.json');
@@ -52,7 +55,12 @@ const MAILTO = 'app@papertok.io';
 // as Ex Libris adds regions.
 const ALMA_REGIONS = ['eu00', 'eu01', 'eu02', 'eu03', 'eu04', 'eu05', 'eu06', 'na01', 'na02', 'na03', 'na04', 'na05', 'na06', 'na07', 'na08', 'ca01', 'ap01', 'ap02'];
 const EUROPE = ['AT', 'BE', 'BG', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR', 'HR', 'HU', 'IE', 'IS', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'NO', 'PL', 'PT', 'RO', 'RS', 'SE', 'SI', 'SK', 'UA'];
-const PROBE_QUERY = 'openurl?svc_dat=CTO&rft.genre=article&rft.issn=0028-0836&rft.date=2020';
+// Journals a host is asked about, in order: Nature, then a Springer journal
+// most libraries hold, for the few that lack Nature (Drexel, Burgos, seen
+// on 2026-10-19). A host is verified by an answer that lists a service.
+const PROBE_JOURNALS = [{ issn: '0028-0836', year: 2020 }, { issn: '0022-2461', year: 2021 }];
+const probeQuery = ({ issn, year }) => `openurl?svc_dat=CTO&rft.genre=article&rft.issn=${issn}&rft.date=${year}`;
+const PRIMO_SLUG = /\b([a-z0-9-]+)\.primo\.exlibrisgroup\.com/i;
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_HTML = 600 * 1024;
 const PER_HOST_INTERVAL_MS = 1000;
@@ -198,8 +206,11 @@ function inspect(page) {
   const haystack = `${page.url}\n${page.reportTo || ''}\n${page.text}`;
   const code = codeIn(haystack);
   const region = regionIn(haystack);
+  // The Primo slug usually names the library's own Alma host too
+  // (unipv.primo… and unipv.alma…), which the regional host may not stand in for.
+  const primoSlug = (haystack.match(PRIMO_SLUG) || [])[1]?.toLowerCase() || null;
   const primoLinks = [...new Set([...haystack.matchAll(PRIMO_LINK)].map(match => match[0].replace(/&amp;/g, '&')))].slice(0, 3);
-  return { code, region, primoLinks };
+  return { code, region, primoSlug, primoLinks };
 }
 
 /**
@@ -208,7 +219,7 @@ function inspect(page) {
  */
 async function discoverCode(institution, ror) {
   const seen = new Set();
-  const found = { code: null, region: null, route: null, evidence: null };
+  const found = { code: null, region: null, primoSlug: null, route: null, evidence: null };
   const visit = async (url, route) => {
     if (!url || found.code || seen.size >= MAX_PAGES || ASSET_LINK.test(url)) return;
     const key = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -216,8 +227,9 @@ async function discoverCode(institution, ror) {
     seen.add(key);
     const page = await fetchPage(url);
     if (!page) return;
-    const { code, region, primoLinks } = inspect(page);
+    const { code, region, primoSlug, primoLinks } = inspect(page);
     if (region && !found.region) found.region = region;
+    if (primoSlug && !found.primoSlug) found.primoSlug = primoSlug;
     if (code) {
       Object.assign(found, { code, route, evidence: page.url });
       return;
@@ -273,22 +285,48 @@ async function discoverCode(institution, ror) {
  * libraries answer without a `full_text_indicator` (Harvard, seen 2026-10-14);
  * the Worker's parser cannot read those, so they are recorded but not shipped.
  */
-async function probeRegions(code, preferred) {
-  // Consortium members often answer only on a host named after the code:
-  // 01OHIOLINK_CWRU on ohiolink-cwru.alma…, 49HBZ_ULB on hbz-ulb.alma…
-  const slug = code.replace(/^\d+/, '').toLowerCase().replace(/_/g, '-');
-  const regions = [...new Set([preferred, slug, ...ALMA_REGIONS].filter(Boolean))];
-  for (const region of regions) {
-    const host = `${region}.alma.exlibrisgroup.com`;
-    const page = await fetchPage(`https://${host}/view/uresolver/${code}/${PROBE_QUERY}`, { accept: 'text/xml' });
-    if (!page || !page.text.includes('<uresolver_content')) continue;
-    const indicator = page.text.includes('full_text_indicator');
-    const services = (page.text.match(/<context_service /g) || []).length;
-    if (!indicator && services === 0) continue;
-    const packages = [...page.text.matchAll(/<key id="package_public_name">([^<]*)<\/key>/g)].map(match => match[1]).slice(0, 2);
-    return { host, indicator, services, packages };
+/** One probe of one host: the page, the Worker's reading of it, and what Alma listed. */
+async function probeHost(host, code, journal) {
+  const page = await fetchPage(`https://${host}/view/uresolver/${code}/${probeQuery(journal)}`, { accept: 'text/xml' });
+  if (!page || !page.text.includes('<uresolver_content')) return null;
+  const answer = parseResolverAnswer(page.text);
+  const listed = (page.text.match(/<context_service /g) || []).length;
+  const packages = [...page.text.matchAll(/<key id="package_public_name">([^<]*)<\/key>/g)].map(match => match[1]).slice(0, 2);
+  return { host, answer, listed, packages, journal };
+}
+
+/**
+ * The host that answers for the code with a service listed, or the best
+ * answer short of that. Hosts are tried in order of likelihood: the slug
+ * of the library's Primo (unipv.alma…), the region a page named, the slug
+ * derived from the code (01OHIOLINK_CWRU → ohiolink-cwru.alma…), the
+ * labels of the mail domains, then every region. A host that knows the
+ * code but not the journal (no `rft.mms_id`, nothing listed) is not this
+ * library's host: eu03 answered that way for Pavia while unipv.alma… listed
+ * five services (2026-10-19). A host that resolves the journal and lists
+ * nothing is asked about the next journal; a library with nothing for
+ * either is recorded as `answers-without-services`, not shipped.
+ */
+async function probeRegions(code, { region = null, primoSlug = null, domains = [] } = {}) {
+  const codeSlug = code.replace(/^\d+/, '').toLowerCase().replace(/_/g, '-');
+  const labels = domains.map(domain => domain.split('.')[0]).filter(label => label.length > 2);
+  const slugs = [...new Set([primoSlug, region, codeSlug, ...labels, ...ALMA_REGIONS].filter(Boolean))];
+  let resolved = null;
+  for (const slug of slugs) {
+    const host = `${slug}.alma.exlibrisgroup.com`;
+    for (const journal of PROBE_JOURNALS) {
+      const probe = await probeHost(host, code, journal);
+      if (!probe) break;
+      if (!probe.answer) {
+        if (probe.listed > 0) return { ...probe, status: 'answers-without-indicator' };
+        break;
+      }
+      if (!probe.answer.matched && probe.listed === 0) break;
+      if (probe.listed > 0) return { ...probe, status: 'verified' };
+      resolved ||= probe;
+    }
   }
-  return null;
+  return resolved ? { ...resolved, status: 'answers-without-services' } : null;
 }
 
 // --- the census record and the Worker table --------------------------------
@@ -347,22 +385,35 @@ async function processInstitution(institution, record, seeds, verifyOnly) {
   let code = seed?.code || record?.code || null;
   let route = seed?.code ? 'seed' : record?.route || null;
   let region = (seed?.host || record?.host || '').split('.')[0] || null;
-  // A directory address without a code is read even in a verify run.
-  if (!code && (!verifyOnly || (seed?.url && almaLike))) {
+  let primoSlug = record?.primoSlug || null;
+  const discover = async () => {
     const found = await discoverCode({ ...entry, seedUrl: almaLike ? seed?.url : null, seedSource: seed?.source }, { domains: entry.domains, links: entry.links });
-    code = found.code;
-    route = found.route;
+    if (found.code) {
+      code = found.code;
+      route = found.route;
+      entry.evidence = found.evidence;
+    }
     region = found.region || region;
-    entry.evidence = found.evidence;
-  }
+    primoSlug = found.primoSlug || primoSlug;
+  };
+  // A directory address without a code is read even in a verify run.
+  if (!code && (!verifyOnly || (seed?.url && almaLike))) await discover();
   if (!code) {
     const status = seed?.url ? (almaLike ? 'address-located' : 'compatibility-pending') : 'unresolved';
     return { ...entry, code: null, host: null, status };
   }
-  const probe = await probeRegions(code, region);
-  if (!probe) return { ...entry, code, route, host: null, status: 'code-without-region' };
-  const status = probe.indicator ? 'verified' : 'answers-without-indicator';
-  return { ...entry, code, route, host: probe.host, services: probe.services, packages: probe.packages, status };
+  let probe = await probeRegions(code, { region, primoSlug, domains: entry.domains });
+  // A host that lists nothing may be the regional one standing in for the
+  // library's own: the library's pages name that host through its Primo.
+  if (probe?.status !== 'verified' && !primoSlug) {
+    await discover();
+    if (primoSlug) probe = await probeRegions(code, { region, primoSlug, domains: entry.domains });
+  }
+  if (!probe) return { ...entry, code, route, host: null, primoSlug, status: 'code-without-region' };
+  return {
+    ...entry, code, route, primoSlug, host: probe.host, status: probe.status,
+    services: probe.listed, packages: probe.packages, journal: probe.journal.issn,
+  };
 }
 
 async function main() {

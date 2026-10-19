@@ -172,6 +172,7 @@ const DOI = '10.1016/j.cell.2020.01.001';
 const ELSEVIER_URL = 'https://buc-usal.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=8714574410005773&institutionId=5773&customerId=5770';
 const ENTITY_ID = 'https://idp.usal.es/entity';
 const ROR_ID = 'https://ror.org/02f40zc51';
+const USAL_HOST = 'eu01.alma.exlibrisgroup.com';
 // A well-formed ROR id that no census will ever list.
 const OTHER_ROR_ID = 'https://ror.org/0nowher00';
 const GETFTR_ENV = { GETFTR_API_KEY: 'getftr-test-key' };
@@ -221,6 +222,7 @@ const query = (params: string|Record<string,string>|Iterable<Iterable<string>>|u
 test('parses the captured Cell answer into its two full-text services, unescaped', () => {
   assert.deepEqual(parseResolverAnswer(CTO_CELL), {
     fullText: true,
+    matched: true,
     services: [
       {
         name: 'Cell Press Free Archives',
@@ -233,8 +235,31 @@ test('parses the captured Cell answer into its two full-text services, unescaped
 });
 
 test('parses the captured control answer as no full text and anything else as no answer', () => {
-  assert.deepEqual(parseResolverAnswer(CTO_CONTROL), { fullText: false, services: [] });
+  assert.deepEqual(parseResolverAnswer(CTO_CONTROL), { fullText: false, matched: false, services: [] });
   assert.equal(parseResolverAnswer('<html>Service unavailable</html>'), null);
+});
+
+// Captured 2026-10-19 on eu03.alma.exlibrisgroup.com for Pavia's code
+// (39UPV_INST), Nature 2020: the regional host knows the code but did not
+// resolve the journal, so it lists nothing, while unipv.alma… lists five
+// services for the same question. Keys the Worker does not read are left out.
+const CTO_NO_MATCH = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <context_object>
+    <keys>
+      <key id="available_services">getit</key>
+      <key id="institution">8486</key>
+      <key id="rft.date">2020</key>
+      <key id="rft.normalized_issn">0028-0836</key>
+      <key id="full_text_indicator">false</key>
+      <key id="rft.issn">0028-0836</key>
+    </keys>
+  </context_object>
+  <context_services/>
+</uresolver_content>`;
+
+test('an answer that did not resolve the journal is read, but as unmatched', () => {
+  assert.deepEqual(parseResolverAnswer(CTO_NO_MATCH), { fullText: false, matched: false, services: [] });
+  assert.equal(parseResolverAnswer(CTO_CELL)!.matched, true);
 });
 
 test('reports the subscription service rather than the free archive for an entitled journal', async () => {
@@ -301,16 +326,27 @@ test('a resolver answer that cannot be read is an outage, not an unknown to reme
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
   const { upstreamParams } = await import('./institution-access.ts');
   const query = { doi: DOI, domain: 'usal.es', entityId: 'https://idp.usal.es/entity', rorId: 'https://ror.org/02f40zc51' };
-  assert.deepEqual(upstreamParams(query, {}), { doi: DOI, library: '34BUC_USAL' });
-  assert.deepEqual(upstreamParams(query, { GETFTR_API_KEY: 'k' }), { doi: DOI, library: '34BUC_USAL', entityId: query.entityId, rorId: query.rorId });
-  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'usal.es', entityId: null, rorId: null }, { GETFTR_API_KEY: 'k' }), { doi: DOI, library: '34BUC_USAL' });
+  assert.deepEqual(upstreamParams(query, {}), { doi: DOI, library: '34BUC_USAL', host: USAL_HOST });
+  assert.deepEqual(upstreamParams(query, { GETFTR_API_KEY: 'k' }), { doi: DOI, library: '34BUC_USAL', host: USAL_HOST, entityId: query.entityId, rorId: query.rorId });
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'usal.es', entityId: null, rorId: null }, { GETFTR_API_KEY: 'k' }), { doi: DOI, library: '34BUC_USAL', host: USAL_HOST });
+});
+
+test('the cache key names the host the code is asked on, so a row moved to another host is asked again', async () => {
+  const { upstreamParams, findResolver } = await import('./institution-access.ts');
+  // The same code answers differently on a regional host and on the library's
+  // own (Pavia, 2026-10-19): a key without the host would serve the regional
+  // host's empty answer for a week after the row was corrected.
+  const resolver = findResolver({ domain: 'usal.es' })!;
+  const key = upstreamParams({ doi: DOI, domain: 'usal.es' }, {});
+  assert.deepEqual(key, { doi: DOI, library: resolver.institution, host: resolver.host });
+  assert.notDeepEqual(key, { ...key, host: 'eu03.alma.exlibrisgroup.com' });
 });
 
 test('the cache key names the library asked, or the domain when there is none', async () => {
   const { upstreamParams } = await import('./institution-access.ts');
   // Every mail domain of a university reaches the same resolver, so its
   // answers are shared through the institution code, not split by domain.
-  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'alumni.usal.es', rorId: ROR_ID }, {}), { doi: DOI, library: '34BUC_USAL' });
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'alumni.usal.es', rorId: ROR_ID }, {}), { doi: DOI, library: '34BUC_USAL', host: USAL_HOST });
   assert.deepEqual(upstreamParams({ doi: DOI, domain: 'uam.es', rorId: OTHER_ROR_ID }, {}), { doi: DOI, domain: 'uam.es' });
 });
 
@@ -539,7 +575,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['citation', 'article']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 

@@ -6,7 +6,7 @@
       "country": "ES",
       "worksCount": 204231,
       "homepage": "https://web.ub.edu",
-      "probedAt": "2026-10-19T10:15:31.062Z",
+      "probedAt": "2026-10-19T12:24:15.027Z",
       "domains": [
         "ub.edu"
       ],
@@ -25,7 +25,10 @@
       "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://cercabib.ub.edu/openurl/34CSUC_UB/34CSUC_UB:VU1",
-      "adapter": "alma"
+      "adapter": "alma",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02f40zc51": {
       "rorId": "https://ror.org/02f40zc51",
@@ -33,7 +36,7 @@
       "country": "ES",
       "worksCount": 66367,
       "homepage": "https://www.usal.es",
-      "probedAt": "2026-10-19T10:15:35.172Z",
+      "probedAt": "2026-10-19T12:24:15.029Z",
       "domains": [
         "usal.es"
       ],
@@ -49,7 +52,9 @@
         "Nature"
       ],
       "status": "verified",
-      "source": "worker table, verified 2026-10-13"
+      "source": "worker table, verified 2026-10-13",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02p0gd045": {
       "rorId": "https://ror.org/02p0gd045",
@@ -75,7 +80,7 @@
       "country": "ES",
       "worksCount": 171533,
       "homepage": "https://www.uab.cat",
-      "probedAt": "2026-10-19T10:15:31.067Z",
+      "probedAt": "2026-10-19T12:24:15.029Z",
       "domains": [
         "uab.cat"
       ],
@@ -91,7 +96,9 @@
         "Nature",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00jmfr291": {
       "rorId": "https://ror.org/00jmfr291",
@@ -99,7 +106,7 @@
       "country": "US",
       "worksCount": 1004999,
       "homepage": "https://www.umich.edu",
-      "probedAt": "2026-10-19T10:30:51.235Z",
+      "probedAt": "2026-10-19T12:24:15.029Z",
       "domains": [
         "umich.edu"
       ],
@@ -118,7 +125,9 @@
       "packages": [
         "Gale Academic OneFile",
         "Gale General OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/046rm7j60": {
       "rorId": "https://ror.org/046rm7j60",
@@ -126,7 +135,7 @@
       "country": "US",
       "worksCount": 532316,
       "homepage": "https://www.ucla.edu",
-      "probedAt": "2026-10-19T10:04:44.553Z",
+      "probedAt": "2026-10-19T12:24:15.029Z",
       "domains": [
         "ucla.edu"
       ],
@@ -135,14 +144,19 @@
       ],
       "evidence": "https://www.library.ucla.edu/",
       "code": "01UCS_LAL",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 10,
       "packages": [
         "Materials Science &amp; Engineering Collection",
         "Natural Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.ucla.edu/openurl/01UCS_LAL/01UCS_LAL:UCLA",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00cvxb145": {
       "rorId": "https://ror.org/00cvxb145",
@@ -150,7 +164,7 @@
       "country": "US",
       "worksCount": 542266,
       "homepage": "https://www.washington.edu",
-      "probedAt": "2026-10-19T10:19:05.855Z",
+      "probedAt": "2026-10-19T12:24:15.029Z",
       "domains": [
         "washington.edu"
       ],
@@ -169,7 +183,9 @@
       "packages": [
         "Nature",
         "Natural Science Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03vek6s52": {
       "rorId": "https://ror.org/03vek6s52",
@@ -177,7 +193,7 @@
       "country": "US",
       "worksCount": 1070696,
       "homepage": "https://www.harvard.edu",
-      "probedAt": "2026-10-19T11:05:50.111Z",
+      "probedAt": "2026-10-19T12:24:15.834Z",
       "domains": [
         "harvard.edu"
       ],
@@ -196,7 +212,9 @@
       "packages": [
         "Nature",
         "Nature Single Titles"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00f54p054": {
       "rorId": "https://ror.org/00f54p054",
@@ -204,7 +222,7 @@
       "country": "US",
       "worksCount": 558086,
       "homepage": "https://www.stanford.edu",
-      "probedAt": "2026-10-19T11:05:50.112Z",
+      "probedAt": "2026-10-19T12:24:16.140Z",
       "domains": [
         "stanford.edu"
       ],
@@ -225,7 +243,7 @@
       "country": "US",
       "worksCount": 436954,
       "homepage": "https://www.yale.edu",
-      "probedAt": "2026-10-19T10:04:58.970Z",
+      "probedAt": "2026-10-19T12:24:16.140Z",
       "domains": [
         "yale.edu"
       ],
@@ -234,14 +252,19 @@
       ],
       "evidence": "https://library.yale.edu/",
       "code": "01YALE_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na05.alma.exlibrisgroup.com",
       "services": 19,
       "packages": [
         "Springer Nature - Complete Nature.com",
         "Natural Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://articles.library.yale.edu/openurl/01YALE_INST/01YALE_INST:01YALE_INST",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00za53h95": {
       "rorId": "https://ror.org/00za53h95",
@@ -249,7 +272,7 @@
       "country": "US",
       "worksCount": 523020,
       "homepage": "https://www.jhu.edu/",
-      "probedAt": "2026-10-19T10:19:05.856Z",
+      "probedAt": "2026-10-19T12:24:16.251Z",
       "domains": [
         "jhu.edu"
       ],
@@ -268,7 +291,9 @@
       "packages": [
         "*Nature",
         "SpringerLink Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00hj8s172": {
       "rorId": "https://ror.org/00hj8s172",
@@ -276,7 +301,7 @@
       "country": "US",
       "worksCount": 429571,
       "homepage": "https://www.columbia.edu",
-      "probedAt": "2026-10-19T11:05:50.112Z",
+      "probedAt": "2026-10-19T12:24:16.336Z",
       "domains": [
         "columbia.edu"
       ],
@@ -297,7 +322,7 @@
       "country": "US",
       "worksCount": 457247,
       "homepage": "https://www.upenn.edu",
-      "probedAt": "2026-10-19T10:19:05.856Z",
+      "probedAt": "2026-10-19T12:24:16.336Z",
       "domains": [
         "upenn.edu"
       ],
@@ -316,7 +341,9 @@
       "packages": [
         "Agricultural &amp; Environmental Science Collection",
         "Materials Science Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00rs6vg23": {
       "rorId": "https://ror.org/00rs6vg23",
@@ -324,7 +351,7 @@
       "country": "US",
       "worksCount": 414905,
       "homepage": "https://www.osu.edu/",
-      "probedAt": "2026-10-19T10:30:51.239Z",
+      "probedAt": "2026-10-19T12:24:16.454Z",
       "domains": [
         "osu.edu"
       ],
@@ -343,7 +370,9 @@
       "packages": [
         "Science Reference Source",
         "EBSCOhost Academic Search Complete"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0168r3w48": {
       "rorId": "https://ror.org/0168r3w48",
@@ -351,7 +380,7 @@
       "country": "US",
       "worksCount": 405589,
       "homepage": "https://ucsd.edu",
-      "probedAt": "2026-10-19T10:05:09.434Z",
+      "probedAt": "2026-10-19T12:24:16.566Z",
       "domains": [
         "ucsd.edu"
       ],
@@ -360,14 +389,19 @@
       ],
       "evidence": "https://library.ucsd.edu/",
       "code": "01UCS_SDI",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 10,
       "packages": [
         "Nature",
         "Earth, Atmospheric &amp; Aquatic Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search-library.ucsd.edu/openurl/01UCS_SDI/01UCS_SDI:UCSD",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/017zqws13": {
       "rorId": "https://ror.org/017zqws13",
@@ -375,7 +409,7 @@
       "country": "US",
       "worksCount": 424650,
       "homepage": "https://twin-cities.umn.edu",
-      "probedAt": "2026-10-19T10:30:51.239Z",
+      "probedAt": "2026-10-19T12:24:17.174Z",
       "domains": [
         "umn.edu"
       ],
@@ -394,7 +428,9 @@
       "packages": [
         "Science Reference Source",
         "EBSCOhost Academic Search Premier"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01an3r305": {
       "rorId": "https://ror.org/01an3r305",
@@ -402,7 +438,7 @@
       "country": "US",
       "worksCount": 377736,
       "homepage": "https://www.pitt.edu/",
-      "probedAt": "2026-10-19T10:05:12.761Z",
+      "probedAt": "2026-10-19T12:24:17.272Z",
       "domains": [
         "pitt.edu"
       ],
@@ -418,7 +454,9 @@
         "Nature",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01an7q238": {
       "rorId": "https://ror.org/01an7q238",
@@ -426,7 +464,7 @@
       "country": "US",
       "worksCount": 491348,
       "homepage": "https://www.berkeley.edu",
-      "probedAt": "2026-10-19T10:04:57.818Z",
+      "probedAt": "2026-10-19T12:24:17.566Z",
       "domains": [
         "berkeley.edu"
       ],
@@ -435,14 +473,19 @@
       ],
       "evidence": "https://www.lib.berkeley.edu/",
       "code": "01UCS_BER",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 12,
       "packages": [
         "Agricultural &amp; Environmental Science Collection",
         "Agricultural Science Database"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.berkeley.edu/openurl/01UCS_BER/01UCS_BER:UCB",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00hj54h04": {
       "rorId": "https://ror.org/00hj54h04",
@@ -450,7 +493,7 @@
       "country": "US",
       "worksCount": 358186,
       "homepage": "http://www.utexas.edu/",
-      "probedAt": "2026-10-19T10:19:05.951Z",
+      "probedAt": "2026-10-19T12:24:17.736Z",
       "domains": [],
       "links": [
         "http://www.utexas.edu/"
@@ -467,7 +510,9 @@
       "packages": [
         "Nature",
         "Biological Science Database"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05hs6h993": {
       "rorId": "https://ror.org/05hs6h993",
@@ -475,7 +520,7 @@
       "country": "US",
       "worksCount": 369893,
       "homepage": "https://msu.edu/",
-      "probedAt": "2026-10-19T11:05:50.112Z",
+      "probedAt": "2026-10-19T12:24:17.963Z",
       "domains": [
         "msu.edu"
       ],
@@ -496,7 +541,7 @@
       "country": "US",
       "worksCount": 375603,
       "homepage": "https://www.ufl.edu",
-      "probedAt": "2026-10-19T10:30:51.271Z",
+      "probedAt": "2026-10-19T12:24:17.963Z",
       "domains": [
         "ufl.edu"
       ],
@@ -515,7 +560,9 @@
       "packages": [
         "Nature",
         "Springer Ejournals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/042nb2s44": {
       "rorId": "https://ror.org/042nb2s44",
@@ -523,7 +570,7 @@
       "country": "US",
       "worksCount": 410208,
       "homepage": "https://web.mit.edu",
-      "probedAt": "2026-10-19T10:05:06.800Z",
+      "probedAt": "2026-10-19T12:24:18.212Z",
       "domains": [
         "mit.edu"
       ],
@@ -539,7 +586,9 @@
         "Nature Publishing Group",
         "Advanced Technologies &amp; Computer Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05bnh6r87": {
       "rorId": "https://ror.org/05bnh6r87",
@@ -547,7 +596,7 @@
       "country": "US",
       "worksCount": 365550,
       "homepage": "https://www.cornell.edu",
-      "probedAt": "2026-10-19T11:05:50.112Z",
+      "probedAt": "2026-10-19T12:24:19.060Z",
       "domains": [
         "cornell.edu"
       ],
@@ -568,7 +617,7 @@
       "country": "US",
       "worksCount": 357174,
       "homepage": "https://www.psu.edu",
-      "probedAt": "2026-10-19T11:05:50.112Z",
+      "probedAt": "2026-10-19T12:24:19.060Z",
       "domains": [
         "psu.edu"
       ],
@@ -589,7 +638,7 @@
       "country": "US",
       "worksCount": 395646,
       "homepage": "https://www.wisc.edu/",
-      "probedAt": "2026-10-19T10:30:51.273Z",
+      "probedAt": "2026-10-19T12:24:19.060Z",
       "domains": [
         "wisc.edu"
       ],
@@ -608,7 +657,9 @@
       "packages": [
         "Nature",
         "Technology collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/043mz5j54": {
       "rorId": "https://ror.org/043mz5j54",
@@ -616,7 +667,7 @@
       "country": "US",
       "worksCount": 329409,
       "homepage": "https://www.ucsf.edu/",
-      "probedAt": "2026-10-19T10:05:31.486Z",
+      "probedAt": "2026-10-19T12:24:19.937Z",
       "domains": [
         "ucsf.edu"
       ],
@@ -625,14 +676,19 @@
       ],
       "evidence": "https://www.library.ucsf.edu/",
       "code": "01UCS_SAF",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 9,
       "packages": [
         "Materials Science &amp; Engineering Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.ucsf.edu/openurl/01UCS_SAF/01UCS_SAF:UCSF",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/047426m28": {
       "rorId": "https://ror.org/047426m28",
@@ -640,7 +696,7 @@
       "country": "US",
       "worksCount": 356996,
       "homepage": "https://illinois.edu",
-      "probedAt": "2026-10-19T10:05:24.519Z",
+      "probedAt": "2026-10-19T12:24:19.994Z",
       "domains": [
         "illinois.edu"
       ],
@@ -649,14 +705,19 @@
       ],
       "evidence": "https://www.library.illinois.edu/",
       "code": "01CARLI_UIU",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na06.alma.exlibrisgroup.com",
       "services": 11,
       "packages": [
         "Nature",
         "Free E- Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://i-share-UIU.primo.exlibrisgroup.com/openurl/01CARLI_UIU/01CARLI_UIU:CARLI_UIU",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0190ak572": {
       "rorId": "https://ror.org/0190ak572",
@@ -664,7 +725,7 @@
       "country": "US",
       "worksCount": 323873,
       "homepage": "https://www.nyu.edu",
-      "probedAt": "2026-10-19T10:05:32.403Z",
+      "probedAt": "2026-10-19T12:24:20.312Z",
       "domains": [
         "nyu.edu"
       ],
@@ -680,7 +741,9 @@
         "Springer Nature - Complete Nature.com",
         "Springer Nature - Nature Journals All"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0130frc33": {
       "rorId": "https://ror.org/0130frc33",
@@ -688,7 +751,7 @@
       "country": "US",
       "worksCount": 350993,
       "homepage": "https://www.unc.edu",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:20.624Z",
       "domains": [
         "unc.edu"
       ],
@@ -709,7 +772,7 @@
       "country": "US",
       "worksCount": 291262,
       "homepage": "http://www.purdue.edu/",
-      "probedAt": "2026-10-19T10:30:52.114Z",
+      "probedAt": "2026-10-19T12:24:20.624Z",
       "domains": [],
       "links": [
         "http://www.purdue.edu/"
@@ -726,7 +789,9 @@
       "packages": [
         "SpringerLink Journals",
         "Agricultural &amp; Environmental Science Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03taz7m60": {
       "rorId": "https://ror.org/03taz7m60",
@@ -734,7 +799,7 @@
       "country": "US",
       "worksCount": 295353,
       "homepage": "https://usc.edu",
-      "probedAt": "2026-10-19T10:05:37.439Z",
+      "probedAt": "2026-10-19T12:24:21.224Z",
       "domains": [
         "usc.edu"
       ],
@@ -750,7 +815,12 @@
         "Nature",
         "SpringerNature SCELC-Combo-Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://libkey.io/libraries/149/openurl",
+      "product": "libkey",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/000e0be47": {
       "rorId": "https://ror.org/000e0be47",
@@ -758,7 +828,7 @@
       "country": "US",
       "worksCount": 330159,
       "homepage": "https://www.northwestern.edu/",
-      "probedAt": "2026-10-19T10:05:31.192Z",
+      "probedAt": "2026-10-19T12:24:21.823Z",
       "domains": [
         "northwestern.edu"
       ],
@@ -774,7 +844,12 @@
         "Nature",
         "Agricultural Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://hopper.library.northwestern.edu/sfx",
+      "product": "sfx",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03m2x1q45": {
       "rorId": "https://ror.org/03m2x1q45",
@@ -782,7 +857,7 @@
       "country": "US",
       "worksCount": 280178,
       "homepage": "http://www.arizona.edu/",
-      "probedAt": "2026-10-19T10:30:52.162Z",
+      "probedAt": "2026-10-19T12:24:21.855Z",
       "domains": [],
       "links": [
         "http://www.arizona.edu/"
@@ -799,7 +874,9 @@
       "packages": [
         "Academic OneFile",
         "Agricultural &amp; Environmental Science Database"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00py81415": {
       "rorId": "https://ror.org/00py81415",
@@ -807,7 +884,7 @@
       "country": "US",
       "worksCount": 295116,
       "homepage": "https://duke.edu",
-      "probedAt": "2026-10-19T10:05:38.358Z",
+      "probedAt": "2026-10-19T12:24:22.181Z",
       "domains": [
         "duke.edu"
       ],
@@ -823,7 +900,9 @@
         "Nature",
         "Advanced Technologies &amp; Aerospace Database"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05dxps055": {
       "rorId": "https://ror.org/05dxps055",
@@ -831,7 +910,7 @@
       "country": "US",
       "worksCount": 282611,
       "homepage": "https://www.caltech.edu",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:22.462Z",
       "domains": [
         "caltech.edu"
       ],
@@ -852,7 +931,7 @@
       "country": "US",
       "worksCount": 301103,
       "homepage": "https://www.uchicago.edu",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:22.462Z",
       "domains": [
         "uchicago.edu"
       ],
@@ -873,7 +952,7 @@
       "country": "US",
       "worksCount": 287952,
       "homepage": "http://wustl.edu/",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:22.462Z",
       "domains": [
         "wustl.edu"
       ],
@@ -894,7 +973,7 @@
       "country": "US",
       "worksCount": 255279,
       "homepage": "https://www.rutgers.edu/",
-      "probedAt": "2026-10-19T10:05:45.073Z",
+      "probedAt": "2026-10-19T12:24:22.462Z",
       "domains": [
         "rutgers.edu"
       ],
@@ -910,7 +989,9 @@
         "Nature",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05rrcem69": {
       "rorId": "https://ror.org/05rrcem69",
@@ -918,7 +999,7 @@
       "country": "US",
       "worksCount": 307323,
       "homepage": "https://www.ucdavis.edu",
-      "probedAt": "2026-10-19T10:05:35.810Z",
+      "probedAt": "2026-10-19T12:24:22.576Z",
       "domains": [
         "ucdavis.edu"
       ],
@@ -927,14 +1008,19 @@
       ],
       "evidence": "https://library.ucdavis.edu/",
       "code": "01UCD_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 15,
       "packages": [
         "Agricultural &amp; Environmental Science Collection",
         "Biological Science Database"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.ucdavis.edu/openurl/01UCD_INST/01UCD_INST:UCD",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03czfpz43": {
       "rorId": "https://ror.org/03czfpz43",
@@ -942,7 +1028,7 @@
       "country": "US",
       "worksCount": 235463,
       "homepage": "https://www.emory.edu",
-      "probedAt": "2026-10-19T10:05:56.155Z",
+      "probedAt": "2026-10-19T12:24:23.077Z",
       "domains": [
         "emory.edu"
       ],
@@ -958,7 +1044,9 @@
         "Nature",
         "Research Library"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/047s2c258": {
       "rorId": "https://ror.org/047s2c258",
@@ -966,26 +1054,28 @@
       "country": "US",
       "worksCount": 241981,
       "homepage": "https://umd.edu",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:23.489Z",
       "domains": [
         "umd.edu"
       ],
       "links": [
         "https://umd.edu"
       ],
-      "evidence": null,
+      "evidence": "https://na04.alma.exlibrisgroup.com/view/uresolver/01USMAI_UMCP/openurl",
       "code": "01USMAI_UMCP",
       "host": "na04.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://na04.alma.exlibrisgroup.com/view/uresolver/01USMAI_UMCP/openurl",
       "product": "alma",
-      "route": "seed",
+      "route": "manual (Opus subagent, 2026-10-19)-url",
       "services": 2,
       "packages": [
         "Springer Nature - Complete Springer Journals",
         "EBSCOhost Academic Search Ultimate"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05qwgg493": {
       "rorId": "https://ror.org/05qwgg493",
@@ -993,7 +1083,7 @@
       "country": "US",
       "worksCount": 224827,
       "homepage": "https://www.bu.edu",
-      "probedAt": "2026-10-19T10:05:56.345Z",
+      "probedAt": "2026-10-19T12:24:23.850Z",
       "domains": [
         "bu.edu"
       ],
@@ -1002,14 +1092,19 @@
       ],
       "evidence": "https://bu.primo.exlibrisgroup.com/nde/fulldisplay?vid=01BOSU_INST%3ABULS&isFrbr=true&tab=Everything&docid=alma99209885697801161&context=L&search_scope=MyInst_and_CI_NoLondon&lang=en",
       "code": "01BOSU_INST",
-      "route": "homepage>link>primo",
+      "route": "seed",
       "host": "na03.alma.exlibrisgroup.com",
       "services": 10,
       "packages": [
         "Springer Nature Link Journals",
         "Advanced Technologies &amp; Computer Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://bu.primo.exlibrisgroup.com/openurl/01BOSU_INST/01BOSU_INST:BU",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01f5ytq51": {
       "rorId": "https://ror.org/01f5ytq51",
@@ -1017,7 +1112,7 @@
       "country": "US",
       "worksCount": 276876,
       "homepage": "https://www.tamu.edu/",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:24.093Z",
       "domains": [
         "tamu.edu"
       ],
@@ -1038,7 +1133,7 @@
       "country": "US",
       "worksCount": 213903,
       "homepage": "https://virginia.edu",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:24.094Z",
       "domains": [
         "virginia.edu"
       ],
@@ -1059,7 +1154,7 @@
       "country": "US",
       "worksCount": 224278,
       "homepage": "https://www.utah.edu",
-      "probedAt": "2026-10-19T10:05:58.536Z",
+      "probedAt": "2026-10-19T12:24:24.094Z",
       "domains": [
         "utah.edu"
       ],
@@ -1068,14 +1163,19 @@
       ],
       "evidence": "https://utah.primo.exlibrisgroup.com/discovery/search?vid=01UTAH_INST%3AUTAH&sortby=rank",
       "code": "01UTAH_INST",
-      "route": "homepage>link>primo",
-      "host": "na02.alma.exlibrisgroup.com",
+      "route": "seed",
+      "host": "utah.alma.exlibrisgroup.com",
       "services": 24,
       "packages": [
         "Nature",
         "Environmental Issues &amp; Policy Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://na04.alma.exlibrisgroup.com/view/uresolver/01UTAH_INST/openurl",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02vm5rt34": {
       "rorId": "https://ror.org/02vm5rt34",
@@ -1083,7 +1183,7 @@
       "country": "US",
       "worksCount": 202390,
       "homepage": "https://www.vanderbilt.edu/",
-      "probedAt": "2026-10-19T10:06:02.533Z",
+      "probedAt": "2026-10-19T12:24:24.253Z",
       "domains": [
         "vanderbilt.edu"
       ],
@@ -1092,14 +1192,19 @@
       ],
       "evidence": "https://www.library.vanderbilt.edu/",
       "code": "01VAN_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na04.alma.exlibrisgroup.com",
       "services": 11,
       "packages": [
         "Springer Journals",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://catalog.library.vanderbilt.edu/openurl/01VAN_INST/01VAN_INST:vanui",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01zkghx44": {
       "rorId": "https://ror.org/01zkghx44",
@@ -1107,7 +1212,7 @@
       "country": "US",
       "worksCount": 201166,
       "homepage": "https://www.gatech.edu",
-      "probedAt": "2026-10-19T10:06:07.042Z",
+      "probedAt": "2026-10-19T12:24:24.668Z",
       "domains": [
         "gatech.edu"
       ],
@@ -1123,7 +1228,9 @@
         "Nature",
         "Gale In Context: Science"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00hx57361": {
       "rorId": "https://ror.org/00hx57361",
@@ -1131,7 +1238,7 @@
       "country": "US",
       "worksCount": 213591,
       "homepage": "https://www.princeton.edu",
-      "probedAt": "2026-10-19T10:19:11.895Z",
+      "probedAt": "2026-10-19T12:24:26.066Z",
       "domains": [
         "princeton.edu"
       ],
@@ -1150,7 +1257,9 @@
       "packages": [
         "Gale In Context: Environmental Studies",
         "Nature"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03efmqc40": {
       "rorId": "https://ror.org/03efmqc40",
@@ -1158,7 +1267,7 @@
       "country": "US",
       "worksCount": 198025,
       "homepage": "https://www.asu.edu",
-      "probedAt": "2026-10-19T10:06:07.827Z",
+      "probedAt": "2026-10-19T12:24:26.519Z",
       "domains": [
         "asu.edu"
       ],
@@ -1174,7 +1283,12 @@
         "Nature Journals Online",
         "Advanced Technologies &amp; Computer Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.lib.asu.edu/openurl/01ASU",
+      "product": "other",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04gyf1771": {
       "rorId": "https://ror.org/04gyf1771",
@@ -1182,7 +1296,7 @@
       "country": "US",
       "worksCount": 205511,
       "homepage": "https://uci.edu/",
-      "probedAt": "2026-10-19T10:06:00.338Z",
+      "probedAt": "2026-10-19T12:24:26.563Z",
       "domains": [
         "uci.edu"
       ],
@@ -1191,13 +1305,18 @@
       ],
       "evidence": "https://www.lib.uci.edu/",
       "code": "01CDL_IRV_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na04.alma.exlibrisgroup.com",
       "services": 1,
       "packages": [
         "Agricultural &amp; environmental science database online journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://uci.primo.exlibrisgroup.com/openurl/01CDL_IRV_INST/01CDL_IRV_INST:UCI",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02mpq6x41": {
       "rorId": "https://ror.org/02mpq6x41",
@@ -1205,7 +1324,7 @@
       "country": "US",
       "worksCount": 186251,
       "homepage": "https://www.uic.edu",
-      "probedAt": "2026-10-19T10:06:13.095Z",
+      "probedAt": "2026-10-19T12:24:26.733Z",
       "domains": [
         "uic.edu"
       ],
@@ -1214,14 +1333,19 @@
       ],
       "evidence": "https://library.uic.edu/",
       "code": "01CARLI_UIC",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na06.alma.exlibrisgroup.com",
       "services": 9,
       "packages": [
         "Nature",
         "SpringerLink Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://i-share-uic.primo.exlibrisgroup.com/openurl/01CARLI_UIC/01CARLI_UIC:CARLI_UIC",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05gq02987": {
       "rorId": "https://ror.org/05gq02987",
@@ -1229,7 +1353,7 @@
       "country": "US",
       "worksCount": 182351,
       "homepage": "https://www.brown.edu",
-      "probedAt": "2026-10-19T10:06:16.122Z",
+      "probedAt": "2026-10-19T12:24:26.749Z",
       "domains": [
         "brown.edu"
       ],
@@ -1238,14 +1362,19 @@
       ],
       "evidence": "https://lib.brown.edu/",
       "code": "01BU_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 4,
       "packages": [
         "ProQuest Central",
         "SpringerLink Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://brown.alma.exlibrisgroup.com/openurl/01BU_INST/01BU_INST:BROWN",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04tj63d06": {
       "rorId": "https://ror.org/04tj63d06",
@@ -1253,7 +1382,7 @@
       "country": "US",
       "worksCount": 187549,
       "homepage": "https://www.ncsu.edu/",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:26.912Z",
       "domains": [
         "ncsu.edu"
       ],
@@ -1272,7 +1401,9 @@
       "packages": [
         "Nature",
         "Advanced Technologies &amp; Aerospace Database"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04rswrd78": {
       "rorId": "https://ror.org/04rswrd78",
@@ -1280,16 +1411,16 @@
       "country": "US",
       "worksCount": 197436,
       "homepage": "https://www.iastate.edu",
-      "probedAt": "2026-10-19T11:05:50.132Z",
+      "probedAt": "2026-10-19T12:24:27.140Z",
       "domains": [
         "iastate.edu"
       ],
       "links": [
         "https://www.iastate.edu"
       ],
-      "evidence": "https://www.lib.iastate.edu/",
+      "evidence": "https://quicksearch.lib.iastate.edu/nde/openurl?vid=01IASU_INST%3A01IASU_NDE&institution=01IASU_INST",
       "code": "01IASU_INST",
-      "route": "seed",
+      "route": "zotero-url",
       "host": "na03.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "source": "zotero",
@@ -1299,7 +1430,9 @@
       "packages": [
         "Nature",
         "Springer Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/051fd9666": {
       "rorId": "https://ror.org/051fd9666",
@@ -1307,7 +1440,7 @@
       "country": "US",
       "worksCount": 183879,
       "homepage": "https://case.edu",
-      "probedAt": "2026-10-19T10:30:52.937Z",
+      "probedAt": "2026-10-19T12:24:27.313Z",
       "domains": [
         "case.edu"
       ],
@@ -1326,7 +1459,9 @@
       "packages": [
         "Springer Nature - Complete Springer Journals",
         "Springer Nature - Complete Nature.com"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00te3t702": {
       "rorId": "https://ror.org/00te3t702",
@@ -1334,7 +1469,7 @@
       "country": "US",
       "worksCount": 174758,
       "homepage": "https://www.uga.edu",
-      "probedAt": "2026-10-19T10:06:20.721Z",
+      "probedAt": "2026-10-19T12:24:28.615Z",
       "domains": [
         "uga.edu"
       ],
@@ -1350,7 +1485,12 @@
         "Nature",
         "SciTech Premium Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://www.galileo.usg.edu/sfx_uga",
+      "product": "sfx",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02dgjyy92": {
       "rorId": "https://ror.org/02dgjyy92",
@@ -1358,23 +1498,28 @@
       "country": "US",
       "worksCount": 172701,
       "homepage": "https://welcome.miami.edu",
-      "probedAt": "2026-10-19T10:06:23.120Z",
+      "probedAt": "2026-10-19T12:24:28.942Z",
       "domains": [
         "miami.edu"
       ],
       "links": [
         "https://welcome.miami.edu"
       ],
-      "evidence": "https://www.library.miami.edu/",
+      "evidence": "https://miami.primo.exlibrisgroup.com/discovery/openurl?institution=01UOML_INST&vid=01UOML_INST:uml_new",
       "code": "01UOML_INST",
-      "route": "subdomain",
-      "host": "na03.alma.exlibrisgroup.com",
+      "route": "zotero-url",
+      "host": "miami.alma.exlibrisgroup.com",
       "services": 18,
       "packages": [
         "Advanced Technologies &amp; Computer Science Collection",
         "Agricultural &amp; Environmental Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://miami-primo.hosted.exlibrisgroup.com/openurl/01UOML/01UOML_SERVICES",
+      "product": "alma",
+      "primoSlug": "miami",
+      "journal": "0028-0836"
     },
     "https://ror.org/02pttbw34": {
       "rorId": "https://ror.org/02pttbw34",
@@ -1400,7 +1545,7 @@
       "country": "US",
       "worksCount": 171067,
       "homepage": "https://icahn.mssm.edu",
-      "probedAt": "2026-10-19T11:05:50.133Z",
+      "probedAt": "2026-10-19T12:24:29.513Z",
       "domains": [
         "mssm.edu"
       ],
@@ -1410,13 +1555,15 @@
       "evidence": "https://icahn.mssm.edu/about/srt/levy-library",
       "code": "01MSSM_INST",
       "route": "homepage>link",
-      "host": "na06.alma.exlibrisgroup.com",
+      "host": "icahn-mssm.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "services": 6,
       "packages": [
         "Nature",
         "SpringerLink Journals - AutoHoldings"
-      ]
+      ],
+      "primoSlug": "icahn-mssm",
+      "journal": "0028-0836"
     },
     "https://ror.org/02smfhw86": {
       "rorId": "https://ror.org/02smfhw86",
@@ -1424,7 +1571,7 @@
       "country": "US",
       "worksCount": 172056,
       "homepage": "https://www.vt.edu",
-      "probedAt": "2026-10-19T10:06:26.514Z",
+      "probedAt": "2026-10-19T12:24:29.787Z",
       "domains": [
         "vt.edu"
       ],
@@ -1434,10 +1581,15 @@
       "evidence": "https://lib.vt.edu/",
       "code": "01VT_INST",
       "route": "subdomain",
-      "host": "na05.alma.exlibrisgroup.com",
-      "services": 0,
-      "packages": [],
-      "status": "verified"
+      "host": "na07.alma.exlibrisgroup.com",
+      "services": 21,
+      "packages": [
+        "Agricultural Science Collection",
+        "Biological Science Collection"
+      ],
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/036jqmy94": {
       "rorId": "https://ror.org/036jqmy94",
@@ -1445,7 +1597,7 @@
       "country": "US",
       "worksCount": 203752,
       "homepage": "https://uiowa.edu",
-      "probedAt": "2026-10-19T10:30:53.282Z",
+      "probedAt": "2026-10-19T12:24:30.367Z",
       "domains": [
         "uiowa.edu"
       ],
@@ -1464,7 +1616,9 @@
       "packages": [
         "Nature",
         "Springer Nature - Complete Springer Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01e3m7079": {
       "rorId": "https://ror.org/01e3m7079",
@@ -1488,7 +1642,7 @@
       "country": "US",
       "worksCount": 179668,
       "homepage": "https://www.colorado.edu/",
-      "probedAt": "2026-10-19T11:05:50.133Z",
+      "probedAt": "2026-10-19T12:24:31.517Z",
       "domains": [
         "colorado.edu"
       ],
@@ -1509,7 +1663,7 @@
       "country": "US",
       "worksCount": 164590,
       "homepage": "https://www.cmu.edu",
-      "probedAt": "2026-10-19T10:06:33.276Z",
+      "probedAt": "2026-10-19T12:24:31.517Z",
       "domains": [
         "cmu.edu"
       ],
@@ -1518,14 +1672,19 @@
       ],
       "evidence": "https://www.library.cmu.edu/",
       "code": "01CMU_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na04.alma.exlibrisgroup.com",
       "services": 23,
       "packages": [
         "SpringerLink Journals - AutoHoldings",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://cmu.primo.exlibrisgroup.com/openurl/01CMU_INST/01CMU_INST:01CMU",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/022kthw22": {
       "rorId": "https://ror.org/022kthw22",
@@ -1533,7 +1692,7 @@
       "country": "US",
       "worksCount": 164221,
       "homepage": "https://www.rochester.edu",
-      "probedAt": "2026-10-19T10:06:33.323Z",
+      "probedAt": "2026-10-19T12:24:31.650Z",
       "domains": [
         "rochester.edu"
       ],
@@ -1542,14 +1701,19 @@
       ],
       "evidence": "https://www.library.rochester.edu/",
       "code": "01ROCH_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na04.alma.exlibrisgroup.com",
       "services": 5,
       "packages": [
         "Nature",
         "Nature NERL"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://rochester.primo.exlibrisgroup.com/openurl/01ROCH_INST/01ROCH_INST:UR01",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02der9h97": {
       "rorId": "https://ror.org/02der9h97",
@@ -1557,7 +1721,7 @@
       "country": "US",
       "worksCount": 157348,
       "homepage": "https://uconn.edu",
-      "probedAt": "2026-10-19T10:06:34.641Z",
+      "probedAt": "2026-10-19T12:24:32.125Z",
       "domains": [
         "uconn.edu"
       ],
@@ -1570,7 +1734,9 @@
       "host": "na02.alma.exlibrisgroup.com",
       "services": 1,
       "packages": [],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/008s83205": {
       "rorId": "https://ror.org/008s83205",
@@ -1578,7 +1744,7 @@
       "country": "US",
       "worksCount": 163912,
       "homepage": "https://www.uab.edu",
-      "probedAt": "2026-10-19T10:06:33.385Z",
+      "probedAt": "2026-10-19T12:24:32.219Z",
       "domains": [
         "uab.edu"
       ],
@@ -1594,7 +1760,9 @@
         "Springer Nature Journals",
         "Expanded Academic ASAP"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02k3smh20": {
       "rorId": "https://ror.org/02k3smh20",
@@ -1602,7 +1770,7 @@
       "country": "US",
       "worksCount": 169701,
       "homepage": "https://www.uky.edu",
-      "probedAt": "2026-10-19T10:06:29.084Z",
+      "probedAt": "2026-10-19T12:24:32.554Z",
       "domains": [
         "uky.edu"
       ],
@@ -1611,14 +1779,19 @@
       ],
       "evidence": "https://libraries.uky.edu/search",
       "code": "01SAA_UKY",
-      "route": "subdomain>link",
+      "route": "seed",
       "host": "na02.alma.exlibrisgroup.com",
       "services": 11,
       "packages": [
         "Nature",
         "EBSCOhost MasterFILE Premier"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://saalck-uky.primo.exlibrisgroup.com/discovery/openurl?institution=01SAA_UKY&vid=01SAA_UKY:UKY",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/009avj582": {
       "rorId": "https://ror.org/009avj582",
@@ -1626,7 +1799,7 @@
       "country": "US",
       "worksCount": 150160,
       "homepage": "https://www.ohsu.edu",
-      "probedAt": "2026-10-19T10:06:41.039Z",
+      "probedAt": "2026-10-19T12:24:33.305Z",
       "domains": [
         "ohsu.edu"
       ],
@@ -1642,7 +1815,9 @@
         "Springer Journals",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05ect4e57": {
       "rorId": "https://ror.org/05ect4e57",
@@ -1650,7 +1825,7 @@
       "country": "US",
       "worksCount": 165471,
       "homepage": "http://www.lsu.edu/",
-      "probedAt": "2026-10-19T10:30:53.950Z",
+      "probedAt": "2026-10-19T12:24:33.309Z",
       "domains": [
         "lsu.edu"
       ],
@@ -1660,13 +1835,15 @@
       "evidence": "https://lsu-louis.primo.exlibrisgroup.com/nde/home?vid=01LOUIS_LSU:LSUMAIN",
       "code": "01LOUIS_LSU",
       "route": "subdomain",
-      "host": "na08.alma.exlibrisgroup.com",
+      "host": "lsu-louis.alma.exlibrisgroup.com",
       "status": "verified",
       "services": 9,
       "packages": [
         "Earth, Atmospheric &amp; Aquatic Science Collection",
         "view full text"
-      ]
+      ],
+      "primoSlug": "lsu-louis",
+      "journal": "0028-0836"
     },
     "https://ror.org/01kg8sb98": {
       "rorId": "https://ror.org/01kg8sb98",
@@ -1708,7 +1885,7 @@
       "country": "US",
       "worksCount": 143171,
       "homepage": "https://www.utk.edu",
-      "probedAt": "2026-10-19T10:06:45.202Z",
+      "probedAt": "2026-10-19T12:24:33.330Z",
       "domains": [
         "utk.edu"
       ],
@@ -1724,7 +1901,12 @@
         "Agricultural &amp; Environmental Science Collection",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://libkey.io/libraries/203/openurl",
+      "product": "libkey",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01y64my43": {
       "rorId": "https://ror.org/01y64my43",
@@ -1732,7 +1914,7 @@
       "country": "US",
       "worksCount": 146297,
       "homepage": "https://www.buffalo.edu/",
-      "probedAt": "2026-10-19T10:06:41.897Z",
+      "probedAt": "2026-10-19T12:24:35.506Z",
       "domains": [
         "buffalo.edu"
       ],
@@ -1748,7 +1930,9 @@
         "Gale In Context: Environmental Studies",
         "SpringerLink Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05qghxh33": {
       "rorId": "https://ror.org/05qghxh33",
@@ -1756,7 +1940,7 @@
       "country": "US",
       "worksCount": 141991,
       "homepage": "https://www.stonybrook.edu",
-      "probedAt": "2026-10-19T10:06:45.571Z",
+      "probedAt": "2026-10-19T12:24:35.832Z",
       "domains": [
         "stonybrook.edu"
       ],
@@ -1772,7 +1956,9 @@
         "Gale Academic OneFile",
         "Gale Academic OneFile Select"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05dk0ce17": {
       "rorId": "https://ror.org/05dk0ce17",
@@ -1798,7 +1984,7 @@
       "country": "US",
       "worksCount": 135294,
       "homepage": "https://www.umass.edu",
-      "probedAt": "2026-10-19T11:05:50.134Z",
+      "probedAt": "2026-10-19T12:24:37.053Z",
       "domains": [
         "umass.edu"
       ],
@@ -1819,7 +2005,7 @@
       "country": "US",
       "worksCount": 133985,
       "homepage": "https://wayne.edu/",
-      "probedAt": "2026-10-19T10:06:53.259Z",
+      "probedAt": "2026-10-19T12:24:37.053Z",
       "domains": [
         "wayne.edu"
       ],
@@ -1828,14 +2014,19 @@
       ],
       "evidence": "https://library.wayne.edu/",
       "code": "01WSUL_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 9,
       "packages": [
         "Materials Science &amp; Engineering Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://wayne.alma.exlibrisgroup.com/openurl/01WSUL_INST/01WSUL_INST:Services",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/043mer456": {
       "rorId": "https://ror.org/043mer456",
@@ -1843,7 +2034,7 @@
       "country": "US",
       "worksCount": 134047,
       "homepage": "https://www.unl.edu/",
-      "probedAt": "2026-10-19T10:06:51.510Z",
+      "probedAt": "2026-10-19T12:24:37.597Z",
       "domains": [
         "unl.edu"
       ],
@@ -1852,14 +2043,19 @@
       ],
       "evidence": "https://libraries.unl.edu/",
       "code": "01UON_LINC",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na02.alma.exlibrisgroup.com",
       "services": 7,
       "packages": [
         "SpringerLink Journals - AutoHoldings",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://unl.primo.exlibrisgroup.com/openurl/01UON_LINC/01UON_LINC:UNL",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02ymw8z06": {
       "rorId": "https://ror.org/02ymw8z06",
@@ -1867,7 +2063,7 @@
       "country": "US",
       "worksCount": 139224,
       "homepage": "https://missouri.edu/",
-      "probedAt": "2026-10-19T11:05:50.134Z",
+      "probedAt": "2026-10-19T12:24:37.809Z",
       "domains": [
         "missouri.edu"
       ],
@@ -1888,7 +2084,7 @@
       "country": "US",
       "worksCount": 123873,
       "homepage": "https://www.gwu.edu/",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:37.923Z",
       "domains": [
         "gwu.edu"
       ],
@@ -1909,7 +2105,7 @@
       "country": "US",
       "worksCount": 143320,
       "homepage": "https://www.ucsb.edu",
-      "probedAt": "2026-10-19T10:06:44.903Z",
+      "probedAt": "2026-10-19T12:24:37.923Z",
       "domains": [
         "ucsb.edu"
       ],
@@ -1918,14 +2114,19 @@
       ],
       "evidence": "https://www.library.ucsb.edu/",
       "code": "01UCSB_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 12,
       "packages": [
         "Agricultural &amp; Environmental Science Collection",
         "Biological Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.ucsb.edu/openurl/01UCSB_INST/01UCSB_INST:UCSB",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/032db5x82": {
       "rorId": "https://ror.org/032db5x82",
@@ -1933,7 +2134,7 @@
       "country": "US",
       "worksCount": 134983,
       "homepage": "http://www.usf.edu/",
-      "probedAt": "2026-10-19T10:06:49.480Z",
+      "probedAt": "2026-10-19T12:24:38.039Z",
       "domains": [
         "usf.edu"
       ],
@@ -1949,7 +2150,9 @@
         "SpringerLink Journals",
         "Advanced Technologies &amp; Computer Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00ysfqy60": {
       "rorId": "https://ror.org/00ysfqy60",
@@ -1957,7 +2160,7 @@
       "country": "US",
       "worksCount": 122104,
       "homepage": "https://oregonstate.edu",
-      "probedAt": "2026-10-19T10:06:59.750Z",
+      "probedAt": "2026-10-19T12:24:38.330Z",
       "domains": [
         "oregonstate.edu"
       ],
@@ -1973,7 +2176,12 @@
         "SciTech Premium Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://libkey.io/libraries/135/openurl",
+      "product": "libkey",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05wvpxv85": {
       "rorId": "https://ror.org/05wvpxv85",
@@ -1981,7 +2189,7 @@
       "country": "US",
       "worksCount": 120198,
       "homepage": "https://www.tufts.edu",
-      "probedAt": "2026-10-19T10:07:03.475Z",
+      "probedAt": "2026-10-19T12:24:38.924Z",
       "domains": [
         "tufts.edu"
       ],
@@ -1997,7 +2205,9 @@
         "NERL SpringerNature All Titles",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05g3dte14": {
       "rorId": "https://ror.org/05g3dte14",
@@ -2005,7 +2215,7 @@
       "country": "US",
       "worksCount": 115960,
       "homepage": "https://www.fsu.edu/",
-      "probedAt": "2026-10-19T10:07:04.556Z",
+      "probedAt": "2026-10-19T12:24:40.599Z",
       "domains": [
         "fsu.edu"
       ],
@@ -2014,14 +2224,19 @@
       ],
       "evidence": "https://www.lib.fsu.edu/",
       "code": "01FALSC_FSU",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 23,
       "packages": [
         "Nature",
         "SpringerNature Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://fsu-flvc.primo.exlibrisgroup.com/openurl/01FALSC_FSU/01FALSC_FSU:Home",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03k1gpj17": {
       "rorId": "https://ror.org/03k1gpj17",
@@ -2029,7 +2244,7 @@
       "country": "US",
       "worksCount": 126958,
       "homepage": "http://www.colostate.edu/",
-      "probedAt": "2026-10-19T10:06:55.958Z",
+      "probedAt": "2026-10-19T12:24:40.934Z",
       "domains": [
         "colostate.edu"
       ],
@@ -2045,7 +2260,9 @@
         "EBSCO Academic Search Premier",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04rq5mt64": {
       "rorId": "https://ror.org/04rq5mt64",
@@ -2123,7 +2340,7 @@
       "country": "US",
       "worksCount": 111161,
       "homepage": "https://www.byu.edu",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:41.036Z",
       "domains": [
         "byu.edu"
       ],
@@ -2198,7 +2415,7 @@
       "country": "US",
       "worksCount": 105279,
       "homepage": "https://www.northeastern.edu/",
-      "probedAt": "2026-10-19T10:07:37.524Z",
+      "probedAt": "2026-10-19T12:24:41.036Z",
       "domains": [
         "northeastern.edu"
       ],
@@ -2214,7 +2431,12 @@
         "Nature",
         "SpringerLink Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://libkey.io/libraries/545/openurl",
+      "product": "libkey",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/001tmjg57": {
       "rorId": "https://ror.org/001tmjg57",
@@ -2222,7 +2444,7 @@
       "country": "US",
       "worksCount": 115703,
       "homepage": "https://ku.edu",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:42.261Z",
       "domains": [
         "ku.edu"
       ],
@@ -2243,7 +2465,7 @@
       "country": "US",
       "worksCount": 107448,
       "homepage": "https://sc.edu/",
-      "probedAt": "2026-10-19T10:07:32.168Z",
+      "probedAt": "2026-10-19T12:24:42.261Z",
       "domains": [
         "sc.edu"
       ],
@@ -2259,7 +2481,9 @@
         "Gale Cengage Nursing and Allied Health Collection",
         "Gale Cengage Nursing Resource Center"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03nawhv43": {
       "rorId": "https://ror.org/03nawhv43",
@@ -2267,7 +2491,7 @@
       "country": "US",
       "worksCount": 105285,
       "homepage": "https://www.ucr.edu",
-      "probedAt": "2026-10-19T10:07:34.622Z",
+      "probedAt": "2026-10-19T12:24:42.262Z",
       "domains": [
         "ucr.edu"
       ],
@@ -2276,14 +2500,19 @@
       ],
       "evidence": "https://library.ucr.edu/",
       "code": "01CDL_RIV_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na04.alma.exlibrisgroup.com",
       "services": 5,
       "packages": [
         "Materials Science &amp; Engineering Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.ucr.edu/openurl/01CDL_RIV_INST/01CDL_RIV_INST:UCR",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/011vxgd24": {
       "rorId": "https://ror.org/011vxgd24",
@@ -2363,7 +2592,7 @@
       "country": "US",
       "worksCount": 100098,
       "homepage": "https://www.georgetown.edu",
-      "probedAt": "2026-10-19T10:07:48.213Z",
+      "probedAt": "2026-10-19T12:24:42.597Z",
       "domains": [
         "georgetown.edu"
       ],
@@ -2379,7 +2608,9 @@
         "Nature",
         "SpringerLink Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/048sx0r50": {
       "rorId": "https://ror.org/048sx0r50",
@@ -2423,7 +2654,7 @@
       "country": "US",
       "worksCount": 98522,
       "homepage": "https://www.cuanschutz.edu",
-      "probedAt": "2026-10-19T10:07:54.151Z",
+      "probedAt": "2026-10-19T12:24:45.394Z",
       "domains": [
         "cuanschutz.edu"
       ],
@@ -2439,7 +2670,9 @@
         "SpringerLink Journals - AutoHoldings",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01sbq1a82": {
       "rorId": "https://ror.org/01sbq1a82",
@@ -2447,7 +2680,7 @@
       "country": "US",
       "worksCount": 98903,
       "homepage": "https://www.udel.edu",
-      "probedAt": "2026-10-19T10:07:50.368Z",
+      "probedAt": "2026-10-19T12:24:45.633Z",
       "domains": [
         "udel.edu"
       ],
@@ -2463,7 +2696,9 @@
         "SpringerLink Journals",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/036nfer12": {
       "rorId": "https://ror.org/036nfer12",
@@ -2471,7 +2706,7 @@
       "country": "US",
       "worksCount": 91066,
       "homepage": "https://www.ucf.edu",
-      "probedAt": "2026-10-19T10:07:57.644Z",
+      "probedAt": "2026-10-19T12:24:45.735Z",
       "domains": [
         "ucf.edu"
       ],
@@ -2480,14 +2715,19 @@
       ],
       "evidence": "https://library.ucf.edu/",
       "code": "01FALSC_UCF",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 26,
       "packages": [
         "Springer eJournals",
         "Gale General OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://ucf-flvc.primo.exlibrisgroup.com/openurl/01FALSC_UCF/01FALSC_UCF:UCF",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/049s0rh22": {
       "rorId": "https://ror.org/049s0rh22",
@@ -2495,7 +2735,7 @@
       "country": "US",
       "worksCount": 89880,
       "homepage": "https://home.dartmouth.edu",
-      "probedAt": "2026-10-19T10:07:59.048Z",
+      "probedAt": "2026-10-19T12:24:45.799Z",
       "domains": [
         "dartmouth.edu"
       ],
@@ -2504,14 +2744,19 @@
       ],
       "evidence": "https://www.library.dartmouth.edu/",
       "code": "01DCL_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na01.alma.exlibrisgroup.com",
       "services": 8,
       "packages": [
         "SpringerLink Journals",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.library.dartmouth.edu/openurl/01DCL_INST/01DCL_INST:01DCL",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00mkhxb43": {
       "rorId": "https://ror.org/00mkhxb43",
@@ -2537,23 +2782,28 @@
       "country": "US",
       "worksCount": 88315,
       "homepage": "https://www.k-state.edu/",
-      "probedAt": "2026-10-19T10:08:00.609Z",
+      "probedAt": "2026-10-19T12:24:46.301Z",
       "domains": [
         "k-state.edu"
       ],
       "links": [
         "https://www.k-state.edu/"
       ],
-      "evidence": "https://lib.k-state.edu/",
+      "evidence": "https://k-state.primo.exlibrisgroup.com/discovery/openurl?institution=01KSU_INST&vid=01KSU_INST:NewUI",
       "code": "01KSU_INST",
-      "route": "subdomain",
-      "host": "na02.alma.exlibrisgroup.com",
+      "route": "zotero-url",
+      "host": "k-state.alma.exlibrisgroup.com",
       "services": 21,
       "packages": [
         "Gale Academic OneFile",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://k-state-primo.hosted.exlibrisgroup.com/openurl/01KSU/01KSU_SERVICES",
+      "product": "alma",
+      "primoSlug": "k-state",
+      "journal": "0028-0836"
     },
     "https://ror.org/00kx1jb78": {
       "rorId": "https://ror.org/00kx1jb78",
@@ -2561,7 +2811,7 @@
       "country": "US",
       "worksCount": 102107,
       "homepage": "https://www.temple.edu",
-      "probedAt": "2026-10-19T10:19:19.564Z",
+      "probedAt": "2026-10-19T12:24:46.559Z",
       "domains": [
         "temple.edu"
       ],
@@ -2580,7 +2830,9 @@
       "packages": [
         "Nature",
         "SpringerNature Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0405mnx93": {
       "rorId": "https://ror.org/0405mnx93",
@@ -2588,7 +2840,7 @@
       "country": "US",
       "worksCount": 87587,
       "homepage": "https://www.ttu.edu/",
-      "probedAt": "2026-10-19T10:08:03.803Z",
+      "probedAt": "2026-10-19T12:24:48.531Z",
       "domains": [
         "ttu.edu"
       ],
@@ -2604,7 +2856,9 @@
         "Advanced Technologies &amp; Aerospace Database",
         "Agricultural &amp; Environmental Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02aqsxs83": {
       "rorId": "https://ror.org/02aqsxs83",
@@ -2612,7 +2866,7 @@
       "country": "US",
       "worksCount": 93542,
       "homepage": "https://www.ou.edu",
-      "probedAt": "2026-10-19T10:19:20.598Z",
+      "probedAt": "2026-10-19T12:24:49.104Z",
       "domains": [
         "ou.edu"
       ],
@@ -2631,7 +2885,9 @@
       "packages": [
         "Biological Science Database",
         "Natural Science Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02jqj7156": {
       "rorId": "https://ror.org/02jqj7156",
@@ -2639,7 +2895,7 @@
       "country": "US",
       "worksCount": 83743,
       "homepage": "https://www.gmu.edu/",
-      "probedAt": "2026-10-19T10:08:08.996Z",
+      "probedAt": "2026-10-19T12:24:50.802Z",
       "domains": [
         "gmu.edu"
       ],
@@ -2655,7 +2911,12 @@
         "Advanced Technologies &amp; Computer Science Collection",
         "Agricultural Science Database"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://sfx.wrlc.org/gm",
+      "product": "sfx",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01ckdn478": {
       "rorId": "https://ror.org/01ckdn478",
@@ -2663,7 +2924,7 @@
       "country": "US",
       "worksCount": 87674,
       "homepage": "https://louisville.edu",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:50.867Z",
       "domains": [
         "louisville.edu"
       ],
@@ -2684,7 +2945,7 @@
       "country": "US",
       "worksCount": 87110,
       "homepage": "https://www.ua.edu/",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:50.868Z",
       "domains": [
         "ua.edu"
       ],
@@ -2723,7 +2984,7 @@
       "country": "US",
       "worksCount": 81423,
       "homepage": "https://www.rice.edu",
-      "probedAt": "2026-10-19T10:08:19.845Z",
+      "probedAt": "2026-10-19T12:24:50.868Z",
       "domains": [
         "rice.edu"
       ],
@@ -2739,7 +3000,12 @@
         "SpringerLink Journals - AutoHoldings",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://linkresolver.library.rice.edu",
+      "product": "other",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04vmvtb21": {
       "rorId": "https://ror.org/04vmvtb21",
@@ -2747,7 +3013,7 @@
       "country": "US",
       "worksCount": 84816,
       "homepage": "https://tulane.edu",
-      "probedAt": "2026-10-19T10:19:21.220Z",
+      "probedAt": "2026-10-19T12:24:51.040Z",
       "domains": [
         "tulane.edu"
       ],
@@ -2766,7 +3032,9 @@
       "packages": [
         "Agricultural &amp; Environmental Science Collection",
         "Agricultural Science Database"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0464eyp60": {
       "rorId": "https://ror.org/0464eyp60",
@@ -2774,7 +3042,7 @@
       "country": "US",
       "worksCount": 80693,
       "homepage": "https://www.umassmed.edu",
-      "probedAt": "2026-10-19T10:08:22.360Z",
+      "probedAt": "2026-10-19T12:24:51.293Z",
       "domains": [
         "umassmed.edu"
       ],
@@ -2790,7 +3058,9 @@
         "Gale Academic OneFile",
         "Gale OneFile: Environmental Studies and Policy"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0207ad724": {
       "rorId": "https://ror.org/0207ad724",
@@ -2798,7 +3068,7 @@
       "country": "US",
       "worksCount": 82978,
       "homepage": "https://www.wfu.edu",
-      "probedAt": "2026-10-19T10:19:21.575Z",
+      "probedAt": "2026-10-19T12:24:51.771Z",
       "domains": [
         "wfu.edu"
       ],
@@ -2817,7 +3087,9 @@
       "packages": [
         "Nature",
         "SpringerLink Journals AUH"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02gz6gg07": {
       "rorId": "https://ror.org/02gz6gg07",
@@ -2825,7 +3097,7 @@
       "country": "US",
       "worksCount": 80598,
       "homepage": "https://www.fiu.edu",
-      "probedAt": "2026-10-19T10:08:22.761Z",
+      "probedAt": "2026-10-19T12:24:52.417Z",
       "domains": [
         "fiu.edu"
       ],
@@ -2841,7 +3113,9 @@
         "Biological Science Collection",
         "Gale Academic ASAP"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00ysqcn41": {
       "rorId": "https://ror.org/00ysqcn41",
@@ -2849,7 +3123,7 @@
       "country": "US",
       "worksCount": 77856,
       "homepage": "https://www.jefferson.edu",
-      "probedAt": "2026-10-19T10:08:25.149Z",
+      "probedAt": "2026-10-19T12:24:52.799Z",
       "domains": [
         "jefferson.edu"
       ],
@@ -2865,7 +3139,9 @@
         "ProQuest Research Library",
         "Nexis Uni"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04bdffz58": {
       "rorId": "https://ror.org/04bdffz58",
@@ -2873,7 +3149,7 @@
       "country": "US",
       "worksCount": 79608,
       "homepage": "https://drexel.edu",
-      "probedAt": "2026-10-19T10:08:23.598Z",
+      "probedAt": "2026-10-19T12:24:53.019Z",
       "domains": [
         "drexel.edu"
       ],
@@ -2884,9 +3160,14 @@
       "code": "01DRXU_INST",
       "route": "subdomain",
       "host": "na04.alma.exlibrisgroup.com",
-      "services": 0,
-      "packages": [],
-      "status": "verified"
+      "services": 9,
+      "packages": [
+        "SpringerLink Journals",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0022-2461"
     },
     "https://ror.org/00qqv6244": {
       "rorId": "https://ror.org/00qqv6244",
@@ -2928,7 +3209,7 @@
       "country": "US",
       "worksCount": 77230,
       "homepage": "https://www.clemson.edu",
-      "probedAt": "2026-10-19T10:08:30.943Z",
+      "probedAt": "2026-10-19T12:24:53.291Z",
       "domains": [
         "clemson.edu"
       ],
@@ -2944,7 +3225,9 @@
         "Gale Academic OneFile",
         "Gale In Context: Environmental Studies"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/012jban78": {
       "rorId": "https://ror.org/012jban78",
@@ -2970,7 +3253,7 @@
       "country": "US",
       "worksCount": 77198,
       "homepage": "https://www.ucsc.edu",
-      "probedAt": "2026-10-19T10:08:31.563Z",
+      "probedAt": "2026-10-19T12:24:54.095Z",
       "domains": [
         "ucsc.edu"
       ],
@@ -2979,14 +3262,19 @@
       ],
       "evidence": "https://library.ucsc.edu/",
       "code": "01CDL_SCR_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na07.alma.exlibrisgroup.com",
       "services": 9,
       "packages": [
         "Nature",
         "Materials Science &amp; Engineering Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://ucsc.primo.exlibrisgroup.com/openurl/01CDL_SCR_INST/01CDL_SCR_INST:USCS",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/025r5qe02": {
       "rorId": "https://ror.org/025r5qe02",
@@ -2994,7 +3282,7 @@
       "country": "US",
       "worksCount": 73200,
       "homepage": "https://www.syracuse.edu",
-      "probedAt": "2026-10-19T10:08:32.189Z",
+      "probedAt": "2026-10-19T12:24:54.125Z",
       "domains": [
         "syr.edu"
       ],
@@ -3003,14 +3291,19 @@
       ],
       "evidence": "https://library.syracuse.edu/",
       "code": "01SYU_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na05.alma.exlibrisgroup.com",
       "services": 11,
       "packages": [
         "Advanced Technologies &amp; Computer Science Collection",
         "Gale OneFile: Environmental Studies and Policy"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://search.syr.edu/openurl/01SYU_INST/01SYU_INST:SYU",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02v80fc35": {
       "rorId": "https://ror.org/02v80fc35",
@@ -3018,7 +3311,7 @@
       "country": "US",
       "worksCount": 82465,
       "homepage": "https://auburn.edu",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:54.364Z",
       "domains": [
         "auburn.edu"
       ],
@@ -3055,7 +3348,7 @@
       "country": "US",
       "worksCount": 69039,
       "homepage": "https://www.uoregon.edu",
-      "probedAt": "2026-10-19T10:08:37.241Z",
+      "probedAt": "2026-10-19T12:24:54.364Z",
       "domains": [
         "uoregon.edu"
       ],
@@ -3064,14 +3357,19 @@
       ],
       "evidence": "https://library.uoregon.edu/",
       "code": "01ALLIANCE_UO",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na01.alma.exlibrisgroup.com",
       "services": 12,
       "packages": [
         "SpringerNature Journals",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://alliance-uoregon.primo.exlibrisgroup.com/openurl/01ALLIANCE_UO/01ALLIANCE_UO:UO",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01g9vbr38": {
       "rorId": "https://ror.org/01g9vbr38",
@@ -3079,7 +3377,7 @@
       "country": "US",
       "worksCount": 66546,
       "homepage": "http://go.okstate.edu/",
-      "probedAt": "2026-10-19T11:05:51.271Z",
+      "probedAt": "2026-10-19T12:24:54.633Z",
       "domains": [],
       "links": [
         "http://go.okstate.edu/"
@@ -3098,7 +3396,7 @@
       "country": "US",
       "worksCount": 67940,
       "homepage": "https://www.rpi.edu",
-      "probedAt": "2026-10-19T11:05:51.308Z",
+      "probedAt": "2026-10-19T12:24:54.668Z",
       "domains": [
         "rpi.edu"
       ],
@@ -3119,7 +3417,7 @@
       "country": "US",
       "worksCount": 66674,
       "homepage": "https://www.utdallas.edu/",
-      "probedAt": "2026-10-19T10:08:39.695Z",
+      "probedAt": "2026-10-19T12:24:54.669Z",
       "domains": [
         "utdallas.edu"
       ],
@@ -3128,14 +3426,19 @@
       ],
       "evidence": "https://library.utdallas.edu/",
       "code": "01UT_DALLAS",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na01.alma.exlibrisgroup.com",
       "services": 6,
       "packages": [
         "Nature Journals",
         "Gale In Context: Science"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://utdallas.primo.exlibrisgroup.com/discovery/openurl?institution=01UT_DALLAS&vid=01UT_DALLAS:UTDALMA",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0155zta11": {
       "rorId": "https://ror.org/0155zta11",
@@ -3143,7 +3446,7 @@
       "country": "US",
       "worksCount": 66410,
       "homepage": "https://www.uvm.edu",
-      "probedAt": "2026-10-19T10:08:40.078Z",
+      "probedAt": "2026-10-19T12:24:54.790Z",
       "domains": [
         "uvm.edu"
       ],
@@ -3159,7 +3462,12 @@
         "Nature",
         "Agricultural &amp; Environmental Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://sfx.uvm.edu/UVM",
+      "product": "sfx",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03qt6ba18": {
       "rorId": "https://ror.org/03qt6ba18",
@@ -3167,7 +3475,7 @@
       "country": "US",
       "worksCount": 65072,
       "homepage": "https://www.gsu.edu",
-      "probedAt": "2026-10-19T10:08:41.130Z",
+      "probedAt": "2026-10-19T12:24:54.970Z",
       "domains": [
         "gsu.edu"
       ],
@@ -3176,14 +3484,19 @@
       ],
       "evidence": "https://library.gsu.edu/",
       "code": "01GALI_GSU",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na03.alma.exlibrisgroup.com",
       "services": 27,
       "packages": [
         "SpringerLink Journals",
         "ProQuest Central - GALILEO"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://galileo-gsu.primo.exlibrisgroup.com/openurl/01GALI_GSU/01GALI_GSU:GSU_V1",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03tzaeb71": {
       "rorId": "https://ror.org/03tzaeb71",
@@ -3227,7 +3540,7 @@
       "country": "US",
       "worksCount": 59782,
       "homepage": "https://www.uark.edu/",
-      "probedAt": "2026-10-19T10:08:50.082Z",
+      "probedAt": "2026-10-19T12:24:55.887Z",
       "domains": [
         "uark.edu"
       ],
@@ -3236,14 +3549,19 @@
       ],
       "evidence": "https://libraries.uark.edu/",
       "code": "01UARK_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "na04.alma.exlibrisgroup.com",
       "services": 15,
       "packages": [
         "SpringerLink Journals",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://onesearch.uark.edu/openurl/01UARK_INST/01UARK_INST:01UARK",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/016tfm930": {
       "rorId": "https://ror.org/016tfm930",
@@ -3251,7 +3569,7 @@
       "country": "US",
       "worksCount": 63546,
       "homepage": "https://www.utmb.edu",
-      "probedAt": "2026-10-19T11:05:51.308Z",
+      "probedAt": "2026-10-19T12:24:56.103Z",
       "domains": [
         "utmb.edu"
       ],
@@ -3261,13 +3579,15 @@
       "evidence": "https://www.utmb.edu/library/",
       "code": "01TEXASHEALTH_UTXMED",
       "route": "homepage>link",
-      "host": "na05.alma.exlibrisgroup.com",
+      "host": "thslc-utxmed.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "services": 16,
       "packages": [
         "SpringerLink eJournals",
         "Gale In Context: Science"
-      ]
+      ],
+      "primoSlug": "thslc-utxmed",
+      "journal": "0028-0836"
     },
     "https://ror.org/012zs8222": {
       "rorId": "https://ror.org/012zs8222",
@@ -3275,7 +3595,7 @@
       "country": "US",
       "worksCount": 57666,
       "homepage": "https://www.albany.edu",
-      "probedAt": "2026-10-19T10:08:53.229Z",
+      "probedAt": "2026-10-19T12:24:56.221Z",
       "domains": [
         "albany.edu"
       ],
@@ -3291,7 +3611,9 @@
         "Nature",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0264fdx42": {
       "rorId": "https://ror.org/0264fdx42",
@@ -3299,7 +3621,7 @@
       "country": "US",
       "worksCount": 52578,
       "homepage": "https://www.sdsu.edu",
-      "probedAt": "2026-10-19T10:08:59.507Z",
+      "probedAt": "2026-10-19T12:24:56.364Z",
       "domains": [
         "sdsu.edu"
       ],
@@ -3308,14 +3630,19 @@
       ],
       "evidence": "https://library.sdsu.edu/",
       "code": "01CALS_SDL",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na03.alma.exlibrisgroup.com",
       "services": 28,
       "packages": [
         "Nature Journals Online",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://csu-sdsu.primo.exlibrisgroup.com/discovery/openurl?institution=01CALS_SDL&vid=01CALS_SDL:01CALS_SDL",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00h6set76": {
       "rorId": "https://ror.org/00h6set76",
@@ -3323,7 +3650,7 @@
       "country": "US",
       "worksCount": 60446,
       "homepage": "http://www.usu.edu/",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:24:57.160Z",
       "domains": [
         "usu.edu"
       ],
@@ -3362,7 +3689,7 @@
       "country": "US",
       "worksCount": 53126,
       "homepage": "https://www.unr.edu",
-      "probedAt": "2026-10-19T10:08:59.007Z",
+      "probedAt": "2026-10-19T12:24:57.160Z",
       "domains": [
         "unr.edu"
       ],
@@ -3378,7 +3705,12 @@
         "Nature",
         "Springer Nature Link Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://libkey.io/libraries/408/openurl",
+      "product": "libkey",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/005781934": {
       "rorId": "https://ror.org/005781934",
@@ -3404,7 +3736,7 @@
       "country": "US",
       "worksCount": 52024,
       "homepage": "https://www.luc.edu/",
-      "probedAt": "2026-10-19T10:09:07.504Z",
+      "probedAt": "2026-10-19T12:24:57.543Z",
       "domains": [
         "luc.edu"
       ],
@@ -3413,14 +3745,19 @@
       ],
       "evidence": "https://libraries.luc.edu/home",
       "code": "01LUC_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "na01.alma.exlibrisgroup.com",
       "services": 10,
       "packages": [
         "SpringerNature Journal Collection (Lakeside Campuses)",
         "Nature (Health Sciences Campus)"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://luc.primo.exlibrisgroup.com/openurl/01LUC_INST/01LUC_INST:01LUC",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00v97ad02": {
       "rorId": "https://ror.org/00v97ad02",
@@ -3446,7 +3783,7 @@
       "country": "US",
       "worksCount": 64943,
       "homepage": "https://olemiss.edu",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:24:59.304Z",
       "domains": [
         "olemiss.edu"
       ],
@@ -3485,7 +3822,7 @@
       "country": "GB",
       "worksCount": 625107,
       "homepage": "https://www.ox.ac.uk",
-      "probedAt": "2026-10-19T10:30:54.469Z",
+      "probedAt": "2026-10-19T12:24:59.304Z",
       "domains": [
         "ox.ac.uk"
       ],
@@ -3504,7 +3841,9 @@
       "packages": [
         "Nature",
         "Electronic Legal Deposit Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/013meh722": {
       "rorId": "https://ror.org/013meh722",
@@ -3512,7 +3851,7 @@
       "country": "GB",
       "worksCount": 508247,
       "homepage": "https://www.cam.ac.uk",
-      "probedAt": "2026-10-19T10:19:24.732Z",
+      "probedAt": "2026-10-19T12:24:59.717Z",
       "domains": [
         "cam.ac.uk"
       ],
@@ -3531,7 +3870,9 @@
       "packages": [
         "Gale Academic OneFile",
         "Gale General OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00wjc7c48": {
       "rorId": "https://ror.org/00wjc7c48",
@@ -3539,7 +3880,7 @@
       "country": "IT",
       "worksCount": 406476,
       "homepage": "https://www.unimi.it",
-      "probedAt": "2026-10-19T10:30:55.256Z",
+      "probedAt": "2026-10-19T12:24:59.721Z",
       "domains": [
         "unimi.it"
       ],
@@ -3558,7 +3899,9 @@
       "packages": [
         "Nature",
         "SpringerLINK Contemporary 1997-Present"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/041kmwe10": {
       "rorId": "https://ror.org/041kmwe10",
@@ -3566,7 +3909,7 @@
       "country": "GB",
       "worksCount": 401675,
       "homepage": "https://www.imperial.ac.uk",
-      "probedAt": "2026-10-19T10:10:11.699Z",
+      "probedAt": "2026-10-19T12:24:59.729Z",
       "domains": [
         "imperial.ac.uk"
       ],
@@ -3575,14 +3918,19 @@
       ],
       "evidence": "https://library-search.imperial.ac.uk/discovery/search?vid=44IMP_INST:ICL_VU1",
       "code": "44IMP_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu00.alma.exlibrisgroup.com",
       "services": 2,
       "packages": [
         "*Nature Springer Journals",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://library-search.imperial.ac.uk/openurl/44IMP_INST/44IMP_INST:ICL_VU1",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05591te55": {
       "rorId": "https://ror.org/05591te55",
@@ -3590,7 +3938,7 @@
       "country": "DE",
       "worksCount": 329130,
       "homepage": "https://www.lmu.de",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:25:00.395Z",
       "domains": [
         "lmu.de"
       ],
@@ -3611,7 +3959,7 @@
       "country": "GB",
       "worksCount": 326331,
       "homepage": "https://www.manchester.ac.uk/",
-      "probedAt": "2026-10-19T10:30:55.916Z",
+      "probedAt": "2026-10-19T12:25:00.395Z",
       "domains": [
         "manchester.ac.uk"
       ],
@@ -3630,7 +3978,9 @@
       "packages": [
         "Gale Academic OneFile",
         "Gale General OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05f950310": {
       "rorId": "https://ror.org/05f950310",
@@ -3638,7 +3988,7 @@
       "country": "BE",
       "worksCount": 314107,
       "homepage": "https://www.kuleuven.be",
-      "probedAt": "2026-10-19T10:10:17.152Z",
+      "probedAt": "2026-10-19T12:25:00.416Z",
       "domains": [
         "kuleuven.be"
       ],
@@ -3654,7 +4004,12 @@
         "Springer Nature - Nature",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://limo.libis.be/services/KULeuven",
+      "product": "other",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01nrxwf90": {
       "rorId": "https://ror.org/01nrxwf90",
@@ -3662,7 +4017,7 @@
       "country": "GB",
       "worksCount": 298342,
       "homepage": "https://www.ed.ac.uk",
-      "probedAt": "2026-10-19T10:30:55.984Z",
+      "probedAt": "2026-10-19T12:25:00.527Z",
       "domains": [
         "ed.ac.uk"
       ],
@@ -3681,7 +4036,9 @@
       "packages": [
         "Gale Academic OneFile",
         "Gale General OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/035b05819": {
       "rorId": "https://ror.org/035b05819",
@@ -3689,7 +4046,7 @@
       "country": "DK",
       "worksCount": 340742,
       "homepage": "https://www.ku.dk",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:25:00.892Z",
       "domains": [
         "ku.dk"
       ],
@@ -3717,7 +4074,7 @@
       "country": "GB",
       "worksCount": 498429,
       "homepage": "http://www.ucl.ac.uk/",
-      "probedAt": "2026-10-19T10:30:56.333Z",
+      "probedAt": "2026-10-19T12:25:00.892Z",
       "domains": [
         "ucl.ac.uk"
       ],
@@ -3736,7 +4093,9 @@
       "packages": [
         "Gale Academic OneFile",
         "Gale General OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05a28rw58": {
       "rorId": "https://ror.org/05a28rw58",
@@ -3744,7 +4103,7 @@
       "country": "CH",
       "worksCount": 286963,
       "homepage": "https://ethz.ch",
-      "probedAt": "2026-10-19T10:10:21.146Z",
+      "probedAt": "2026-10-19T12:25:00.902Z",
       "domains": [
         "ethz.ch"
       ],
@@ -3753,14 +4112,19 @@
       ],
       "evidence": "https://eth.swisscovery.slsp.ch/discovery/search?vid=41SLSP_ETH:ETH",
       "code": "41SLSP_ETH",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu03.alma.exlibrisgroup.com",
       "services": 8,
       "packages": [
         "Materials Science &amp; Engineering Collection",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://slsp-eth.primo.exlibrisgroup.com/openurl/41SLSP_ETH/41SLSP_ETH:ETH",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00afp2z80": {
       "rorId": "https://ror.org/00afp2z80",
@@ -3768,7 +4132,7 @@
       "country": "BE",
       "worksCount": 281449,
       "homepage": "https://www.uliege.be",
-      "probedAt": "2026-10-19T10:10:24.824Z",
+      "probedAt": "2026-10-19T12:25:01.496Z",
       "domains": [
         "uliege.be"
       ],
@@ -3784,7 +4148,12 @@
         "SpringerLink Journals Complete",
         "Agricultural &amp; Environmental Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://libkey.io/libraries/1973/openurl",
+      "product": "libkey",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02k7v4d05": {
       "rorId": "https://ror.org/02k7v4d05",
@@ -3792,7 +4161,7 @@
       "country": "CH",
       "worksCount": 294034,
       "homepage": "https://www.unibe.ch",
-      "probedAt": "2026-10-19T10:19:25.177Z",
+      "probedAt": "2026-10-19T12:25:01.640Z",
       "domains": [
         "unibe.ch"
       ],
@@ -3811,7 +4180,9 @@
       "packages": [
         "Open Access: Biodiversity Heritage Library",
         "Open Access: Free E- Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01nffqt88": {
       "rorId": "https://ror.org/01nffqt88",
@@ -3819,7 +4190,7 @@
       "country": "IT",
       "worksCount": 258166,
       "homepage": "https://polimi.it",
-      "probedAt": "2026-10-19T10:30:56.475Z",
+      "probedAt": "2026-10-19T12:25:01.829Z",
       "domains": [
         "polimi.it"
       ],
@@ -3838,7 +4209,9 @@
       "packages": [
         "Advanced Technologies &amp; Computer Science Collection",
         "Materials Science &amp; Engineering Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0220mzb33": {
       "rorId": "https://ror.org/0220mzb33",
@@ -3846,7 +4219,7 @@
       "country": "GB",
       "worksCount": 268133,
       "homepage": "https://www.kcl.ac.uk/",
-      "probedAt": "2026-10-19T10:10:27.735Z",
+      "probedAt": "2026-10-19T12:25:02.043Z",
       "domains": [
         "kcl.ac.uk"
       ],
@@ -3855,14 +4228,19 @@
       ],
       "evidence": "https://librarysearch.kcl.ac.uk/discovery/search?vid=44KCL_INST:44KCL_INST",
       "code": "44KCL_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu04.alma.exlibrisgroup.com",
       "services": 5,
       "packages": [
         "Nature",
         "ProQuest Central UK/Ireland"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://librarysearch.kcl.ac.uk/discovery/openurl?institution=44KCL_INST&vid=44KCL_INST:44KCL_INST",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02kkvpp62": {
       "rorId": "https://ror.org/02kkvpp62",
@@ -3870,7 +4248,7 @@
       "country": "DE",
       "worksCount": 272205,
       "homepage": "https://www.tum.de",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:25:02.236Z",
       "domains": [
         "tum.de"
       ],
@@ -3891,7 +4269,7 @@
       "country": "NL",
       "worksCount": 245956,
       "homepage": "https://www.uu.nl",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:25:02.236Z",
       "domains": [
         "uu.nl"
       ],
@@ -3912,7 +4290,7 @@
       "country": "DK",
       "worksCount": 251953,
       "homepage": "https://www.au.dk",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:25:02.236Z",
       "domains": [
         "au.dk"
       ],
@@ -3938,7 +4316,7 @@
       "country": "DE",
       "worksCount": 252744,
       "homepage": "https://www.uni-heidelberg.de",
-      "probedAt": "2026-10-19T11:05:51.456Z",
+      "probedAt": "2026-10-19T12:25:02.236Z",
       "domains": [
         "uni-heidelberg.de"
       ],
@@ -3959,7 +4337,7 @@
       "country": "NL",
       "worksCount": 222962,
       "homepage": "https://www.uva.nl",
-      "probedAt": "2026-10-19T11:05:51.595Z",
+      "probedAt": "2026-10-19T12:25:02.314Z",
       "domains": [
         "uva.nl"
       ],
@@ -3975,7 +4353,9 @@
         "Gale Academic OneFile",
         "Gale General OneFile"
       ],
-      "status": "answers-without-indicator"
+      "status": "answers-without-indicator",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01111rn36": {
       "rorId": "https://ror.org/01111rn36",
@@ -3983,7 +4363,7 @@
       "country": "IT",
       "worksCount": 229784,
       "homepage": "https://www.unibo.it",
-      "probedAt": "2026-10-19T10:19:27.569Z",
+      "probedAt": "2026-10-19T12:25:02.463Z",
       "domains": [
         "unibo.it"
       ],
@@ -4002,7 +4382,9 @@
       "packages": [
         "Nature",
         "ProQuest Central"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/040af2s02": {
       "rorId": "https://ror.org/040af2s02",
@@ -4010,26 +4392,28 @@
       "country": "FI",
       "worksCount": 222467,
       "homepage": "https://www.helsinki.fi/",
-      "probedAt": "2026-10-19T11:05:51.721Z",
+      "probedAt": "2026-10-19T12:25:02.917Z",
       "domains": [
         "helsinki.fi"
       ],
       "links": [
         "https://www.helsinki.fi/"
       ],
-      "evidence": null,
+      "evidence": "https://helka.helsinki.fi/discovery/openurl?institution=358UOH_INST&vid=358UOH_INST:VU1",
       "code": "358UOH_INST",
       "host": "eu03.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "source": "zotero",
       "resolverUrl": "https://helka.helsinki.fi/openurl/358UOH_INST/358UOH_INST:VU1",
       "product": "alma",
-      "route": "seed",
+      "route": "zotero-url",
       "services": 3,
       "packages": [
         "Nature Research (F)",
         "Free E-Journals"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02be6w209": {
       "rorId": "https://ror.org/02be6w209",
@@ -4037,7 +4421,7 @@
       "country": "IT",
       "worksCount": 281822,
       "homepage": "https://www.uniroma1.it",
-      "probedAt": "2026-10-19T11:05:52.133Z",
+      "probedAt": "2026-10-19T12:25:03.272Z",
       "domains": [
         "uniroma1.it"
       ],
@@ -4058,7 +4442,7 @@
       "country": "SE",
       "worksCount": 233252,
       "homepage": "https://ki.se",
-      "probedAt": "2026-10-19T10:19:29.575Z",
+      "probedAt": "2026-10-19T12:25:03.272Z",
       "domains": [
         "ki.se"
       ],
@@ -4077,7 +4461,9 @@
       "packages": [
         "Springer Nature - Complete Nature.com",
         "SpringerLink Journals - AutoHoldings"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04xfq0f34": {
       "rorId": "https://ror.org/04xfq0f34",
@@ -4085,7 +4471,7 @@
       "country": "DE",
       "worksCount": 222132,
       "homepage": "https://www.rwth-aachen.de/",
-      "probedAt": "2026-10-19T10:10:38.143Z",
+      "probedAt": "2026-10-19T12:25:03.486Z",
       "domains": [
         "rwth-aachen.de"
       ],
@@ -4101,7 +4487,12 @@
         "Nature",
         "Lizenzfreie Zeitschriften - Lizenzfreie E-Ressourcen der ZDB (lzzdb)"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://sfx.hbz-nrw.de/sfx_rwth/",
+      "product": "sfx",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0524sp257": {
       "rorId": "https://ror.org/0524sp257",
@@ -4109,7 +4500,7 @@
       "country": "GB",
       "worksCount": 217237,
       "homepage": "https://www.bristol.ac.uk/",
-      "probedAt": "2026-10-19T11:05:52.133Z",
+      "probedAt": "2026-10-19T12:25:03.653Z",
       "domains": [
         "bristol.ac.uk"
       ],
@@ -4130,7 +4521,7 @@
       "country": "IT",
       "worksCount": 221238,
       "homepage": "https://www.unipd.it",
-      "probedAt": "2026-10-19T10:10:39.981Z",
+      "probedAt": "2026-10-19T12:25:03.653Z",
       "domains": [
         "unipd.it"
       ],
@@ -4146,7 +4537,9 @@
         "Nature",
         "EBSCOhost Psychology and Behavioral Sciences Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02crff812": {
       "rorId": "https://ror.org/02crff812",
@@ -4154,7 +4547,7 @@
       "country": "CH",
       "worksCount": 214574,
       "homepage": "https://uzh.ch/de.html",
-      "probedAt": "2026-10-19T10:10:43.696Z",
+      "probedAt": "2026-10-19T12:25:04.104Z",
       "domains": [
         "uzh.ch"
       ],
@@ -4163,14 +4556,19 @@
       ],
       "evidence": "https://www.ub.uzh.ch/de.html",
       "code": "41SLSP_UZB",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu03.alma.exlibrisgroup.com",
       "services": 5,
       "packages": [
         "UZH-/ZB-Zugriff: Springer Nature Journals",
         "Open Access: Biodiversity Heritage Library"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://slsp-uzb.primo.exlibrisgroup.com/openurl/41SLSP_UZB/41SLSP_UZB:UZB",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/048a87296": {
       "rorId": "https://ror.org/048a87296",
@@ -4178,7 +4576,7 @@
       "country": "SE",
       "worksCount": 210393,
       "homepage": "https://www.uu.se/en/",
-      "probedAt": "2026-10-19T10:10:44.997Z",
+      "probedAt": "2026-10-19T12:25:04.191Z",
       "domains": [
         "uu.se"
       ],
@@ -4187,14 +4585,19 @@
       ],
       "evidence": "https://www.uu.se/en/library",
       "code": "46LIBRIS_UUB",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu04.alma.exlibrisgroup.com",
       "services": 3,
       "packages": [
         "Springer Nature Journals",
         "Nature Journals Transformative Agreement"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://uub.primo.exlibrisgroup.com/openurl/46LIBRIS_UUB/46LIBRIS_UUB:UUB",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01kj2bm70": {
       "rorId": "https://ror.org/01kj2bm70",
@@ -4202,7 +4605,7 @@
       "country": "GB",
       "worksCount": 202432,
       "homepage": "https://www.ncl.ac.uk",
-      "probedAt": "2026-10-19T10:10:48.105Z",
+      "probedAt": "2026-10-19T12:25:04.221Z",
       "domains": [
         "ncl.ac.uk"
       ],
@@ -4218,7 +4621,9 @@
         "Agricultural &amp; Environmental Science Collection",
         "Biological Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01y9bpm73": {
       "rorId": "https://ror.org/01y9bpm73",
@@ -4242,7 +4647,7 @@
       "country": "NO",
       "worksCount": 209202,
       "homepage": "https://www4.uib.no/",
-      "probedAt": "2026-10-19T10:30:57.990Z",
+      "probedAt": "2026-10-19T12:25:04.517Z",
       "domains": [
         "uib.no"
       ],
@@ -4261,7 +4666,9 @@
       "packages": [
         "Nature",
         "ProQuest Central Premium"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00cv9y106": {
       "rorId": "https://ror.org/00cv9y106",
@@ -4269,16 +4676,16 @@
       "country": "BE",
       "worksCount": 215014,
       "homepage": "https://www.ugent.be",
-      "probedAt": "2026-10-19T11:05:52.133Z",
+      "probedAt": "2026-10-19T12:25:04.859Z",
       "domains": [
         "ugent.be"
       ],
       "links": [
         "https://www.ugent.be"
       ],
-      "evidence": "https://www.ugent.be/nl/univgent/bibliotheek",
+      "evidence": "https://eu06.alma.exlibrisgroup.com/view/uresolver/32RUG_INST/openurl",
       "code": "32RUG_INST",
-      "route": "seed",
+      "route": "manual (Opus subagent, 2026-10-19)-url",
       "host": "eu06.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "source": "manual (Opus subagent, 2026-10-19)",
@@ -4288,7 +4695,9 @@
       "packages": [
         "SpringerLink Journals",
         "ProQuest Central"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/024mrxd33": {
       "rorId": "https://ror.org/024mrxd33",
@@ -4296,7 +4705,7 @@
       "country": "GB",
       "worksCount": 195962,
       "homepage": "https://www.leeds.ac.uk",
-      "probedAt": "2026-10-19T10:10:49.760Z",
+      "probedAt": "2026-10-19T12:25:05.529Z",
       "domains": [
         "leeds.ac.uk"
       ],
@@ -4312,7 +4721,9 @@
         "Nature",
         "Biodiversity Heritage Library"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03angcq70": {
       "rorId": "https://ror.org/03angcq70",
@@ -4320,7 +4731,7 @@
       "country": "GB",
       "worksCount": 220962,
       "homepage": "http://www.birmingham.ac.uk/index.aspx",
-      "probedAt": "2026-10-19T10:30:59.194Z",
+      "probedAt": "2026-10-19T12:25:05.698Z",
       "domains": [
         "bham.ac.uk"
       ],
@@ -4339,7 +4750,9 @@
       "packages": [
         "Nature",
         "ProQuest Central UK/Ireland"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/012a77v79": {
       "rorId": "https://ror.org/012a77v79",
@@ -4347,7 +4760,7 @@
       "country": "SE",
       "worksCount": 235367,
       "homepage": "https://www.lu.se",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:05.780Z",
       "domains": [
         "lu.se"
       ],
@@ -4368,7 +4781,7 @@
       "country": "DE",
       "worksCount": 193009,
       "homepage": "https://www.uni-bonn.de",
-      "probedAt": "2026-10-19T10:30:59.351Z",
+      "probedAt": "2026-10-19T12:25:05.780Z",
       "domains": [
         "uni-bonn.de"
       ],
@@ -4387,7 +4800,9 @@
       "packages": [
         "Nature",
         "Lizenzfreie Zeitschriften - Lizenzfreie E-Ressourcen der ZDB (lzzdb)"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/012p63287": {
       "rorId": "https://ror.org/012p63287",
@@ -4395,7 +4810,7 @@
       "country": "NL",
       "worksCount": 194784,
       "homepage": "https://www.rug.nl",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:06.033Z",
       "domains": [
         "rug.nl"
       ],
@@ -4416,7 +4831,7 @@
       "country": "FR",
       "worksCount": 189282,
       "homepage": "https://www.univ-amu.fr/",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:06.033Z",
       "domains": [
         "univ-amu.fr"
       ],
@@ -4437,7 +4852,7 @@
       "country": "GB",
       "worksCount": 188355,
       "homepage": "https://www.liverpool.ac.uk/",
-      "probedAt": "2026-10-19T10:10:55.906Z",
+      "probedAt": "2026-10-19T12:25:06.033Z",
       "domains": [
         "liverpool.ac.uk"
       ],
@@ -4453,7 +4868,9 @@
         "Gale Academic OneFile",
         "Health Research Premium"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00vtgdb53": {
       "rorId": "https://ror.org/00vtgdb53",
@@ -4461,7 +4878,7 @@
       "country": "GB",
       "worksCount": 199897,
       "homepage": "https://www.gla.ac.uk/",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:06.049Z",
       "domains": [
         "gla.ac.uk"
       ],
@@ -4482,7 +4899,7 @@
       "country": "NO",
       "worksCount": 192185,
       "homepage": "https://www.uio.no/",
-      "probedAt": "2026-10-19T10:10:52.828Z",
+      "probedAt": "2026-10-19T12:25:06.049Z",
       "domains": [
         "uio.no"
       ],
@@ -4498,7 +4915,9 @@
         "Nature",
         "Springer Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04t3en479": {
       "rorId": "https://ror.org/04t3en479",
@@ -4506,7 +4925,7 @@
       "country": "DE",
       "worksCount": 187678,
       "homepage": "https://www.kit.edu",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:06.340Z",
       "domains": [
         "kit.edu"
       ],
@@ -4526,7 +4945,7 @@
       "country": "GB",
       "worksCount": 185574,
       "homepage": "https://www.southampton.ac.uk/",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:06.340Z",
       "domains": [
         "southampton.ac.uk"
       ],
@@ -4547,7 +4966,7 @@
       "country": "GB",
       "worksCount": 191257,
       "homepage": "https://www.nottingham.ac.uk/",
-      "probedAt": "2026-10-19T10:19:30.417Z",
+      "probedAt": "2026-10-19T12:25:06.340Z",
       "domains": [
         "nottingham.ac.uk"
       ],
@@ -4566,7 +4985,9 @@
       "packages": [
         "Nature",
         "Advanced Technologies &amp; Computer Science Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0245cg223": {
       "rorId": "https://ror.org/0245cg223",
@@ -4592,7 +5013,7 @@
       "country": "GB",
       "worksCount": 189731,
       "homepage": "https://www.sheffield.ac.uk",
-      "probedAt": "2026-10-19T10:30:59.594Z",
+      "probedAt": "2026-10-19T12:25:06.439Z",
       "domains": [
         "sheffield.ac.uk"
       ],
@@ -4611,7 +5032,9 @@
       "packages": [
         "Nature Journals",
         "SciTech Premium Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03a1kwz48": {
       "rorId": "https://ror.org/03a1kwz48",
@@ -4655,7 +5078,7 @@
       "country": "AT",
       "worksCount": 188221,
       "homepage": "https://www.univie.ac.at",
-      "probedAt": "2026-10-19T10:30:59.622Z",
+      "probedAt": "2026-10-19T12:25:06.636Z",
       "domains": [
         "univie.ac.at"
       ],
@@ -4664,7 +5087,7 @@
       ],
       "evidence": null,
       "code": "43ACC_UBW",
-      "host": "obv-at-ubw.alma.exlibrisgroup.com",
+      "host": "eu02.alma.exlibrisgroup.com",
       "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://obv-at-ubw.alma.exlibrisgroup.com/view/uresolver/43ACC_UBW/openurl",
@@ -4674,7 +5097,9 @@
       "packages": [
         "Biological Science Collection",
         "Gale Academic OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02en5vm52": {
       "rorId": "https://ror.org/02en5vm52",
@@ -4682,7 +5107,7 @@
       "country": "FR",
       "worksCount": 172460,
       "homepage": "https://www.sorbonne-universite.fr",
-      "probedAt": "2026-10-19T10:11:10.696Z",
+      "probedAt": "2026-10-19T12:25:07.255Z",
       "domains": [
         "sorbonne-universite.fr"
       ],
@@ -4698,7 +5123,9 @@
         "Nature",
         "SpringerNature : Revues \"Nature\" [Licence nationale] - ISTEX"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04vnq7t77": {
       "rorId": "https://ror.org/04vnq7t77",
@@ -4706,7 +5133,7 @@
       "country": "DE",
       "worksCount": 161691,
       "homepage": "https://www.uni-stuttgart.de/",
-      "probedAt": "2026-10-19T11:05:52.163Z",
+      "probedAt": "2026-10-19T12:25:07.698Z",
       "domains": [
         "uni-stuttgart.de"
       ],
@@ -4727,7 +5154,7 @@
       "country": "FR",
       "worksCount": 161932,
       "homepage": "https://www.universite-paris-saclay.fr/",
-      "probedAt": "2026-10-19T11:05:52.476Z",
+      "probedAt": "2026-10-19T12:25:08.375Z",
       "domains": [
         "universite-paris-saclay.fr"
       ],
@@ -4741,7 +5168,8 @@
       "source": "zotero",
       "resolverUrl": "https://upsaclay.focus.universite-paris-saclay.fr/openurl/33UDPS/33UDPS_VU1",
       "product": "alma",
-      "route": "seed"
+      "route": "seed",
+      "primoSlug": null
     },
     "https://ror.org/016xsfp80": {
       "rorId": "https://ror.org/016xsfp80",
@@ -4767,7 +5195,7 @@
       "country": "NL",
       "worksCount": 160474,
       "homepage": "http://www.leiden.edu/",
-      "probedAt": "2026-10-19T10:11:25.338Z",
+      "probedAt": "2026-10-19T12:25:09.167Z",
       "domains": [
         "leidenuniv.nl"
       ],
@@ -4783,7 +5211,9 @@
         "Nature",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04cvxnb49": {
       "rorId": "https://ror.org/04cvxnb49",
@@ -4809,7 +5239,7 @@
       "country": "FR",
       "worksCount": 155880,
       "homepage": null,
-      "probedAt": "2026-10-19T11:05:53.140Z",
+      "probedAt": "2026-10-19T12:25:10.113Z",
       "domains": [],
       "links": [],
       "evidence": null,
@@ -4826,26 +5256,28 @@
       "country": "IT",
       "worksCount": 179840,
       "homepage": "https://www.unina.it",
-      "probedAt": "2026-10-19T11:05:53.204Z",
+      "probedAt": "2026-10-19T12:25:10.249Z",
       "domains": [
         "unina.it"
       ],
       "links": [
         "https://www.unina.it"
       ],
-      "evidence": null,
+      "evidence": "https://eu01.alma.exlibrisgroup.com/view/uresolver/39NAP_INST/openurl",
       "code": "39NAP_INST",
       "host": "eu01.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://eu01.alma.exlibrisgroup.com/view/uresolver/39NAP_INST/openurl",
       "product": "alma",
-      "route": "seed",
+      "route": "manual (Opus subagent, 2026-10-19)-url",
       "services": 7,
       "packages": [
         "SpringerLink Journals - AutoHoldings",
         "EBSCOhost Food Science Source"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02e2c7k09": {
       "rorId": "https://ror.org/02e2c7k09",
@@ -4871,7 +5303,7 @@
       "country": "DE",
       "worksCount": 164450,
       "homepage": "https://www.fau.de/",
-      "probedAt": "2026-10-19T11:05:54.124Z",
+      "probedAt": "2026-10-19T12:25:10.271Z",
       "domains": [
         "fau.de"
       ],
@@ -4892,7 +5324,7 @@
       "country": "FR",
       "worksCount": 155394,
       "homepage": "https://www.univ-lorraine.fr",
-      "probedAt": "2026-10-19T10:19:32.223Z",
+      "probedAt": "2026-10-19T12:25:10.271Z",
       "domains": [
         "univ-lorraine.fr"
       ],
@@ -4911,7 +5343,9 @@
       "packages": [
         "Nature",
         "AllJournals Licence Nationale _ plateforme ISTEX"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/043pwc612": {
       "rorId": "https://ror.org/043pwc612",
@@ -4919,7 +5353,7 @@
       "country": "PT",
       "worksCount": 156427,
       "homepage": "https://www.up.pt",
-      "probedAt": "2026-10-19T10:11:27.243Z",
+      "probedAt": "2026-10-19T12:25:10.311Z",
       "domains": [
         "up.pt"
       ],
@@ -4935,7 +5369,9 @@
         "Advanced Technologies &amp; Aerospace Database",
         "Engineering Database"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04jr1s763": {
       "rorId": "https://ror.org/04jr1s763",
@@ -4961,7 +5397,7 @@
       "country": "CZ",
       "worksCount": 155294,
       "homepage": "https://www.cuni.cz",
-      "probedAt": "2026-10-19T10:11:31.806Z",
+      "probedAt": "2026-10-19T12:25:10.478Z",
       "domains": [
         "cuni.cz"
       ],
@@ -4970,14 +5406,19 @@
       ],
       "evidence": "https://library.cuni.cz/",
       "code": "420CKIS_INST",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu04.alma.exlibrisgroup.com",
       "services": 11,
       "packages": [
         "SpringerLink Journals - AutoHoldings",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://cuni.primo.exlibrisgroup.com/openurl/420CKIS_INST/420CKIS_INST:UKAZ",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05xg72x27": {
       "rorId": "https://ror.org/05xg72x27",
@@ -5021,7 +5462,7 @@
       "country": "DE",
       "worksCount": 148122,
       "homepage": "https://www.uni-muenster.de/",
-      "probedAt": "2026-10-19T10:19:32.703Z",
+      "probedAt": "2026-10-19T12:25:10.754Z",
       "domains": [
         "uni-muenster.de"
       ],
@@ -5040,7 +5481,9 @@
       "packages": [
         "Lizenzfreie Zeitschriften - Lizenzfreie E-Ressourcen der ZDB (lzzdb)",
         "Lizenzfreie Zeitschriften - Lizenzfreie E-Ressourcen der ZDB (lzzdb)"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04qtj9h94": {
       "rorId": "https://ror.org/04qtj9h94",
@@ -5066,7 +5509,7 @@
       "country": "CH",
       "worksCount": 147694,
       "homepage": "https://www.epfl.ch/",
-      "probedAt": "2026-10-19T11:05:54.124Z",
+      "probedAt": "2026-10-19T12:25:11.254Z",
       "domains": [
         "epfl.ch"
       ],
@@ -5076,13 +5519,15 @@
       "evidence": "https://www.epfl.ch/campus/library/fr/",
       "code": "41SLSP_EPF",
       "route": "homepage>link",
-      "host": "eu03.alma.exlibrisgroup.com",
+      "host": "slsp-epfl.alma.exlibrisgroup.com",
       "services": 5,
       "packages": [
         "Materials Science &amp; Engineering Collection",
         "Nature"
       ],
-      "status": "answers-without-indicator"
+      "status": "answers-without-indicator",
+      "primoSlug": "slsp-epfl",
+      "journal": "0028-0836"
     },
     "https://ror.org/046ak2485": {
       "rorId": "https://ror.org/046ak2485",
@@ -5090,7 +5535,7 @@
       "country": "DE",
       "worksCount": 147204,
       "homepage": "https://www.fu-berlin.de",
-      "probedAt": "2026-10-19T10:11:36.711Z",
+      "probedAt": "2026-10-19T12:25:11.364Z",
       "domains": [
         "fu-berlin.de"
       ],
@@ -5106,7 +5551,12 @@
         "Gale General OneFile - TFS",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://fu-berlin.hosted.exlibrisgroup.com/openurl/FUB/FUB?u.ignore_date_coverage=true",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/042aqky30": {
       "rorId": "https://ror.org/042aqky30",
@@ -5150,7 +5600,7 @@
       "country": "CH",
       "worksCount": 143499,
       "homepage": "https://www.unige.ch/",
-      "probedAt": "2026-10-19T10:11:41.159Z",
+      "probedAt": "2026-10-19T12:25:11.963Z",
       "domains": [
         "unige.ch"
       ],
@@ -5159,14 +5609,19 @@
       ],
       "evidence": "https://www.unige.ch/biblio/en/",
       "code": "41SLSP_UGE",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu03.alma.exlibrisgroup.com",
       "services": 4,
       "packages": [
         "Nature",
         "Open Access: Biodiversity Heritage Library"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://slsp-unige.primo.exlibrisgroup.com/openurl/41SLSP_UGE/41SLSP_UGE:VU1",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01c27hj86": {
       "rorId": "https://ror.org/01c27hj86",
@@ -5210,7 +5665,7 @@
       "country": "GB",
       "worksCount": 144699,
       "homepage": "https://www.qmul.ac.uk/",
-      "probedAt": "2026-10-19T10:31:01.381Z",
+      "probedAt": "2026-10-19T12:25:12.002Z",
       "domains": [
         "qmul.ac.uk"
       ],
@@ -5226,7 +5681,9 @@
       "packages": [
         "Nature",
         "Nature Research"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00rcxh774": {
       "rorId": "https://ror.org/00rcxh774",
@@ -5252,7 +5709,7 @@
       "country": "IT",
       "worksCount": 141701,
       "homepage": "https://www.unipi.it",
-      "probedAt": "2026-10-19T10:11:46.004Z",
+      "probedAt": "2026-10-19T12:25:12.279Z",
       "domains": [
         "unipi.it"
       ],
@@ -5268,7 +5725,9 @@
         "Nature",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/043nxc105": {
       "rorId": "https://ror.org/043nxc105",
@@ -5276,7 +5735,7 @@
       "country": "ES",
       "worksCount": 137451,
       "homepage": "https://www.uv.es",
-      "probedAt": "2026-10-19T10:15:31.067Z",
+      "probedAt": "2026-10-19T12:25:12.886Z",
       "domains": [
         "uv.es"
       ],
@@ -5295,7 +5754,10 @@
       "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://trobes.uv.es/openurl/34CVA_UV:VU1/34CVA_UV:VU1",
-      "adapter": "alma"
+      "adapter": "alma",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04gnjpq42": {
       "rorId": "https://ror.org/04gnjpq42",
@@ -5391,7 +5853,7 @@
       "country": "GB",
       "worksCount": 138574,
       "homepage": "http://www.cardiff.ac.uk/",
-      "probedAt": "2026-10-19T10:19:33.976Z",
+      "probedAt": "2026-10-19T12:25:12.942Z",
       "domains": [
         "cardiff.ac.uk"
       ],
@@ -5410,7 +5872,9 @@
       "packages": [
         "Nature Archives",
         "Nature (perpetual access)"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01hcx6992": {
       "rorId": "https://ror.org/01hcx6992",
@@ -5418,7 +5882,7 @@
       "country": "DE",
       "worksCount": 135078,
       "homepage": "https://www.hu-berlin.de/?set_language=en&cl=en",
-      "probedAt": "2026-10-19T11:05:54.844Z",
+      "probedAt": "2026-10-19T12:25:13.590Z",
       "domains": [
         "hu-berlin.de"
       ],
@@ -5455,7 +5919,7 @@
       "country": "SE",
       "worksCount": 129846,
       "homepage": "https://www.su.se",
-      "probedAt": "2026-10-19T11:05:54.844Z",
+      "probedAt": "2026-10-19T12:25:13.590Z",
       "domains": [
         "su.se"
       ],
@@ -5530,7 +5994,7 @@
       "country": "FR",
       "worksCount": 125392,
       "homepage": "https://www.univ-lyon1.fr",
-      "probedAt": "2026-10-19T11:05:54.844Z",
+      "probedAt": "2026-10-19T12:25:13.590Z",
       "domains": [
         "univ-lyon1.fr"
       ],
@@ -5551,7 +6015,7 @@
       "country": "ES",
       "worksCount": 125311,
       "homepage": "https://www.ugr.es",
-      "probedAt": "2026-10-19T10:15:31.067Z",
+      "probedAt": "2026-10-19T12:25:13.590Z",
       "domains": [
         "ugr.es"
       ],
@@ -5567,7 +6031,9 @@
         "Nature",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/023b0x485": {
       "rorId": "https://ror.org/023b0x485",
@@ -5575,7 +6041,7 @@
       "country": "DE",
       "worksCount": 127188,
       "homepage": "https://www.uni-mainz.de",
-      "probedAt": "2026-10-19T11:05:54.844Z",
+      "probedAt": "2026-10-19T12:25:14.104Z",
       "domains": [
         "uni-mainz.de"
       ],
@@ -5596,7 +6062,7 @@
       "country": "FR",
       "worksCount": 124196,
       "homepage": "https://www.univ-lille.fr/home/",
-      "probedAt": "2026-10-19T10:19:34.556Z",
+      "probedAt": "2026-10-19T12:25:14.539Z",
       "domains": [],
       "links": [
         "https://www.univ-lille.fr/home/"
@@ -5613,7 +6079,9 @@
       "packages": [
         "Nature - Journals",
         "Psychology and Behavioral Sciences Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04qw24q55": {
       "rorId": "https://ror.org/04qw24q55",
@@ -5689,7 +6157,7 @@
       "country": "SE",
       "worksCount": 118386,
       "homepage": "https://www.kth.se",
-      "probedAt": "2026-10-19T11:05:55.092Z",
+      "probedAt": "2026-10-19T12:25:15.092Z",
       "domains": [
         "kth.se"
       ],
@@ -5697,17 +6165,19 @@
         "https://www.kth.se"
       ],
       "evidence": "https://www.kth.se/biblioteket",
-      "code": "46KTH",
-      "route": "seed",
-      "host": null,
+      "code": "46KTH_INST",
+      "route": "homepage>link",
+      "host": "kth-ch.alma.exlibrisgroup.com",
       "services": 1,
       "packages": [
         "Springer Journals"
       ],
-      "status": "code-without-region",
+      "status": "answers-without-indicator",
       "source": "zotero",
       "resolverUrl": "https://kth-primo.hosted.exlibrisgroup.com/openurl/46KTH/46KTH_services_page",
-      "product": "alma"
+      "product": "alma",
+      "primoSlug": "kth-ch",
+      "journal": "0028-0836"
     },
     "https://ror.org/03bqmcz70": {
       "rorId": "https://ror.org/03bqmcz70",
@@ -5733,7 +6203,7 @@
       "country": "FR",
       "worksCount": 118906,
       "homepage": "https://u-paris.fr",
-      "probedAt": "2026-10-19T10:19:35.450Z",
+      "probedAt": "2026-10-19T12:25:15.628Z",
       "domains": [
         "u-paris.fr"
       ],
@@ -5752,7 +6222,9 @@
       "packages": [
         "Nature - Revues",
         "Nature - Revues - Licence nationale"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03s7gtk40": {
       "rorId": "https://ror.org/03s7gtk40",
@@ -5760,7 +6232,7 @@
       "country": "DE",
       "worksCount": 127177,
       "homepage": "https://www.uni-leipzig.de/",
-      "probedAt": "2026-10-19T11:05:55.669Z",
+      "probedAt": "2026-10-19T12:25:15.740Z",
       "domains": [
         "uni-leipzig.de"
       ],
@@ -5799,7 +6271,7 @@
       "country": "ES",
       "worksCount": 116519,
       "homepage": "https://www.us.es/",
-      "probedAt": "2026-10-19T10:15:31.624Z",
+      "probedAt": "2026-10-19T12:25:15.904Z",
       "domains": [
         "us.es"
       ],
@@ -5818,7 +6290,10 @@
       "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://fama.us.es/openurl/34CBUA_US/34CBUA_US:VU1",
-      "adapter": "alma"
+      "adapter": "alma",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03yghzc09": {
       "rorId": "https://ror.org/03yghzc09",
@@ -5826,7 +6301,7 @@
       "country": "GB",
       "worksCount": 114211,
       "homepage": "https://www.exeter.ac.uk",
-      "probedAt": "2026-10-19T10:12:21.172Z",
+      "probedAt": "2026-10-19T12:25:16.212Z",
       "domains": [
         "exeter.ac.uk"
       ],
@@ -5835,14 +6310,19 @@
       ],
       "evidence": "https://www.exeter.ac.uk/departments/library/",
       "code": "44UOEX_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu04.alma.exlibrisgroup.com",
       "services": 7,
       "packages": [
         "ProQuest Central UK/Ireland",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://librarysearch.exeter.ac.uk/discovery/openurl?institution=44UOEX_INST&vid=44UOEX_INST:default",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00hswnk62": {
       "rorId": "https://ror.org/00hswnk62",
@@ -5850,7 +6330,7 @@
       "country": "GB",
       "worksCount": 114112,
       "homepage": "https://www.qub.ac.uk",
-      "probedAt": "2026-10-19T11:05:58.159Z",
+      "probedAt": "2026-10-19T12:25:16.584Z",
       "domains": [
         "qub.ac.uk"
       ],
@@ -5871,7 +6351,7 @@
       "country": "DE",
       "worksCount": 114218,
       "homepage": "https://www.tu.berlin",
-      "probedAt": "2026-10-19T11:05:58.159Z",
+      "probedAt": "2026-10-19T12:25:16.584Z",
       "domains": [
         "tu-berlin.de"
       ],
@@ -5892,7 +6372,7 @@
       "country": "BE",
       "worksCount": 113652,
       "homepage": "https://www.ulb.be",
-      "probedAt": "2026-10-19T10:12:24.823Z",
+      "probedAt": "2026-10-19T12:25:17.697Z",
       "domains": [
         "ulb.be"
       ],
@@ -5901,14 +6381,19 @@
       ],
       "evidence": "https://bib.ulb.be/",
       "code": "32ULDB_U_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu00.alma.exlibrisgroup.com",
       "services": 7,
       "packages": [
         "Nature",
         "Proquest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://cibleplus.ulb.ac.be/openurl/32ULDB_U_INST/32ULDB_U_INST:32ULB_VU1",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/057qpr032": {
       "rorId": "https://ror.org/057qpr032",
@@ -5916,7 +6401,7 @@
       "country": "FR",
       "worksCount": 114080,
       "homepage": "https://www.u-bordeaux.fr",
-      "probedAt": "2026-10-19T10:12:23.200Z",
+      "probedAt": "2026-10-19T12:25:18.677Z",
       "domains": [
         "u-bordeaux.fr"
       ],
@@ -5925,14 +6410,19 @@
       ],
       "evidence": "https://bibliotheques.u-bordeaux.fr/Soutien-a-la-recherche/Visibilite-de-sa-recherche-et-bibliometrie-nos-services2",
       "code": "33PUDB_UB",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu02.alma.exlibrisgroup.com",
       "services": 11,
       "packages": [
         "Nature",
         "EBSCOhost Psychology and Behavioral Sciences Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://babordplus.hosted.exlibrisgroup.com/primo-explore/openurl?&Force_direct=false&vid=33PUDB_UB_VU1&institution=33PUDB_UB&",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/054pv6659": {
       "rorId": "https://ror.org/054pv6659",
@@ -5958,7 +6448,7 @@
       "country": "CH",
       "worksCount": 118854,
       "homepage": "https://www.unibas.ch",
-      "probedAt": "2026-10-19T10:12:14.075Z",
+      "probedAt": "2026-10-19T12:25:18.945Z",
       "domains": [
         "unibas.ch"
       ],
@@ -5967,14 +6457,19 @@
       ],
       "evidence": "https://ub.unibas.ch/de",
       "code": "41SLSP_UBS",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu03.alma.exlibrisgroup.com",
       "services": 7,
       "packages": [
         "Open Access: Biodiversity Heritage Library",
         "Open Access: Free E- Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://slsp-ubs.primo.exlibrisgroup.com/openurl/41SLSP_UBS/41SLSP_UBS:live",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0107c5v14": {
       "rorId": "https://ror.org/0107c5v14",
@@ -5982,7 +6477,7 @@
       "country": "IT",
       "worksCount": 111052,
       "homepage": "https://unige.it",
-      "probedAt": "2026-10-19T10:12:27.028Z",
+      "probedAt": "2026-10-19T12:25:19.087Z",
       "domains": [
         "unige.it"
       ],
@@ -5991,14 +6486,19 @@
       ],
       "evidence": "https://biblioteche.unige.it/",
       "code": "39GEN_INST",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu02.alma.exlibrisgroup.com",
       "services": 12,
       "packages": [
         "Nature",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://unopertutto.unige.net/openurl/39GEN_INST/39GEN_INST:39GEN_VU1",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02j61yw88": {
       "rorId": "https://ror.org/02j61yw88",
@@ -6042,7 +6542,7 @@
       "country": "GB",
       "worksCount": 109759,
       "homepage": "https://www.dur.ac.uk/",
-      "probedAt": "2026-10-19T10:12:29.833Z",
+      "probedAt": "2026-10-19T12:25:20.223Z",
       "domains": [
         "durham.ac.uk"
       ],
@@ -6058,7 +6558,9 @@
         "Journals@Ovid Complete",
         "General OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04m5j1k67": {
       "rorId": "https://ror.org/04m5j1k67",
@@ -6084,7 +6586,7 @@
       "country": "FR",
       "worksCount": 108256,
       "homepage": "https://umontpellier.fr",
-      "probedAt": "2026-10-19T10:19:37.627Z",
+      "probedAt": "2026-10-19T12:25:20.273Z",
       "domains": [
         "umontpellier.fr"
       ],
@@ -6103,7 +6605,9 @@
       "packages": [
         "Nature [Accès UM]",
         "Nature - Revues - Licence Nationale - Plateforme Editeur [Accès UNîmes]"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00pg6eq24": {
       "rorId": "https://ror.org/00pg6eq24",
@@ -6111,7 +6615,7 @@
       "country": "FR",
       "worksCount": 109387,
       "homepage": "https://www.unistra.fr",
-      "probedAt": "2026-10-19T11:06:00.390Z",
+      "probedAt": "2026-10-19T12:25:20.449Z",
       "domains": [
         "unistra.fr"
       ],
@@ -6132,7 +6636,7 @@
       "country": "GB",
       "worksCount": 106164,
       "homepage": "http://www.lshtm.ac.uk/",
-      "probedAt": "2026-10-19T11:06:00.390Z",
+      "probedAt": "2026-10-19T12:25:20.449Z",
       "domains": [
         "lshtm.ac.uk"
       ],
@@ -6148,7 +6652,9 @@
         "Springer Nature Read and Publish 2026-2028: Nature Read",
         "Free E- Journals"
       ],
-      "status": "answers-without-indicator"
+      "status": "answers-without-indicator",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04m01e293": {
       "rorId": "https://ror.org/04m01e293",
@@ -6156,7 +6662,7 @@
       "country": "GB",
       "worksCount": 104581,
       "homepage": "https://www.york.ac.uk",
-      "probedAt": "2026-10-19T10:12:38.419Z",
+      "probedAt": "2026-10-19T12:25:20.634Z",
       "domains": [
         "york.ac.uk"
       ],
@@ -6172,7 +6678,9 @@
         "Nature",
         "Free E- Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02jz4aj89": {
       "rorId": "https://ror.org/02jz4aj89",
@@ -6198,7 +6706,7 @@
       "country": "GB",
       "worksCount": 104519,
       "homepage": "https://le.ac.uk",
-      "probedAt": "2026-10-19T10:19:40.176Z",
+      "probedAt": "2026-10-19T12:25:20.957Z",
       "domains": [
         "le.ac.uk"
       ],
@@ -6217,7 +6725,9 @@
       "packages": [
         "Springer Nature JISC  Read and Publish 2026-2028",
         "Gale Academic OneFile"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03yrrjy16": {
       "rorId": "https://ror.org/03yrrjy16",
@@ -6225,7 +6735,7 @@
       "country": "DK",
       "worksCount": 103168,
       "homepage": "https://www.sdu.dk",
-      "probedAt": "2026-10-19T10:12:42.700Z",
+      "probedAt": "2026-10-19T12:25:21.969Z",
       "domains": [
         "sdu.dk"
       ],
@@ -6241,7 +6751,12 @@
         "EBSCOhost Academic Search Premier (EB_SDU_P3)",
         "Nexis Uni"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "http://ul2nb3kn6e.search.serialssolutions.com",
+      "product": "360link",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02n7qrg46": {
       "rorId": "https://ror.org/02n7qrg46",
@@ -6265,7 +6780,7 @@
       "country": "IE",
       "worksCount": 106549,
       "homepage": "https://www.ucd.ie",
-      "probedAt": "2026-10-19T11:06:01.116Z",
+      "probedAt": "2026-10-19T12:25:22.496Z",
       "domains": [
         "ucd.ie"
       ],
@@ -6286,7 +6801,7 @@
       "country": "FR",
       "worksCount": 103668,
       "homepage": "https://www.univ-tlse3.fr",
-      "probedAt": "2026-10-19T11:06:01.117Z",
+      "probedAt": "2026-10-19T12:25:22.496Z",
       "domains": [
         "univ-tlse3.fr"
       ],
@@ -6415,7 +6930,7 @@
       "country": "CH",
       "worksCount": 99846,
       "homepage": "https://www.unil.ch",
-      "probedAt": "2026-10-19T10:12:50.830Z",
+      "probedAt": "2026-10-19T12:25:23.384Z",
       "domains": [
         "unil.ch"
       ],
@@ -6424,14 +6939,19 @@
       ],
       "evidence": "https://www.unil.ch/unil/fr/home/menuinst/campus/bibliotheques.html",
       "code": "41BCULAUSA_LIB",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu01.alma.exlibrisgroup.com",
       "services": 7,
       "packages": [
         "Nature Journals  [Accès UNIL ; CHUV ; HEP Vaud ; Sites BCUL]",
         "ProQuest One Psychology  [Accès UNIL ; CHUV ; HEP Vaud ; Sites BCUL]"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://renouvaud1.primo.exlibrisgroup.com/openurl/41BCULAUSA_LIB/41BCULAUSA_LIB:VU2",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/024z2rq82": {
       "rorId": "https://ror.org/024z2rq82",
@@ -6475,7 +6995,7 @@
       "country": "FR",
       "worksCount": 96685,
       "homepage": "https://www.univ-nantes.fr/",
-      "probedAt": "2026-10-19T11:06:01.342Z",
+      "probedAt": "2026-10-19T12:25:23.443Z",
       "domains": [
         "univ-nantes.fr"
       ],
@@ -6496,7 +7016,7 @@
       "country": "IT",
       "worksCount": 96711,
       "homepage": "https://portale.unipv.it/it",
-      "probedAt": "2026-10-19T10:12:54.458Z",
+      "probedAt": "2026-10-19T12:25:23.443Z",
       "domains": [
         "unipv.it"
       ],
@@ -6506,10 +7026,15 @@
       "evidence": "https://libraries.unipv.it/",
       "code": "39UPV_INST",
       "route": "subdomain",
-      "host": "eu03.alma.exlibrisgroup.com",
-      "services": 0,
-      "packages": [],
-      "status": "verified"
+      "host": "unipv.alma.exlibrisgroup.com",
+      "services": 7,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02tyrky19": {
       "rorId": "https://ror.org/02tyrky19",
@@ -6517,7 +7042,7 @@
       "country": "IE",
       "worksCount": 96879,
       "homepage": "https://www.tcd.ie/",
-      "probedAt": "2026-10-19T11:06:01.342Z",
+      "probedAt": "2026-10-19T12:25:23.489Z",
       "domains": [
         "tcd.ie"
       ],
@@ -6556,7 +7081,7 @@
       "country": "GB",
       "worksCount": 96217,
       "homepage": "https://www.abdn.ac.uk",
-      "probedAt": "2026-10-19T10:12:59.661Z",
+      "probedAt": "2026-10-19T12:25:23.489Z",
       "domains": [
         "abdn.ac.uk"
       ],
@@ -6566,10 +7091,12 @@
       "evidence": "https://www.abdn.ac.uk/library/",
       "code": "44ABE_INST",
       "route": "homepage>link",
-      "host": "eu03.alma.exlibrisgroup.com",
+      "host": "abdn.alma.exlibrisgroup.com",
       "services": 0,
       "packages": [],
-      "status": "verified"
+      "status": "answers-without-services",
+      "primoSlug": "abdn",
+      "journal": "0028-0836"
     },
     "https://ror.org/02v6kpv12": {
       "rorId": "https://ror.org/02v6kpv12",
@@ -6593,7 +7120,7 @@
       "country": "DE",
       "worksCount": 95702,
       "homepage": "https://www.uni-due.de",
-      "probedAt": "2026-10-19T10:12:59.779Z",
+      "probedAt": "2026-10-19T12:25:24.244Z",
       "domains": [
         "uni-due.de"
       ],
@@ -6602,14 +7129,19 @@
       ],
       "evidence": "https://primo.uni-due.de/discovery/search?vid=49HBZ_UDE:UDE",
       "code": "49HBZ_UDE",
-      "route": "subdomain",
+      "route": "seed",
       "host": "eu04.alma.exlibrisgroup.com",
       "services": 8,
       "packages": [
         "Nature",
         "Lizenzfreie Zeitschriften - Lizenzfreie E-Ressourcen der ZDB (lzzdb)"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://primo.uni-due.de/openurl/49HBZ_UDE/49HBZ_UDE:UDE",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04z8k9a98": {
       "rorId": "https://ror.org/04z8k9a98",
@@ -6635,7 +7167,7 @@
       "country": "DE",
       "worksCount": 95440,
       "homepage": "https://www.tu-darmstadt.de",
-      "probedAt": "2026-10-19T11:06:01.342Z",
+      "probedAt": "2026-10-19T12:25:24.698Z",
       "domains": [
         "tu-darmstadt.de"
       ],
@@ -6692,7 +7224,7 @@
       "country": "DE",
       "worksCount": 95556,
       "homepage": "https://www.uni-marburg.de/",
-      "probedAt": "2026-10-19T11:06:02.127Z",
+      "probedAt": "2026-10-19T12:25:25.555Z",
       "domains": [
         "uni-marburg.de"
       ],
@@ -6713,7 +7245,7 @@
       "country": "FI",
       "worksCount": 94605,
       "homepage": "https://www.utu.fi",
-      "probedAt": "2026-10-19T10:13:06.959Z",
+      "probedAt": "2026-10-19T12:25:25.637Z",
       "domains": [
         "utu.fi"
       ],
@@ -6729,7 +7261,9 @@
         "Nature",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00f2yqf98": {
       "rorId": "https://ror.org/00f2yqf98",
@@ -6755,7 +7289,7 @@
       "country": "ES",
       "worksCount": 92310,
       "homepage": "https://www.upc.edu",
-      "probedAt": "2026-10-19T10:15:31.735Z",
+      "probedAt": "2026-10-19T12:25:25.890Z",
       "domains": [
         "upc.edu"
       ],
@@ -6774,7 +7308,10 @@
       "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://discovery.upc.edu/openurl/34CSUC_UPC/34CSUC_UPC:VU1",
-      "adapter": "alma"
+      "adapter": "alma",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/040wg7k59": {
       "rorId": "https://ror.org/040wg7k59",
@@ -6800,7 +7337,7 @@
       "country": "GB",
       "worksCount": 87950,
       "homepage": "https://www.lancaster.ac.uk",
-      "probedAt": "2026-10-19T10:13:09.407Z",
+      "probedAt": "2026-10-19T12:25:26.165Z",
       "domains": [
         "lancaster.ac.uk"
       ],
@@ -6816,7 +7353,9 @@
         "Nature Journals",
         "Gale Academic OneFile"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/006hf6230": {
       "rorId": "https://ror.org/006hf6230",
@@ -6842,7 +7381,7 @@
       "country": "FR",
       "worksCount": 87948,
       "homepage": "https://www.univ-rennes.fr",
-      "probedAt": "2026-10-19T11:06:02.160Z",
+      "probedAt": "2026-10-19T12:25:26.260Z",
       "domains": [
         "univ-rennes.fr"
       ],
@@ -6971,7 +7510,7 @@
       "country": "GB",
       "worksCount": 83379,
       "homepage": "https://www.sussex.ac.uk",
-      "probedAt": "2026-10-19T10:13:22.158Z",
+      "probedAt": "2026-10-19T12:25:26.260Z",
       "domains": [
         "sussex.ac.uk"
       ],
@@ -6987,7 +7526,9 @@
         "Nature",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05kb8h459": {
       "rorId": "https://ror.org/05kb8h459",
@@ -6995,7 +7536,7 @@
       "country": "SE",
       "worksCount": 82876,
       "homepage": "https://www.umu.se",
-      "probedAt": "2026-10-19T10:13:24.918Z",
+      "probedAt": "2026-10-19T12:25:26.508Z",
       "domains": [
         "umu.se"
       ],
@@ -7011,7 +7552,9 @@
         "Nature Journals Transformative Agreement",
         "Springer autoholdings - journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00ks66431": {
       "rorId": "https://ror.org/00ks66431",
@@ -7019,7 +7562,7 @@
       "country": "GB",
       "worksCount": 80835,
       "homepage": "https://www.surrey.ac.uk",
-      "probedAt": "2026-10-19T10:13:26.826Z",
+      "probedAt": "2026-10-19T12:25:26.845Z",
       "domains": [
         "surrey.ac.uk"
       ],
@@ -7035,7 +7578,9 @@
         "Nature",
         "SpringerLink Journals - AutoHoldings"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01faaaf77": {
       "rorId": "https://ror.org/01faaaf77",
@@ -7079,7 +7624,7 @@
       "country": "IT",
       "worksCount": 85094,
       "homepage": "https://www.unipa.it",
-      "probedAt": "2026-10-19T10:31:07.524Z",
+      "probedAt": "2026-10-19T12:25:27.455Z",
       "domains": [
         "unipa.it"
       ],
@@ -7095,7 +7640,9 @@
       "packages": [
         "SpringerLink Journals - AutoHoldings",
         "Springer Nature - Nature Journals All"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0304hq317": {
       "rorId": "https://ror.org/0304hq317",
@@ -7121,7 +7668,7 @@
       "country": "IT",
       "worksCount": 80319,
       "homepage": "https://www.unict.it",
-      "probedAt": "2026-10-19T10:13:30.031Z",
+      "probedAt": "2026-10-19T12:25:27.462Z",
       "domains": [
         "unict.it"
       ],
@@ -7137,7 +7684,9 @@
         "KB+ JISC Collections Nature Publishing Group 2017",
         "Health &amp; Medical Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05gqaka33": {
       "rorId": "https://ror.org/05gqaka33",
@@ -7215,7 +7764,7 @@
       "country": "GB",
       "worksCount": 78710,
       "homepage": "https://www.st-andrews.ac.uk/",
-      "probedAt": "2026-10-19T10:31:07.828Z",
+      "probedAt": "2026-10-19T12:25:27.662Z",
       "domains": [
         "st-andrews.ac.uk"
       ],
@@ -7231,7 +7780,9 @@
       "packages": [
         "Springer Nature:Jisc Collections:Springer Nature Read and Publish 2023-2025: Nature Reading List (Pick one or more titles)",
         "EBSCOhost Psychology and Behavioral Sciences Collection"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/030eybx10": {
       "rorId": "https://ror.org/030eybx10",
@@ -7239,7 +7790,7 @@
       "country": "ES",
       "worksCount": 77400,
       "homepage": "https://www.usc.gal/",
-      "probedAt": "2026-10-19T10:15:34.326Z",
+      "probedAt": "2026-10-19T12:25:27.679Z",
       "domains": [
         "usc.gal"
       ],
@@ -7255,7 +7806,9 @@
         "Earth, Atmospheric &amp; Aquatic Science Collection",
         "Psychology Database"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02xankh89": {
       "rorId": "https://ror.org/02xankh89",
@@ -7281,7 +7834,7 @@
       "country": "GB",
       "worksCount": 76031,
       "homepage": "https://www.lse.ac.uk/",
-      "probedAt": "2026-10-19T10:13:40.308Z",
+      "probedAt": "2026-10-19T12:25:27.729Z",
       "domains": [
         "lse.ac.uk"
       ],
@@ -7297,7 +7850,9 @@
         "Nature",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00bgk9508": {
       "rorId": "https://ror.org/00bgk9508",
@@ -7323,7 +7878,7 @@
       "country": "GB",
       "worksCount": 73970,
       "homepage": "https://www.bath.ac.uk/",
-      "probedAt": "2026-10-19T10:13:43.118Z",
+      "probedAt": "2026-10-19T12:25:28.354Z",
       "domains": [
         "bath.ac.uk"
       ],
@@ -7339,7 +7894,9 @@
         "Nature Publishing Group",
         "ProQuest One Sustainability"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04ers2y35": {
       "rorId": "https://ror.org/04ers2y35",
@@ -7401,7 +7958,7 @@
       "country": "DE",
       "worksCount": 71675,
       "homepage": "https://www.uni-regensburg.de",
-      "probedAt": "2026-10-19T11:06:02.160Z",
+      "probedAt": "2026-10-19T12:25:28.439Z",
       "domains": [
         "uni-regensburg.de"
       ],
@@ -7548,7 +8105,7 @@
       "country": "FI",
       "worksCount": 65771,
       "homepage": "https://www.aalto.fi",
-      "probedAt": "2026-10-19T10:14:01.896Z",
+      "probedAt": "2026-10-19T12:25:28.439Z",
       "domains": [
         "aalto.fi"
       ],
@@ -7564,7 +8121,9 @@
         "Nature",
         "SciTech Premium Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04g6bbq64": {
       "rorId": "https://ror.org/04g6bbq64",
@@ -7572,7 +8131,7 @@
       "country": "PL",
       "worksCount": 68112,
       "homepage": "https://amu.edu.pl",
-      "probedAt": "2026-10-19T10:13:57.518Z",
+      "probedAt": "2026-10-19T12:25:28.667Z",
       "domains": [
         "amu.edu.pl"
       ],
@@ -7588,7 +8147,9 @@
         "SpringerLink Journals - AutoHoldings",
         "EBSCOhost Academic Search Ultimate"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/036x5ad56": {
       "rorId": "https://ror.org/036x5ad56",
@@ -7648,24 +8209,26 @@
       "country": "SE",
       "worksCount": 63799,
       "homepage": "http://www.slu.se/en/",
-      "probedAt": "2026-10-19T11:06:02.160Z",
+      "probedAt": "2026-10-19T12:25:28.910Z",
       "domains": [],
       "links": [
         "http://www.slu.se/en/"
       ],
-      "evidence": null,
+      "evidence": "https://slu.primo.exlibrisgroup.com/nde/openurl?vid=46SLUB_INST%3ASLUB_NDE&institution=46SLUB_INST",
       "code": "46SLUB_INST",
-      "host": "eu01.alma.exlibrisgroup.com",
+      "host": "slu.alma.exlibrisgroup.com",
       "status": "answers-without-indicator",
       "source": "zotero",
       "resolverUrl": "https://slu.primo.exlibrisgroup.com/openurl/46SLUB_INST/46SLUB_INST:SLUB_V1",
       "product": "alma",
-      "route": "seed",
+      "route": "zotero-url",
       "services": 2,
       "packages": [
         "Springer Nature:Jisc Collections:Springer Nature Read and Publish 2023-2025: Nature Reading List (Pick one or more titles)",
         "SpringerLink"
-      ]
+      ],
+      "primoSlug": "slu",
+      "journal": "0028-0836"
     },
     "https://ror.org/053fq8t95": {
       "rorId": "https://ror.org/053fq8t95",
@@ -7673,7 +8236,7 @@
       "country": "GB",
       "worksCount": 63628,
       "homepage": "https://www.swansea.ac.uk",
-      "probedAt": "2026-10-19T10:14:12.009Z",
+      "probedAt": "2026-10-19T12:25:29.895Z",
       "domains": [
         "swansea.ac.uk"
       ],
@@ -7689,7 +8252,9 @@
         "SpringerLink Journals - AutoHoldings",
         "Springer Nature - Nature Journals All"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00wge5k78": {
       "rorId": "https://ror.org/00wge5k78",
@@ -7697,7 +8262,7 @@
       "country": "NO",
       "worksCount": 65067,
       "homepage": "https://uit.no",
-      "probedAt": "2026-10-19T10:14:08.309Z",
+      "probedAt": "2026-10-19T12:25:29.912Z",
       "domains": [
         "uit.no"
       ],
@@ -7713,7 +8278,9 @@
         "Agricultural &amp; Environmental Science Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02k7wn190": {
       "rorId": "https://ror.org/02k7wn190",
@@ -7811,7 +8378,7 @@
       "country": "DE",
       "worksCount": 63489,
       "homepage": "https://www.uni-bielefeld.de",
-      "probedAt": "2026-10-19T11:06:02.957Z",
+      "probedAt": "2026-10-19T12:25:30.254Z",
       "domains": [
         "uni-bielefeld.de"
       ],
@@ -7922,7 +8489,7 @@
       "country": "FR",
       "worksCount": 61574,
       "homepage": "https://www.polytechnique.edu/en",
-      "probedAt": "2026-10-19T11:06:04.162Z",
+      "probedAt": "2026-10-19T12:25:30.465Z",
       "domains": [
         "polytechnique.edu"
       ],
@@ -7938,7 +8505,9 @@
       "packages": [
         "Accès via la plateforme de l'éditeur",
         "Biodiversity Heritage Library"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05trd4x28": {
       "rorId": "https://ror.org/05trd4x28",
@@ -8000,7 +8569,7 @@
       "country": "PL",
       "worksCount": 61941,
       "homepage": "https://pw.edu.pl",
-      "probedAt": "2026-10-19T10:33:04.554Z",
+      "probedAt": "2026-10-19T12:25:31.245Z",
       "domains": [
         "pw.edu.pl"
       ],
@@ -8016,7 +8585,9 @@
         "ProQuest Central UK/Ireland",
         "Research Library"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03cx6bg69": {
       "rorId": "https://ror.org/03cx6bg69",
@@ -8078,7 +8649,7 @@
       "country": "FI",
       "worksCount": 59730,
       "homepage": "https://www.uef.fi",
-      "probedAt": "2026-10-19T10:14:40.341Z",
+      "probedAt": "2026-10-19T12:25:31.436Z",
       "domains": [
         "uef.fi"
       ],
@@ -8087,14 +8658,19 @@
       ],
       "evidence": "https://www.uef.fi/fi/kirjasto",
       "code": "358FIN_UOEF",
-      "route": "homepage>link",
+      "route": "seed",
       "host": "eu03.alma.exlibrisgroup.com",
       "services": 5,
       "packages": [
         "Biological Science Database",
         "Nature (UEF FinELib)"
       ],
-      "status": "verified"
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://primo.uef.fi/openurl/358FIN_UOEF/358FIN_UOEF:VU1",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03bnmw459": {
       "rorId": "https://ror.org/03bnmw459",
@@ -8172,7 +8748,7 @@
       "country": "DE",
       "worksCount": 59806,
       "homepage": "https://www.uni-rostock.de/",
-      "probedAt": "2026-10-19T11:06:04.504Z",
+      "probedAt": "2026-10-19T12:25:31.658Z",
       "domains": [
         "uni-rostock.de"
       ],
@@ -8229,7 +8805,7 @@
       "country": "CZ",
       "worksCount": 58939,
       "homepage": "https://www.muni.cz",
-      "probedAt": "2026-10-19T10:31:11.909Z",
+      "probedAt": "2026-10-19T12:25:31.852Z",
       "domains": [
         "muni.cz"
       ],
@@ -8245,7 +8821,9 @@
       "packages": [
         "ProQuest Central Premium",
         "SpringerLink Journals - AutoHoldings"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05ctdxz19": {
       "rorId": "https://ror.org/05ctdxz19",
@@ -8307,7 +8885,7 @@
       "country": "FR",
       "worksCount": 55882,
       "homepage": "https://www.univ-poitiers.fr/",
-      "probedAt": "2026-10-19T10:19:49.488Z",
+      "probedAt": "2026-10-19T12:25:32.583Z",
       "domains": [
         "univ-poitiers.fr"
       ],
@@ -8326,7 +8904,9 @@
       "packages": [
         "Nature journals archives - Licence Nationale",
         "Nature journals archives - Licence Nationale"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/013bkhk48": {
       "rorId": "https://ror.org/013bkhk48",
@@ -8334,7 +8914,7 @@
       "country": "FR",
       "worksCount": 56031,
       "homepage": "https://www.parisnanterre.fr",
-      "probedAt": "2026-10-19T11:06:05.646Z",
+      "probedAt": "2026-10-19T12:25:33.020Z",
       "domains": [
         "parisnanterre.fr"
       ],
@@ -8355,7 +8935,7 @@
       "country": "GB",
       "worksCount": 55170,
       "homepage": "https://www.open.ac.uk",
-      "probedAt": "2026-10-19T11:06:05.646Z",
+      "probedAt": "2026-10-19T12:25:33.020Z",
       "domains": [
         "open.ac.uk"
       ],
@@ -8371,7 +8951,9 @@
         "Nature",
         "Gale Academic OneFile"
       ],
-      "status": "answers-without-indicator"
+      "status": "answers-without-indicator",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02aaqv166": {
       "rorId": "https://ror.org/02aaqv166",
@@ -8506,7 +9088,7 @@
       "country": "ES",
       "worksCount": 52624,
       "homepage": "https://www.upf.edu",
-      "probedAt": "2026-10-19T10:15:36.681Z",
+      "probedAt": "2026-10-19T12:25:33.240Z",
       "domains": [
         "upf.edu"
       ],
@@ -8525,7 +9107,10 @@
       "packages": [
         "SpringerLink Journals",
         "Gale Academic OneFile"
-      ]
+      ],
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00ggpsq73": {
       "rorId": "https://ror.org/00ggpsq73",
@@ -8533,7 +9118,7 @@
       "country": "DE",
       "worksCount": 55102,
       "homepage": "https://www.ovgu.de",
-      "probedAt": "2026-10-19T11:06:06.124Z",
+      "probedAt": "2026-10-19T12:25:33.689Z",
       "domains": [
         "ovgu.de"
       ],
@@ -8554,7 +9139,7 @@
       "country": "PL",
       "worksCount": 53178,
       "homepage": "https://pwr.edu.pl/",
-      "probedAt": "2026-10-19T10:15:17.620Z",
+      "probedAt": "2026-10-19T12:25:33.689Z",
       "domains": [
         "pwr.edu.pl"
       ],
@@ -8570,7 +9155,9 @@
         "Nature",
         "ProQuest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/00xa57a59": {
       "rorId": "https://ror.org/00xa57a59",
@@ -8650,7 +9237,7 @@
       "country": "ES",
       "worksCount": 51121,
       "homepage": "https://www.urv.cat",
-      "probedAt": "2026-10-19T10:15:36.937Z",
+      "probedAt": "2026-10-19T12:25:34.108Z",
       "domains": [
         "urv.cat"
       ],
@@ -8668,7 +9255,10 @@
         "SpringerLink Journals",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05t8bcz72": {
       "rorId": "https://ror.org/05t8bcz72",
@@ -8676,7 +9266,7 @@
       "country": "ES",
       "worksCount": 50446,
       "homepage": "https://www.ua.es/",
-      "probedAt": "2026-10-19T10:15:37.442Z",
+      "probedAt": "2026-10-19T12:25:34.715Z",
       "domains": [
         "ua.es"
       ],
@@ -8692,7 +9282,9 @@
         "SpringerLink Journals - AutoHoldings",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02rxc7m23": {
       "rorId": "https://ror.org/02rxc7m23",
@@ -8700,7 +9292,7 @@
       "country": "ES",
       "worksCount": 48945,
       "homepage": "https://www.unav.edu",
-      "probedAt": "2026-10-19T10:15:38.261Z",
+      "probedAt": "2026-10-19T12:25:35.440Z",
       "domains": [
         "unav.edu"
       ],
@@ -8716,7 +9308,9 @@
         "Nature",
         "Springer Nature - Complete Nature.com"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05rdf8595": {
       "rorId": "https://ror.org/05rdf8595",
@@ -8724,7 +9318,7 @@
       "country": "ES",
       "worksCount": 47572,
       "homepage": "https://www.uvigo.gal/",
-      "probedAt": "2026-10-19T10:15:38.614Z",
+      "probedAt": "2026-10-19T12:25:36.374Z",
       "domains": [
         "uvigo.gal"
       ],
@@ -8740,7 +9334,9 @@
         "Earth, Atmospheric &amp; Aquatic Science Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05r78ng12": {
       "rorId": "https://ror.org/05r78ng12",
@@ -8784,7 +9380,7 @@
       "country": "ES",
       "worksCount": 46408,
       "homepage": "https://www.uc3m.es",
-      "probedAt": "2026-10-19T10:15:43.619Z",
+      "probedAt": "2026-10-19T12:25:36.397Z",
       "domains": [
         "uc3m.es"
       ],
@@ -8800,7 +9396,9 @@
         "Nature Complete",
         "ProQuest Central Premium"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04pmn0e78": {
       "rorId": "https://ror.org/04pmn0e78",
@@ -8808,7 +9406,7 @@
       "country": "ES",
       "worksCount": 46551,
       "homepage": "https://uah.es",
-      "probedAt": "2026-10-19T10:15:41.660Z",
+      "probedAt": "2026-10-19T12:25:37.375Z",
       "domains": [
         "uah.es"
       ],
@@ -8824,7 +9422,9 @@
         "Nature",
         "Research Library"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/01v5cv687": {
       "rorId": "https://ror.org/01v5cv687",
@@ -8832,7 +9432,7 @@
       "country": "ES",
       "worksCount": 37476,
       "homepage": "https://www.urjc.es/",
-      "probedAt": "2026-10-19T10:15:44.399Z",
+      "probedAt": "2026-10-19T12:25:37.481Z",
       "domains": [
         "urjc.es"
       ],
@@ -8848,7 +9448,9 @@
         "Research Library",
         "Single Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02msb5n36": {
       "rorId": "https://ror.org/02msb5n36",
@@ -8856,7 +9458,7 @@
       "country": "ES",
       "worksCount": 35825,
       "homepage": "https://www.uned.es",
-      "probedAt": "2026-10-19T10:15:48.121Z",
+      "probedAt": "2026-10-19T12:25:38.038Z",
       "domains": [
         "uned.es"
       ],
@@ -8872,7 +9474,9 @@
         "Research Library",
         "Academic Search Ultimate"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0174shg90": {
       "rorId": "https://ror.org/0174shg90",
@@ -8916,7 +9520,7 @@
       "country": "ES",
       "worksCount": 32015,
       "homepage": "https://www.udc.gal/",
-      "probedAt": "2026-10-19T10:15:51.607Z",
+      "probedAt": "2026-10-19T12:25:39.379Z",
       "domains": [
         "udc.gal"
       ],
@@ -8932,7 +9536,9 @@
         "SpringerLink Journals - AutoHoldings",
         "Earth, Atmospheric &amp; Aquatic Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04mxxkb11": {
       "rorId": "https://ror.org/04mxxkb11",
@@ -8976,7 +9582,7 @@
       "country": "ES",
       "worksCount": 43787,
       "homepage": "https://www.ull.es",
-      "probedAt": "2026-10-19T10:31:13.500Z",
+      "probedAt": "2026-10-19T12:25:39.723Z",
       "domains": [
         "ull.es"
       ],
@@ -8992,7 +9598,9 @@
       "packages": [
         "Nature",
         "SpringerLink Journals - AutoHoldings"
-      ]
+      ],
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/03e10x626": {
       "rorId": "https://ror.org/03e10x626",
@@ -9000,7 +9608,7 @@
       "country": "ES",
       "worksCount": 31161,
       "homepage": "https://www.uib.cat/",
-      "probedAt": "2026-10-19T11:06:06.124Z",
+      "probedAt": "2026-10-19T12:25:39.844Z",
       "domains": [
         "uib.es"
       ],
@@ -9040,7 +9648,7 @@
       "country": "ES",
       "worksCount": 28592,
       "homepage": "https://www.udg.edu",
-      "probedAt": "2026-10-19T10:15:54.802Z",
+      "probedAt": "2026-10-19T12:25:39.964Z",
       "domains": [
         "udg.edu"
       ],
@@ -9056,7 +9664,9 @@
         "Health &amp; Medical Collection",
         "Proquest Central"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0122p5f64": {
       "rorId": "https://ror.org/0122p5f64",
@@ -9064,7 +9674,7 @@
       "country": "ES",
       "worksCount": 25916,
       "homepage": "https://www.ujaen.es",
-      "probedAt": "2026-10-19T10:15:55.333Z",
+      "probedAt": "2026-10-19T12:25:39.990Z",
       "domains": [
         "ujaen.es"
       ],
@@ -9080,7 +9690,9 @@
         "Health &amp; Medical Collection",
         "Nature Journals"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/003d3xx08": {
       "rorId": "https://ror.org/003d3xx08",
@@ -9088,7 +9700,7 @@
       "country": "ES",
       "worksCount": 23938,
       "homepage": "https://www.ual.es",
-      "probedAt": "2026-10-19T10:15:58.008Z",
+      "probedAt": "2026-10-19T12:25:40.473Z",
       "domains": [
         "ual.es"
       ],
@@ -9104,7 +9716,9 @@
         "Agricultural &amp; Environmental Science Collection",
         "Health &amp; Medical Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/050c3cw24": {
       "rorId": "https://ror.org/050c3cw24",
@@ -9112,7 +9726,7 @@
       "country": "ES",
       "worksCount": 21290,
       "homepage": "https://udl.cat",
-      "probedAt": "2026-10-19T10:16:00.643Z",
+      "probedAt": "2026-10-19T12:25:41.922Z",
       "domains": [
         "udl.cat"
       ],
@@ -9130,7 +9744,10 @@
         "SpringerLink Journals - AutoHoldings",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02z749649": {
       "rorId": "https://ror.org/02z749649",
@@ -9156,7 +9773,7 @@
       "country": "ES",
       "worksCount": 23577,
       "homepage": "https://www.umh.es",
-      "probedAt": "2026-10-19T10:15:58.728Z",
+      "probedAt": "2026-10-19T12:25:42.649Z",
       "domains": [
         "umh.es"
       ],
@@ -9172,7 +9789,9 @@
         "Agricultural &amp; Environmental Science Collection",
         "Agricultural Science Collection"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02z0cah89": {
       "rorId": "https://ror.org/02z0cah89",
@@ -9252,7 +9871,7 @@
       "country": "ES",
       "worksCount": 17660,
       "homepage": "https://www.uhu.es",
-      "probedAt": "2026-10-19T10:16:04.385Z",
+      "probedAt": "2026-10-19T12:25:42.852Z",
       "domains": [
         "uhu.es"
       ],
@@ -9268,7 +9887,9 @@
         "Health &amp; Medical Collection",
         "Nature"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/04p9k2z50": {
       "rorId": "https://ror.org/04p9k2z50",
@@ -9276,7 +9897,7 @@
       "country": "ES",
       "worksCount": 12397,
       "homepage": "https://www.url.edu",
-      "probedAt": "2026-10-19T10:16:10.149Z",
+      "probedAt": "2026-10-19T12:25:43.408Z",
       "domains": [
         "url.edu"
       ],
@@ -9294,7 +9915,10 @@
         "Factiva - Classic",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "product": "alma",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02tzt0b78": {
       "rorId": "https://ror.org/02tzt0b78",
@@ -9302,7 +9926,7 @@
       "country": "ES",
       "worksCount": 23497,
       "homepage": "https://www.unileon.es",
-      "probedAt": "2026-10-19T10:16:00.035Z",
+      "probedAt": "2026-10-19T12:25:44.588Z",
       "domains": [
         "unileon.es"
       ],
@@ -9318,7 +9942,9 @@
         "ProQuest Central Premium",
         "ProQuest One Academic (New)"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/049da5t36": {
       "rorId": "https://ror.org/049da5t36",
@@ -9326,7 +9952,7 @@
       "country": "ES",
       "worksCount": 12251,
       "homepage": "https://www.ubu.es",
-      "probedAt": "2026-10-19T10:16:10.943Z",
+      "probedAt": "2026-10-19T12:25:45.339Z",
       "domains": [
         "ubu.es"
       ],
@@ -9337,9 +9963,13 @@
       "code": "34BUC_UBU",
       "route": "homepage>link",
       "host": "eu01.alma.exlibrisgroup.com",
-      "services": 0,
-      "packages": [],
-      "status": "verified"
+      "services": 1,
+      "packages": [
+        "SpringerNature AcuerdoTransformativo CRUE-CSIC 2023"
+      ],
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0022-2461"
     },
     "https://ror.org/0553yr311": {
       "rorId": "https://ror.org/0553yr311",
@@ -9383,7 +10013,7 @@
       "country": "ES",
       "worksCount": 10926,
       "homepage": "https://www.deusto.es",
-      "probedAt": "2026-10-19T11:06:07.483Z",
+      "probedAt": "2026-10-19T12:25:46.125Z",
       "domains": [
         "deusto.es"
       ],
@@ -9579,7 +10209,7 @@
       "country": "ES",
       "worksCount": 8542,
       "homepage": "http://www.uic.es",
-      "probedAt": "2026-10-19T10:16:18.353Z",
+      "probedAt": "2026-10-19T12:25:47.344Z",
       "domains": [
         "uic.es"
       ],
@@ -9595,7 +10225,9 @@
         "ProQuest Central",
         "EBSCOhost MEDLINE Complete"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05b1rsv17": {
       "rorId": "https://ror.org/05b1rsv17",
@@ -9675,7 +10307,7 @@
       "country": "ES",
       "worksCount": 3889,
       "homepage": "https://www.ie.edu",
-      "probedAt": "2026-10-19T11:06:07.595Z",
+      "probedAt": "2026-10-19T12:25:47.363Z",
       "domains": [
         "ie.edu"
       ],
@@ -9714,7 +10346,7 @@
       "country": "ES",
       "worksCount": 4556,
       "homepage": "https://www.iese.edu",
-      "probedAt": "2026-10-19T10:16:28.307Z",
+      "probedAt": "2026-10-19T12:25:47.363Z",
       "domains": [
         "iese.edu",
         "iese.net"
@@ -9731,7 +10363,9 @@
         "Nature",
         "Springer Nature Link"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/02d9gec76": {
       "rorId": "https://ror.org/02d9gec76",
@@ -10338,7 +10972,7 @@
       "country": "ES",
       "worksCount": 777,
       "homepage": "https://www.uaoceu.es",
-      "probedAt": "2026-10-19T11:06:07.595Z",
+      "probedAt": "2026-10-19T12:25:47.826Z",
       "domains": [
         "uaoceu.es"
       ],
@@ -10484,7 +11118,7 @@
       "country": "ES",
       "worksCount": 501,
       "homepage": "https://www.unia.es",
-      "probedAt": "2026-10-19T11:06:07.595Z",
+      "probedAt": "2026-10-19T12:25:47.826Z",
       "domains": [
         "unia.es"
       ],
@@ -10577,7 +11211,7 @@
       "country": "ES",
       "worksCount": 395,
       "homepage": "https://www.blanquerna.edu",
-      "probedAt": "2026-10-19T10:17:15.327Z",
+      "probedAt": "2026-10-19T12:25:47.827Z",
       "domains": [
         "blanquerna.edu"
       ],
@@ -10593,7 +11227,9 @@
         "Factiva - Classic",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/0596wkf93": {
       "rorId": "https://ror.org/0596wkf93",
@@ -10689,7 +11325,7 @@
       "country": "ES",
       "worksCount": 346,
       "homepage": "https://www.universidadunie.com",
-      "probedAt": "2026-10-19T10:17:23.314Z",
+      "probedAt": "2026-10-19T12:25:47.960Z",
       "domains": [
         "universidadunie.com"
       ],
@@ -10705,7 +11341,9 @@
         "EBSCOhost MEDLINE Complete",
         "Factiva - Classic"
       ],
-      "status": "verified"
+      "status": "verified",
+      "primoSlug": null,
+      "journal": "0028-0836"
     },
     "https://ror.org/05ymqz659": {
       "rorId": "https://ror.org/05ymqz659",
@@ -10847,7 +11485,7 @@
       "country": "ES",
       "worksCount": 228,
       "homepage": "https://www.esmuc.cat",
-      "probedAt": "2026-10-19T11:06:07.595Z",
+      "probedAt": "2026-10-19T12:25:48.314Z",
       "domains": [
         "esmuc.cat"
       ],
@@ -11475,7 +12113,7 @@
       "country": "ES",
       "worksCount": 57,
       "homepage": "https://www.csuc.cat",
-      "probedAt": "2026-10-19T11:06:07.595Z",
+      "probedAt": "2026-10-19T12:25:48.314Z",
       "domains": [
         "csuc.cat"
       ],
@@ -12139,7 +12777,7 @@
       "country": "ES",
       "worksCount": 1,
       "homepage": "https://www.cbua.es",
-      "probedAt": "2026-10-19T11:06:07.595Z",
+      "probedAt": "2026-10-19T12:25:48.315Z",
       "domains": [
         "cbua.es"
       ],
@@ -12223,5 +12861,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-19T11:06:44.940Z"
+  "generatedAt": "2026-10-19T12:26:07.127Z"
 }

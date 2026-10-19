@@ -156,10 +156,15 @@ function xmlKey(xml: string, id: string) {
 /**
  * The resolver's `svc_dat=CTO` answer. Null when it carries no
  * `full_text_indicator`, which is not an answer about the journal at all.
+ * `matched` says whether Alma resolved the journal to a record of its own
+ * (`rft.mms_id`): an answer without one lists nothing because the journal,
+ * or the library's data, is not where it was asked for, not because the
+ * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
   const indicator = xmlKey(String(xml), 'full_text_indicator');
   if (indicator !== 'true' && indicator !== 'false') return null;
+  const matched = xmlKey(String(xml), 'rft.mms_id') !== null;
   const services = [];
   for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
     if (!/\bservice_type="getFullTxt"/.test(attributes)) continue;
@@ -170,7 +175,7 @@ export function parseResolverAnswer(xml: unknown) {
       url: resolution ? httpsUrl(unescapeXml(resolution[1].trim())) : null,
     });
   }
-  return { fullText: indicator === 'true', services };
+  return { fullText: indicator === 'true', matched, services };
 }
 
 /** The most DOIs one GetFTR request may carry (Entitlement API v2.7). */
@@ -275,9 +280,11 @@ const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null }
 
 /**
  * The parameters a lookup actually sends upstream, for the edge cache key:
- * the library asked (its institution code, since every mail domain of a
- * university reaches the same resolver), or the domain when there is none,
- * and the institution ids only with a GetFTR key, since only GetFTR gets them.
+ * the library asked (its institution code and the host it is asked on,
+ * since every mail domain of a university reaches the same resolver, and a
+ * regional host may answer for a code without the library's data), or the
+ * domain when there is none, and the institution ids only with a GetFTR
+ * key, since only GetFTR gets them.
  */
 export function upstreamParams(query: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
   const { doi = null, domain, entityId = null, rorId = null } = query;
@@ -285,7 +292,7 @@ export function upstreamParams(query: InstitutionQuery & { doi?: string | null }
   const resolver = findResolver(query);
   return {
     ...(doi ? { doi } : {}),
-    ...(resolver ? { library: resolver.institution } : { domain }),
+    ...(resolver ? { library: resolver.institution, host: resolver.host } : { domain }),
     ...(getFtr && entityId ? { entityId } : {}),
     ...(getFtr && rorId ? { rorId } : {}),
   };

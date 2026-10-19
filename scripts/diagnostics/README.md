@@ -456,9 +456,14 @@ Generates `worker/institution-resolvers.ts`, the table that tells `/access` whic
 resolver to ask for a reader's university. No registry maps a university to its Alma instance,
 so the script finds each institution code on the library's own pages (its Primo catalogue
 carries it as `vid=<CODE>:<VIEW>`, on the homepage, a catalogue link or a library subdomain)
-and then the Alma region by probing the sixteen regions: only the right one answers with a
-`full_text_indicator`; a Primo page's `Report-To` header names the region first, and consortium
-members often answer only on a host named after their code (`ohiolink-cwru.alma…`). Codes found
+and then the Alma host by probing: the slug of the library's Primo (`unipv.primo…` → `unipv.alma…`),
+the region a Primo page names in its `Report-To` header, a host named after the code
+(`ohiolink-cwru.alma…`), the mail domain's label, then every region. A host counts when its answer
+is one the Worker reads (`parseResolverAnswer`) and lists a service for Nature 2020 or, failing
+that, for the Journal of Materials Science 2021: a regional host can know the code without the
+library's data (eu03 answered for Pavia with no `rft.mms_id` and nothing listed while
+`unipv.alma…` listed five services), so an answer that lists nothing never verifies a host, and a
+library with nothing listed for either journal is `answers-without-services`, not shipped. Codes found
 by hand or in Zotero's public directory of OpenURL resolvers (zotero.org/openurl_resolvers) go
 in `alma-resolver-seeds.json` as `{ rorId, source, code?, host?, url?, product?, exclude? }` and
 are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
