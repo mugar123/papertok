@@ -182,8 +182,8 @@ test('SOURCE: a slow library lookup says "Checking", named and pushed', async ()
   assert.match(reduced, /\.pc-action-out \{\s*animation: fadeOut [^;]*;\s*\}/, 'reduced motion still slides the leaving face');
   assert.match(reduced, /\.pc-action-checking \{\s*animation: none;/, 'reduced motion still sweeps the band across "Checking"');
   const movil = css.slice(css.indexOf('@media (max-width: 640px)'), css.indexOf('@media (max-width: 420px)'));
-  assert.match(movil, /\.pc-action-read svg:not\(\.spinning\) \{\s*display: none;\s*\}/,
-    'on the phone the leaving face shows the glyph the arriving one hides');
+  assert.doesNotMatch(movil, /\.pc-action-read svg:not\(\.spinning\) \{\s*display: none;/,
+    'on the phone the Read button keeps its glyph, as "Read in plain words" keeps its sparkle');
 });
 
 test('SOURCE: el botón de reescritura se llama por lo que dibuja, sin aria-label que lo contradiga', async () => {
