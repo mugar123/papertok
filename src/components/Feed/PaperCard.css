@@ -1797,21 +1797,18 @@ button.pc-topics-pop-item:focus-visible {
 .graph-edge.is-dimmed { stroke: rgba(17, 19, 24, 0.06); }
 
 /* Hover (RelatedPapersSheet's hoveredKey) and the selected node: the edge
-   takes its paper's ink and thickens, so the connection reads; the hit line
-   is its unpainted, wider twin for the pointer. */
+   takes its paper's ink and thickens, so the connection reads. */
 .graph-edge.is-hovered {
   stroke: var(--edge-accent, var(--accent-primary));
   stroke-width: 2;
   stroke-dasharray: none;
 }
 
-.graph-edge-hit {
-  fill: none;
-  stroke: transparent;
-  stroke-width: 12;
-  pointer-events: stroke;
-  cursor: pointer;
-}
+/* Links are picked by distance (`nearestCitationLink`), not by their 1px
+   stroke, so the lines themselves take no pointer. */
+.graph-lines { pointer-events: none; }
+
+.graph-plot[data-link-hovered] { cursor: pointer; }
 
 .graph-edge.is-gone {
   opacity: 0;
@@ -2131,27 +2128,33 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 /* A narrow plot gives each year a few pixels, so papers of the same year
-   cannot step aside and are left off the map; this says how many and leads
-   to the list, which has them all. */
+   cannot step aside and are left off the map; this row says how many and
+   leads to the list, which has them all. */
 .graph-off-map {
-  align-self: flex-end;
-  display: inline-flex;
+  flex: 0 0 auto;
+  display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  margin-top: 2px;
-  padding: 0 2px;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 18px;
   border: 0;
+  border-bottom: 1px solid var(--border-subtle);
   background: none;
   color: var(--text-secondary);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-align: left;
   cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .graph-off-map:hover { color: var(--text-primary); }
+  .graph-off-map:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
 }
 
 /* ── Where you are in the graph ── */
@@ -3185,6 +3188,7 @@ button.pc-topics-pop-item:focus-visible {
   .graph-map { padding: 12px 14px 10px; }
   .graph-node-label { max-width: 84px; }
   .graph-trail { padding: 0 14px; }
+  .graph-off-map { padding: 0 14px; }
   .graph-crumb { max-width: 118px; }
   .graph-degraded { margin: 10px 14px 0; }
   .related-header .graph-view-button { width: 40px; height: 40px; }
