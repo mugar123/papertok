@@ -2134,6 +2134,7 @@ button.pc-topics-pop-item:focus-visible {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   width: 100%;
   min-height: 36px;
