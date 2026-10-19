@@ -12,14 +12,14 @@ interface AuthInternals {
  *
  * On phones and in Safari, Firebase's resolver loads Google's gapi scripts and
  * the auth iframe while Auth starts, and Auth reports no session, signed in or
- * not, until the scripts arrive. On an emulated mid-range phone that held the
- * first screen about 2 s. With this subclass Auth reports the session from
- * storage alone, and the scripts load for the first popup or redirect instead.
+ * not, until the scripts arrive. On an emulated mid-range phone over Slow 4G
+ * that held the first screen about 2 s. With this subclass Auth reports the
+ * session without them, and they load for the first popup or redirect instead.
  *
- * Firebase loads early there because Safari blocks a popup that does not open
- * inside the tap, and `signInWithPopup` opens the window only once the load is
- * done. Screens with sign-in buttons call `preparePopupRedirectResolver` when
- * the buttons appear, so the load is done before the tap.
+ * The early load lets a popup open inside the tap: `signInWithPopup` opens the
+ * window only once the load is done, and Safari blocks a window opened later.
+ * Screens with sign-in buttons start the load when the buttons appear
+ * (`preparePopupSignIn` in firebase.ts), so it is done before the tap.
  *
  * Firebase's Node build, which the unit tests import, has no popup resolver.
  * There Auth starts without one, as `getAuth` does.
