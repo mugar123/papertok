@@ -39,12 +39,11 @@ test('SOURCE: the connections empty state uses a smaller Petri and steps down wi
   assert.match(css, /\.graph-empty \{[^}]*overflow-y: auto;/, 'as a last resort it scrolls, it is never cut off');
 });
 
-test('SOURCE: the abstract, the similar papers and the graph are one size: the slot takes the room and each face fills it', async () => {
+test('SOURCE: the abstract and the graph are one size: the slot takes the room and each face fills it', async () => {
   const jsx = await read('./PaperCard.tsx');
   assert.doesNotMatch(jsx, /layout="row"/, 'a missing abstract is the stacked empty state, like every other');
   assert.match(jsx, /className=\{`pc-slot\$\{abstractText \? '' : ' pc-slot--no-abstract'\}`\}/, 'the slot knows the record has no abstract');
   const css = stripComments(await read('./PaperCard.css'));
-  const similar = stripComments(await read('./SimilarPapers.css'));
   const rule = (source: string, selector: RegExp) => source.match(new RegExp(`\\n${selector.source} \\{([^}]*)\\}`))?.[1] || '';
   assert.match(rule(css, /\.pc-slot,\n\.pc-slot-track,\n\.pc-slot-face/), /flex: 1 1 auto;/, 'the slot and its face take the room');
   const abstract = css.match(/\n\.pc-abstract \{([^}]*overflow: hidden[^}]*)\}/)?.[1] || '';
@@ -53,8 +52,5 @@ test('SOURCE: the abstract, the similar papers and the graph are one size: the s
   const graph = rule(css, /\.related-sheet\.related-sheet--inline/);
   assert.match(graph, /flex: 1 1 auto;/, 'the graph fills it');
   assert.match(graph, /height: auto;\s*max-height: none;/, 'with no height of its own');
-  const panel = rule(similar, /\.similar-panel/);
-  assert.match(panel, /flex: 1 1 auto;/, 'the similar papers fill it');
-  assert.match(panel, /container: related-panel \/ size;/, 'and their states step down like the graph\'s');
   assert.match(css, /\.pc-abstract:has\(> \.pc-abstract-empty\) \{\s*display: flex;\s*flex-direction: column;\s*justify-content: center;\s*\}/, 'a missing abstract is centred in its panel');
 });

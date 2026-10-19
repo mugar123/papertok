@@ -54,15 +54,15 @@ test('a guest pressing Connections gets the dialog with its reason, not a sheet 
   );
   // The rail's Connections tile goes through it.
   assert.match(card, /onPressedChange=\{toggleRelated\}/);
-  assert.match(card, /if \(next\) \{\s*setSimilarOpen\(false\);\s*openRelated\(\);/);
+  assert.match(card, /if \(next\) openRelated\(\);/);
 });
 
 test('the sheet says "sign in" when the session is what is missing, and says it to assistive tech', () => {
   const sheet = read('../Feed/RelatedPapersSheet.tsx');
   assert.match(sheet, /const SETTLED = new Set\(\['ready', 'empty', 'error', 'signin'\]\);/);
   assert.match(sheet, /\{ status: isSignInRequiredError\(error\) \? 'signin' : 'error' \}/);
-  const similar = read('../Feed/SimilarPapers.tsx');
-  assert.match(similar, /status: isSignInRequiredError\(error\) \? 'signin' : 'error'/);
+  const similar = read('../Feed/SimilarFeedLayer.tsx');
+  assert.match(similar, /isSignInRequiredError\(current\?\.error\) \? \(\s*<EmptyState role="status"/);
   assert.match(sheet, /\{visibleStatus === 'signin' && \(\s*<div className="related-state" role="status">/);
   assert.match(sheet, /\{visibleStatus === 'error' && \(\s*<EmptyState\s+as="p"\s+role="status"/);
 });

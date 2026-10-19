@@ -70,6 +70,7 @@ import {
   UserCheck,
   X,
 } from '@phosphor-icons/react';
+import { useSimilarFeed } from '../../hooks/useSimilarFeed.ts';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
 import { useIsPageArriving } from '../../hooks/usePageArrival.ts';
 import ScientificText from '../ScientificText.ts';
@@ -94,8 +95,6 @@ import AbstractSheet from './AbstractSheet.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
 import SharePanel from './SharePanel.tsx';
 import MoreActions from './MoreActions.tsx';
-import SimilarPapers from './SimilarPapers.tsx';
-import './SimilarPapers.css';
 import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import './PaperCard.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -430,16 +429,14 @@ const PaperCard = memo(function PaperCard({
   // which the page's unmount cut off part-way when the card went.
   const [authorsSheetLeaving, setAuthorsSheetLeaving] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
-  const [similarOpen, setSimilarOpen] = useState(false);
-  const similarListId = useId();
   // On a wider screen the connections take the abstract's place in the card;
   // a phone has no room for them there and keeps the bottom sheet.
   const isPhone = useIsPhone();
   const relatedInline = showRelated && !isPhone;
-  // The slot holds one face at a time: the abstract, the graph, or the papers
-  // like this one. The graph wins if both were asked for in one commit.
-  const similarInline = similarOpen && !relatedInline;
-  const slotAway = relatedInline || similarInline;
+  // The slot holds one face at a time: the abstract or the graph. The papers
+  // like this one open as a feed of their own (SimilarFeedLayer.jsx).
+  const slotAway = relatedInline;
+  const { openSimilar } = useSimilarFeed();
   // Once the connections have stood in the slot, the abstract coming back is
   // a swap, not the card's arrival: it slides in and does not replay that.
   const [slotSwapped, setSlotSwapped] = useState(false);
@@ -1346,19 +1343,8 @@ const PaperCard = memo(function PaperCard({
       setSlotSwapped(true);
       slotFromHeight.current = slotRef.current?.offsetHeight ?? null;
     }
-    if (next) {
-      setSimilarOpen(false);
-      openRelated();
-    } else setShowRelated(false);
-  };
-
-  // The same swap as the graph's, from the pill under the authors.
-  const toggleSimilar = () => {
-    pinSheet();
-    setSlotSwapped(true);
-    slotFromHeight.current = slotRef.current?.offsetHeight ?? null;
-    if (!similarOpen) setShowRelated(false);
-    setSimilarOpen((open) => !open);
+    if (next) openRelated();
+    else setShowRelated(false);
   };
 
   const handleNotInterested = (e: MouseEvent) => {
@@ -2061,11 +2047,10 @@ const PaperCard = memo(function PaperCard({
               <Button
                 variant="similar"
                 size="sm"
-                aria-expanded={similarInline}
-                aria-controls={similarListId}
+                aria-haspopup="dialog"
                 onClick={(event) => {
                   event.stopPropagation();
-                  toggleSimilar();
+                  openSimilar(paper, event.currentTarget);
                 }}
               >
                 <Intersect size={14} aria-hidden="true" />
@@ -2097,22 +2082,6 @@ const PaperCard = memo(function PaperCard({
                 onSelectPaper={selectRelatedPaper}
               />
             </Suspense>
-          </motion.div>
-        ) : similarInline ? (
-          <motion.div
-            key="similar"
-            id={similarListId}
-            className="pc-slot-face pc-similar-face"
-            variants={slotSlide}
-            custom={1}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <section className="similar-panel" aria-label={'Similar papers'}>
-              <SimilarPapers paper={paper} />
-            </section>
           </motion.div>
         ) : (
         <motion.div

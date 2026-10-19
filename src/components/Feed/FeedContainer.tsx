@@ -9,6 +9,7 @@ interface FeedSource {
   error?: unknown;
   hasMore?: boolean;
   loadMore?: () => void;
+  // A source without one (the Similar layer's fixed list) gets no refresh pill.
   refresh?: () => void;
   isRefreshing?: boolean;
   publicMode?: boolean;
@@ -644,10 +645,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         // `[role="dialog"]` covers a non-modal popup over the feed, such as a
         // visitor's Privacy panel: its keys are its own, and with large text it
         // scrolls with them.
-        const isInteractive = activeTarget?.closest(
+        const exempt = activeTarget?.closest(
           'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"], [role="dialog"]',
         );
-        const hasOpenModal = document.querySelector('[aria-modal="true"]');
+        // The Similar layer is a modal dialog this feed lives IN: its arrows
+        // are this feed's, and the feed under it is the one that keeps still.
+        const isInteractive = exempt && !(exempt.matches('[role="dialog"]') && exempt.contains(container));
+        // A modal Base UI has hidden behind a newer one (`aria-hidden`) — the
+        // explorer's paper overlay under the Similar layer — owns no keys.
+        const hasOpenModal = [...document.querySelectorAll('[aria-modal="true"]')]
+          .some(modal => !modal.contains(container) && !modal.closest('[aria-hidden="true"]'));
         if (isInteractive || hasOpenModal) return;
 
         e.preventDefault();
@@ -664,11 +671,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       }
     };
 
+    // Base UI stops arrow keys at the edge of a dialog (its popup's
+    // `COMPOSITE_KEYS`), so a feed inside one — the Similar layer — listens on
+    // that dialog. The page's own feed listens on the window.
+    const dialog = feedNode?.closest<HTMLElement>('[role="dialog"]');
+    if (dialog) {
+      dialog.addEventListener('keydown', handleKeyDown);
+      return () => dialog.removeEventListener('keydown', handleKeyDown);
+    }
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, showEndCard]);
+  }, [papers.length, loading, showEndCard, feedNode]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
@@ -920,7 +935,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
     <FeedLandmark landmark={landmark}>
-      {!publicMode && papers.length > 0 && (
+      {!publicMode && papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
           ref={refreshPillRef}

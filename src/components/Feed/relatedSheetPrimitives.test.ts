@@ -69,7 +69,7 @@ test('wider than a phone the rail\'s Connections tile swaps the abstract for the
   // The rail's Connections tile is the panel's state, at every width.
   assert.match(card, /className="pc-side-btn pc-side-btn--connections"\s+pressed=\{showRelated\}\s+onPressedChange=\{toggleRelated\}/);
   // The swap grows the card downward: pinned on the press, held while open.
-  assert.match(card, /const toggleRelated = \(next: boolean\) => \{\s*if \(!isPhone && !publicMode\) \{\s*pinSheet\(\);[\s\S]*?if \(next\) \{\s*setSimilarOpen\(false\);\s*openRelated\(\);\s*\} else setShowRelated\(false\);\s*\};/);
+  assert.match(card, /const toggleRelated = \(next: boolean\) => \{\s*if \(!isPhone && !publicMode\) \{\s*pinSheet\(\);[\s\S]*?if \(next\) openRelated\(\);\s*else setShowRelated\(false\);\s*\};/);
   assert.match(card, /const sheetGrown = expanded \|\| authorsExpanded \|\| slotAway;/);
   assert.doesNotMatch(card, /id: 'related'/, 'Related papers left the More menu for the rail');
   // Two quick presses on the map are not a double tap on the card.
