@@ -1,6 +1,6 @@
 import type { Paper } from '../models/Paper.ts';
 interface AreaPlan { areas?: string[] }
-import { CATEGORIES } from '../data/categories.ts';
+import { INTEREST_AREAS } from '../data/categories.ts';
 
 /**
  * How the guest page is dealt out among the areas a visitor picked.
@@ -17,7 +17,7 @@ import { CATEGORIES } from '../data/categories.ts';
  * inside an area, and a card already on screen never moves.
  */
 
-const AREA_BY_CATEGORY = new Map(Object.entries(CATEGORIES)
+const AREA_BY_CATEGORY = new Map(Object.entries(INTEREST_AREAS)
   .flatMap(([areaKey, area]) => Object.keys(area.subcategories || {}).map(categoryId => [categoryId, areaKey] as const)));
 
 /** The taxonomy area a paper belongs to, from its category ids; `null` if none is ours. */
@@ -27,7 +27,7 @@ export function areaOfPaper(paper: CompositionPaper | null | undefined) {
   if (!paper) return null;
   for (const value of [paper.primaryCategory, ...(paper.categories || [])]) {
     if (typeof value !== 'string') continue;
-    if (CATEGORIES[value as keyof typeof CATEGORIES]) return value;
+    if (INTEREST_AREAS[value as keyof typeof INTEREST_AREAS]) return value;
     const area = AREA_BY_CATEGORY.get(value);
     if (area) return area;
   }

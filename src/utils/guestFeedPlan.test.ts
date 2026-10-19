@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORIES } from '../data/categories.ts';
+import { INTEREST_AREAS } from '../data/categories.ts';
 import { GUEST_CATEGORIES, buildGuestDiscoveryQuery, buildGuestFeedPlan, guestCategoryLabel } from './guestFeedPlan.ts';
 
 // The root invariant. Four consumers read this list, and an id the schema does
@@ -50,17 +50,17 @@ test('every category a chosen plan asks for exists in the internal schema', () =
 });
 
 test('the chosen areas are all represented, and each source is capped', () => {
-  const plan = buildGuestFeedPlan(['econ', 'physics', 'cs', 'math']);
+  const plan = buildGuestFeedPlan(['econ', 'physics', 'ai', 'math']);
 
-  assert.equal(plan.key, 'physics+cs+math+econ');
+  assert.equal(plan.key, 'physics+ai+math+econ');
   assert.ok(plan.categories.length > 40, 'the full union routes the domain plan');
   assert.equal(plan.arxivCategories.length, 6);
   // Round-robin: the first category of every area before any area's second.
-  const firstOf = (area: string) => Object.keys(CATEGORIES[area].subcategories)[0];
-  assert.deepEqual(plan.arxivCategories.slice(0, 4), ['physics', 'cs', 'math', 'econ'].map(firstOf));
+  const firstOf = (area: string) => Object.keys(INTEREST_AREAS[area].subcategories)[0];
+  assert.deepEqual(plan.arxivCategories.slice(0, 4), ['physics', 'ai', 'math', 'econ'].map(firstOf));
   assert.equal((plan.discoveryQuery.match(/"/g) || []).length, 5 * 2);
   assert.ok(plan.discoveryQuery.includes('"Artificial Intelligence"'));
-  assert.ok(plan.discoveryQuery.includes(`"${CATEGORIES.econ.subcategories[firstOf('econ')].label}"`));
+  assert.ok(plan.discoveryQuery.includes(`"${INTEREST_AREAS.econ.subcategories[firstOf('econ')].label}"`));
 });
 
 test('PubMed is only asked for biology and medicine, and arXiv never for them', () => {
@@ -82,16 +82,16 @@ test('the same areas in any order make the same plan', () => {
 test('a narrowed area sends its topics, not its first subcategories', async () => {
   const { buildGuestFeedPlan: build } = await import('./guestFeedPlan.ts');
   const whole = build(['cs']);
-  const narrowed = build(['cs'], ['cs.CL', 'cs.CR']);
+  const narrowed = build(['cs'], ['cs.CR', 'cs.SE']);
   assert.notEqual(whole.key, narrowed.key, 'a different answer is a different plan');
-  assert.deepEqual(narrowed.arxivCategories, ['cs.CL', 'cs.CR']);
-  assert.deepEqual(narrowed.categories, ['cs.CL', 'cs.CR']);
-  assert.deepEqual(narrowed.topics, ['cs.CL', 'cs.CR']);
+  assert.deepEqual(narrowed.arxivCategories, ['cs.CR', 'cs.SE']);
+  assert.deepEqual(narrowed.categories, ['cs.CR', 'cs.SE']);
+  assert.deepEqual(narrowed.topics, ['cs.CR', 'cs.SE']);
   // An area left whole still offers all of its own next to a narrowed one.
-  const mixed = build(['physics', 'cs'], ['cs.CL']);
+  const mixed = build(['physics', 'ai'], ['cs.CL']);
   assert.ok(mixed.arxivCategories.includes('cs.CL'));
   assert.ok(mixed.arxivCategories.some(id => !id.startsWith('cs.')), 'physics is still represented');
-  assert.ok(!mixed.arxivCategories.includes('cs.AI'), 'cs is narrowed to what was picked');
+  assert.ok(!mixed.arxivCategories.includes('cs.AI'), 'ai is narrowed to what was picked');
 });
 
 test('topics outside the chosen areas do not change the plan', async () => {

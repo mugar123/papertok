@@ -2,7 +2,7 @@ type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown };
 
-import { CATEGORIES } from '../data/categories.ts';
+import { INTEREST_AREAS } from '../data/categories.ts';
 import { normalizeReadingPreferences } from './userSettings.ts';
 
 /**
@@ -27,7 +27,7 @@ import { normalizeReadingPreferences } from './userSettings.ts';
  */
 export const GUEST_INTERESTS_STORAGE_KEY = 'papertok_guestInterests';
 
-const AREA_KEYS = Object.freeze(Object.keys(CATEGORIES) as Array<Extract<keyof typeof CATEGORIES, string>>);
+const AREA_KEYS = Object.freeze(Object.keys(INTEREST_AREAS) as Array<Extract<keyof typeof INTEREST_AREAS, string>>);
 
 function getStorage(storage?: GuestStorage | null) {
   if (storage) return storage;
@@ -42,7 +42,7 @@ function getStorage(storage?: GuestStorage | null) {
 /**
  * Unknown keys dropped, duplicates folded, taxonomy order kept: the stored
  * list is always something every consumer (the feed plan, the onboarding)
- * can hand straight to CATEGORIES.
+ * can hand straight to INTEREST_AREAS.
  */
 export function normalizeGuestAreas(areas: unknown) {
   if (!Array.isArray(areas)) return [];
@@ -59,7 +59,7 @@ export function normalizeGuestTopics(topics: unknown, areas: unknown) {
   if (!Array.isArray(topics)) return [];
   const wanted = new Set(topics.filter(topic => typeof topic === 'string'));
   return normalizeGuestAreas(areas)
-    .flatMap(key => Object.keys(CATEGORIES[key].subcategories))
+    .flatMap(key => Object.keys(INTEREST_AREAS[key].subcategories))
     .filter(id => wanted.has(id));
 }
 
@@ -70,7 +70,7 @@ export function normalizeGuestTopics(topics: unknown, areas: unknown) {
 export function guestTopicListsForAreas(areas: unknown, topics: unknown = []) {
   const chosenTopics = new Set(normalizeGuestTopics(topics, areas));
   return normalizeGuestAreas(areas).map((key) => {
-    const all = Object.keys(CATEGORIES[key].subcategories);
+    const all = Object.keys(INTEREST_AREAS[key].subcategories);
     const refined = all.filter(id => chosenTopics.has(id));
     return refined.length > 0 ? refined : all;
   });
@@ -97,7 +97,7 @@ export function guestCategoriesForAreas(areas: readonly string[], topics: readon
  * first GUEST_SEED_PER_AREA subcategories of each area, interleaved across
  * areas — physics[0], eess[0], mech[0], physics[1], … — so that a ranking
  * with nothing to go on still spreads its window over every area picked.
- * All twelve areas make 58, well under the rules' cap of 100.
+ * All thirteen areas make 63, well under the rules' cap of 100.
  */
 export const GUEST_SEED_PER_AREA = 5;
 
@@ -117,7 +117,7 @@ function guestSeedLists(areas: unknown, perArea: number, topics: unknown) {
   const chosen = normalizeGuestAreas(areas);
   const narrowed = new Set(normalizeGuestTopics(topics, chosen));
   return chosen.map((key) => {
-    const all = Object.keys(CATEGORIES[key].subcategories);
+    const all = Object.keys(INTEREST_AREAS[key].subcategories);
     const picked = all.filter(id => narrowed.has(id));
     return picked.length > 0 ? picked : all.slice(0, perArea);
   });

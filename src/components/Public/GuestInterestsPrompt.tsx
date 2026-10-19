@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check } from '@phosphor-icons/react';
-import { CATEGORIES } from '../../data/categories.ts';
+import { INTEREST_AREAS } from '../../data/categories.ts';
 import { normalizeGuestAreas } from '../../utils/guestInterests.ts';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
@@ -21,7 +21,7 @@ import './GuestInterestsPrompt.css';
 // takes five seconds, and the onboarding is where the fine grain gets chosen,
 // pre-filled from this.
 
-const AREA_ENTRIES = Object.entries(CATEGORIES);
+const AREA_ENTRIES = Object.entries(INTEREST_AREAS);
 
 const COPY = {
   en: {
@@ -39,7 +39,7 @@ const COPY = {
 // Escape, the scrim — flips it; Base UI plays the leave, and only then
 // `onOpenChangeComplete(false)` hands the outcome to the parent: the answer
 // through `onSubmit`, anything else through `onDismiss`. One call, once.
-function AreaTile({ area, pressed, onPressedChange }: { area: typeof CATEGORIES[keyof typeof CATEGORIES]; pressed: boolean; onPressedChange: () => void }) {
+function AreaTile({ area, pressed, onPressedChange }: { area: typeof INTEREST_AREAS[keyof typeof INTEREST_AREAS]; pressed: boolean; onPressedChange: () => void }) {
   const { ref: nameRef, ...tooltip } = useClipTooltip();
   return (
     <Tooltip {...tooltip}>
