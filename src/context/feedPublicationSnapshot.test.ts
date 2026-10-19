@@ -58,6 +58,23 @@ test('a book Crossref confirmed after its card was saved is left out when the sn
   assert.deepEqual(readFeedSnapshot('test-user', 'math.AG').papers.map((paper: { id: string }) => paper.id), [visible.id]);
 });
 
+test('late answers to a restored snapshot keep its save time, while a newly loaded page starts its fifteen minutes', t => {
+  const { readFeedSnapshot, writeFeedSnapshot } = snapshots();
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const card = { id: 'W2020715063', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: [card], page: 1, hasMore: true });
+  now += 10 * 60 * 1000;
+  // A cold open restores it, and a late abstract updates the restored cards.
+  const restored = readFeedSnapshot('test-user', 'cs.AI');
+  writeFeedSnapshot('test-user', 'cs.AI', { ...restored, papers: [{ ...card, abstract: 'Recovered source text.' }] });
+  now += 6 * 60 * 1000;
+  assert.equal(readFeedSnapshot('test-user', 'cs.AI'), null, 'the snapshot expires fifteen minutes after its page loaded');
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: [card], page: 1, hasMore: true });
+  now += 10 * 60 * 1000;
+  assert.deepEqual(readFeedSnapshot('test-user', 'cs.AI').papers.map((paper: { id: string }) => paper.id), [card.id]);
+});
+
 // FeedContext cannot be mounted under Node; feedUsableBatch.test.ts runs the
 // restore itself. This pins that both restoring effects go through it, and
 // that a cold mount does not read the snapshot again once it is shown.

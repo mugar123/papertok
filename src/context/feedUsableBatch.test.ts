@@ -469,3 +469,22 @@ test('a restored snapshot asks again for the abstract and the type its session h
   assert.deepEqual(state.papers.map(paper => paper.id), [visible.id, electron.id]);
   assert.deepEqual(saved.map(paper => paper.abstract), ['Source text.', 'Recovered source text.']);
 });
+
+test('a restored snapshot is written again only when a late answer changes a card, and keeps its save time', async () => {
+  // Synthetic PubMed letter: Europe PMC has its record, and the card already carries it.
+  const letter = PaperBuilder.create({ id: 'pmid:1', pmid: '1', title: 'Synthetic letter', authors: [], abstract: '', citationCount: 3, sources: { primary: 'pubmed', enrichedBy: ['europepmc'] } });
+  for (const [record, rewritten] of [
+    [{ pmid: '1', citationCount: 3 }, false],
+    [{ pmid: '1', citationCount: 3, abstract: 'Europe PMC source text.' }, true],
+  ] as const) {
+    const { state, env, restore } = feed();
+    env.enrichPubmedIds = async () => new Map([['1', record]]);
+    const writes: Array<{ papers: Paper[]; savedAt?: number }> = [];
+    env.scheduleFeedSnapshotWrite = (_uid, _key, snapshot) => { writes.push(snapshot); };
+    const snapshot = { papers: [letter], page: 1, hasMore: true, savedAt: 1_000 };
+    restore(snapshot);
+    await wait(20);
+    assert.equal(state.papers === snapshot.papers, !rewritten);
+    assert.deepEqual(writes.map(write => [write.papers[0].abstract, write.savedAt]), rewritten ? [['Europe PMC source text.', 1_000]] : []);
+  }
+});

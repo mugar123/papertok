@@ -5,7 +5,8 @@ import type { CuratedSetName, InteractionDocumentData, InteractionEvent, Profile
 import type { PersonalCandidate } from '../services/personalRecommendationsService.ts';
 import type { ProfileLoadResult } from '../utils/interactionProfileLoader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendationEngine.ts';
-interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean }
+// `savedAt` is set only on a snapshot read back from storage.
+interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean; savedAt?: number }
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
 export interface LibraryEntry {
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
@@ -195,7 +196,9 @@ function writeFeedSnapshot(userId: string | null | undefined, signature: string,
       ...snapshot,
       papers,
       publicationPolicy: 3,
-      savedAt: Date.now(),
+      // A restored page updated by late answers keeps its expiry: the
+      // fifteen minutes count from when its page was loaded.
+      savedAt: snapshot.savedAt ?? Date.now(),
     }));
   } catch {
     // A full browser storage quota must never block the feed.
@@ -676,7 +679,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (feedSessionId.current !== sessionId) return;
       setPapers(current => {
         const next = change(current);
-        if (next === current) return current;
+        // The merges return a new list even when every card object is
+        // unchanged. Such an answer must not re-render or rewrite the snapshot.
+        if (next.length === current.length && next.every((paper, index) => paper === current[index])) return current;
         const cachedMode = feedCache.current[mode];
         if (cachedMode) {
           feedCache.current[mode] = { ...cachedMode, papers: next };
