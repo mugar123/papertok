@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, inMemoryPersistence, initializeAuth, onAuthStateChanged } from 'firebase/auth';
 import type { Auth, Persistence, PopupRedirectResolver } from 'firebase/auth';
+import { settleWithin } from '../test-support/deadlineHarness.ts';
 import type { PopupReadiness } from './popupRedirectResolver.ts';
 import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
@@ -93,13 +94,6 @@ async function startSignedIn(t: TestContext, popupRedirectResolver: PopupRedirec
   return auth;
 }
 
-function settlesWithin(promise: Promise<unknown>, ms: number) {
-  return Promise.race([
-    promise.then(() => true),
-    new Promise<boolean>(resolve => setTimeout(resolve, ms, false).unref()),
-  ]);
-}
-
 const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 
 test('Auth reports the session without waiting for the popup resolver to load', async (t) => {
@@ -107,12 +101,12 @@ test('Auth reports the session without waiting for the popup resolver to load', 
   // until its scripts arrive.
   const eager = firebaseResolver();
   const held = startAuth(t, eager.resolver);
-  assert.equal(await settlesWithin(held.authStateReady(), 300), false);
+  assert.equal(await settleWithin(300, () => held.authStateReady()), 'still waiting');
   assert.equal(eager.loads.length, 1);
 
   const deferred = firebaseResolver();
   const auth = startAuth(t, deferPopupRedirectResolver(deferred.resolver));
-  assert.equal(await settlesWithin(auth.authStateReady(), 2000), true);
+  assert.equal(await settleWithin(2000, () => auth.authStateReady()), 'resolved');
   assert.equal(auth.currentUser, null);
   assert.deepEqual(deferred.loads, []);
 });
@@ -142,7 +136,7 @@ test('on a phone, controls wait for the load and are let through the moment it f
   assert.equal(readiness.ready, false, 'not ready while the scripts load');
 
   load.finish();
-  assert.equal(await settlesWithin(ready, 100), true);
+  assert.equal(await settleWithin(100, () => ready), 'resolved');
   assert.equal(readiness.ready, true);
 });
 
@@ -159,8 +153,9 @@ test('a failed load lets presses through, leaving the load and its error to Fire
   });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   const readiness = preparePopupRedirectResolver(auth);
+  const ready = turnsReady(readiness);
 
-  assert.equal(await settlesWithin(turnsReady(readiness), 2000), true);
+  assert.equal(await settleWithin(2000, () => ready), 'resolved');
   // A rejection nobody handled is reported after this turn.
   await nextTurn();
 
@@ -220,8 +215,9 @@ test('with nobody signed in, the resolver loads after Auth has reported the sess
   const phone = firebaseResolver({ load: reported.load });
   const auth = startAuth(t, deferPopupRedirectResolver(phone.resolver));
   reported.listen(auth);
+  const ready = turnsReady(preparePopupRedirectResolver(auth));
 
-  assert.equal(await settlesWithin(turnsReady(preparePopupRedirectResolver(auth)), 2000), true);
+  assert.equal(await settleWithin(2000, () => ready), 'resolved');
 
   assert.deepEqual(phone.loads, [auth]);
   assert.deepEqual(reported.atLoad, [['nobody']]);
@@ -232,8 +228,9 @@ test('a restored session loads the resolver too, after Auth has reported the rea
   const phone = firebaseResolver({ load: reported.load });
   const auth = await startSignedIn(t, deferPopupRedirectResolver(phone.resolver));
   reported.listen(auth);
+  const ready = turnsReady(preparePopupRedirectResolver(auth));
 
-  assert.equal(await settlesWithin(turnsReady(preparePopupRedirectResolver(auth)), 2000), true);
+  assert.equal(await settleWithin(2000, () => ready), 'resolved');
 
   assert.equal(auth.currentUser?.uid, 'reader');
   assert.deepEqual(phone.loads, [auth]);
