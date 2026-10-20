@@ -119,6 +119,17 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * organisation is never answered with this university's library.
  */
 const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
+  'myumanitoba.ca': { rorId: 'https://ror.org/02gfys938', source: 'https://umanitoba.ca/information-services-technology/my-accounts-email/claim-umnetid', checked: '2026-10-20' },
+  'rochester.edu': { rorId: 'https://ror.org/022kthw22', source: 'https://it.rochester.edu/rochedualiaspages/FAQ.aspx', checked: '2026-10-20' },
+  'sms.ed.ac.uk': { rorId: 'https://ror.org/01nrxwf90', source: 'https://information-services.ed.ac.uk/computing/comms-and-collab/email/directories/student-directory', checked: '2026-10-20' },
+  'student.ethz.ch': { rorId: 'https://ror.org/05a28rw58', source: 'https://blogs.ethz.ch/its/2026/09/11/new-to-eth-your-it-starter-pack-for-your-studies/', checked: '2026-10-20' },
+  'sydney.edu.au': { rorId: 'https://ror.org/0384j8v12', source: 'https://www.sydney.edu.au/policies/showdoc.aspx?RendNum=0&recnum=PDOC2011%2F139', checked: '2026-10-20' },
+  'u.rochester.edu': { rorId: 'https://ror.org/022kthw22', source: 'https://tech.rochester.edu/faqs/gmail-faqs/', checked: '2026-10-20' },
+  'ugent.be': { rorId: 'https://ror.org/00cv9y106', source: 'https://www.ugent.be/student/en/ict/ict-services/account.htm', checked: '2026-10-20' },
+  'umail.leidenuniv.nl': { rorId: 'https://ror.org/027bh9e22', source: 'https://researchwiki.solo.universiteitleiden.nl/xwiki/wiki/researchwiki.solo.universiteitleiden.nl/view/Online%20Research/Pavlovia/', checked: '2026-10-20' },
+  'umanitoba.ca': { rorId: 'https://ror.org/02gfys938', source: 'https://umanitoba.ca/information-services-technology/my-accounts-email/claim-umnetid', checked: '2026-10-20' },
+  'uni.sydney.edu.au': { rorId: 'https://ror.org/0384j8v12', source: 'https://www.sydney.edu.au/students/student-responsibilities/university-correspondence.html', checked: '2026-10-20' },
+  'unr.edu': { rorId: 'https://ror.org/01keh0577', source: 'https://library.unr.edu/help/troubleshooting/technology-updates', checked: '2026-10-20' },
   'neu.edu': { rorDomain: 'northeastern.edu', source: 'https://www.northeastern.edu/privacy-information/', checked: '2026-10-19' },
   'husky.neu.edu': { rorDomain: 'northeastern.edu', source: 'https://cssh.northeastern.edu/writingcenter/tutoring/first-visit/', checked: '2026-10-19' },
   'alum.us.es': { rorId: 'https://ror.org/03yxnpp24', source: 'https://cat.us.es/orientacion/guia-de-estudiantes/', checked: '2026-10-19' },
