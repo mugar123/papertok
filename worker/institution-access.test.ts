@@ -452,7 +452,9 @@ test('is not entitled when every ISSN asked answers without full text', async ()
 });
 
 test('a resolver answer that cannot be read is an outage, not an unknown to remember', async () => {
-  const stub = upstreams({ resolver: () => xml('<uresolver_content/>') });
+  // Complete, but with no context object: an answer about no journal, which
+  // must not be cached for a week as a refusal.
+  const stub = upstreams({ resolver: () => xml('<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u"><context_services/></uresolver_content>') });
   await assert.rejects(
     lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
     error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
