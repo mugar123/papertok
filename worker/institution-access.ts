@@ -59,7 +59,7 @@ const RESOLVER_CITATION = 'article';
 // then a key left open, or one whose tag was written another way, was read as
 // absent, so a service Alma had filtered out for the date could count as
 // access again, cached for seven days.
-export const RESOLVER_READING = 'balanced-tags';
+export const RESOLVER_READING = 'balanced-tags-cdata';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -239,7 +239,7 @@ function markupHolds(text: string) {
  * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
-  const text = String(xml);
+  let text = String(xml);
   // The expressions below read keys and services, not a document tree, so
   // damaged markup misleads them: a single-service answer cut off before
   // its services would read as a refusal, and a `Filtered` key that never
@@ -253,12 +253,17 @@ export function parseResolverAnswer(xml: unknown) {
   // answers with `available_services` = single_service and no indicator
   // (Harvard, Helsinki, Amsterdam, 2026-10-19); its services still carry
   // Alma's filter marks, so what is left unfiltered is the answer.
-  if (!markupHolds(text) || !/<context_object>/.test(text)) return null;
+  if (!markupHolds(text)) return null;
+  // CDATA is text, including when it contains something that looks like a
+  // key or service. Escape it before the shared reader extracts any values.
+  text = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_section, value: string) =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+  if (!/<context_object>/.test(text)) return null;
   const indicator = xmlKey(text, 'full_text_indicator');
   const matched = xmlKey(text, 'rft.mms_id') !== null;
   const services = [];
   let restricted = false;
-  for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
+  for (const [, attributes, body] of text.matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
     if (!/\bservice_type="getFullTxt"/.test(attributes)) continue;
     if (xmlKey(body, 'Filtered') === 'true') {
       if (!/date/i.test(xmlKey(body, 'Filter reason') || '')) restricted = true;

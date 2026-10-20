@@ -606,6 +606,21 @@ test('an answer with damaged markup is no answer, whatever its keys would read a
   }
 });
 
+test('CDATA is literal text, including split values and markup in public notes', () => {
+  const answer = CTO_CDATA
+    .replace('<key id="Filtered">true</key>', '<key id="Filtered"><![CDATA[tr]]>u<![CDATA[e]]></key>')
+    .replace('<key id="Filter reason">Date Filter</key>', '<key id="Filter reason"><![CDATA[Date Filter]]></key>')
+    .replace('Nature Publishing Group Journals (Springer Nature)', '<![CDATA[Nature & <Archive> &amp;]]>')
+    .replace(HKPU_NATURE_URL.replace(/&/g, '&amp;'), `<![CDATA[${HKPU_NATURE_URL}]]>`)
+    .replace('<key id="Is_free">0</key>', '<key id="public_note"><![CDATA[<key id="Filtered">true</key>]]></key><key id="Is_free">0</key>');
+  assert.deepEqual(parseResolverAnswer(answer), {
+    fullText: true,
+    matched: true,
+    services: [{ name: 'Nature & <Archive> &amp;', free: false, url: HKPU_NATURE_URL }],
+    restricted: false,
+  });
+});
+
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
   const { upstreamParams } = await import('./institution-access.ts');
   const query = { doi: DOI, domain: 'usal.es', entityId: 'https://idp.usal.es/entity', rorId: 'https://ror.org/02f40zc51' };
@@ -916,8 +931,35 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'balanced-tags']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'balanced-tags-cdata']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
+});
+
+test('the access route reads CDATA filters before caching its verdict', async () => {
+  const date = CTO_FILTERED_BY_DATE
+    .replace('<key id="Filtered">true</key>', '<key id="Filtered"><![CDATA[true]]></key>')
+    .replace('<key id="Filter reason">Date Filter</key>', '<key id="Filter reason"><![CDATA[Date Filter]]></key>');
+  const cases = [
+    [date, 'not-entitled'],
+    [date.replace('Date Filter', 'IP Filter'), 'unknown'],
+    [CTO_FILTERED_AND_LIVE.replace('<key id="Filtered">true</key>', '<key id="Filtered"><![CDATA[true]]></key>'), 'entitled'],
+  ] as const;
+  for (const [answer, status] of cases) {
+    const { response, body, accessPuts } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, {
+      resolver: () => xml(answer),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(body, status === 'entitled'
+      ? { status, collection: 'Nature', url: NATURE_URL }
+      : { status, collection: null, url: null });
+    assert.equal(accessPuts.length, 1);
+    assert.deepEqual(await accessPuts[0].response.clone().json(), body);
+  }
+  const broken = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, {
+    resolver: () => xml(date.replace('Date Filter]]>', 'Date Filter')),
+  });
+  assert.equal(broken.response.status, 502);
+  assert.equal(broken.accessPuts.length, 0);
 });
 
 test('the access route accepts USC\'s stored SAML URN and uses its Alma library', async () => {
