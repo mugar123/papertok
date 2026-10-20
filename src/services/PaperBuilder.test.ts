@@ -318,12 +318,21 @@ test('a working paper joined to a different article by title alone does not unre
     assert.equal(paper.doi, imfDoi, provider);
     assert.equal(paper.peerReviewed, false, provider);
     assert.equal(reviewTagForPaper(paper)?.label, 'Working paper', provider);
+
+    // Nor does a working paper with no DOI at all: the shared eprint is the
+    // only link, and the row keeps the journal's DOI.
+    const [stillArticle] = PaperBuilder.deduplicate([journalVersion, { ...eprintWorkingPaper, doi: undefined }]);
+    assert.equal(stillArticle.doi, journalDoi, provider);
+    assert.equal(stillArticle.peerReviewed, true, provider);
+    assert.equal(reviewTagForPaper(stillArticle), null, provider);
+    assert.deepEqual(peerReviewedOnly([stillArticle]).map(row => row.doi), [journalDoi], provider);
   }
 
-  // Where at most one side has a publisher's DOI, the arXiv id still makes
-  // one record, whatever the version: the eprint with no journal DOI, and
-  // OpenAlex's record of it under arXiv's own DOI, which the mapper reads
-  // the arXiv id out of.
+  // The working paper's own versions stay unreviewed and tagged in either
+  // order: the eprint with no journal DOI, and OpenAlex's record of it under
+  // arXiv's own DOI, which the mapper reads the arXiv id out of. Either one
+  // first is a base with no publisher's DOI, so the shared arXiv id joins the
+  // working paper's answer to it; the working paper first keeps its own.
   const eprint = PaperBuilder.create({
     id: '2601.00001',
     arxivId: '2601.00001v2',

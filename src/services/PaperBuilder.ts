@@ -318,18 +318,19 @@ export class PaperBuilder {
       || merged.publicationType === 'preprint';
     // A `false` and the working-paper tag describe the record that sent them,
     // so the row takes them only while it keeps that record's identity: the
-    // base had no DOI, or both share a DOI, or both share an arXiv id and at
-    // most one has a publisher's DOI. `deduplicate` also joins a journal
-    // article and its working paper on title and first author, or on an
-    // eprint both list: OpenAlex can file an arXiv eprint among a FEDS
-    // paper's locations while arXiv lists the journal's DOI for it. A row
-    // that keeps the article's DOI and journal is not the working paper.
+    // base had no DOI, or both share a DOI, or the base's only DOI is arXiv's
+    // own and both share an arXiv id. A shared eprint never outranks a
+    // publisher's DOI on the base, whether the other record has a DOI or not.
+    // `deduplicate` also joins a journal article and its working paper on
+    // title and first author, or on an eprint both list: OpenAlex can file an
+    // arXiv eprint among a FEDS paper's locations while arXiv lists the
+    // journal's DOI for it. A row that keeps the article's DOI and journal is
+    // not the working paper.
     const baseDoi = normalizeDoi(existingPaper.doi);
-    const incomingDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
     const sameRecord = !existingPaper.doi
-      || (baseDoi !== '' && baseDoi === incomingDoi)
-      || (!(isPublisherDoi(baseDoi) && isPublisherDoi(incomingDoi))
+      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
+      || (!isPublisherDoi(baseDoi)
         && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
     // A published record that says outright it was not reviewed wins from
     // either side, so an IMF working paper that another provider also lists as
