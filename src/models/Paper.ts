@@ -232,7 +232,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   const arxivId = readArxivId(legacyPaper.arxivId) || readArxivId(legacyPaper.id);
   const year = legacyPaper.published
     ? new Date(legacyPaper.published).getFullYear()
-    : (legacyPaper.year || new Date().getFullYear());
+    : (legacyPaper.year || undefined);
 
   const authors = Array.isArray(legacyPaper.authors)
     ? legacyPaper.authors.map(a => typeof a === 'string' ? { name: a } : a)

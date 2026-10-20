@@ -76,7 +76,7 @@ export class PaperBuilder {
       huggingFaceUpvotes: data.huggingFaceUpvotes ?? undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
-      year: data.year || new Date().getFullYear(),
+      year: data.year || undefined,
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
