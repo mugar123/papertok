@@ -3059,6 +3059,23 @@ test('a healthy bioRxiv answer keeps its ten minutes and says nothing is degrade
   assert.equal(maxAgeSeconds(response), 600);
 });
 
+test('bioRxiv pages of any limit share one upstream call and one cache entry', async () => {
+  const collection = Array.from({ length: 30 }, (_, index) => ({ doi: `10.1101/2026.09.01.${index}`, title: `Preprint ${index}` }));
+  const calls = await withCountedUpstream(async () => Response.json({ collection }), async () => {
+    await withIdentityAndCacheStore(async () => {
+      for (const limit of [8, 2, 10]) {
+        const response = await reportApi.fetch(new Request(
+          `https://papertok-report-api.example/sources/biorxiv?category=neuroscience&page=1&limit=${limit}`,
+          { headers: { origin: 'https://mugar123.github.io' } },
+        ), {});
+        // The whole group of thirty: the client keeps the first `limit`.
+        assert.equal((await response.json<{ collection: unknown[] }>()).collection.length, 30);
+      }
+    });
+  });
+  assert.equal(calls.filter(url => url.startsWith('https://api.biorxiv.org/')).length, 1);
+});
+
 /**
  * The share pages (worker/share-pages.ts) as the router serves them: public,
  * GET and HEAD, and with no Origin, because the caller is Vercel relaying a
