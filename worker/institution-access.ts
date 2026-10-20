@@ -243,16 +243,21 @@ const MARKUP = /<(?:\/([A-Za-z_][\w.-]*)|([A-Za-z_][\w.-]*)((?: [\w.:-]+="[^"<>&
  */
 function markupHolds(text: string) {
   const open: string[] = [];
+  let services = 0;
   for (const { 0: tag, 1: closing, 2: name, 3: attributes, 4: closed, index } of text.matchAll(MARKUP)) {
     if (tag === '<' || (tag.startsWith('<?') && index !== 0)) return false;
     if (closing) {
       if (open.pop() !== closing) return false;
+      if (closing === 'context_service') services -= 1;
       if (!open.length) return closing === 'uresolver_content' && !text.slice(index + tag.length).trim();
     } else if (name) {
-      if (open.at(-1) === 'key' || (name === 'context_service' && (closed === '/' || open.includes(name)))) return false;
+      if (open.at(-1) === 'key' || (name === 'context_service' && (closed === '/' || services > 0))) return false;
       const unmatched = name === 'key' ? !/^ id="[^"]*"$/.test(attributes) : name === 'resolution_url' && attributes !== '';
       if (closed !== '/' && unmatched) return false;
-      if (!closed) open.push(name);
+      if (!closed) {
+        open.push(name);
+        if (name === 'context_service') services += 1;
+      }
     }
   }
   return false;
