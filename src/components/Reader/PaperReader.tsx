@@ -13,6 +13,7 @@ export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
+  ArrowClockwise,
   ArrowLeft,
   ArrowSquareOut,
   Flask,
@@ -21,7 +22,6 @@ import {
   PencilLine,
   Plant,
   Sparkle,
-  WarningCircle,
 } from '@phosphor-icons/react';
 import {
   canRewritePaper,
@@ -48,6 +48,8 @@ import { useAuth } from '../../context/AuthContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.ts';
 import { Button } from '../ui/button.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 import { Dialog, DialogContent } from '../ui/dialog.tsx';
 import { Toggle } from '../ui/toggle.tsx';
 import { toast } from 'sonner';
@@ -85,7 +87,6 @@ const COPY = {
     retry: 'Try again',
     incomplete: 'The rewrite stopped before finishing. You can try again.',
     sections: 'sections',
-    errorKicker: 'Could not rewrite',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
     toggleAiMarks: 'Show AI highlights',
@@ -132,7 +133,7 @@ const ERROR_COPY = {
   en: {
     AI_REWRITE_NEEDS_FULL_TEXT: {
       title: 'There is no paper to read',
-      body: 'The rewrite needs the full text, and this one has only an abstract or a PDF that will not open. Sometimes it is the source being down: if you think it should be there, try again.',
+      body: 'The rewrite needs the full text, and this one has only an abstract or a PDF that will not open.',
     },
     AI_AUTH_REQUIRED: {
       title: 'You need to sign in',
@@ -216,6 +217,8 @@ const ANNOTATION_ERROR_COPY = {
  * `wait` is amber (come back and it will work), `broken` is red (this attempt
  * went wrong), `closed` is neutral (nothing here is going to change by trying).
  */
+const ERROR_POSES = { wait: 'thinking', broken: 'upset', closed: 'lost' } as const;
+
 const ERROR_TONES = {
   AI_QUOTA_EXHAUSTED: 'wait',
   AI_TIMEOUT: 'wait',
@@ -919,7 +922,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const isStreaming = shownStatus === 'streaming';
   const errorCopy = ERROR_COPY.en[(providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError) as keyof typeof ERROR_COPY.en]
     || ERROR_COPY.en.AI_UNAVAILABLE;
-  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError as keyof typeof ERROR_TONES] || 'broken');
+  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError as keyof typeof ERROR_TONES] || 'broken') as keyof typeof ERROR_POSES;
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
   /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
@@ -931,6 +934,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
 
+  const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? quota : null;
   const { error: askError, clearError: clearAskError } = annotations;
   useEffect(() => {
     if (!askError) return;
@@ -1050,14 +1054,15 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
-            {(paper?.authors?.length ?? 0) > 0 && paper && (
-              <div className="rd-doc-byline">
-                <ListRowAuthors paper={paper} />
-              </div>
-            )}
-            {(sections.length > 0 || paper?.year) && (
+            {(usesQuota || sections.length > 0 || paper?.year) && (
               <div className="rd-doc-tags">
+                {usesQuota && (
+                  <span className="rd-tag rd-tag--ai rd-uses">
+                    <Sparkle size={12} aria-hidden="true" />
+                    <span aria-hidden="true">{`${usesQuota.remainingUses}/${usesQuota.dailyLimit}`}</span>
+                    <span className="visually-hidden">{copy.usesLeftLine(usesQuota.remainingUses, usesQuota.dailyLimit)}</span>
+                  </span>
+                )}
                 {sections.length > 0 && (
                   <InfoTag className="rd-tag rd-tag--ai" info={[copy.adaptation, meta?.model].filter(Boolean).join(' · ')}>
                     <Sparkle size={12} aria-hidden="true" />
@@ -1068,6 +1073,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
               </div>
             )}
+            <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
+            {(paper?.authors?.length ?? 0) > 0 && paper && (
+              <div className="rd-doc-byline">
+                <ListRowAuthors paper={paper} />
+              </div>
+            )}
 
             {/* Pointed at by every paragraph's `aria-describedby` below,
                 never read on its own: the keyboard route's instructions, for
@@ -1076,31 +1087,30 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
 
             {shownStatus === 'error' ? (
-              /* A failure is a block on the page, not a note left in the middle of
-                 an empty one: a rule down the side in the colour of what went
-                 wrong, the code set in mono because that is machine data, then the
-                 same two-line hierarchy the rest of the document uses. */
-              <div className="rd-error" role="alert" data-tone={errorTone}>
-                <span className="rd-error-kicker">
-                  <WarningCircle size={12} />
-                  {copy.errorKicker}
-                  {shownError && <code>{shownError}</code>}
-                </span>
-                <h2 className="rd-error-title">{errorCopy.title}</h2>
-                <p className="rd-error-body">{errorCopy.body}</p>
-                <div className="rd-error-actions">
-                  {canRetry && (
-                    <button type="button" className="rd-retry" onClick={() => load(level, { force: true })}>
-                      {copy.retry}
-                    </button>
-                  )}
-                  {originalUrl && (
-                    <a className="rd-original" href={originalUrl} target="_blank" rel="noopener noreferrer">
-                      {copy.original} <ArrowSquareOut size={13} />
-                    </a>
-                  )}
-                </div>
-              </div>
+              <EmptyState
+                role="alert"
+                className="rd-error-state"
+                art={<Petri pose={ERROR_POSES[errorTone]} className="rd-error-petri" />}
+                title={errorCopy.title}
+                actions={(canRetry || originalUrl) && (
+                  <>
+                    {canRetry && (
+                      <Button onClick={() => load(level, { force: true })}>
+                        <ArrowClockwise size={16} aria-hidden="true" />
+                        {copy.retry}
+                      </Button>
+                    )}
+                    {originalUrl && (
+                      <Button variant="outline" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}>
+                        {copy.original}
+                        <ArrowSquareOut size={16} aria-hidden="true" />
+                      </Button>
+                    )}
+                  </>
+                )}
+              >
+                {errorCopy.body}
+              </EmptyState>
             ) : (
               <>
                 {sections.map((section, sectionIndex) => (
@@ -1157,6 +1167,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   {isStreaming && (
                   <motion.div
                     className="rd-ghost"
+                    data-start={sections.length === 0 ? '' : undefined}
                     /* The last ghost has no section to turn into: the stream
                        simply ends. Without an exit of its own it blinked out one
                        frame after growing a fresh skeleton nobody would fill. */
@@ -1164,6 +1175,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                       ? { opacity: 0, transition: { duration: 0.12 } }
                       : { opacity: 0, transform: 'translateY(-6px)', transition: { duration: 0.2, ease: EASE_OUT } }}
                   >
+                    {sections.length === 0 && <Petri pose="download" className="rd-ghost-petri" />}
                     <p className="rd-ghost-head" role="status" aria-live="polite">
                       <ThinkingDots />
                       {/* Keyed by stage so the label is remounted, and its own
@@ -1172,6 +1184,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                       <span key={stage} className="rd-ghost-stage">{copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing}</span>
                       <small>{sections.length > 0 ? `${sections.length} ${copy.sections}` : copy.writingHint}</small>
                     </p>
+                    {sections.length > 0 && (
                     <AnimatePresence mode="wait">
                       <motion.div
                         key={sections.length}
@@ -1192,6 +1205,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                         </div>
                       </motion.div>
                     </AnimatePresence>
+                    )}
                   </motion.div>
                   )}
                 </AnimatePresence>

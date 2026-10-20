@@ -36,12 +36,6 @@
   --rd-sheet-peek-total: calc(var(--rd-sheet-peek) + var(--inset-bottom));
 }
 
-.rd-doc-byline:has(+ .rd-doc-tags) {
-  padding-bottom: 0;
-  margin-bottom: var(--space-3);
-  border-bottom: 0;
-}
-
 .rd-doc-byline .list-row-authors-list {
   align-self: stretch;
 }
@@ -54,9 +48,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  padding-bottom: var(--space-5);
-  margin-bottom: var(--space-6);
-  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--space-4);
 }
 
 .rd-tag {
@@ -74,6 +66,11 @@
 
 button.rd-tag {
   cursor: pointer;
+}
+
+.rd-uses {
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 .rd-tag--ai {
@@ -473,6 +470,29 @@ button.rd-tag {
   margin-bottom: var(--space-8);
 }
 
+.rd-ghost[data-start] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+
+.rd-ghost[data-start] .rd-ghost-head {
+  justify-content: center;
+  margin-bottom: 0;
+}
+
+.rd-ghost[data-start] .rd-ghost-head small {
+  flex-basis: 100%;
+}
+
+.petri.rd-ghost-petri {
+  width: 6rem;
+  height: 6rem;
+  margin: 0 auto var(--space-3);
+}
+
 .rd-ghost-head {
   display: flex;
   align-items: center;
@@ -694,89 +714,13 @@ button.rd-tag {
   animation: rdErrorIn 320ms var(--ease-out-expo);
 }
 
-/* ── When it fails ──
-   A block on the page rather than a note dropped in the middle of an empty one:
-   a rule down the side in the colour of what went wrong, the code in mono
-   because it is machine data, then the same headline-over-body hierarchy the
-   rest of the document is set in. */
-.rd-error {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  /* Full measure, so its edges line up with the rule under the byline.
-     Stopping short of it read as a block that had failed to load rather than as
-     a deliberate callout. The prose inside keeps its own shorter measure. */
-  padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--rd-tone-line);
-  border-left: 3px solid var(--rd-tone-fg);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  background: var(--rd-tone-bg);
+.rd-error-state {
   animation: rdErrorIn 360ms var(--ease-out-expo);
 }
 
-/* Amber: come back and it will work. Red: this attempt broke. Neutral: nothing
-   here changes by trying, so the screen does not shout. */
-.rd-error[data-tone='wait'] {
-  --rd-tone-bg: var(--tint-amber-bg);
-  --rd-tone-fg: var(--tint-amber-fg);
-  --rd-tone-line: var(--tint-amber-line);
-}
-
-.rd-error[data-tone='broken'] {
-  --rd-tone-bg: var(--tint-red-bg);
-  --rd-tone-fg: var(--tint-red-fg);
-  --rd-tone-line: var(--tint-red-line);
-}
-
-.rd-error[data-tone='closed'] {
-  --rd-tone-bg: var(--tint-neutral-bg);
-  --rd-tone-fg: var(--tint-neutral-fg);
-  --rd-tone-line: var(--tint-neutral-line);
-}
-
-.rd-error-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--rd-tone-fg);
-}
-
-.rd-error-kicker code {
-  padding: 1px 5px;
-  border: 1px solid var(--rd-tone-line);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  font: 400 0.625rem/1.6 var(--font-mono);
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--text-tertiary);
-}
-
-.rd-error-title {
-  font-family: var(--font-serif);
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.rd-error-body {
-  font-size: var(--fs-sm);
-  line-height: var(--lh-relaxed);
-  color: var(--text-secondary);
-}
-
-.rd-error-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  margin-top: var(--space-2);
+.rd-error-petri {
+  width: 6rem;
+  height: 6rem;
 }
 
 @keyframes rdErrorIn {
@@ -798,15 +742,6 @@ button.rd-tag {
 
 @media (hover: hover) and (pointer: fine) {
   .rd-retry:hover { background: var(--accent-primary-hover); }
-}
-
-.rd-original {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--accent-secondary);
 }
 
 /* ── Responsive ── */
@@ -904,18 +839,6 @@ button.rd-tag {
     font-size: 1.2rem;
   }
 
-  .rd-error {
-    padding: var(--space-4) var(--space-4);
-  }
-
-  .rd-error-title {
-    font-size: 1.25rem;
-  }
-
-  .rd-error-actions {
-    gap: var(--space-3);
-  }
-
   /* The head wraps at this width and the hint is the first thing worth losing:
      the stage label already says what is happening. */
   .rd-ghost-head small {
@@ -966,7 +889,7 @@ button.rd-tag {
     background: var(--bg-secondary);
   }
 
-  .rd-error,
+  .rd-error-state,
   .rd-notice {
     animation: none;
   }

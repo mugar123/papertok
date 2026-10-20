@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import PetriBell from './PetriBell.tsx';
 import PetriBlankPage from './PetriBlankPage.tsx';
 import PetriCompass from './PetriCompass.tsx';
+import PetriDownload from './PetriDownload.tsx';
 import PetriFlask from './PetriFlask.tsx';
 import PetriKey from './PetriKey.tsx';
 import PetriLetGo from './PetriLetGo.tsx';
@@ -30,6 +31,7 @@ const POSES = {
   upset: PetriUpset,
   star: PetriStar,
   compass: PetriCompass,
+  download: PetriDownload,
   letGo: PetriLetGo,
   lost: PetriLost,
 };
