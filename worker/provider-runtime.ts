@@ -483,53 +483,36 @@ export function boundedText(value: unknown, maxLength: number) {
 // is global rather than per user, and it is reserved only after a cache miss so
 // repeated queries cost nothing.
 //
-// Minute first, day second, and the minute given back if the day says no. This
-// used to leave the minute unit to expire as the lesser of two leaks, chosen
-// before giving a unit back was a pattern here; now nothing is left spent for
-// a call that was never made. What was taken travels back to the caller, the
-// same shape as every other gate, so whoever owns the refund can name it.
+// Both ceilings travel in one ledger call. The day's object counts every call in
+// its global row and checks the current minute as the subject, in the same
+// transaction: one Durable Object request per miss instead of two, and no object
+// (with its own alarm and cleanup) created for every minute. What was taken
+// travels back to the caller, the same shape as every other gate, so whoever
+// owns the refund can name it.
 export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amount: number) {
   const now = new Date().toISOString();
-  const periods: Array<[string, number, string]> = [
-    [`openalex:${now.slice(0, 16)}`, boundedLimit(
-      env.OPENALEX_GLOBAL_MINUTE_LIMIT,
-      DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT,
-      100_000,
-    ), '60'],
-    // Not the true seconds until UTC midnight: a `retry-after` of several hours is
-    // a client that stops asking until someone reloads the tab, and the daily
-    // ceiling is an emergency brake, not a normal state.
-    [`openalex:day:${now.slice(0, 10)}`, boundedLimit(
-      env.OPENALEX_GLOBAL_DAILY_LIMIT,
-      DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT,
-      1_000_000,
-    ), '300'],
-  ];
-  const taken: QuotaRequest[] = [];
-  for (const [periodKey, limit, retryAfter] of periods) {
-    const ledgerRequest = {
-      periodKey,
-      subject: 'openalex:shared',
-      subjectLimit: limit,
-      globalLimit: limit,
-      amount,
-    };
-    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
-    if (!reservation.accepted) {
-      await releaseHeld(env, taken);
-      if (reservation.code) {
-        return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
-          ...corsHeaders(origin, env),
-          'cache-control': 'no-store',
-        }) };
-      }
-      return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
-        ...corsHeaders(origin, env),
-        'cache-control': 'no-store',
-        'retry-after': retryAfter,
-      }) };
-    }
-    taken.push(ledgerRequest);
+  const ledgerRequest = {
+    periodKey: `openalex:day:${now.slice(0, 10)}`,
+    subject: `openalex:minute:${now.slice(0, 16)}`,
+    subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+    globalLimit: boundedLimit(env.OPENALEX_GLOBAL_DAILY_LIMIT, DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT, 1_000_000),
+    amount,
+  };
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
+  if (reservation.accepted) return { reservations: [ledgerRequest] };
+  if (reservation.code) {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    }) };
   }
-  return { reservations: taken };
+  return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    // The day's refusal is not the true seconds until UTC midnight: a
+    // `retry-after` of several hours is a client that stops asking until someone
+    // reloads the tab, and the daily ceiling is an emergency brake, not a normal
+    // state.
+    'retry-after': reservation.scope === 'global' ? '300' : '60',
+  }) };
 }
