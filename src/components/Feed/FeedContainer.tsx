@@ -667,7 +667,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
         const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
         if (nextIndex >= 0 && nextIndex < itemCount) {
-          container.scrollTo({ top: nextIndex * cardHeight, behavior: 'auto' });
+          // Smooth, as the browser's own arrow scroll is when a focused
+          // control leaves the key to it: an instant jump here made the same
+          // key move the feed two different ways depending on focus.
+          container.scrollTo({ top: nextIndex * cardHeight, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
         }
       }
     };
@@ -684,7 +687,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, showEndCard, feedNode]);
+  }, [papers.length, loading, showEndCard, feedNode, prefersReducedMotion]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
@@ -806,46 +809,60 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     await latest.markSaved(paper);
   }, [interactionIdFor, language, user]);
 
-  const handleSaveToList = useCallback(async (paper: Paper) => {
+  // One save or unsave per paper at a time. Each step waits for Firestore to
+  // confirm, and a click landing meanwhile still saw the old saved state, so it
+  // repeated the same operation and queued its writes behind the first. A burst
+  // of clicks left the button unchanged for seconds, and whichever operation
+  // finished last decided the state.
+  const savesInFlight = useRef(new Set<string>());
+  const runSave = useCallback((id: string, run: () => Promise<void>) => {
+    if (savesInFlight.current.has(id)) return Promise.resolve();
+    savesInFlight.current.add(id);
+    return run().finally(() => { savesInFlight.current.delete(id); });
+  }, []);
+
+  const handleSaveToList = useCallback((paper: Paper) => {
     const id = interactionIdFor(paper)!;
-    const readLater = Boolean(personalLibrary[id]?.readLater);
-    if (savedPaperIds.has(id)) {
-      let lists: OwnList[] | null = null;
-      let removed = false;
-      try {
-        lists = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
-        if (!lists) {
-          onSaveToList!(paper);
-          return;
+    return runSave(id, async () => {
+      const readLater = Boolean(personalLibrary[id]?.readLater);
+      if (savedPaperIds.has(id)) {
+        let lists: OwnList[] | null = null;
+        let removed = false;
+        try {
+          lists = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
+          if (!lists) {
+            onSaveToList!(paper);
+            return;
+          }
+          const held = lists;
+          if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
+          removed = true;
+          if (readLater) await toggleReadLater(paper);
+          await unmarkSaved(paper);
+          toast('Removed from your saved papers', {
+            action: {
+              label: 'Undo',
+              onClick: () => { runSave(id, () => restoreSave(paper, held, readLater)).catch(() => toast.error('Could not save this paper')); },
+            },
+          });
+        } catch {
+          // Half an unsave is worse than none: put back what was already taken.
+          if (removed && lists) await restoreSave(paper, lists, readLater).catch(() => {});
+          toast.error('Could not remove this paper');
         }
-        const held = lists;
-        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
-        removed = true;
-        if (readLater) await toggleReadLater(paper);
-        await unmarkSaved(paper);
-        toast('Removed from your saved papers', {
-          action: {
-            label: 'Undo',
-            onClick: () => { restoreSave(paper, held, readLater).catch(() => toast.error('Could not save this paper')); },
-          },
+        return;
+      }
+      try {
+        await restoreSave(paper, [], true);
+        markActivation();
+        toast.success('Saved to Read later', {
+          action: { label: 'Add to list', onClick: () => onSaveToList!(paper) },
         });
       } catch {
-        // Half an unsave is worse than none: put back what was already taken.
-        if (removed && lists) await restoreSave(paper, lists, readLater).catch(() => {});
-        toast.error('Could not remove this paper');
+        toast.error('Could not save this paper');
       }
-      return;
-    }
-    try {
-      await restoreSave(paper, [], true);
-      markActivation();
-      toast.success('Saved to Read later', {
-        action: { label: 'Add to list', onClick: () => onSaveToList!(paper) },
-      });
-    } catch {
-      toast.error('Could not save this paper');
-    }
-  }, [interactionIdFor, language, markActivation, onSaveToList, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
+    });
+  }, [interactionIdFor, language, markActivation, onSaveToList, personalLibrary, restoreSave, runSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
 
   /**
    * El `setActiveIndex` de aquí va en transición, y conviene saber exactamente
