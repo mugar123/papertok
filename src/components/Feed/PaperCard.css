@@ -2839,11 +2839,16 @@ button.pc-topics-pop-item:focus-visible {
     padding: 6px;
     background: var(--bg-figure-plate);
     opacity: 0;
+    transform-origin: 50% 0;
   }
 
   .pc-lead-figure.is-loaded {
     opacity: 1;
     animation: pcLeadDevelop 360ms var(--ease-out-expo) both;
+  }
+
+  .pc-lead-figure.is-loaded.is-resumed {
+    animation: figureClipFade 200ms linear both;
   }
 
   .pc-watermark {
@@ -2960,13 +2965,11 @@ button.pc-topics-pop-item:focus-visible {
   from {
     opacity: 0;
     clip-path: inset(0 0 100% 0 round var(--radius-md));
-    filter: blur(6px);
     scale: 0.97;
   }
   to {
     opacity: 1;
     clip-path: inset(0 0 0 0 round var(--radius-md));
-    filter: blur(0);
     scale: 1;
   }
 }
