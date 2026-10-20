@@ -16,8 +16,6 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, ''
 
 const authJsx = readFile(new URL('./AuthPrompt.tsx', import.meta.url), 'utf8').then(stripComments);
 const authCss = readFile(new URL('./AuthPrompt.css', import.meta.url), 'utf8').then(stripComments);
-const gipJsx = readFile(new URL('./GuestInterestsPrompt.tsx', import.meta.url), 'utf8').then(stripComments);
-const gipCss = readFile(new URL('./GuestInterestsPrompt.css', import.meta.url), 'utf8').then(stripComments);
 
 test('the sign-in prompt is a modal Base UI Dialog that owns its own open flag', async () => {
   const jsx = await authJsx;
@@ -64,62 +62,4 @@ test('the sign-in sheet keeps its look and leaves the centring to the primitive'
   const scrim = css.match(/\.auth-modal-backdrop\s*\{[^}]*\}/);
   assert.ok(scrim, 'AuthPrompt.css lost .auth-modal-backdrop');
   assert.doesNotMatch(scrim[0], /backdrop-filter|position:|z-index/);
-});
-
-test('the interests prompt is a modal Dialog and settles into one parent callback', async () => {
-  const jsx = await gipJsx;
-  assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
-  // Edit-only now: the first answer is the welcome page's last step
-  // (GuestWelcome), so this sheet always has an answer to change and every
-  // way out stays open — the X, Escape, the scrim and Cancel.
-  assert.match(jsx, /<Dialog open=\{open\} onOpenChange=\{setOpen\} onOpenChangeComplete=\{settle\} modal>/);
-  assert.doesNotMatch(jsx, /firstAsk|requestOpenChange|showClose=/);
-  assert.match(jsx, /<Button variant="ghost" onClick=\{dismiss\}>/);
-  assert.doesNotMatch(jsx, /useDialogFocus|framer-motion|aria-modal=/);
-  // An answer and a dismissal both close the sheet first; the parent hears
-  // one of them once the leave has played.
-  const settle = jsx.match(/const settle = \(isOpen: boolean\) => \{[\s\S]*?\n {2}\};/);
-  assert.ok(settle, 'GuestInterestsPrompt lost settle()');
-  assert.match(settle[0], /if \(answer\) onSubmit\?\.\(answer\);\s*else onDismiss\?\.\(\);/);
-  assert.equal((jsx.match(/onDismiss\?\.\(\)/g) ?? []).length, 1);
-  assert.equal((jsx.match(/onSubmit\?\.\(/g) ?? []).length, 1);
-  // The close control has an accessible name. Initial focus lands on
-  // the title, not the first area — see the dedicated SOURCE test below.
-  assert.match(jsx, /closeLabel=\{copy\.close\}/);
-  // The chips are the shared Toggle: a native button on which Base UI
-  // writes `aria-pressed` and `data-pressed`; the CSS reads the attribute.
-  assert.match(jsx, /import \{ Toggle \} from '\.\.\/ui\/toggle\.tsx'/);
-  assert.match(jsx, /<Toggle\s[\s\S]*?className="gip-area"\s+pressed=\{pressed\}\s+onPressedChange=\{onPressedChange\}/);
-  assert.match(jsx, /<AreaTile\s+key=\{key\}\s+area=\{area\}\s+pressed=\{selected\.has\(key\)\}\s+onPressedChange=\{\(\) => toggle\(key\)\}/);
-  assert.match(jsx, /const \{ ref: nameRef, \.\.\.tooltip \} = useClipTooltip\(\);/);
-  assert.match(jsx, /<span className="gip-area-name" ref=\{nameRef\}>/, 'measured on the clamped name');
-  const hook = await readFile(new URL('../../hooks/useClipTooltip.ts', import.meta.url), 'utf8');
-  assert.match(hook, /node!\.scrollHeight > node!\.clientHeight/, 'a name held to two lines counts as cut');
-  assert.doesNotMatch(jsx, /aria-pressed=|is-selected/);
-  const css = await gipCss;
-  assert.match(css, /\.gip-area\[data-pressed\]\s*\{/);
-  assert.doesNotMatch(css, /\.gip-area\.is-selected|:not\(\.is-selected\)/);
-  assert.match(css, /\.gip-area \{[^}]*height: calc\(2 \* 1\.2em \+ 2 \* var\(--space-2\) \+ 2px\);/);
-  assert.match(css, /\.gip-area-name \{[^}]*-webkit-line-clamp: 2;[^}]*overflow: hidden;/);
-});
-
-test('SOURCE: el onboarding enfoca el título, no el primer chip', async () => {
-  const jsx = await gipJsx;
-  assert.match(jsx, /initialFocus=\{titleRef\}/);
-  assert.match(jsx, /<DialogTitle[^>]*ref=\{titleRef\}[^>]*tabIndex=\{-1\}/);
-  assert.doesNotMatch(jsx, /initialFocus=\{firstAreaRef\}/);
-});
-
-test('the interests sheet docks to the bottom on a phone and floats centred from 640px', async () => {
-  const css = await gipCss;
-  const phone = css.match(/\.gip\s*\{[^}]*\}/);
-  assert.ok(phone, 'GuestInterestsPrompt.css lost .gip');
-  assert.match(phone[0], /top:\s*auto/);
-  assert.match(phone[0], /bottom:\s*0/);
-  assert.match(phone[0], /translate:\s*-50% 0/);
-  const wide = css.match(/@media \(min-width: 640px\)\s*\{[\s\S]*?\.gip\s*\{[^}]*\}/);
-  assert.ok(wide, 'the wide breakpoint lost its .gip rule');
-  assert.match(wide[0], /top:\s*50%/);
-  assert.match(wide[0], /translate:\s*-50% -50%/);
-  assert.doesNotMatch(css, /\.gip-backdrop\s*\{[^}]*(?:position|z-index|place-items)/);
 });

@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.ts';
+import { routeForLog } from './router.ts';
+import type { WorkerEnv } from './env.ts';
+import type { TestGlobals, TestNamespace } from './test-types.ts';
 import type { runEmailNotificationSchedule } from './email-notifications.ts';
 type ScheduleSummary = Awaited<ReturnType<typeof runEmailNotificationSchedule>>;
 
@@ -44,6 +47,116 @@ test('the public configuration health route does not become origin-gated', async
   assert.equal(response.status, 200);
   assert.equal((await response.json<{ ok: boolean }>()).ok, true);
   assert.equal(response.headers.get('access-control-allow-origin'), null);
+});
+
+test('/health names the deployed version by id and tag only', async () => {
+  const versionOf = async (env: WorkerEnv) => (await (await worker.fetch(request('/health'), env)).json<{ version: { id: string; tag: string | null } | null }>()).version;
+  const metadata = { id: '0f6c2a51-6b0e-4f3d-9d6a-2c1e8f7b4a90', tag: 'd162b083', timestamp: '2026-10-16T09:00:00.000Z' };
+
+  assert.deepEqual(await versionOf({ CF_VERSION_METADATA: metadata }), { id: metadata.id, tag: 'd162b083' });
+  assert.deepEqual(await versionOf({ CF_VERSION_METADATA: { ...metadata, tag: '' } }), { id: metadata.id, tag: null });
+  assert.equal(await versionOf({}), null);
+});
+
+async function warningsDuring(callback: () => Promise<void>) {
+  const originalWarn = console.warn;
+  const warnings: unknown[][] = [];
+  console.warn = (...args: unknown[]) => warnings.push(args);
+  try {
+    await callback();
+  } finally {
+    console.warn = originalWarn;
+  }
+  return warnings;
+}
+
+const failureLines = (warnings: unknown[][]) => warnings.map(args => {
+  assert.equal(args.length, 1);
+  const [line] = args;
+  assert.ok(typeof line === 'string');
+  return JSON.parse(line);
+});
+
+test('a relayed refusal leaves one log line with the route and status, without the id or the query', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = async () => new Response('{"error":"Rate limit exceeded"}', { status: 429 });
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  let response: Response | undefined;
+  let warnings: unknown[][];
+  try {
+    warnings = await warningsDuring(async () => {
+      response = await worker.fetch(request('/openalex/works/W2741809807?search=my+private+question'), {
+        REQUEST_QUOTA_LEDGER: {
+          idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
+          get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) })) as TestNamespace['get'],
+        } as WorkerEnv['REQUEST_QUOTA_LEDGER'],
+      });
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
+  }
+
+  assert.equal(response?.status, 429);
+  assert.deepEqual(failureLines(warnings), [{ route: '/openalex/works', status: 429 }]);
+});
+
+test('an unsubscribe failure is logged without its token', async () => {
+  const path = '/notifications/unsubscribe?token=abcdefghijklmnop0123';
+  let response: Response | undefined;
+  const warnings = await warningsDuring(async () => {
+    response = await worker.fetch(request(path), {});
+  });
+
+  assert.equal(response?.status, 503);
+  assert.deepEqual(failureLines(warnings), [{ route: '/notifications/unsubscribe', status: 503 }]);
+});
+
+test('an uncaught throw is logged as the 500 the reader gets, and still thrown', async () => {
+  const path = '/notifications/unsubscribe?token=abcdefghijklmnop0123';
+  const warnings = await warningsDuring(async () => {
+    await assert.rejects(
+      worker.fetch(request(path), {
+        NOTIFICATION_STORE: { get: async () => { throw new Error('KV unavailable'); } } as KVNamespace & { get(): Promise<never> },
+      }),
+      /KV unavailable/,
+    );
+  });
+
+  assert.deepEqual(failureLines(warnings), [{ route: '/notifications/unsubscribe', status: 500 }]);
+});
+
+test('answers below 500 other than 429 leave no log line', async () => {
+  const statuses: number[] = [];
+  const warnings = await warningsDuring(async () => {
+    for (const path of ['/health', '/missing', '/openalex/secrets']) {
+      statuses.push((await worker.fetch(request(path), {})).status);
+    }
+  });
+
+  assert.deepEqual(statuses, [200, 404, 400]);
+  assert.deepEqual(warnings, []);
+});
+
+test('the logged route keeps only the fixed part of the path', () => {
+  const cases = {
+    '/openalex/works/W2741809807': '/openalex/works',
+    '/openalex/works/doi:10.1038/nature12373': '/openalex/works',
+    '/openalex/W2741809807': '/openalex',
+    '/share/paper/arxiv%3A2609.28470': '/share',
+    '/share/list/x7Kq2mPz': '/share',
+    '/notifications/unsubscribe': '/notifications/unsubscribe',
+    '/sources/s2': '/sources/s2',
+    '/citation-graph': '/citation-graph',
+    '/health': '/health',
+    '/10.1038/nature12373': '/',
+    '/203.0.113.7': '/',
+  };
+  for (const [pathname, route] of Object.entries(cases)) {
+    assert.equal(routeForLog(pathname), route, pathname);
+  }
 });
 
 for (const method of ['GET', 'POST']) {

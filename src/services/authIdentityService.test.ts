@@ -9,6 +9,7 @@ import {
   hasSignInProvider,
   linkSignInProvider,
   providerIdsOf,
+  reauthenticateCurrentUser,
   signInWithProvider,
 } from './authIdentityService.ts';
 
@@ -46,6 +47,14 @@ function fakeApi(overrides: IdentityApi = {}) {
           ? PROVIDER_IDS_BY_STUB[provider as string]
           : provider as string;
         return { user: { ...user, providerData: [...user.providerData, { providerId }] } };
+      },
+      popupReauthenticate: async (user, provider) => {
+        calls.push(['reauthenticate', user.uid, provider]);
+        return { user };
+      },
+      credentialReauthenticate: async (user, credential) => {
+        calls.push(['reauthenticateWithCredential', user.uid, JSON.parse(credential.idToken ?? '')]);
+        return { user };
       },
       additionalUserInfo: () => ({ isNewUser: false }),
       ...overrides,
@@ -245,6 +254,81 @@ test('F5: an explicit currentUser override wins over the auth singleton', async 
   await linkSignInProvider(GITHUB, api);
 
   assert.deepEqual(calls, [['link', 'right', 'github-provider']]);
+});
+
+// --- signing in again before account deletion ------------------------------
+
+test('signing in again uses a door the account already has', async () => {
+  const googleUser = { uid: 'user-1', providerData: [{ providerId: GOOGLE }, { providerId: GITHUB }] };
+  const githubUser = { uid: 'user-2', providerData: [{ providerId: GITHUB }] };
+  const { api, calls } = fakeApi({ authentication: { currentUser: googleUser } });
+
+  await reauthenticateCurrentUser(api);
+  await reauthenticateCurrentUser({ ...api, authentication: { currentUser: githubUser } });
+
+  assert.deepEqual(calls, [
+    ['reauthenticate', 'user-1', 'google-provider'],
+    ['reauthenticate', 'user-2', 'github-provider'],
+  ]);
+});
+
+test('choosing another account in the popup reaches the caller as user-mismatch', async () => {
+  const currentUser = { uid: 'user-1', providerData: [{ providerId: GOOGLE }] };
+  const { api } = fakeApi({
+    authentication: { currentUser },
+    popupReauthenticate: async () => { throw authError('auth/user-mismatch'); },
+  });
+
+  await assert.rejects(() => reauthenticateCurrentUser(api), error => (error as { code?: string }).code === 'auth/user-mismatch');
+});
+
+test('signing in again reports the account that confirmed, even if the session switched meanwhile', async () => {
+  const alice = { uid: 'alice', providerData: [{ providerId: GOOGLE }] };
+  const bob = { uid: 'bob', providerData: [{ providerId: GOOGLE }] };
+  const authentication = { currentUser: alice };
+  const { api } = fakeApi({
+    authentication,
+    popupReauthenticate: async (user) => {
+      authentication.currentUser = bob; // another tab signs this one in as Bob
+      return { user };
+    },
+  });
+
+  assert.equal(await reauthenticateCurrentUser(api), 'alice');
+});
+
+test('demo mode and a missing session open no popup', async () => {
+  const currentUser = { uid: 'user-1', providerData: [{ providerId: GOOGLE }] };
+  const { api, calls } = fakeApi({ authentication: { currentUser }, isDemo: true });
+  await assert.rejects(() => reauthenticateCurrentUser(api), AuthIdentityUnsupportedError);
+
+  await assert.rejects(
+    () => reauthenticateCurrentUser({ ...api, isDemo: false, authentication: { currentUser: null } }),
+    /Authentication is required/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test('the emulator signs in again with the credential it signs in with, without a popup', async () => {
+  const currentUser = {
+    uid: 'emulator-uid',
+    providerData: [{ providerId: GOOGLE, uid: 'alice', email: 'alice@example.com' }],
+  };
+  const { api, calls } = fakeApi({
+    authentication: {
+      currentUser,
+      emulatorConfig: { protocol: 'http', host: '127.0.0.1', port: 9099, options: { disableWarnings: true } },
+    },
+  });
+
+  await reauthenticateCurrentUser(api);
+
+  assert.equal(calls.length, 1);
+  const [operation, uid, claims] = calls[0] as [string, string, { sub?: string; email?: string }];
+  assert.equal(operation, 'reauthenticateWithCredential');
+  assert.equal(uid, 'emulator-uid');
+  assert.equal(claims.sub, 'alice', 'the Google identity the emulator account was created with');
+  assert.equal(claims.email, 'alice@example.com');
 });
 
 // --- reading the doors an account has --------------------------------------

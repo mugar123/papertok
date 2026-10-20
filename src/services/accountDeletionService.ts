@@ -80,13 +80,13 @@ async function postSlice(api: ReturnType<typeof operations>) {
  * once the walk has reached the user tree — which is what a lost response
  * after Auth deletion looks like from the tab.
  */
-export async function deleteAccount(overrides?: DeletionOperations) {
+export async function deleteAccount(confirmedUid: string, overrides?: DeletionOperations) {
   const api = operations(overrides);
   if (api.isDemo) throw new AccountDeletionError('ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO', 400);
-  // The account that confirmed is the only one this loop may act on. Each
-  // slice fetches a fresh token from whoever is signed in *now*, so a session
-  // switch mid-deletion would otherwise carry on against the new account.
-  const confirmedUid = api.currentUid();
+  // Only the account that confirmed may be deleted. The caller passes its uid
+  // because the session can switch while the sign-in window is open. Each
+  // slice sends a token for whoever is signed in at that moment, so the loop
+  // stops as soon as that is not the confirmed account.
   if (!confirmedUid) throw new AccountDeletionError('AUTH_REQUIRED', 401);
 
   let lastStage: string | null = null;

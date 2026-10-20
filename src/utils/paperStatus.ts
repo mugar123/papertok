@@ -116,7 +116,7 @@ const ACCESS_TAGS = {
   subscription: {
     key: 'subscription',
     tone: 'neutral',
-    label: { en: 'Subscription' },
+    label: { en: 'Closed access' },
     hint: {
       en: 'The full text may require a subscription or payment.',
     },

@@ -10,7 +10,7 @@ import { normalizeReadingPreferences } from './userSettings.ts';
  *
  * This is the one browser key on purpose NOT scoped to a user id: a guest has
  * no id to scope it to. It is a bridge, not a store — it lives from the
- * moment a guest answers the interests prompt until the answer has somewhere
+ * moment a guest answers the welcome until the answer has somewhere
  * better to go. Two things end it: the onboarding writes it into
  * `users/{uid}.preferences` (AuthContext's `completeOnboarding` clears it),
  * or a session that was already onboarded loads on this device (the profile
@@ -61,28 +61,6 @@ export function normalizeGuestTopics(topics: unknown, areas: unknown) {
   return normalizeGuestAreas(areas)
     .flatMap(key => Object.keys(INTEREST_AREAS[key].subcategories))
     .filter(id => wanted.has(id));
-}
-
-/**
- * The subcategory ids each chosen area stands for, area by area: its picked
- * topics if it has any, otherwise every one of its subcategories.
- */
-export function guestTopicListsForAreas(areas: unknown, topics: unknown = []) {
-  const chosenTopics = new Set(normalizeGuestTopics(topics, areas));
-  return normalizeGuestAreas(areas).map((key) => {
-    const all = Object.keys(INTEREST_AREAS[key].subcategories);
-    const refined = all.filter(id => chosenTopics.has(id));
-    return refined.length > 0 ? refined : all;
-  });
-}
-
-/**
- * Every subcategory id the answer stands for, in taxonomy order. This is what
- * `preferences` holds for a signed-in user, so it is what the onboarding
- * pre-selects and what the domain source plan is routed by.
- */
-export function guestCategoriesForAreas(areas: readonly string[], topics: readonly string[] = []) {
-  return guestTopicListsForAreas(areas, topics).flat();
 }
 
 /**
@@ -149,10 +127,9 @@ export function guestSeedCategoriesForAreas(areas: readonly string[], perArea = 
 }
 
 /**
- * `null` when the prompt has never been answered on this device. Otherwise
- * `{ areas, topics, dismissed, readingLevel?, emailDigest? }`: `dismissed` is a "not now" (or a pick emptied out),
- * which the prompt honours by not asking again — the header chip stays as
- * the way back in.
+ * `null` when the welcome has never been answered on this device. Otherwise
+ * `{ areas, topics, dismissed, readingLevel?, emailDigest? }`: `dismissed`
+ * marks an answer with no areas, which seeds nothing.
  */
 export function readGuestInterests(storage?: GuestStorage | null) {
   const target = getStorage(storage);
@@ -176,8 +153,7 @@ export function readGuestInterests(storage?: GuestStorage | null) {
 }
 
 /**
- * Takes the areas alone (the header chip's sheet) or `{ areas, topics }` (the
- * welcome). Returns the normalized list of areas that was actually stored;
+ * Takes the areas alone or `{ areas, topics }` (the welcome). Returns the normalized list of areas that was actually stored;
  * `readGuestInterests` has the topics and optional reading level. The level
  * travels with this guest bridge until account onboarding saves it to the UID,
  * and so does an explicit yes to the email digest (`emailDigest: true`).
@@ -191,8 +167,7 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
 
   try {
     if (normalized.length === 0) {
-      // An emptied pick is a "not now": the feed goes back to the default
-      // sample and the prompt does not come back on its own.
+      // An emptied pick is kept as dismissed: it seeds nothing.
       target.setItem(GUEST_INTERESTS_STORAGE_KEY, JSON.stringify({ areas: [], dismissedAt: Date.now() }));
     } else {
       target.setItem(GUEST_INTERESTS_STORAGE_KEY, JSON.stringify({
@@ -209,10 +184,6 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
     // for this visit; it is only asked again next time.
   }
   return normalized;
-}
-
-export function dismissGuestInterests(storage?: GuestStorage | null) {
-  saveGuestInterests([], storage);
 }
 
 export function clearGuestInterests(storage?: GuestStorage | null) {

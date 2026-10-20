@@ -306,24 +306,214 @@ const ROR_UAM = {
   }],
 };
 
-test('a student subdomain links through the university\'s own domain, and keeps its own', async () => {
+/** The ROR questions among the fetches: a domain query, or the id of a record asked for by id. */
+function rorQuestions(calls: string[]) {
+  return calls.filter(url => url.startsWith('https://api.ror.org/'))
+    .map(url => new URL(url).searchParams.get('query.advanced') ?? new URL(url).pathname.split('/').pop());
+}
+
+// ROR's record for UC3M, shaped like the live answer to
+// GET /v2/organizations/03ths8210 (2026-10-19): it lists uc3m.es, while
+// students write from alumnos.uc3m.es.
+const ROR_UC3M = {
+  id: 'https://ror.org/03ths8210',
+  domains: ['uc3m.es'],
+  names: [
+    { value: 'Carlos III University of Madrid', types: ['label'] },
+    { value: 'UC3M', types: ['acronym'] },
+    { value: 'Universidad Carlos III de Madrid', types: ['ror_display', 'label'] },
+  ],
+};
+
+test('a hand-checked student domain links to its university with ROR\'s name and acronym, and selects its library', async () => {
   const upstream = stubUpstreams({
-    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Auam.es') ? ROR_UAM : { items: [] }), { status: 200 }),
-    mdq: (url) => new Response(JSON.stringify(url.includes('q=uam.es') ? [{ entityID: 'https://idp.uam.es/entity', scope: 'uam.es' }] : []), { status: 200 }),
+    users: { [SESSION_TOKEN]: { localId: UID, email: '100123456@alumnos.uc3m.es', emailVerified: true } },
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/03ths8210' ? ROR_UC3M
+      : new URL(url).searchParams.get('query.advanced') === 'domains:uc3m.es' ? { items: [ROR_UC3M] } : { items: [] }),
+    mdq: (url) => Response.json(new URL(url).searchParams.get('q') === 'uc3m.es' ? [{ entityID: 'https://idp.uc3m.es/entity', scope: 'uc3m.es' }] : []),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.domain, 'alumnos.uc3m.es');
+    assert.equal(institution!.rorId, 'https://ror.org/03ths8210');
+    assert.equal(institution!.name, 'Universidad Carlos III de Madrid');
+    assert.equal(institution!.acronym, 'UC3M');
+    assert.equal(institution!.entityId, 'https://idp.uc3m.es/entity');
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(findResolver(institution!), { host: 'eu02.alma.exlibrisgroup.com', institution: '34UC3M_INST' });
+    // A record stored under a UC3M sub-unit is not answered with UC3M's
+    // library, although its domain is a UC3M mail domain.
+    assert.equal(findResolver({ domain: 'alumnos.uc3m.es', rorId: 'https://ror.org/004aqbt71' }), null);
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR's live records list the primary domains, not these official student
+// mail domains (2026-10-20). Linking must preserve the verified mail domain
+// while selecting the existing library by the university's ROR id.
+for (const entry of [
+  {
+    domain: 'mail.utoronto.ca',
+    primary: 'utoronto.ca',
+    rorId: 'https://ror.org/03dbr7087',
+    name: 'University of Toronto',
+    resolver: { host: 'ca01.alma.exlibrisgroup.com', institution: '01UTORONTO_INST' },
+  },
+  {
+    domain: 'student.unimelb.edu.au',
+    primary: 'unimelb.edu.au',
+    rorId: 'https://ror.org/01ej9dk98',
+    name: 'The University of Melbourne',
+    resolver: { host: 'ap02.alma.exlibrisgroup.com', institution: '61UMB_INST' },
+  },
+]) {
+  test(`${entry.domain} links a verified student to the university and its library`, async () => {
+    const record = {
+      id: entry.rorId,
+      domains: [entry.primary],
+      names: [{ value: entry.name, types: ['ror_display'] }],
+    };
+    const id = entry.rorId.split('/').pop()!;
+    const upstream = stubUpstreams({
+      users: { [SESSION_TOKEN]: { localId: UID, email: `alice@${entry.domain}`, emailVerified: true } },
+      ror: url => Response.json(url === `https://api.ror.org/v2/organizations/${id}` ? record : { items: [] }),
+      mdq: () => Response.json([]),
+    });
+    const admin = memoryAdmin();
+    try {
+      const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+      assert.equal(institution!.domain, entry.domain);
+      assert.equal(institution!.rorId, entry.rorId);
+      assert.equal(institution!.name, entry.name);
+      assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+      assert.deepEqual(findResolver(institution!), entry.resolver);
+      assert.deepEqual(rorQuestions(upstream.calls), [id]);
+
+      // The explicit mapping must not authorize arbitrary descendants or
+      // a domain that merely contains the student's domain.
+      for (const unverified of [`other.${entry.domain}`, `${entry.domain}.example`]) {
+        await rejectsWith(resolveInstitution(unverified, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+      }
+    } finally {
+      upstream.restore();
+    }
+  });
+}
+
+// ROR lists purdue.edu only under the Clifford B. Kinley Trust, and Purdue's
+// own record lists no domain (live answers to domains:purdue.edu and
+// GET /v2/organizations/02dqehb95, 2026-10-19).
+const ROR_KINLEY_TRUST = {
+  items: [{
+    id: 'https://ror.org/049s7vz13',
+    domains: ['purdue.edu'],
+    names: [{ value: 'Clifford B. Kinley Trust', types: ['label', 'ror_display'] }],
+  }],
+};
+const ROR_PURDUE = {
+  id: 'https://ror.org/02dqehb95',
+  domains: [],
+  names: [
+    { value: 'Purdue University West Lafayette', types: ['ror_display', 'label'] },
+    { value: 'Université de Purdue', types: ['label'] },
+  ],
+};
+
+test('a university domain ROR lists only under another record links to the university and selects its library', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@purdue.edu', emailVerified: true } },
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/02dqehb95' ? ROR_PURDUE
+      : new URL(url).searchParams.get('query.advanced') === 'domains:purdue.edu' ? ROR_KINLEY_TRUST : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.domain, 'purdue.edu');
+    assert.equal(institution!.rorId, 'https://ror.org/02dqehb95');
+    assert.equal(institution!.name, 'Purdue University West Lafayette');
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(findResolver(institution!), { host: 'na03.alma.exlibrisgroup.com', institution: '01PURDUE_PUWL' });
+    // A reader stored under the trust before this list is still not answered
+    // with Purdue's library.
+    assert.equal(findResolver({ domain: 'purdue.edu', rorId: 'https://ror.org/049s7vz13' }), null);
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR's record for the Universidad de La Laguna lists ull.es, while its
+// students write from ull.edu.es (live answer to
+// GET /v2/organizations/01r9z8p25, 2026-10-19).
+const ROR_ULL = {
+  id: 'https://ror.org/01r9z8p25',
+  domains: ['ull.es'],
+  names: [
+    { value: 'ULL', types: ['acronym'] },
+    { value: 'Universidad de La Laguna', types: ['ror_display', 'label'] },
+    { value: 'University of La Laguna', types: ['label'] },
+  ],
+};
+
+test('a student domain ROR does not list links to its university once it is hand-checked', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/01r9z8p25' ? ROR_ULL : { items: [] }),
+    mdq: () => Response.json([]),
   });
   try {
-    const institution = await resolveInstitution('estudiante.uam.es', { cache: undefined });
-    assert.deepEqual(institution, {
-      domain: 'estudiante.uam.es',
-      rorId: 'https://ror.org/01cby8j38',
-      name: 'Universidad Autónoma de Madrid',
-      acronym: 'UAM',
-      entityId: 'https://idp.uam.es/entity',
-    });
-    assert.deepEqual(
-      upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).map(url => decodeURIComponent(url.split('query.advanced=')[1])),
-      ['domains:estudiante.uam.es', 'domains:uam.es'],
-    );
+    const institution = await resolveInstitution('ull.edu.es', { cache: null });
+    assert.equal(institution.domain, 'ull.edu.es');
+    assert.equal(institution.rorId, 'https://ror.org/01r9z8p25');
+    assert.equal(institution.name, 'Universidad de La Laguna');
+    assert.equal(institution.acronym, 'ULL');
+    assert.deepEqual(findResolver(institution), { host: 'eu06.alma.exlibrisgroup.com', institution: '34ULL_INST' });
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR's record for Carnegie Mellon lists cmu.edu only; alumni.cmu.edu is
+// CMU's mail for alumni (checked 2026-10-19).
+const ROR_CMU = {
+  items: [{
+    id: 'https://ror.org/05x2bcf33',
+    domains: ['cmu.edu'],
+    names: [{ value: 'Carnegie Mellon University', types: ['ror_display', 'label'] }],
+  }],
+};
+
+test('an address on a subdomain ROR does not list is not linked to the parent\'s institution', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@alumni.cmu.edu', emailVerified: true } },
+    ror: (url) => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:cmu.edu' ? ROR_CMU : { items: [] }),
+  });
+  const admin = memoryAdmin();
+  try {
+    await rejectsWith(handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+    assert.equal(admin.commits.length, 0);
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR lists nhs.uk, a public suffix, under two organisations (live answer to
+// domains:nhs.uk, 2026-10-19).
+const ROR_NHS = {
+  items: [
+    { id: 'https://ror.org/01jgmvf05', domains: ['nhs.uk'], names: [{ value: 'North London NHS Foundation Trust', types: ['label', 'ror_display'] }] },
+    { id: 'https://ror.org/02wnqcb97', domains: ['nhs.uk'], names: [{ value: 'National Health Service', types: ['ror_display', 'label'] }] },
+  ],
+};
+
+test('a domain ROR does not list is not found after one question, even when its parent is listed', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:nhs.uk' ? ROR_NHS : { items: [] }),
+  });
+  try {
+    await rejectsWith(resolveInstitution('somerset.nhs.uk', { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+    assert.deepEqual(rorQuestions(upstream.calls), ['domains:somerset.nhs.uk']);
   } finally {
     upstream.restore();
   }
@@ -366,13 +556,16 @@ test('a verified Northeastern legacy address links to Boston and selects its lib
     const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
     assert.equal(institution!.domain, 'husky.neu.edu');
     assert.equal(institution!.rorId, 'https://ror.org/04t5xt781');
-    assert.equal(institution!.entityId, 'https://neuidmsso.neu.edu/idp/shibboleth');
+    // The federation lists Boston's provider under neu.edu only (checked
+    // 2026-10-19), and it is asked about the address's domain and the
+    // domain ROR lists, never about a parent.
+    assert.equal(institution!.entityId, null);
     assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
     assert.deepEqual(findResolver(institution!), { host: 'na03.alma.exlibrisgroup.com', institution: '01NEU_INST' });
-    assert.deepEqual(upstream.calls.filter(url => url.startsWith('https://api.ror.org/'))
-      .map(url => new URL(url).searchParams.get('query.advanced')),
-    ['domains:husky.neu.edu', 'domains:northeastern.edu']);
-    assert.equal((await resolveInstitution('neu.edu', { cache: null })).rorId, institution!.rorId);
+    assert.deepEqual(rorQuestions(upstream.calls), ['domains:northeastern.edu']);
+    const neu = await resolveInstitution('neu.edu', { cache: null });
+    assert.equal(neu.rorId, institution!.rorId);
+    assert.equal(neu.entityId, 'https://neuidmsso.neu.edu/idp/shibboleth');
     assert.equal((await resolveInstitution('northeastern.edu', { cache: null })).rorId, institution!.rorId);
   } finally {
     upstream.restore();
@@ -436,7 +629,6 @@ test('a university whose website lives on another domain still links by its mail
   });
   try {
     assert.equal((await resolveInstitution('bham.ac.uk', { cache: undefined })).rorId, 'https://ror.org/03angcq70');
-    assert.equal((await resolveInstitution('student.bham.ac.uk', { cache: undefined })).rorId, 'https://ror.org/03angcq70');
     assert.equal((await resolveInstitution('syr.edu', { cache: undefined })).rorId, 'https://ror.org/025r5qe02');
   } finally {
     upstream.restore();
@@ -490,11 +682,18 @@ function stalledFetch(onCall: (url: string) => void = () => {}) {
   return { fetchImpl, started };
 }
 
-test('a lookup whose budget runs out is unavailable, not a missing institution, and starts nothing more', async () => {
-  const controller = new AbortController();
-  const { fetchImpl, started } = stalledFetch(() => controller.abort());
-  await rejectsWith(resolveInstitution('mail.students.uam.es', { fetchImpl, cache: undefined, signal: controller.signal }), 'INSTITUTION_LOOKUP_UNAVAILABLE', 502);
-  assert.equal(started.length, 1, 'the second ROR question is never asked after the budget is gone');
+test('a link asks ROR one question, and a budget that runs out during it is unavailable with nothing started after it', async () => {
+  for (const [domain, question] of [
+    ['usal.es', 'domains:usal.es'],
+    ['alumnos.uc3m.es', '03ths8210'],
+    ['husky.neu.edu', 'domains:northeastern.edu'],
+  ]) {
+    const controller = new AbortController();
+    const { fetchImpl, started } = stalledFetch(() => controller.abort());
+    await rejectsWith(resolveInstitution(domain, { fetchImpl, cache: null, signal: controller.signal }), 'INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+    assert.equal(started.length, 1, `${domain}: nothing is started once the budget is gone`);
+    assert.deepEqual(rorQuestions(started), [question], domain);
+  }
 });
 
 test('the identity provider lookup is skipped when the budget is gone, and the confirmed institution still links', async () => {
@@ -514,16 +713,6 @@ test('the identity provider lookup is skipped when the budget is gone, and the c
 
 test('the lookup budget leaves the browser\'s wait room for the identity checks and the write', () => {
   assert.ok(LINK_LOOKUP_BUDGET_MS <= DEFAULT_REQUEST_TIMEOUT_MS - 4000, `${LINK_LOOKUP_BUDGET_MS} against a ${DEFAULT_REQUEST_TIMEOUT_MS} ms wait`);
-});
-
-test('a domain with no record up its parents is not found, after a bounded number of questions', async () => {
-  const upstream = stubUpstreams({ ror: () => new Response(JSON.stringify({ items: [] }), { status: 200 }) });
-  try {
-    await rejectsWith(resolveInstitution('mail.students.nowhere.example', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
-    assert.equal(upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).length, 3);
-  } finally {
-    upstream.restore();
-  }
 });
 
 test('a resolved institution is served from the cache; a miss is not remembered', async () => {
@@ -550,3 +739,135 @@ test('a resolved institution is served from the cache; a miss is not remembered'
     upstream.restore();
   }
 });
+
+test('an answer cached before a domain was hand-checked is not served once it is', async () => {
+  const store = new Map<string, Response>();
+  const cache = {
+    async match(request: RequestInfo | URL) { return store.get((request as Request).url)?.clone() || null; },
+    async put(request: RequestInfo | URL, response: Response) { store.set((request as Request).url, response); },
+  };
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/03ths8210' ? ROR_UC3M : ROR_USAL),
+    mdq: () => Response.json([]),
+  });
+  try {
+    await resolveInstitution('usal.es', { cache });
+    const [outsideKey] = store.keys();
+    // What ROR's exact domain search gave for alumnos.uc3m.es before it had
+    // an entry, stored the way any domain outside the list is.
+    const stale = { domain: 'alumnos.uc3m.es', rorId: 'https://ror.org/004aqbt71', name: 'A UC3M institute', acronym: null, entityId: null };
+    store.set(outsideKey.replace('usal.es', 'alumnos.uc3m.es'), Response.json(stale));
+
+    const institution = await resolveInstitution('alumnos.uc3m.es', { cache });
+    assert.equal(institution.rorId, 'https://ror.org/03ths8210');
+    // A domain outside the list is still answered from the cache.
+    await resolveInstitution('usal.es', { cache });
+    assert.deepEqual(rorQuestions(upstream.calls), ['domains:usal.es', '03ths8210']);
+  } finally {
+    upstream.restore();
+  }
+});
+
+// Live ROR searches on 2026-10-20 either omitted these student domains or
+// returned a research unit before its university for a shared primary domain.
+for (const entry of [
+  {
+    domain: 'student.ethz.ch', primary: 'ethz.ch', rorId: 'https://ror.org/05a28rw58',
+    name: 'ETH Zurich', wrongId: null,
+    resolver: { host: 'eu03.alma.exlibrisgroup.com', institution: '41SLSP_ETH' },
+  },
+  {
+    domain: 'sms.ed.ac.uk', primary: 'ed.ac.uk', rorId: 'https://ror.org/01nrxwf90',
+    name: 'University of Edinburgh', wrongId: null,
+    resolver: { host: 'eu01.alma.exlibrisgroup.com', institution: '44UOE_INST' },
+  },
+  {
+    domain: 'umail.leidenuniv.nl', primary: 'leidenuniv.nl', rorId: 'https://ror.org/027bh9e22',
+    name: 'Leiden University', wrongId: null,
+    resolver: { host: 'eu00.alma.exlibrisgroup.com', institution: '31UKB_LEU' },
+  },
+  {
+    domain: 'ugent.be', primary: 'ugent.be', rorId: 'https://ror.org/00cv9y106',
+    name: 'Ghent University', wrongId: 'https://ror.org/0027txx50',
+    resolver: { host: 'eu06.alma.exlibrisgroup.com', institution: '32RUG_INST' },
+  },
+  {
+    domain: 'sydney.edu.au', primary: 'sydney.edu.au', rorId: 'https://ror.org/0384j8v12',
+    name: 'University of Sydney', wrongId: 'https://ror.org/00zqx9e28',
+    resolver: { host: 'ap02.alma.exlibrisgroup.com', institution: '61USYD_INST' },
+  },
+  {
+    domain: 'uni.sydney.edu.au', primary: 'sydney.edu.au', rorId: 'https://ror.org/0384j8v12',
+    name: 'University of Sydney', wrongId: null,
+    resolver: { host: 'ap02.alma.exlibrisgroup.com', institution: '61USYD_INST' },
+  },
+  {
+    domain: 'umanitoba.ca', primary: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938',
+    name: 'University of Manitoba', wrongId: 'https://ror.org/05pcf2t08',
+    resolver: { host: 'ca01.alma.exlibrisgroup.com', institution: '01UMB_INST' },
+  },
+  {
+    domain: 'myumanitoba.ca', primary: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938',
+    name: 'University of Manitoba', wrongId: null,
+    resolver: { host: 'ca01.alma.exlibrisgroup.com', institution: '01UMB_INST' },
+  },
+  {
+    domain: 'unr.edu', primary: 'unr.edu', rorId: 'https://ror.org/01keh0577',
+    name: 'University of Nevada, Reno', wrongId: 'https://ror.org/048c68826',
+    resolver: { host: 'na07.alma.exlibrisgroup.com', institution: '01UNR_INST' },
+  },
+  {
+    domain: 'rochester.edu', primary: 'rochester.edu', rorId: 'https://ror.org/022kthw22',
+    name: 'University of Rochester', wrongId: 'https://ror.org/006rjbv46',
+    resolver: { host: 'na04.alma.exlibrisgroup.com', institution: '01ROCH_INST' },
+  },
+  {
+    domain: 'u.rochester.edu', primary: 'rochester.edu', rorId: 'https://ror.org/022kthw22',
+    name: 'University of Rochester', wrongId: null,
+    resolver: { host: 'na04.alma.exlibrisgroup.com', institution: '01ROCH_INST' },
+  },
+]) {
+  test(`${entry.domain} links to the verified university despite missing or ambiguous ROR search results`, async () => {
+    const record = { id: entry.rorId, domains: [entry.primary], names: [{ value: entry.name, types: ['ror_display'] }] };
+    const wrong = { id: entry.wrongId, domains: [entry.domain], names: [{ value: 'Research unit', types: ['ror_display'] }] };
+    const id = entry.rorId.split('/').pop()!;
+    const store = new Map<string, Response>();
+    if (entry.wrongId) {
+      store.set(`https://papertok.internal/institution/v3/${entry.domain}`, Response.json({
+        domain: entry.domain, rorId: entry.wrongId, name: 'Research unit', acronym: null, entityId: null,
+      }));
+    }
+    const cache = {
+      async match(request: RequestInfo | URL) { return store.get((request as Request).url)?.clone(); },
+      async put(request: RequestInfo | URL, response: Response) { store.set((request as Request).url, response); },
+    };
+    const upstream = stubUpstreams({
+      users: { [SESSION_TOKEN]: { localId: UID, email: `alice@${entry.domain}`, emailVerified: true } },
+      ror: url => {
+        if (url === `https://api.ror.org/v2/organizations/${id}`) return Response.json(record);
+        const domain = new URL(url).searchParams.get('query.advanced');
+        return Response.json({ items: domain === `domains:${entry.domain}` && entry.wrongId ? [wrong, record] : [] });
+      },
+      mdq: () => Response.json([]),
+    });
+    const admin = memoryAdmin();
+    try {
+      const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache });
+      assert.equal(institution!.rorId, entry.rorId);
+      assert.equal(institution!.domain, entry.domain);
+      assert.equal(institution!.name, entry.name);
+      assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+      assert.deepEqual(findResolver(institution!), entry.resolver);
+      assert.deepEqual(rorQuestions(upstream.calls), [id]);
+      const { verifiedAt, ...resolved } = institution!;
+      assert.ok(verifiedAt);
+      assert.deepEqual(await resolveInstitution(entry.domain, { cache }), resolved);
+      assert.deepEqual(rorQuestions(upstream.calls), [id], 'the corrected identity is cached');
+      for (const other of [`alumni.${entry.domain}`, `${entry.domain}.example`]) {
+        await rejectsWith(resolveInstitution(other, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+      }
+    } finally {
+      upstream.restore();
+    }
+  });
+}

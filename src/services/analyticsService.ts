@@ -1,4 +1,5 @@
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
+import { PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/appReload.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
@@ -20,7 +21,6 @@ export const ANALYTICS_CONSENT = Object.freeze({
 
 export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   'acquisition_view',
-  'guest_demo_start',
   'paper_view',
   'paper_open',
   'search_performed',
@@ -46,20 +46,13 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // that it was worth keeping. Neither is measurable from `paper_rewrite`.
   'paper_annotation',
   'paper_export',
-  // The far end of the guest run. `guest_demo_start` already marks where a
-  // visitor begins; without its pair, the only thing measurable was how many
-  // people started, never how many reached the wall. It was being sent as
-  // `select_content`, which is GA4's name for a *click*, so an impression
-  // arrived counted as one and the card looked like it converted every viewer.
-  'guest_demo_end',
-  // The interests prompt a guest meets once the sample feed is on screen.
-  // `set` is an answer, `skip` a "not now", `clear` a pick emptied out from
-  // the header chip; `areas` is how many areas the answer holds.
-  'guest_interests',
   // How the For You feed is landing, one event per twenty cards: of those
   // cards, how many were skipped, read past the reader's own median dwell,
   // liked and saved. Counts only; no paper, topic or account travels with it.
   'feed_engagement',
+  // A failure the reader is left looking at: the error boundary's screen or the
+  // feed's "Error loading papers". Only the kind travels, never the error.
+  'app_error',
 ]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -133,14 +126,13 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   content_type: new Set(['paper', 'author', 'institution', 'project', 'topic', 'list', 'signup_cta', 'other']),
   destination: new Set(['publisher', 'pdf', 'doi', 'arxiv', 'other']),
   entity_type: new Set(['author', 'institution', 'project', 'topic']),
-  entry_point: new Set(['home', 'login', 'onboarding', 'shared_link', 'other']),
-  guest_interests_action: new Set(['set', 'skip', 'clear']),
   language: new Set(['en', 'es']),
   method: new Set(['google', 'email', 'link', 'native', 'clipboard', 'other']),
   newsletter_action: new Set(['subscribe', 'unsubscribe']),
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
   annotation_origin: new Set(['user', 'ai']),
   export_format: new Set(['tex']),
+  app_error_kind: new Set(['render_crash', 'chunk_load_failed', 'feed_load_failed']),
   search_type: new Set(['all', 'papers', 'authors', 'institutions', 'projects', 'topics']),
   // `reader` and `auth_prompt` are the two surfaces the light redesign added.
   // A surface that is emitted but not listed here is not an error anywhere: the
@@ -152,7 +144,6 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
 
 const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> = Object.freeze({
   acquisition_view: { acquisition_channel: 'acquisition_channel', language: 'language' },
-  guest_demo_start: { entry_point: 'entry_point', language: 'language' },
   paper_view: { surface: 'surface', position: 'boundedNumber' },
   paper_open: { surface: 'surface', destination: 'destination', position: 'boundedNumber' },
   search_performed: { search_type: 'search_type', result_count: 'boundedNumber', has_results: 'boolean' },
@@ -174,13 +165,10 @@ const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> 
   // so counting them together would hide which one people actually want.
   paper_annotation: { level: 'rewrite_level', surface: 'surface', origin: 'annotation_origin' },
   paper_export: { level: 'rewrite_level', surface: 'surface', format: 'export_format', notes: 'boundedNumber' },
-  // Mirrors `guest_demo_start`'s shape so the two ends of the run can be read
-  // as one funnel; `position` is how many papers were behind the reader.
-  guest_demo_end: { position: 'boundedNumber', language: 'language' },
-  guest_interests: { action: 'guest_interests_action', areas: 'boundedNumber', language: 'language' },
   feed_engagement: {
     cards: 'boundedNumber', skips: 'boundedNumber', deep_reads: 'boundedNumber', likes: 'boundedNumber', saves: 'boundedNumber',
   },
+  app_error: { kind: 'app_error_kind' },
 });
 
 let acquisitionTrackedInMemory = false;
@@ -655,4 +643,37 @@ export async function trackDay7Return({ storage = getBrowserStorage(), now = Dat
   } catch {
     return false;
   }
+}
+
+// main.tsx imports this module through the boundary, so it is evaluated before
+// main.tsx can write a mark. Date.now() is the clock main.tsx writes with.
+const PAGE_LOADED_AT = Date.now();
+// The error boundary's fallback stays up until the reader reloads, so one
+// report per page load covers it.
+let appCrashReported = false;
+
+/**
+ * The report for GlobalErrorBoundary, which sits outside AnalyticsProvider.
+ * A crash inside main.tsx's window after an earlier page's reload counts as
+ * the chunk failing again. A mark written by this page means that reload is
+ * already under way: the crash is its side effect, and the next page reports
+ * if the chunk still fails.
+ */
+export async function trackAppCrash({
+  storage = getSessionStorage(),
+  now = Date.now(),
+  pageLoadedAt = PAGE_LOADED_AT,
+  track = trackProductEvent,
+}: Omit<TrackingOptions, 'now'> & { now?: number; pageLoadedAt?: number } = {}) {
+  if (appCrashReported) return false;
+  let reloadedAt = 0;
+  try {
+    reloadedAt = Number(storage?.getItem(PRELOAD_RELOAD_KEY)) || 0;
+  } catch {
+    // Without session storage main.tsx does not reload either.
+  }
+  if (reloadedAt >= pageLoadedAt) return false;
+  appCrashReported = true;
+  const kind = now - reloadedAt < PRELOAD_RELOAD_WINDOW_MS ? 'chunk_load_failed' : 'render_crash';
+  return track('app_error', { kind });
 }

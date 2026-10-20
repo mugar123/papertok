@@ -92,6 +92,9 @@ const MAX_ISSNS = 2;
 const GETFTR_API = 'https://entitlements.prod.getft.io';
 const DOI_PATTERN = /^10\.\d{4,9}\/.+/;
 const ROR_ID_PATTERN = /^https:\/\/ror\.org\/0[a-z0-9]{6}\d{2}$/;
+// SAML entity IDs include URN assigned names (USC) and HTTP URIs (Manitoba).
+// These are opaque identifiers, never URLs to fetch or reading links.
+const ENTITY_URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,30}[a-z0-9]:(?!\/)(?:[a-z0-9._~!$&'()*+,;=:@/-]|%[0-9a-f]{2})+$/i;
 const ISSN_PATTERN = /^\d{4}-\d{3}[\dX]$/;
 
 export class InstitutionAccessError extends Error {
@@ -114,6 +117,17 @@ function httpsUrl(value: string | null | undefined) {
   }
 }
 
+function isEntityId(value: string) {
+  if (ENTITY_URN_PATTERN.test(value)) return true;
+  if (!/^https?:\/\//i.test(value) || /\s/.test(value)) return false;
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /** The normalized query, or a 400 naming the first malformed parameter. */
 export function readAccessQuery(searchParams: URLSearchParams) {
   const doi = (searchParams.get('doi') || '').trim().toLowerCase();
@@ -127,7 +141,7 @@ export function readInstitutionQuery(searchParams: URLSearchParams) {
   if (!domain) throw new InstitutionAccessError('INVALID_DOMAIN', 400);
   const entityId = (searchParams.get('entityId') || '').trim();
   const rorId = (searchParams.get('rorId') || '').trim().toLowerCase();
-  if ((entityId && (entityId.length > 300 || !httpsUrl(entityId)))
+  if ((entityId && (entityId.length > 300 || !isEntityId(entityId)))
     || (rorId && !ROR_ID_PATTERN.test(rorId))) {
     throw new InstitutionAccessError('INVALID_INSTITUTION_ID', 400);
   }

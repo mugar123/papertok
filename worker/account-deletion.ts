@@ -47,6 +47,17 @@ const PAGE_SIZE = 80;
 const MAX_WRITES = 240;
 const IDENTITY_TOOLKIT_TIMEOUT_MS = 8000;
 
+/**
+ * Identity Toolkit refuses `accounts:delete` with CREDENTIAL_TOO_OLD_LOGIN_AGAIN
+ * when the session's sign-in is not recent, and Auth is the last stage, so that
+ * refusal would only arrive after the Firestore tree and the newsletter were
+ * gone. So every request checks the sign-in age first and refuses past this
+ * limit. Firebase does not document its window; it is commonly reported as five
+ * minutes, so this stays a minute under it to leave room for clock skew and for
+ * the request itself.
+ */
+const RECENT_SIGN_IN_SECONDS = 240;
+
 export class AccountDeletionError extends Error {
   declare code: string;
   declare status: number;
@@ -321,6 +332,11 @@ export async function handleAccountDeletionRequest(request: Request, env: Worker
   await readConfirmBody(request);
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: false });
   const uid = requireUid(identity.uid);
+  const { authTime } = identity;
+  if (typeof authTime !== 'number' || !Number.isFinite(authTime)
+    || Date.now() / 1000 - authTime > RECENT_SIGN_IN_SECONDS) {
+    throw new AccountDeletionError('AUTH_RECENT_LOGIN_REQUIRED', 401);
+  }
   const admin = options.admin || createFirestoreAdmin(env);
   try {
     return await runAccountDeletionSlice(admin, uid, env, {

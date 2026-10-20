@@ -5,9 +5,9 @@ import './ThemeToggle.css';
 
 /**
  * The ink switch: one more button in the utility group, next to reload — in
- * the bar for a session, in the guest header for a visitor. The host passes
- * its own chrome class (`.navbar-icon-btn`, `.guest-header-button`), which are
- * the same 32 × 32 control under two names; everything particular to this one
+ * the bar for a session, in the welcome's bar for a visitor. The host passes
+ * its own chrome class (`.navbar-icon-btn`, `.gw-bar-button`), which are the
+ * same icon control under two names; everything particular to this one
  * rides on `.theme-toggle`.
  *
  * The icon says where the reader is — an outlined sun on paper, a solid

@@ -12,7 +12,8 @@ import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 
 const UID = 'alice-uid';
 const PROJECT_ID = 'papertok-168df';
-const TOKEN = fakeIdToken({ aud: PROJECT_ID });
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const TOKEN = fakeIdToken({ aud: PROJECT_ID, auth_time: nowSeconds() });
 const HANDLE = 'alice';
 const SHARE = 'a'.repeat(32);
 const PAPER_KEY = 'paperKey1';
@@ -124,11 +125,11 @@ function stubIdentityLookup() {
   return () => { globalThis.fetch = original; };
 }
 
-function deletionRequest() {
+function deletionRequest(token = TOKEN) {
   return new Request(`https://worker.test${ACCOUNT_DELETE_PATH}`, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${TOKEN}`,
+      authorization: `Bearer ${token}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({ confirm: true }),
@@ -336,6 +337,75 @@ test('USER_NOT_FOUND on Auth delete still completes, so a retry after Auth is go
     ),
   });
   assert.equal(result!.complete, true);
+});
+
+test('a sign-in that is not recent is refused before anything is deleted', async () => {
+  const restore = stubIdentityLookup();
+  const seed: Record<string, FirestoreData> = {
+    [`papers/${PAPER_KEY}/comments/c1`]: { authorUid: UID, text: 'mine' },
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'list-1' },
+    [`publicLists/${SHARE}`]: { title: 'Reading' },
+    [`userProfiles/${UID}`]: { handle: HANDLE },
+    [`handles/${HANDLE}`]: { uid: UID },
+    [`users/${UID}/lists/list-1`]: { name: 'Reading', publicShareId: SHARE },
+    [`users/${UID}`]: { onboardingComplete: true },
+  };
+  const admin = memoryAdmin(structuredClone(seed));
+  const subscription = JSON.stringify({ uid: UID, unsubscribeToken: 'tok-1', enabled: true });
+  const store = kvStore({
+    [`notification:subscription:${UID}`]: subscription,
+    'notification:unsubscribe:tok-1': UID,
+  });
+  const authCalls: string[] = [];
+  const env = { ...SERVICE, NOTIFICATION_STORE: store as typeof store & KVNamespace };
+
+  try {
+    for (const [why, token] of Object.entries({
+      'signed in ten minutes ago': fakeIdToken({ aud: PROJECT_ID, auth_time: nowSeconds() - 600 }),
+      'signed in five minutes ago': fakeIdToken({ aud: PROJECT_ID, auth_time: nowSeconds() - 300 }),
+      'no sign-in time at all': fakeIdToken({ aud: PROJECT_ID }),
+    })) {
+      await assert.rejects(
+        () => handleAccountDeletionRequest(deletionRequest(token), env, {
+          admin,
+          fetchImpl: async (url) => {
+            authCalls.push(String(url));
+            return new Response('{}', { status: 200 });
+          },
+        }),
+        error => error instanceof AccountDeletionError
+          && error.code === 'AUTH_RECENT_LOGIN_REQUIRED'
+          && error.status === 401,
+        `must refuse a token ${why}`,
+      );
+    }
+    assert.deepEqual(admin.documents, seed, 'every document is still there');
+    assert.deepEqual(admin.commits, [], 'nothing was written');
+    assert.equal(store.data.get(`notification:subscription:${UID}`), subscription);
+    assert.equal(store.data.get('notification:unsubscribe:tok-1'), UID);
+    assert.equal(authCalls.length, 0, 'Auth was not asked to delete anything');
+
+    // The same tree, after the user has just signed in again.
+    const freshToken = fakeIdToken({ aud: PROJECT_ID, auth_time: nowSeconds() - 5 });
+    let result: Awaited<ReturnType<typeof handleAccountDeletionRequest>> | undefined;
+    for (let i = 0; i < 12; i += 1) {
+      result = await handleAccountDeletionRequest(deletionRequest(freshToken), env, {
+        admin,
+        fetchImpl: async (url) => {
+          authCalls.push(String(url));
+          return new Response('{}', { status: 200 });
+        },
+      });
+      if (result.complete) break;
+    }
+    assert.equal(result?.complete, true);
+    assert.deepEqual(admin.documents, {}, 'the whole tree is gone');
+    assert.equal(store.data.size, 0, 'the newsletter subscription is gone');
+    assert.equal(authCalls.length, 1);
+    assert.match(authCalls[0], /accounts:delete/);
+  } finally {
+    restore();
+  }
 });
 
 test('a stale session asks the user to sign in again instead of deleting Auth later', async () => {

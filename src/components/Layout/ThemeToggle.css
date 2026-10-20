@@ -2,7 +2,7 @@
    Theme toggle — the ink switch
 
    Chrome comes from the host: `.navbar-icon-btn` in the bar,
-   `.guest-header-button` in the guest header — the same 32 × 32 control under
+   `.gw-bar-button` in the welcome bar — the same icon control under
    two names, with the same hover wash and the same orange focus ring as reload
    and search. Only what is particular to this one lives here: the press, the
    touch area, and the sun/moon morph.
@@ -42,8 +42,8 @@
    is felt even when the page behind it takes longer.
 
    The class is tripled for the same reason `.katex.katex` is doubled in
-   `global.css`: the host — `.navbar-icon-btn` in the bar, `.guest-header-button`
-   in the guest header — already declares a `transition`, and `transition` is a
+   `global.css`: the host — `.navbar-icon-btn` in the bar, `.gw-bar-button`
+   in the welcome bar — already declares a `transition`, and `transition` is a
    shorthand, so the loser of that tie drops `transform` entirely. Three classes
    take the specificity outright instead of depending on which stylesheet the
    bundler happens to emit last. */

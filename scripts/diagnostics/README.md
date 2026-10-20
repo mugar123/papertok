@@ -466,8 +466,9 @@ that, for the Journal of Materials Science 2021: a regional host can know the co
 library's data (eu03 answered for Pavia with no `rft.mms_id` and nothing listed while
 `unipv.alma…` listed five services), so an answer that lists nothing never verifies a host, and a
 library with nothing listed for either journal is `answers-without-services`, not shipped. Codes found
-by hand or in Zotero's public directory of OpenURL resolvers (zotero.org/openurl_resolvers) go
-in `alma-resolver-seeds.json` as `{ rorId, source, code?, host?, url?, product?, exclude? }` and
+by hand on a library's own pages or in Zotero's public directory of OpenURL resolvers
+(zotero.org/openurl_resolvers) go in `alma-resolver-seeds.json` as
+`{ rorId, source, code?, host?, url?, product?, evidence?, exclude? }` and
 are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
 worldcat, libkey) without assuming the library lacks Alma, and `exclude` keeps a library
 consortium out of the table. The census record, misses included, is `alma-resolver-census.json`:
@@ -484,12 +485,29 @@ node scripts/diagnostics/alma-resolver-census.mjs --inventory
 ```
 
 `--inventory` prints the coverage inventory as Markdown from the census record alone (per
-country: institutions met, rows shipped, Alma libraries whose answer the Worker cannot read,
-libraries on another product, candidates still unverified, exclusions, unresolved), so a report
+country: institutions met, rows shipped, Alma libraries whose answer lists nothing for either
+probe journal, libraries on another product, candidates still unverified, exclusions, unresolved), so a report
 quotes a table that can be regenerated after any run.
 
+Finding a code by hand, when the crawler could not (batch 5, 2026-10-20, 228 institutions by
+hand): the Alma staff login page `https://<slug>.alma.exlibrisgroup.com/mng/login` names the
+code in its stylesheet URLs (`institutionCode=…`), which turns any named host into a code;
+Primo VE's `/primaws/rest/pub/configuration/vid/<CODE>:<VIEW>` names the institution behind a
+view; the OBV (Austria) classic Primo publishes its whole member map at
+`/primo_library/libweb/webservices/rest/v1/configuration/<vid>` (`alma_base` entries), and hbz
+(NRW) libraries answer on `hbz-<x>.alma…` hosts that exist in DNS only for real members. A code
+that answers only with services filtered for an IP group (Houston, Toulouse) still verifies, and
+the Worker reads it as `unknown`. A shared Alma institution serving several universities
+(Toulouse's 33TOULOUSE_INST, Paris-Saclay's 33PUP_INST with per-member `openurl-<MEMBER>`
+profiles the Worker cannot ask yet) is excluded for the members, like the Royal Danish Library.
+
 Institutions come from OpenAlex (`type:education`, by works count; each request spends its
-free daily budget), their domains from ROR. Every host is asked at most once per second with
+free daily budget), their domains from ROR. A row's `domains` are ROR's only: a student or staff
+mail domain ROR does not list (alumnos.uc3m.es) goes, with its source page, in `CHECKED_MAIL_DOMAINS`
+in `worker/institution-link.ts`, and a reader linked from it reaches the row by ROR id. A row with
+no `domains` is reachable only through such an entry: on 2026-10-19 ROR listed no domain for Purdue,
+UT Austin, Arizona, Lille and SLU, and listed four of their domains only under a sub-unit or funder.
+Every host is asked at most once per second with
 an identifying user agent. `--debug` prints each request; `--only <ror>` restricts a run;
 `--skip-known` leaves out the institutions already in the census, so a wider `--limit` only
 probes the new ones.

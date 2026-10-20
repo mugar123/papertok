@@ -30,181 +30,107 @@
      PaperReader.jsx as `--rd-origin` (viewport coordinates — `.rd` is
      `inset: 0`, so its box is the viewport). */
   transform-origin: var(--rd-origin, 50% 62%);
-  /* How much of the annotation sheet stays on screen once it is put away.
-     Declared here rather than on the sheet because three things have to agree
-     on it — the sheet's own resting transform, the control panel parked above
-     it, and the air the document leaves under its last line — and while it was
-     private to `.rd-rail` the other two simply did not know, so the panel and
-     the sheet shared the same 62px. */
-  --rd-sheet-peek: 62px;
-  /* The sheet's real resting height with the home indicator folded in:
-     Annotations.css lifts the peeked sheet by --inset-bottom on top of
-     --rd-sheet-peek, so its top edge no longer sits at the bare constant.
-     One derived token, read by the sheet itself and by the panel dock and
-     scroll padding below (1100px block) that stand next to it, is what keeps
-     that edge one number instead of three copies free to drift apart again —
-     the same fix as --nav-total, one file over. `.rd-rail` is a descendant
-     of `.rd` (AnnotationRail is mounted inside it in PaperReader.jsx), so
-     this inherits down to Annotations.css. Zero inset: identical to
-     --rd-sheet-peek alone. */
+  /* How much of the annotation sheet stays on screen once it is put away. */
+  --rd-sheet-peek: 32px;
+  /* The sheet's resting height with the home indicator folded in. */
   --rd-sheet-peek-total: calc(var(--rd-sheet-peek) + var(--inset-bottom));
 }
 
-/* ── Floating chrome ──
-   The reader has no bars. A back button, a status line and a control panel
-   float over the page, so the full height belongs to the document. */
-.rd-float-close {
-  position: absolute;
-  top: max(var(--space-4), env(safe-area-inset-top));
-  left: var(--space-4);
-  z-index: 3;
+.rd-doc-byline:has(+ .rd-doc-tags) {
+  padding-bottom: 0;
+  margin-bottom: var(--space-3);
+  border-bottom: 0;
 }
 
-.rd-status {
-  position: absolute;
-  top: max(var(--space-4), env(safe-area-inset-top));
-  right: var(--space-4);
-  z-index: 3;
+.rd-doc-byline .list-row-authors-list {
+  align-self: stretch;
+}
+
+.rd-doc-byline .list-row-authors-list[data-open] {
+  margin-top: var(--space-3);
+}
+
+.rd-doc-tags {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  max-width: calc(100% - 140px);
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-default);
 }
 
-/* ── Reading down, the top chrome gets out of the way ──
-   `data-receded` follows the bar's own scroll-direction state (PaperReader's
-   `chromeReceded`), so on a phone the back button and the uses counter leave
-   with the bar instead of standing on the text for the whole read. Styled on
-   the CHILDREN: framer owns the wrappers' inline transform (the entrance
-   variants), and a class transform on the wrapper itself would lose that
-   fight. `:has(:focus-visible)` brings a receded control back for a keyboard
-   — a keyboard reaching an invisible button is exactly the hidden-focus
-   failure the a11y work exists to prevent. Not `:focus-within`: the reader
-   programmatically focuses the back button on open (data-dialog-initial-focus)
-   and that focus is not `:focus-visible`, so with `:focus-within` the back
-   button simply never receded at all (measured in the pane, 2026-08-29). */
-@media (pointer: coarse) {
-  .rd-float-close > *,
-  .rd-status > * {
-    transition: opacity 200ms ease, transform 200ms ease;
-  }
-
-  .rd-float-close[data-receded]:not(:has(:focus-visible)) > *,
-  .rd-status[data-receded]:not(:has(:focus-visible)) > * {
-    opacity: 0;
-    transform: translateY(-10px);
-    pointer-events: none;
-  }
-}
-
-@media (pointer: coarse) and (prefers-reduced-motion: reduce) {
-  .rd-float-close > *,
-  .rd-status > * {
-    transition: none;
-  }
-
-  .rd-float-close[data-receded]:not(:has(:focus-visible)) > *,
-  .rd-status[data-receded]:not(:has(:focus-visible)) > * {
-    transform: none;
-  }
-}
-
-.rd-status-kicker {
+.rd-tag {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.rd-status-chip {
-  padding: 2px 7px;
-  border: 1px solid var(--border-default);
+  padding: 2px 8px;
+  border: 1px solid var(--tint-neutral-line);
   border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-tertiary);
-  font: 500 0.625rem/1.5 var(--font-mono);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font: 500 0.6875rem/1.5 var(--font-mono);
   white-space: nowrap;
 }
 
-/* The day's AI allowance. Ten segments that empty left to right, because the
-   count alone ("3 left") reads as plenty until you see how short the row is. */
-.rd-uses {
-  display: inline-flex;
+button.rd-tag {
+  cursor: pointer;
+}
+
+.rd-tag--ai {
+  border-color: var(--tint-violet-line);
+  background: var(--tint-violet-bg);
+  color: var(--tint-violet-fg);
+}
+
+/* ── The top bar ──
+   The controls sit in a bar above the document, always on screen; the paper
+   scrolls under it. */
+.rd-topbar {
+  position: relative;
+  flex: none;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 7px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-tertiary);
-  font: 500 0.625rem/1.5 var(--font-mono);
-  white-space: nowrap;
-  /* The allowance is fetched, so it lands a moment after the reader has already
-     opened — into chrome that has finished arriving. Without this it punched a
-     hole in the header of a screen that had settled. */
-  animation: rdUsesIn 280ms var(--ease-out-expo);
-  transition: color var(--transition-base), border-color var(--transition-base);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-primary);
+  z-index: 3;
 }
 
-@keyframes rdUsesIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: none; }
+.rd-topbar .rd-panel {
+  align-items: center;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
 }
 
-.rd-uses-meter {
-  display: inline-flex;
-  gap: 2px;
+.rd-topbar .rd-panel-group {
+  flex-direction: row;
+  align-items: center;
 }
 
-.rd-uses-meter i {
-  width: 3px;
-  height: 9px;
-  border-radius: 1px;
-  background: var(--accent-primary);
-  /* Spending a use drains one segment rather than swapping it. It is the only
-     thing on screen that says the rewrite cost something. */
-  transition: background-color var(--transition-slow);
+.rd-topbar .rd-panel-label {
+  display: none;
 }
 
-.rd-uses-meter i[data-spent] {
-  background: var(--border-default);
+.rd-level-select {
+  min-width: 8.5rem;
 }
 
-.rd-uses[data-level='low'] {
-  color: var(--accent-save);
-  border-color: var(--accent-save);
+.rd-panel .rd-topbar-switch[data-pressed] {
+  border-color: var(--tint-green-line);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
 }
 
-.rd-uses[data-level='low'] .rd-uses-meter i:not([data-spent]) {
-  background: var(--accent-save);
-}
-
-.rd-uses[data-level='out'] {
-  color: var(--accent-danger);
-  border-color: var(--accent-danger);
-}
-
-/* The dock holds the position; the panel inside it holds the look. They are
-   separate because they animate to different clocks — the dock arrives with the
-   reader, the panel comes and goes with the pointer — and a single element
-   cannot carry two transforms without one overwriting the other.
-
-   Centred by auto margins rather than by `translateX(-50%)`: framer-motion
-   writes an inline transform here, and an inline transform replaces the
-   stylesheet's wholesale — the panel used to snap to the left edge for the
-   length of the animation. */
-.rd-panel-dock {
-  position: absolute;
-  bottom: max(var(--space-5), calc(env(safe-area-inset-bottom, 0px) + var(--space-4)));
-  left: 0;
-  right: 0;
-  margin-inline: auto;
-  width: fit-content;
-  max-width: calc(100vw - var(--space-6));
-  z-index: 4;
+@media (hover: hover) and (pointer: fine) {
+  .rd-topbar .rd-level-select:hover,
+  .rd-topbar [data-slot='toggle']:not([data-pressed]):hover {
+    background: var(--bg-secondary);
+  }
 }
 
 /* The panel: grouped and labelled, like a properties palette. */
@@ -257,42 +183,6 @@
   color: var(--text-on-brand);
 }
 
-/* ── The level chip ──
-   One mark for three buttons. The colour is the surface's, not the chip's: the
-   dock paints the yellow thread (design.md, rule 3) and the phone's bar keeps
-   the plain raised chip the toggle group ships with, so the same element reads
-   correctly in both without a second implementation. */
-.rd-panel { --rd-level-chip: var(--brand-yellow); }
-
-.rd-level-item {
-  position: relative;
-}
-
-/* The button must stop painting its own background, or the destination is
-   already yellow before the chip has left — and a journey nobody can see is
-   just a slower cross-fade. Written against both containers so it outranks the
-   rule above and the toggle's own `data-pressed:bg-card`, which match it on
-   specificity and would otherwise be settled by stylesheet order. */
-.rd-panel .rd-level-item[data-pressed],
-.rd-bar .rd-level-item[data-pressed] {
-  background: transparent;
-  box-shadow: none;
-}
-
-.rd-level-chip {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--rd-level-chip, var(--bg-card));
-  box-shadow: var(--shadow-sm);
-}
-
-/* Painted after the chip in the same stacking context, so the label stays on
-   top of the mark that arrives underneath it. */
-.rd-level-label {
-  position: relative;
-}
-
 /* ── Scroll region ── */
 .rd-scroll {
   flex: 1 1 auto;
@@ -325,35 +215,14 @@
   margin-bottom: var(--space-3);
 }
 
-/* On a coarse pointer the kicker moves out of `.rd-status` (see the comment
-   there, in PaperReader.jsx) and into the document, ahead of the title it
-   names — identity to the document, state to the chrome. Gated on pointer
-   alone, the same as `ReaderBar.css`, and at no width: `.rd-doc-kicker` is
-   only ever in the DOM when the JSX's own `coarsePointer` check renders it
-   (a fine pointer never mounts the element), so this block is a second,
-   independent guarantee that a fine pointer can never be styled by it — the
-   same belt-and-braces this reader already applies everywhere pointer type
-   decides layout, not width. */
-@media (pointer: coarse) {
-  .rd-doc-kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font: var(--mono-label);
-    letter-spacing: var(--mono-track);
-    text-transform: uppercase;
-    color: var(--text-tertiary);
-    margin-bottom: var(--space-2);
-  }
-}
-
 .rd-doc-byline {
-  font: 500 0.75rem/1.5 var(--font-mono);
-  letter-spacing: 0.02em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   color: var(--text-secondary);
   padding-bottom: var(--space-5);
   margin-bottom: var(--space-6);
-  border-bottom: 3px double var(--border-ink);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .rd-section {
@@ -370,19 +239,10 @@
 
 .rd-section-kind {
   font: var(--mono-label);
+  font-weight: var(--fw-regular);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  color: var(--text-primary);
-}
-
-/* The heading as it appears in the PDF, so the rewrite stays traceable. */
-.rd-section-origin {
-  font: 400 0.625rem/1.5 var(--font-mono);
   color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
 }
 
 .rd-section-title {
@@ -530,10 +390,29 @@
 }
 
 /* ── Marks ── */
+.rd-mark[data-arrived] {
+  --arrive-sweep: color-mix(in srgb, var(--bg-card) 85%, transparent);
+  background-image: linear-gradient(105deg, transparent 35%, var(--arrive-sweep) 50%, transparent 65%);
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  animation: rdMarkArrive 600ms var(--ease-in-out) both;
+}
+
+:root[data-theme='dark'] .rd-mark[data-arrived] {
+  --arrive-sweep: color-mix(in srgb, var(--text-primary) 18%, transparent);
+}
+
+@keyframes rdMarkArrive {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
 .rd-mark {
+  --rd-pen: color-mix(in srgb, var(--brand-yellow) 40%, transparent);
   background: var(--brand-yellow-soft);
   color: inherit;
   padding: 0 1px;
+  margin: 0 -1px;
   border-radius: var(--radius-sm);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
@@ -543,9 +422,7 @@
 /* A user's own highlight is the saturated pen; the model's suggestions are
    softer, so the reader can tell them apart at a glance. */
 .rd-mark--user {
-  background: var(--brand-yellow);
-  /* The pen does not flip with the theme, so neither can the words inside it. */
-  color: var(--text-on-brand);
+  background: var(--rd-pen);
 }
 
 .rd-mark--caveat {
@@ -573,6 +450,15 @@
    for the specificity of the rule above that takes the reader's shadow off. */
 .rd-mark--over-ai.rd-mark--over-ai {
   box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
+.rd-doc[data-ai-marks='hidden'] .rd-mark--ai {
+  background: transparent;
+  box-shadow: none;
+}
+
+.rd-doc[data-ai-marks='hidden'] .rd-mark--over-ai.rd-mark--over-ai {
+  box-shadow: none;
 }
 
 /* ── Streaming and states ── */
@@ -648,7 +534,7 @@
     var(--bg-secondary) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.6s ease-in-out infinite;
+  animation: shimmer 1.6s linear infinite;
 }
 
 /* A negative delay offsets each line's phase, so the shimmer crosses the block
@@ -710,18 +596,11 @@
   animation: rdShellOut 180ms var(--ease-out) both;
 }
 
-.rd[data-open] .rd-float-close,
-.rd[data-open] .rd-status,
-.rd[data-open] .rd-panel-dock {
+.rd[data-open] .rd-topbar {
   animation: rdChromeIn 280ms var(--ease-out-expo) both;
 }
 
-.rd[data-open] .rd-status { animation-delay: 30ms; }
-.rd[data-open] .rd-panel-dock { animation-delay: 60ms; }
-
-.rd[data-closed] .rd-float-close,
-.rd[data-closed] .rd-status,
-.rd[data-closed] .rd-panel-dock {
+.rd[data-closed] .rd-topbar {
   animation: rdChromeOut 120ms var(--ease-out) both;
 }
 
@@ -756,12 +635,8 @@
     animation: rdShellStillOut 120ms linear both;
   }
 
-  .rd[data-open] .rd-float-close,
-  .rd[data-open] .rd-status,
-  .rd[data-open] .rd-panel-dock,
-  .rd[data-closed] .rd-float-close,
-  .rd[data-closed] .rd-status,
-  .rd[data-closed] .rd-panel-dock {
+  .rd[data-open] .rd-topbar,
+  .rd[data-closed] .rd-topbar {
     animation: none;
   }
 }
@@ -829,7 +704,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-2);
-  /* Full measure, so its edges line up with the double rule under the byline.
+  /* Full measure, so its edges line up with the rule under the byline.
      Stopping short of it read as a block that had failed to load rather than as
      a deliberate callout. The prose inside keeps its own shorter measure. */
   padding: var(--space-5) var(--space-6);
@@ -925,26 +800,6 @@
   .rd-retry:hover { background: var(--accent-primary-hover); }
 }
 
-/* ── Footer: attribution is not optional for a derivative text ── */
-.rd-doc-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding-top: var(--space-5);
-  margin-top: var(--space-8);
-  border-top: 1px solid var(--border-default);
-  /* Arrives under the first section that lands, while the rest are still being
-     written above it. A fade keeps it from reading as part of the stream. */
-  animation: rdRevealStill 420ms ease-out;
-}
-
-.rd-attribution {
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  max-width: 60ch;
-}
-
 .rd-original {
   display: inline-flex;
   align-items: center;
@@ -954,47 +809,32 @@
   color: var(--accent-secondary);
 }
 
-.rd-model {
-  font: 400 0.625rem/1.5 var(--font-mono);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
 /* ── Responsive ── */
 @media (max-width: 640px) {
-  .rd-status-chip {
+  .rd-topbar {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .rd-topbar .rd-panel {
+    grid-row: 1;
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .rd-topbar .rd-level-select {
+    margin-right: auto;
+  }
+
+  .rd-topbar .rd-panel-divider {
     display: none;
-  }
-
-  /* Anchored on both sides rather than reserving a guess for the back button.
-     `calc(100% - 140px)` left the status 250px of a 390px screen, so the kicker
-     broke onto a second line and came down on the paper's title. The left edge
-     now names what it is clearing: the button's own 40px and a gap. */
-  .rd-status {
-    left: calc(var(--space-4) + 40px + var(--space-3));
-    max-width: none;
-    justify-content: flex-end;
-  }
-
-  /* The count keeps its width — it is the number you came to read. The kicker
-     is what gives way, and it gives way by being cut rather than by wrapping. */
-  .rd-status-kicker {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .rd-uses {
-    flex: none;
-  }
-
-  .rd-panel-dock {
-    left: var(--space-3);
-    right: var(--space-3);
-    width: auto;
-    max-width: none;
-    margin-inline: 0;
   }
 
   /* Two rows, because one row of this never fitted. The level names, the three
@@ -1016,12 +856,6 @@
     overflow-x: visible;
   }
 
-  /* Scoped to `.rd-panel` (the dock's own panel), not bare, from here through
-     `.rd-panel-divider` below: `ReaderBar.jsx` renders the same shared
-     controls (`levelSlot`/`exportSlot`) inside `.rd-bar` — a 56px flex row,
-     not this grid — so a bare `.rd-panel-group`/`-label`/`-divider` rule at
-     this width would also match there and fight the bar's own layout.
-     Prefixing keeps this block byte-identical for the dock. */
   .rd-panel .rd-panel-group {
     align-items: center;
   }
@@ -1057,14 +891,7 @@
     display: none;
   }
 
-  /* The head of the document clears the back button the way the back button is
-     actually placed — inset and all. A flat 56px was fine on a phone without a
-     notch and put the title's first line under the button on every phone with
-     one, because the chrome moves down with `safe-area-inset-top` and this did
-     not. The foot is set once, under 1100px, where it has both the sheet and
-     the panel to clear. */
   .rd-scroll {
-    padding-top: calc(max(var(--space-4), env(safe-area-inset-top)) + 40px + var(--space-4));
     padding-inline: var(--space-4);
   }
 
@@ -1100,102 +927,13 @@
   }
 }
 
-/* Where there is a pointer that can hover, the panel is not always on screen,
-   so the document stops reserving a panel's worth of air at its foot. On a
-   touch screen there is no hover to summon it with, the panel stays put, and so
-   does the padding that keeps it off the last lines. */
-@media (hover: hover) and (pointer: fine) {
-  .rd-scroll {
-    padding-bottom: calc(var(--space-12) + var(--space-2));
-  }
+.rd-scroll {
+  padding-bottom: calc(var(--space-12) + var(--space-2));
 }
 
-/* ── Below 1100px there is furniture at the foot of the screen ──
-   This is the width at which the margin stops being a margin and becomes a
-   sheet, so it is the width at which two things start standing at the bottom:
-   the sheet, peeking, and the panel. They were both measuring from
-   `bottom: 0` and landing on top of each other. That was true regardless of
-   pointer when this block was written; it no longer is on a coarse pointer,
-   where a later block (`@media (pointer: coarse) and (max-width: 1100px)`,
-   below the hover block that follows this one) hides the panel outright and
-   overrides `.rd-scroll`'s padding here — `ReaderBar.jsx` stands in for it
-   instead. What is below still governs a fine pointer at this width exactly
-   as it always did.
-
-   Every clearance at this width is declared here, after the hover block, so
-   there is one place to read them from. The `.rd-scroll` half of it used to sit
-   in `Annotations.css` — later in the cascade, which is how it quietly won
-   against the phone rule above and why neither file could be read alone.
-
-   All three read --rd-sheet-peek-total, not the bare --rd-sheet-peek: on a
-   device with a home indicator the sheet's peeked top edge sits --inset-bottom
-   above the constant (Annotations.css lifts it there), so a rule that still
-   measured from the bare 62px would clear less than the sheet actually needs —
-   touch plus this width is exactly the notched-phone case, and the dock's
-   +12px of slack does not survive a 34px inset. */
 @media (max-width: 1100px) {
-  .rd-panel-dock {
-    bottom: calc(var(--rd-sheet-peek-total) + var(--space-3));
-  }
-
-  /* Measured rather than guessed: the panel stands 74px up and is 109px tall,
-     so its top edge is 183px above the foot of the screen. At `--space-6` of
-     slack the last line of the paper landed one pixel under it. */
-  .rd-scroll {
-    padding-bottom: calc(var(--rd-sheet-peek-total) + var(--space-24) + var(--space-12));
-  }
-}
-
-/* A narrow window on a machine with a mouse: the sheet is still a sheet, but
-   the panel comes and goes with the pointer, so only the peek is standing.
-   Reads --rd-sheet-peek-total for the same reason as the block above, even
-   though a fine pointer with hover support is not the notched-phone case in
-   practice today — the point is that this and the sheet cannot disagree. */
-@media (max-width: 1100px) and (hover: hover) and (pointer: fine) {
-  .rd-scroll {
+  .rd-scroll:has(.rd-rail[data-surface='sheet']:not([data-hidden])) {
     padding-bottom: calc(var(--rd-sheet-peek-total) + var(--space-6));
-  }
-}
-
-/* ── Touch, any width: one island instead of a dock and a bar stacked on it ──
-   Everything above this block still describes the fine-pointer, hover-driven
-   panel and the sheet's permanent peek — untouched, because a coarse pointer
-   is never the case those rules are for.
-
-   Pointer alone, not pointer-and-width: this used to be
-   `(pointer: coarse) and (max-width: 1100px)`, on the theory that above that
-   width the rail is still the desktop margin (`isNarrow` is false, no sheet,
-   no settings tab to stand in for the dock) and never had the sheet's own
-   undismissable-surfaces problem, so the dock could just stay — "exactly like
-   a mouse user narrower than 1100px already sees it." That comparison is what
-   stopped being true: `ReaderBar.jsx` mounts on `selectionRoute === 'bar'`
-   alone, pointer-gated only, at every width — so a coarse pointer above
-   1100px got a second fixed-bottom surface a same-width mouse user never
-   grew. The dock (z-index 4) and the bar (z-index 12048) both pin to the
-   bottom of `.rd`; the bar wins the stack and covers the dock's lower edge.
-   `PaperReader.jsx` now makes the rail a sheet (and the bar's settings entry
-   live) for any coarse pointer, not just a narrow one, so hiding the dock on
-   pointer alone no longer strands those controls — see `railIsSheet` there.
-   Width still decides the rail/sheet split for a mouse, per decision 5: a
-   fine pointer never matches `(pointer: coarse)` at any width, so that rule
-   stays byte-for-byte itself.
-
-   `.rd-scroll`'s bar-height padding below is intentionally *not* widened to
-   match: it stays scoped to coarse-and-narrow, because at coarse-and-wide the
-   base 112px padding (`.rd-scroll` above) already clears the bar's 56px rest
-   row plus its 12px offset — nothing to correct for at that width. */
-@media (pointer: coarse) {
-  .rd-panel-dock {
-    display: none;
-  }
-}
-
-/* `--rd-bar-h` is declared once, in `ReaderBar.css`, for the same reason
-   `--rd-sheet-peek-total` is declared once on `.rd` above: one number, read
-   here and by the bar itself, rather than two guesses free to drift apart. */
-@media (pointer: coarse) and (max-width: 1100px) {
-  .rd-scroll {
-    padding-bottom: calc(var(--rd-bar-h, 56px) + var(--space-3) * 2 + var(--inset-bottom));
   }
 }
 
@@ -1229,14 +967,11 @@
   }
 
   .rd-error,
-  .rd-notice,
-  .rd-uses,
-  .rd-doc-footer {
+  .rd-notice {
     animation: none;
   }
 
-  .rd-mark,
-  .rd-uses-meter i {
+  .rd-mark {
     transition: none;
   }
 }
@@ -1262,4 +997,8 @@
    behind it and folds back into it. */
 body[data-reader-open] #root {
   content-visibility: hidden;
+}
+
+.rd-scroll {
+  padding-top: var(--space-10);
 }

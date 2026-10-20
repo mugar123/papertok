@@ -4,7 +4,7 @@ import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.ts'
-import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.ts'
+import { applyReloadPolicy, markAppForcedReload, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from './utils/appReload.ts'
 import { applyLegacyHashRoute } from './utils/legacyHashRoute.ts'
 import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.ts'
 import App from './App.tsx'
@@ -98,13 +98,12 @@ import './styles/global.css'
 // and Vite reports the failure here. One reload fetches the new graph. The
 // timestamp is what keeps a deploy that is genuinely broken from reloading
 // forever: a second failure inside a minute surfaces as the error it is.
-const PRELOAD_RELOAD_KEY = 'papertok_preload_reloaded_at'
 window.addEventListener('vite:preloadError', (event) => {
   const now = Date.now()
   let last
   try {
     last = Number(sessionStorage.getItem(PRELOAD_RELOAD_KEY)) || 0
-    if (now - last < 60_000) return
+    if (now - last < PRELOAD_RELOAD_WINDOW_MS) return
     sessionStorage.setItem(PRELOAD_RELOAD_KEY, String(now))
   } catch {
     // No session storage means no way to stop a loop: let the error surface.

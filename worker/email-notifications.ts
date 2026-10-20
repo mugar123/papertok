@@ -16,7 +16,7 @@ type SourceReportInput = Partial<Omit<SourceReport, 'bySource'>> & { bySource?: 
 export type DigestPaper = Partial<Omit<NonNullable<ReturnType<typeof sanitizePaper>>, 'matches'>> & { matches?: Partial<Follow>[] };
 type IdentityPaper = Pick<PaperInput, 'title' | 'authors' | 'doi' | 'id'>;
 type PreferencesInput = Partial<Record<'maxPapers' | 'enabled' | 'frequency' | 'language', unknown>>;
-type PreferencesBody = PreferencesInput & { follows?: FollowInput[]; previewItems?: PaperInput[] };
+type PreferencesBody = PreferencesInput & { sync?: unknown; follows?: FollowInput[]; previewItems?: PaperInput[] };
 type Preferences = ReturnType<typeof sanitizePreferences>;
 interface SourceCounts { attempted: number; succeeded: number; failed: number; requestAttempts: number; retried: number }
 export interface SourceReport extends SourceCounts {
@@ -990,6 +990,11 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
   }
   const preferences = sanitizePreferences(body);
+  // `sync` marks the app's background refresh of follows and previews. The tab
+  // that sends it may have loaded before the reader unsubscribed or changed the
+  // digest elsewhere, so a sync never creates or re-enables a subscription and
+  // keeps the stored settings.
+  const sync = body.sync === true;
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const existingRecord = await loadSubscriptionRecord(env, key);
   const existingRaw = existingRecord?.subscription || null;
@@ -999,7 +1004,9 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     ...(existingRecord!.state || {}),
   } : null;
 
-  if (!preferences.enabled) {
+  if (sync) {
+    if (!existing?.enabled) return publicSubscription(existing, identity.email);
+  } else if (!preferences.enabled) {
     await deleteSubscription(env, identity.uid, existing);
     return publicSubscription(null, identity.email);
   }
@@ -1014,13 +1021,31 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   }
   const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
+  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`;
+  // A subscriber's app syncs on every open, usually with nothing new, and each
+  // write costs two KV puts. The token index is still checked: a save whose
+  // index put failed leaves an enabled subscription whose unsubscribe link
+  // answers 400, and this sync may be the only retry that save gets.
+  if (
+    sync
+    && existingRaw?.unsubscribeToken
+    && existingRaw.email === identity.email
+    && existingRaw.displayName === identity.displayName
+    && JSON.stringify(existingRaw.follows) === JSON.stringify(follows)
+    && JSON.stringify(existingRaw.previewItems) === JSON.stringify(previewItems)
+  ) {
+    if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
+      await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
+    }
+    return publicSubscription(existing, identity.email);
+  }
   const now = new Date().toISOString();
   const persistedBase = existingRecord?.state
     ? stripDeliveryState(existingRaw!)
     : (existingRaw || {});
   const subscription = {
     ...persistedBase,
-    ...preferences,
+    ...(sync ? {} : preferences),
     uid: identity.uid,
     email: identity.email,
     displayName: identity.displayName,
@@ -1033,7 +1058,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   };
   await Promise.all([
     env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
-    env.NOTIFICATION_STORE.put(`${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`, identity.uid),
+    env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
   ]);
   return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
 }
