@@ -22,6 +22,12 @@ function arxivIdKey(value: unknown) {
   return normalizeArxivId(value).replace(/v\d+$/, '');
 }
 
+// A DOI a publisher issued. arXiv's own DataCite DOI (10.48550/arXiv.<id>)
+// names the eprint, as the arXiv id does.
+function isPublisherDoi(normalizedDoi: string) {
+  return normalizedDoi !== '' && !normalizedDoi.startsWith('10.48550/arxiv.');
+}
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -312,15 +318,19 @@ export class PaperBuilder {
       || merged.publicationType === 'preprint';
     // A `false` and the working-paper tag describe the record that sent them,
     // so the row takes them only while it keeps that record's identity: the
-    // base had no DOI, or both share a DOI or arXiv id. `deduplicate` also
-    // joins a journal article and its working paper on title and first
-    // author, and a row that keeps the article's DOI and journal is not the
-    // working paper.
+    // base had no DOI, or both share a DOI, or both share an arXiv id and at
+    // most one has a publisher's DOI. `deduplicate` also joins a journal
+    // article and its working paper on title and first author, or on an
+    // eprint both list: OpenAlex can file an arXiv eprint among a FEDS
+    // paper's locations while arXiv lists the journal's DOI for it. A row
+    // that keeps the article's DOI and journal is not the working paper.
     const baseDoi = normalizeDoi(existingPaper.doi);
+    const incomingDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
     const sameRecord = !existingPaper.doi
-      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
-      || (baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
+      || (baseDoi !== '' && baseDoi === incomingDoi)
+      || (!(isPublisherDoi(baseDoi) && isPublisherDoi(incomingDoi))
+        && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
     // A published record that says outright it was not reviewed wins from
     // either side, so an IMF working paper that another provider also lists as
     // published stays unreviewed whichever record arrives first. It does not

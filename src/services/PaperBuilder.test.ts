@@ -278,23 +278,79 @@ test('a working paper joined to a different article by title alone does not unre
   assert.equal(gap.peerReviewed, undefined);
   assert.equal(reviewTagForPaper(gap), null);
 
-  // So does a shared arXiv id, whatever the version: here a Semantic Scholar
-  // record of the journal version that also lists the eprint.
-  const semanticScholar = {
-    id: 's2:abc',
-    doi: journalDoi,
+  // A shared arXiv id does not make two publishers' DOIs one record. The
+  // working paper lists the eprint among its locations, and so do the journal
+  // version's records: arXiv's own, which lists the journal's DOI and
+  // reference (the feed puts it before the working paper), and Semantic
+  // Scholar's. `deduplicate` joins each pair on the arXiv id.
+  const eprintWorkingPaper = { ...workingPaper, arxivId: '2601.00001' };
+  const journalVersions = {
+    arxiv: PaperBuilder.create({
+      id: '2601.00001',
+      arxivId: '2601.00001',
+      sources: { primary: 'arxiv', enrichedBy: [] },
+      title,
+      authors: [{ name: 'Ana Economist' }],
+      doi: journalDoi,
+      journal: 'J. Int. Econ. 160 (2026) 103900',
+      publicationType: 'article',
+      publicationStatus: 'published',
+    }),
+    semanticScholar: {
+      id: 's2:abc',
+      doi: journalDoi,
+      arxivId: '2601.00001v2',
+      title,
+      authors: [{ name: 'Ana Economist' }],
+      publicationType: 'JournalArticle',
+      publicationStatus: 'published' as const,
+      sources: { primary: 'semantic_scholar', enrichedBy: [] },
+    },
+  };
+  for (const [provider, journalVersion] of Object.entries(journalVersions)) {
+    const [article] = PaperBuilder.deduplicate([journalVersion, eprintWorkingPaper]);
+    assert.equal(article.doi, journalDoi, provider);
+    assert.equal(article.peerReviewed, true, provider);
+    assert.equal(reviewTagForPaper(article), null, provider);
+    assert.deepEqual(peerReviewedOnly([article]).map(row => row.doi), [journalDoi], provider);
+
+    const [paper] = PaperBuilder.deduplicate([eprintWorkingPaper, journalVersion]);
+    assert.equal(paper.doi, imfDoi, provider);
+    assert.equal(paper.peerReviewed, false, provider);
+    assert.equal(reviewTagForPaper(paper)?.label, 'Working paper', provider);
+  }
+
+  // Where at most one side has a publisher's DOI, the arXiv id still makes
+  // one record, whatever the version: the eprint with no journal DOI, and
+  // OpenAlex's record of it under arXiv's own DOI, which the mapper reads
+  // the arXiv id out of.
+  const eprint = PaperBuilder.create({
+    id: '2601.00001',
     arxivId: '2601.00001v2',
+    sources: { primary: 'arxiv', enrichedBy: [] },
     title,
     authors: [{ name: 'Ana Economist' }],
-    publicationType: 'JournalArticle',
-    publicationStatus: 'published' as const,
-    sources: { primary: 'semantic_scholar', enrichedBy: [] },
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+  });
+  const openAlexPreprint = {
+    id: 'openalex:W400',
+    doi: '10.48550/arxiv.2601.00001',
+    arxivId: '2601.00001',
+    sources: { primary: 'openalex', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    publicationType: 'preprint',
+    publicationStatus: 'preprint' as const,
+    peerReviewed: false,
+    provider: 'openalex',
   };
-  const eprintWorkingPaper = { ...workingPaper, arxivId: '2601.00001' };
-  for (const order of [[semanticScholar, eprintWorkingPaper], [eprintWorkingPaper, semanticScholar]]) {
-    const [twin] = PaperBuilder.deduplicate(order);
-    assert.equal(twin.peerReviewed, false, 'shared arXiv id');
-    assert.equal(reviewTagForPaper(twin)?.label, 'Working paper', 'shared arXiv id');
+  for (const [label, preprint] of [['eprint', eprint], ['OpenAlex preprint', openAlexPreprint]] as const) {
+    for (const order of [[preprint, eprintWorkingPaper], [eprintWorkingPaper, preprint]]) {
+      const [twin] = PaperBuilder.deduplicate(order);
+      assert.equal(twin.peerReviewed, false, label);
+      assert.equal(reviewTagForPaper(twin)?.label, 'Working paper', label);
+    }
   }
 });
 
