@@ -776,7 +776,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * One page of the series above, newest first, for a reader whose interests
  * include an economics or quantitative-finance category. Any other reader
  * costs no request. The answer does not depend on which of those categories
- * asked, so only the two feeds call it, with the reader's own interests:
+ * asked, so only the feed calls it, with the reader's own interests:
  * exploration and topic pages would fetch the same series again.
  *
  * The cards come from the OpenAlex mapper and are filed under econ.GN. The

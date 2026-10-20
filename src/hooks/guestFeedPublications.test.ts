@@ -14,9 +14,6 @@ import { awaitWithinGate } from '../utils/feedCitationGate.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { getOpenAlexEnrichmentId, needsOpenAlexEnrichment, mergeOpenAlexEnrichment, preserveFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
-import { fetchWorkingPapers } from '../services/domainSourceService.ts';
-import { openAlexClient } from '../services/openAlexClient.ts';
-import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 const source = readFileSync(new URL('./useGuestFeed.ts', import.meta.url), 'utf8');
 const start = source.indexOf('function startGuestCandidateRequests(');
@@ -38,7 +35,7 @@ test('guest candidate batches exclude video books and book reviews before both e
     return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
   });
   const env = {
-    fetchPapers: async () => [], fetchDomainPapers: async () => [], fetchWorkingPapers: async () => [],
+    fetchPapers: async () => [], fetchDomainPapers: async () => [],
     OpenAlexAdapter: class { async search() { return { papers }; } },
     PubmedAdapter: class { async search() { return { papers: [] }; } },
     GUEST_PAGE_SIZE: 12, classifyFeedPublications, isFeedPublication,
@@ -152,60 +149,4 @@ test('preparing late guest additions preserves the shown page and does not recov
   assert.equal(state.papers[0], first);
   assert.equal(state.papers[1].abstract, 'Second source text.');
   assert.deepEqual(batches, [[electron.id], [other.id]]);
-});
-
-// PAP-53: a guest who picks economics gets the working-paper series as well;
-// the default sample, which includes econ.GN without the guest choosing it,
-// does not ask for them. A CESifo working paper as OpenAlex returned it on
-// 2026-10-19, trimmed.
-test('a guest who picks economics gets the working-paper series, and no other guest asks for them', async t => {
-  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
-    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
-    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: 'report' })) } });
-  });
-  const realFetch = openAlexClient.fetchImpl;
-  const seriesRequests: string[] = [];
-  openAlexClient.clearMemoryCache();
-  openAlexClient.fetchImpl = async (input) => {
-    const url = decodeURIComponent(String(input));
-    if (url.includes('primary_location.source.id:')) seriesRequests.push(url);
-    return Response.json({ results: [{
-      id: 'https://openalex.org/W7222541626',
-      doi: 'https://doi.org/10.65864/jochq5qfxv',
-      title: 'The Spillover Effect of Services Offshoring on Local Labour Markets',
-      type: 'report',
-      publication_date: '2026-10-14',
-      publication_year: 2026,
-      authorships: [{ author: { id: 'https://openalex.org/A5026475124', display_name: 'Martina Magli' }, institutions: [] }],
-      abstract_inverted_index: null,
-      primary_location: {
-        landing_page_url: 'https://doi.org/10.65864/jochq5qfxv',
-        is_published: true,
-        source: { id: 'https://openalex.org/S7407053623', display_name: 'CESifo', type: 'journal' },
-      },
-      locations: [],
-      open_access: { is_oa: true, oa_url: null },
-      cited_by_count: 0,
-    }] });
-  };
-  t.after(() => { openAlexClient.fetchImpl = realFetch; });
-  const env = {
-    fetchPapers: async () => [], fetchDomainPapers: async () => [], fetchWorkingPapers,
-    OpenAlexAdapter: class { async search() { return { papers: [] }; } },
-    PubmedAdapter: class { async search() { return { papers: [] }; } },
-    GUEST_PAGE_SIZE: 12, classifyFeedPublications, isFeedPublication,
-  };
-  const requests = new Function(...Object.keys(env), `${callback}; return startGuestCandidateRequests;`)(...Object.values(env));
-
-  for (const areas of [[], ['math']]) {
-    await Promise.all(requests(buildGuestFeedPlan(areas)));
-    assert.equal(seriesRequests.length, 0, `a guest with ${areas.join('') || 'the default sample'} does not ask`);
-  }
-
-  const plan = buildGuestFeedPlan(['econ']);
-  const page = composeGuestPage((await Promise.all(requests(plan))).flat() as Paper[], plan, 12);
-  assert.equal(seriesRequests.length, 1);
-  assert.deepEqual(page.map(paper => paper.id), ['openalex:W7222541626']);
-  assert.equal(page[0].peerReviewed, false);
-  assert.equal(reviewStatusForPaper(page[0]), 'workingPaper');
 });
