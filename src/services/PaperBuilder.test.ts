@@ -607,6 +607,105 @@ test('an arXiv record beside a working paper it is not takes neither its series 
   }
 });
 
+test('a report from a journal\'s registrant does not unreview the journal article', () => {
+  // Synthetic records. OpenAlex types an unlisted series' paper `report`, and
+  // the St. Louis Fed registers both its working papers and its Review under
+  // 10.20955. The journal article arrives as the Crossref institution fallback
+  // maps it, or as arXiv lists it with the journal's DOI and reference.
+  const title = 'Unemployment insurance and the dynamics of job search';
+  const arxivId = '2601.00099';
+  const journalDoi = '10.20955/r.102.12';
+  const reportDoi = '10.20955/wp.2019.001';
+  const reportLocation = {
+    landing_page_url: `https://doi.org/${reportDoi}`,
+    is_published: true,
+    source: {
+      id: 'https://openalex.org/S0000000001',
+      display_name: 'Working Paper Series',
+      type: 'repository',
+      host_organization_name: 'Federal Reserve Bank of St. Louis',
+    },
+  };
+  const reportWork: OpenAlexWork = {
+    id: 'https://openalex.org/W900',
+    doi: `https://doi.org/${reportDoi}`,
+    title,
+    type: 'report',
+    authorships: [{ author: { id: 'https://openalex.org/A9', display_name: 'Ana Economist' } }],
+    publication_year: 2019,
+    primary_location: reportLocation,
+    locations: [reportLocation, {
+      landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+      is_published: false,
+      source: { display_name: 'arXiv (Cornell University)', type: 'repository' },
+    }],
+  };
+  const crossrefArticle = mapCrossrefInstitutionWork({
+    DOI: journalDoi,
+    title: [title],
+    type: 'journal-article',
+    author: [{ given: 'Ana', family: 'Economist' }],
+    'container-title': ['Review'],
+    publisher: 'Federal Reserve Bank of St. Louis',
+  })!;
+  const arxiv = PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    doi: journalDoi,
+    journal: 'Fed. Reserve Bank St. Louis Rev. 102 (2020)',
+    publicationType: 'article',
+    publicationStatus: 'published',
+  });
+  // The eprint alone, which takes the journal's DOI from OpenAlex's record of
+  // the article before the report merges in. The search mapper sets no
+  // journal on either.
+  const eprint = PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+  });
+  const reviewLocation = {
+    landing_page_url: `https://doi.org/${journalDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S43156200', display_name: 'Review', type: 'journal' },
+  };
+  const articleWork: OpenAlexWork = {
+    ...reportWork,
+    id: 'https://openalex.org/W901',
+    doi: `https://doi.org/${journalDoi}`,
+    type: 'article',
+    publication_year: 2020,
+    primary_location: reviewLocation,
+    locations: [reviewLocation, reportWork.locations![1]],
+  };
+  const searchReport = () => new OpenAlexAdapter().mapToStandard(reportWork)!;
+  const explorerReport = () => slimWorksPage({ results: [reportWork] }).papers[0];
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
+
+  for (const [flow, rows] of [
+    ['eprint, OpenAlex article, report', PaperBuilder.deduplicate([eprint, new OpenAlexAdapter().mapToStandard(articleWork)!, searchReport()])],
+    ['Crossref, search', PaperBuilder.deduplicate([crossrefArticle, searchReport()])],
+    ['Crossref, Explorer page', PaperBuilder.deduplicate([crossrefArticle, explorerReport()])],
+    ['arXiv, search', PaperBuilder.deduplicate([arxiv, searchReport()])],
+    ['arXiv, Explorer page', PaperBuilder.deduplicate([arxiv, explorerReport()])],
+    ['arXiv, Explorer across pages', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), explorerReport()])],
+    ['arXiv, feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(reportWork)!.enrichment, 'openalex')]],
+  ] as Array<[string, Paper[]]>) {
+    assert.equal(rows.length, 1, flow);
+    assert.equal(rows[0].doi, journalDoi, flow);
+    assert.equal(rows[0].peerReviewed, true, flow);
+    assert.equal(reviewTagForPaper(rows[0]), null, flow);
+    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], flow);
+  }
+});
+
 test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {
   const unknown = {
     id: 'openalex:W3',

@@ -235,19 +235,31 @@ export class PaperBuilder {
     // arXiv eprint among a FEDS paper's locations while arXiv lists the
     // journal's DOI for it. A row that keeps the article's DOI and journal is
     // not the working paper.
-    // A base DOI from the working paper's own registrant keeps that identity
-    // too: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for the
-    // paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
-    // 2026-10-20, the prefix of each series in `WORKING_PAPER_SOURCE_IDS`
-    // held only its institution's own publications, and no academic
-    // publisher's journal. Other records get no such reading: Springer
-    // registers journal articles and chapters alike under 10.1007.
+    // An arXiv record whose DOI is its only claim, and comes from a working
+    // paper's own registrant, is that working paper too: arXiv can list a
+    // FEDS revision, 10.17016/feds.2026.007r1, for the paper OpenAlex files as
+    // 10.17016/feds.2026.007. The evidence covers the listed series: in
+    // Crossref on 2026-10-20, the prefix of each series in
+    // `WORKING_PAPER_SOURCE_IDS` held only its institution's own
+    // publications. `workingPaper` also marks every OpenAlex `report`, and
+    // some of their registrants issue journals as well (the St. Louis Fed's
+    // Review under 10.20955), so a record that names its journal, has merged
+    // another record or comes from another provider keeps its own answer. An
+    // arXiv record that lists such a journal's DOI without its reference still
+    // reads as the report. Springer registers journal articles and chapters
+    // alike under 10.1007, so only a working paper gets this reading.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
+    // `arxivService` reads any DOI as publication. Until another record merges
+    // in, an arXiv record without a journal reference has nothing else behind
+    // its `true`.
+    const arxivDoiOnly = existingPaper.sources?.primary === 'arxiv'
+      && existingPaper.sources.enrichedBy.length === 0
+      && !existingPaper.journal && isPublisherDoi(baseDoi);
     const sameRecord = !existingPaper.doi
       || (baseDoi !== '' && baseDoi === enrichmentDoi)
-      || (enrichmentData.workingPaper === true && enrichmentDoi !== ''
+      || (arxivDoiOnly && enrichmentData.workingPaper === true && enrichmentDoi !== ''
         && doiRegistrant(baseDoi) === doiRegistrant(enrichmentDoi))
       || (!isPublisherDoi(baseDoi)
         && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
