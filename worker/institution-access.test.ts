@@ -515,6 +515,44 @@ test('the resolver is found by ROR id first, then by mail domain', async () => {
   assert.deepEqual(findResolver({ domain: 'usal.es', rorId: OTHER_ROR_ID }), usal);
 });
 
+// The University of Hawaiʻi gives one @hawaii.edu address to the students and
+// staff of all ten campuses, and the only resolver the census found for the
+// system is the Mānoa library's (01UHAWAII_MANOA, verified then withdrawn on
+// 2026-10-20). A hawaii.edu reader may be at Hilo or a community college, so
+// the system's domain and ROR id select nothing until the campus is known.
+const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
+
+test('the Hawaiʻi system\'s mail domain and ROR id select no resolver, so Mānoa\'s holdings are not the system\'s answer', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const { INSTITUTION_RESOLVERS } = await import('./institution-resolvers.ts');
+  assert.equal(findResolver({ domain: 'hawaii.edu' }), null);
+  assert.equal(findResolver({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }), null);
+  assert.equal(findResolver({ domain: 'hilo.hawaii.edu', rorId: HAWAII_SYSTEM_ROR }), null);
+  assert.ok(!INSTITUTION_RESOLVERS.some(row => row.institution === '01UHAWAII_MANOA' || row.domains.includes('hawaii.edu') || row.rorId === HAWAII_SYSTEM_ROR));
+  // Shipped, the row answered Nature 2020 with Mānoa's link; the stub only
+  // knows USAL's host, so any resolver call would surface as an unexpected fetch.
+  const stub = upstreams();
+  await rejectsWith(
+    lookupInstitutionAccess({ doi: DOI, domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }, { fetchImpl: stub.fetchImpl }),
+    'INSTITUTION_NOT_SUPPORTED',
+    404,
+  );
+  assert.equal(stub.calls.length, 0);
+});
+
+test('rows deployed from main keep their resolvers: UVic-UCC, PUC Chile and JKU Linz, each once', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const { INSTITUTION_RESOLVERS } = await import('./institution-resolvers.ts');
+  const uvic = { host: 'csuc-uvic.alma.exlibrisgroup.com', institution: '34CSUC_UVIC' };
+  const puc = { host: 'puc.alma.exlibrisgroup.com', institution: '56PUC_INST' };
+  assert.deepEqual(findResolver({ domain: 'uvic-ucc.cat' }), uvic);
+  assert.deepEqual(findResolver({ domain: 'alumnes.uvic-ucc.cat', rorId: 'https://ror.org/006zjws59' }), uvic);
+  assert.deepEqual(findResolver({ domain: 'uc.cl' }), puc);
+  assert.deepEqual(findResolver({ domain: 'estudiante.uc.cl', rorId: 'https://ror.org/04teye511' }), puc);
+  assert.deepEqual(findResolver({ domain: 'jku.at' }), { host: 'obv-at-ubl.alma.exlibrisgroup.com', institution: '43ACC_UBL' });
+  assert.equal(INSTITUTION_RESOLVERS.filter(row => row.rorId === 'https://ror.org/052r2xn60').length, 1);
+});
+
 test('ignores date coverage when Crossref gives no year', async () => {
   const stub = upstreams({ crossref: () => jsonResponse({ message: { ISSN: ['0092-8674'] } }) });
   await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
@@ -793,4 +831,14 @@ test('the route maps validation, unsupported institutions and outages to codes i
   }
   const { response } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { method: 'POST' });
   assert.equal(response.status, 405);
+});
+
+test('the access route refuses the Hawaiʻi system instead of answering with Mānoa\'s subscriptions', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }).toString();
+  const { response, body, calls, accessPuts } = await requestAccess(search);
+  assert.equal(response.status, 404);
+  assert.deepEqual(body, { code: 'INSTITUTION_NOT_SUPPORTED' });
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(accessPuts.length, 0);
+  assert.ok(calls.every(host => !host.endsWith('.alma.exlibrisgroup.com')), `asked a resolver: ${calls.join(', ')}`);
 });

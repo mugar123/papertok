@@ -225,6 +225,33 @@ test('refuses an institution no provider can answer for, without asking anyone',
   }
 });
 
+// One @hawaii.edu address serves every campus of the University of Hawaiʻi,
+// and the only resolver found is Mānoa's library: the system's identity
+// gets no list rather than Mānoa's (row withdrawn 2026-10-20).
+const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
+
+test('the Hawaiʻi system is refused rather than listed from Mānoa\'s library', async () => {
+  const stub = upstreams();
+  await assert.rejects(
+    lookupInstitutionServices({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR } as InstitutionQuery, { fetchImpl: stub.fetchImpl }),
+    error => (error as Error & { code?: string; status?: number }).code === 'INSTITUTION_NOT_SUPPORTED' && (error as Error & { code?: string; status?: number }).status === 404,
+  );
+  assert.equal(stub.calls.length, 0);
+  assert.equal('library' in servicesCacheParams({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR } as InstitutionQuery, {} as WorkerEnv), false);
+});
+
+test('UVic-UCC and PUC Chile are listed from their own libraries', () => {
+  const catalogue = catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET);
+  assert.deepEqual(
+    servicesCacheParams({ domain: 'uvic-ucc.cat', rorId: 'https://ror.org/006zjws59' } as InstitutionQuery, {} as WorkerEnv),
+    { library: '34CSUC_UVIC', host: 'csuc-uvic.alma.exlibrisgroup.com', catalogue, reading: 'well-formed-answers' },
+  );
+  assert.deepEqual(
+    servicesCacheParams({ domain: 'uc.cl', rorId: 'https://ror.org/04teye511' } as InstitutionQuery, {} as WorkerEnv),
+    { library: '56PUC_INST', host: 'puc.alma.exlibrisgroup.com', catalogue, reading: 'well-formed-answers' },
+  );
+});
+
 // With a key, the catalogue goes to GetFTR twenty DOIs per request.
 const GETFTR_BATCHES = Math.ceil(SERVICE_CATALOGUE.filter(entry => entry.doi).length / GETFTR_BATCH_SIZE);
 
@@ -409,6 +436,15 @@ test('the services route rejects malformed URNs and unsafe schemes without provi
     assert.ok(calls.every(host => host === 'identitytoolkit.googleapis.com'));
     assert.equal(servicePuts.length, 0);
   }
+});
+
+test('the services route refuses the Hawaiʻi system without asking Mānoa\'s resolver or caching', async () => {
+  const search = new URLSearchParams({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR, offset: '0' }).toString();
+  const { response, body, calls, servicePuts } = await requestServices(search);
+  assert.equal(response.status, 404);
+  assert.deepEqual(body, { code: 'INSTITUTION_NOT_SUPPORTED' });
+  assert.equal(servicePuts.length, 0);
+  assert.ok(calls.every(host => !host.endsWith('.alma.exlibrisgroup.com')), `asked a resolver: ${calls.join(', ')}`);
 });
 
 test('the route caches a complete list for seven days under the library', async () => {
