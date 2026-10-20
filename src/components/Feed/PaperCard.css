@@ -1152,7 +1152,13 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .pc-side-btn--like { --rail: var(--accent-rose); }
-.pc-side-btn--bookmark { --rail: var(--accent-save); }
+.pc-side-btn--bookmark {
+  --rail: var(--accent-save);
+  /* Save is held to pick a list (PaperCard.tsx, `saveHold`); iOS would answer
+     the same hold with its callout and a text selection. */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
 .pc-side-btn--connections { --rail: var(--accent-primary); }
 .pc-side-btn--similar { --rail: var(--accent-violet); }
 .pc-side-btn--more { --rail: var(--text-tertiary); }
