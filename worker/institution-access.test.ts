@@ -453,7 +453,9 @@ test('is not entitled when every ISSN asked answers without full text', async ()
 });
 
 test('a resolver answer that cannot be read is an outage, not an unknown to remember', async () => {
-  const stub = upstreams({ resolver: () => xml('<uresolver_content/>') });
+  // Complete, but with no context object: an answer about no journal, which
+  // must not be cached for a week as a refusal.
+  const stub = upstreams({ resolver: () => xml('<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u"><context_services/></uresolver_content>') });
   await assert.rejects(
     lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
     error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
@@ -473,6 +475,22 @@ test('an answer cut off before its services is no answer: an outage, not a refus
     lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
     error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
   );
+});
+
+// Complete, but not well-formed XML: a package name with its ampersand left
+// unescaped. Nothing the reader needs is missing.
+const CTO_NOT_WELL_FORMED = CTO_SINGLE_SERVICE.replace('>ProQuest Central<', '>Earth, Atmospheric & Aquatic Science Collection<');
+// Complete, but the filtered Pau service never closes: read as it stands, it
+// would swallow the live service after it, which would then count as
+// filtered too.
+const CTO_SERVICE_LEFT_OPEN = CTO_FILTERED_AND_LIVE.replace('</resolution_url>\n    </context_service>', '</resolution_url>');
+
+test('a complete answer is read even when it is not well-formed XML, but not one with a service left open', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_NOT_WELL_FORMED)?.services.map(service => service.name), ['Nature', 'Earth, Atmospheric & Aquatic Science Collection']);
+  const stub = upstreams({ resolver: () => xml(CTO_NOT_WELL_FORMED) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
+  assert.equal(parseResolverAnswer(CTO_SERVICE_LEFT_OPEN), null);
 });
 
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
@@ -785,7 +803,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'well-formed-answers']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'complete-answers']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
