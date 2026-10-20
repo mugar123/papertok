@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient } from './openAlexClient.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import type { Paper } from '../models/Paper.ts';
 import type { PaperSearchFilters } from './adapters/index.ts';
 
@@ -77,6 +79,45 @@ test('does not mark repository preprints as published', () => {
 
   assert.equal(paper!.citationCountKnown, true);
   assert.equal(paper!.publicationStatus, 'preprint');
+});
+
+// OpenAlex returns the IMF series exactly as it returns Nature: `article`, in a
+// `journal`, published version (sources as returned on 2026-10-19).
+const feedWork = (id: string, source: { id: string; display_name: string; type: string } | null) => new OpenAlexAdapter().mapToStandard({
+  id: `https://openalex.org/${id}`,
+  title: `Work ${id}`,
+  type: 'article',
+  authorships: [],
+  primary_location: { is_published: true, source },
+});
+const IMF_SOURCE = { id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Paper', type: 'journal' };
+const NATURE_SOURCE = { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal' };
+
+test('a feed card from OpenAlex is peer reviewed only when a venue shows it', () => {
+  // The card used to call both reviewed.
+  const [imf, nature, unsourced] = PaperBuilder.deduplicate([
+    feedWork('W7215107402', IMF_SOURCE),
+    feedWork('W2919115771', NATURE_SOURCE),
+    feedWork('W3', null),
+  ]);
+
+  assert.equal(imf.peerReviewed, false);
+  assert.equal(nature.peerReviewed, true);
+  assert.equal(unsourced.peerReviewed, undefined);
+});
+
+test('a feed card tags the working paper, and neither the journal article nor a journal named Working Paper', () => {
+  const [imf, nature, publicHealth] = PaperBuilder.deduplicate([
+    feedWork('W7215107402', IMF_SOURCE),
+    feedWork('W2919115771', NATURE_SOURCE),
+    // A PAGEPress journal whose name alone would read as a working-paper series.
+    feedWork('W4', { id: 'https://openalex.org/S4210222596', display_name: 'Working Paper of Public Health', type: 'journal' }),
+  ]);
+
+  assert.equal(reviewTagForPaper(imf)?.label, 'Working paper');
+  assert.equal(reviewTagForPaper(nature), null);
+  assert.equal(publicHealth.peerReviewed, undefined);
+  assert.equal(reviewTagForPaper(publicHealth), null);
 });
 
 test('uses current OpenAlex topics when legacy concepts are missing', () => {

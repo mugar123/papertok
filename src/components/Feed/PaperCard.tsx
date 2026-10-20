@@ -49,6 +49,7 @@ import {
   Dna,
   Eye,
   FileText,
+  Files,
   Flask,
   Gear,
   GraduationCap,
@@ -139,6 +140,7 @@ const SLOT_MORPH_MS = 240;
  */
 const STATUS_CHIP_ICONS = {
   preprint: NotePencil,
+  workingPaper: Files,
   open: LockKeyOpen,
   openCopy: LockKeyOpen,
   subscription: LockKey,

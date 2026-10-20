@@ -49,6 +49,25 @@ test('an explicit peerReviewed:false is never Verified, whatever the publication
   assert.equal(reviewStatusForPaper({ journal: 'Some Journal', peerReviewed: false }), null);
 });
 
+test('a working paper carries its own tag, while a reviewed or unknown paper carries none', () => {
+  // An IMF working paper as the OpenAlex mappers build it: published, typed
+  // `article`, in a journal-like series.
+  const workingPaper = reviewTagForPaper({
+    journal: 'IMF Working Paper',
+    publicationType: 'article',
+    publicationStatus: 'published',
+    peerReviewed: false,
+    workingPaper: true,
+  });
+  assert.equal(workingPaper?.label, 'Working paper');
+
+  assert.equal(reviewTagForPaper({ journal: 'Nature', publicationType: 'article', publicationStatus: 'published', peerReviewed: true }), null);
+  // Another provider's `false` says nothing about the kind of record.
+  assert.equal(reviewTagForPaper({ publicationStatus: 'published', publicationType: 'techreport', peerReviewed: false }), null);
+  // A preprint stays a preprint whatever series holds it.
+  assert.equal(reviewTagForPaper({ publicationStatus: 'preprint', peerReviewed: false, workingPaper: true })?.label, 'Preprint');
+});
+
 test('an arXiv copy outranks a publisher that says the paper is closed', () => {
   // OpenAlex reports `is_oa` for the published version. A paper that ran in a
   // subscription journal reads as closed there while its arXiv copy sits free,
@@ -112,12 +131,13 @@ test('a downloadable pdf counts as open', () => {
 test('every chip carries a tone, a word and an explanation', () => {
   const papers = [
     { publicationType: 'preprint', arxivId: '2401.00001' },
+    { publicationStatus: 'published' as const, peerReviewed: false, workingPaper: true },
     { journal: 'Nature', openAccess: false },
   ];
   for (const paper of papers) {
-    // `reviewTagForPaper` puede no dar nada: desde el 12-09-2026 sólo hay
-    // distintivo para el preprint, la salvedad. Lo revisado por pares es la
-    // norma y no se señala.
+    // `reviewTagForPaper` can return nothing: since 2026-09-12 only the
+    // caveats (preprint, working paper) are tagged. Peer review is the norm
+    // and is not marked.
     for (const tag of [reviewTagForPaper(paper), accessTagForPaper(paper)].filter(Boolean)) {
       assert.match(tag!.tone, /^(amber|blue|green|neutral)$/);
       assert.ok(tag!.label.length > 0 && tag!.hint.length > 0);
@@ -138,7 +158,7 @@ test('the chips use the English terms', () => {
  * del informe. El ESTADO sigue calculándose —los filtros lo usan— pero no
  * hay distintivo detrás de él.
  */
-test('sólo el preprint lleva distintivo; lo revisado por pares no', () => {
+test('a peer-reviewed paper carries no review tag', () => {
   assert.equal(reviewTagForPaper({ journal: 'Nature' }), null);
   assert.equal(reviewTagForPaper({ publicationStatus: 'published' }), null);
   const preprint = reviewTagForPaper({ publicationType: 'preprint' });

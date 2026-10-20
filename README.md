@@ -54,7 +54,7 @@ The palette publishes each view once: All waits for every category to settle; a 
 
 **A personal library, in color.** Lists carry one of eight colors generated under three constraints (shared lightness, capped chroma, minimum contrast), visible from the library to the lists you share.
 
-**Honest labels.** Every card answers whether a paper passed peer review ("Preprint" / "Verified") and whether you can actually read it ("Open access" / "Open version" / "Subscription") — and shows nothing rather than guessing when the record doesn't say.
+**Honest labels.** Cards flag two kinds of paper that have not been through journal peer review: "Preprint" for work shared before review, and "Working paper" when OpenAlex types the record as a report or files it under a known working-paper series. A card without either label does not claim peer review. Cards also say whether you can read the paper ("Open access" / "Open version" / "Closed access"), and show nothing rather than guess when the record doesn't say.
 
 **Installable.** Add PaperTok to your home screen and it opens standalone, with its own icon and a theme-tinted system bar. (No offline mode yet — it still needs the network.)
 
