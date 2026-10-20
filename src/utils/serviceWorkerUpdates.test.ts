@@ -344,6 +344,59 @@ test('a tab behind a deploy reloads at a route change taken online, once the wri
   assert.equal(tab.reloads, 6)
 })
 
+// Firestore writes as App.tsx waits for them, acknowledged when the test says
+// so. The wait first issues the interaction aggregate if its debounce is
+// armed, then covers the writes issued before it was called, like
+// `waitForPendingWrites`, and none issued after.
+function firestoreWrites() {
+  const writes = new Map<string, { acknowledged: Promise<void>; acknowledge(): void }>()
+  let aggregateArmed = false
+  const issue = (name: string) => {
+    let acknowledge!: () => void
+    const acknowledged = new Promise<void>((resolve) => { acknowledge = resolve })
+    writes.set(name, { acknowledged, acknowledge })
+  }
+  return {
+    issue,
+    armAggregate: () => { aggregateArmed = true },
+    acknowledge: (name: string) => writes.get(name)!.acknowledge(),
+    settled: () => {
+      if (aggregateArmed) issue('aggregate')
+      aggregateArmed = false
+      return Promise.all([...writes.values()].map(({ acknowledged }) => acknowledged))
+    },
+  }
+}
+
+test('a like issued while the reload waits holds it until the next route change', async (t) => {
+  const tab = tabAfterDeploy(t, '/onboarding')
+  // The module's own copy, as in the crash test below, so `behindSince` starts
+  // unset whichever test ran before.
+  const specifier = './serviceWorkerUpdates.ts?page=liked'
+  const { noteDeployActivated, reloadIfBehindDeploy }: typeof import('./serviceWorkerUpdates.ts') = await import(specifier)
+  await noteDeployActivated(OLD_ENTRY)
+  const firestore = firestoreWrites()
+
+  // The email opt-in is still unacknowledged when onboarding moves to the
+  // feed, and the reader likes the first card before it is acknowledged: the
+  // like's own write, and the aggregate's debounce armed again.
+  firestore.issue('opt-in')
+  tab.pathname = '/feed'
+  const reload = reloadIfBehindDeploy('/feed', firestore.settled)
+  await settle()
+  firestore.issue('like')
+  firestore.armAggregate()
+  firestore.acknowledge('opt-in')
+  await reload
+  assert.equal(tab.reloads, 0, 'the like is still unacknowledged')
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+
+  // With nothing left to acknowledge, the next route change reloads.
+  tab.pathname = '/lists'
+  await reloadIfBehindDeploy('/lists', async () => {})
+  assert.equal(tab.reloads, 1)
+})
+
 test('the page a deploy reload is replacing reports no crash, and the page it boots reports a render crash', async (t) => {
   const tab = tabAfterDeploy(t, '/feed')
   // Each page load runs its own copy of a module, and a query makes one: this
