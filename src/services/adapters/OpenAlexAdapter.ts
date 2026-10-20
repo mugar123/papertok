@@ -3,7 +3,6 @@ import type { PaperSearchFilters, PaperSearchResult } from './index.ts';
 import type { OpenAlexWork } from './openAlexTypes.ts';
 import type { OpenAlexRequestError } from '../openAlexClient.ts';
 
-import { assignRequestedCategories } from '../arxivService.ts';
 import { getCategoryArea } from '../../data/categoryTaxonomy.ts';
 import { openAlexFetch } from '../openAlexClient.ts';
 import { getArxivIdFromWork } from '../openAlexService.ts';
@@ -115,10 +114,11 @@ export class OpenAlexAdapter {
 
       const data = await response.json() as { results: OpenAlexWork[]; meta: { count: number } };
       
-      const papers = assignRequestedCategories(
-        data.results.map(work => this.mapToStandard(work)).filter(Boolean) as Paper[],
-        filters.internalCategories
-      );
+      // No category from the request: an OpenAlex work carries none of arXiv's,
+      // and `internalCategories` only widens the work types above. Choosing one
+      // by label words in the abstract called an AI survey "High Energy
+      // Physics - Theory" (PAP-60); the card reads `primaryTopic` instead.
+      const papers = data.results.map(work => this.mapToStandard(work)).filter(Boolean) as Paper[];
 
       return {
         papers,
