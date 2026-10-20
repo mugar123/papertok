@@ -30,6 +30,15 @@ import { FOLLOWING_ORDER_STORAGE_KEY } from './followingOrderStorage.ts';
 
 export const APP_RELOAD_KEY = 'papertok_app_forced_reload_at';
 
+/**
+ * The mark main.tsx's `vite:preloadError` handler leaves when it reloads for a
+ * chunk a deploy took away, and how long it keeps a second failure from
+ * reloading again. analyticsService.ts reads the same mark to tell a chunk
+ * that is still missing from any other crash.
+ */
+export const PRELOAD_RELOAD_KEY = 'papertok_preload_reloaded_at';
+export const PRELOAD_RELOAD_WINDOW_MS = 60_000;
+
 /** The snapshot's own prefix, from `context/FeedContext.jsx`. */
 export const FEED_SNAPSHOT_STORAGE_PREFIX = 'papertok_feed_snapshot_';
 

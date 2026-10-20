@@ -7,7 +7,7 @@ import type { PublicPaperInput } from '../../services/publicListPayload.ts';
 import type { ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { IS_DEMO, db } from '../../services/firebase.ts';
 import {
   collection,
@@ -33,6 +33,7 @@ import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.tsx';
 import SaveToListModal from './SaveToListModal.tsx';
 import ListNote from './ListNote.tsx';
+import { ListRowAuthors, PaperListRow } from './ListRow.tsx';
 import { Button } from '../ui/button.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu.tsx';
 import {
@@ -42,17 +43,14 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from '../ui/alert-dialog.tsx';
-import AuthorDots from '../Feed/AuthorDots.tsx';
 import RailMenu from '../Feed/RailMenu.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { EASE_DRAWER, EASE_OUT, animateSize } from '../../utils/motionCurves.ts';
 import useIsPhone from '../../hooks/useIsPhone.ts';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { toastError } from '../ui/toast.ts';
 import { resolveListColor } from '../../utils/listColors.ts';
-import { areaAccentForPaper } from '../../utils/areaAccent.ts';
 import ScientificText from '../ScientificText.ts';
 import { paperLegacyAdapter } from '../../models/Paper.ts';
 import {
@@ -71,7 +69,6 @@ import {
   Warning,
 } from '@phosphor-icons/react';
 import { shareOrCopyLink } from '../../utils/shareLink.ts';
-import { authorExplorerPath } from '../../utils/explorerPaths.ts';
 import { timeAgo } from '../../utils/timeAgo.ts';
 import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.ts';
@@ -385,8 +382,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const isPhone = useIsPhone();
   const [rowSheet, setRowSheet] = useState<RowTarget | null>(null);
   const [rowSheetOpen, setRowSheetOpen] = useState(false);
-  const [authorsSheet, setAuthorsSheet] = useState<Partial<Paper> | null>(null);
-  const [authorsOpen, setAuthorsOpen] = useState(false);
   const [rowSheetStep, setRowSheetStep] = useState<'menu' | 'remove' | 'edit'>('menu');
   const rowSheetFrom = useRef<number | null>(null);
   const rowSheetStepRef = useRef<HTMLElement | null>(null);
@@ -1779,7 +1774,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       <motion.div
                         {...rowMotion}
                         key={paperId}
-                        className="lists-paper-item lists-paper-item--skeleton"
+                        className="list-row lists-paper-item--skeleton"
                         aria-hidden={pendingPaperIds.has(paperId) ? 'true' : undefined}
                       >
                         {/* This paper's own id, not the list's loading flag.
@@ -1799,67 +1794,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
                           </div>
                         ) : (
-                          <p className="lists-paper-title lists-paper-placeholder">
+                          <p className="list-row-title lists-paper-placeholder">
                             {'The title could not be loaded'}
                           </p>
                         )}
                       </motion.div>
                     );
                     return (
-                      <motion.div {...rowMotion} key={paperId} className="lists-paper-item"
-                        style={{ '--area-accent': areaAccentForPaper(paper) }}
-                        onClick={() => openPaperCard(paper)}>
-                        <div className="lists-paper-item-content">
-                          <div className="lists-paper-head">
-                            {(paper.categories?.length ?? 0) > 0 && (
-                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories![0])}</span>
-                            )}
-                            {(paper.categories?.length ?? 0) > 0 && paper.year && <span className="lists-paper-dot" aria-hidden="true">·</span>}
-                            {paper.year && <span className="lists-paper-date">{paper.year}</span>}
-                          </div>
-                          <p className="lists-paper-title" lang="en">
-                            <button
-                              type="button"
-                              className="lists-paper-title-btn"
-                              onClick={(e) => { e.stopPropagation(); openPaperCard(paper); }}
-                            >
-                              <ScientificText>{paper.title}</ScientificText>
-                            </button>
-                          </p>
-                          {(paper.authors?.length ?? 0) > 0 && (() => {
-                            const names = paper.authors!.map(a => (typeof a === 'string' ? a : a.name)).filter(Boolean).join(', ');
-                            if (isPhone) return (
-                              <button
-                                type="button"
-                                className="pc-author-avatars lists-paper-authors lists-paper-authors-btn"
-                                aria-label={`Authors: ${names}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setAuthorsSheet(paper);
-                                  setAuthorsOpen(true);
-                                }}
-                              >
-                                <AuthorDots authors={paper.authors!} />
-                              </button>
-                            );
-                            return (
-                              <Tooltip>
-                                <TooltipTrigger render={<p className="pc-author-avatars lists-paper-authors" />}>
-                                  <AuthorDots authors={paper.authors!} />
-                                  <span className="visually-hidden">{names}</span>
-                                </TooltipTrigger>
-                                <TooltipContent align="start" className="lists-authors-tooltip" aria-hidden="true">{names}</TooltipContent>
-                              </Tooltip>
-                            );
-                          })()}
-                          {(record?.tags?.length as number) > 0 && (
-                            <div className="lists-paper-tags">
-                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
-                            </div>
-                          )}
-                          {record?.note && <ListNote note={record.note} />}
-                        </div>
-                        <div className="lists-paper-actions">
+                      <PaperListRow {...rowMotion} key={paperId}
+                        paper={paper}
+                        onOpen={() => openPaperCard(paper)}
+                        actions={(
+                          <>
                           {/* The stored id, not the merged paper's: the list
                               and the library key this paper by `paperId`, and
                               the modal's membership check and note record
@@ -1906,8 +1852,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             </Button>
                             </>
                           )}
-                        </div>
-                      </motion.div>
+                          </>
+                        )}
+                      >
+                          {(paper.authors?.length ?? 0) > 0 && (
+                            <ListRowAuthors
+                              paper={paper}
+                              onNavigate={() => {
+                                if (expandedList) navigate(location.pathname, { replace: true, state: { openListId: expandedList } });
+                              }}
+                            />
+                          )}
+                          {(record?.tags?.length as number) > 0 && (
+                            <div className="lists-paper-tags">
+                              {record.tags!.map((tag) => <span key={tag}>{tag}</span>)}
+                            </div>
+                          )}
+                          {record?.note && <ListNote note={record.note} />}
+                      </PaperListRow>
                     );
                   })}
                   </AnimatePresence>
@@ -2083,49 +2045,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           />
         )}
       </PaperOverlay>
-
-      {isPhone && (
-        <Drawer
-          open={authorsOpen}
-          onOpenChange={setAuthorsOpen}
-          onOpenChangeComplete={(isOpen) => { if (!isOpen) setAuthorsSheet(null); }}
-        >
-          <DrawerContent className="pc-share-sheet">
-            <DrawerHandle />
-            <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{'Authors'}</DrawerTitle>
-            <ul className="pc-share-list lists-authors-sheet">
-              {(authorsSheet?.authors || []).map((author, i) => {
-                const name = typeof author === 'string' ? author : author.name;
-                if (!name) return null;
-                const path = authorExplorerPath(author, authorsSheet);
-                const inner = (
-                  <>
-                    <span className="pc-author-avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
-                    {name}
-                  </>
-                );
-                return (
-                  <li key={i}>
-                    {path
-                      ? (
-                        <Link
-                          to={path}
-                          className="pc-share-row lists-authors-sheet-row"
-                          onClick={() => {
-                            if (expandedList) navigate(location.pathname, { replace: true, state: { openListId: expandedList } });
-                          }}
-                        >
-                          {inner}
-                        </Link>
-                      )
-                      : <span className="lists-authors-sheet-row">{inner}</span>}
-                  </li>
-                );
-              })}
-            </ul>
-          </DrawerContent>
-        </Drawer>
-      )}
 
       {/* Outside the AnimatePresence on purpose: Edit is reachable from a card
           in the grid AND from inside an open list, and a window that lived in

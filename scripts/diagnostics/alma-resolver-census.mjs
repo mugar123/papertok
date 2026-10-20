@@ -30,7 +30,9 @@
  * `compatibility-pending`, with the product kept for a later adapter.
  * `--only <ror>` restricts a run to one institution; `--dry` probes without
  * writing anything. `--skip-known` leaves out the institutions the census has
- * already met, so a wider `--limit` only probes the new ones.
+ * already met, so a wider `--limit` only probes the new ones. `--inventory`
+ * prints the coverage inventory (per country: met, shipped, and where the
+ * rest stand) from the census record, without any request.
  *
  * Every host is asked at most once per second, with an identifying user agent.
  * Only public endpoints are used: OpenAlex, ROR, library web pages and the
@@ -308,20 +310,21 @@ async function probeHost(host, code, journal) {
  * nothing is asked about the next journal; a library with nothing for
  * either is recorded as `answers-without-services`, not shipped.
  */
-async function probeRegions(code, { region = null, primoSlug = null, domains = [] } = {}) {
+async function probeRegions(code, { host: known = null, region = null, primoSlug = null, domains = [], country = null } = {}) {
   const codeSlug = code.replace(/^\d+/, '').toLowerCase().replace(/_/g, '-');
   const labels = domains.map(domain => domain.split('.')[0]).filter(label => label.length > 2);
   const slugs = [...new Set([primoSlug, region, codeSlug, ...labels, ...ALMA_REGIONS].filter(Boolean))];
+  // Alma in mainland China lives under exlibrisgroup.com.cn (Tsinghua answers on
+  // tsinghua.alma.exlibrisgroup.com.cn and on no .com host, 2026-10-19), so a
+  // known host is probed as given, and a Chinese institution's slugs on both.
+  const hosts = [known, ...slugs.map(slug => `${slug}.alma.exlibrisgroup.com`)];
+  if (country === 'CN') hosts.push(...slugs.map(slug => `${slug}.alma.exlibrisgroup.com.cn`), 'cn01.alma.exlibrisgroup.com.cn');
   let resolved = null;
-  for (const slug of slugs) {
-    const host = `${slug}.alma.exlibrisgroup.com`;
+  for (const host of [...new Set(hosts.filter(Boolean))]) {
     for (const journal of PROBE_JOURNALS) {
       const probe = await probeHost(host, code, journal);
       if (!probe) break;
-      if (!probe.answer) {
-        if (probe.listed > 0) return { ...probe, status: 'answers-without-indicator' };
-        break;
-      }
+      if (!probe.answer) break;
       if (!probe.answer.matched && probe.listed === 0) break;
       if (probe.listed > 0) return { ...probe, status: 'verified' };
       resolved ||= probe;
@@ -400,15 +403,18 @@ async function processInstitution(institution, record, seeds, verifyOnly) {
   // A directory address without a code is read even in a verify run.
   if (!code && (!verifyOnly || (seed?.url && almaLike))) await discover();
   if (!code) {
-    const status = seed?.url ? (almaLike ? 'address-located' : 'compatibility-pending') : 'unresolved';
+    // A product seen on the library's pages places the institution even
+    // when no resolver address was published (NUS, USP, UNAM on 2026-10-19).
+    const status = seed?.product && !almaLike ? 'compatibility-pending' : seed?.url ? 'address-located' : 'unresolved';
     return { ...entry, code: null, host: null, status };
   }
-  let probe = await probeRegions(code, { region, primoSlug, domains: entry.domains });
+  const known = seed?.host || record?.host || null;
+  let probe = await probeRegions(code, { host: known, region, primoSlug, domains: entry.domains, country: entry.country });
   // A host that lists nothing may be the regional one standing in for the
   // library's own: the library's pages name that host through its Primo.
   if (probe?.status !== 'verified' && !primoSlug) {
     await discover();
-    if (primoSlug) probe = await probeRegions(code, { region, primoSlug, domains: entry.domains });
+    if (primoSlug) probe = await probeRegions(code, { host: known, region, primoSlug, domains: entry.domains, country: entry.country });
   }
   if (!probe) return { ...entry, code, route, host: null, primoSlug, status: 'code-without-region' };
   return {
@@ -417,9 +423,54 @@ async function processInstitution(institution, record, seeds, verifyOnly) {
   };
 }
 
+/**
+ * The coverage inventory, as Markdown, from the census record alone: per
+ * country, how many institutions were met, how many ship, and where the
+ * rest stand (an Alma answer the Worker cannot read, another product, a
+ * candidate still unverified, nothing found). Reproducible: a report that
+ * quotes it can be regenerated after any run.
+ */
+function inventory(census) {
+  const all = Object.values(census.institutions);
+  const statusGroup = (entry) => {
+    if (entry.status === 'verified') return 'shipped';
+    if (entry.status === 'answers-without-indicator' || entry.status === 'answers-without-services') return 'almaUnreadable';
+    if (entry.status === 'compatibility-pending') return 'otherProduct';
+    if (entry.status === 'address-located' || entry.status === 'code-without-region') return 'candidate';
+    if (entry.status === 'excluded') return 'excluded';
+    return 'unresolved';
+  };
+  const rows = new Map();
+  for (const entry of all) {
+    const row = rows.get(entry.country) || { total: 0, shipped: 0, almaUnreadable: 0, otherProduct: 0, candidate: 0, excluded: 0, unresolved: 0, products: {} };
+    row.total += 1;
+    row[statusGroup(entry)] += 1;
+    if (entry.status === 'compatibility-pending' && entry.product) row.products[entry.product] = (row.products[entry.product] || 0) + 1;
+    rows.set(entry.country, row);
+  }
+  const lines = [
+    `Census of ${all.length} institutions, generated ${new Date().toISOString().slice(0, 10)} from alma-resolver-census.json.`,
+    '',
+    '| Country | Met | Shipped | Alma, unreadable answer | Other product | Candidate, unverified | Excluded | Unresolved |',
+    '|---|---|---|---|---|---|---|---|',
+  ];
+  for (const [country, row] of [...rows].sort((a, b) => b[1].shipped - a[1].shipped || b[1].total - a[1].total)) {
+    const products = Object.entries(row.products).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name} ${count}`).join(', ');
+    lines.push(`| ${country || '?'} | ${row.total} | ${row.shipped} | ${row.almaUnreadable} | ${row.otherProduct}${products ? ` (${products})` : ''} | ${row.candidate} | ${row.excluded} | ${row.unresolved} |`);
+  }
+  const totals = [...rows.values()].reduce((sum, row) => { for (const key of Object.keys(sum)) sum[key] += row[key]; return sum; }, { total: 0, shipped: 0, almaUnreadable: 0, otherProduct: 0, candidate: 0, excluded: 0, unresolved: 0 });
+  lines.push(`| **All** | ${totals.total} | ${totals.shipped} | ${totals.almaUnreadable} | ${totals.otherProduct} | ${totals.candidate} | ${totals.excluded} | ${totals.unresolved} |`);
+  lines.push('', 'Shipped rows answered a live probe with a service listed. "Alma, unreadable answer" is a library on Alma whose answer the Worker cannot read yet (no indicator, or nothing listed for either probe journal). "Other product" is the resolver product the library publishes instead (SFX, EBSCO, 360 Link, WorldCat, LibKey). "Candidate" is an address or code still without a verified host. Excluded rows are consortia or shared libraries, with the reason in the seeds.');
+  return lines.join('\n');
+}
+
 async function main() {
   const census = await readJson(CENSUS_FILE, { institutions: {} });
   const seeds = new Map((await readJson(SEEDS_FILE, [])).map(seed => [seed.rorId, seed]));
+  if (args.inventory) {
+    console.log(inventory(census));
+    return;
+  }
 
   let targets;
   if (args.verify) {

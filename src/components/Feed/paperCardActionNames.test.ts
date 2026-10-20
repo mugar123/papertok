@@ -112,7 +112,7 @@ test('SOURCE: la palabra que el botón principal enseña en móvil está en su n
 /**
  * A library that has the paper is named on the button, not on the chip: the
  * button is what goes through the library, and the chip keeps telling
- * everyone what the record says ("Subscription"). Asked for on 2026-10-17,
+ * everyone what the record says ("Closed access"). Asked for on 2026-10-17,
  * after the chip had carried «Via USAL» for four days.
  */
 test('SOURCE: the primary button names the library it opens the paper through', async () => {

@@ -47,6 +47,11 @@ export const INSTITUTION_PATHS = new Set([INSTITUTION_LINK_PATH, INSTITUTION_UNL
 // A Firebase ID token runs to about a kilobyte; the body carries at most one.
 const BODY_LIMIT_BYTES = 16_384;
 const LOOKUP_TIMEOUT_MS = 6000;
+// One budget for every registry question of a link: the browser waits 15 s
+// for the whole request, which also verifies one or two tokens and writes
+// the document, and up to three ROR and two federation questions at 6 s
+// each would outrun it (seen with mail.students.uam.es on 2026-10-19).
+export const LINK_LOOKUP_BUDGET_MS = 10_000;
 const ROR_API = 'https://api.ror.org/v2/organizations';
 // SeamlessAccess publishes the eduGAIN metadata as a query service: each entry
 // carries the email `scope` its identity provider authenticates.
@@ -69,10 +74,10 @@ export class InstitutionLinkError extends Error {
  * Reads the body inside the deadline as well: a registry that sends its
  * headers and then stalls is as unavailable as one that never answered.
  */
-async function fetchJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
+async function fetchJson<T>(url: string, fetchImpl: typeof fetch, budget: AbortSignal): Promise<T> {
   const response = await fetchImpl(url, {
     headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    signal: AbortSignal.any([budget, AbortSignal.timeout(LOOKUP_TIMEOUT_MS)]),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`${url} returned ${response.status}`);
@@ -85,28 +90,62 @@ function rorName(record: RorRecord, type: string) {
   return typeof match?.value === 'string' && match.value.trim() ? match.value.trim() : null;
 }
 
+// How many domains are asked about for one address: the address's own, then
+// its parents. ROR registers a university's primary domain and students
+// write from a subdomain of it (estudiante.uam.es, alumnos.upm.es,
+// g.ucla.edu, terpmail.umd.edu, checked 2026-10-19), which the university
+// controls as much as the primary one.
+const ROR_DOMAIN_ATTEMPTS = 3;
+
 /**
- * The ROR record whose registered domains include this one. ROR's search is
- * a text query, so the answer is filtered again on the `domains` field: a
- * record that merely mentions the domain somewhere is not a match.
+ * Verified mail aliases whose ROR lookup must use the university's current
+ * domain. ROR mislists neu.edu under Shenyang, while northeastern.edu resolves
+ * to Boston (04t5xt781). Northeastern documents both its legacy domain and
+ * husky.neu.edu: https://www.northeastern.edu/privacy-information/ and
+ * https://cssh.northeastern.edu/writingcenter/tutoring/first-visit/
+ * Checked 2026-10-19. Only the ROR query changes; the verified mail domain and
+ * federation scope stay intact. Website/mail-domain differences alone do not
+ * establish an alias.
  */
-async function lookupRor(domain: string, fetchImpl: typeof fetch) {
-  const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${domain}`)}`;
-  let payload;
-  try {
-    payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl);
-  } catch {
-    throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+const ROR_DOMAIN_ALIASES: Record<string, string> = {
+  'neu.edu': 'northeastern.edu',
+};
+
+/**
+ * The ROR record whose registered domains include this one or a parent of
+ * it, with the domain that matched. ROR's search is a text query, so the
+ * answer is filtered again on the `domains` field: a record that merely
+ * mentions the domain somewhere is not a match. Verified aliases are looked
+ * up by their canonical domain, and that domain must match the record. A
+ * parent with no record (`ac.uk`, `edu.au`) is simply a miss on the way to
+ * not found. A budget that runs out is the registry being unavailable, not
+ * a miss, and no further question is started past it.
+ */
+async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
+  const labels = domain.split('.');
+  const candidates = [];
+  for (let start = 0; start < labels.length - 1 && candidates.length < ROR_DOMAIN_ATTEMPTS; start += 1) {
+    candidates.push(labels.slice(start).join('.'));
   }
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  const record = items.find(item => Array.isArray(item?.domains)
-    && item.domains.some(value => String(value).toLowerCase() === domain));
-  if (!record || typeof record.id !== 'string') {
-    throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
+  for (const candidate of candidates) {
+    if (budget.aborted) throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+    const lookupDomain = ROR_DOMAIN_ALIASES[candidate] || candidate;
+    const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${lookupDomain}`)}`;
+    let payload;
+    try {
+      payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl, budget);
+    } catch {
+      throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+    }
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const record = items.find(item => Array.isArray(item?.domains)
+      && item.domains.some(value => String(value).toLowerCase() === lookupDomain));
+    if (!record || typeof record.id !== 'string') continue;
+    const name = rorName(record, 'ror_display') || rorName(record, 'label');
+    if (!name) continue;
+    return { rorId: record.id, name, acronym: rorName(record, 'acronym'), matchedDomain: candidate };
   }
-  const name = rorName(record, 'ror_display') || rorName(record, 'label');
-  if (!name) throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
-  return { rorId: record.id, name, acronym: rorName(record, 'acronym') };
+  throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
 }
 
 /**
@@ -115,9 +154,11 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch) {
  * federation, or a metadata service that is down, leaves it null rather than
  * blocking the link. Null here means "not found now", not "has none".
  */
-async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
+async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
+  // Optional, so a budget already spent on the registry is not spent again.
+  if (budget.aborted) return null;
   try {
-    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl);
+    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl, budget);
     const entry = (Array.isArray(entries) ? entries : []).find(candidate => String(candidate?.scope || '')
       .split(',')
       .map(scope => scope.trim().toLowerCase())
@@ -128,23 +169,30 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
   }
 }
 
+// The cache's second generation: the first could hold a record that does
+// not own its domain (neu.edu resolved to Shenyang until 2026-10-19).
 function cacheRequest(domain: string) {
-  return new Request(`https://papertok.internal/institution/${encodeURIComponent(domain)}`);
+  return new Request(`https://papertok.internal/institution/v2/${encodeURIComponent(domain)}`);
 }
 
 /**
  * What a domain resolves to. Cached a week on success: the registries change
  * slowly and every member of one institution asks the same question. Not
  * found and unavailable are not cached, so a registry outage or a record
- * added tomorrow is not remembered as a refusal.
+ * added tomorrow is not remembered as a refusal. Every registry question
+ * shares one `budget`, `LINK_LOOKUP_BUDGET_MS` by default.
  */
-export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> = {}): Promise<ResolvedInstitution> {
+export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default, signal: budget = AbortSignal.timeout(LINK_LOOKUP_BUDGET_MS) }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> & { signal?: AbortSignal } = {}): Promise<ResolvedInstitution> {
   const key = cacheRequest(domain);
   const cached = cache ? await cache.match(key) : null;
   if (cached) return cached.json<ResolvedInstitution>();
 
-  const ror = await lookupRor(domain, fetchImpl);
-  const institution = { domain, ...ror, entityId: await lookupEntityId(domain, fetchImpl) };
+  const { matchedDomain, ...ror } = await lookupRor(domain, fetchImpl, budget);
+  // The federation lists the identity provider by the university's own
+  // scope, which a student subdomain may not be.
+  const entityId = await lookupEntityId(domain, fetchImpl, budget)
+    ?? (matchedDomain !== domain ? await lookupEntityId(matchedDomain, fetchImpl, budget) : null);
+  const institution = { domain, ...ror, entityId };
   if (cache) {
     await cache.put(key, new Response(JSON.stringify(institution), {
       headers: {

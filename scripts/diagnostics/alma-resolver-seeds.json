@@ -2322,5 +2322,218 @@
     "product": "ebsco",
     "evidence": "https://www.canterbury.ac.nz/study/library/search-our-collections",
     "notes": "The library links a VuFind catalogue (libcat.canterbury.ac.nz, which answered 403 to curl) and EBSCO Publications Finder (custId=s1165276); no Ex Libris host was seen and canterbury.primo.exlibrisgroup.com does not resolve. The codes 64CANTERBURY_INST and 64UC_INST returned empty bodies on ap02."
+  },
+  {
+    "rorId": "https://ror.org/022k4wk35",
+    "name": "Beijing Normal University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://bnu.alma.exlibrisgroup.com/view/uresolver/86BNU_INST/openurl",
+    "product": "alma",
+    "code": "86BNU_INST",
+    "host": "bnu.alma.exlibrisgroup.com"
+  },
+  {
+    "rorId": "https://ror.org/013xs5b60",
+    "name": "Capital Medical University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://sfx-86ali.hosted.exlibrisgroup.com.cn/cmu",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/00js3aw79",
+    "name": "Jilin University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://kp8vy8vz5l.search.serialssolutions.com/",
+    "product": "360link"
+  },
+  {
+    "rorId": "https://ror.org/02v51f717",
+    "name": "Peking University",
+    "country": "CN",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://zm8lp2fe5j.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://zm8lp2fe5j.search.serialssolutions.com/?genre=article&issn=0028-0836&date=2020",
+    "notes": "The directory-listed 360 Link instance is live and is Peking's: the Nature OpenURL page loads pku_link20.js, links to lib.pku.edu.cn CALIS ILL and shows pkusummon@lib.pku.edu.cn. No Primo or Alma reference to PKU was found in searches."
+  },
+  {
+    "rorId": "https://ror.org/0220qvk04",
+    "name": "Shanghai Jiao Tong University",
+    "country": "CN",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://sfx-86sjtu.hosted.exlibrisgroup.com.cn/86sjtu",
+    "product": "sfx",
+    "evidence": "https://sfx-86sjtu.hosted.exlibrisgroup.com.cn/86sjtu?sid=test&genre=article&issn=0028-0836&date=2020&sfx.response_type=simplexml",
+    "notes": "The directory-listed SFX instance is live: a Nature OpenURL with sfx.response_type=simplexml returns 5 getFullTxt targets. The library homepage (lib.sjtu.edu.cn) renders through a Chaoxing JS portal with no static links, so no Alma code or own-page reference to the resolver was found."
+  },
+  {
+    "rorId": "https://ror.org/01vy4gh70",
+    "name": "Shenzhen University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "http://szdnet.cceu.org.cn:3410/szu",
+    "product": "other"
+  },
+  {
+    "rorId": "https://ror.org/011ashp19",
+    "name": "Sichuan University",
+    "country": "CN",
+    "source": "zotero",
+    "url": "https://sfx-86scu.hosted.exlibrisgroup.com.cn/86scu",
+    "product": "sfx"
+  },
+  {
+    "rorId": "https://ror.org/03cve4549",
+    "name": "Tsinghua University",
+    "country": "CN",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://tsinghua.alma.exlibrisgroup.com.cn/view/uresolver/86THU_INST/openurl",
+    "product": "alma",
+    "code": "86THU_INST",
+    "host": "tsinghua.alma.exlibrisgroup.com.cn",
+    "evidence": "https://tsinghua-primo.hosted.exlibrisgroup.com.cn/primo_library/libweb/webservices/rest/v1/configuration/86THU",
+    "notes": "The Primo view config (vid=86THU, hosted at the .com.cn Primo, not the .com host in the directory URL, which no longer resolves) names the resolver tsinghua.alma.exlibrisgroup.com.cn/view/uresolver/86THU_INST/openurl. Nature 2020 returned 14 getFullTxt context services with full_text_indicator; tsinghua.alma.exlibrisgroup.com (.com) answers with an empty body."
+  },
+  {
+    "rorId": "https://ror.org/04mhzgx49",
+    "name": "Tel Aviv University",
+    "country": "IL",
+    "source": "zotero",
+    "url": "https://tau-primo.hosted.exlibrisgroup.com/openurl/TAU/TAU",
+    "product": "alma"
+  },
+  {
+    "rorId": "https://ror.org/03awzbc87",
+    "name": "Northeastern University (Shenyang)",
+    "country": "CN",
+    "source": "census review 2026-10-19",
+    "exclude": "ROR lists neu.edu, an alias of Northeastern University in Boston, under this Chinese university; the code and host found through that domain (01NEU_INST on northeastern.alma…) belong to the Boston library, already in the table under its own ROR id"
+  },
+  {
+    "rorId": "https://ror.org/057zh3y96",
+    "name": "The University of Tokyo",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://vs2ga4mq9g.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.lib.u-tokyo.ac.jp/ja/library/contents/database/",
+    "notes": "The library's database list links UTokyo Article Link to vs2ga4mq9g.search.serialssolutions.com (ProQuest 360 Link), and discovery is Summon (tokyo.summon.serialssolutions.com). A Nature OpenURL to that host returns a UTokyo-branded 360 Link page; the OPAC is the in-house opac.dl.itc.u-tokyo.ac.jp."
+  },
+  {
+    "rorId": "https://ror.org/02kpeqv85",
+    "name": "Kyoto University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://tt2mx4dc7s.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.kulib.kyoto-u.ac.jp/",
+    "notes": "The library homepage links the e-journal list and resolver at tt2mx4dc7s.search.serialssolutions.com (360 Link) and Summon at kyoto.summon.serialssolutions.com. A Nature OpenURL returns a 360 Link page branded with kulib.kyoto-u.ac.jp links; the OPAC is KULINE."
+  },
+  {
+    "rorId": "https://ror.org/01dq60k83",
+    "name": "Tohoku University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://ec2xm3xr4v.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.library.tohoku.ac.jp/search/ejournal/index.php",
+    "notes": "The library's e-journal page links ec2xm3xr4v.search.serialssolutions.com. A Nature OpenURL to it returns a 360 Link page titled 'Tohoku University Library Full Text Finder' that links back to the in-house OPAC's opac_openurl."
+  },
+  {
+    "rorId": "https://ror.org/04h9pn542",
+    "name": "Seoul National University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "code": "82SNU_INST",
+    "product": "alma",
+    "host": "ap01.alma.exlibrisgroup.com",
+    "url": "https://ap01.alma.exlibrisgroup.com/view/uresolver/82SNU_INST/openurl",
+    "evidence": "https://lib.snu.ac.kr/",
+    "notes": "The library homepage embeds ap01.alma.exlibrisgroup.com/view/delivery/thumbnail/82SNU_INST/... and links hosted Primo snu-primo.hosted.exlibrisgroup.com (vid=82SNU). Nature 2020 returned 6 getFullTxt services with full_text_indicator on ap01; snu.alma.exlibrisgroup.com (guessed slug) returned the same body."
+  },
+  {
+    "rorId": "https://ror.org/02e16g702",
+    "name": "Hokkaido University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://jg8gn6xr5x.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://www.lib.hokudai.ac.jp/e-journals/",
+    "notes": "The library's e-journals page links jg8gn6xr5x.search.serialssolutions.com. A Nature OpenURL returns a 360 Link page with Hokkaido branding (hokkaido/images/link20_header.png); the OPAC is the in-house opac.lib.hokudai.ac.jp."
+  },
+  {
+    "rorId": "https://ror.org/036rp1748",
+    "name": "Universidade de São Paulo",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "product": "other",
+    "evidence": "https://www.ime.usp.br/bib/wp-content/uploads/2020/03/Pesquisa-online.pdf",
+    "notes": "dedalus.usp.br serves an Aleph menu and Busca Integrada is a local Primo at buscaintegrada.usp.br:1701/primo_library/libweb/action/search.do?vid=USP (its HTTPS port timed out from here). The library pages publish no OpenURL resolver; there is no evidence of Alma."
+  },
+  {
+    "rorId": "https://ror.org/00a2xv884",
+    "name": "Zhejiang University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "http://gk4pb6yy8y.search.serialssolutions.com/",
+    "product": "360link",
+    "evidence": "https://libweb.zju.edu.cn/",
+    "notes": "The library homepage links to zju.summon.serialssolutions.com and to the Serials Solutions client GK4PB6YY8Y for its e-journal and e-book A-Z lists. The catalogue is Aleph (ZJU01)."
+  },
+  {
+    "rorId": "https://ror.org/05qbk4x57",
+    "name": "University of Chinese Academy of Sciences",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "code": "86UCAS_INST",
+    "product": "alma",
+    "host": "ucas.alma.exlibrisgroup.com.cn",
+    "evidence": "https://lib.ucas.ac.cn/?noWireless",
+    "notes": "The library homepage links to ucas.primo.exlibrisgroup.com.cn/nde/home?vid=86UCAS_INST:UCAS, and that page's Report-To header names cn01.alma.exlibrisgroup.com.cn. The Nature query returned 5 getFullTxt services with full_text_indicator=true on both ucas.alma.exlibrisgroup.com.cn and cn01.alma.exlibrisgroup.com.cn. The China hosts use .com.cn, not .com."
+  },
+  {
+    "rorId": "https://ror.org/035t8zc32",
+    "name": "The University of Osaka",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://resolver.ebsco.com/c/f4r4fk/result",
+    "product": "ebsco",
+    "evidence": "https://www.library.osaka-u.ac.jp/",
+    "notes": "The library homepage links to resolver.ebsco.com/c/f4r4fk/result, publications.ebsco.com/c/6zefm4 and EDS search. Its OPAC is a domestic system, not Primo or Alma."
+  },
+  {
+    "rorId": "https://ror.org/04chrp450",
+    "name": "Nagoya University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://resolver.ebsco.com/c/5qyzs6",
+    "product": "ebsco",
+    "evidence": "https://www.nul.nagoya-u.ac.jp/search/ej_guide/nulink/",
+    "notes": "The NULink page (Nagoya University Link Service) links to resolver.ebsco.com/c/5qyzs6/revise-request. Discovery runs on EBSCO (research.ebsco.com/c/yih5zg) and the OPAC on iLiswave (iwjs0023opc)."
+  },
+  {
+    "rorId": "https://ror.org/01tgyzw49",
+    "name": "National University of Singapore",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "product": "360link",
+    "evidence": "https://libfaq.nus.edu.sg/faq/71480",
+    "notes": "The NUS FAQ describes Find It! as 360Link, and the guides link to nus.summon.serialssolutions.com. linc.nus.edu.sg is an Innovative WebPAC. I did not find the 360 Link client code, and the main library site is behind Incapsula bot protection."
+  },
+  {
+    "rorId": "https://ror.org/013q1eq08",
+    "name": "Fudan University",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "url": "https://sfx-86fdu.hosted.exlibrisgroup.com.cn/86fdu",
+    "product": "sfx",
+    "evidence": "https://library.fudan.edu.cn/",
+    "notes": "The library homepage links to sfx-86fdu.hosted.exlibrisgroup.com.cn/cgi-bin/86fdu/ej.cgi and fudan-primo.hosted.exlibrisgroup.com.cn/primo-explore (institution=FDU, which is not an Alma code). The SFX base URL answered HTTP 200; I did not inspect its content."
+  },
+  {
+    "rorId": "https://ror.org/01tmp8f25",
+    "name": "Universidad Nacional Autónoma de México",
+    "source": "manual (Opus subagent, 2026-10-19, batch 4)",
+    "product": "other",
+    "evidence": "https://bidi.unam.mx/",
+    "notes": "BiDi UNAM and DGB link to Aleph catalogues (librunam.dgb.unam.mx, seriunam.dgb.unam.mx) and to EDS (profid=eds). I found no published OpenURL resolver and no evidence of Alma."
+  },
+  {
+    "rorId": "https://ror.org/04nbhqj75",
+    "name": "Hasselt University",
+    "country": "BE",
+    "source": "census review 2026-10-19",
+    "exclude": "the code found on its e-resources page (32EUC_INST on ec-europa-finder.alma…) is the European Commission library Find-eR, which the page links to, not the university's own resolver"
   }
 ]

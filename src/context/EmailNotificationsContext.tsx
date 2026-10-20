@@ -216,12 +216,31 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
       || !followedEntities.length
       || loadedForUser.current !== userId
     ) return undefined;
+    let cancelled = false;
     const syncTimeout = setTimeout(() => {
-      saveEmailNotificationPreferences({ ...preferences, language }, followedEntities, items)
+      // These preferences may predate an unsubscribe or a change made on
+      // another device. The Worker answers a sync with the stored
+      // subscription, so a reader who turned the digest off sees Off here and
+      // this effect stops syncing. The answer skips applySavedPreferences:
+      // the reader made no choice in this tab, so there is no
+      // newsletter_change to report.
+      saveEmailNotificationPreferences({ ...preferences, language }, followedEntities, items, { sync: true })
+        .then(saved => {
+          if (cancelled) return;
+          setPreferences(current => {
+            const next = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
+            // An identical answer keeps the same object; a new one would
+            // rerun this effect and sync again.
+            return (Object.keys(next) as (keyof NotificationPreferences)[]).some(field => next[field] !== current[field]) ? next : current;
+          });
+        })
         .catch(syncError => console.warn('Could not synchronize the notification digest', syncError));
     }, 1800);
-    return () => clearTimeout(syncTimeout);
-  }, [followSignature, followedEntities, followsError, followsLoading, items, language, preferences, previewSignature, updatesLoading, userId]);
+    return () => {
+      cancelled = true;
+      clearTimeout(syncTimeout);
+    };
+  }, [followSignature, followedEntities, followsError, followsLoading, items, language, preferences, previewSignature, updatesLoading, userEmail, userId]);
 
   const localizedPreferences = useMemo(
     () => ({ ...preferences, language }),

@@ -333,6 +333,71 @@ test('an answer that did not resolve the journal is read, but as unmatched', () 
   assert.equal(parseResolverAnswer(CTO_CELL)!.matched, true);
 });
 
+// Captured 2026-10-19 on na03 for Harvard (01HVD_INST), Nature 2020. The
+// library sends readers straight to one service (`single_service`) and its
+// answer carries no `full_text_indicator`; the services still carry Alma's
+// filter marks. Cut to three services; keys the Worker does not read left out.
+const HARVARD_NATURE_URL = 'https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=126971641670003941&institutionId=3941&customerId=3940';
+const CTO_SINGLE_SERVICE = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <context_object>
+    <keys>
+      <key id="rft.jtitle">Nature.</key>
+      <key id="available_services">single_service</key>
+      <key id="rft.issn">0028-0836</key>
+      <key id="rft.mms_id">990001299870203941</key>
+      <key id="rft.date">2020</key>
+    </keys>
+  </context_object>
+  <context_services>
+    <context_service service_type="getFullTxt" context_service_id="126971641670003941">
+      <keys>
+        <key id="package_public_name">Nature</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 1869 volume: 1 issue: 1.&lt;br></key>
+      </keys>
+      <resolution_url>${HARVARD_NATURE_URL.replace(/&/g, '&amp;')}</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="126971641640003941">
+      <keys>
+        <key id="package_public_name">ProQuest Central</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 01/07/1988 volume: 331.&lt;br>Most recent 1 year(s) not available.&lt;br></key>
+      </keys>
+      <resolution_url>https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=126971641640003941&amp;institutionId=3941&amp;customerId=3940</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="126971641700003941">
+      <keys>
+        <key id="package_public_name">EBSCOhost Academic Search Premier</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 06/05/1997 until 11/30/2015.&lt;br></key>
+        <key id="Filtered">true</key>
+        <key id="Filter reason">Date Filter</key>
+      </keys>
+      <resolution_url>https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=126971641700003941&amp;institutionId=3941&amp;customerId=3940</resolution_url>
+    </context_service>
+  </context_services>
+</uresolver_content>`;
+
+// The same answer with only the filtered service left: nothing live.
+const CTO_SINGLE_SERVICE_FILTERED = CTO_SINGLE_SERVICE.replace(/<context_service service_type="getFullTxt" context_service_id="1269716416[47]0003941">[\s\S]*?<\/context_service>\n/g, '');
+
+test('an answer without an indicator is read from what it lists unfiltered', async () => {
+  const answer = parseResolverAnswer(CTO_SINGLE_SERVICE)!;
+  assert.equal(answer.fullText, true);
+  assert.equal(answer.matched, true);
+  assert.deepEqual(answer.services.map(service => service.name), ['Nature', 'ProQuest Central']);
+  const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
+});
+
+test('an answer without an indicator whose services are all filtered is a refusal', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_SINGLE_SERVICE_FILTERED), { fullText: false, matched: true, services: [], restricted: false });
+  const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE_FILTERED) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+});
+
 test('reports the subscription service rather than the free archive for an entitled journal', async () => {
   const stub = upstreams();
   const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
@@ -388,6 +453,21 @@ test('is not entitled when every ISSN asked answers without full text', async ()
 
 test('a resolver answer that cannot be read is an outage, not an unknown to remember', async () => {
   const stub = upstreams({ resolver: () => xml('<uresolver_content/>') });
+  await assert.rejects(
+    lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
+    error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
+  );
+});
+
+// A single-service answer cut off after its context object: the journal
+// resolved, the services never arrived. Read as it stands it would be a
+// refusal; it is not an answer.
+const CTO_TRUNCATED = '<uresolver_content><context_object><keys><key id="rft.mms_id">990001299870203941</key><key id="available_services">single_service</key></keys></context_object><context_services>';
+
+test('an answer cut off before its services is no answer: an outage, not a refusal', async () => {
+  assert.equal(parseResolverAnswer(CTO_TRUNCATED), null);
+  assert.equal(parseResolverAnswer(CTO_SINGLE_SERVICE.slice(0, -40)), null);
+  const stub = upstreams({ resolver: () => xml(CTO_TRUNCATED) });
   await assert.rejects(
     lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
     error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
@@ -646,7 +726,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'filtered-services']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'well-formed-answers']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 

@@ -6,10 +6,13 @@ import {
   INSTITUTION_LINK_PATH,
   INSTITUTION_UNLINK_PATH,
   InstitutionLinkError,
+  LINK_LOOKUP_BUDGET_MS,
   handleInstitutionLinkRequest,
   resolveInstitution,
 } from './institution-link.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
+import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/requestDeadline.ts';
+import { findResolver } from './institution-access.ts';
 
 const UID = 'alice-uid';
 const PROJECT_ID = 'papertok-168df';
@@ -287,6 +290,237 @@ test('refuses other methods and a Worker without the service account', async () 
       'INSTITUTION_LINK_NOT_CONFIGURED',
       503,
     );
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR's record for the Autónoma de Madrid: students write from
+// estudiante.uam.es, which ROR does not list (checked 2026-10-19).
+const ROR_UAM = {
+  number_of_results: 1,
+  items: [{
+    id: 'https://ror.org/01cby8j38',
+    domains: ['uam.es'],
+    names: [{ value: 'Universidad Autónoma de Madrid', types: ['ror_display', 'label'] }, { value: 'UAM', types: ['acronym'] }],
+  }],
+};
+
+test('a student subdomain links through the university\'s own domain, and keeps its own', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Auam.es') ? ROR_UAM : { items: [] }), { status: 200 }),
+    mdq: (url) => new Response(JSON.stringify(url.includes('q=uam.es') ? [{ entityID: 'https://idp.uam.es/entity', scope: 'uam.es' }] : []), { status: 200 }),
+  });
+  try {
+    const institution = await resolveInstitution('estudiante.uam.es', { cache: undefined });
+    assert.deepEqual(institution, {
+      domain: 'estudiante.uam.es',
+      rorId: 'https://ror.org/01cby8j38',
+      name: 'Universidad Autónoma de Madrid',
+      acronym: 'UAM',
+      entityId: 'https://idp.uam.es/entity',
+    });
+    assert.deepEqual(
+      upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).map(url => decodeURIComponent(url.split('query.advanced=')[1])),
+      ['domains:estudiante.uam.es', 'domains:uam.es'],
+    );
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR's record for Northeastern University in Shenyang lists neu.edu, which is
+// an alias of Northeastern University in Boston (checked 2026-10-19). The
+// federation lists neu.edu under Boston's provider.
+const ROR_NEU_SHENYANG = {
+  number_of_results: 1,
+  items: [{
+    id: 'https://ror.org/03awzbc87',
+    domains: ['neu.edu'],
+    links: [{ type: 'website', value: 'https://www.neu.edu.cn' }],
+    names: [{ value: 'Northeastern University', types: ['ror_display', 'label'] }],
+  }],
+};
+const MDQ_NEU_BOSTON = [{ title: 'Northeastern University', entityID: 'https://neuidmsso.neu.edu/idp/shibboleth', scope: 'neu.edu' }];
+
+const ROR_NEU_BOSTON = {
+  items: [{
+    id: 'https://ror.org/04t5xt781',
+    domains: ['northeastern.edu'],
+    names: [{ value: 'Northeastern University', types: ['ror_display', 'label'] }],
+  }],
+};
+
+test('a verified Northeastern legacy address links to Boston and selects its library', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@husky.neu.edu', emailVerified: true } },
+    ror: (url) => {
+      const domain = new URL(url).searchParams.get('query.advanced');
+      return Response.json(domain === 'domains:northeastern.edu' ? ROR_NEU_BOSTON
+        : domain === 'domains:neu.edu' ? ROR_NEU_SHENYANG : { items: [] });
+    },
+    mdq: (url) => Response.json(new URL(url).searchParams.get('q') === 'neu.edu' ? MDQ_NEU_BOSTON : []),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.domain, 'husky.neu.edu');
+    assert.equal(institution!.rorId, 'https://ror.org/04t5xt781');
+    assert.equal(institution!.entityId, 'https://neuidmsso.neu.edu/idp/shibboleth');
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(findResolver(institution!), { host: 'na03.alma.exlibrisgroup.com', institution: '01NEU_INST' });
+    assert.deepEqual(upstream.calls.filter(url => url.startsWith('https://api.ror.org/'))
+      .map(url => new URL(url).searchParams.get('query.advanced')),
+    ['domains:husky.neu.edu', 'domains:northeastern.edu']);
+    assert.equal((await resolveInstitution('neu.edu', { cache: null })).rorId, institution!.rorId);
+    assert.equal((await resolveInstitution('northeastern.edu', { cache: null })).rorId, institution!.rorId);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('similar domains do not use the Northeastern alias', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:northeastern.edu' ? ROR_NEU_BOSTON : { items: [] }),
+  });
+  try {
+    for (const domain of ['husky.new.edu', 'neu.edu.cn', 'notneu.edu', 'neu.edu.evil.example']) {
+      await rejectsWith(resolveInstitution(domain, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+    }
+    assert.ok(upstream.calls.every(url => !url.includes('domains%3Anortheastern.edu')));
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('the Shenyang record cannot satisfy the canonical Boston domain lookup', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@husky.neu.edu', emailVerified: true } },
+    ror: () => Response.json(ROR_NEU_SHENYANG),
+    mdq: () => new Response(JSON.stringify(MDQ_NEU_BOSTON), { status: 200 }),
+  });
+  const admin = memoryAdmin();
+  try {
+    await rejectsWith(resolveInstitution('husky.neu.edu', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
+    await rejectsWith(resolveInstitution('neu.edu', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
+    await rejectsWith(handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin }), 'INSTITUTION_NOT_FOUND', 404);
+    assert.equal(admin.commits.length, 0, 'nothing is written for a contradicted identity');
+  } finally {
+    upstream.restore();
+  }
+});
+
+// Universities whose website is not under their mail domain, as ROR lists
+// them (checked 2026-10-19).
+const ROR_BIRMINGHAM = {
+  items: [{
+    id: 'https://ror.org/03angcq70',
+    domains: ['bham.ac.uk'],
+    links: [{ type: 'website', value: 'http://www.birmingham.ac.uk/index.aspx' }],
+    names: [{ value: 'University of Birmingham', types: ['ror_display', 'label'] }],
+  }],
+};
+const ROR_SYRACUSE = {
+  items: [{
+    id: 'https://ror.org/025r5qe02',
+    domains: ['syr.edu'],
+    links: [{ type: 'website', value: 'https://www.syracuse.edu' }],
+    names: [{ value: 'Syracuse University', types: ['ror_display', 'label'] }],
+  }],
+};
+
+test('a university whose website lives on another domain still links by its mail domain', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Abham.ac.uk') ? ROR_BIRMINGHAM : url.includes('domains%3Asyr.edu') ? ROR_SYRACUSE : { items: [] }), { status: 200 }),
+    mdq: () => new Response('[]', { status: 200 }),
+  });
+  try {
+    assert.equal((await resolveInstitution('bham.ac.uk', { cache: undefined })).rorId, 'https://ror.org/03angcq70');
+    assert.equal((await resolveInstitution('student.bham.ac.uk', { cache: undefined })).rorId, 'https://ror.org/03angcq70');
+    assert.equal((await resolveInstitution('syr.edu', { cache: undefined })).rorId, 'https://ror.org/025r5qe02');
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('a record links through every domain it lists', async () => {
+  // HKUST lists hkust.edu.hk and ust.hk.
+  const record = {
+    items: [{
+      id: 'https://ror.org/00q4vv597',
+      domains: ['hkust.edu.hk', 'ust.hk'],
+      links: [{ type: 'website', value: 'https://hkust.edu.hk/' }],
+      names: [{ value: 'Hong Kong University of Science and Technology', types: ['ror_display', 'label'] }],
+    }],
+  };
+  const upstream = stubUpstreams({
+    ror: (url) => new Response(JSON.stringify(url.includes('domains%3Aust.hk') ? record : { items: [] }), { status: 200 }),
+    mdq: () => new Response('[]', { status: 200 }),
+  });
+  try {
+    const institution = await resolveInstitution('ust.hk', { cache: undefined });
+    assert.equal(institution.rorId, 'https://ror.org/00q4vv597');
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('an exact match ends the search before any parent is asked about', async () => {
+  const upstream = stubUpstreams({ ror: () => new Response(JSON.stringify(ROR_UAM), { status: 200 }), mdq: () => new Response('[]', { status: 200 }) });
+  try {
+    const institution = await resolveInstitution('uam.es', { cache: undefined });
+    assert.equal(institution.rorId, 'https://ror.org/01cby8j38');
+    assert.equal(upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).length, 1);
+  } finally {
+    upstream.restore();
+  }
+});
+
+/** A fetch that never answers until its signal aborts, counting what was started. */
+function stalledFetch(onCall: (url: string) => void = () => {}) {
+  const started: string[] = [];
+  const fetchImpl: typeof fetch = (url, init) => new Promise((resolve, reject) => {
+    started.push(String(url));
+    onCall(String(url));
+    const signal = init?.signal;
+    const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort', abort);
+  });
+  return { fetchImpl, started };
+}
+
+test('a lookup whose budget runs out is unavailable, not a missing institution, and starts nothing more', async () => {
+  const controller = new AbortController();
+  const { fetchImpl, started } = stalledFetch(() => controller.abort());
+  await rejectsWith(resolveInstitution('mail.students.uam.es', { fetchImpl, cache: undefined, signal: controller.signal }), 'INSTITUTION_LOOKUP_UNAVAILABLE', 502);
+  assert.equal(started.length, 1, 'the second ROR question is never asked after the budget is gone');
+});
+
+test('the identity provider lookup is skipped when the budget is gone, and the confirmed institution still links', async () => {
+  const controller = new AbortController();
+  const started: string[] = [];
+  const fetchImpl: typeof fetch = async (url) => {
+    started.push(String(url));
+    // ROR answers at once; what is left of the budget is spent by the time the federation would be asked.
+    controller.abort();
+    return new Response(JSON.stringify(ROR_UAM), { status: 200 });
+  };
+  const institution = await resolveInstitution('uam.es', { fetchImpl, cache: undefined, signal: controller.signal });
+  assert.equal(institution.rorId, 'https://ror.org/01cby8j38');
+  assert.equal(institution.entityId, null);
+  assert.deepEqual(started.filter(url => url.startsWith('https://md.seamlessaccess.org/')), []);
+});
+
+test('the lookup budget leaves the browser\'s wait room for the identity checks and the write', () => {
+  assert.ok(LINK_LOOKUP_BUDGET_MS <= DEFAULT_REQUEST_TIMEOUT_MS - 4000, `${LINK_LOOKUP_BUDGET_MS} against a ${DEFAULT_REQUEST_TIMEOUT_MS} ms wait`);
+});
+
+test('a domain with no record up its parents is not found, after a bounded number of questions', async () => {
+  const upstream = stubUpstreams({ ror: () => new Response(JSON.stringify({ items: [] }), { status: 200 }) });
+  try {
+    await rejectsWith(resolveInstitution('mail.students.nowhere.example', { cache: undefined }), 'INSTITUTION_NOT_FOUND', 404);
+    assert.equal(upstream.calls.filter(url => url.startsWith('https://api.ror.org/')).length, 3);
   } finally {
     upstream.restore();
   }
