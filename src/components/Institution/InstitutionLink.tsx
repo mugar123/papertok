@@ -12,16 +12,14 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import InstitutionPill from './InstitutionPill.tsx';
 import InstitutionServices from './InstitutionServices.tsx';
-import { PreparingNote } from '../Public/ProviderSignIn.tsx';
-import usePopupReady from '../../hooks/usePopupReady.ts';
-import { institutionLinkReadiness, needsUniversityProof } from '../../services/institutionService.ts';
+import { cancelInstitutionVerification, pendingInstitutionVerification, sendInstitutionVerification, needsUniversityProof } from '../../services/institutionService.ts';
 import './Institution.css';
 
 const COPY = {
   email: 'University email',
   placeholder: 'name@university.edu',
-  hint: 'When you continue, Google opens so you can sign in with that account. PaperTok keeps the institution, not the address.',
-  submit: 'Continue with Google',
+  hint: 'We will email a verification link. Open it in this browser while signed into this PaperTok account.',
+  submit: 'Verify university email',
   submitting: 'Verifying…',
   linked: (name: string) => `Verified with ${name}.`,
   unlink: 'Unlink',
@@ -30,21 +28,7 @@ const COPY = {
   unlinked: 'Institution unlinked.',
 };
 
-/**
- * The one place an institution gets linked or unlinked, used from the
- * onboarding's last step and from Settings. `idPrefix` keeps the field ids
- * unique when the two could share a page.
- *
- * Settings uses it as it is: the field with its own arrow inside. A caller
- * that draws the submit itself (the onboarding's primary, in the page's foot)
- * passes `showSubmit={false}` and a `formId` for its button's `form`, owns
- * the address through `email` / `onEmailChange` so it can tell whether one is
- * typed, and hears `onBusyChange` to say "Verifying…" while Google is open.
- * The form ignores a submit that would open Google's window until the window
- * can open inside the press, so that caller reads institutionLinkReadiness and
- * needsUniversityProof to say "Preparing sign-in…".
- * There, `linkedNote` adds a sentence after "Verified with …" once linked.
- */
+/** Shared by Settings and onboarding, whose primary can submit this form. */
 export default function InstitutionLink({
   idPrefix = 'institution',
   formId,
@@ -61,12 +45,7 @@ export default function InstitutionLink({
   const setEmail = controlled ? onEmailChange : setOwnEmail;
   const [busy, setOwnBusy] = useState(false);
   const setBusy = (next: boolean) => { setOwnBusy(next); onBusyChange?.(next); };
-  // While the form shows, its Google window gets ready to open inside the
-  // press (usePopupReady). Until then a submit that would open it is held; an
-  // address the account already proves opens none and goes through.
-  const preparing = !usePopupReady(institution ? null : institutionLinkReadiness());
-  const held = preparing && needsUniversityProof(email);
-  const preparingId = `${idPrefix}-preparing`;
+  const [pending, setPending] = useState(() => pendingInstitutionVerification());
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   // Linking swaps the form for the linked row and unlinking swaps it back, so
   // the control that had focus is gone either way. Focus lands on the control
@@ -85,22 +64,24 @@ export default function InstitutionLink({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (busy || held) return;
+    if (busy || pending) return;
     setBusy(true);
     setFeedback(null);
     pendingFocus.current = 'unlink';
     try {
-      await linkInstitution(email);
-      setEmail!('');
-      setFeedback({ tone: 'success', text: COPY.linkedNow });
-    } catch (error) {
-      // Closing Google's window is a decision, not a failure to report.
-      if ((error as { code?: string } | null)?.code === 'auth/popup-closed-by-user' || (error as { code?: string } | null)?.code === 'auth/cancelled-popup-request') {
-        setFeedback(null);
+      if (needsUniversityProof(email)) {
+        await sendInstitutionVerification(email);
+        setPending(pendingInstitutionVerification());
+        setEmail!('');
+        setFeedback({ tone: 'success', text: 'Check your university inbox. Continue in the tab opened by the email.' });
+        pendingFocus.current = null;
       } else {
-        if (!String((error as { code?: string } | null)?.code || '').startsWith('INSTITUTION_')) console.error('Error linking institution:', error);
-        setFeedback({ tone: 'error', text: getUiErrorMessage(error, 'INSTITUTION_LINK_FAILED') });
+        await linkInstitution(email);
+        setEmail!('');
+        setFeedback({ tone: 'success', text: COPY.linkedNow });
       }
+    } catch (error) {
+      setFeedback({ tone: 'error', text: getUiErrorMessage(error, 'INSTITUTION_LINK_FAILED') });
       pendingFocus.current = null;
     } finally {
       setBusy(false);
@@ -131,7 +112,7 @@ export default function InstitutionLink({
       role={feedback?.tone === 'error' ? 'alert' : 'status'}
       aria-live="polite"
     >
-      {feedback?.text || ''}
+      {feedback?.text || (pending ? 'Check your university inbox. Continue in the tab opened by the email.' : '')}
     </p>
   );
 
@@ -150,8 +131,6 @@ export default function InstitutionLink({
   }
 
   return (
-    // Nothing is disabled while Google is open: a disabled control drops the
-    // focus it had, and the error that may come back would land on nobody.
     <form id={formId} className="institution-link" onSubmit={handleSubmit} noValidate aria-busy={busy || undefined}>
       <Label htmlFor={inputId}>{COPY.email}</Label>
       <div className="institution-link-field">
@@ -165,37 +144,40 @@ export default function InstitutionLink({
           autoComplete="email"
           spellCheck="false"
           placeholder={COPY.placeholder}
-          value={email}
+          value={pending?.email ?? email}
           onChange={(event) => {
             setEmail!(event.target.value);
             if (feedback?.tone === 'error') setFeedback(null);
           }}
-          readOnly={busy}
+          readOnly={busy || Boolean(pending)}
           required
           aria-required="true"
           aria-invalid={feedback?.tone === 'error' ? 'true' : undefined}
           aria-describedby={feedback?.tone === 'error' ? `${hintId} ${feedbackId}` : hintId}
         />
         {showSubmit && (
-          // Disabled, and still focusable, while it waits for Google's window.
-          // While Google is open it is disabled for assistive tech only. The
-          // aria-disabled here replaces the one Base UI sets, so it covers both.
           <Button
             type="submit"
             size="icon-sm"
             className="institution-link-submit"
             aria-label={busy ? COPY.submitting : COPY.submit}
             title={COPY.submit}
-            disabled={held}
+            disabled={Boolean(pending)}
             focusableWhenDisabled
-            aria-disabled={busy || held || undefined}
-            aria-describedby={held ? preparingId : undefined}
+            aria-disabled={busy || Boolean(pending) || undefined}
           >
-            {busy || held ? <span className="institution-link-spinner" aria-hidden="true" /> : <ArrowRight size={16} weight="bold" aria-hidden="true" />}
+            {busy ? <span className="institution-link-spinner" aria-hidden="true" /> : <ArrowRight size={16} weight="bold" aria-hidden="true" />}
           </Button>
         )}
       </div>
-      {showSubmit && <PreparingNote id={preparingId} preparing={preparing} />}
+      {pending && (
+        <Button type="button" variant="outline" onClick={() => {
+          cancelInstitutionVerification();
+          setPending(null);
+          setFeedback(null);
+          inputRef.current?.focus();
+        }}>Cancel verification</Button>
+      )}
       <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
     </form>
