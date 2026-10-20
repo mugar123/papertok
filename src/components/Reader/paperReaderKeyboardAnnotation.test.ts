@@ -34,7 +34,7 @@ test('paragraphs are keyboard-focusable on the desktop selection route', async (
 
   assert.match(
     paragraph[0],
-    /tabIndex=\{selectionRoute === 'menu' \? 0 : undefined\}/,
+    /tabIndex=\{0\}/,
     'paragraphs no longer get tabIndex 0 on the desktop route -- a keyboard user has no way to '
     + 'reach an unfocusable paragraph, so the annotation menu stays mouse-only (WCAG 2.1.1).',
   );
@@ -50,7 +50,7 @@ test('a focused paragraph opens the annotation menu on Enter', async () => {
   );
   assert.match(
     paragraph[0],
-    /onKeyDown=\{selectionRoute === 'menu'/,
+    /onKeyDown=\{\(event\) => handleParagraphKeyDown/,
     'the focused paragraph no longer wires an onKeyDown handler -- tabbing to it now leads '
     + 'nowhere, since there is no Enter route into the menu.',
   );
@@ -99,7 +99,7 @@ test('the paragraph carries a hidden, screen-reader-only instruction for the Ent
 
   assert.match(
     jsx,
-    /aria-describedby=\{selectionRoute === 'menu' \? paragraphHintId : undefined\}/,
+    /aria-describedby=\{paragraphHintId\}/,
     'the paragraph no longer points aria-describedby at the hidden instructions -- a screen '
     + 'reader user tabbing onto a paragraph now hears only its text, with no indication Enter '
     + 'does anything.',

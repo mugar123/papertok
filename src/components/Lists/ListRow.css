@@ -93,8 +93,13 @@
   margin: 0;
 }
 
-.list-row-authors-tooltip {
-  max-width: 22rem;
+.pc-authors-list.list-row-authors-list {
+  display: grid;
+  margin-top: 0;
+}
+
+.pc-authors-list.list-row-authors-list[data-open] {
+  margin-top: var(--space-2);
 }
 
 .list-row-authors-btn {

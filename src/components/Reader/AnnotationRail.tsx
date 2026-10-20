@@ -4,38 +4,39 @@ import type { PassageAnnotation } from '../../hooks/usePassageAnnotations.ts';
 type RailAnnotation = PassageAnnotation;
 interface AnnotationRailProps {
   surface?: 'rail' | 'sheet'; hidden?: boolean; expanded?: boolean; onToggle: () => void;
-  annotations: RailAnnotation[]; answerAt?: number | null;
-  counts: { notes: number; marks: number }; filter: string; onFilter: (filter: string) => void;
-  thinking: boolean; error?: boolean; errorText?: string;
+  annotations: RailAnnotation[]; pins?: ReadonlyMap<string, { number: number }>; answerAt?: number | null;
+  counts: { all: number; mine: number; ai: number }; filter: string; onFilter: (filter: string) => void;
+  thinking: boolean;
   onFocus: (annotation: RailAnnotation) => void; onRemove: (id: string) => void;
   labelFor: (annotation: RailAnnotation) => string; copy: ReaderCopy;
 }
 import { useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { CaretUp, PencilLine, Sparkle, Trash, WarningCircle } from '@phosphor-icons/react';
+import { Copy, DotsThree, Sparkle, Trash, User } from '@phosphor-icons/react';
+import { toast } from 'sonner';
+import { annotationMarkdown } from '../../utils/annotationMarkdown.ts';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu.tsx';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.ts';
 import { revealScrollDelta } from '../../utils/railReveal.ts';
 import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.ts';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
 import ScientificText from '../ScientificText.ts';
 import ThinkingDots from './ThinkingDots.tsx';
-import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
+import Petri from '../Onboarding/Petri.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, EASE_OUT_QUAD } from '../../utils/motionCurves.ts';
 
 /**
  * The margin, kept as a margin.
  *
  * Reads top to bottom in document order, so its shape matches the paper beside
  * it rather than the order things were made. Everything that is not the note
- * itself is deliberately absent — no avatars, no timestamps, no character
- * counts, no status icons — because each of those turns a margin into a feed,
- * and a feed is not something you read a paper next to.
+ * itself is deliberately absent — no avatars, no timestamps — because each of
+ * those turns a margin into a feed, and a feed is not something you read a
+ * paper next to.
  *
- * Origin is carried by one 3px rule down the inner edge: the brand yellow when
- * you wrote it, ink when the model did. It is the only place the difference is
- * stated, and it is legible without reading a word.
- *
- * On a phone there is no margin to be, so the same component becomes a sheet:
- * pinned to the bottom, peeking by its header, pulled up when wanted. The cards
+ * On a narrow screen there is no margin to be, so the same component becomes a
+ * sheet: pinned to the bottom, peeking by its grab bar, pulled up when wanted. The cards
  * are the same cards — only the container and its header change, which is the
  * whole reason this is one component and not two.
  */
@@ -45,13 +46,12 @@ export default function AnnotationRail({
   expanded = true,
   onToggle,
   annotations,
+  pins,
   answerAt = null,
   counts,
   filter,
   onFilter,
   thinking,
-  error,
-  errorText,
   onFocus,
   onRemove,
   labelFor,
@@ -74,15 +74,21 @@ export default function AnnotationRail({
     const list = listRef.current;
     if (!list) return undefined;
     const measure = () => {
-      if (list.scrollHeight > list.clientHeight + 1) list.dataset.scrollable = '';
+      const scrollable = list.scrollHeight > list.clientHeight + 1;
+      if (scrollable) list.dataset.scrollable = '';
       else delete list.dataset.scrollable;
+      list.toggleAttribute('data-more-above', scrollable && list.scrollTop > 1);
+      list.toggleAttribute('data-more-below', scrollable && list.scrollTop + list.clientHeight < list.scrollHeight - 1);
     };
     measureOverflowRef.current = measure;
     measure();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(list);
-    return () => observer.disconnect();
+    list.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(list);
+    return () => {
+      list.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
   }, []);
   useEffect(() => {
     measureOverflowRef.current?.();
@@ -90,13 +96,11 @@ export default function AnnotationRail({
 
   /* ── Bringing an answer into view ──
      "Explain this" writes into the margin, and the margin may be scrolled
-     anywhere: the card that says the model is reading, the answer that takes
-     its place, and the failure if there is one each come into view as they
-     appear (reported 2026-09-24: the answer to a passage near the end was
-     filed below the fold while the list sat at its top). Only the list
+     anywhere: the card that says the model is reading and the answer that
+     takes its place each come into view as they appear. Only the list
      scrolls — the paper stays where the reader left it. */
   const freshAnswer = annotations.find(item => item.fresh && item.kind === 'ai')?.id ?? null;
-  const revealKey = thinking ? 'thinking' : error ? 'error' : freshAnswer;
+  const revealKey = thinking ? 'thinking' : freshAnswer;
   useEffect(() => {
     const list = listRef.current;
     if (!revealKey || !list) return;
@@ -225,39 +229,29 @@ export default function AnnotationRail({
   // is never `hidden`. (The fully-offscreen touch sheet this used to also
   // cover no longer exists — the touch route mounts no rail at all.)
   const inert = hidden;
-  const head = (
-    <>
-      <span className="rd-rail-title">
-        <PencilLine size={12} />
-        {copy.annotations}
-      </span>
-      <span className="rd-rail-count">{copy.countLine(counts)}</span>
-    </>
-  );
 
+  const listShape = annotations.length + (thinking ? 1 : 0);
   const cards = annotations.map(annotation => (
     <motion.div
       key={annotation.id}
-      /* No `layout` here on purpose. It reads every card's box on every
-         render of the reader, and a forced layout on this page costs
-         milliseconds — while buying nothing the exit does not already
-         give: a removed card animates its own height to zero, so the
-         cards below slide up on that same curve. */
       className="rd-note"
       data-kind={annotation.kind === 'ai' ? 'ai' : 'user'}
       data-reveal={annotation.fresh && annotation.kind === 'ai' ? annotation.id : undefined}
-      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translate(0px, 10px)' }}
-      animate={{ opacity: 1, transform: 'translate(0px, 0px)' }}
-      exit={prefersReducedMotion
-        ? { opacity: 0, transition: { duration: 0.12 } }
-        : { opacity: 0, transform: 'translate(-8px, 0px)', height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
-      transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: EASE_OUT_EXPO }}
+      layout={prefersReducedMotion ? false : 'position'}
+      layoutDependency={listShape}
+      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, transition: { duration: 0.15, ease: EASE_OUT } }}
+      transition={prefersReducedMotion
+        ? { duration: 0.12 }
+        : { duration: 0.2, ease: EASE_OUT, layout: { duration: 0.22, ease: EASE_IN_OUT } }}
     >
       <div className="rd-note-head">
-        <span className="rd-note-origin">
-          {annotation.kind === 'ai' && <Sparkle size={10} />}
-          {annotation.kind === 'ai' ? copy.originAi : copy.originMine}
+        <span className="rd-note-origin" title={annotation.kind === 'ai' ? copy.originAi : copy.originMine}>
+          {annotation.kind === 'ai' ? <Sparkle size={14} aria-hidden="true" /> : <User size={14} aria-hidden="true" />}
+          <span className="visually-hidden">{annotation.kind === 'ai' ? copy.originAi : copy.originMine}</span>
         </span>
+        {pins?.has(annotation.id) && <span className="rd-note-pin">{pins.get(annotation.id)!.number}</span>}
         {/* The anchor doubles as the way back to the passage. */}
         <button
           type="button"
@@ -267,15 +261,29 @@ export default function AnnotationRail({
         >
           {labelFor(annotation)}
         </button>
-        <button
-          type="button"
-          className="rd-note-remove"
-          onClick={() => onRemove(annotation.id)}
-          aria-label={copy.removeAnnotation}
-          title={copy.removeAnnotation}
-        >
-          <Trash size={13} />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<button type="button" className="rd-note-actions" aria-label={copy.noteActions} title={copy.noteActions} />}
+          >
+            <DotsThree size={16} weight="bold" aria-hidden="true" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" aria-label={copy.noteActions}>
+            <DropdownMenuItem
+              onClick={() => {
+                navigator.clipboard.writeText(annotationMarkdown(annotation))
+                  .then(() => toast.success(copy.noteCopied))
+                  .catch(() => toast.error(copy.noteCopyFailed));
+              }}
+            >
+              <Copy size={15} aria-hidden="true" />
+              {copy.copyNote}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onRemove(annotation.id)}>
+              <Trash size={15} aria-hidden="true" />
+              {copy.removeAnnotation}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {/* The passage as the paper sets it: a quote is stored as source text,
           so a highlight across a formula keeps its `$…$`, and printed as prose
@@ -309,14 +317,13 @@ export default function AnnotationRail({
         key="thinking"
         className="rd-note rd-note--ai rd-note--thinking"
         data-reveal="thinking"
-        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translateY(8px)' }}
-        animate={{ opacity: 1, transform: 'translateY(0px)' }}
-        /* It hands its room back as it goes, like a removed card: the answer
-           arrives right beside it, and a card that only faded would leave the
-           answer to jump by its height the moment it unmounted. */
+        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        layout={prefersReducedMotion ? false : 'position'}
+        layoutDependency={listShape}
         exit={prefersReducedMotion
           ? { opacity: 0, transition: { duration: 0.12 } }
-          : { opacity: 0, transform: 'translateY(-4px)', height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: EASE_OUT } }}
+          : { opacity: 0, scale: 0.97, transition: { duration: 0.18, ease: EASE_OUT } }}
         transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: EASE_OUT_EXPO }}
       >
         <span className="rd-note-origin">
@@ -326,21 +333,6 @@ export default function AnnotationRail({
         <span className="rd-note-bar" />
         <span className="rd-note-bar rd-note-bar--short" />
       </motion.div>
-    ),
-    error && (
-      <motion.p
-        key="error"
-        className="rd-note rd-note--failed"
-        data-reveal="error"
-        role="alert"
-        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translateY(8px)' }}
-        animate={{ opacity: 1, transform: 'translateY(0px)' }}
-        exit={{ opacity: 0, transition: { duration: 0.12 } }}
-        transition={{ duration: 0.22, ease: EASE_OUT_EXPO }}
-      >
-        <WarningCircle size={13} />
-        {errorText}
-      </motion.p>
     ),
   ].filter(Boolean);
   const slot = answerAt == null ? 0 : Math.max(0, Math.min(answerAt, cards.length));
@@ -366,23 +358,18 @@ export default function AnnotationRail({
         // the sheet follows; tap it and it toggles, as it always did.
         <button
           type="button"
-          className="rd-rail-head rd-rail-grab"
+          className="rd-rail-grab"
           onClick={handleClick}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={endDrag}
           onPointerCancel={event => endDrag(event, { cancelled: true })}
           aria-expanded={expanded}
+          aria-label={copy.annotations}
         >
           <span className="rd-rail-grabber" aria-hidden="true" />
-          <span className="rd-rail-headline">
-            {head}
-            <CaretUp size={16} className="rd-rail-chevron" />
-          </span>
         </button>
-      ) : (
-        <div className="rd-rail-head">{head}</div>
-      )}
+      ) : null}
 
       {/* One filter at a time, and always one: a single-select group
           reports `[]` when the pressed chip is pressed again, and that
@@ -390,7 +377,6 @@ export default function AnnotationRail({
           state, not "none". */}
       <ToggleGroup
         className="rd-rail-filters"
-        variant="outline"
         size="sm"
         value={[filter]}
         onValueChange={([next]) => { if (next) onFilter(next); }}
@@ -398,22 +384,36 @@ export default function AnnotationRail({
       >
         {ANNOTATION_FILTERS.map(value => (
           <ToggleGroupItem key={value} value={value} className="rd-rail-filter">
-            {copy.filters[value as keyof ReaderCopy['filters']]}
+            {filter === value && (
+              <motion.span
+                layoutId="rd-filter-chip"
+                className="rd-rail-filter-chip"
+                aria-hidden="true"
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: EASE_OUT_QUAD }}
+              />
+            )}
+            <span className="rd-rail-filter-label">{copy.filters[value as keyof ReaderCopy['filters']]}</span>
+            <span className="rd-rail-filter-count">{counts[value as keyof typeof counts]}</span>
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
 
-      <div ref={listRef} className="rd-rail-list">
-        <AnimatePresence initial={false}>
+      <motion.div ref={listRef} className="rd-rail-list" layoutScroll>
+        <AnimatePresence key={filter} initial={false} mode="popLayout">
           {[...cards.slice(0, slot), ...waiting, ...cards.slice(slot)]}
         </AnimatePresence>
 
-        {annotations.length === 0 && !thinking && !error && (
-          <p className="rd-rail-empty">
-            {filter === 'all' ? copy.emptyAll : copy.emptyFiltered}
-          </p>
+        {annotations.length === 0 && !thinking && (
+          <EmptyState
+            as="h3"
+            className="rd-rail-empty"
+            art={<Petri pose="blankPage" className="rd-rail-empty-petri" />}
+            title={copy.emptyAllTitle}
+          >
+            {copy.emptyAll}
+          </EmptyState>
         )}
-      </div>
+      </motion.div>
     </aside>
   );
 }

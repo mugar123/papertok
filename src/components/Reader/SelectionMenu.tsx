@@ -3,7 +3,7 @@ import type { ReaderCopy } from './PaperReader.tsx';
 type SelectionRect = Pick<DOMRect, 'top' | 'bottom' | 'left' | 'right'>;
 interface SelectionMenuProps {
   open?: boolean; anchor?: SelectionRect | null; copy: ReaderCopy;
-  usesLeft?: number | null; unlimited?: boolean; canAsk?: boolean; busy?: boolean;
+  usesLeft?: number | null; usesLimit?: number | null; unlimited?: boolean; canAsk?: boolean; busy?: boolean;
   onHighlight: () => void; onSaveNote: (note: string) => void;
   onAsk: () => void; onClose: () => void;
 }
@@ -62,6 +62,7 @@ export default function SelectionMenu({
   anchor,
   copy,
   usesLeft,
+  usesLimit,
   unlimited = false,
   canAsk = true,
   busy = false,
@@ -185,11 +186,15 @@ export default function SelectionMenu({
                   {/* The price, stated before it is spent. A daily allowance that only
                       announces itself once it is gone is a trap — and where there is
                       no allowance there is no price to state. */}
-                  {!unlimited && <small>{canAsk ? copy.oneUse : copy.noUsesLeftShort}</small>}
+                  {!unlimited && (
+                    typeof usesLeft === 'number' ? (
+                      <small>
+                        <span aria-hidden="true">{usesLimit ? `${usesLeft}/${usesLimit}` : usesLeft}</span>
+                        <span className="visually-hidden">{copy.usesLeftLine(usesLeft, usesLimit)}</span>
+                      </small>
+                    ) : <small>{canAsk ? copy.oneUse : copy.noUsesLeftShort}</small>
+                  )}
                 </button>
-                {typeof usesLeft === 'number' && (
-                  <p className="rd-menu-foot">{copy.usesLeftLine(usesLeft)}</p>
-                )}
               </div>
             )}
           </PopoverPrimitive.Popup>

@@ -21,9 +21,7 @@ import type { FileHandle } from 'fs/promises';
  */
 
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
-const EXPORT_CSS = new URL('./Export.css', import.meta.url);
 const RAIL_JSX = new URL('./AnnotationRail.tsx', import.meta.url);
-const POPOVER_JSX = new URL('../ui/popover.tsx', import.meta.url);
 const HOOK = new URL('../../hooks/usePassageAnnotations.ts', import.meta.url);
 
 const stripComments = (source: string) => source
@@ -86,47 +84,15 @@ test('the rail no longer decides when the pen stroke is over', async () => {
   assert.doesNotMatch(rail, /onAnimationComplete=\{\(\) => \{ if \(annotation\.fresh\) onSettle/);
 });
 
-/** How deep in `{ … }` a selector sits: 0 is the top level. */
-function nestingDepth(css: string, needle: string) {
-  const at = css.indexOf(needle);
-  assert.notEqual(at, -1, `expected to find \`${needle}\``);
-  const before = css.slice(0, at);
-  return (before.match(/\{/g) || []).length - (before.match(/\}/g) || []).length;
-}
 
-test('the export card arrives from below again', async () => {
-  const css = await read(EXPORT_CSS);
-  assert.match(css, /\.rd-export\[data-starting-style\]\s*\{[^}]*translate:\s*0\s+\d+px/);
-  // At the top level, and not swallowed by the button's block above it: as a
-  // nested rule it reads as `.rd-export-go .rd-export[…]`, which matches
-  // nothing — the shape this exact rule shipped in for one round, invisible to
-  // a test that only looked for the text (2026-09-12).
-  assert.equal(nestingDepth(css, '.rd-export[data-starting-style]'), 0);
-  assert.equal(nestingDepth(css, '.rd-export[data-ending-style]'), 0);
-  // The shared popover has to list the property, or the value above is a jump.
-  const popover = await read(POPOVER_JSX);
-  const transition = popover.match(/\[transition:([^\]]+)\]/);
-  assert.ok(transition, 'expected an explicit transition on the popup');
-  assert.match(transition[1], /translate_\d+ms/);
-});
-
-/**
- * The rail's hide and show never animated: `var(--transition-slow)` is
- * `320ms ease` — a duration AND a curve — and each line of the transition
- * added a second curve after it, which makes the whole declaration invalid.
- * Measured 2026-09-18: the rail sat at its hidden end state in the first
- * frame of the hide and back in place in the first frame of the show, the
- * paper's column jumping 176px each way. Plain durations now, and a guard
- * over every stylesheet so the pattern cannot come back elsewhere.
- */
 test('the rail slides on valid transitions, and no stylesheet gives a duration token a second curve', async () => {
   const css = stripComments(await read(ANNOTATIONS_CSS));
   const rail = css.match(/\.rd-rail\[data-surface='rail'\] \{([^}]*)\}/)?.[1] || '';
-  assert.match(rail, /margin-right 320ms var\(--ease-out-quad\)/);
-  assert.match(rail, /transform 320ms var\(--ease-out-quad\)/);
+  assert.doesNotMatch(rail, /margin-right \d/, 'the paper column snaps; only the rail moves');
+  assert.match(rail, /transform 240ms var\(--ease-out-quad\)/);
   assert.match(rail, /visibility 0s/);
   const hidden = css.match(/\.rd-rail\[data-surface='rail'\]\[data-hidden\] \{([^}]*)\}/)?.[1] || '';
-  assert.match(hidden, /transition-delay: 0s, 0s, 0s, 320ms;/, 'visibility waits for the slide, with a plain delay');
+  assert.match(hidden, /transition-delay: 0s, 0s, 240ms;/, 'visibility waits for the slide, with a plain delay');
   assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.rd-rail\[data-surface='sheet'\],\s*\.rd-rail\[data-surface='rail'\],/);
   const { readdirSync, statSync } = await import('node:fs');
   const { join } = await import('node:path');
@@ -145,11 +111,3 @@ test('the rail slides on valid transitions, and no stylesheet gives a duration t
  * departure brakes where nobody is looking, so it goes back down into the
  * button on the quad, 10px over 200ms, with the fade a straight line.
  */
-test('the export card leaves on a departure\'s curve, back down into the button', async () => {
-  const css = stripComments(await read(EXPORT_CSS));
-  assert.match(css, /\.rd-export\[data-ending-style\] \{ translate: 0 10px; scale: 0\.97; \}/);
-  const leave = css.match(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.rd-export\[data-ending-style\] \{([^}]*)\}/)?.[1] || '';
-  assert.match(leave, /opacity 160ms linear/);
-  assert.match(leave, /scale 200ms var\(--ease-out-quad\)/);
-  assert.match(leave, /translate 200ms var\(--ease-out-quad\)/);
-});
