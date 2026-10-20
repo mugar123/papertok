@@ -55,7 +55,7 @@ export class PaperBuilder {
     // A record that has merged another holds the answer `merge` gave it, an
     // unknown included. The Explorer deduplicates its rows again with each
     // page, and deriving one here turned that unknown into `true`.
-    const reviewedByMerge = (data.sources?.enrichedBy?.length ?? 0) > 0;
+    const fromMerge = (data.sources?.enrichedBy?.length ?? 0) > 0;
 
     // Normalize DOI
     let doi = data.doi;
@@ -95,7 +95,7 @@ export class PaperBuilder {
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
-      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) || reviewedByMerge ? undefined : !isPreprint),
+      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) || fromMerge ? undefined : !isPreprint),
       workingPaper: data.workingPaper || undefined,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
@@ -239,19 +239,19 @@ export class PaperBuilder {
     // arXiv eprint among a FEDS paper's locations while arXiv lists the
     // journal's DOI for it. A row that keeps the article's DOI and journal is
     // not the working paper.
-    // An arXiv record whose DOI is its only claim, and comes from a working
-    // paper's own registrant, is that working paper too: arXiv can list a
-    // FEDS revision, 10.17016/feds.2026.007r1, for the paper OpenAlex files as
+    // An arXiv record whose only claim is a DOI from a working paper's own
+    // registrant is that working paper too: arXiv can list a FEDS revision,
+    // 10.17016/feds.2026.007r1, for the paper OpenAlex files as
     // 10.17016/feds.2026.007. The evidence covers the listed series: in
     // Crossref on 2026-10-20, the prefix of each series in
     // `WORKING_PAPER_SOURCE_IDS` held only its institution's own
     // publications. `workingPaper` also marks every OpenAlex `report`, and
-    // some of their registrants issue journals as well (the St. Louis Fed's
-    // Review under 10.20955), so a record that names its journal, has merged
-    // another record or comes from another provider keeps its own answer. An
-    // arXiv record that lists such a journal's DOI without its reference still
-    // reads as the report. Springer registers journal articles and chapters
-    // alike under 10.1007, so only a working paper gets this reading.
+    // some report registrants issue journals too (the St. Louis Fed its Review
+    // under 10.20955). A record that names its journal, has merged another
+    // record or comes from another provider therefore keeps its own answer;
+    // an arXiv record listing the Review's DOI without a journal reference
+    // still reads as the report. Only a working paper gets this reading:
+    // Springer registers journal articles and chapters alike under 10.1007.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
@@ -267,8 +267,8 @@ export class PaperBuilder {
         && doiRegistrant(baseDoi) === doiRegistrant(enrichmentDoi))
       || (!isPublisherDoi(baseDoi)
         && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
-    // A working paper the row is not: its `false` and tag stay out (below),
-    // and so do its series name and institution.
+    // A working paper the row is not. Its `false` and tag stay off the row
+    // (below), and so do its series name and institution.
     const otherWorkingPaper = enrichmentData.workingPaper === true
       && enrichmentData.peerReviewed === false && !sameRecord;
 
@@ -276,9 +276,9 @@ export class PaperBuilder {
     // A working paper that keeps its `false` takes neither the other record's
     // journal nor its publisher: like that record's DOI, they would put the
     // journal version's venue on the unreviewed working paper. Nor does a row
-    // that is not the working paper take that paper's series as its journal.
-    // A `false` from a record that is no working paper (a non-refereed NASA
-    // ADS one) still comes with the same work's venue.
+    // take the series and institution of a working paper it is not. A `false`
+    // from a record that is no working paper (a non-refereed NASA ADS one)
+    // still comes with the same work's venue.
     const takesVenue = !keepsOwnFalse && !otherWorkingPaper;
     if (!merged.journal && enrichmentData.journal && takesVenue) merged.journal = enrichmentData.journal;
     if (!merged.publisher && enrichmentData.publisher && takesVenue) merged.publisher = enrichmentData.publisher;
