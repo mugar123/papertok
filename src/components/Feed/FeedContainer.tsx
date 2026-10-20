@@ -59,6 +59,7 @@ import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
 import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
+import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.ts';
 import './FeedContainer.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
@@ -97,6 +98,11 @@ const REFRESH_HOVER_BAND_PX = 120;
 // feedRefresh.test.ts holds the two together: everything this number is used
 // for here is about waiting until the cover is actually down.
 const REFRESH_DIP_MS = 180;
+// How long the pull's landing pose is held (`landPull`). It only has to cover
+// the frame or two React takes to give the pill `is-visible` through
+// `isRefreshing`, plus the transition that takes it there; after that the
+// pose is the same with the attribute and without it.
+const PULL_LANDING_MS = 420;
 // Lo que tarda la píldora en meterse bajo la barra (`.feed-refresh`, 280ms de
 // recorrido). La cara se queda en «Actualizado» todo ese rato y sólo vuelve a
 // «Actualizar» cuando ya no se la ve.
@@ -302,12 +308,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the scroll event corrected it. The restore effect below re-seeds it for
   // the other resume shape, a reload whose papers had not arrived yet.
   const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey).index);
+  // One gesture's worth of state. `phase` is 'idle' until a touch lands
+  // somewhere a pull may begin, 'pending' until its first move says which
+  // way it is going, and 'owning' once it is ours — from there the feed is
+  // stopped from scrolling under it.
+  const pullRef = useRef({ phase: 'idle', startY: 0, startX: 0, startedAt: 0 });
+  // The touch listeners are attached once per scroller, not per render, so
+  // what they need from the render lives here instead of in their closure.
+  const pullDepsRef = useRef({ refresh: refreshFeed, loading, isRefreshing });
+  const pullLandingTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const refreshPillRef = useRef<HTMLButtonElement | null>(null);
   // Whether the scroll back to the top is still owed (see the effect below).
   const refreshJumpOwedRef = useRef(false);
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
-  // is in the band beneath it. Pulling past the top no longer refreshes
-  // (removed 2026-10-15): the pill is the one way to ask for it.
+  // is in the band beneath it. Touch: it shows as the pull progresses.
   const [refreshPillHover, setRefreshPillHover] = useState(false);
   // True until the pointer leaves the hover band once. Stops the pill from
   // flashing when the feed returns under a cursor that never left the band.
@@ -693,6 +707,44 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     refreshFeed();
   }, [refreshFeed]);
 
+  // The pull's progress goes to the WRAPPER, not to the pill: the papers
+  // follow the finger too, and the wrapper is the one ancestor both they and
+  // the pill hang off. Written to the element, so a drag never re-renders.
+  // A data attribute, not a class: `className` on `.feed-wrapper` is a JSX
+  // literal that React rewrites on every commit, and the commit that starts
+  // the refresh lands on the very frame the finger lets go. `setAttribute`
+  // rather than `dataset.x =`, which the lint reads as mutating a ref value.
+  const setPull = useCallback((progress: number, travelPx = 0) => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper) return;
+    wrapper.style.setProperty('--pull', String(progress));
+    wrapper.style.setProperty('--pull-y', `${travelPx.toFixed(1)}px`);
+    wrapper.setAttribute('data-pull', progress > 0 ? 'pulling' : '');
+  }, []);
+
+  // A pull that refreshes does not let go: it lands. Resetting to zero would
+  // leave the pill with no state for the frame or two before React gives it
+  // `is-visible`, and with no state its transition is the one that LEAVES —
+  // a half-shown pill, a retreat and a jump back, all inside 100ms. The
+  // landing pose is the working pose letter for letter, so when React
+  // arrives there is nothing to correct; and the papers sink on the veil's
+  // clock instead of springing back, so thumb to veil reads as one movement.
+  const landPull = useCallback(() => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper) return;
+    wrapper.style.setProperty('--pull', '1');
+    wrapper.style.setProperty('--pull-y', '0px');
+    wrapper.setAttribute('data-pull', 'landing');
+    clearTimeout(pullLandingTimerRef.current);
+    pullLandingTimerRef.current = setTimeout(() => {
+      if (wrapper.getAttribute('data-pull') === 'landing') wrapper.setAttribute('data-pull', '');
+    }, PULL_LANDING_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(pullLandingTimerRef.current), []);
+  useEffect(() => {
+    pullDepsRef.current = { refresh: refreshFeed, loading, isRefreshing };
+  });
+
 
   // Fine pointer only: a touch also fires a synthetic mousemove where it
   // landed, and a tap on the card's top edge is not a request for the pill.
@@ -929,6 +981,90 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   useEffect(() => {
     if (feedFailed) trackEvent('app_error', { kind: 'feed_load_failed' });
   }, [feedFailed, trackEvent]);
+
+  // Pull-to-refresh, touch only, and only where the pill exists: a source
+  // without a refresh of its own (the Similar layer) has nothing to pull.
+  // utils/feedPullToRefresh.ts says where a pull may begin and how it ends.
+  // Native listeners, not React's: React registers `touchmove` at the root as
+  // passive, so `preventDefault` inside an `onTouchMove` prop is ignored —
+  // and stopping the scroll is the whole point once the pull is ours.
+  const canPull = papers.length > 0 && (!source || Boolean(source.refresh));
+  useEffect(() => {
+    const el = feedNode;
+    if (!el || !canPull) return undefined;
+    const state = pullRef.current;
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      const box = el.getBoundingClientRect();
+      const startY = pullStartFrom({
+        target: event.target as Element | null,
+        scrollTop: el.scrollTop,
+        clientY: touch.clientY,
+        containerTop: box.top,
+        containerHeight: box.height,
+      });
+      state.phase = startY === null ? 'idle' : 'pending';
+      state.startY = startY ?? 0;
+      state.startX = touch.clientX;
+      state.startedAt = performance.now();
+    };
+    const onMove = (event: TouchEvent) => {
+      if (state.phase === 'idle') return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      if (state.phase === 'pending') {
+        if (touch.clientY === state.startY && touch.clientX === state.startX) return;
+        if (!pullTakesOver({
+          startY: state.startY, startX: state.startX, currentY: touch.clientY, currentX: touch.clientX,
+        })) {
+          state.phase = 'idle';
+          return;
+        }
+        state.phase = 'owning';
+      }
+      if (event.cancelable) event.preventDefault();
+      setPull(
+        pullProgress({ startY: state.startY, currentY: touch.clientY }),
+        pullTravelPx({ startY: state.startY, currentY: touch.clientY }),
+      );
+    };
+    const onEnd = (event: TouchEvent) => {
+      const owning = state.phase === 'owning';
+      state.phase = 'idle';
+      if (!owning) return;
+      const touch = event.changedTouches[0];
+      if (!touch) { setPull(0, 0); return; }
+      const outcome = pullOutcome({
+        startY: state.startY,
+        endY: touch.clientY,
+        elapsedMs: performance.now() - state.startedAt,
+      });
+      const { refresh, loading: busy, isRefreshing: running } = pullDepsRef.current;
+      // Released short of a refresh is a spring: everything goes back.
+      // Released into one is a hand-over: see `landPull`.
+      if (outcome === 'refresh' && !busy && !running) {
+        landPull();
+        refresh();
+      } else {
+        setPull(0, 0);
+      }
+    };
+    const onCancel = () => {
+      state.phase = 'idle';
+      setPull(0, 0);
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onCancel, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onCancel);
+    };
+  }, [feedNode, canPull, setPull, landPull]);
 
 
 

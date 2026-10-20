@@ -38,9 +38,12 @@
      half of it that runs on the way back up (.feed-container--refreshing in
      FeedContainer.css holds the way down). */
   --pc-travel: 340ms 80ms var(--ease-out-quad);
+  /* `transform` is the pull-to-refresh's (FeedContainer.css): a pull let go
+     short of the threshold springs back on this. */
   transition:
     opacity 0.9s ease,
-    translate var(--pc-travel);
+    translate var(--pc-travel),
+    transform 320ms var(--ease-out-expo);
 }
 
 /* ── The page ──
