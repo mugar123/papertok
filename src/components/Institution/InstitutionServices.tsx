@@ -1,6 +1,9 @@
 import type { LinkedInstitution } from '../../services/institutionService.ts';
 type ServicesAnswer = Awaited<ReturnType<typeof findInstitutionServices>>;
 type InstitutionPlatform = NonNullable<ServicesAnswer>['services'][number];
+import { Collapsible } from '@base-ui/react/collapsible';
+import { CaretDownIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
+import { groupInstitutionServices } from './institutionServiceGroups.ts';
 import { useEffect, useId, useRef, useState } from 'react';
 import { findInstitutionServices, knownInstitutionServices } from '../../services/institutionAccessService.ts';
 import { Button } from '../ui/button.tsx';
@@ -19,7 +22,7 @@ const COPY = {
   error: 'Your library could not be checked.',
   retry: 'Retry',
   newTab: ' (opens in a new tab)',
-  coverage: 'A sample of library access, not a complete subscription list. Coverage varies by journal, year and article.',
+  coverage: 'Access varies by journal, year and article. Open a source to see the access found; this is not a full subscription list.',
 };
 
 /**
@@ -52,37 +55,70 @@ function inkOn(hex: string) {
   return 1.05 / (luminance + 0.05) >= (luminance + 0.05) / 0.0565 ? 'light' : 'dark';
 }
 
-function ServiceRow({ service }: { service: InstitutionPlatform }) {
+function ServiceLogo({ service }: { service: InstitutionPlatform }) {
   const logo = publisherLogoFor(service.platformId || service.id);
-  const content = (
-    <>
-      {logo ? (
-        <span className="institution-service-plate" aria-hidden="true">
-          <img src={logo} alt="" decoding="async" />
-        </span>
-      ) : (
-        <span
-          className="institution-service-tile"
-          data-ink={service.color ? inkOn(service.color) : undefined}
-          style={service.color ? { '--brand': service.color } : undefined}
-          aria-hidden="true"
-        >
-          {service.monogram}
-        </span>
-      )}
-      <span className="institution-service-text">
-        <span className="institution-service-name">{service.name}</span>
-        {subtitleFor(service) && <span className="institution-service-publisher">{subtitleFor(service)}</span>}
-      </span>
-    </>
+  return logo ? (
+    <span className="institution-service-plate" aria-hidden="true">
+      <img src={logo} alt="" decoding="async" />
+    </span>
+  ) : (
+    <span
+      className="institution-service-tile"
+      data-ink={service.color ? inkOn(service.color) : undefined}
+      style={service.color ? { '--brand': service.color } : undefined}
+      aria-hidden="true"
+    >
+      {service.monogram}
+    </span>
   );
-  const title = service.collection || undefined;
-  if (!service.url) return <div className="institution-service-row" title={title}>{content}</div>;
+}
+
+function ServiceGroup({ group }: { group: ReturnType<typeof groupInstitutionServices>[number] }) {
+  const journals = group.services.filter(service => service.platformId).length;
   return (
-    <a className="institution-service-row" href={service.url} target="_blank" rel="noreferrer" title={title}>
-      {content}
-      <span className="sr-only">{COPY.newTab}</span>
-    </a>
+    <Collapsible.Root className="institution-service-group">
+      <Collapsible.Trigger className="institution-service-summary">
+        <ServiceLogo service={group.representative} />
+        <span className="institution-service-text">
+          <span className="institution-service-name">{group.name}</span>
+          <span className="institution-service-coverage">{journals ? 'Access found in part of this collection' : 'Access found for a checked sample'}</span>
+          <span className="institution-service-count">
+            {journals ? `${journals} ${journals === 1 ? 'journal' : 'journals'} found · View details` : 'View access details'}
+          </span>
+        </span>
+        <CaretDownIcon className="institution-service-chevron" size={18} aria-hidden="true" />
+      </Collapsible.Trigger>
+      <Collapsible.Panel
+        className="institution-service-panel"
+        render={(props, state) => <div {...props} inert={!state.open} />}
+      >
+        <div className="institution-service-details">
+          <p className="institution-service-detail-note">{'These results cover sampled titles and years. Check access on the article you want to read.'}</p>
+          <ul className="institution-service-titles">
+            {group.services.map(service => (
+              <li key={service.id}>
+                {service.url ? (
+                  <a className="institution-service-title-link" href={service.url} target="_blank" rel="noreferrer">
+                    <span>
+                      <span className="institution-service-title-name">{service.name}</span>
+                      <span className="institution-service-route">
+                        {!service.platformId && 'Platform or publication sample · '}{subtitleFor(service)}
+                      </span>
+                    </span>
+                    <ArrowUpRightIcon size={16} aria-hidden="true" />
+                    <span className="sr-only">{COPY.newTab}</span>
+                  </a>
+                ) : (
+                  <span className="institution-service-title-link">
+                    <span><span className="institution-service-title-name">{service.name}</span><span className="institution-service-route">{subtitleFor(service)}</span></span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }
 
@@ -123,6 +159,7 @@ export default function InstitutionServices({ institution }: { institution: Link
   const result = own?.value;
   const failed = own && result === null;
   const services = result?.services || [];
+  const groups = groupInstitutionServices(services);
 
   // The status region stays in the tree in every state, so whatever it says
   // next is announced. A plain success repeats the heading's count, so it is
@@ -134,10 +171,10 @@ export default function InstitutionServices({ institution }: { institution: Link
   else if (result!.unsupported) status = COPY.unsupported;
   else if (result!.partial) status = COPY.partial;
   else if (result!.unchecked > 0) {
-    status = [services.length > 0 && COPY.found(services.length), COPY.unchecked(result!.unchecked)].filter(Boolean).join(' ');
+    status = [services.length > 0 && COPY.found(groups.length), COPY.unchecked(result!.unchecked)].filter(Boolean).join(' ');
   } else if (services.length === 0) status = COPY.empty;
   else {
-    status = COPY.found(services.length);
+    status = COPY.found(groups.length);
     quiet = true;
   }
 
@@ -160,15 +197,17 @@ export default function InstitutionServices({ institution }: { institution: Link
     <section className="institution-services" aria-labelledby={kickerId} aria-busy={loading || undefined}>
       <h3 id={kickerId} ref={kickerRef} tabIndex={-1} className="institution-services-kicker">
         {COPY.kicker}
-        {services.length > 0 && <span className="institution-services-count">{COPY.count(services.length)}</span>}
+        {services.length > 0 && <span className="institution-services-count">{COPY.count(groups.length)}</span>}
       </h3>
       <div className="institution-services-status">
         <p className="institution-services-note">{COPY.coverage}</p>
       </div>
       {services.length > 0 && (
         <ul className="institution-services-list">
-          {services.map(service => (
-            <li key={service.id}><ServiceRow service={service} /></li>
+          {groups.map((group, index) => (
+            <li key={`${subject}:${group.id}`} style={{ '--service-delay': `${Math.min(index, 4) * 45}ms` }}>
+              <ServiceGroup group={group} />
+            </li>
           ))}
         </ul>
       )}
