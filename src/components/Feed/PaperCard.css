@@ -3302,3 +3302,77 @@ button.pc-topics-pop-item:focus-visible {
   text-transform: uppercase;
   color: var(--text-tertiary);
 }
+
+/* Topics and funding as ruled rows, the Explorer's list: a hairline between
+   rows and a short rule down the inner edge, the field's ink for the field and
+   a lighter one for its topics. Funding claims no subject, so its rule is ink. */
+.pc-about .pc-topics-pop-list {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pc-about .pc-topics-pop-list > li {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pc-about .pc-topics-pop-item {
+  --rule: var(--border-strong);
+  position: relative;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: 0;
+  transition: background-color 120ms ease-out;
+}
+
+.pc-about .pc-topics-pop-item::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 20px;
+  translate: 0 -50%;
+  background: var(--rule);
+}
+
+.pc-about .pc-topics-pop-item[data-kind='field'] {
+  --rule: var(--area-accent, var(--accent-primary));
+}
+
+.pc-about .pc-topics-pop-item[data-kind='topic'] {
+  --rule: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 40%, var(--bg-card));
+}
+
+.pc-about .pc-topics-pop-kind {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.pc-about .pc-topics-pop-item[data-kind='field'] .pc-topics-pop-kind {
+  color: var(--area-accent, var(--text-tertiary));
+}
+
+.pc-about .pc-topics-pop-item > svg {
+  transition: color 120ms ease-out, translate 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-about button.pc-topics-pop-item:hover {
+    background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 6%, var(--bg-card));
+  }
+
+  .pc-about button.pc-topics-pop-item:hover > svg {
+    color: var(--area-accent, var(--text-primary));
+    translate: 2px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-about .pc-topics-pop-item > svg {
+    transition: color 120ms ease-out;
+  }
+
+  .pc-about button.pc-topics-pop-item:hover > svg {
+    translate: none;
+  }
+}

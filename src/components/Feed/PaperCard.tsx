@@ -1288,6 +1288,7 @@ const PaperCard = memo(function PaperCard({
               type="button"
               className="pc-topics-pop-item"
               lang={item.lang}
+              data-kind={item.key === 'primary' ? 'field' : 'topic'}
               onClick={(event) => {
                 setMenuView('closed');
                 openTopic(event, item.topic!);
@@ -1300,7 +1301,7 @@ const PaperCard = memo(function PaperCard({
               <ArrowRight size={14} aria-hidden="true" />
             </button>
           ) : (
-            <span className="pc-topics-pop-item">
+            <span className="pc-topics-pop-item" data-kind={item.key === 'primary' ? 'field' : 'topic'}>
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
                 <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
