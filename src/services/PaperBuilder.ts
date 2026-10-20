@@ -156,13 +156,26 @@ export class PaperBuilder {
       };
     }
 
+    // Evidence of publication reopens only a preprint's `false` or a missing
+    // answer; a published record's answer stands.
+    const reviewOpen = merged.peerReviewed === undefined
+      || merged.publicationStatus === 'preprint'
+      || merged.publicationType === 'preprint';
+
     // Normalize DOI from enrichment if existing doesn't have it
     let newDoi = enrichmentData.doi;
     if (newDoi && newDoi.startsWith('https://doi.org/')) {
       newDoi = newDoi.replace('https://doi.org/', '');
     }
-    
-    if (!merged.doi && newDoi) {
+
+    // A published `false` stands against a record that does not deny review
+    // too, so the row stays the working paper and does not take that record's
+    // publisher DOI either. The journal's DOI beside a working paper's `false`
+    // would give one DOI two answers: the same pair shows it reviewed when the
+    // journal version arrives first.
+    const keepsOwnFalse = !reviewOpen && merged.peerReviewed === false
+      && enrichmentData.peerReviewed !== false;
+    if (!merged.doi && newDoi && !(keepsOwnFalse && isPublisherDoi(normalizeDoi(newDoi)))) {
       merged.doi = newDoi;
       // NOTE: Do NOT overwrite merged.id here. The id must remain stable (arXiv ID)
       // so that all subsequent state updates can find the paper by its original ID.
@@ -311,11 +324,6 @@ export class PaperBuilder {
       || (!hasExplicitPublicationStatus
         && enrichmentData.publicationType
         && !['preprint', 'repository'].includes(enrichmentData.publicationType));
-    // Evidence of publication reopens only a preprint's `false` or a missing
-    // answer; a published record's answer stands.
-    const reviewOpen = merged.peerReviewed === undefined
-      || merged.publicationStatus === 'preprint'
-      || merged.publicationType === 'preprint';
     // A `false` and the working-paper tag describe the record that sent them,
     // so the row takes them only while it keeps that record's identity: the
     // base had no DOI, or both share a DOI, or the base's only DOI is arXiv's

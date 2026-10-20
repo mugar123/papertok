@@ -326,6 +326,13 @@ test('a working paper joined to a different article by title alone does not unre
     assert.equal(stillArticle.peerReviewed, true, provider);
     assert.equal(reviewTagForPaper(stillArticle), null, provider);
     assert.deepEqual(peerReviewedOnly([stillArticle]).map(row => row.doi), [journalDoi], provider);
+
+    // The same pair the other way round is the working paper, and it does not
+    // take the journal's DOI: that DOI shows one answer in either order.
+    const [stillWorkingPaper] = PaperBuilder.deduplicate([{ ...eprintWorkingPaper, doi: undefined }, journalVersion]);
+    assert.equal(stillWorkingPaper.doi, undefined, provider);
+    assert.equal(stillWorkingPaper.peerReviewed, false, provider);
+    assert.equal(reviewTagForPaper(stillWorkingPaper)?.label, 'Working paper', provider);
   }
 
   // The working paper's own versions stay unreviewed and tagged in either
