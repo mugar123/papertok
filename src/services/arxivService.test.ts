@@ -62,6 +62,7 @@ test('keeps an exact arXiv subcategory selected by the user', () => {
     abstract: 'A physics experiment.',
     primaryCategory: 'physics.optics',
     categories: ['physics.optics', 'quant-ph'],
+    allCategories: ['physics.optics', 'quant-ph'],
   }], ['physics.optics', 'quant-ph']);
 
   assert.equal(paper.primaryCategory, 'physics.optics');
