@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
-import { watchServiceWorkerUpdates } from './utils/serviceWorkerUpdates.ts'
+import { noteDeployActivated, watchServiceWorkerUpdates, watchWorkerActivations } from './utils/serviceWorkerUpdates.ts'
 import { applyReloadPolicy, markAppForcedReload, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from './utils/appReload.ts'
 import { applyLegacyHashRoute } from './utils/legacyHashRoute.ts'
 import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.ts'
@@ -59,22 +59,18 @@ import './styles/global.css'
 // deploy's service worker is detected, skip waiting and take control
 // automatically.
 //
-// What "take control automatically" actually does to an open tab:
-// `registerSW()` below is called with no options, so `onNeedReload` is
-// undefined and the plugin falls through to its own default handler on the
-// `activated` event, which calls `window.location.reload()` itself --
-// unprompted, the instant the new worker takes control. Not "the reader
-// gets the new build next time they reload": the reload is not requested,
-// it is forced. `isUpdate` is false on a first install, so this never fires
-// for a first-time visitor; it fires when an updated worker activates. Since
-// taking control follows precaching the whole boot set over the network, on
-// a slow connection that forced reload can land mid-reading-session. It is
-// needed because NetworkFirst only fetches new HTML on a navigation, not
-// when an existing tab resumes. Without it, a tab that stays open across a deploy
-// keeps the OLD `app.html` in memory, and that page's own lazy
-// `import()` calls still ask for chunks by their old content hash, which
-// the new deploy no longer serves -- a plain 404, and a route that simply
-// will not open until the tab reloads some other way.
+// Without `onNeedReload`, the plugin reloads the page itself when an updated
+// worker reaches `activated` (never on a first install). That reload was
+// redundant on the first visit after each deploy: navigations are
+// NetworkFirst, so the page had already booted the new build, and the reload
+// booted it a second time a few seconds later. It is still needed
+// for a tab that stays open across a deploy: that page's lazy `import()`
+// calls ask for chunks by their old content hash, which the new deploy no
+// longer serves. Below, `onNeedReload` turns the plugin's reload off, and each
+// worker that takes control is checked instead: nothing happens when the
+// page runs the build that worker precaches, and otherwise the reload waits
+// until the reader changes page (utils/serviceWorkerUpdates.ts). A chunk that
+// fails before then is caught by `vite:preloadError` below.
 //
 // No `immediate: true` here, deliberately: that option calls
 // `navigator.serviceWorker.register()` right away, which starts the new
@@ -116,20 +112,6 @@ window.addEventListener('vite:preloadError', (event) => {
   window.location.reload()
 })
 
-// The service worker's reload is not ours to intercept -- the note above
-// explains why it is left to workbox -- but it is ours to RECOGNISE. Workbox
-// reloads from the new worker's `activated` event, and the page hears
-// `controllerchange` before that lands, which is early enough to leave the
-// mark. Without it, the reload a deploy forces would look like the reader's
-// and drop them at the top of a freshly ranked feed mid-session.
-try {
-  navigator.serviceWorker?.addEventListener('controllerchange', () => {
-    markAppForcedReload()
-  })
-} catch {
-  // No service worker (vite dev, or a browser without one): nothing to mark.
-}
-
 // First of the pre-React gestures, because it settles the URL that every one
 // of them — and then the router — reads. The app was a HashRouter until this
 // commit, so `papertok.app/#/public/paper/<key>` is the shape of every link
@@ -156,7 +138,22 @@ registerSW({
   onRegisteredSW(_url, registration) {
     watchServiceWorkerUpdates(registration)
   },
+  // Replaces the plugin's own reload on `activated`. The activation watch
+  // below decides instead.
+  onNeedReload() {},
 })
+// Read here, in the entry module: this is the entry chunk's URL, which names
+// the build. In any other module it could name a shared chunk.
+const entryUrl = import.meta.url
+try {
+  watchWorkerActivations(navigator.serviceWorker, () => {
+    void noteDeployActivated(entryUrl)
+  })
+} catch {
+  // A browser that blocks service workers may throw when
+  // `navigator.serviceWorker` is read. That must not stop the boot, and there
+  // is no deploy to watch.
+}
 
 // The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.ts):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own

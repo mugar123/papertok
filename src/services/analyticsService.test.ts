@@ -1,4 +1,4 @@
-import { PRELOAD_RELOAD_KEY } from '../utils/appReload.ts';
+import { markAppForcedReload, PRELOAD_RELOAD_KEY } from '../utils/appReload.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -618,7 +618,9 @@ test('after a reload for a missing chunk, the reloaded page reports a chunk fail
   const storage = memoryStorage();
   const firstLoad = 1_000_000;
   const reloadedAt = firstLoad + 30_000;
+  // main.tsx's `vite:preloadError` handler leaves both marks before it reloads.
   storage.setItem(PRELOAD_RELOAD_KEY, String(reloadedAt));
+  markAppForcedReload({ storage, now: reloadedAt });
 
   // The page main.tsx is reloading can crash on the chunk it could not load
   // before it unloads. The reload is the answer to that, not a failure yet.

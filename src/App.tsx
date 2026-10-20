@@ -4,6 +4,9 @@ import type { Paper } from './models/Paper.ts'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { waitForPendingWrites } from 'firebase/firestore'
+import { db } from './services/firebase.ts'
+import { flushAllInteractionProfiles } from './services/interactionProfileStore.ts'
 import PageTransition from './components/Layout/PageTransition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom.ts'
 import { useOverlayHistory } from './hooks/useOverlayHistory.ts'
@@ -32,6 +35,7 @@ import AuthPrompt from './components/Public/AuthPrompt.tsx'
 import { normalizeAuthReason } from './components/Public/authPromptCopy.ts'
 import { getPublicPaperPath } from './utils/publicNavigation.ts'
 import { lazyWithPreload } from './utils/lazyPreload.ts'
+import { reloadIfBehindDeploy } from './utils/serviceWorkerUpdates.ts'
 import './App.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
@@ -132,6 +136,16 @@ function AppContent() {
     setSearchOpen(true)
   }, [])
   const location = useLocation()
+  // A deploy this tab is behind on is applied when the reader changes page,
+  // once Firestore has acknowledged the writes already issued and the
+  // interaction aggregate flushed here (utils/serviceWorkerUpdates.ts). The
+  // liked, saved and read lists load from that aggregate after the reload.
+  // Without the flush its write waits for the debounce timer, the tab being
+  // hidden or pagehide, and the reload fires the last two only as it unloads
+  // the page.
+  useEffect(() => {
+    void reloadIfBehindDeploy(location.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
+  }, [location.pathname])
   // The ONE place this is computed. Every PageTransition reads it from the
   // provider below, and AnimatePresence hands it to the page on its way out —
   // which cannot work it out for itself, because it is kept mounted inside a
