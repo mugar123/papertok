@@ -1114,6 +1114,32 @@ for (const [route, extraEnv] of SOURCE_ROUTES) {
   });
 }
 
+// CORE answered in 7-8 s when measured; the shared six-second deadline cut
+// every such search into a 502 before the edge cache could keep it.
+test('answers a CORE search that takes longer than the shared source deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: RequestInfo | URL, options: RequestInit = {}) => new Promise((resolve, reject) => {
+    const answer = setTimeout(() => resolve(new Response(JSON.stringify({ results: [{ id: 'slow-paper' }] }), {
+      headers: { 'content-type': 'application/json' },
+    })), 6_500);
+    options.signal?.addEventListener('abort', () => {
+      clearTimeout(answer);
+      reject(options.signal!.reason);
+    }, { once: true });
+  })) as typeof fetch;
+  try {
+    const response = await withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/core?q=robotics',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { results: [{ id: 'slow-paper' }] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('falls back to INSPIRE when NASA ADS stalls instead of waiting on it', async () => {
   let inspireQuery = '';
   const originalFetch = globalThis.fetch;

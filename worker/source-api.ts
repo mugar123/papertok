@@ -407,6 +407,14 @@ export async function handlePaperFigures(request: Request, env: WorkerEnv) {
   );
 }
 
+// CORE's search took 7.4 s and 8.0 s to answer (measured 2026-10-20), past the
+// shared six seconds, so a successful search was cut before it could reach the
+// edge cache. The browser keeps the request open for 10 s (`REQUEST_TIMEOUT_MS`
+// in domainSourceService.ts) after the feed stops waiting for it; nine seconds
+// lets the answer finish and be cached for the next reader, with room left for
+// the identity and quota checks that run first.
+const CORE_UPSTREAM_TIMEOUT_MS = 9_000;
+
 export async function handleCore(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -419,7 +427,7 @@ export async function handleCore(request: Request, env: WorkerEnv, identity?: Pi
     url.searchParams.set('limit', String(context.limit));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
     const headers: Record<string, string> = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
-    return fetchJsonUpstream(url, headers);
+    return fetchJsonUpstream(url, headers, CORE_UPSTREAM_TIMEOUT_MS);
     // No `sort`: this handler never sends it upstream, so two entries would hold
     // one identical answer.
   }, { identity, canonicalParams: sourceCacheParams(context, { q: query }) });
