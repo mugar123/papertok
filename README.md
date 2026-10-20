@@ -207,7 +207,7 @@ papertok/
 ├── worker/                 Cloudflare Worker, AI and notifications
 ├── public/                 Static assets
 ├── scripts/diagnostics/    Manual provider and proxy probes
-└── vercel.json             Vercel build, SPA fallback, auth and analytics proxies, cache headers
+└── vercel.json             Vercel build, SPA fallback, auth and analytics proxies, cache and security headers
 ```
 
 ## Documentation

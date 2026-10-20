@@ -122,6 +122,21 @@ async function authenticateProtectedProviderRequest(request: Request, env: Worke
   return verifyFirebaseIdentity(request, env);
 }
 
+// What a log line may say about a request: the route's fixed part. The query
+// string is never read, `/share/*` keeps no key and `/openalex/*` no id, and a
+// segment that is not a lowercase route word ends the route, so a DOI, a
+// token or an address never reaches Workers Logs.
+export function routeForLog(pathname: string) {
+  const segments = pathname.split('/').slice(1, 3);
+  if (segments[0] === 'share') return '/share';
+  const fixed: string[] = [];
+  for (const segment of segments) {
+    if (!/^[a-z][a-z0-9-]*$/.test(segment)) break;
+    fixed.push(segment);
+  }
+  return `/${fixed.join('/')}`;
+}
+
 const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/sources/biorxiv': handleBioRxiv,
   '/sources/europepmc': handleEuropePmc,
@@ -379,6 +394,11 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
       ),
       publishingConfigured: isServiceAccountConfigured(env),
+      // The `[version_metadata]` binding: which deploy is answering. `tag` is
+      // the one given to `wrangler deploy --tag`, and null for an untagged one.
+      version: env.CF_VERSION_METADATA
+        ? { id: env.CF_VERSION_METADATA.id, tag: env.CF_VERSION_METADATA.tag || null }
+        : null,
     }, 200, corsHeaders(origin, env));
   }
   if (url.pathname === '/health/email') {

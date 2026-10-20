@@ -97,9 +97,9 @@ test('an accepted manuscript at the publisher is still only a version of the pap
   assert.equal(accessTagForPaper({ openAccess: false }, { openCopy: manuscript })!.key, 'openCopy');
 });
 
-test('the chip takes no word from the library: a paywalled paper reads Subscription for everyone', () => {
+test('the chip takes no word from the library: a paywalled paper reads Closed access for everyone', () => {
   // The library's way in is the button's to name (`PaperCard`).
-  assert.equal(accessTagForPaper({ openAccess: false })!.label, 'Subscription');
+  assert.equal(accessTagForPaper({ openAccess: false })!.label, 'Closed access');
   assert.equal(accessTagForPaper({}), null);
 });
 
@@ -127,7 +127,7 @@ test('every chip carries a tone, a word and an explanation', () => {
 
 test('the chips use the English terms', () => {
   assert.equal(reviewTagForPaper({ publicationType: 'preprint' })!.label, 'Preprint');
-  assert.equal(accessTagForPaper({ openAccess: false })!.label, 'Subscription');
+  assert.equal(accessTagForPaper({ openAccess: false })!.label, 'Closed access');
   assert.equal(reviewTagForPaper({ journal: 'Nature' }), null,
     'lo revisado por pares no lleva distintivo: era la norma, no la excepción');
 });

@@ -2626,13 +2626,12 @@
     "rorId": "https://ror.org/052r2xn60",
     "name": "Johannes Kepler University of Linz",
     "country": "AT",
-    "source": "manual (Opus subagent, 2026-10-20, batch 5)",
+    "source": "zotero",
+    "url": "https://obv-at-ubl.userservices.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl",
     "product": "alma",
     "code": "43ACC_UBL",
     "host": "obv-at-ubl.alma.exlibrisgroup.com",
-    "url": "https://obv-at-ubl.alma.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl",
-    "evidence": "https://lisss.jku.at/",
-    "notes": "Nature 2020 probe: full_text_indicator=true, rft.mms_id present, 5 context_services (1 Filtered). JKU library page (jku.at/bibliothek) links lisss.jku.at, which redirects to /primo-explore/search?vid=ULI. Code tied via the OBV Primo classic configuration (/primo_library/libweb/webservices/rest/v1/configuration/<vid>, alma_base map) which maps Primo institution ULI to https://obv-at-ubl.userservices.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl (host listed as .userservices; the .alma host answers identically)."
+    "notes": "The directory lists the resolver on obv-at-ubl.userservices.exlibrisgroup.com; the seed asks the same slug under alma.exlibrisgroup.com, where the University of Vienna row (obv-at-ubw) also answers."
   },
   {
     "rorId": "https://ror.org/057ff4y42",
@@ -4380,13 +4379,9 @@
     "rorId": "https://ror.org/03tzaeb71",
     "name": "University of Hawaii System",
     "country": "US",
-    "source": "manual (Opus subagent, 2026-10-20, batch 5)",
-    "product": "alma",
-    "code": "01UHAWAII_MANOA",
-    "host": "na06.alma.exlibrisgroup.com",
-    "url": "https://na06.alma.exlibrisgroup.com/view/uresolver/01UHAWAII_MANOA/openurl",
-    "evidence": "https://manoa.hawaii.edu/library/",
-    "notes": "Manoa Library homepage (library.manoa.hawaii.edu -> manoa.hawaii.edu/library/) links OneSearch at uhawaii-manoa.primo.exlibrisgroup.com with vid=01UHAWAII_MANOA:MANOA. Nature 2020 probe: full_text_indicator=true, rft.mms_id present, 8 context_services (7 Filtered=true); resolution_url on na06 (institutionId 5681, customerId 5680). Both na06 and the named host uhawaii-manoa.alma (CNAME na06; slow, ~16 s on first call) return the same 8 services. This is the Manoa institution of the UH system Alma (01UHAWAII_ customer)."
+    "source": "census review 2026-10-20 (batch 5)",
+    "exclude": "hawaii.edu is the mail domain of every campus of the system (UH assigns one @hawaii.edu address to students and staff of all ten campuses), and the only code found, 01UHAWAII_MANOA, is the Mānoa library's institution in the system's Alma; its answer is Mānoa's subscriptions, not the system's, and nothing in the mail address says which campus a reader belongs to. Pending a way to identify the campus.",
+    "notes": "Batch 5 had verified 01UHAWAII_MANOA on na06 (Mānoa OneSearch at uhawaii-manoa.primo.exlibrisgroup.com, vid=01UHAWAII_MANOA:MANOA; Nature 2020: indicator true, 8 services, 7 filtered). Withdrawn on review: a hawaii.edu reader at Hilo or a community college would be answered with Mānoa's holdings."
   },
   {
     "rorId": "https://ror.org/01p7jjy08",
@@ -4469,5 +4464,27 @@
     "country": "FR",
     "source": "census review 2026-10-20 (batch 5)",
     "exclude": "its library is the shared Humathèque Condorcet (33CCP_INST on eu00), a campus library serving several institutions; the probe listed no services"
+  },
+  {
+    "rorId": "https://ror.org/006zjws59",
+    "name": "Universitat de Vic - Universitat Central de Catalunya",
+    "country": "ES",
+    "source": "zotero",
+    "url": "https://csuc-uvic.primo.exlibrisgroup.com/openurl/34CSUC_UVIC/34CSUC_UVIC:VU1",
+    "product": "alma",
+    "code": "34CSUC_UVIC",
+    "host": "csuc-uvic.alma.exlibrisgroup.com",
+    "notes": "The directory lists the Primo VE OpenURL entry point; the seed asks the same slug under alma.exlibrisgroup.com, where the Universitat Oberta de Catalunya row (csuc-uoc) also answers."
+  },
+  {
+    "rorId": "https://ror.org/04teye511",
+    "name": "Pontificia Universidad Católica de Chile",
+    "country": "CL",
+    "source": "manual (library page, 2026-10-19)",
+    "product": "alma",
+    "code": "56PUC_INST",
+    "host": "puc.alma.exlibrisgroup.com",
+    "evidence": "https://bibliotecas.uc.cl/",
+    "notes": "The library homepage's search box sends queries to https://buscador.bibliotecas.uc.cl/discovery/search with vid=56PUC_INST:56PUC_INST, and its research assistant link opens https://buscador.bibliotecas.uc.cl/discovery/researchAssistant?vid=56PUC_INST:56PUC_INST (both in the page's script, main-PZAD75PX.js, read 2026-10-19). The page names no Alma host; puc.alma.exlibrisgroup.com is the host that answered for this code with services listed."
   }
 ]

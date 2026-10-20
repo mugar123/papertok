@@ -2,7 +2,7 @@ import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type AccessOptions = { token?: string | null; method?: string; resolver?: () => Response | Promise<Response> };
+type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response> };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
@@ -11,6 +11,7 @@ import {
   lookupInstitutionAccess,
   parseResolverAnswer,
   readAccessQuery,
+  upstreamParams,
 } from './institution-access.ts';
 import reportApi from './index.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -514,6 +515,44 @@ test('the resolver is found by ROR id first, then by mail domain', async () => {
   assert.deepEqual(findResolver({ domain: 'usal.es', rorId: OTHER_ROR_ID }), usal);
 });
 
+// The University of Hawaiʻi gives one @hawaii.edu address to the students and
+// staff of all ten campuses, and the only resolver the census found for the
+// system is the Mānoa library's (01UHAWAII_MANOA, verified then withdrawn on
+// 2026-10-20). A hawaii.edu reader may be at Hilo or a community college, so
+// the system's domain and ROR id select nothing until the campus is known.
+const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
+
+test('the Hawaiʻi system\'s mail domain and ROR id select no resolver, so Mānoa\'s holdings are not the system\'s answer', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const { INSTITUTION_RESOLVERS } = await import('./institution-resolvers.ts');
+  assert.equal(findResolver({ domain: 'hawaii.edu' }), null);
+  assert.equal(findResolver({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }), null);
+  assert.equal(findResolver({ domain: 'hilo.hawaii.edu', rorId: HAWAII_SYSTEM_ROR }), null);
+  assert.ok(!INSTITUTION_RESOLVERS.some(row => row.institution === '01UHAWAII_MANOA' || row.domains.includes('hawaii.edu') || row.rorId === HAWAII_SYSTEM_ROR));
+  // Shipped, the row answered Nature 2020 with Mānoa's link; the stub only
+  // knows USAL's host, so any resolver call would surface as an unexpected fetch.
+  const stub = upstreams();
+  await rejectsWith(
+    lookupInstitutionAccess({ doi: DOI, domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }, { fetchImpl: stub.fetchImpl }),
+    'INSTITUTION_NOT_SUPPORTED',
+    404,
+  );
+  assert.equal(stub.calls.length, 0);
+});
+
+test('rows deployed from main keep their resolvers: UVic-UCC, PUC Chile and JKU Linz, each once', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const { INSTITUTION_RESOLVERS } = await import('./institution-resolvers.ts');
+  const uvic = { host: 'csuc-uvic.alma.exlibrisgroup.com', institution: '34CSUC_UVIC' };
+  const puc = { host: 'puc.alma.exlibrisgroup.com', institution: '56PUC_INST' };
+  assert.deepEqual(findResolver({ domain: 'uvic-ucc.cat' }), uvic);
+  assert.deepEqual(findResolver({ domain: 'alumnes.uvic-ucc.cat', rorId: 'https://ror.org/006zjws59' }), uvic);
+  assert.deepEqual(findResolver({ domain: 'uc.cl' }), puc);
+  assert.deepEqual(findResolver({ domain: 'estudiante.uc.cl', rorId: 'https://ror.org/04teye511' }), puc);
+  assert.deepEqual(findResolver({ domain: 'jku.at' }), { host: 'obv-at-ubl.alma.exlibrisgroup.com', institution: '43ACC_UBL' });
+  assert.equal(INSTITUTION_RESOLVERS.filter(row => row.rorId === 'https://ror.org/052r2xn60').length, 1);
+});
+
 test('ignores date coverage when Crossref gives no year', async () => {
   const stub = upstreams({ crossref: () => jsonResponse({ message: { ISSN: ['0092-8674'] } }) });
   await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
@@ -579,7 +618,7 @@ test('normalizes the query and refuses malformed parameters', () => {
     [{ doi: DOI }, 'INVALID_DOMAIN'],
     [{ doi: DOI, domain: 'localhost' }, 'INVALID_DOMAIN'],
     [{ doi: DOI, domain: 'a@usal.es' }, 'INVALID_DOMAIN'],
-    [{ doi: DOI, domain: 'usal.es', entityId: 'urn:mace:usal' }, 'INVALID_INSTITUTION_ID'],
+    [{ doi: DOI, domain: 'usal.es', entityId: 'urn:mace:' }, 'INVALID_INSTITUTION_ID'],
     [{ doi: DOI, domain: 'usal.es', entityId: `https://idp.usal.es/${'x'.repeat(300)}` }, 'INVALID_INSTITUTION_ID'],
     [{ doi: DOI, domain: 'usal.es', rorId: '02f40zc51' }, 'INVALID_INSTITUTION_ID'],
   ]) {
@@ -621,6 +660,16 @@ test('GetFTR entitled answers with its version-of-record link and skips Crossref
   assert.equal(call.init.headers!['X-API-KEY'], 'getftr-test-key');
   assert.match(call.init.headers!['X-REQUEST-ID'], /^[0-9a-f-]{36}$/);
   assert.deepEqual(JSON.parse(call.init.body as string), { org: { entityID: ENTITY_ID }, dois: [DOI] });
+});
+
+test('a SAML URN is preserved in GetFTR requests and its cache identity', async () => {
+  const entityId = 'urn:mace:incommon:usc.edu';
+  const institution = query({ doi: DOI, domain: 'usc.edu', entityId, rorId: 'https://ror.org/03taz7m60' });
+  const stub = upstreams({ getftr: () => jsonResponse({ entitlements: [{ doi: DOI, statusCode: 200, entitled: 'no' }] }) });
+  const answer = await lookupInstitutionAccess(institution, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  assert.equal(answer.status, 'not-entitled');
+  assert.deepEqual(JSON.parse(stub.getftrCalls()[0].init.body as string).org, { entityID: entityId, rorID: 'https://ror.org/03taz7m60' });
+  assert.equal(upstreamParams(institution, GETFTR_ENV).entityId, entityId);
 });
 
 test('GetFTR not entitled is the answer, even for a library with a resolver', async () => {
@@ -696,7 +745,7 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
     if (url.host === 'api.crossref.org') return jsonResponse({ message: CELL_WORK });
-    if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver();
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com') return resolver(url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -730,6 +779,37 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
+test('the access route accepts USC\'s stored SAML URN and uses its Alma library', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'usc.edu', rorId: 'https://ror.org/03taz7m60', entityId: 'urn:mace:incommon:usc.edu' }).toString();
+  const articleUrl = 'https://libproxy.usc.edu/login?url=https://publisher.example/article';
+  const { response, body, accessPuts } = await requestAccess(search, {
+    resolver: target => {
+      assert.equal(target.host, 'na03.alma.exlibrisgroup.com');
+      assert.equal(target.pathname, '/view/uresolver/01USC_INST/openurl');
+      return xml(`<uresolver_content><context_object><keys><key id="full_text_indicator">true</key></keys></context_object>
+        <context_services><context_service service_type="getFullTxt"><keys><key id="package_public_name">USC subscription</key></keys>
+        <resolution_url>${articleUrl}</resolution_url></context_service></context_services></uresolver_content>`);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { status: 'entitled', collection: 'USC subscription', url: articleUrl });
+  assert.equal(accessPuts.length, 1);
+  assert.equal(new URL(accessPuts[0].key).searchParams.get('library'), '01USC_INST');
+  const anonymous = await requestAccess(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
+test('the access route rejects malformed URNs and unsafe schemes without provider work or caching', async () => {
+  for (const entityId of ['urn:mace:', 'urn::usc.edu', 'urn:mace:incommon:usc edu', 'urn:mace:usc%ZZ', 'javascript:alert(1)', 'http://idp.usc.edu', `urn:mace:${'x'.repeat(300)}`]) {
+    const { response, body, calls, accessPuts } = await requestAccess(new URLSearchParams({ doi: DOI, domain: 'usc.edu', entityId }).toString());
+    assert.equal(response.status, 400, entityId);
+    assert.deepEqual(body, { code: 'INVALID_INSTITUTION_ID' });
+    assert.ok(calls.every(host => host === 'identitytoolkit.googleapis.com'));
+    assert.equal(accessPuts.length, 0);
+  }
+});
+
 test('the route refuses a request without a session before reaching any provider', async () => {
   const { response, body, calls } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { token: null });
   assert.equal(response.status, 401);
@@ -751,4 +831,14 @@ test('the route maps validation, unsupported institutions and outages to codes i
   }
   const { response } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { method: 'POST' });
   assert.equal(response.status, 405);
+});
+
+test('the access route refuses the Hawaiʻi system instead of answering with Mānoa\'s subscriptions', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }).toString();
+  const { response, body, calls, accessPuts } = await requestAccess(search);
+  assert.equal(response.status, 404);
+  assert.deepEqual(body, { code: 'INSTITUTION_NOT_SUPPORTED' });
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(accessPuts.length, 0);
+  assert.ok(calls.every(host => !host.endsWith('.alma.exlibrisgroup.com')), `asked a resolver: ${calls.join(', ')}`);
 });

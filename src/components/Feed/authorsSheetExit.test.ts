@@ -19,7 +19,7 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.
  */
 test('the authors sheet is a Base UI Drawer, which lives on the body, outside the page the transition transforms', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
-  const sheet = jsx.match(/<Drawer\s[\s\S]*?overlayClassName="pc-authors-modal-overlay"[\s\S]*?<\/Drawer>/);
+  const sheet = jsx.match(/<Drawer\s+open=\{showAuthorsModal\}[\s\S]*?overlayClassName="pc-authors-modal-overlay"[\s\S]*?<\/Drawer>/);
   assert.ok(sheet, 'the authors sheet is not a Drawer');
   assert.match(sheet[0], /<DrawerContent\s[\s\S]*?className=\{`pc-authors-modal-sheet /);
   assert.match(sheet[0], /aria-modal="true"/, 'FeedContainer probes [aria-modal="true"] to hold the feed still');

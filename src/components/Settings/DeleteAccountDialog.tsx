@@ -1,6 +1,7 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { CircleNotch, Trash, X } from '@phosphor-icons/react';
 import { deleteAccount } from '../../services/accountDeletionService.ts';
+import { reauthenticateCurrentUser } from '../../services/authIdentityService.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import {
   AlertDialog,
@@ -18,12 +19,13 @@ const COPY = {
   en: {
     title: 'Delete account',
     close: 'Close',
-    lead: 'This deletes your lists, highlights, follows, preferences, newsletter subscription, and sign-in account, along with any profile, photo, comments or content reports from earlier versions of PaperTok. It cannot be undone.',
+    lead: 'This deletes your lists, highlights, follows, preferences, newsletter subscription, and sign-in account, along with any profile, photo, comments or content reports from earlier versions of PaperTok. It cannot be undone. Before anything is deleted, a new window asks you to sign in again.',
     privacy: 'Privacy policy',
     privacyNewTab: 'opens in a new tab',
     typeLabel: 'Type DELETE to confirm',
     phrase: 'DELETE',
     confirm: 'Delete my account',
+    signingIn: 'Sign in again in the new window to continue.',
     working: 'Deleting the account…',
     cancel: 'Cancel',
   },
@@ -43,27 +45,41 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   const errorId = useId();
   const [open, setOpen] = useState(openOnMount);
   const [typed, setTyped] = useState('');
-  const [working, setWorking] = useState(false);
+  // '' when idle, 'signingIn' while the sign-in popup is open, then 'deleting'.
+  const [step, setStep] = useState<'' | 'signingIn' | 'deleting'>('');
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const confirmed = typed.trim() === copy.phrase;
+  const working = step !== '';
+
+  // The input and buttons are disabled while the sign-in window and the
+  // deletion run, so focus falls out of the dialog. On an error it goes back to
+  // the input, which the error is attached to.
+  useEffect(() => {
+    if (error && !working) inputRef.current?.focus();
+  }, [error, working]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (working) return;
     setOpen(nextOpen);
   };
 
+  // The Worker deletes nothing for a sign-in that is not recent, so the person
+  // signs in again first. That popup has to open from this click, before any
+  // other `await`, or the browser blocks it.
   const handleDelete = async () => {
     if (!confirmed || working) return;
-    setWorking(true);
+    setStep('signingIn');
     setError('');
     try {
-      await deleteAccount();
+      const confirmedUid = await reauthenticateCurrentUser();
+      setStep('deleting');
+      await deleteAccount(confirmedUid);
       await onDeleted();
     } catch (err) {
       setError(getUiErrorMessage(err, 'ACCOUNT_DELETION_FAILED'));
-      setWorking(false);
+      setStep('');
     }
   };
 
@@ -121,7 +137,9 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
           role="status"
           aria-live="polite"
         >
-          {working ? copy.working : error}
+          {step === 'signingIn' && copy.signingIn}
+          {step === 'deleting' && copy.working}
+          {error}
         </p>
         <div className="delete-account-actions">
           <AlertDialogCancel disabled={working}>

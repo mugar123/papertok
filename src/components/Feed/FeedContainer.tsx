@@ -32,6 +32,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 
 import PaperCard from './PaperCard.tsx';
@@ -230,6 +231,7 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
   const feed = useFeed();
+  const { trackEvent } = useAnalyticsConsent();
   const publicMode = Boolean(source?.publicMode);
   const onAuthRequired = source?.onAuthRequired;
   const dismissFromSource = source?.onNotInterested;
@@ -867,6 +869,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
+  const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
+  useEffect(() => {
+    if (feedFailed) trackEvent('app_error', { kind: 'feed_load_failed' });
+  }, [feedFailed, trackEvent]);
 
 
 

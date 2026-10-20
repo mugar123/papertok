@@ -5,8 +5,11 @@ import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
 
 const UID = 'alice-uid';
 const EMAIL = 'alice@example.com';
-/** What a verified lookup now resolves to: who, and whether the address is theirs. */
-const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true };
+/**
+ * What a verified lookup now resolves to: who, whether the address is theirs,
+ * and when they signed in (none here: `fakeIdToken` carries no `auth_time`).
+ */
+const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true, authTime: null };
 const PROJECT_ID = 'papertok-168df';
 const ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
@@ -130,7 +133,7 @@ test('an unverified address is carried, but carried as unverified', async () => 
   stubUser({ localId: UID, email: EMAIL, emailVerified: false });
   assert.deepEqual(
     await verify(fakeIdToken({ aud: PROJECT_ID })),
-    { uid: UID, email: EMAIL, emailVerified: false },
+    { uid: UID, email: EMAIL, emailVerified: false, authTime: null },
   );
 });
 
@@ -141,5 +144,22 @@ test('an address is normalised, so a match cannot turn on capitals or spacing', 
 
 test('an account with no address at all resolves to an empty one, never to undefined', async () => {
   stubUser({ localId: UID });
-  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false, authTime: null });
+});
+
+test('the sign-in time travels with the identity once Google has accepted the token', async () => {
+  // Account deletion refuses a sign-in that is not recent and reads the time
+  // from here, so only a token Identity Toolkit accepted may supply it.
+  const authTime = Math.floor(Date.now() / 1000) - 42;
+  stubUpstream();
+  assert.deepEqual(
+    await verify(fakeIdToken({ aud: PROJECT_ID, auth_time: authTime })),
+    { ...IDENTITY, authTime },
+  );
+
+  stubUpstream({ ok: false });
+  await assert.rejects(
+    () => verify(fakeIdToken({ aud: PROJECT_ID, auth_time: authTime })),
+    error => (error as { code: string; status: number }).code === 'AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
+  );
 });

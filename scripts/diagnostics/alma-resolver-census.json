@@ -3599,7 +3599,7 @@
       "country": "US",
       "worksCount": 66232,
       "homepage": "http://www.hawaii.edu/",
-      "probedAt": "2026-10-20T10:07:31.233Z",
+      "probedAt": "2026-10-20T10:28:40.786Z",
       "domains": [
         "hawaii.edu"
       ],
@@ -3609,8 +3609,8 @@
       "evidence": null,
       "code": "01UHAWAII_MANOA",
       "host": "na06.alma.exlibrisgroup.com",
-      "status": "verified",
-      "source": "manual (Opus subagent, 2026-10-20, batch 5)",
+      "status": "excluded",
+      "source": "census review 2026-10-20 (batch 5)",
       "resolverUrl": "https://na06.alma.exlibrisgroup.com/view/uresolver/01UHAWAII_MANOA/openurl",
       "product": "alma",
       "route": "seed",
@@ -3620,7 +3620,8 @@
         "Nature",
         "EBSCOhost MAS Complete"
       ],
-      "journal": "0028-0836"
+      "journal": "0028-0836",
+      "exclude": "hawaii.edu is the mail domain of every campus of the system (UH assigns one @hawaii.edu address to students and staff of all ten campuses), and the only code found, 01UHAWAII_MANOA, is the Mānoa library's institution in the system's Alma; its answer is Mānoa's subscriptions, not the system's, and nothing in the mail address says which campus a reader belongs to. Pending a way to identify the campus."
     },
     "https://ror.org/01p7jjy08": {
       "rorId": "https://ror.org/01p7jjy08",
@@ -10819,7 +10820,7 @@
       "country": "ES",
       "worksCount": 9540,
       "homepage": "https://uvic-ucc.cat/",
-      "probedAt": "2026-10-19T10:16:15.539Z",
+      "probedAt": "2026-10-19T22:32:54.658Z",
       "domains": [
         "uvic-ucc.cat"
       ],
@@ -10827,9 +10828,20 @@
         "https://uvic-ucc.cat/"
       ],
       "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "34CSUC_UVIC",
+      "host": "csuc-uvic.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "zotero",
+      "resolverUrl": "https://csuc-uvic.primo.exlibrisgroup.com/openurl/34CSUC_UVIC/34CSUC_UVIC:VU1",
+      "product": "alma",
+      "route": "seed",
+      "primoSlug": null,
+      "services": 7,
+      "packages": [
+        "SpringerNature Complete",
+        "SpringerLink Journals"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/023d5h353": {
       "rorId": "https://ror.org/023d5h353",
@@ -16028,7 +16040,7 @@
       "country": "AT",
       "worksCount": 41532,
       "homepage": "https://www.jku.at",
-      "probedAt": "2026-10-20T10:07:50.759Z",
+      "probedAt": "2026-10-19T22:33:09.369Z",
       "domains": [
         "jku.at"
       ],
@@ -16039,8 +16051,8 @@
       "code": "43ACC_UBL",
       "host": "obv-at-ubl.alma.exlibrisgroup.com",
       "status": "verified",
-      "source": "manual (Opus subagent, 2026-10-20, batch 5)",
-      "resolverUrl": "https://obv-at-ubl.alma.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl",
+      "source": "zotero",
+      "resolverUrl": "https://obv-at-ubl.userservices.exlibrisgroup.com/view/uresolver/43ACC_UBL/openurl",
       "product": "alma",
       "route": "seed",
       "primoSlug": null,
@@ -22621,16 +22633,26 @@
       "country": "CL",
       "worksCount": 87302,
       "homepage": "https://www.uc.cl/",
-      "probedAt": "2026-10-19T17:13:52.321Z",
+      "probedAt": "2026-10-20T03:33:15.101Z",
       "domains": [
         "uc.cl"
       ],
       "links": [
         "https://www.uc.cl/"
       ],
-      "code": null,
-      "host": null,
-      "status": "unresolved"
+      "code": "56PUC_INST",
+      "host": "puc.alma.exlibrisgroup.com",
+      "status": "verified",
+      "source": "manual (library page, 2026-10-19)",
+      "product": "alma",
+      "route": "seed",
+      "primoSlug": null,
+      "services": 6,
+      "packages": [
+        "Nature",
+        "Nursing &amp; Allied Health Database"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/01tjs6929": {
       "rorId": "https://ror.org/01tjs6929",
@@ -23346,5 +23368,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-20T10:08:29.708Z"
+  "generatedAt": "2026-10-20T10:28:40.787Z"
 }

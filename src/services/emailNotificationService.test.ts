@@ -25,6 +25,19 @@ test('asks the Worker for the weekly digest whatever the saved preference says',
   assert.equal(buildNotificationPreferencesPayload({ enabled: true }).frequency, 'weekly');
 });
 
+test('marks a background sync, and only a background sync, for the Worker', () => {
+  const follows = [{ type: 'author' as const, canonicalId: 'A1', displayName: 'Ada Lovelace' }];
+  const choice = buildNotificationPreferencesPayload({ enabled: true, maxPapers: 10 }, follows);
+  assert.equal('sync' in choice, false);
+
+  const sync = buildNotificationPreferencesPayload({ enabled: true, maxPapers: 10 }, follows, [], { sync: true });
+  assert.equal(sync.sync, true);
+  // A Worker deployed before `sync` ignores it and saves the rest as a choice.
+  assert.equal(sync.enabled, true);
+  assert.equal(sync.maxPapers, 10);
+  assert.deepEqual(sync.follows, choice.follows);
+});
+
 test('serializes only the follow metadata required by notification digests', () => {
   assert.deepEqual(serializeFollowForNotifications({
     type: 'institution',
