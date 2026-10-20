@@ -1304,7 +1304,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers);
+             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
           
           let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1316,7 +1316,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              openAlexProm = openAlexAdapter
-               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true })
+               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
                .then(res => res.papers);
           }
           
@@ -1462,7 +1462,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
             
             let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1474,7 +1474,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby })
+                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby, requireAbstract: true })
                   .then(res => res.papers)
                   .catch(() => []);
             }
@@ -1536,7 +1536,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
             
             let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1548,7 +1548,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom })
+                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom, requireAbstract: true })
                   .then(res => res.papers)
                   .catch(() => []);
             }

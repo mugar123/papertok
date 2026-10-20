@@ -1,5 +1,8 @@
 import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/Paper.ts';
 import type { FollowInput } from './following.ts';
+
+import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
+
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
 export interface RecommendationContext {
@@ -21,9 +24,11 @@ interface ShuffleOptions<T> {
 // learned category affinity (<=100) > follows (<=70) > learned concepts
 // (<=semanticConceptMultiplier) > learned authors and the session (<=30) >
 // citations/classics (<=25) > personal and graph candidates, diversity,
-// recency. The selected-category preference fades to minPreferenceShare of
-// itself over preferenceFadeInteractions interactions: what the reader does
-// takes over from what they picked at sign-up.
+// recency. A card without an abstract loses missingAbstract: it reaches the
+// page when the pool has little else or a follow carries it. The
+// selected-category preference fades to minPreferenceShare of itself over
+// preferenceFadeInteractions interactions: what the reader does takes over
+// from what they picked at sign-up.
 export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   selectedCategory: 100,
   relatedSelectedCategory: 80,
@@ -49,6 +54,7 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   maxCitationLog: 5,
   graphCandidate: 15,
   personalCandidate: 20,
+  missingAbstract: 60,
   explorationBaseWeight: 5,
   exploitBaseWeight: 15,
   minShuffleWeight: 0.1,
@@ -362,6 +368,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
 
   const graphBoost = paper._isGraphCandidate ? weights.graphCandidate : 0;
   const personalBoost = paper._isPersonalCandidate ? weights.personalCandidate : 0;
+  const missingAbstract = hasUsableAIAbstract(paper.abstract) ? 0 : -weights.missingAbstract;
 
   // The window-independent components; the diversity boost is added afterwards.
   const stableParts = {
@@ -376,6 +383,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     graphBoost,
     personalBoost,
     followBoost,
+    missingAbstract,
   };
 
   return {

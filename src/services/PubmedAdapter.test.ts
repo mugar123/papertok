@@ -124,6 +124,22 @@ test('reads PubMed through the Worker route instead of calling NCBI from the bro
   assert.deepEqual(escaped, [], `PubMed search still issued extra browser fetches: ${escaped.join(', ')}`);
 });
 
+test('a feed search asks PubMed only for records with an abstract', async () => {
+  const queries: string[] = [];
+  const adapter = new PubmedAdapter({
+    apiBase: 'https://papertok-report-api.example',
+    fetchImpl: async url => {
+      queries.push(new URL(String(url)).searchParams.get('q')!);
+      return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), { headers: { 'content-type': 'application/json' } });
+    },
+  });
+
+  await adapter.search('"Oncology" OR "Cardiology"', 1, { requireAbstract: true });
+  await adapter.search('"Oncology" OR "Cardiology"', 1);
+
+  assert.deepEqual(queries, ['("Oncology" OR "Cardiology") AND hasabstract', '"Oncology" OR "Cardiology"']);
+});
+
 test('carries a deadline on the PubMed request', async () => {
   const escaped: string[] = [];
   const restore = recordingGlobalFetch(escaped);
