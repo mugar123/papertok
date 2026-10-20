@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { CircleNotch, Trash, X } from '@phosphor-icons/react';
 import { deleteAccount } from '../../services/accountDeletionService.ts';
 import { reauthenticateCurrentUser } from '../../services/authIdentityService.ts';
+import { popupReadiness } from '../../services/firebase.ts';
+import usePopupReady from '../../hooks/usePopupReady.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import {
   AlertDialog,
@@ -26,6 +28,7 @@ const COPY = {
     phrase: 'DELETE',
     confirm: 'Delete my account',
     signingIn: 'Sign in again in the new window to continue.',
+    preparing: 'Preparing sign-in…',
     working: 'Deleting the account…',
     cancel: 'Cancel',
   },
@@ -52,6 +55,10 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
 
   const confirmed = typed.trim() === copy.phrase;
   const working = step !== '';
+  // Until the sign-in window can open inside the press (usePopupReady), a
+  // confirmed delete waits, focusable and described by the status line.
+  const popupReady = usePopupReady(popupReadiness);
+  const held = confirmed && !popupReady;
 
   // The input and buttons are disabled while the sign-in window and the
   // deletion run, so focus falls out of the dialog. On an error it goes back to
@@ -69,7 +76,7 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   // signs in again first. That popup has to open from this click, before any
   // other `await`, or the browser blocks it.
   const handleDelete = async () => {
-    if (!confirmed || working) return;
+    if (!confirmed || working || held) return;
     setStep('signingIn');
     setError('');
     try {
@@ -133,12 +140,13 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
         </div>
         <p
           id={errorId}
-          className={`delete-account-status${working ? ' is-working' : ''}`}
+          className={`delete-account-status${working || held ? ' is-working' : ''}`}
           role="status"
           aria-live="polite"
         >
           {step === 'signingIn' && copy.signingIn}
           {step === 'deleting' && copy.working}
+          {held && copy.preparing}
           {error}
         </p>
         <div className="delete-account-actions">
@@ -149,9 +157,11 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
             variant="outline"
             className="delete-account-confirm"
             onClick={handleDelete}
-            disabled={!confirmed || working}
+            disabled={!confirmed || working || held}
+            focusableWhenDisabled={held}
+            aria-describedby={held ? errorId : undefined}
           >
-            {working ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
+            {working || held ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
             {copy.confirm}
           </Button>
         </div>

@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight,
@@ -19,7 +19,7 @@ import { GithubMark } from '../ui/GithubMark.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import GoogleMark from './GoogleMark.tsx';
 import { useProviderSignIn } from './useProviderSignIn.ts';
-import { CollisionNote, ProviderSpinner } from './ProviderSignIn.tsx';
+import { CollisionNote, PreparingNote, ProviderSpinner } from './ProviderSignIn.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import PetriStamp from '../Onboarding/PetriStamp.tsx';
 import { normalizeGuestAreas, normalizeGuestTopics, saveGuestInterests } from '../../utils/guestInterests.ts';
@@ -308,7 +308,8 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const onLanding = shownStep === 'welcome';
   // The landing's account button opens the two providers under it, in place.
   const [accountOpen, setAccountOpen] = useState(false);
-  const { pendingProvider, collision, error: signInError, signIn } = useProviderSignIn('onboarding');
+  const { pendingProvider, collision, error: signInError, preparing, signIn } = useProviderSignIn('onboarding');
+  const preparingId = useId();
   const [selected, setSelected] = useState(() => new Set<string>());
   const [selectedTopics, setSelectedTopics] = useState(() => new Set<string>());
   const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
@@ -457,14 +458,31 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                   closed it is inert, so the keyboard never lands on a hidden provider. */}
               <div id="gw-providers" className="gw-providers" data-open={accountOpen ? '' : undefined} inert={!accountOpen}>
                 <div>
-                  <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('github')}>
-                    {pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="w-full"
+                    onClick={() => signIn('github')}
+                    disabled={preparing}
+                    focusableWhenDisabled
+                    aria-describedby={preparing ? preparingId : undefined}
+                  >
+                    {preparing || pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
                     {copy.welcome.github}
                   </Button>
-                  <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('google')}>
-                    {pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="w-full"
+                    onClick={() => signIn('google')}
+                    disabled={preparing}
+                    focusableWhenDisabled
+                    aria-describedby={preparing ? preparingId : undefined}
+                  >
+                    {preparing || pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
+                  <PreparingNote id={preparingId} preparing={preparing} keepLine={false} />
                   {/* Always mounted and displayed, even empty, so the alert is a
                       live region before its text arrives. */}
                   <p className="gw-providers-note" role="alert">

@@ -7,6 +7,8 @@ import { useLanguage } from '../../context/LanguageContext.tsx';
 import { INTEREST_AREAS } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import InstitutionLink from '../Institution/InstitutionLink.tsx';
+import usePopupReady from '../../hooks/usePopupReady.ts';
+import { institutionLinkReadiness, needsUniversityProof } from '../../services/institutionService.ts';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../Public/WelcomeShell.tsx';
 import { LibraryPreview } from '../Public/GuestWelcomePreferences.tsx';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guestInterests.ts';
@@ -61,6 +63,7 @@ const COPY = {
     cta: 'Start exploring',
     link: 'Continue',
     verifying: 'Verifying…',
+    preparing: 'Preparing sign-in…',
     skip: 'Skip for now',
     linkedNote: 'You can unlink any time in Settings.',
   },
@@ -315,6 +318,10 @@ export default function OnboardingFlow() {
   // On the university screen an address typed and nothing linked yet makes
   // the primary the link's submit: Google's window has to open from a press.
   const linksOnPress = step === 'university' && !institution && institutionEmail.trim() !== '';
+  // Until that window can open inside the press, the form ignores a submit
+  // that would open it (InstitutionLink) and the primary says why.
+  const linkPreparing = !usePopupReady(linksOnPress ? institutionLinkReadiness() : null)
+    && needsUniversityProof(institutionEmail);
   if (arrivedOnboarded) return null;
   return (
     <WelcomeShell
@@ -343,8 +350,8 @@ export default function OnboardingFlow() {
       // so: bound to the form, a press would still start a link.
       primary={linksOnPress && !saving
         ? {
-          label: linkBusy ? COPY.university.verifying : COPY.university.link,
-          busy: linkBusy,
+          label: linkBusy ? COPY.university.verifying : linkPreparing ? COPY.university.preparing : COPY.university.link,
+          busy: linkBusy || linkPreparing,
           form: UNIVERSITY_FORM_ID,
           disabled: primaryDisabled,
         }

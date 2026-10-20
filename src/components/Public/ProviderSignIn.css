@@ -16,3 +16,13 @@
     animation: none;
   }
 }
+
+/* "Preparing sign-in…" (PreparingNote). The height holds its line once the
+   text has gone. */
+.provider-preparing {
+  min-height: calc(var(--fs-xs) * var(--lh-normal));
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
