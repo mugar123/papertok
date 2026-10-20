@@ -1861,7 +1861,7 @@ const PaperCard = memo(function PaperCard({
         <div className="pc-lead" aria-hidden="true">
           {figures[0] && (
             <img
-              className={`pc-lead-figure${loadedFigures.has(figures[0].url) ? ' is-loaded' : ''}`}
+              className={`pc-lead-figure${loadedFigures.has(figures[0].url) ? ' is-loaded' : ''}${figuresResumed ? ' is-resumed' : ''}`}
               src={figures[0].url}
               alt=""
               loading="lazy"

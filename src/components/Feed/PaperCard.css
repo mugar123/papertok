@@ -2849,13 +2849,19 @@ button.pc-topics-pop-item:focus-visible {
     object-fit: contain;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    background: var(--bg-card);
+    padding: 6px;
+    background: var(--bg-figure-plate);
     opacity: 0;
-    transition: opacity 200ms var(--ease-out);
+    transform-origin: 50% 0;
   }
 
   .pc-lead-figure.is-loaded {
     opacity: 1;
+    animation: pcLeadDevelop 360ms var(--ease-out-expo) both;
+  }
+
+  .pc-lead-figure.is-loaded.is-resumed {
+    animation: figureClipFade 200ms linear both;
   }
 
   /* On a phone the field's glyph is the card's picture: it fills the lead and
@@ -2975,7 +2981,24 @@ button.pc-topics-pop-item:focus-visible {
   .related-header .graph-view-button { width: 40px; height: 40px; }
 }
 
+@keyframes pcLeadDevelop {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0 round var(--radius-md));
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round var(--radius-md));
+    scale: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .pc-lead-figure.is-loaded {
+    animation: figureClipFade 200ms linear both;
+  }
+
   /* The press keeps its colour and its dip; the squeeze is movement. */
   .pc-topic-link:active,
   .pc-side-btn:active .pc-side-icon {

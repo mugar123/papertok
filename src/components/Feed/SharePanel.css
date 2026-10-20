@@ -134,10 +134,7 @@
 
 .pc-menu-group {
   margin: 0 var(--space-3);
-  padding: var(--space-1);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-2xl);
-  background: var(--bg-sunken);
+  padding: 0;
   list-style: none;
 }
 
@@ -184,7 +181,6 @@ ul.pc-menu-group {
 .pc-menu-share {
   display: flex;
   gap: var(--space-2);
-  padding: var(--space-2);
 }
 
 .pc-menu-nets {
@@ -246,6 +242,6 @@ ul.pc-menu-group {
 }
 
 /* As in Settings, the hairline steps up on ink, where it all but vanishes. */
-:root[data-theme='dark'] :is(.pc-menu-group, .pc-menu-item, .pc-menu-link, .pc-menu-net) {
+:root[data-theme='dark'] :is(.pc-menu-item, .pc-menu-link, .pc-menu-net) {
   border-color: var(--border-strong);
 }
