@@ -203,6 +203,15 @@ test('a single-service answer cut off before its services is a failed probe, not
   assert.equal(result.partial, true);
 });
 
+test('an answer whose Filtered key never closes is a failed probe, not a platform', async () => {
+  // Read by its keys, the package Alma filtered out for the date would count as live.
+  const damaged = ctoFiltered('Date Filter', 'Nature').replace('<key id="Filtered">true</key>', '<key id="Filtered">true');
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? damaged : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services, []);
+  assert.equal(result.partial, true);
+});
+
 test('a complete answer that is not well-formed XML still lists its platform', async () => {
   const unescaped = ctoWith('Taylor & Francis Current Content Access');
   const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.tandf ? unescaped : CTO_NONE) });
@@ -254,11 +263,11 @@ test('UVic-UCC and PUC Chile are listed from their own libraries', () => {
   const catalogue = catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET);
   assert.deepEqual(
     servicesCacheParams({ domain: 'uvic-ucc.cat', rorId: 'https://ror.org/006zjws59' } as InstitutionQuery, {} as WorkerEnv),
-    { library: '34CSUC_UVIC', host: 'csuc-uvic.alma.exlibrisgroup.com', catalogue, reading: 'complete-answers' },
+    { library: '34CSUC_UVIC', host: 'csuc-uvic.alma.exlibrisgroup.com', catalogue, reading: 'balanced-tags' },
   );
   assert.deepEqual(
     servicesCacheParams({ domain: 'uc.cl', rorId: 'https://ror.org/04teye511' } as InstitutionQuery, {} as WorkerEnv),
-    { library: '56PUC_INST', host: 'puc.alma.exlibrisgroup.com', catalogue, reading: 'complete-answers' },
+    { library: '56PUC_INST', host: 'puc.alma.exlibrisgroup.com', catalogue, reading: 'balanced-tags' },
   );
 });
 
@@ -491,7 +500,7 @@ test('the route caches a complete list for seven days under the library', async 
     ['library', '34BUC_USAL'],
     ['host', 'eu01.alma.exlibrisgroup.com'],
     ['catalogue', catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET)],
-    ['reading', 'complete-answers'],
+    ['reading', 'balanced-tags'],
   ]);
   assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
@@ -504,10 +513,10 @@ test('the cache key changes with the catalogue and the budget, and with nothing 
   assert.notEqual(catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET + 30), fingerprint);
   const swapped = SERVICE_CATALOGUE.map((entry, index) => (index === 0 ? { ...entry, doi: '10.1016/j.other.2021.1' } : entry));
   assert.notEqual(catalogueFingerprint(swapped, SUBREQUEST_BUDGET), fingerprint);
-  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'complete-answers' });
+  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'balanced-tags' });
   assert.deepEqual(
     servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, GETFTR_ENV),
-    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'complete-answers' },
+    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'balanced-tags' },
   );
 });
 

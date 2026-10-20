@@ -239,6 +239,8 @@ test('parses the captured Cell answer into its two full-text services, unescaped
 test('parses the captured control answer as no full text and anything else as no answer', () => {
   assert.deepEqual(parseResolverAnswer(CTO_CONTROL), { fullText: false, matched: false, services: [], restricted: false });
   assert.equal(parseResolverAnswer('<html>Service unavailable</html>'), null);
+  // Nor is a page that wraps one: only Alma's own root closes an answer.
+  assert.equal(parseResolverAnswer(`<html><body>${CTO_CELL}</body></html>`), null);
 });
 
 // Captured 2026-10-19 for the Université de Pau (33BUPAU_INST on eu03), Nature
@@ -470,6 +472,8 @@ const CTO_TRUNCATED = '<uresolver_content><context_object><keys><key id="rft.mms
 test('an answer cut off before its services is no answer: an outage, not a refusal', async () => {
   assert.equal(parseResolverAnswer(CTO_TRUNCATED), null);
   assert.equal(parseResolverAnswer(CTO_SINGLE_SERVICE.slice(0, -40)), null);
+  // Nor is a whole answer with a cut-off one after it: the root closes the answer.
+  assert.equal(parseResolverAnswer(CTO_SINGLE_SERVICE + CTO_TRUNCATED), null);
   const stub = upstreams({ resolver: () => xml(CTO_TRUNCATED) });
   await assert.rejects(
     lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
@@ -491,6 +495,105 @@ test('a complete answer is read even when it is not well-formed XML, but not one
   const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
   assert.equal(parseResolverAnswer(CTO_SERVICE_LEFT_OPEN), null);
+});
+
+// Captured 2026-10-19 on julac-hkpu for the Hong Kong Polytechnic University
+// (852JULAC_HKPU), Nature 2020: two of its 24 services, the second filtered
+// for the date. Alma wraps a value holding `&` or HTML in a CDATA section, as
+// in that service's parser parameters and note. Keys the Worker does not read
+// are left out, except those two.
+const HKPU_NATURE_URL = 'https://julac-hkpu.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=103567352960003411&institutionId=3411&customerId=3405';
+const CTO_CDATA = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <context_object>
+    <keys>
+      <key id="available_services">viewit</key>
+      <key id="available_services">getit</key>
+      <key id="user_ip" xsi:nil="true"/>
+      <key id="full_text_indicator">true</key>
+      <key id="rft.issn">0028-0836</key>
+      <key id="rft.mms_id">991021913441903411</key>
+    </keys>
+  </context_object>
+  <context_services>
+    <context_service service_type="getFullTxt" context_service_id="103567352960003411">
+      <keys>
+        <key id="package_public_name">Nature Publishing Group Journals (Springer Nature)</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 1869 volume: 1 issue: 1.&lt;br></key>
+      </keys>
+      <resolution_url>${HKPU_NATURE_URL.replace(/&/g, '&amp;')}</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="103567352990003411">
+      <keys>
+        <key id="package_public_name">Academic Search Premier (via EbscoHost)</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 05/06/1997 until 30/11/2015.&lt;br></key>
+        <key id="parse_parameters"><![CDATA[db_host=aph & url=https://search.ebscohost.com & url1=https://openurl.ebscohost.com/linksvc/linking.aspx & url2=https://openurl.ebsco.com & shib= & customer_id= & sso= & ipauth= & opid=&jkey=NAE]]></key>
+        <key id="public_note"><![CDATA[In case of link problem, please try to access the <a target=’_blank’ href='http://ezproxy.lb.polyu.edu.hk/login?url=https://search.ebscohost.com/login.aspx?authtype=ip,uid&groupid=main&profile=ehost&defaultdb=aph'>database</a> directly.<br/>]]></key>
+        <key id="Filtered">true</key>
+        <key id="Filter reason">Date Filter</key>
+      </keys>
+      <resolution_url>https://julac-hkpu.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=103567352990003411&amp;institutionId=3411&amp;customerId=3405</resolution_url>
+    </context_service>
+  </context_services>
+  <performance_counters>
+    <performance_counter name="TOTAL" duration="0.0"/>
+    <performance_counter name="MMS_LOOKUP" duration="0.337"/>
+  </performance_counters>
+</uresolver_content>`;
+
+/** `text` with the first `find` after each of `anchors` in turn replaced. */
+function replaceAfter(text: string, anchors: string[], find: string, replacement: string) {
+  let at = 0;
+  for (const anchor of anchors) {
+    at = text.indexOf(anchor, at);
+    assert.ok(at >= 0, `no ${anchor}`);
+  }
+  const start = text.indexOf(find, at);
+  assert.ok(start >= 0, `no ${find}`);
+  return text.slice(0, start) + replacement + text.slice(start + find.length);
+}
+
+// Damage the reader's expressions would read past, each made once to each
+// answer in the test below, all of more than one service. Read by its keys
+// alone, such an answer can count a filtered service as live, a live one as
+// filtered or missing, or lose a service's link.
+const MARKUP_DAMAGE: Array<[string, (answer: string) => string]> = [
+  ['a key left open in the context object', answer => replaceAfter(answer, ['<context_object>'], '</key>', '')],
+  ['a key left open in a service', answer => replaceAfter(answer, ['<context_service '], '</key>', '')],
+  ['a key opened inside another', answer => replaceAfter(replaceAfter(answer, ['<context_service '], '</key>', ''), ['<context_service '], '</key>', '</key></key>')],
+  ['a key closed by a misspelt tag', answer => replaceAfter(answer, ['<context_service '], '</key>', '</kye>')],
+  ['a < left unescaped in a key', answer => replaceAfter(answer, ['<context_service '], '</key>', '<</key>')],
+  ['a quote left open in a key', answer => replaceAfter(answer, ['<context_service ', '<key '], '">', '>')],
+  ['a quote left open in a service', answer => replaceAfter(answer, ['<context_service '], '">', '>')],
+  ['a link left open', answer => replaceAfter(answer, [], '</resolution_url>', '')],
+  ['the context object left open', answer => replaceAfter(answer, [], '</context_object>', '')],
+  ['a service closed by the next one', answer => replaceAfter(answer, [], '</context_service>', '')],
+  ['a service opened inside another', answer => replaceAfter(replaceAfter(answer, [], '</context_service>', ''), [], '</context_services>', '</context_service></context_services>')],
+];
+
+test('an answer with damaged markup is no answer, whatever its keys would read as', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_CDATA), {
+    fullText: true,
+    matched: true,
+    services: [{ name: 'Nature Publishing Group Journals (Springer Nature)', free: false, url: HKPU_NATURE_URL }],
+    restricted: false,
+  });
+  const outcome = (answer: string) => lookupInstitutionAccess(
+    { doi: DOI, domain: 'usal.es' },
+    { fetchImpl: upstreams({ resolver: () => xml(answer) }).fetchImpl },
+  ).then(result => result.status, error => (error as InstitutionAccessError).code);
+  const answers = { Pau: CTO_FILTERED_AND_LIVE, USAL: CTO_CELL, Harvard: CTO_SINGLE_SERVICE, HKPU: CTO_CDATA };
+  for (const [library, answer] of Object.entries(answers)) {
+    assert.equal(await outcome(answer), 'entitled', library);
+    const ampersand = answer.replace('<key id="package_public_name">', '<key id="package_public_name">A & ');
+    assert.equal(await outcome(ampersand), 'entitled', `${library}: an unescaped &`);
+    for (const [damage, apply] of MARKUP_DAMAGE) {
+      const damaged = apply(answer);
+      assert.notEqual(damaged, answer);
+      assert.equal(await outcome(damaged), 'ACCESS_LOOKUP_UNAVAILABLE', `${library}: ${damage}`);
+    }
+  }
 });
 
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
@@ -803,7 +906,7 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'complete-answers']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'balanced-tags']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
 
@@ -871,6 +974,9 @@ test('the route maps validation, unsupported institutions and outages to codes i
     ['doi=nope&domain=usal.es', {}, 400, 'INVALID_DOI'],
     [`doi=${encodeURIComponent(DOI)}&domain=nowhere.example`, {}, 404, 'INSTITUTION_NOT_SUPPORTED'],
     [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => new Response('down', { status: 503 }) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
+    // The Pau answer with only the `</key>` of `Filtered` lost: read by its
+    // keys, the service filtered out for the date counts as access.
+    [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => xml(CTO_FILTERED_BY_DATE.replace('<key id="Filtered">true</key>', '<key id="Filtered">true')) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
   ] as Array<[string, AccessOptions, number, string]>) {
     const { response, body, accessPuts } = await requestAccess(search, options);
     assert.equal(response.status, status, search);
