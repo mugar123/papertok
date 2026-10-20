@@ -2,14 +2,16 @@ import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response> };
+type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response>; crossref?: () => Response };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
 import {
   InstitutionAccessError,
+  findResolver,
   lookupInstitutionAccess,
   parseResolverAnswer,
+  parseSfxAnswer,
   readAccessQuery,
   upstreamParams,
 } from './institution-access.ts';
@@ -181,21 +183,292 @@ const GETFTR_ENV = { GETFTR_API_KEY: 'getftr-test-key' };
 const xml = (body: BodyInit|null|undefined) => new Response(body, { status: 200, headers: { 'content-type': 'text/xml;charset=UTF-8' } });
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
+// The SFX pilot: TUM, LMU and FAU each have an instance on the Bavarian
+// library network's SFX server. The answers below were captured there on
+// 2026-10-20 (`sfx.response_type=multi_obj_detailed_xml`) and cut to the
+// attributes and target fields the Worker reads; the nested `_stash` hash
+// stays, as SFX sends it.
+const SFX_HOST = 'sfx.bib-bvb.de';
+const TUM_ROR = 'https://ror.org/02kkvpp62';
+const LMU_ROR = 'https://ror.org/05591te55';
+const FAU_ROR = 'https://ror.org/00f7hpc57';
+const NATURE_DOI = '10.1038/s41586-020-2782-y';
+const NATURE_LINK = 'https://doi.org/10.1038/s41586-020-2782-y?nosfx=y';
+// Crossref's record for the article, as it answered the same day.
+const NATURE_WORK = {
+  DOI: NATURE_DOI,
+  'issn-type': [{ value: '0028-0836', type: 'print' }, { value: '1476-4687', type: 'electronic' }],
+  issued: { 'date-parts': [[2020, 10, 14]] },
+  volume: '586',
+  issue: '7829',
+  page: '378-384',
+};
+
+// sfx_tum, Nature 1476-4687, 2020, with the article's DOI, volume, issue and
+// first page, full-text services only: the journal's own package and
+// Springer's, both linking to the article.
+const SFX_TUM_NATURE = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.eissn"&gt;1476-4687&lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.1038/s41586-020-2782-y&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;954925427238&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Nature&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2020&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;0028-0836&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>SPRINGER_LINK_JOURNALS_AUTOLOAD</target_name>
+    <target_public_name>SpringerLink Journals - AutoHoldings</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41586-020-2782-y?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>NATURE</target_name>
+    <target_public_name>Nature</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41586-020-2782-y?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+// sfx_uben, PLOS ONE 1932-6203, 2020, for 10.1371/journal.pone.0234574,
+// full-text services only: four free collections and nothing licensed. The
+// knowledge-base names are the only sign that they are free; FAU and TUM
+// answered alike.
+const SFX_FAU_PLOS = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;1932-6203&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2020&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;1000000000277859&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;1932-6203&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Plos One&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>DOAJ_DIRECTORY_OPEN_ACCESS_JOURNALS</target_name>
+    <target_public_name>DOAJ Directory of Open Access Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1371/journal.pone.0234574?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>FREE_FULL_TEXT_JOURNALS_IN_CHEMISTRY</target_name>
+    <target_public_name>Free Full-Text Journals in Chemistry</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>http://www.plosone.org/home.action</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>PUBLIC_LIBRARY_OF_SCIENCE_PLOS_JOURNALS_OPEN_ACCESS</target_name>
+    <target_public_name>Public Library of Science (PLoS) Journals Open Access</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1371/journal.pone.0234574?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>PUBMED_CENTRAL_JOURNALS</target_name>
+    <target_public_name>PubMed Central</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://www.ncbi.nlm.nih.gov/pmc/ivip/1932-6203/15/6/e0234574</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+// sfx_tum, Journal of the American Mathematical Society 0894-0347, 2021,
+// full-text services only: the AMS opens its articles after five years, and
+// TUM lists that free collection and the EZB's.
+const SFX_TUM_JAMS = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.object_id"&gt;954925558506&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2021&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Journal of the American Mathematical Society&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;0894-0347&lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;1088-6834&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>AMERICAN_MATHEMATICAL_SOCIETY_PUBLICATIONS_FREELY_ACCESSIBLE</target_name>
+    <target_public_name>American Mathematical Society Publications (Freely Accessible)</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://www.ams.org/journals/jams/all_issues.html</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>EZB-FREE-00999_FREELY_AVAILABLE_EZB_JOURNALS</target_name>
+    <target_public_name>EZB-FREE-00999 freely available EZB journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://pubs.ams.org/JAMS?active=all</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+// sfx_tum, Nature 0028-0836, 1800, without the full-text filter: the journal
+// resolves, no full text covers the year, and the menu still offers the
+// union catalogue, interlibrary loan, document delivery and a feedback form,
+// some with https links. Their long query strings are shortened.
+const SFX_TUM_NATURE_1800 = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.eissn"&gt;1476-4687&lt;/item&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Nature&lt;/item&gt;
+  &lt;item key="rft.year"&gt;1800&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;0028-0836&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;954925427238&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>BVB_GUEST_LCL</target_name>
+    <target_public_name>Bibliotheksverbundes Bayern</target_public_name>
+    <service_type>getHolding</service_type>
+    <proxy>no</proxy>
+    <target_url>https://sfx.bib-bvb.de/bvb-cgi/pick_bvb_container.cgi?options=BV002529932-BV002534890&amp;Jahr=1800&amp;SigelNB=EXT&amp;lang=de&amp;svc=HOLO</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>FRENCH_UNION_CATALOGUE_SUDOC</target_name>
+    <target_public_name>Catalogue SUDOC</target_public_name>
+    <service_type>getHolding</service_type>
+    <proxy>no</proxy>
+    <target_url>http://corail.sudoc.abes.fr/DB=2.1/SET=1/TTL=1/NXT/CMD?sfx%24char_set=latin1&amp;ACT=SRCHA&amp;SRT=RLV&amp;IKT=8&amp;TRM=0028-0836</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>ISI_JOURNAL_CITATION_REPORTS_SCIENCE_EDITION</target_name>
+    <target_public_name>ISI's Journal Citation Report (JCR) Science Edition</target_public_name>
+    <service_type>getCitedJournal</service_type>
+    <proxy>no</proxy>
+    <target_url>http://gateway.webofknowledge.com/gateway/Gateway.cgi?GWVersion=2&amp;SrcAuth=ExLibris&amp;SrcApp=SFX&amp;KeyISSN=0028-0836&amp;DestApp=IC2JCR&amp;edition=SCIE</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>DOKUMENTUM_LCL</target_name>
+    <target_public_name>Fernleihe oder dokumenTUM (Papier/Kapitel-Scans)</target_public_name>
+    <service_type>getDocumentDelivery</service_type>
+    <proxy>no</proxy>
+    <target_url>https://sfx.bib-bvb.de/bvb-cgi/pick_bvb_container.cgi?jahr=1800&amp;options=-BV002529932-BV002534890&amp;svc=GUDD&amp;lang=de</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>DOCDEL_SUBITO</target_name>
+    <target_public_name>Subito</target_public_name>
+    <service_type>getDocumentDelivery</service_type>
+    <proxy>no</proxy>
+    <target_url>http://www.subito-doc.de/order/po.php?APY=1800&amp;SS=0028-0836&amp;JT=Nature&amp;BI=BVB&amp;CO=NATUAS</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>LOCAL_FEEDBACK</target_name>
+    <target_public_name>Nachricht</target_public_name>
+    <service_type>getWebService</service_type>
+    <proxy>no</proxy>
+    <target_url>http://sfx.bib-bvb.de/sfx_tum/cgi/public/feedback.cgi?em=support.emedien%40ub.tum.de&amp;year=1800&amp;issn=0028-0836&amp;journal=Nature</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+// sfx_tum asked about 1234-5678, an ISSN no journal has: SFX resolved it to
+// another journal of its knowledge base, with a free service.
+const SFX_TUM_OTHER_JOURNAL = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;4550000000000100&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2020&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Bisanzio e l&amp;apos;Occidente&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;2345-6789&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>MISCELLANEOUS_FREE_EJOURNALS</target_name>
+    <target_public_name>Free E- Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://riviste.unimi.it/index.php/BEO</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
 /**
  * Crossref, the resolver and GetFTR, each answering per call. `resolver`
- * receives the ISSN asked about so a test can answer per journal.
+ * receives the ISSN asked about so a test can answer per journal; `sfx`
+ * answers for the Bavarian SFX instances the same way.
  */
 function upstreams({
   crossref = () => jsonResponse({ message: CELL_WORK }),
   resolver = () => xml(CTO_CELL),
+  sfx = () => xml(SFX_TUM_NATURE),
   getftr = () => jsonResponse({ entitlements: [] }),
-}: { crossref?: (target: URL) => Response | Promise<Response>; resolver?: Resolver; getftr?: (body: unknown, init: RequestInit) => Response | Promise<Response> } = {}) {
+}: { crossref?: (target: URL) => Response | Promise<Response>; resolver?: Resolver; sfx?: Resolver; getftr?: (body: unknown, init: RequestInit) => Response | Promise<Response> } = {}) {
   const calls: Array<{ url: URL; init: RequestInit & { headers?: Record<string, string> } }> = [];
   const fetchImpl: typeof fetch = async (url, init = {}) => {
     const target = new URL(String(url));
     calls.push({ url: target, init: init as RequestInit & { headers?: Record<string, string> } });
     if (target.host === 'api.crossref.org') return crossref(target);
     if (target.host === 'eu01.alma.exlibrisgroup.com') return resolver(target.searchParams.get('rft.issn')!, target);
+    if (target.host === SFX_HOST) return sfx(target.searchParams.get('rft.issn')!, target);
     if (target.host === 'entitlements.prod.getft.io') return getftr(JSON.parse(init.body as string), init);
     throw new Error(`unexpected fetch ${target}`);
   };
@@ -205,6 +478,7 @@ function upstreams({
     calls,
     crossrefCalls: () => of('api.crossref.org'),
     resolverCalls: () => of('eu01.alma.exlibrisgroup.com'),
+    sfxCalls: () => of(SFX_HOST),
     getftrCalls: () => of('entitlements.prod.getft.io'),
   };
 }
@@ -763,7 +1037,7 @@ const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 const ROUTE_ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
 /** The route through the Worker's own dispatch, with the edge cache recorded. */
-async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL) }: AccessOptions = {}) {
+async function requestAccess(search: string, { token = TOKEN, method = 'GET', resolver = () => xml(CTO_CELL), crossref = () => jsonResponse({ message: CELL_WORK }) }: AccessOptions = {}) {
   const calls: string[] = [];
   const puts: Array<{ key: string; response: Response }> = [];
   const originalFetch = globalThis.fetch;
@@ -772,8 +1046,8 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
-    if (url.host === 'api.crossref.org') return jsonResponse({ message: CELL_WORK });
-    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com') return resolver(url);
+    if (url.host === 'api.crossref.org') return crossref();
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com' || url.host === SFX_HOST) return resolver(url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -898,4 +1172,203 @@ test('the access route refuses the Hawaiʻi system instead of answering with Mā
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(accessPuts.length, 0);
   assert.ok(calls.every(host => !host.endsWith('.alma.exlibrisgroup.com')), `asked a resolver: ${calls.join(', ')}`);
+});
+
+const PLOS_DOI = '10.1371/journal.pone.0234574';
+const PLOS_WORK = {
+  DOI: PLOS_DOI,
+  'issn-type': [{ value: '1932-6203', type: 'electronic' }],
+  issued: { 'date-parts': [[2020, 6, 25]] },
+  volume: '15',
+  issue: '6',
+  page: 'e0234574',
+};
+const askedAbout = (work: object) => () => jsonResponse({ message: work });
+
+test('an SFX answer is read from the full-text services of the journal asked about', () => {
+  const services = [
+    { name: 'SpringerLink Journals - AutoHoldings', free: false, url: NATURE_LINK },
+    { name: 'Nature', free: false, url: NATURE_LINK },
+  ];
+  for (const issn of ['1476-4687', '0028-0836']) {
+    assert.deepEqual(parseSfxAnswer(SFX_TUM_NATURE, issn), { fullText: true, matched: true, services, restricted: false });
+  }
+});
+
+// SFX's simplexml answer to the same question nests a related journal in
+// the attributes (Nature Physical Science, eISSN 2058-1106); added here to
+// the full answer, its items must not stand in for the object's own.
+const SFX_NESTED_RELATED = SFX_TUM_NATURE.replace(' &lt;/hash&gt;\n&lt;/perldata&gt;', `  &lt;item key="@sfx.related_objects"&gt;
+   &lt;array&gt;
+    &lt;item key="0"&gt;
+     &lt;hash&gt;
+      &lt;item key="rft.object_id"&gt;954927601631&lt;/item&gt;
+      &lt;item key="rft.eissn"&gt;2058-1106&lt;/item&gt;
+     &lt;/hash&gt;
+    &lt;/item&gt;
+   &lt;/array&gt;
+  &lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;`);
+
+test('a related journal nested in an SFX answer\'s attributes does not stand in for the journal asked about', () => {
+  assert.ok(SFX_NESTED_RELATED.includes('2058-1106'));
+  assert.deepEqual(parseSfxAnswer(SFX_NESTED_RELATED, '1476-4687'), parseSfxAnswer(SFX_TUM_NATURE, '1476-4687'));
+  assert.equal(parseSfxAnswer(SFX_NESTED_RELATED, '2058-1106')!.matched, false);
+});
+
+test('a subscription in an SFX library is entitled, with the link SFX gives to the article', async () => {
+  const stub = upstreams({ crossref: askedAbout(NATURE_WORK) });
+  const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: NATURE_LINK });
+  const [call, ...more] = stub.sfxCalls();
+  assert.equal(more.length, 0);
+  assert.equal(call.url.pathname, '/sfx_tum');
+  // The article's own locators, as for Alma, and only full-text services.
+  for (const [key, value] of [
+    ['rft.issn', '1476-4687'], ['rft.date', '2020'], ['rft_id', `info:doi/${NATURE_DOI}`],
+    ['rft.volume', '586'], ['rft.issue', '7829'], ['rft.spage', '378'],
+    ['svc.fulltext', 'yes'], ['sfx.response_type', 'multi_obj_detailed_xml'],
+  ]) {
+    assert.equal(call.url.searchParams.get(key), value, key);
+  }
+  assert.equal(stub.resolverCalls().length, 0);
+});
+
+test('free collections in an SFX answer are open access, not the library\'s subscription', async () => {
+  assert.deepEqual(parseSfxAnswer(SFX_FAU_PLOS, '1932-6203'), { fullText: false, matched: true, services: [], restricted: false });
+  assert.deepEqual(parseSfxAnswer(SFX_TUM_JAMS, '0894-0347'), { fullText: false, matched: true, services: [], restricted: false });
+  const stub = upstreams({ crossref: askedAbout(PLOS_WORK), sfx: () => xml(SFX_FAU_PLOS) });
+  const result = await lookupInstitutionAccess({ doi: PLOS_DOI, domain: 'fau.de', rorId: FAU_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+  assert.equal(stub.sfxCalls()[0].url.pathname, '/sfx_uben');
+  // Only a whole word marks a collection free: Elsevier's licensed Freedom
+  // Collection is a subscription.
+  const freedom = SFX_TUM_NATURE.replace('<target_name>NATURE</target_name>', '<target_name>ELSEVIER_SD_FREEDOM_COLLECTION</target_name>');
+  assert.equal(parseSfxAnswer(freedom, '1476-4687')!.services.length, 2);
+});
+
+test('an SFX answer without full text is a refusal: holdings, loans and delivery are not full text', async () => {
+  assert.deepEqual(parseSfxAnswer(SFX_TUM_NATURE_1800, '0028-0836'), { fullText: false, matched: true, services: [], restricted: false });
+  const stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx: () => xml(SFX_TUM_NATURE_1800) });
+  const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+  assert.deepEqual(stub.sfxCalls().map(call => call.url.searchParams.get('rft.issn')), ['1476-4687', '0028-0836']);
+});
+
+// No captured answer had an object without a record; this one is the 1800
+// answer without its `rft.object_id`.
+const SFX_UNRESOLVED = SFX_TUM_NATURE_1800.replace('  &lt;item key="rft.object_id"&gt;954925427238&lt;/item&gt;\n', '');
+
+test('an SFX answer about another journal, or without a record, is no answer about this one: unknown, not refused', async () => {
+  assert.deepEqual(parseSfxAnswer(SFX_TUM_OTHER_JOURNAL, '1234-5678'), { fullText: false, matched: false, services: [], restricted: true });
+  assert.ok(!SFX_UNRESOLVED.includes('rft.object_id'));
+  assert.deepEqual(parseSfxAnswer(SFX_UNRESOLVED, '0028-0836'), { fullText: false, matched: false, services: [], restricted: true });
+  const work = { 'issn-type': [{ value: '1234-5678', type: 'print' }], issued: { 'date-parts': [[2020]] } };
+  const stub = upstreams({ crossref: askedAbout(work), sfx: () => xml(SFX_TUM_OTHER_JOURNAL) });
+  const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'unknown', collection: null, url: null });
+});
+
+// What the pilot's answers did not show, built on the TUM answer: Ex Libris
+// documents `is_related` as no, close or remote, and full text of selected
+// articles as a service type of its own (without `sfx.has_full_text`, so
+// that rule is tested alone). The third claims full text and lists none; the
+// fourth links its subscriptions over plain http, which the reader cannot follow.
+const SFX_RELATED = SFX_TUM_NATURE.replaceAll('<is_related>no</is_related>', '<is_related>close</is_related>');
+const SFX_SELECTED = SFX_TUM_NATURE
+  .replaceAll('<service_type>getFullTxt</service_type>', '<service_type>getSelectedFullTxt</service_type>')
+  .replace('  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;\n', '');
+const SFX_UNLISTED = SFX_TUM_NATURE.replace(/<ctx_obj_targets>[\s\S]*<\/ctx_obj_targets>/, '<ctx_obj_targets/>');
+const SFX_PLAIN_HTTP = SFX_TUM_NATURE.replaceAll('<target_url>https://', '<target_url>http://');
+
+test('related, selective, unlisted or unlinkable full text leaves an SFX answer unknown, not refused', async () => {
+  assert.ok(!SFX_SELECTED.includes('sfx.has_full_text'));
+  for (const answer of [SFX_RELATED, SFX_SELECTED, SFX_UNLISTED, SFX_PLAIN_HTTP]) {
+    assert.deepEqual(parseSfxAnswer(answer, '1476-4687'), { fullText: false, matched: true, services: [], restricted: true });
+    const stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx: () => xml(answer) });
+    const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+    assert.deepEqual(result, { status: 'unknown', collection: null, url: null });
+  }
+});
+
+// The TUM answer twice over, as SFX answers an ambiguous question.
+const SFX_TWO_OBJECTS = SFX_TUM_NATURE.replace('</ctx_obj_set>', `${SFX_TUM_NATURE.match(/<ctx_obj [\s\S]*<\/ctx_obj>/)![0]}\n</ctx_obj_set>`);
+
+test('an incomplete SFX answer, or an SFX failure, is an outage rather than a refusal', async () => {
+  const broken = [
+    SFX_TUM_NATURE.slice(0, -60),
+    // Cut inside its second object, or between the two: the first one alone
+    // must not be read. An object left open would swallow the next.
+    SFX_TWO_OBJECTS.slice(0, SFX_TWO_OBJECTS.lastIndexOf('<ctx_obj_targets>')),
+    SFX_TWO_OBJECTS.slice(0, SFX_TWO_OBJECTS.indexOf('</ctx_obj>') + '</ctx_obj>'.length),
+    SFX_TWO_OBJECTS.replace('</ctx_obj>', ''),
+    SFX_TUM_NATURE.replace('</ctx_obj>', ''),
+    SFX_TUM_NATURE.replace('</target>', ''),
+    '<html><body>SFX ist vorübergehend nicht erreichbar</body></html>',
+    '',
+    '<ctx_obj_set/>',
+    '<ctx_obj_set></ctx_obj_set>',
+    SFX_TUM_NATURE.replace(/<ctx_obj_attributes>[\s\S]*<\/ctx_obj_attributes>/, '<ctx_obj_attributes></ctx_obj_attributes>'),
+    SFX_TUM_NATURE.replace('&lt;/hash&gt;\n&lt;/perldata&gt;', '&lt;/perldata&gt;'),
+  ];
+  assert.deepEqual(parseSfxAnswer(SFX_TWO_OBJECTS, '1476-4687')!.services.length, 4);
+  for (const text of broken) assert.equal(parseSfxAnswer(text, '1476-4687'), null, text.slice(0, 40));
+  const timeout = () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'));
+  for (const sfx of [
+    () => xml(broken[0]),
+    () => new Response(broken[1], { status: 200, headers: { 'content-type': 'text/html' } }),
+    () => new Response('error', { status: 500 }),
+    timeout,
+  ]) {
+    const stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx });
+    await rejectsWith(lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl }), 'ACCESS_LOOKUP_UNAVAILABLE', 502);
+  }
+});
+
+test('TUM, LMU and FAU each reach their own SFX instance, and their answers are cached apart', async () => {
+  const libraries = [
+    { domain: 'tum.de', student: 'mytum.de', rorId: TUM_ROR, instance: 'sfx_tum' },
+    { domain: 'lmu.de', student: 'campus.lmu.de', rorId: LMU_ROR, instance: 'sfx_ubm' },
+    { domain: 'fau.de', student: 'fau.de', rorId: FAU_ROR, instance: 'sfx_uben' },
+  ];
+  const keys = new Set();
+  for (const { domain, student, rorId, instance } of libraries) {
+    const resolver = { host: SFX_HOST, institution: instance, product: 'sfx' };
+    assert.deepEqual(findResolver({ domain }), resolver);
+    // A student domain is not a row's; the link stores the ROR id that reaches it.
+    assert.deepEqual(findResolver({ domain: student, rorId }), resolver);
+    const key = upstreamParams({ doi: NATURE_DOI, domain: student, rorId }, {});
+    assert.deepEqual(key, { doi: NATURE_DOI, library: instance, host: SFX_HOST, product: 'sfx' });
+    keys.add(JSON.stringify(key));
+    const stub = upstreams({ crossref: askedAbout(NATURE_WORK) });
+    await lookupInstitutionAccess({ doi: NATURE_DOI, domain: student, rorId }, { fetchImpl: stub.fetchImpl });
+    assert.deepEqual(stub.sfxCalls().map(call => call.url.pathname), [`/${instance}`]);
+  }
+  assert.equal(keys.size, 3);
+  // An Alma library's key is what it was before the SFX rows.
+  assert.deepEqual(upstreamParams({ doi: DOI, domain: 'usal.es' }, {}), { doi: DOI, library: '34BUC_USAL', host: USAL_HOST });
+});
+
+test('the access route answers for an SFX library and caches under its instance and the product', async () => {
+  for (const [domain, rorId, instance] of [['mytum.de', TUM_ROR, 'sfx_tum'], ['campus.lmu.de', LMU_ROR, 'sfx_ubm'], ['fau.de', FAU_ROR, 'sfx_uben']]) {
+    const { response, body, accessPuts } = await requestAccess(new URLSearchParams({ doi: NATURE_DOI, domain, rorId }).toString(), {
+      crossref: askedAbout(NATURE_WORK),
+      resolver: target => xml(target.pathname === `/${instance}` ? SFX_TUM_NATURE : '<html>wrong instance</html>'),
+    });
+    assert.equal(response.status, 200, domain);
+    assert.deepEqual(body, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: NATURE_LINK });
+    assert.equal(accessPuts.length, 1);
+    assert.deepEqual([...new URL(accessPuts[0].key).searchParams], [
+      ['doi', NATURE_DOI], ['library', instance], ['host', SFX_HOST], ['product', 'sfx'], ['citation', 'article'], ['reading', 'complete-answers'],
+    ]);
+  }
+  const outage = await requestAccess(new URLSearchParams({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }).toString(), {
+    crossref: askedAbout(NATURE_WORK),
+    resolver: () => new Response('<html>Wartungsarbeiten</html>', { status: 503 }),
+  });
+  assert.equal(outage.response.status, 502);
+  assert.deepEqual(outage.body, { code: 'ACCESS_LOOKUP_UNAVAILABLE' });
+  assert.equal(outage.response.headers.get('cache-control'), 'no-store');
+  assert.equal(outage.accessPuts.length, 0);
 });

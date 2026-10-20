@@ -72,11 +72,44 @@ const timeout = () => Promise.reject(new DOMException('The operation timed out.'
 /** A GetFTR response answering each DOI of a request through `verdict(doi)`. */
 const getftrAnswering = (verdict: (doi: string) => Record<string, unknown>) => (dois: string[]) => jsonResponse({ entitlements: dois.map(doi => ({ doi, ...verdict(doi) })) });
 
+// The SFX pilot's instances on the Bavarian network's server (2026-10-20).
+const SFX_HOST = 'sfx.bib-bvb.de';
+const TUM_ROR = 'https://ror.org/02kkvpp62';
+
+/**
+ * An SFX answer resolving `issn` with the given full-text targets, as
+ * `[KB name, public name]`, shaped like the captures in
+ * institution-access.test.ts (sfx_tum, 2026-10-20).
+ */
+const sfxWith = (issn: string, ...targets: Array<[string, string]>) => `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.object_id"&gt;954925427238&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;${issn}&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>${targets.map(([name, publicName]) => `
+   <target>
+    <target_name>${name}</target_name>
+    <target_public_name>${publicName}</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://journals.example.org/${name.toLowerCase()}</target_url>
+    <is_related>no</is_related>
+   </target>`).join('')}
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
 /**
  * The resolver answering per journal and GetFTR per request (its `dois`
- * array), with overlapping calls counted.
+ * array), with overlapping calls counted; `sfx` answers for the SFX instances.
  */
-function upstreams({ resolver = () => xml(CTO_NONE), getftr = () => jsonResponse({ entitlements: [] }) }: { resolver?: Resolver; getftr?: (dois: string[], init: RequestInit) => Response | Promise<Response> } = {}) {
+function upstreams({ resolver = () => xml(CTO_NONE), sfx = issn => xml(sfxWith(issn)), getftr = () => jsonResponse({ entitlements: [] }) }: { resolver?: Resolver; sfx?: Resolver; getftr?: (dois: string[], init: RequestInit) => Response | Promise<Response> } = {}) {
   const calls: Array<{ url: URL; init: RequestInit & { headers?: Record<string, string> } }> = [];
   let inFlight = 0;
   let maxInFlight = 0;
@@ -88,6 +121,7 @@ function upstreams({ resolver = () => xml(CTO_NONE), getftr = () => jsonResponse
     try {
       await new Promise(resolve => setTimeout(resolve, 1));
       if (target.host === 'eu01.alma.exlibrisgroup.com') return await resolver(target.searchParams.get('rft.issn')!, target);
+      if (target.host === SFX_HOST) return await sfx(target.searchParams.get('rft.issn')!, target);
       if (target.host === 'entitlements.prod.getft.io') {
         const { dois } = JSON.parse(init.body as string);
         const answer = await getftr(dois, init);
@@ -397,7 +431,7 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
-    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn')!, url);
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com' || url.host === SFX_HOST) return resolver(url.searchParams.get('rft.issn')!, url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -600,4 +634,54 @@ test('ISSN, coverage year, package matching and displayed changes invalidate the
     const changed = SERVICE_CATALOGUE.map((entry, index) => index === 0 ? { ...entry, ...change } : entry);
     assert.notEqual(catalogueFingerprint(changed, 40), original);
   }
+});
+
+test('an SFX library lists the platforms it subscribes to, under its own package, and not its free collections', async () => {
+  const stub = upstreams({
+    sfx: issn => xml(issn === ISSN_OF.nature
+      ? sfxWith(issn, ['SPRINGER_LINK_JOURNALS_AUTOLOAD', 'SpringerLink Journals - AutoHoldings'], ['NATURE', 'Nature'])
+      : issn === ISSN_OF.sage
+        ? sfxWith(issn, ['EZB-NALIW-00495_SAGE_JOURNALS_KOMPLETT_AL', 'EZB-NALIW-00495 Sage Journals Komplett AL'])
+        : issn === ISSN_OF.wiley
+          ? sfxWith(issn, ['MISCELLANEOUS_FREE_EJOURNALS', 'Free E- Journals'], ['PUBMED_CENTRAL_JOURNALS', 'PubMed Central'])
+          // TUM's answer for the AMS journal on 2026-10-20: its free collection only.
+          : issn === ISSN_OF.ams
+            ? sfxWith(issn, ['AMERICAN_MATHEMATICAL_SOCIETY_PUBLICATIONS_FREELY_ACCESSIBLE', 'American Mathematical Society Publications (Freely Accessible)'])
+            : sfxWith(issn)),
+  });
+  const result = await lookupInstitutionServices({ domain: 'mytum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now: NOW, offset: 0 });
+  assert.deepEqual(result.services.map(({ id, collection, ownPlatform }) => ({ id, collection, ownPlatform })), [
+    { id: 'nature', collection: 'Nature', ownPlatform: true },
+    { id: 'sage', collection: 'EZB-NALIW-00495 Sage Journals Komplett AL', ownPlatform: true },
+  ]);
+  assert.equal(result.partial, false);
+  assert.equal(result.unchecked, 0);
+  assert.ok(stub.calls.every(call => call.url.host === SFX_HOST && call.url.pathname === '/sfx_tum'));
+  assert.ok(stub.calls.every(call => call.url.searchParams.get('svc.fulltext') === 'yes'));
+});
+
+test('an SFX answer about another journal or with only a plain http link leaves the platform unchecked, and an unreadable one a partial list', async () => {
+  const stub = upstreams({
+    sfx: issn => (issn === ISSN_OF.nature
+      ? xml(sfxWith('2345-6789', ['MISCELLANEOUS_FREE_EJOURNALS', 'Free E- Journals']))
+      : issn === ISSN_OF.sage
+        ? xml(sfxWith(issn, ['SAGE_JOURNALS_ALL_TITLES', 'Sage Journals All Titles']).replace('<target_url>https://', '<target_url>http://'))
+        : issn === ISSN_OF.wiley ? xml('<html><body>Wartungsarbeiten</body></html>') : xml(sfxWith(issn))),
+  });
+  const result = await lookupInstitutionServices({ domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now: NOW, offset: 0 });
+  assert.deepEqual(result.services, []);
+  assert.equal(result.unchecked, 2);
+  assert.equal(result.partial, true);
+});
+
+test('the services route answers for an SFX library and caches its list under the instance and the product', async () => {
+  const search = new URLSearchParams({ domain: 'mytum.de', rorId: TUM_ROR, offset: '0' }).toString();
+  const { response, body, servicePuts } = await requestServices(search, {
+    resolver: (issn, target) => xml(target!.pathname === '/sfx_tum' && issn === ISSN_OF.nature ? sfxWith(issn, ['NATURE', 'Nature']) : sfxWith(issn)),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.services.map(service => service.id), ['nature']);
+  assert.equal(servicePuts.length, 1);
+  const key = new URL(servicePuts[0].key).searchParams;
+  assert.deepEqual([key.get('library'), key.get('host'), key.get('product')], ['sfx_tum', SFX_HOST, 'sfx']);
 });

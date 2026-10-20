@@ -228,7 +228,10 @@
     "country": "DE",
     "source": "zotero",
     "url": "https://sfx.bib-bvb.de/sfx_uben",
-    "product": "sfx"
+    "product": "sfx",
+    "resolverProduct": "sfx",
+    "evidence": "https://ub.fau.de/recherchieren/literatur-verwalten-und-zitieren/citavi/einstellungsdatei/",
+    "notes": "SFX pilot (PAP-56), checked 2026-10-20. The FAU library's Citavi page lists 'Eintrag des SFX-Linkresolvers der UB'; the settings file that names the address is for FAU members only and was not read. The instance itself is configured for FAU's library: its feedback service writes to ub@fau.de and its loan service is FAUdok. FAU's access page names its library UBEN in DBIS, the instance's name. No FAU page found on 2026-10-20 prints the instance address; the zotero directory does."
   },
   {
     "rorId": "https://ror.org/01hcx6992",
@@ -253,8 +256,9 @@
     "source": "manual (Opus subagent, 2026-10-19)",
     "url": "https://sfx.bib-bvb.de/sfx_ubm",
     "product": "sfx",
-    "evidence": "https://opac.ub.lmu.de/",
-    "notes": "The library homepage links to a VuFind OPAC (opac.ub.lmu.de) whose 'Artikel & mehr' tab is a Primo index search module, not an Alma catalogue. The BVB SFX instance sfx_ubm is live and resolved a Nature 2020 request into a full-text redirect (Gale, LMU Shibboleth)."
+    "resolverProduct": "sfx",
+    "evidence": "https://opac.ub.lmu.de/PrimoRecord/cdi_crossref_citationtrail_10_1038_nphys3554",
+    "notes": "The library homepage links to a VuFind OPAC (opac.ub.lmu.de) whose 'Artikel & mehr' tab is a Primo index search module, not an Alma catalogue. SFX pilot (PAP-56), checked 2026-10-20: the OPAC's article records link to https://sfx.bib-bvb.de/sfx_ubm/ through the library's E-Medien login (emedien.ub.uni-muenchen.de/login?qurl=…). The instance's feedback service writes to sfx@ub.uni-muenchen.de, and its Gale links carry LMU's location (lmum) and start LMU's Shibboleth sign-in (lmuidp.lrz.de)."
   },
   {
     "rorId": "https://ror.org/00ggpsq73",
@@ -1479,8 +1483,9 @@
     "source": "manual (Opus subagent, 2026-10-19)",
     "url": "https://sfx.bib-bvb.de/sfx_tum",
     "product": "sfx",
-    "evidence": "https://search.ub.tum.de/vufind/Search/Results?lookfor=nature&type=AllFields&lng=en",
-    "notes": "The TUM catalogue is VuFind (search.ub.tum.de), and its embedded OpenURLs carry SFX-specific parameters (sfx.directlink, bvnummer=localTUM). The BVB SFX instance sfx.bib-bvb.de/sfx_tum answers with an SFX menu, but that URL comes from the BVB naming pattern rather than a TUM page, and no Primo or Alma code was found."
+    "resolverProduct": "sfx",
+    "evidence": "https://www.ub.tum.de/en/citavi",
+    "notes": "The TUM catalogue is VuFind (search.ub.tum.de), and its embedded OpenURLs carry SFX-specific parameters (sfx.directlink, bvnummer=localTUM). No Primo or Alma code was found. SFX pilot (PAP-56), checked 2026-10-20: the TUM library's Citavi page gives http://sfx.bib-bvb.de/sfx_tum as the OpenURL for TUM-licensed resources, and the instance's feedback service writes to support.emedien@ub.tum.de. TUM's SFX page says SFX does not authenticate: readers sign in through eAccess, Shibboleth or the campus network."
   },
   {
     "rorId": "https://ror.org/03angcq70",
