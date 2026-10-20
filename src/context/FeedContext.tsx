@@ -103,7 +103,7 @@ import {
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
 } from '../services/interactionProfileStore.ts';
-import { fetchDomainPapers } from '../services/domainSourceService.ts';
+import { fetchDomainPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
@@ -1253,6 +1253,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             8,
             queryMode,
           );
+          const workingPapersProm = fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1);
 
           if (relatedCandidates.current?.length > 0) {
             graphCandidatesPromise = resolveWithin(
@@ -1277,7 +1278,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           }
 
           const { first, all } = settleSourcesForFirstPaint(
-            [arxivProm, pubmedProm, openAlexProm, domainProm],
+            [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
             (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
           );

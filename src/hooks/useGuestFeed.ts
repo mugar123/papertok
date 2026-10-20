@@ -5,7 +5,7 @@ import { fetchPapers } from '../services/arxivService.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter.ts';
 import { PaperBuilder } from '../services/PaperBuilder.ts';
-import { fetchDomainPapers } from '../services/domainSourceService.ts';
+import { fetchDomainPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.ts';
 import { buildGuestFeedPlan } from '../utils/guestFeedPlan.ts';
 import { composeGuestPage, extendGuestPage, guestPageReady } from '../utils/guestFeedComposition.ts';
@@ -47,6 +47,8 @@ function startGuestCandidateRequests(plan: GuestFeedPlan, { refresh = false } = 
     openAlex.search(plan.discoveryQuery, 1, { internalCategories: plan.categories })
       .then(result => result.papers),
     fetchDomainPapers(plan.categories, 1, GUEST_PAGE_SIZE, 'recent'),
+    // Only a guest's own choice counts: the default sample's econ.GN does not.
+    fetchWorkingPapers(plan.areas.length > 0 ? plan.categories : [], 1),
   ];
   if (plan.pubmedQuery) {
     const pubmed = new PubmedAdapter();

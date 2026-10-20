@@ -16,7 +16,11 @@ import {
   mapNasaRecord,
   mapOstiRecord,
   readBioRxivResponse,
+  fetchWorkingPapers,
 } from './domainSourceService.ts';
+import { openAlexClient } from './openAlexClient.ts';
+import { reviewStatusForPaper } from '../utils/paperStatus.ts';
+import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 
 // The Worker answers a bioRxiv outage with an empty collection marked
 // `_papertok.degraded` (cached briefly). Read as papers it would be "bioRxiv has
@@ -332,4 +336,84 @@ test('the failure report shows the upstream status once the body travels on the 
 
   assert.equal(logged.length, 1);
   assert.match(logged[0], /\/sources\/openreview failed: \/sources\/openreview returned 502 \(upstream 400\)/);
+});
+
+// Two works as OpenAlex returned them on 2026-10-19 (trimmed): a San Francisco
+// Fed working paper filed as a journal article, and a CESifo working paper
+// typed `report`, here without its abstract.
+const invertedIndex = (text: string) => {
+  const index: Record<string, number[]> = {};
+  text.split(' ').forEach((word, position) => { (index[word] ||= []).push(position); });
+  return index;
+};
+const seriesWork = (id: string, doi: string, type: string, source: { id: string; display_name: string }, abstract: string | null) => ({
+  id: `https://openalex.org/${id}`,
+  doi: `https://doi.org/${doi}`,
+  title: `Working paper ${id}`,
+  type,
+  publication_date: '2026-10-14',
+  publication_year: 2026,
+  authorships: [{ author: { id: `https://openalex.org/A${id.slice(1)}`, display_name: `Author ${id}` }, institutions: [] }],
+  abstract_inverted_index: abstract ? invertedIndex(abstract) : null,
+  primary_location: {
+    landing_page_url: `https://doi.org/${doi}`,
+    is_published: true,
+    version: 'publishedVersion',
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: 'journal' },
+  },
+  locations: [],
+  open_access: { is_oa: true, oa_url: null },
+  cited_by_count: 0,
+});
+const FRBSF = { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' };
+const CESIFO = { id: 'S7407053623', display_name: 'CESifo' };
+
+test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed cards', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const realBase = openAlexClient.apiBase;
+  const urls: URL[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.apiBase = 'https://api.papertok.app';
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(new URL(String(input)));
+    return Response.json({ results: [
+      seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'From early 2021 through 2024, unauthorized immigration to the United States rose sharply.'),
+      seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
+    ] });
+  };
+  try {
+    assert.deepEqual(await fetchWorkingPapers(['cs.AI', 'math.PR'], 3), []);
+    assert.equal(urls.length, 0, 'a reader without economics or finance interests costs no request');
+
+    const papers = await fetchWorkingPapers(['q-fin.ST', 'cs.AI'], 3);
+    assert.equal(urls.length, 1);
+    const [url] = urls;
+    assert.equal(`${url.origin}${url.pathname}`, 'https://api.papertok.app/openalex/works');
+    assert.ok(!url.searchParams.has('api_key') && !url.searchParams.has('mailto'), 'the Worker attaches the credential');
+    const filters = url.searchParams.get('filter')!.split(',');
+    const sources = filters.find(filter => filter.startsWith('primary_location.source.id:'))!;
+    assert.deepEqual(sources.slice('primary_location.source.id:'.length).split('|').sort(), [
+      'S2809516038', 'S4210171147', 'S7407053623', 'S4393913881',
+      'S4393919745', 'S4306510381', 'S4210230366', 'S4210212089',
+    ].sort());
+    const since = filters.find(filter => filter.startsWith('from_publication_date:'))!.split(':')[1];
+    const ageDays = (Date.now() - Date.parse(since)) / 86_400_000;
+    assert.ok(ageDays > 0 && ageDays <= 366, `a bounded recent window, got ${since}`);
+    assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+    assert.equal(url.searchParams.get('page'), '3');
+    assert.ok(Number(url.searchParams.get('per-page')) <= 6, 'no more of a page than OSTI or NASA may take');
+
+    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626']);
+    for (const paper of papers) {
+      assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper, not a reviewed article`);
+      assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
+      assert.equal(paper.landingPageUrl, `https://doi.org/${paper.doi}`);
+      assert.equal(paper.primaryCategory, 'q-fin.ST');
+    }
+    assert.match(papers[0].abstract, /unauthorized immigration/);
+    assert.equal(hasUsableAIAbstract(papers[1].abstract), false, 'a missing abstract stays missing');
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.apiBase = realBase;
+  }
 });
