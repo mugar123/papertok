@@ -214,36 +214,37 @@ function xmlKey(xml: string, id: string) {
 // A closing tag; an opening tag, with the rest of the element when it is
 // empty or holds only text (most keys, so most elements take one match); a
 // CDATA section; an XML declaration; or a `<` that starts none of them.
-// Tags match only as Alma writes them: each attribute after one space, its
-// value in double quotes with no `<`, `>` or `&`, and no space before `>`,
-// `/>` or a closing tag's `>`. A quote left open runs into the next `<` or
-// `>`, so the tag does not match.
-const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)|([A-Za-z_][\w.:-]*)((?: [\w.:-]+="[^"<>&]*")*)(\/|>[^<]*<\/\2)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
+// Tags match only as Alma writes them: an element name with no namespace
+// prefix, each attribute after one space, its value in double quotes with no
+// `<`, `>` or `&`, and no space before `>`, `/>` or a closing tag's `>`. A
+// quote left open runs into the next `<` or `>`, so the tag does not match.
+const MARKUP = /<(?:\/([A-Za-z_][\w.-]*)|([A-Za-z_][\w.-]*)((?: [\w.:-]+="[^"<>&]*")*)(\/|>[^<]*<\/\2)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
 
 /**
  * Whether an answer's markup holds together the way `parseResolverAnswer`
  * reads it, checked in one pass over its tags: every `<` starts a tag, a
- * CDATA section or an XML declaration, every element closes inside the
- * element it opened in, the root element, `uresolver_content`, closes at
- * the end, a key holds no element, and no service opens inside another.
- * The reader matches tags as Alma writes them, not every spelling XML
- * allows: `<key id="…">`, `</key>`, `service_type="getFullTxt"`,
- * `<resolution_url>` and `</context_service>`, reading a service up to the
- * next `</context_service>`. So a tag written another way fails (a space
- * before `>`, single quotes, a key with a value opened other than as
- * `<key id="…">`, a link with an attribute), and so does a service closed
- * in its own opening tag: read anyway, a `Filtered` key would count as
- * absent, a full-text service would be skipped or lose its link, or a
- * service would be read with the next one's keys. Every saved answer
- * writes its tags this way. Text is not checked, so an unescaped `&` does
- * not stop an answer from being read. No saved answer starts with an XML
- * declaration, but one is well-formed XML, and refusing it would make
- * every answer an outage if Alma began to send one.
+ * CDATA section or, at the very start, an XML declaration, every element
+ * closes inside the element it opened in, the root element,
+ * `uresolver_content`, closes at the end, a key holds no element, and no
+ * service opens inside another. The reader matches tags as Alma writes
+ * them, not every spelling XML allows: `<key id="…">`, `</key>`,
+ * `service_type="getFullTxt"`, `<resolution_url>` and `</context_service>`,
+ * reading a service up to the next `</context_service>`. So a tag written
+ * another way fails (a namespace prefix, a space before `>` or around `=`,
+ * single quotes, a key with a value opened other than as `<key id="…">`, a
+ * link with an attribute), and so does a service closed in its own opening
+ * tag: read anyway, a `Filtered` key would count as absent, a full-text
+ * service would be skipped or lose its link, or a service would be read
+ * with the next one's keys. Every saved answer writes its tags this way.
+ * Text is not checked, so an unescaped `&` does not stop an answer from
+ * being read. No saved answer starts with an XML declaration, but XML
+ * allows one at the start, and refusing it would make every answer an
+ * outage if Alma began to send one.
  */
 function markupHolds(text: string) {
   const open: string[] = [];
   for (const { 0: tag, 1: closing, 2: name, 3: attributes, 4: closed, index } of text.matchAll(MARKUP)) {
-    if (tag === '<') return false;
+    if (tag === '<' || (tag.startsWith('<?') && index !== 0)) return false;
     if (closing) {
       if (open.pop() !== closing) return false;
       if (!open.length) return closing === 'uresolver_content' && !text.slice(index + tag.length).trim();

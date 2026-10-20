@@ -1298,6 +1298,17 @@ test('an answer with damaged markup is no answer, whatever its keys would read a
       assert.equal(await outcome(damaged), 'ACCESS_LOOKUP_UNAVAILABLE', `${library}: ${damage}`);
     }
   }
+  // XML allows a namespace prefix on an element, and an XML declaration only
+  // at the start. Read anyway, Pau's only service, filtered out for the date,
+  // would count as access, and Harvard's services would be missed: a refusal.
+  const prefix = 'xmlns:u="http://com/exlibris/urm/uresolver/xmlbeans/u"';
+  const filtered = '<key id="Filtered">true</key>';
+  assert.equal(await outcome(CTO_FILTERED_BY_DATE), 'not-entitled');
+  for (const spelling of ['<key id="Filtered"><?xml version="1.0"?>true</key>', `<u:key ${prefix} id="Filtered">true</u:key>`]) {
+    assert.equal(await outcome(CTO_FILTERED_BY_DATE.replace(filtered, spelling)), 'ACCESS_LOOKUP_UNAVAILABLE', `Pau: ${spelling}`);
+  }
+  const prefixed = CTO_SINGLE_SERVICE.replaceAll('<context_service ', `<u:context_service ${prefix} `).replaceAll('</context_service>', '</u:context_service>');
+  assert.equal(await outcome(prefixed), 'ACCESS_LOOKUP_UNAVAILABLE', 'Harvard: prefixed services');
 });
 
 test('CDATA is literal text, including split values and markup in public notes', () => {
