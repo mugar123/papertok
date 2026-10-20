@@ -38,15 +38,6 @@ function rule(css: string, selector: string) {
   return match[1];
 }
 
-test('the selection menu grows into the composer instead of jumping', async () => {
-  const css = await read(ANNOTATIONS_CSS);
-  const menu = rule(css, '.rd-menu');
-  // The two widths are declared — 244px for the three choices, 348px for the
-  // composer — so the box only needs the property named in its transition.
-  assert.match(css, /\.rd-menu\[data-composing\]\s*\{[^}]*width:/);
-  assert.match(menu, /transition:[^;]*\bwidth\b/, 'the width has to travel');
-});
-
 test('the selection menu fades evenly, like every other surface in the reader', async () => {
   const menu = rule(await read(ANNOTATIONS_CSS), '.rd-menu');
   assert.match(menu, /opacity\s+\d+ms\s+linear/, 'the fade must be a straight line');

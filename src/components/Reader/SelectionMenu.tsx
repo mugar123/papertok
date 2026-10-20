@@ -2,7 +2,7 @@ import type { SyntheticEvent } from 'react';
 import type { ReaderCopy } from './PaperReader.tsx';
 type SelectionRect = Pick<DOMRect, 'top' | 'bottom' | 'left' | 'right'>;
 interface SelectionMenuProps {
-  open?: boolean; anchor?: SelectionRect | null; copy: ReaderCopy;
+  open?: boolean; anchor?: SelectionRect | null; copy: ReaderCopy; noteNumber?: number; notePlace?: string;
   usesLeft?: number | null; usesLimit?: number | null; unlimited?: boolean; canAsk?: boolean; busy?: boolean;
   onHighlight: () => void; onSaveNote: (note: string) => void;
   onAsk: () => void; onClose: () => void;
@@ -61,6 +61,8 @@ export default function SelectionMenu({
   open = false,
   anchor,
   copy,
+  noteNumber,
+  notePlace,
   usesLeft,
   usesLimit,
   unlimited = false,
@@ -137,31 +139,32 @@ export default function SelectionMenu({
           >
             {composing ? (
               <form className="rd-menu-compose" onSubmit={submit}>
-                <label className="rd-menu-label" htmlFor={noteFieldId}>
-                  <i className="rd-menu-pen" aria-hidden="true" />
-                  {copy.yourNote}
+                <div className="rd-menu-compose-row">
+                  {noteNumber ? <span className="rd-menu-number" aria-hidden="true">{noteNumber}</span> : null}
+                  <Textarea
+                    id={noteFieldId}
+                    ref={textareaRef}
+                    className="rd-menu-input"
+                    value={draft}
+                    maxLength={MAX_NOTE_LENGTH}
+                    placeholder={copy.notePlaceholder}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      // Enter writes a newline; the shortcut is the one every comment
+                      // box in this app already uses.
+                      if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(event);
+                    }}
+                  />
+                </div>
+                <label className="visually-hidden" htmlFor={noteFieldId}>
+                  {notePlace ? `${copy.yourNote} · ${notePlace}` : copy.yourNote}
                 </label>
-                <Textarea
-                  id={noteFieldId}
-                  ref={textareaRef}
-                  className="rd-menu-input"
-                  value={draft}
-                  maxLength={MAX_NOTE_LENGTH}
-                  placeholder={copy.notePlaceholder}
-                  aria-label={copy.yourNote}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    // Enter writes a newline; the shortcut is the one every comment
-                    // box in this app already uses.
-                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(event);
-                  }}
-                />
                 <div className="rd-menu-actions">
-                  <button type="submit" className="rd-menu-save" disabled={!draft.trim() || busy}>
-                    {busy ? <CircleNotch size={14} className="spinning" /> : null}
+                  <button type="button" className="rd-menu-act" onClick={onClose}>{copy.cancel}</button>
+                  <button type="submit" className="rd-menu-act rd-menu-act--save" disabled={!draft.trim() || busy}>
+                    {busy ? <CircleNotch size={13} className="spinning" /> : null}
                     {copy.save}
                   </button>
-                  <button type="button" className="rd-menu-cancel" onClick={onClose}>{copy.cancel}</button>
                 </div>
               </form>
             ) : (

@@ -1,9 +1,9 @@
 import { Sparkle, User } from '@phosphor-icons/react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover.tsx';
 
-export interface NotePinData { number: number; note: string; kind?: string }
+export interface NotePinData { number: number; note: string; kind?: string; origin: string; where: string }
 
-export default function NotePin({ number, note, kind }: NotePinData) {
+export default function NotePin({ number, note, kind, origin, where }: NotePinData) {
   return (
     <Popover>
       <PopoverTrigger
@@ -19,11 +19,14 @@ export default function NotePin({ number, note, kind }: NotePinData) {
         )}
       />
       <PopoverContent side="top" align="center" className="rd-pin-pop">
-        <span className="rd-pin-pop-head">
+        <p className="rd-pin-pop-note">
+          <span className="rd-pin-pop-number">{number}</span>
+          {note}
+        </p>
+        <span className="rd-pin-pop-source">
           {kind === 'ai' ? <Sparkle size={13} aria-hidden="true" /> : <User size={13} aria-hidden="true" />}
-          <span className="rd-note-pin">{number}</span>
+          {origin} · {where}
         </span>
-        <p className="rd-pin-pop-note">{note}</p>
       </PopoverContent>
     </Popover>
   );

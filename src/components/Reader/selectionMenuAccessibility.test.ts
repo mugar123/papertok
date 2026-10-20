@@ -28,8 +28,8 @@ test('the note textarea is named by a real <label>, not a floating span', async 
     + 'programmatic association at all, however clearly its text reads on screen.',
   );
 
-  const label = jsx.match(/<label className="rd-menu-label"[^>]*>/);
-  assert.ok(label, 'the "rd-menu-label" element changed shape; update this test alongside it');
+  const label = jsx.match(/<label\b[^>]*htmlFor=\{\w+\}[^>]*>/);
+  assert.ok(label, 'the note field has no <label htmlFor> any more; update this test alongside it');
   const fieldId = label[0].match(/htmlFor=\{(\w+)\}/);
   assert.ok(
     fieldId,

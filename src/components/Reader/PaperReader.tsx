@@ -347,8 +347,8 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   return (
     <Popover>
       <PopoverTrigger render={<button type="button" className={className} />}>{children}</PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className="rd-pin-pop">
-        <p className="rd-pin-pop-note">{info}</p>
+      <PopoverContent side="bottom" align="start" className="rd-info-pop">
+        <p>{info}</p>
       </PopoverContent>
     </Popover>
   );
@@ -769,17 +769,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     () => sortAnnotations(annotations.annotations, sectionOrder),
     [annotations.annotations, sectionOrder],
   );
-  const notePins = useMemo(
-    () => new Map(orderedAnnotations.filter(item => item.note).map((item, index) => [
-      item.id,
-      { number: index + 1, note: item.note!, kind: item.kind },
-    ])),
-    [orderedAnnotations],
-  );
-  const textPins = useMemo(
-    () => (showAiMarks ? notePins : new Map([...notePins].filter(([, pin]) => pin.kind !== 'ai'))),
-    [notePins, showAiMarks],
-  );
   const visibleAnnotations = useMemo(
     () => filterAnnotations(orderedAnnotations, annotationFilter),
     [annotationFilter, orderedAnnotations],
@@ -848,11 +837,34 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
 
   /** Where the passage is, said in the reader's own vocabulary: "Método · §2". */
-  const annotationLabel = useCallback((annotation: PassageAnnotation) => {
+  const annotationLabel = useCallback((annotation: Pick<PassageAnnotation, 'sectionId' | 'paragraphIndex'>) => {
     const section = sections.find(item => String(item.id) === String(annotation.sectionId));
     const kind = kindLabels[section?.kind as keyof typeof kindLabels] || kindLabels.other;
     return `${kind} · §${Number(annotation.paragraphIndex) + 1}`;
   }, [kindLabels, sections]);
+
+  const notePins = useMemo(
+    () => new Map(orderedAnnotations.filter(item => item.note).map((item, index) => [
+      item.id,
+      {
+        number: index + 1,
+        note: item.note!,
+        kind: item.kind,
+        origin: item.kind === 'ai' ? copy.originAi : copy.originMine,
+        where: annotationLabel(item),
+      },
+    ])),
+    [annotationLabel, copy.originAi, copy.originMine, orderedAnnotations],
+  );
+  const pendingNoteNumber = useMemo(() => {
+    const pending = annotations.pending;
+    if (!pending) return undefined;
+    return 1 + orderedAnnotations.filter(item => item.note && sortAnnotations([item, pending], sectionOrder)[0] === item).length;
+  }, [annotations.pending, orderedAnnotations, sectionOrder]);
+  const textPins = useMemo(
+    () => (showAiMarks ? notePins : new Map([...notePins].filter(([, pin]) => pin.kind !== 'ai'))),
+    [notePins, showAiMarks],
+  );
 
   /**
    * The rail sends the reader back to a passage. `block: 'center'` is the whole
@@ -1240,6 +1252,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             open={Boolean(annotations.pending)}
             anchor={annotations.pending?.anchor}
             copy={copy}
+            noteNumber={pendingNoteNumber}
+            notePlace={annotations.pending ? annotationLabel(annotations.pending) : undefined}
             usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
             usesLimit={quota?.dailyLimit ?? null}
             unlimited={Boolean(quota?.unlimited)}
