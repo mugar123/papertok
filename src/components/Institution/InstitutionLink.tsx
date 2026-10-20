@@ -47,6 +47,14 @@ export default function InstitutionLink({
   const setBusy = (next: boolean) => { setOwnBusy(next); onBusyChange?.(next); };
   const [pending, setPending] = useState(() => pendingInstitutionVerification());
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  // The pill is pinned only when the link lands while this form is on screen,
+  // not each time the window opens on an account that was already linked.
+  const [wasLinked, setWasLinked] = useState(Boolean(institution));
+  const [justLinked, setJustLinked] = useState(false);
+  if (wasLinked !== Boolean(institution)) {
+    setWasLinked(Boolean(institution));
+    setJustLinked(Boolean(institution));
+  }
   // Linking swaps the form for the linked row and unlinking swaps it back, so
   // the control that had focus is gone either way. Focus lands on the control
   // that continues the task: Unlink after a link, the field after an unlink.
@@ -105,6 +113,9 @@ export default function InstitutionLink({
     }
   };
 
+  const feedbackText = feedback?.text || (pending ? 'Check your university inbox. Continue in the tab opened by the email.' : '');
+  // The region stays mounted so each message is announced; the keyed span
+  // opens again whenever the message changes.
   const feedbackNode = (
     <p
       id={feedbackId}
@@ -112,13 +123,13 @@ export default function InstitutionLink({
       role={feedback?.tone === 'error' ? 'alert' : 'status'}
       aria-live="polite"
     >
-      {feedback?.text || (pending ? 'Check your university inbox. Continue in the tab opened by the email.' : '')}
+      {feedbackText && <span key={feedbackText} className="institution-link-reveal"><span>{feedbackText}</span></span>}
     </p>
   );
 
   if (institution) {
     return (
-      <div className="institution-link is-linked">
+      <div className={`institution-link is-linked${justLinked ? ' is-just-linked' : ''}`}>
         <InstitutionPill institution={institution} />
         <p className="institution-link-copy">{COPY.linked(institution.name)}{linkedNote ? ` ${linkedNote}` : ''}</p>
         <Button ref={unlinkRef} type="button" variant="outline" size="sm" onClick={handleUnlink} disabled={busy}>
@@ -171,12 +182,16 @@ export default function InstitutionLink({
         )}
       </div>
       {pending && (
-        <Button type="button" variant="outline" onClick={() => {
-          cancelInstitutionVerification();
-          setPending(null);
-          setFeedback(null);
-          inputRef.current?.focus();
-        }}>Cancel verification</Button>
+        <div className="institution-link-reveal">
+          <div>
+            <Button type="button" variant="outline" className="w-full" onClick={() => {
+              cancelInstitutionVerification();
+              setPending(null);
+              setFeedback(null);
+              inputRef.current?.focus();
+            }}>Cancel verification</Button>
+          </div>
+        </div>
       )}
       <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
