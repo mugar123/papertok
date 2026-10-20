@@ -138,11 +138,12 @@ function AppContent() {
   }, [])
   const location = useLocation()
   // A deploy this tab is behind on is applied when the reader changes page,
-  // after Firestore has acknowledged the app's writes
-  // (utils/serviceWorkerUpdates.ts). The interaction aggregate, which the
-  // liked, saved and read lists load from after the reload, waits on a
-  // debounce. It is issued first: otherwise only pagehide would issue it,
-  // while the reload unloads the page.
+  // once Firestore has acknowledged the writes already issued and the
+  // interaction aggregate flushed here (utils/serviceWorkerUpdates.ts). The
+  // liked, saved and read lists load from that aggregate after the reload.
+  // Without the flush its write waits for the debounce timer, the tab being
+  // hidden or pagehide, and the reload fires the last two only as it unloads
+  // the page.
   useEffect(() => {
     void reloadIfBehindDeploy(location.pathname, () => Promise.all([flushAllInteractionProfiles(), waitForPendingWrites(db)]))
   }, [location.pathname])
