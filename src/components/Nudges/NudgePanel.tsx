@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import type { Transition } from 'framer-motion';
 interface NudgePanelProps {
-  icon: ReactNode; iconClassName?: string; title: ReactNode; body: string;
+  icon: ReactNode; iconClassName?: string; title: ReactNode; body: ReactNode;
   action: { label: string; href?: string; onClick: () => void };
-  dismissLabel: string; onDismiss: () => void;
+  // A second answer of equal weight, for a question with two (the consent ask).
+  secondaryAction?: { label: string; onClick: () => void };
+  dismissLabel?: string; onDismiss?: () => void;
 }
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
@@ -46,6 +48,7 @@ export default function NudgePanel({
   title,
   body,
   action,
+  secondaryAction,
   dismissLabel,
   onDismiss,
 }: NudgePanelProps) {
@@ -77,16 +80,21 @@ export default function NudgePanel({
         ) : (
           <Button size="sm" onClick={action.onClick}>{action.label}</Button>
         )}
+        {secondaryAction && (
+          <Button size="sm" variant="outline" onClick={secondaryAction.onClick}>{secondaryAction.label}</Button>
+        )}
       </div>
-      <button
-        type="button"
-        className="nudge-dismiss"
-        onClick={onDismiss}
-        aria-label={dismissLabel}
-        title={dismissLabel}
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
+      {onDismiss && (
+        <button
+          type="button"
+          className="nudge-dismiss"
+          onClick={onDismiss}
+          aria-label={dismissLabel}
+          title={dismissLabel}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
     </motion.aside>
   );
 }

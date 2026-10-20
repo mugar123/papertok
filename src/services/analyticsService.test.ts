@@ -11,6 +11,7 @@ import {
   persistAnalyticsConsent,
   PRODUCT_ANALYTICS_EVENTS,
   readAnalyticsConsent,
+  readStoredAnalyticsConsent,
   sanitizeAnalyticsCapture,
   sanitizeAnalyticsEventUrl,
   sanitizeAnalyticsLocation,
@@ -37,12 +38,12 @@ function memoryStorage(initial: Record<string, string> = {}) {
 // says "granted" must mean somebody said so.
 test('reads as granted until an explicit choice is stored', () => {
   const storage = memoryStorage();
-  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.GRANTED);
+  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.ANONYMOUS);
   assert.equal(storage.getItem(ANALYTICS_CONSENT_KEY), null, 'the default must not be persisted as a choice');
-  assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.GRANTED, storage), true);
-  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.GRANTED);
+  assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.ANONYMOUS, storage), true);
+  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.ANONYMOUS);
   assert.equal(persistAnalyticsConsent('unknown', storage), false);
-  assert.equal(storage.getItem(ANALYTICS_CONSENT_KEY), ANALYTICS_CONSENT.GRANTED);
+  assert.equal(storage.getItem(ANALYTICS_CONSENT_KEY), ANALYTICS_CONSENT.ANONYMOUS);
 });
 
 test('with neither storage nor cookie, consent is granted by default', t => {
@@ -65,7 +66,7 @@ test('with neither storage nor cookie, consent is granted by default', t => {
     else delete (globalThis as Partial<typeof globalThis>).document;
   });
 
-  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.GRANTED);
+  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.ANONYMOUS);
 });
 
 test('remembers a denied analytics choice as an explicit decision', () => {
@@ -105,9 +106,9 @@ test('falls back to a consent cookie when browser storage is unavailable', t => 
     else delete (globalThis as Partial<typeof globalThis>).location;
   });
 
-  assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.GRANTED), true);
-  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.GRANTED);
-  assert.equal(consentCookie, `${ANALYTICS_CONSENT_COOKIE_KEY}=${ANALYTICS_CONSENT.GRANTED}`);
+  assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.ANONYMOUS), true);
+  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.ANONYMOUS);
+  assert.equal(consentCookie, `${ANALYTICS_CONSENT_COOKIE_KEY}=${ANALYTICS_CONSENT.ANONYMOUS}`);
 });
 
 // A visitor's Privacy panel says "Not saved" on exactly this `false`. A browser
@@ -137,7 +138,7 @@ test('a choice neither browser storage nor a cookie will keep is reported as not
   });
 
   assert.equal(await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED), false);
-  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.GRANTED);
+  assert.equal(readAnalyticsConsent(), ANALYTICS_CONSENT.ANONYMOUS);
 });
 
 test('restores a previous consent decision from its cookie after a reload', t => {
@@ -207,7 +208,7 @@ test('classifies acquisition without exposing the referring URL', () => {
 
 test('tracks acquisition once per browser session after consent', async t => {
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  const consentStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const consentStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   const sessionStorage = memoryStorage();
   const events: unknown[] = [];
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: consentStorage });
@@ -235,14 +236,46 @@ test('tracks acquisition once per browser session after consent', async t => {
   }]]);
 });
 
+test('a session after activation says how long ago, in weeks rather than days', async t => {
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const day = 24 * 60 * 60 * 1000;
+  const localStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorage });
+  t.after(() => {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
+  });
+  const sessionAt = async (now: number) => {
+    let sent: Record<string, unknown> | undefined;
+    await trackAcquisition({
+      storage: memoryStorage(),
+      referrer: '',
+      location: { search: '', origin: 'https://papertok.test' },
+      now,
+      track: async (_eventName: string, params?: Record<string, unknown>) => {
+        sent = params;
+        return true;
+      },
+    });
+    return sent?.activation_age;
+  };
+
+  assert.equal(await sessionAt(1000), undefined);
+  await markActivation({ now: 1000, track: async () => true });
+  assert.equal(await sessionAt(1000 + day - 1), 'day_0');
+  assert.equal(await sessionAt(1000 + day), 'day_1');
+  assert.equal(await sessionAt(1000 + 9 * day), 'days_7_13');
+  assert.equal(await sessionAt(1000 + 400 * day), 'days_60_plus');
+});
+
 test('tracks acquisition once even when session storage is unavailable', async t => {
   const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
-    value: memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED }),
+    value: memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS }),
   });
   await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED);
-  await setAnalyticsConsent(ANALYTICS_CONSENT.GRANTED);
+  await setAnalyticsConsent(ANALYTICS_CONSENT.ANONYMOUS);
   t.after(async () => {
     await setAnalyticsConsent(ANALYTICS_CONSENT.DENIED);
     if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
@@ -265,7 +298,7 @@ test('tracks acquisition once even when session storage is unavailable', async t
 });
 
 test('retries activation if the analytics transport is temporarily unavailable', async () => {
-  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   let attempts = 0;
   const track = async () => {
     attempts += 1;
@@ -425,7 +458,7 @@ function postHogCapture(event: string, properties: { search_type?: string; resul
 test('an event leaves with the normalized address and nothing that names a paper, a person or a search', () => {
   const sent = sanitizeAnalyticsCapture(
     postHogCapture('search_performed', { search_type: 'papers', result_count: 12, has_results: true, query: 'crispr' }),
-    ANALYTICS_CONSENT.GRANTED,
+    ANALYTICS_CONSENT.ANONYMOUS,
   );
 
   assert.equal(sent!.properties.$current_url, 'https://papertok.app/search');
@@ -444,7 +477,7 @@ test('an event leaves with the normalized address and nothing that names a paper
 });
 
 test('an event keeps what PostHog needs to accept and count it without cookies', () => {
-  const sent = sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.GRANTED);
+  const sent = sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.ANONYMOUS);
   // The server drops a cookieless event without the user agent or the host,
   // and the client drops one without its token. Without the cookieless
   // marker, every visitor would become one person.
@@ -459,7 +492,7 @@ test('an event keeps what PostHog needs to accept and count it without cookies',
 test('a page view on a paper is filed under the pattern, without the paper\'s title', () => {
   const sent = sanitizeAnalyticsCapture(
     postHogCapture('$pageview', { $current_url: 'https://papertok.app/public/paper/W2741809807', $pathname: '/public/paper/W2741809807' }),
-    ANALYTICS_CONSENT.GRANTED,
+    ANALYTICS_CONSENT.ANONYMOUS,
   );
   assert.equal(sent!.properties.$current_url, 'https://papertok.app/public/paper/:id');
   assert.equal(sent!.properties.$pathname, '/public/paper/:id');
@@ -469,16 +502,16 @@ test('a page view on a paper is filed under the pattern, without the paper\'s ti
 
 test('nothing leaves that is not a page view or a registered event, or once analytics is off', () => {
   for (const event of ['$autocapture', '$pageleave', '$exception', '$identify', 'made_up_event']) {
-    assert.equal(sanitizeAnalyticsCapture(postHogCapture(event, {}), ANALYTICS_CONSENT.GRANTED), null, event);
+    assert.equal(sanitizeAnalyticsCapture(postHogCapture(event, {}), ANALYTICS_CONSENT.ANONYMOUS), null, event);
   }
   assert.equal(sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.DENIED), null);
-  assert.equal(sanitizeAnalyticsCapture(null, ANALYTICS_CONSENT.GRANTED), null);
+  assert.equal(sanitizeAnalyticsCapture(null, ANALYTICS_CONSENT.ANONYMOUS), null);
 });
 
 test('a Vercel event leaves with the normalized address while analytics is on', () => {
   const sent = sanitizeVercelEvent(
     { type: 'pageview', url: 'https://papertok.app/public/paper/W2741809807' },
-    ANALYTICS_CONSENT.GRANTED,
+    ANALYTICS_CONSENT.ANONYMOUS,
   );
   assert.deepEqual(sent, { type: 'pageview', url: 'https://papertok.app/public/paper/:id' });
 });
@@ -500,14 +533,12 @@ test('a Vercel event is dropped once another tab has turned analytics off', t =>
 });
 
 /**
- * The options are where PostHog's own collection is switched off, and each one
- * below stands for a promise: no cookies or storage, no person profiles, no
- * clicks or page views read off the screen, no recordings or surveys, nothing
- * the PostHog dashboard can switch back on, no script fetched besides the
- * module, and every event through the sanitizer. Read from the source because
- * the library only runs in a browser.
+ * One configuration for both levels. Until the reader opts in, PostHog runs
+ * cookieless and with no identity; replay starts only after the opt-in, and
+ * every event passes through the sanitizer. Read from the source because the
+ * library only runs in a browser.
  */
-test('SOURCE: PostHog starts cookieless, with its own collection off and every event sanitized', async () => {
+test('SOURCE: PostHog stays cookieless until the reader opts in, and every event is sanitized', async () => {
   const { readFile } = await import('node:fs/promises');
   const code = (await readFile(new URL('./analyticsService.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -516,19 +547,50 @@ test('SOURCE: PostHog starts cookieless, with its own collection off and every e
   assert.ok(options, 'the PostHog options are gone');
 
   for (const setting of [
-    /cookieless_mode: 'always'/,
-    /person_profiles: 'never'/,
-    /autocapture: false/,
-    /capture_pageview: false/,
-    /disable_session_recording: true/,
-    /disable_surveys: true/,
-    /advanced_disable_flags: true/,
-    /disable_external_dependency_loading: true/,
+    /cookieless_mode: 'on_reject'/,
+    /opt_out_capturing_by_default: true/,
+    /person_profiles: 'identified_only'/,
+    /session_recording: \{ maskAllInputs: true \}/,
     /before_send: sanitizeAnalyticsCapture/,
   ]) {
     assert.match(options, setting);
   }
-  assert.match(code, /posthog\.init\(POSTHOG_PROJECT_TOKEN, POSTHOG_OPTIONS\)/);
+  assert.match(code, /posthog\.init\(POSTHOG_PROJECT_TOKEN, POSTHOG_OPTIONS\);\s*applyConsent\(posthog, readAnalyticsConsent\(\)\);/);
+});
+
+test('a reader who opted in to detailed analytics sends events as PostHog built them', () => {
+  const click = postHogCapture('$autocapture', { $current_url: 'https://papertok.app/public/paper/W2741809807' });
+  assert.deepEqual(sanitizeAnalyticsCapture(click, ANALYTICS_CONSENT.DETAILED), click);
+  assert.equal(sanitizeAnalyticsCapture(click, ANALYTICS_CONSENT.ANONYMOUS), null);
+});
+
+test('which paper and which search travel only at the detailed level', () => {
+  const params = {
+    surface: 'feed', destination: 'doi', position: 3,
+    paper_id: ' W2741809807 ', paper_title: 'A'.repeat(400), url: 'https://example.com/private',
+  };
+  assert.deepEqual(sanitizeProductEventParams('paper_open', params, ANALYTICS_CONSENT.DETAILED), {
+    surface: 'feed', destination: 'doi', position: 3, paper_id: 'W2741809807', paper_title: 'A'.repeat(300),
+  });
+  assert.deepEqual(sanitizeProductEventParams('paper_open', params, ANALYTICS_CONSENT.ANONYMOUS), {
+    surface: 'feed', destination: 'doi', position: 3,
+  });
+  assert.equal(sanitizeProductEventParams('search_performed', { query: 'crispr' }, ANALYTICS_CONSENT.DETAILED).query, 'crispr');
+});
+
+test('time on a paper is whole seconds, and a tab left open counts four hours at most', () => {
+  assert.equal(sanitizeProductEventParams('paper_dwell', { seconds: 12.4 }).seconds, 12);
+  assert.equal(sanitizeProductEventParams('reader_time', { seconds: 1_000_000 }).seconds, 4 * 60 * 60);
+  assert.equal(sanitizeProductEventParams('reader_time', { seconds: -3 }).seconds, 0);
+});
+
+test('the banner asks until a choice is stored, and the detailed choice is kept', () => {
+  const storage = memoryStorage();
+  assert.equal(readStoredAnalyticsConsent(storage), null);
+  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.ANONYMOUS);
+  assert.equal(persistAnalyticsConsent(ANALYTICS_CONSENT.DETAILED, storage), true);
+  assert.equal(readStoredAnalyticsConsent(storage), ANALYTICS_CONSENT.DETAILED);
+  assert.equal(readAnalyticsConsent(storage), ANALYTICS_CONSENT.DETAILED);
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {
@@ -580,7 +642,7 @@ test('an app error leaves with its kind and nothing from the error, and not at a
   assert.deepEqual(sanitizeProductEventParams('app_error', { kind: 'TypeError: x is undefined' }), {});
 
   const capture = postHogCapture('app_error', { kind: 'render_crash', message: 'private words' });
-  const sent = sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.GRANTED);
+  const sent = sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.ANONYMOUS);
   assert.equal(sent?.event, 'app_error');
   assert.equal(sent?.properties.kind, 'render_crash');
   assert.equal(sent?.properties.$current_url, 'https://papertok.app/search');
@@ -638,7 +700,7 @@ test('after a reload for a missing chunk, the reloaded page reports a chunk fail
 
 test('marks activation only after consent and only once', async () => {
   const deniedStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.DENIED });
-  const grantedStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const grantedStorage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   const events: unknown[] = [];
   const track = async (eventName: string) => {
     events.push(eventName);
@@ -652,7 +714,7 @@ test('marks activation only after consent and only once', async () => {
 });
 
 test('tracks a day-7 return at the boundary and only once', async () => {
-  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   const events: unknown[] = [];
   const track = async (eventName: string) => {
     events.push(eventName);
@@ -674,7 +736,7 @@ test('tracks a day-7 return at the boundary and only once', async () => {
  * fails.
  */
 test('a mark asked for twice while the first send is still waiting leaves once', async () => {
-  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   const events: unknown[] = [];
   let release!: () => void;
   const loaded = new Promise<void>(resolve => { release = resolve; });
@@ -696,7 +758,7 @@ test('a mark asked for twice while the first send is still waiting leaves once',
   assert.deepEqual(await Promise.all(returns), [true, false]);
   assert.deepEqual(events, ['activation', 'day_7_return']);
 
-  const failing = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const failing = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   assert.equal(await markActivation({ storage: failing, now: 1000, track: async () => false }), false);
   assert.equal(await markActivation({ storage: failing, now: 2000, track }), true, 'a failed send is retried');
 });
@@ -705,7 +767,7 @@ test('a mark whose send has not finished is not stored as sent', async () => {
   // If the tab closes while PostHog is still loading, the send never settles,
   // and whatever storage says at that moment is what the next visit reads.
   // Nothing may say the mark left, or that visit would never send it.
-  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED });
+  const storage = memoryStorage({ [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS });
   let settle!: (sent: boolean) => void;
   const pending = markActivation({ storage, now: 1000, track: () => new Promise(resolve => { settle = resolve; }) });
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -719,7 +781,7 @@ test('clears consent-scoped activation state when consent is denied', async t =>
   const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   const previousLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
   const storage = memoryStorage({
-    [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.GRANTED,
+    [ANALYTICS_CONSENT_KEY]: ANALYTICS_CONSENT.ANONYMOUS,
     papertok_analytics_activation_at: '1000',
     papertok_analytics_activation_sent: 'true',
     papertok_analytics_day_7_return_sent: 'true',

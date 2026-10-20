@@ -99,7 +99,10 @@ test('nadie es interrumpido antes de tiempo, ni sin sesión, ni fuera del feed',
   assert.match(jsx, /const signedIn = Boolean\(user\) && !authLoading && onboardingComplete;/, 'los invitados quedan fuera');
   assert.match(jsx, /setTimeout\(\(\) => setDwellDone\(true\), NUDGE_DWELL_MS\)/, 'hay que esperar el minuto');
   assert.match(jsx, /location\.pathname === '\/feed'/, 'solo en el feed');
-  assert.ok(!/useAnalyticsConsent|consent !== null/.test(jsx), 'ya no hay banner de consentimiento al que ceder la esquina');
+  // Desde el 2026-10-20 la petición de consentimiento vuelve y es la primera:
+  // solo con sesión, y ningún aviso le quita la esquina hasta que se contesta.
+  assert.match(jsx, /const askConsent = signedIn && !decided;/, 'el consentimiento se pide solo con sesión');
+  assert.match(jsx, /const openable = dwellDone\s*&& signedIn\s*&& decided/, 'los avisos esperan a la respuesta');
 });
 
 test('uno por visita, y el descarte se recuerda para siempre', async () => {

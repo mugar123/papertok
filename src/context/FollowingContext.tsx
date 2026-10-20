@@ -315,6 +315,8 @@ export function FollowingProvider({ children }: PropsWithChildren) {
         entity_type: entity.type,
         action: wasFollowing ? 'remove' : 'add',
         surface: 'other',
+        entity_id: entity.canonicalId,
+        entity_name: entity.displayName,
       });
       if (!wasFollowing) markActivation();
       return !wasFollowing;

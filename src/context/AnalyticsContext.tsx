@@ -1,6 +1,8 @@
 import type { PropsWithChildren } from 'react';
 export interface AnalyticsContextValue {
   consent: ReturnType<typeof readAnalyticsConsent>;
+  /** Whether a choice is stored at all; until it is, the consent banner asks. */
+  decided: boolean;
   updateConsent: (value: string) => Promise<boolean>;
   trackEvent: typeof trackProductEvent;
   markActivation: () => ReturnType<typeof markAnalyticsActivation>;
@@ -13,11 +15,14 @@ import { pageview } from '@vercel/analytics';
 import { AnalyticsContext } from './contexts.ts';
 import { useLocation } from 'react-router-dom';
 import { useLanguage } from './LanguageContext.tsx';
+import { useAuth } from './AuthContext.tsx';
 import {
   ANALYTICS_CONSENT,
+  identifyAnalyticsUser,
   markActivation as markAnalyticsActivation,
   normalizeAnalyticsPath,
   readAnalyticsConsent,
+  readStoredAnalyticsConsent,
   removeLegacyGoogleAnalyticsCookies,
   sanitizeVercelEvent,
   setAnalyticsConsent,
@@ -31,7 +36,9 @@ import {
 export function AnalyticsProvider({ children }: PropsWithChildren) {
   const location = useLocation();
   const { language } = useLanguage();
+  const { user } = useAuth();
   const [consent, setConsent] = useState(readAnalyticsConsent);
+  const [decided, setDecided] = useState(() => readStoredAnalyticsConsent() !== null);
 
   // Runs for everyone, consent or not: these are leftovers from GA4, and the
   // people carrying them are exactly the ones who once said yes.
@@ -40,7 +47,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (consent !== ANALYTICS_CONSENT.GRANTED) return;
+    if (consent === ANALYTICS_CONSENT.DENIED) return;
     trackAcquisition({ language });
   }, [consent, language]);
 
@@ -56,23 +63,39 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   // `route` as the pattern and `path` as the concrete URL that matched it, but
   // the concrete URL is the one thing that must not travel: the privacy policy
   // promises that reading a paper is reported as `/public/paper/:id` and never
-  // says which. `trackPageView` normalizes the same way for PostHog.
+  // says which. `trackPageView` normalizes the same way for PostHog, unless the
+  // reader opted in to detailed analytics.
   useEffect(() => {
-    if (consent !== ANALYTICS_CONSENT.GRANTED) return;
+    if (consent === ANALYTICS_CONSENT.DENIED) return;
     const viewPath = normalizeAnalyticsPath(location.pathname);
     pageview({ route: viewPath, path: viewPath });
     trackPageView(location.pathname);
   }, [consent, location.pathname]);
 
   useEffect(() => {
-    if (consent !== ANALYTICS_CONSENT.GRANTED) return;
+    if (consent === ANALYTICS_CONSENT.DENIED) return;
     trackDay7Return();
   }, [consent, location.pathname]);
+
+  // Detailed analytics follows the account: linked on sign-in, unlinked on
+  // sign-out. At any other level PostHog never hears about the account.
+  useEffect(() => {
+    if (consent !== ANALYTICS_CONSENT.DETAILED) return;
+    identifyAnalyticsUser(user && {
+      uid: user.uid,
+      email: user.email,
+      name: user.displayName,
+      signInProviders: user.providerData.map(provider => provider.providerId),
+    });
+  }, [consent, user]);
 
   const updateConsent = useCallback(async (value: string) => {
     if (!(Object.values(ANALYTICS_CONSENT) as string[]).includes(value)) return false;
     const persisted = await setAnalyticsConsent(value);
-    if (persisted) setConsent(value);
+    if (persisted) {
+      setConsent(value as typeof consent);
+      setDecided(true);
+    }
     return persisted;
   }, []);
 
@@ -80,8 +103,8 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   const markActivation = useCallback(() => markAnalyticsActivation(), []);
 
   const value = useMemo(
-    () => ({ consent, updateConsent, trackEvent, markActivation }),
-    [consent, updateConsent, trackEvent, markActivation],
+    () => ({ consent, decided, updateConsent, trackEvent, markActivation }),
+    [consent, decided, updateConsent, trackEvent, markActivation],
   );
 
   // Passing `route` flips `disableAutoTrack` on the injected script, whose own
@@ -97,7 +120,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   return (
     <AnalyticsContext.Provider value={value}>
       {children}
-      {consent === ANALYTICS_CONSENT.GRANTED ? (
+      {consent !== ANALYTICS_CONSENT.DENIED ? (
         <Analytics
           mode={import.meta.env.DEV ? 'development' : 'production'}
           route={analyticsPath}
