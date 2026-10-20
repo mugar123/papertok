@@ -93,20 +93,32 @@
 }
 
 /* The window hangs from the top, so it grows down from there, and its pieces
-   arrive in reading order. The same rule replays for the form or the linked
-   row when one replaces the other: each is a new node under an open window. */
+   arrive in reading order. The sheet is opaque within a few frames while it
+   still grows: fading it with its content let the page behind read through
+   the text. The pieces of the form or the linked row arrive one by one, and
+   replay when one replaces the other: each is a new node under an open
+   window. `:where` keeps the pill's pin and the reveals their own animation. */
 .institution-dialog { transform-origin: 50% 0; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .institution-dialog[data-open] { animation: dialogIn 240ms var(--ease-out-expo); }
+  .institution-dialog[data-open] { animation: institution-dialog-in 280ms var(--ease-out-expo); }
 
-  .institution-dialog[data-open] > :where(h2, p, .institution-link) {
+  .institution-dialog[data-open] > :where(h2, p),
+  .institution-dialog[data-open] :where(.institution-link > :not(.institution-link-reveal)) {
     animation: institution-piece-in 360ms var(--ease-out-expo) backwards;
   }
 
   .institution-dialog[data-open] > h2 { animation-delay: 40ms; }
-  .institution-dialog[data-open] > p { animation-delay: 80ms; }
-  .institution-dialog[data-open] > .institution-link { animation-delay: 120ms; }
+  .institution-dialog[data-open] > p { animation-delay: 75ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(1)) { animation-delay: 110ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(2)) { animation-delay: 140ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(3)) { animation-delay: 170ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(n + 4)) { animation-delay: 200ms; }
+}
+
+@keyframes institution-dialog-in {
+  0% { opacity: 0; scale: 0.97; }
+  30% { opacity: 1; }
 }
 
 /* Something added under the field (Cancel, a message, the platform list)
