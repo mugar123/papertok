@@ -56,8 +56,9 @@ const RESOLVER_CITATION = 'article';
 // 2026-10-19 a service Alma had filtered out for the date counted as access;
 // then a single-service answer cut off before its services read as a
 // refusal; then a complete answer that was not well-formed XML was not read;
-// then a key left open was read as absent, so a service Alma had filtered out
-// for the date could count as access again, cached for seven days.
+// then a key left open, or one whose tag was written another way, was read as
+// absent, so a service Alma had filtered out for the date could count as
+// access again, cached for seven days.
 export const RESOLVER_READING = 'balanced-tags';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
@@ -175,13 +176,14 @@ function xmlKey(xml: string, id: string) {
   return match ? unescapeXml(match[1]) : null;
 }
 
-// A closing tag, with no space before its `>`; an opening tag, with the
-// rest of the element when it is empty or holds only text (most keys, so
-// most elements take one match); a CDATA section; an XML declaration; or a
-// `<` that starts none of them. A quote left open pairs with the next
-// attribute's opening quote, and what follows that is no attribute, so the
-// tag does not match.
-const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)|([A-Za-z_][\w.:-]*)(?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(\/|>[^<]*<\/\2)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
+// A closing tag; an opening tag, with the rest of the element when it is
+// empty or holds only text (most keys, so most elements take one match); a
+// CDATA section; an XML declaration; or a `<` that starts none of them.
+// Tags match only as Alma writes them: each attribute after one space, its
+// value in double quotes with no `<`, `>` or `&`, and no space before `>`,
+// `/>` or a closing tag's `>`. A quote left open runs into the next `<` or
+// `>`, so the tag does not match.
+const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)|([A-Za-z_][\w.:-]*)((?: [\w.:-]+="[^"<>&]*")*)(\/|>[^<]*<\/\2)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
 
 /**
  * Whether an answer's markup holds together the way `parseResolverAnswer`
@@ -189,24 +191,31 @@ const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)|([A-Za-z_][\w.:-]*)(?:\s+[\w.:-]+\s*=\
  * CDATA section or an XML declaration, every element closes inside the
  * element it opened in, the root element, `uresolver_content`, closes at
  * the end, a key holds no element, and no service opens inside another.
- * The reader matches `</key>` and `</context_service>` exactly and reads a
- * service up to the next `</context_service>`, so a closing tag with a
- * space before its `>` fails, and so does a service closed in its own
- * opening tag: read anyway, a key would count as absent or a service would
- * be read with the next one's keys. Text is not checked, so an unescaped
- * `&` does not stop an answer from being read. No saved answer starts with
- * an XML declaration, but one is well-formed XML, and refusing it would
- * make every answer an outage if Alma began to send one.
+ * The reader matches tags as Alma writes them, not every spelling XML
+ * allows: `<key id="…">`, `</key>`, `service_type="getFullTxt"`,
+ * `<resolution_url>` and `</context_service>`, reading a service up to the
+ * next `</context_service>`. So a tag written another way fails (a space
+ * before `>`, single quotes, a key with a value opened other than as
+ * `<key id="…">`, a link with an attribute), and so does a service closed
+ * in its own opening tag: read anyway, a `Filtered` key would count as
+ * absent, a full-text service would be skipped or lose its link, or a
+ * service would be read with the next one's keys. Every saved answer
+ * writes its tags this way. Text is not checked, so an unescaped `&` does
+ * not stop an answer from being read. No saved answer starts with an XML
+ * declaration, but one is well-formed XML, and refusing it would make
+ * every answer an outage if Alma began to send one.
  */
 function markupHolds(text: string) {
   const open: string[] = [];
-  for (const { 0: tag, 1: closing, 2: name, 3: closed, index } of text.matchAll(MARKUP)) {
+  for (const { 0: tag, 1: closing, 2: name, 3: attributes, 4: closed, index } of text.matchAll(MARKUP)) {
     if (tag === '<') return false;
     if (closing) {
       if (open.pop() !== closing) return false;
       if (!open.length) return closing === 'uresolver_content' && !text.slice(index + tag.length).trim();
     } else if (name) {
       if (open.at(-1) === 'key' || (name === 'context_service' && (closed === '/' || open.includes(name)))) return false;
+      const unmatched = name === 'key' ? !/^ id="[^"]*"$/.test(attributes) : name === 'resolution_url' && attributes !== '';
+      if (closed !== '/' && unmatched) return false;
       if (!closed) open.push(name);
     }
   }
