@@ -31,9 +31,6 @@ export default function SkeletonCard() {
             <div className="pc-author-avatars sk-authors">
               {[0, 1, 2].map((i) => <span key={i} className="sk-block" style={{ '--i': i }} />)}
             </div>
-            <div className="pc-similar-row">
-              <span className="sk-block sk-similar" />
-            </div>
           </div>
           <div className="pc-slot">
             <div className="sk-abstract">

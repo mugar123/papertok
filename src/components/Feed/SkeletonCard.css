@@ -93,11 +93,6 @@
 }
 
 
-.sk-similar {
-  width: 8.5rem;
-  height: 32px;
-}
-
 .sk-toggle {
   width: 7.5rem;
   height: 12px;
@@ -114,8 +109,8 @@
 
 /* The rail's tiles, at the rail's own 40px. */
 .sk-tile {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: var(--radius-md);
 }
 
@@ -139,8 +134,8 @@
   }
 
   .sk-tile {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   /* The buttons show their short words there. */
