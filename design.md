@@ -446,14 +446,21 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   in at the top, clear of the thumb.
 
 ### The Action Rail (signature)
-The card's right-hand column of 40px tiles: Like, Save, Connections, Share,
-each a faint tint of its own colour (`--rail`) that fills on hover and gives
-under the press. Icons only, without counts until per-paper totals exist; the
-names stay in the DOM for assistive tech and in a native `title`. Connections
-is a toggle: wider than a phone it swaps the abstract for the citation map
-until it is pressed again; on a phone it opens the map as a sheet. A last tile, More (⋯), opens Mark as read, Skip and
-the BibTeX/RIS citation exports the way Share opens: a menu off the tile, or a
-drawer on a phone (`Feed/MoreActions.jsx`).
+The card's right-hand column: Like, Save, Connections and More (⋯). Each is an
+icon-only ghost button, a 24px glyph in its own colour (`--rail`) on a 44px tap
+area, with no tile behind it; the active state is the filled glyph. Like and
+Save pulse when turned on and press in when turned off, and stay still under
+reduced motion. No counts until per-paper totals exist; the names stay in the
+DOM for assistive tech and in a native `title`. Save puts the paper in Read
+later at once, with an "Add to list" toast; a second press takes it out of
+Read later and every list, with Undo. Connections is a toggle: wider than a
+phone it swaps the abstract for the citation map until it is pressed again; on
+a phone it opens the map as a sheet. More opens the paper's options
+(`Feed/PaperMenu.tsx`), a dialog on desktop and a drawer on a phone: the
+actions with a one-line hint each (Mark as read, About this paper, Not
+interested, the BibTeX/RIS exports), then the share destinations. About this
+paper replaces the actions in the same surface, with a back arrow, and holds
+the status chips, topics, funding and links that are not on the card face.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square

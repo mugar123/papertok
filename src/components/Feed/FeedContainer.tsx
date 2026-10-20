@@ -30,6 +30,7 @@ import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { useLanguage } from '../../context/LanguageContext.tsx';
 import { IS_DEMO } from '../../services/firebase.ts';
 import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
 import { readListsHoldingPaper, writeListMembership } from '../../services/paperListMembership.ts';
@@ -788,6 +789,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [onOpenPdf, trackPdfOpened]);
 
   const { user } = useAuth();
+  const { language } = useLanguage();
   const saveState = useRef({ personalLibrary, toggleReadLater, markSaved });
   useEffect(() => {
     saveState.current = { personalLibrary, toggleReadLater, markSaved };
@@ -798,32 +800,38 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     const latest = saveState.current;
     if (user && !IS_DEMO) {
       await setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true });
-      await writeListMembership({ uid: user.uid, paper, lists, added: true, language: 'en' });
+      await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
     }
     if (readLater && !latest.personalLibrary[id]?.readLater) await latest.toggleReadLater(paper);
     await latest.markSaved(paper);
-  }, [interactionIdFor, user]);
+  }, [interactionIdFor, language, user]);
 
   const handleSaveToList = useCallback(async (paper: Paper) => {
     const id = interactionIdFor(paper)!;
     const readLater = Boolean(personalLibrary[id]?.readLater);
     if (savedPaperIds.has(id)) {
+      let lists: OwnList[] | null = null;
+      let removed = false;
       try {
-        const lists = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
+        lists = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
         if (!lists) {
           onSaveToList!(paper);
           return;
         }
-        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists, added: false, language: 'en' });
+        const held = lists;
+        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
+        removed = true;
         if (readLater) await toggleReadLater(paper);
         await unmarkSaved(paper);
         toast('Removed from your saved papers', {
           action: {
             label: 'Undo',
-            onClick: () => { restoreSave(paper, lists, readLater).catch(() => toast.error('Could not save this paper')); },
+            onClick: () => { restoreSave(paper, held, readLater).catch(() => toast.error('Could not save this paper')); },
           },
         });
       } catch {
+        // Half an unsave is worse than none: put back what was already taken.
+        if (removed && lists) await restoreSave(paper, lists, readLater).catch(() => {});
         toast.error('Could not remove this paper');
       }
       return;
@@ -837,7 +845,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     } catch {
       toast.error('Could not save this paper');
     }
-  }, [interactionIdFor, markActivation, onSaveToList, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
+  }, [interactionIdFor, language, markActivation, onSaveToList, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
 
   /**
    * El `setActiveIndex` de aquí va en transición, y conviene saber exactamente

@@ -1347,14 +1347,16 @@ const PaperCard = memo(function PaperCard({
   const likeIconRef = useRef<HTMLSpanElement | null>(null);
   const saveIconRef = useRef<HTMLSpanElement | null>(null);
   const pulse = (icon: HTMLSpanElement | null, on: boolean) => {
-    if (prefersReducedMotion) return;
-    icon?.querySelector('svg')?.animate(
+    const svg = icon?.querySelector('svg');
+    if (!svg || prefersReducedMotion) return;
+    svg.getAnimations().forEach((running) => running.cancel());
+    svg.animate(
       [
         { transform: 'scale(1)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
-        { transform: on ? 'scale(1.16)' : 'scale(0.86)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+        { transform: on ? 'scale(1.16)' : 'scale(0.9)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
         { transform: 'scale(1)' },
       ],
-      { duration: 380 },
+      { duration: 260 },
     );
   };
   const handleLike = (liking: boolean) => {
@@ -2275,7 +2277,7 @@ const PaperCard = memo(function PaperCard({
               Icon: isReadActive ? CheckCircle : Eye,
               onSelect: handleMarkAsRead,
             },
-            { id: 'about', label: 'About this paper', hint: 'Status, topics and links', Icon: Info, onSelect: () => setMenuView('about') },
+            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
             { id: 'skip', label: 'Not interested', hint: 'See fewer papers like this', Icon: Prohibit, onSelect: handleNotInterested },
             { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
             { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },

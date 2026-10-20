@@ -446,8 +446,6 @@
     margin-left: 0;
   }
 
-  /* The PT mark alone. The word is clipped out of view, not removed: the
-     mark is `aria-hidden`, so the word is the button's name. */
   .navbar-brand-word {
     position: absolute;
     width: 1px;

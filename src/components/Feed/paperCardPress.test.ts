@@ -41,6 +41,6 @@ test('the squeeze is appended to the list the chip already had', async () => {
 test('reduced motion keeps the dip and drops the squeeze', async () => {
   const css = stripComments(await read('./PaperCard.css'));
   const blocks = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
-  assert.ok(blocks.some((b: string) => /\.pc-topic-link:active \{\s*transform: none;\s*\}/.test(b)), 'the squeeze is switched off');
+  assert.ok(blocks.some((b: string) => /\.pc-topic-link:active[^{]*\{\s*transform: none;\s*\}/.test(b)), 'the squeeze is switched off');
   assert.ok(!blocks.some((b: string) => /\.pc-author-link:active/.test(b)), 'the opacity dip is not movement and stays');
 });

@@ -18,9 +18,6 @@ import './SharePanel.css';
 
 const enc = encodeURIComponent;
 
-// Where a paper can go: each network's own share link, built from the title
-// as plain text and the link. Instagram has none on the web, so it comes
-// last and copies the link, saying where to paste it.
 const NETWORKS = [
   { id: 'x', name: 'X', Icon: XLogo, href: ({ text, url }: ShareData) => `https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}` },
   { id: 'reddit', name: 'Reddit', Icon: RedditLogo, href: ({ text, url }: ShareData) => `https://www.reddit.com/submit?url=${enc(url)}&title=${enc(text)}` },
@@ -43,17 +40,10 @@ async function copyLink({ url, onShared, method, message, position }: { url: str
   toast.success(message, { position });
 }
 
-/**
- * The card's one overflow button: a dialog on desktop, a bottom sheet on a
- * phone. The paper's actions first, then, under a rule, every way to share it.
- * A panel (About this paper) replaces the actions in the same surface, with a
- * way back, instead of handing over to a second dialog.
- */
 export default function PaperMenu({ title, url, onShared, actions, trigger, open, onOpenChange, panel }: {
   title: string; url?: string | null; onShared?: Shared; actions: PaperMenuAction[]; trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
   open: boolean; onOpenChange: (open: boolean) => void; panel?: PaperMenuPanel | null;
 }) {
-  const setOpen = onOpenChange;
   const isPhone = useIsPhone();
   const listRef = useRef<HTMLUListElement>(null);
   const leftPanel = useRef<string | null>(null);
@@ -70,7 +60,7 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
   const position: ExternalToast['position'] = isPhone ? 'top-center' : undefined;
   const { text = '' } = url ? paperShareData({ title, url }) : {};
   const shown = url?.replace(/^https?:\/\//, '') ?? '';
-  const pick = (run: () => void) => () => { setOpen(false); run(); };
+  const pick = (run: () => void) => () => { onOpenChange(false); run(); };
   // One level under the title: an h2 in the dialog, an h3 in the sheet.
   const ShareHeading = isPhone ? 'h4' : 'h3';
 
@@ -79,7 +69,7 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
       <ul ref={listRef} className="pc-menu-group" aria-label="Paper actions">
         {actions.map(({ id, label, hint, Icon, onSelect }) => (
           <li key={id}>
-            <button type="button" className="pc-menu-item" data-action={id} onClick={(event) => { setOpen(false); onSelect(event); }}>
+            <button type="button" className="pc-menu-item" data-action={id} onClick={(event) => { onOpenChange(false); onSelect(event); }}>
               <Icon size={20} aria-hidden="true" />
               <span>
                 <span className="pc-menu-item-label">{label}</span>
@@ -122,7 +112,7 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
   const opener = cloneElement(trigger, {
     'aria-haspopup': 'dialog',
     'aria-expanded': open,
-    onClick: (event: MouseEvent) => { event.stopPropagation(); setOpen(true); },
+    onClick: (event: MouseEvent) => { event.stopPropagation(); onOpenChange(true); },
   });
 
   const heading = panel?.title ?? 'Paper options';
@@ -146,14 +136,14 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
     <>
       {opener}
       {isPhone ? (
-        <Drawer open={open} onOpenChange={setOpen}>
+        <Drawer open={open} onOpenChange={onOpenChange}>
           <DrawerContent className="pc-share-sheet" viewportProps={{ onClick: stop }}>
             <DrawerHandle />
             {body}
           </DrawerContent>
         </Drawer>
       ) : (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={onOpenChange}>
           <DialogContent className="pc-paper-menu" onClick={stop}>
             {body}
           </DialogContent>

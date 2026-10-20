@@ -21,6 +21,8 @@ export async function readListsHoldingPaper(uid: string, paperId: string): Promi
     where('paperIds', 'array-contains', paperId),
     limit(OWN_LISTS_PAGE_SIZE),
   ));
+  // A full page may have stopped short of lists that also hold the paper.
+  if (snapshot.size >= OWN_LISTS_PAGE_SIZE) return null;
   const read = readOwnLists(snapshot, paperId);
   return read.authoritative ? read.lists : null;
 }
@@ -43,7 +45,11 @@ export async function writeListMembership({ uid, paper, lists, added, language }
     });
   }
   await batch.commit();
-  for (const list of lists) {
+  const cached = ownListsCache.get(uid);
+  for (const passed of lists) {
+    // The session's own copy is newer than a list handed over from before an
+    // Undo, so a published list is republished as it is now.
+    const list = cached?.find(entry => entry.id === passed.id) ?? passed;
     if (!list.publicShareId) continue;
     queuePublicListSync({
       key: publicListSyncKey(uid, list.id),
@@ -58,7 +64,6 @@ export async function writeListMembership({ uid, paper, lists, added, language }
       papers: added ? [{ ...paper, listPaperId: paper.id }] : [],
     });
   }
-  const cached = ownListsCache.get(uid);
   if (cached) {
     const ids = lists.map(list => list.id);
     reviseOwnLists(uid, withPaperMembership(cached, paper.id, added ? { added: ids } : { removed: ids }));
