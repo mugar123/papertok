@@ -128,7 +128,7 @@ const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
   'estudiante.uam.es': { rorId: 'https://ror.org/01cby8j38', source: 'https://www.uam.es/uam/tecnologias-informacion/servicios/correo-electronico', checked: '2026-10-19' },
   'g.ucla.edu': { rorId: 'https://ror.org/046rm7j60', source: 'https://www.psych.ucla.edu/admin-units/information-technology/technical-training-and-how-tos/ucla-email-faq/', checked: '2026-10-19' },
   'student.bham.ac.uk': { rorId: 'https://ror.org/03angcq70', source: 'https://www.birmingham.ac.uk/welcome/essential-tasks/your-next-steps', checked: '2026-10-19' },
-  'terpmail.umd.edu': { rorId: 'https://ror.org/047s2c258', source: 'https://it.umd.edu/news/2021/student-email-changes', checked: '2026-10-19' },
+  'terpmail.umd.edu': { rorId: 'https://ror.org/047s2c258', source: 'https://itsupport.umd.edu/kb_view.do?sysparm_article=KB0016507', checked: '2026-10-19' },
 };
 
 /** A ROR question; any failure, the budget running out included, is the registry being unavailable. */
