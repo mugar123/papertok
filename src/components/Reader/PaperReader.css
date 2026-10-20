@@ -587,6 +587,7 @@
    ghost never moves; the document grows above it. */
 .rd-ghost {
   margin-bottom: var(--space-8);
+  padding-bottom: var(--space-12);
 }
 
 .rd-ghost-head {
