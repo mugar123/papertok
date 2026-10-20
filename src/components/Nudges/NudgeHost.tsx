@@ -1,20 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ChartBar, EnvelopeSimple, Star } from '@phosphor-icons/react';
-import { GithubMark } from '../ui/GithubMark.tsx';
+import { ChartBar, EnvelopeSimple } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext.tsx';
-import { useLanguage } from '../../context/LanguageContext.tsx';
 import {
   NUDGE_DWELL_MS,
-  STAR_FETCH_BUDGET_MS,
-  cacheStarCount,
   emailNudgeProblem,
   pickNudge,
-  readCachedStarCount,
   readDismissedNudges,
   rememberNudgeDismissal,
 } from '../../utils/nudges.ts';
@@ -31,12 +26,6 @@ import NudgePanel from './NudgePanel.tsx';
 // The analytics consent ask comes first and owns the corner until it is
 // answered. It does not wait the minute: until then, detailed analytics is off.
 
-export const REPO_URL = 'https://github.com/mugar123/papertok';
-const REPO_API_URL = 'https://api.github.com/repos/mugar123/papertok';
-
-// How long the thanks beat is on screen before the panel leaves.
-const THANKS_HOLD_MS = 600;
-
 const COPY = {
   en: {
     consent: {
@@ -50,12 +39,6 @@ const COPY = {
       saveFailed: 'Not saved: this browser is blocking site storage.',
     },
     dismiss: 'Dismiss and do not show again',
-    starsLabel: (count: number) => `${count} ${count === 1 ? 'star' : 'stars'} on GitHub`,
-    'open-source': {
-      title: 'PaperTok is open source',
-      body: 'MIT licensed. A star helps other people find it.',
-      cta: 'Star on GitHub',
-    },
     'email-down': {
       'not-configured': {
         title: 'Email updates are paused',
@@ -74,27 +57,19 @@ export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete } = useAuth();
   const { decided, updateConsent } = useAnalyticsConsent();
   const [consentSaveFailed, setConsentSaveFailed] = useState(false);
-  const { locale } = useLanguage();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
   const navigate = useNavigate();
 
   const [dismissed, setDismissed] = useState(() => readDismissedNudges());
   const [dwellDone, setDwellDone] = useState(false);
-  // `null` until one is picked. The star count is `undefined` while it is
-  // still being resolved and a number-or-null once it is: the panel does not
-  // appear until then, so the count travels with it and never lands late on a
-  // reader's copy.
+  // `null` until one is picked.
   const [picked, setPicked] = useState<string | null>(null);
-  const [stars, setStars] = useState<number | null | undefined>(undefined);
-  const [thanked, setThanked] = useState(false);
   // One per visit: flipped the moment the choice is made, so a re-render, a
   // navigation or the health request landing cannot start a second one. State
   // and not a ref, because this is read during render — the same shape (and
   // the same reason) as the guest interests sheet.
   const [choiceMade, setChoiceMade] = useState(false);
-  const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
 
   const signedIn = Boolean(user) && !authLoading && onboardingComplete;
   const emailProblem = emailNudgeProblem({ loading: emailLoading, health });
@@ -117,50 +92,16 @@ export default function NudgeHost() {
   if (openable && !choiceMade) {
     setChoiceMade(true);
     const id = pickNudge({
-      eligible: ['open-source', ...(emailProblem ? ['email-down'] : [])],
+      eligible: emailProblem ? ['email-down'] : [],
       dismissed,
     });
-    if (id) {
-      setPicked(id);
-      setStars(id === 'open-source' ? (readCachedStarCount() ?? undefined) : null);
-    }
+    if (id) setPicked(id);
   }
-
-  // The count, when it was not already cached. A short budget, and then the
-  // panel goes without it: a chip that arrives late would push the copy.
-  useEffect(() => {
-    if (picked !== 'open-source' || stars !== undefined) return undefined;
-    let settled = false;
-    const reveal = (value: number | null) => {
-      if (settled || !aliveRef.current) return;
-      settled = true;
-      setStars(value);
-    };
-    const budget = window.setTimeout(() => reveal(null), STAR_FETCH_BUDGET_MS);
-    fetch(REPO_API_URL, { headers: { Accept: 'application/vnd.github+json' } })
-      .then(response => (response.ok ? response.json() : null))
-      .then(payload => {
-        const count = Number(payload?.stargazers_count);
-        const usable = Number.isInteger(count) && count >= 0;
-        if (usable) cacheStarCount(count);
-        reveal(usable ? count : null);
-      })
-      .catch(() => reveal(null));
-    return () => window.clearTimeout(budget);
-  }, [picked, stars]);
 
   const close = useCallback((id: string) => {
     setDismissed(rememberNudgeDismissal(id));
     setPicked(null);
-    setThanked(false);
   }, []);
-
-  // Pressing the star opens GitHub in its own tab (the button is a link, so
-  // the browser does that itself) and the panel nods once before leaving.
-  const handleStar = useCallback(() => {
-    setThanked(true);
-    window.setTimeout(() => close('open-source'), THANKS_HOLD_MS);
-  }, [close]);
 
   const handleSettings = useCallback(() => {
     close('email-down');
@@ -179,9 +120,7 @@ export default function NudgeHost() {
   }, [updateConsent]);
 
   const copy = COPY.en;
-  const isStar = picked === 'open-source';
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
-  const ready = picked !== null && stars !== undefined;
 
   return (
     <AnimatePresence>
@@ -203,39 +142,16 @@ export default function NudgeHost() {
           action={{ label: copy.consent.allow, onClick: () => answerConsent(ANALYTICS_CONSENT.DETAILED) }}
           secondaryAction={{ label: copy.consent.anonymous, onClick: () => answerConsent(ANALYTICS_CONSENT.ANONYMOUS) }}
         />
-      ) : ready && (isStar || emailCopy) && (
-        isStar ? (
-          <NudgePanel
-            key="nudge-open-source"
-            icon={<GithubMark size={19} />}
-            iconClassName={`nudge-icon--github${thanked ? ' is-thanked' : ''}`}
-            title={(
-              <>
-                {copy['open-source'].title}
-                {stars !== null && (
-                  <span className="nudge-stars" aria-label={copy.starsLabel(stars!)}>
-                    <Star size={11} weight="fill" aria-hidden="true" />
-                    {stars!.toLocaleString(locale)}
-                  </span>
-                )}
-              </>
-            )}
-            body={copy['open-source'].body}
-            action={{ label: copy['open-source'].cta, href: REPO_URL, onClick: handleStar }}
-            dismissLabel={copy.dismiss}
-            onDismiss={() => close('open-source')}
-          />
-        ) : (
-          <NudgePanel
-            key="nudge-email-down"
-            icon={<EnvelopeSimple size={19} />}
-            title={emailCopy!.title}
-            body={emailCopy!.body}
-            action={{ label: copy['email-down'].cta, onClick: handleSettings }}
-            dismissLabel={copy.dismiss}
-            onDismiss={() => close('email-down')}
-          />
-        )
+      ) : picked === 'email-down' && emailCopy && (
+        <NudgePanel
+          key="nudge-email-down"
+          icon={<EnvelopeSimple size={19} />}
+          title={emailCopy.title}
+          body={emailCopy.body}
+          action={{ label: copy['email-down'].cta, onClick: handleSettings }}
+          dismissLabel={copy.dismiss}
+          onDismiss={() => close('email-down')}
+        />
       )}
     </AnimatePresence>
   );
