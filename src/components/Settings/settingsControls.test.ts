@@ -42,6 +42,23 @@ test('deleting an account signs the person in again from the click, before anyth
   assert.match(handler, new RegExp(`await deleteAccount\\(${confirmedUid}\\)`));
 });
 
+/**
+ * The sign-in again is a popup too: until its scripts have loaded, a confirmed
+ * delete waits, focusable and described by "Preparing sign-in…", and a press
+ * starts nothing.
+ */
+test('a confirmed delete waits until its sign-in window can open inside the press', async () => {
+  const jsx = await read('./DeleteAccountDialog.tsx');
+  assert.match(jsx, /const popupReady = usePopupReady\(popupReadiness\);\s*const held = confirmed && !popupReady;/);
+  const handler = jsx.match(/const handleDelete = async \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? '';
+  assert.match(handler, /^\s*if \(!confirmed \|\| working \|\| held\) return;/);
+  const confirm = jsx.match(/<Button\b[^>]*?className="delete-account-confirm"[\s\S]*?\n\s*>/)?.[0] ?? '';
+  assert.match(confirm, /disabled=\{!confirmed \|\| working \|\| held\}/);
+  assert.match(confirm, /focusableWhenDisabled=\{held\}/);
+  assert.match(confirm, /aria-describedby=\{held \? errorId : undefined\}/);
+  assert.match(jsx, /\{held && copy\.preparing\}/);
+});
+
 test('the interests editor is a modal Dialog with a named close and pressed chips', async () => {
   const jsx = await read('./EditInterestsModal.tsx');
   assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
