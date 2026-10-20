@@ -15,6 +15,7 @@ import {
   normalizeCitationDoi,
   normalizeCitationRows,
 } from '../src/utils/citationGraph.ts';
+import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
 import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
@@ -22,13 +23,15 @@ import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLim
 
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 
-function reconstructOpenAlexAbstract(invertedIndex: OpenAlexWork['abstract_inverted_index']) {
-  if (!invertedIndex || typeof invertedIndex !== 'object') return '';
-  return Object.entries(invertedIndex)
-    .flatMap(([word, positions]) => (Array.isArray(positions) ? positions : []).map((position): [number, string] => [position, word]))
-    .sort(([positionA], [positionB]) => positionA - positionB)
-    .map(([, word]) => word)
-    .join(' ');
+// Abstracts are rebuilt only for the papers a relation keeps, after the sort and
+// the cut: up to 80 works arrive for 16 kept, and rebuilding the rest spent
+// about 2 ms of a cold graph's 10 ms CPU budget on text nobody received.
+function withAbstracts(papers: Paper[], works: OpenAlexWork[]) {
+  const byId = new Map(works.map(work => [String(work.id).split('/').pop(), work]));
+  return papers.map(paper => {
+    const work = paper.openAlexId ? byId.get(paper.openAlexId) : undefined;
+    return work ? { ...paper, abstract: usableOpenAlexAbstract(work).slice(0, 4000) } : paper;
+  });
 }
 
 function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
@@ -37,13 +40,12 @@ function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
   const openAlexId = String(work.id).split('/').pop();
   const bestLocation = work.best_oa_location || work.primary_location || {};
   const publicationType = work.type || 'article';
-  const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
   return {
     id: doi || `openalex:${openAlexId}`,
     openAlexId,
     sources: { primary: 'openalex', enrichedBy: ['opencitations'] },
     title: work.title,
-    abstract: abstract ? abstract.slice(0, 4000) : 'Resumen no disponible.',
+    abstract: '',
     authors: (work.authorships || []).slice(0, 20).map(authorship => ({
       id: String(authorship.author?.id || '').split('/').pop() || undefined,
       name: authorship.author?.display_name || '',
@@ -82,7 +84,7 @@ function mapOpenCitationsMetaWork(work: Record<string, string> | null): Paper | 
     openAlexId: openAlexId || undefined,
     sources: { primary: 'opencitations', enrichedBy: [] },
     title: work.title,
-    abstract: 'Resumen no disponible.',
+    abstract: '',
     authors: authorNames.slice(0, 20).map(name => ({ name })),
     doi,
     year: Number.isFinite(year) ? year : undefined,
@@ -181,10 +183,8 @@ async function resolveCitationConnections(connections: CitationConnection[], env
     fetchOpenAlexWorksByFilter('doi', doisWithoutOpenAlexId, env),
   ]);
   let failed = byId.failed || byDoi.failed;
-  let mapped = deduplicateCitationGraphPapers(
-    [...byId.works, ...byDoi.works].map(mapCitationGraphWork).filter(Boolean),
-    40,
-  );
+  const works = [...byId.works, ...byDoi.works];
+  let mapped = deduplicateCitationGraphPapers(works.map(mapCitationGraphWork).filter(Boolean), 40);
   if (mapped.length < limit) {
     const metaFallback = await fetchOpenCitationsMetadata(candidates, env).catch(() => {
       failed = true;
@@ -200,7 +200,7 @@ async function resolveCitationConnections(connections: CitationConnection[], env
     return (paperB.citationCount || 0) - (paperA.citationCount || 0)
       || (paperB.year || 0) - (paperA.year || 0);
   });
-  return { papers: mapped.slice(0, limit), failed };
+  return { papers: withAbstracts(mapped.slice(0, limit), works), failed };
 }
 
 async function fetchOpenAlexCitingWorks(openAlexId: string | undefined, env: WorkerEnv, limit: number) {
@@ -211,10 +211,8 @@ async function fetchOpenAlexCitingWorks(openAlexId: string | undefined, env: Wor
   url.searchParams.set('per-page', String(Math.min(40, limit * 4)));
   url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
   const payload = await fetchOpenAlexJsonWithFallback<{ results?: OpenAlexWork[] }>(url, env, 7500);
-  return deduplicateCitationGraphPapers(
-    (payload?.results || []).map(mapCitationGraphWork).filter(Boolean),
-    limit,
-  );
+  const works = payload?.results || [];
+  return withAbstracts(deduplicateCitationGraphPapers(works.map(mapCitationGraphWork).filter(Boolean), limit), works);
 }
 
 // `partial` and `degraded` are not the same thing, and conflating them is what

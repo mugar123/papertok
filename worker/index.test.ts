@@ -1559,6 +1559,38 @@ test('a refused OpenAlex key is asked again without it', async () => {
   assert.deepEqual(events.filter(event => event.startsWith('lookup') && event !== 'lookup done'), ['lookup', 'lookup without key']);
 });
 
+test('a citation graph carries rebuilt abstracts, and none where OpenAlex has no usable one', async () => {
+  const index = (text: string) => text.split(' ').reduce<Record<string, number[]>>((positions, word, position) => {
+    (positions[word] ||= []).push(position);
+    return positions;
+  }, {});
+  const abstract = 'We measure how often a graph keeps the abstracts of the papers it shows.';
+  const works = [
+    { id: 'https://openalex.org/W11', title: 'With abstract', cited_by_count: 9, abstract_inverted_index: index(abstract) },
+    { id: 'https://openalex.org/W12', title: 'An editorial', type: 'editorial', cited_by_count: 8, abstract_inverted_index: index(abstract) },
+    { id: 'https://openalex.org/W13', title: 'Without abstract', cited_by_count: 7 },
+  ];
+  let body: { references: Array<{ title: string; abstract: string }> } | null = null;
+  await withCountedUpstream(async (address) => {
+    const url = new URL(String(address));
+    if (url.pathname.includes('/index/v2/references/')) return Response.json(works.map(work => ({ cited: `openalex:${work.id.split('/').pop()}` })));
+    if (url.hostname.includes('opencitations')) return Response.json([]);
+    if (url.pathname.startsWith('/works/doi:')) return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 0 });
+    return Response.json({ results: works });
+  }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }), AUTHENTICATED_ENV);
+      body = await response.json();
+    });
+  });
+
+  assert.deepEqual(body!.references.map(paper => [paper.title, paper.abstract]), [
+    ['With abstract', abstract],
+    ['An editorial', ''],
+    ['Without abstract', ''],
+  ]);
+});
+
 test('an OpenCitations failure does not own the citation graph for a week', async () => {
   const response = await citationGraphAnswer((url: string|string[]) => (url.includes('opencitations')
     ? new Response('gateway timeout', { status: 504 })
