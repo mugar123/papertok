@@ -200,6 +200,8 @@ button.rd-tag {
 .rd-doc {
   flex: 0 1 68ch;
   min-width: 0;
+  align-self: flex-start;
+  margin-bottom: var(--space-12);
 }
 
 .rd-doc-title {
@@ -468,6 +470,7 @@ button.rd-tag {
    ghost never moves; the document grows above it. */
 .rd-ghost {
   margin-bottom: var(--space-8);
+  padding-bottom: var(--space-12);
 }
 
 .rd-ghost-head {
