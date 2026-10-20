@@ -8,7 +8,6 @@ export interface PaperCardProps {
   isRead?: boolean;
   onLike?: (paper: Paper) => void;
   onNotInterested?: (paper: Paper) => void;
-  onGuestNotInterested?: (paperId: string) => void;
   onMarkAsRead?: (paper: Paper) => void;
   onUnmarkAsRead?: (paperId: string) => void;
   trackViewTime?: (paper: Paper, seconds: number) => void;
@@ -366,10 +365,6 @@ const PaperCard = memo(function PaperCard({
   isRead = false, 
   onLike = () => {},
   onNotInterested = () => {},
-  // Deliberately without a default: its absence is what tells this card the
-  // surface has no list to drop a paper from, so a visitor is asked for the
-  // account instead. Only the guest feed supplies it.
-  onGuestNotInterested,
   onMarkAsRead = () => {},
   onUnmarkAsRead = () => {},
   trackViewTime = () => {},
@@ -1384,10 +1379,6 @@ const PaperCard = memo(function PaperCard({
   const handleNotInterested = (e: MouseEvent) => {
     e.stopPropagation();
     if (publicMode) {
-      if (onGuestNotInterested) {
-        onGuestNotInterested(paper?.id);
-        return;
-      }
       requireAuthentication('not_interested');
       return;
     }

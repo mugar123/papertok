@@ -6,8 +6,6 @@ import {
   GUEST_SEED_PER_AREA,
   GUEST_SEED_MAX,
   clearGuestInterests,
-  dismissGuestInterests,
-  guestCategoriesForAreas,
   guestSeedCategoriesForAreas,
   guestSeedSizeForAreas,
   normalizeGuestAreas,
@@ -33,12 +31,6 @@ test('areas are normalized to known keys, deduped, in taxonomy order', () => {
   assert.deepEqual(normalizeGuestAreas(null), []);
 });
 
-test('the categories of an area are exactly the schema subcategories', () => {
-  const ids = guestCategoriesForAreas(['ai', 'unknown']);
-  assert.deepEqual(ids, Object.keys(INTEREST_AREAS.ai.subcategories));
-  assert.ok(ids.includes('cs.AI'));
-});
-
 test('a never-answered device reads as null', () => {
   assert.equal(readGuestInterests(fakeStorage()), null);
   assert.equal(readGuestInterests(fakeStorage({ [GUEST_INTERESTS_STORAGE_KEY]: '{not json' })), null);
@@ -53,11 +45,8 @@ test('a saved pick comes back normalized and not dismissed', () => {
   assert.deepEqual(readGuestInterests(storage), { areas: ['cs', 'bio'], topics: [], dismissed: false });
 });
 
-test('"not now" and an emptied pick both read as dismissed, with no areas', () => {
+test('an emptied pick reads as dismissed, with no areas', () => {
   const storage = fakeStorage();
-  dismissGuestInterests(storage);
-  assert.deepEqual(readGuestInterests(storage), { areas: [], topics: [], dismissed: true });
-
   saveGuestInterests(['cs'], storage);
   saveGuestInterests([], storage);
   assert.deepEqual(readGuestInterests(storage), { areas: [], topics: [], dismissed: true });
@@ -87,7 +76,6 @@ test('a storage that throws never reaches the caller', () => {
   };
   assert.equal(readGuestInterests(broken), null);
   assert.deepEqual(saveGuestInterests(['cs'], broken), ['cs']);
-  assert.doesNotThrow(() => dismissGuestInterests(broken));
   assert.doesNotThrow(() => clearGuestInterests(broken));
 });
 
@@ -119,11 +107,6 @@ test('topics survive only inside a chosen area, in taxonomy order', () => {
     ['cs.AI', 'cs.CV'],
   );
   assert.deepEqual(normalizeGuestTopics('cs.AI', ['ai']), []);
-});
-
-test('a narrowed area stands for its topics, an untouched one for all of it', () => {
-  const ids = guestCategoriesForAreas(['ai', 'bio'], ['cs.LG', 'cs.CL']);
-  assert.deepEqual(ids, ['cs.LG', 'cs.CL', ...Object.keys(INTEREST_AREAS.bio.subcategories)]);
 });
 
 test('a pick with topics round-trips, and dropping an area drops its topics', () => {

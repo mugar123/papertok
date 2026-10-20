@@ -71,7 +71,7 @@ Core sources include:
 - **NIH iCite** — citation and translation metrics for PubMed-indexed papers
 - **Hugging Face Hub** — AI papers and their linked models, datasets, code and project pages
 
-Economics and quantitative finance use arXiv in both the personalized and guest feeds. Their category searches also include OpenAlex preprints, so working papers can appear even when they have no arXiv copy. Paper status follows the provider metadata. OpenAlex discovery includes articles, conference papers and scientific reviews in every field.
+Economics and quantitative finance use arXiv in the feed. Their category searches also include OpenAlex preprints, so working papers can appear even when they have no arXiv copy. Paper status follows the provider metadata. OpenAlex discovery includes articles, conference papers and scientific reviews in every field.
 
 Both feeds recover missing OpenAlex abstracts from linked arXiv records before admitting each page, including pagination and refresh. Preparation waits at most six seconds for recovery and metadata enrichment. The current cards remain readable while another page is prepared. Late responses can update citations and access metadata, but cannot change a displayed abstract or missing-abstract state. Older snapshots are refreshed; new snapshots store the prepared text. Recovery uses the supplied arXiv identifier and preserves existing abstracts, publication metadata and access status. If arXiv cannot supply the text, the card keeps its missing-abstract state.
 

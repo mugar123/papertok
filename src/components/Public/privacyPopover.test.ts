@@ -14,11 +14,7 @@ const read = async (path: string|URL) => (await readFile(new URL(path, import.me
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-test('a visitor reaches the analytics switch and the policy from both guest bars', async () => {
-  const feed = await read('./GuestFeedPage.tsx');
-  const header = feed.slice(feed.indexOf('<header className="guest-feed-header"'), feed.indexOf('</header>'));
-  assert.match(header, /<ThemeToggle className="guest-header-button" \/>\s*<PrivacyPopover className="guest-header-button" \/>/);
-
+test('a visitor reaches the analytics switch and the policy from the welcome bar', async () => {
   // From the first screen of the welcome on, and only for a visitor: account
   // onboarding shares the shell and has Settings.
   const welcome = await read('./GuestWelcome.tsx');

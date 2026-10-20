@@ -3,8 +3,8 @@ import type { Variants } from 'framer-motion';
 import type { Progress } from './ProgressDots.tsx';
 interface WelcomeAction { label: string; onClick?: MouseEventHandler<HTMLButtonElement> }
 interface WelcomeShellProps extends PropsWithChildren {
-  stepKey: string; direction: number; still?: boolean | null; leaving?: boolean;
-  onLeaveComplete?: () => void; className?: string; stageClassName?: string;
+  stepKey: string; direction: number; still?: boolean | null;
+  className?: string; stageClassName?: string;
   dots: Progress; primary: WelcomeAction & { form?: string; disabled?: boolean; busy?: boolean };
   back?: WelcomeAction | null; skip?: WelcomeAction | null;
   barAction?: ReactNode; backdrop?: ReactNode; landing?: boolean;
@@ -24,10 +24,7 @@ import './GuestWelcome.css';
 // welcome's layout. The styles stay in GuestWelcome.css under `gw-*`.
 //
 // <WelcomeShell> draws, in order:
-// - `<motion.main className="gw …">`, which fades up and out
-//   while `leaving` and calls `onLeaveComplete` when that has finished. With
-//   `still` there is no leave animation, so the caller hands its answer over
-//   itself instead of waiting for `onLeaveComplete`.
+// - `<main className="gw …">`.
 // - `onStepShown(stepKey)` fires when the leaving screen has gone and the next
 //   one mounts, with the key of the screen now shown: chrome that differs
 //   between screens switches then, not while the old screen is still on its
@@ -71,8 +68,6 @@ export function WelcomeShell({
   stepKey,
   direction,
   still,
-  leaving,
-  onLeaveComplete,
   className,
   stageClassName,
   dots,
@@ -121,14 +116,7 @@ export function WelcomeShell({
     };
 
   return (
-    <motion.main
-      className={`gw${className ? ` ${className}` : ''}`}
-      animate={leaving && !still ? { opacity: 0, y: -16 } : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: [0.32, 0, 0.67, 0] }}
-      onAnimationComplete={() => {
-        if (leaving && !still) onLeaveComplete?.();
-      }}
-    >
+    <main className={`gw${className ? ` ${className}` : ''}`}>
       {backdrop}
       <header className="gw-bar">
         <div className="gw-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
@@ -218,7 +206,7 @@ export function WelcomeShell({
           </span>
         </div>
       </footer>
-    </motion.main>
+    </main>
   );
 }
 

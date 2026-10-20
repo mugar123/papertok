@@ -23,12 +23,12 @@ test('the welcome retains its intro and topics before personalization and option
   const [jsx, shell] = await Promise.all([jsxPromise, shellPromise]);
   assert.match(jsx, /const STEPS = \['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'\];/);
   assert.match(jsx, /return \(\s*<WelcomeShell\b/, 'the welcome is drawn in the shared page');
-  assert.match(shell, /<motion\.main\s+className=\{`gw\$\{/, 'the welcome brings its own <main>, the feed page is not mounted under it');
+  assert.match(shell, /<main className=\{`gw\$\{/, 'the welcome brings its own <main>');
   assert.doesNotMatch(jsx + shell, /ui\/dialog|<Dialog/, 'a first visit is not a dialog over the feed');
   // The feed is built from the answer, so the last step cannot be passed
   // without one; the first two can be skipped straight to it.
   assert.match(jsx, /const primaryDisabled = isQuestion && selected\.size === 0;/);
-  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0 \|\| leaving\) return;/);
+  assert.match(jsx, /const finish = \(\) => \{\s*if \(selected\.size === 0\) return;/);
   assert.match(jsx, /skip=\{stepIndex < TOPICS_INDEX \? \{ onClick: \(\) => goTo\(TOPICS_INDEX\), label: copy\.skip \} : null\}/, 'the skip goes to the areas step, not past it');
   assert.match(jsx, /const TOPICS_INDEX = STEPS\.indexOf\('topics'\);/);
 });
@@ -138,7 +138,6 @@ test('with motion refused the illustrations are drawn finished and the columns h
   const jsx = await jsxPromise;
   assert.match(jsx, /const still = Boolean\(prefersReducedMotion\);/);
   assert.match(jsx, /const \[order, setOrder\] = useState(?:<[^;\n]+>)?\(still \? \['b', 'a', 'c'\] : \['a', 'b', 'c'\]\);/);
-  assert.match(jsx, /if \(still\) onComplete\?\.\(/, 'with no leave to wait for, the answer is handed over at once');
   assert.match(jsx, /\{!still && <Stars avoid=\{hero\} \/>\}/, 'no stars when motion is refused');
   // WCAG 2.2.2: with no pause control, the stars stop scheduling themselves too.
   const stars = await starsPromise;
@@ -216,11 +215,14 @@ test('long topic groups fold behind show more without hiding a pick', async () =
 });
 
 
-test('the welcome ends in the feed, and an existing account can sign in from any screen', async () => {
+test('the welcome ends in a sign-up, and an existing account can sign in from any screen', async () => {
   const [jsx, shell] = await Promise.all([jsxPromise, shellPromise]);
   const support = jsx.slice(jsx.indexOf('    support: {'), jsx.indexOf('const SHOWCASE') > jsx.indexOf('    support: {') ? jsx.indexOf('const SHOWCASE') : undefined);
-  assert.match(support, /cta: 'Start exploring papers'/);
-  assert.doesNotMatch(jsx, /cta: 'Sign in'/, 'the last action opens the feed, not a dialog');
+  assert.match(support, /cta: 'Create your account'/);
+  // There is no guest feed: the last action stores the answer for the account
+  // onboarding, and only then opens the sign-up.
+  assert.match(jsx, /saveGuestInterests\(\{ areas, topics: normalizeGuestTopics\(Array\.from\(selectedTopics\), areas\), readingLevel, emailDigest \}\);\s*onSignIn\?\.\(\);/);
+  assert.doesNotMatch(jsx, /\bonComplete\b/, 'nothing is handed to a feed');
   // Someone onboarded on another device must not answer the welcome again to
   // reach their account: the landing's account button opens the providers, and
   // the bar carries Sign in on every screen after it.
@@ -230,8 +232,4 @@ test('the welcome ends in the feed, and an existing account can sign in from any
   assert.match(barAction, /<PrivacyPopover className=\{`gw-bar-button\$\{onLanding \? ' btn-halftone' : ''\}`\} \/>/, 'Privacy is on every screen, the landing included');
   assert.match(barAction, /\{!onLanding && \(\s*<button type="button" className="gw-sign-in" onClick=\{onSignIn\}>/);
   assert.match(barAction, /Sign in/);
-  // The page leaves, and only then hands its answer over.
-  assert.match(shell, /animate=\{leaving && !still \? \{ opacity: 0, y: -16 \} : \{ opacity: 1, y: 0 \}\}/);
-  assert.match(shell, /onAnimationComplete=\{\(\) => \{\s*if \(leaving && !still\) onLeaveComplete\?\.\(\);/);
-  assert.match(jsx, /onLeaveComplete=\{\(\) => onComplete\?\.\(answer\(\)\)\}/);
 });
