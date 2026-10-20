@@ -7,8 +7,9 @@ export interface CrossrefLicense {
 
 /**
  * Whether Crossref says the published version of a paper is openly licensed
- * today. Shared by the Worker's `/oa` fallback and the Crossref institution
- * fallback, so the two cannot read the same record two ways.
+ * today. Shared by the Worker's `/oa` fallback, the Crossref institution
+ * fallback and `/access` for SFX libraries, so none reads the same record
+ * another way.
  *
  * Crossref carries the licence from the minute a DOI is registered, which is
  * what makes it worth asking: for a paper a day old, Unpaywall and OpenAlex are

@@ -228,7 +228,10 @@
     "country": "DE",
     "source": "zotero",
     "url": "https://sfx.bib-bvb.de/sfx_uben",
-    "product": "sfx"
+    "product": "sfx",
+    "resolverProduct": "sfx",
+    "evidence": "https://ub.fau.de/recherchieren/literatur-verwalten-und-zitieren/citavi/einstellungsdatei/",
+    "notes": "SFX pilot (PAP-56), checked 2026-10-20. The FAU library's Citavi page lists 'Eintrag des SFX-Linkresolvers der UB'; the settings file that names the address is for FAU members only and was not read. The instance itself is configured for FAU's library: its feedback service writes to ub@fau.de and its loan service is FAUdok. FAU's access page names its library UBEN in DBIS, the instance's name. No FAU page found on 2026-10-20 prints the instance address; the zotero directory does. FAU documents eduVPN and Shibboleth per database for off-campus access (https://ub.fau.de/en/searching/electronic-media/access-to-electronic-resources/) and no general proxy prefix, so its links go to the article directly."
   },
   {
     "rorId": "https://ror.org/01hcx6992",
@@ -253,8 +256,12 @@
     "source": "manual (Opus subagent, 2026-10-19)",
     "url": "https://sfx.bib-bvb.de/sfx_ubm",
     "product": "sfx",
-    "evidence": "https://opac.ub.lmu.de/",
-    "notes": "The library homepage links to a VuFind OPAC (opac.ub.lmu.de) whose 'Artikel & mehr' tab is a Primo index search module, not an Alma catalogue. The BVB SFX instance sfx_ubm is live and resolved a Nature 2020 request into a full-text redirect (Gale, LMU Shibboleth)."
+    "resolverProduct": "sfx",
+    "evidence": "https://opac.ub.lmu.de/PrimoRecord/cdi_crossref_citationtrail_10_1038_nphys3554",
+    "proxy": "https://emedien.ub.uni-muenchen.de/login?qurl=",
+    "proxySource": "https://www.ub.lmu.de/en/research-usage/e-media/instructions-for-login-options-for-licensed-e-media.html",
+    "signsIn": ["find.gale.com", "link.gale.com"],
+    "notes": "The library homepage links to a VuFind OPAC (opac.ub.lmu.de) whose 'Artikel & mehr' tab is a Primo index search module, not an Alma catalogue. SFX pilot (PAP-56), checked 2026-10-20: the OPAC's article records link to https://sfx.bib-bvb.de/sfx_ubm/ through the library's E-Medien login (emedien.ub.uni-muenchen.de/login?qurl=…). The instance's feedback service writes to sfx@ub.uni-muenchen.de, and its Gale links carry LMU's location (lmum) and start LMU's Shibboleth sign-in (lmuidp.lrz.de). The E-Medien login (https://emedien.ub.uni-muenchen.de/login?url=, documented for LMU members) is EZproxy; on 2026-10-20 login?qurl= kept an encoded DOI link and an EBSCO link with its own encoded parameters whole and went on to LMU's sign-in. The EBSCO link alone ends at EBSCO's own login, so it goes through E-Medien; Gale's does not. Its Gale links for press titles are link.gale.com links with LMU's location (u=lmum), which reach the same Shibboleth sign-in through Gale's own (checked 2026-10-20 with The Guardian's Gale Academic OneFile link); its Nexis Uni link ends at LexisNexis's own sign-in, so it goes through E-Medien."
   },
   {
     "rorId": "https://ror.org/00ggpsq73",
@@ -1479,8 +1486,11 @@
     "source": "manual (Opus subagent, 2026-10-19)",
     "url": "https://sfx.bib-bvb.de/sfx_tum",
     "product": "sfx",
-    "evidence": "https://search.ub.tum.de/vufind/Search/Results?lookfor=nature&type=AllFields&lng=en",
-    "notes": "The TUM catalogue is VuFind (search.ub.tum.de), and its embedded OpenURLs carry SFX-specific parameters (sfx.directlink, bvnummer=localTUM). The BVB SFX instance sfx.bib-bvb.de/sfx_tum answers with an SFX menu, but that URL comes from the BVB naming pattern rather than a TUM page, and no Primo or Alma code was found."
+    "resolverProduct": "sfx",
+    "evidence": "https://www.ub.tum.de/en/citavi",
+    "proxy": "https://tum-eaccess.de/login?qurl=",
+    "proxySource": "https://www.ub.tum.de/en/eaccess",
+    "notes": "The TUM catalogue is VuFind (search.ub.tum.de), and its embedded OpenURLs carry SFX-specific parameters (sfx.directlink, bvnummer=localTUM). No Primo or Alma code was found. SFX pilot (PAP-56), checked 2026-10-20: the TUM library's Citavi page gives http://sfx.bib-bvb.de/sfx_tum as the OpenURL for TUM-licensed resources, and the instance's feedback service writes to support.emedien@ub.tum.de. TUM's SFX page says SFX does not authenticate: readers sign in through eAccess, Shibboleth or the campus network. eAccess (https://tum-eaccess.de/login?url=, documented for TUM members) is EZproxy; on 2026-10-20 login?qurl= with an encoded DOI link kept the target whole and answered with a Shibboleth request to login.tum.de."
   },
   {
     "rorId": "https://ror.org/03angcq70",

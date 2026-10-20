@@ -107,7 +107,9 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * row's domains. The entry also wins over a record that ROR lists the domain
  * under: ROR lists purdue.edu only under the Clifford B. Kinley Trust
  * (049s7vz13), a funder record, and arizona.edu, univ-lille.fr and slu.se
- * only under sub-units (checked 2026-10-19).
+ * only under sub-units (checked 2026-10-19). It lists lmu.de under LMU and
+ * under the Walther-Straub-Institut (02wbcav28), and only the order of its
+ * answer decided between them (checked 2026-10-20).
  *
  * `rorDomain` names the domain ROR is asked about instead, for a domain ROR
  * lists under another record: ROR lists neu.edu, the legacy domain of
@@ -119,6 +121,9 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * organisation is never answered with this university's library.
  */
 const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
+  'campus.lmu.de': { rorId: 'https://ror.org/05591te55', source: 'https://www.lmu.de/en/about-lmu/structure/central-university-administration/it-services-division/it-service-desk/central-it-services/e-mail-mailbox/', checked: '2026-10-20' },
+  'lmu.de': { rorId: 'https://ror.org/05591te55', source: 'https://www.lmu.de/en/about-lmu/structure/central-university-administration/it-services-division/it-service-desk/central-it-services/e-mail-dienst-fuer-beschaeftigte/', checked: '2026-10-20' },
+  'mytum.de': { rorId: 'https://ror.org/02kkvpp62', source: 'https://www.tum.de/ueber-die-tum/kontakt-und-anfahrt/logins', checked: '2026-10-20' },
   'myumanitoba.ca': { rorId: 'https://ror.org/02gfys938', source: 'https://umanitoba.ca/information-services-technology/my-accounts-email/claim-umnetid', checked: '2026-10-20' },
   'rochester.edu': { rorId: 'https://ror.org/022kthw22', source: 'https://it.rochester.edu/rochedualiaspages/FAQ.aspx', checked: '2026-10-20' },
   'sms.ed.ac.uk': { rorId: 'https://ror.org/01nrxwf90', source: 'https://information-services.ed.ac.uk/computing/comms-and-collab/email/directories/student-directory', checked: '2026-10-20' },

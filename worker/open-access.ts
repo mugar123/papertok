@@ -11,6 +11,11 @@ const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 // access for days after Unpaywall indexes it, which is usually within one or two.
 const OA_UNRESOLVED_CACHE_SECONDS = 6 * 60 * 60;
 
+/** Unpaywall's record of a DOI, as `/oa` asks for it and `/access` reads it for SFX libraries. */
+export function unpaywallUrl(doi: string, env: WorkerEnv) {
+  return `https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(env.UNPAYWALL_EMAIL || 'app@papertok.io')}`;
+}
+
 export async function handleOpenAccess(request: Request, env: WorkerEnv) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
@@ -21,9 +26,8 @@ export async function handleOpenAccess(request: Request, env: WorkerEnv) {
   }
   const ttl = (payload: { source?: string } | null) => (payload?.source === 'unresolved' ? OA_UNRESOLVED_CACHE_SECONDS : OA_CACHE_SECONDS);
   return cacheResponse(request, origin, env, ttl, async () => {
-    const email = env.UNPAYWALL_EMAIL || 'app@papertok.io';
     try {
-      return await fetchJsonWithTimeout<{ source?: string }>(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`, {
+      return await fetchJsonWithTimeout<{ source?: string }>(unpaywallUrl(doi, env), {
         headers: { accept: 'application/json' },
       }, SOURCE_UPSTREAM_TIMEOUT_MS);
     } catch (error) {

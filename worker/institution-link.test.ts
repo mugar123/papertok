@@ -871,3 +871,79 @@ for (const entry of [
     }
   });
 }
+
+// ROR's records for the SFX pilot's universities, shaped like the live
+// answers of 2026-10-20. ROR lists tum.de, lmu.de and fau.de, while students
+// write from mytum.de (TUM) and campus.lmu.de (LMU), and it lists lmu.de
+// under the Walther-Straub-Institut as well as under LMU.
+const ROR_TUM = {
+  id: 'https://ror.org/02kkvpp62',
+  domains: ['tum.de'],
+  names: [{ value: 'Technical University of Munich', types: ['ror_display', 'label'] }, { value: 'TUM', types: ['acronym'] }],
+};
+const ROR_LMU = {
+  id: 'https://ror.org/05591te55',
+  domains: ['lmu.de'],
+  names: [{ value: 'Ludwig-Maximilians-Universität München', types: ['ror_display', 'label'] }, { value: 'LMU', types: ['acronym'] }],
+};
+const ROR_WALTHER_STRAUB = {
+  id: 'https://ror.org/02wbcav28',
+  domains: ['lmu.de', 'lrz.uni-muenchen.de'],
+  names: [{ value: 'Walther-Straub-Institut für Pharmakologie und Toxikologie', types: ['ror_display', 'label'] }],
+};
+const ROR_FAU = {
+  id: 'https://ror.org/00f7hpc57',
+  domains: ['fau.de'],
+  names: [{ value: 'Friedrich-Alexander-Universität Erlangen-Nürnberg', types: ['ror_display', 'label'] }, { value: 'FAU', types: ['acronym'] }],
+};
+
+for (const entry of [
+  { address: 'ab12cde@mytum.de', record: ROR_TUM, instance: 'sfx_tum' },
+  { address: 'a.student@campus.lmu.de', record: ROR_LMU, instance: 'sfx_ubm' },
+  { address: 'a.staff@lmu.de', record: ROR_LMU, instance: 'sfx_ubm' },
+]) {
+  const domain = entry.address.split('@')[1];
+  test(`${domain} links to its university by ROR id and selects the university's SFX library`, async () => {
+    const id = entry.record.id.split('/').pop()!;
+    const upstream = stubUpstreams({
+      users: { [SESSION_TOKEN]: { localId: UID, email: entry.address, emailVerified: true } },
+      // A domain search may list the institute first: its order must not decide.
+      ror: url => Response.json(url === `https://api.ror.org/v2/organizations/${id}` ? entry.record : { items: [ROR_WALTHER_STRAUB, ROR_LMU] }),
+      mdq: () => Response.json([]),
+    });
+    const admin = memoryAdmin();
+    try {
+      const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+      assert.equal(institution!.domain, domain);
+      assert.equal(institution!.rorId, entry.record.id);
+      assert.equal(institution!.name, entry.record.names[0].value);
+      assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+      const { host, institution: library, product } = findResolver(institution!)!;
+      assert.deepEqual({ host, library, product }, { host: 'sfx.bib-bvb.de', library: entry.instance, product: 'sfx' });
+      assert.deepEqual(rorQuestions(upstream.calls), [id]);
+      for (const unverified of [`other.${domain}`, `${domain}.example`]) {
+        await rejectsWith(resolveInstitution(unverified, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+      }
+    } finally {
+      upstream.restore();
+    }
+  });
+}
+
+test('fau.de links to FAU through ROR\'s own listing and selects its SFX library', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'a.student@fau.de', emailVerified: true } },
+    ror: url => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:fau.de' ? { items: [ROR_FAU] } : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.rorId, 'https://ror.org/00f7hpc57');
+    assert.equal(institution!.acronym, 'FAU');
+    const { host, institution: library, product } = findResolver(institution!)!;
+    assert.deepEqual({ host, library, product }, { host: 'sfx.bib-bvb.de', library: 'sfx_uben', product: 'sfx' });
+  } finally {
+    upstream.restore();
+  }
+});
