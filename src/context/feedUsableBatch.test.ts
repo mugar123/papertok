@@ -540,6 +540,15 @@ test('a restored snapshot asks again for the abstract and the type its session h
 });
 
 test('a restored snapshot is written again only when a late answer changes a card, and keeps its save time', async () => {
+  // The real writer, not a stub: it sets the save time that the next cold open
+  // checks. It writes at once, without the 500 ms debounce, into a stand-in
+  // for localStorage.
+  const from = source.indexOf('function feedSnapshotKey(');
+  const to = source.indexOf('// ── Demo mode storage helpers', from);
+  assert.ok(from >= 0 && to > from, 'the snapshot helpers must exist');
+  const snapshotWriter = (localStorage: { setItem: (key: string, value: string) => void }) => new Function(
+    'localStorage', 'FEED_SNAPSHOT_MAX_PAPERS', `${stripTypeScriptTypes(source.slice(from, to))}; return writeFeedSnapshot;`,
+  )(localStorage, 30);
   // Synthetic PubMed letter: Europe PMC has its record, and the card already carries it.
   const letter = PaperBuilder.create({ id: 'pmid:1', pmid: '1', title: 'Synthetic letter', authors: [], abstract: '', citationCount: 3, sources: { primary: 'pubmed', enrichedBy: ['europepmc'] } });
   for (const [record, rewritten] of [
@@ -548,8 +557,8 @@ test('a restored snapshot is written again only when a late answer changes a car
   ] as const) {
     const { state, env, restore } = feed();
     env.enrichPubmedIds = async () => new Map([['1', record]]);
-    const writes: Array<{ papers: Paper[]; savedAt?: number }> = [];
-    env.scheduleFeedSnapshotWrite = (_uid, _key, snapshot) => { writes.push(snapshot); };
+    const writes: Array<{ papers: Paper[]; savedAt: number }> = [];
+    env.scheduleFeedSnapshotWrite = snapshotWriter({ setItem: (_key, value) => { writes.push(JSON.parse(value)); } });
     const snapshot = { papers: [letter], page: 1, hasMore: true, savedAt: 1_000 };
     restore(snapshot);
     await wait(20);
