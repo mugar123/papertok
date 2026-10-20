@@ -221,8 +221,11 @@ export class PaperBuilder {
     }
 
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)
-    if (!merged.journal && enrichmentData.journal) merged.journal = enrichmentData.journal;
-    if (!merged.publisher && enrichmentData.publisher) merged.publisher = enrichmentData.publisher;
+    // A working paper that keeps its `false` takes neither the other record's
+    // journal nor its publisher: like that record's DOI, they would put the
+    // journal version's venue on the unreviewed working paper.
+    if (!merged.journal && enrichmentData.journal && !keepsOwnFalse) merged.journal = enrichmentData.journal;
+    if (!merged.publisher && enrichmentData.publisher && !keepsOwnFalse) merged.publisher = enrichmentData.publisher;
     if (!merged.conference && enrichmentData.conference) merged.conference = enrichmentData.conference;
     if (!merged.pmid && enrichmentData.pmid) merged.pmid = enrichmentData.pmid;
     if (!merged.pmcid && enrichmentData.pmcid) merged.pmcid = enrichmentData.pmcid;

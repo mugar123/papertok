@@ -242,6 +242,7 @@ test('a working paper joined to a different article by title alone does not unre
     type: 'journal-article',
     author: [{ given: 'Ana', family: 'Economist' }],
     'container-title': ['Journal of International Economics'],
+    publisher: 'Elsevier BV',
   })!;
   const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
 
@@ -255,9 +256,12 @@ test('a working paper joined to a different article by title alone does not unre
     assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], provider);
 
     // The working paper first: the row is the working paper, with its own DOI
-    // and its own answer. The article's review does not cross over either.
+    // and its own answer. The article's review does not cross over either,
+    // nor its journal and publisher.
     const [paper] = PaperBuilder.deduplicate([workingPaper, article(journalDoi)]);
     assert.equal(paper.doi, imfDoi, provider);
+    assert.equal(paper.journal, undefined, provider);
+    assert.equal(paper.publisher, undefined, provider);
     assert.equal(paper.peerReviewed, false, provider);
     assert.equal(reviewTagForPaper(paper)?.label, 'Working paper', provider);
 
@@ -329,9 +333,11 @@ test('a working paper joined to a different article by title alone does not unre
     assert.deepEqual(peerReviewedOnly([stillArticle]).map(row => row.doi), [journalDoi], provider);
 
     // The same pair the other way round is the working paper, and it does not
-    // take the journal's DOI: that DOI shows one answer in either order.
+    // take the journal's DOI: that DOI shows one answer in either order. Nor
+    // the journal's name, which arXiv's record carries in its reference.
     const [stillWorkingPaper] = PaperBuilder.deduplicate([{ ...eprintWorkingPaper, doi: undefined }, journalVersion]);
     assert.equal(stillWorkingPaper.doi, undefined, provider);
+    assert.equal(stillWorkingPaper.journal, undefined, provider);
     assert.equal(stillWorkingPaper.peerReviewed, false, provider);
     assert.equal(reviewTagForPaper(stillWorkingPaper)?.label, 'Working paper', provider);
   }
