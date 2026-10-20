@@ -1,5 +1,5 @@
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
-import { PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/appReload.ts';
+import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/appReload.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
@@ -664,7 +664,7 @@ export async function trackDay7Return({ storage = getBrowserStorage(), now = Dat
 }
 
 // main.tsx imports this module through the boundary, so it is evaluated before
-// main.tsx can write a mark. Date.now() is the clock main.tsx writes with.
+// this page can write a reload mark. Both marks are written with Date.now().
 const PAGE_LOADED_AT = Date.now();
 // The error boundary's fallback stays up until the reader reloads, so one
 // report per page load covers it.
@@ -672,10 +672,11 @@ let appCrashReported = false;
 
 /**
  * The report for GlobalErrorBoundary, which sits outside AnalyticsProvider.
- * A crash inside main.tsx's window after an earlier page's reload counts as
- * the chunk failing again. A mark written by this page means that reload is
- * already under way: the crash is its side effect, and the next page reports
- * if the chunk still fails.
+ * A crash inside main.tsx's window after an earlier page's chunk reload counts
+ * as the chunk failing again. A forced-reload mark written by this page means
+ * the app is already reloading it, for a missing chunk (main.tsx) or for a
+ * deploy (utils/serviceWorkerUpdates.ts). The crash is then not what the
+ * reader is left looking at, and the next page reports it if it recurs.
  */
 export async function trackAppCrash({
   storage = getSessionStorage(),
@@ -685,12 +686,15 @@ export async function trackAppCrash({
 }: Omit<TrackingOptions, 'now'> & { now?: number; pageLoadedAt?: number } = {}) {
   if (appCrashReported) return false;
   let reloadedAt = 0;
+  let forcedReloadAt = 0;
   try {
     reloadedAt = Number(storage?.getItem(PRELOAD_RELOAD_KEY)) || 0;
+    forcedReloadAt = Number(storage?.getItem(APP_RELOAD_KEY)) || 0;
   } catch {
-    // Without session storage main.tsx does not reload either.
+    // Without session storage main.tsx does not reload, and a deploy reload
+    // leaves no mark to recognise.
   }
-  if (reloadedAt >= pageLoadedAt) return false;
+  if (forcedReloadAt >= pageLoadedAt) return false;
   appCrashReported = true;
   const kind = now - reloadedAt < PRELOAD_RELOAD_WINDOW_MS ? 'chunk_load_failed' : 'render_crash';
   return track('app_error', { kind });

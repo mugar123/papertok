@@ -343,3 +343,33 @@ test('a tab behind a deploy reloads at a route change taken online, once the wri
   await reloadIfBehindDeploy('/feed', async () => {})
   assert.equal(tab.reloads, 6)
 })
+
+test('the page a deploy reload is replacing reports no crash, and the page it boots reports a render crash', async (t) => {
+  const tab = tabAfterDeploy(t, '/feed')
+  // Each page load runs its own copy of a module, and a query makes one: this
+  // page's `behindSince` starts unset, and each page reports at most one crash.
+  const pageModule = (path: string, page: string) => import(`${path}?page=${page}`)
+  const { noteDeployActivated, reloadIfBehindDeploy }: typeof import('./serviceWorkerUpdates.ts') = await pageModule('./serviceWorkerUpdates.ts', 'leaving')
+  const leaving: typeof import('../services/analyticsService.ts') = await pageModule('../services/analyticsService.ts', 'leaving')
+  const booted: typeof import('../services/analyticsService.ts') = await pageModule('../services/analyticsService.ts', 'booted')
+  const reports: unknown[] = []
+  const track = async (_event: string, params?: Record<string, unknown>) => {
+    reports.push(params?.kind)
+    return true
+  }
+
+  const leavingLoadedAt = Date.now()
+  await noteDeployActivated(OLD_ENTRY)
+  tab.pathname = '/search'
+  await reloadIfBehindDeploy('/search', async () => {})
+  assert.equal(tab.reloads, 1)
+  // The page keeps running until the reload unloads it, and the route it just
+  // opened can still crash in that time.
+  assert.equal(await leaving.trackAppCrash({ storage: window.sessionStorage, now: Date.now(), pageLoadedAt: leavingLoadedAt, track }), false)
+
+  // The deploy reload is not a chunk failure, so a crash on the page it boots
+  // is the new build's own.
+  const reloadedAt = Number(tab.session.get(APP_RELOAD_KEY))
+  await booted.trackAppCrash({ storage: window.sessionStorage, now: reloadedAt + 2_000, pageLoadedAt: reloadedAt + 500, track })
+  assert.deepEqual(reports, ['render_crash'])
+})

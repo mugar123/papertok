@@ -21,13 +21,17 @@
  * gesture that changed nothing.
  *
  * So the app marks its own reloads on the way out, and a boot that finds no
- * mark treats a reload as the reader's. A mark is consumed when it is read, so
+ * mark treats a reload as the reader's. The boot consumes the mark it reads, so
  * it can never make a later, genuine reload look forced.
  */
 
 import { FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.ts';
 import { FOLLOWING_ORDER_STORAGE_KEY } from './followingOrderStorage.ts';
 
+/**
+ * analyticsService.ts also reads this mark, without consuming it, to recognise
+ * a crash on the page that wrote it: the app is already reloading that page.
+ */
 export const APP_RELOAD_KEY = 'papertok_app_forced_reload_at';
 
 /**
