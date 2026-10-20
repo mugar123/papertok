@@ -2002,22 +2002,6 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </div>
           )}
-          {hasRelated && !publicMode && (
-            <div className="pc-similar-row">
-              <Button
-                variant="similar"
-                size="sm"
-                aria-haspopup="dialog"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openSimilar(paper, event.currentTarget);
-                }}
-              >
-                <Intersect size={14} aria-hidden="true" />
-                {'Similar papers'}
-              </Button>
-            </div>
-          )}
         </div>
 
         <div ref={slotRef} className={`pc-slot${abstractText ? '' : ' pc-slot--no-abstract'}`}>
@@ -2254,6 +2238,26 @@ const PaperCard = memo(function PaperCard({
             </span>
             <span className="pc-side-label">{'Connections'}</span>
           </Toggle>
+        )}
+
+        {/* Similar papers open as a feed of their own, grown out of this
+            button (SimilarFeedLayer.tsx). */}
+        {hasRelated && !publicMode && (
+          <button
+            type="button"
+            className="pc-side-btn pc-side-btn--similar"
+            aria-haspopup="dialog"
+            title={'Similar papers'}
+            onClick={(event) => {
+              event.stopPropagation();
+              openSimilar(paper, event.currentTarget);
+            }}
+          >
+            <span className="pc-side-icon">
+              <Intersect size={20} aria-hidden="true" />
+            </span>
+            <span className="pc-side-label">{'Similar papers'}</span>
+          </button>
         )}
 
         <PaperMenu

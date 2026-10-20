@@ -25,7 +25,7 @@ const DRAG_CLOSE_PX = 96;
 type Phase = 'finding' | 'classifying' | 'ready' | 'error';
 interface Load { for: Paper; attempt: number; phase: Phase; papers: Paper[]; unclassified: number; error?: unknown }
 
-/** The pill's box as a clip of the full-screen layer: what it grows out of and folds back into. */
+/** The rail button's box as a clip of the full-screen layer: what it grows out of and folds back into. */
 function clipFrom(origin: HTMLElement) {
   const box = origin.isConnected ? origin.getBoundingClientRect() : null;
   if (!box || box.width === 0) return 'inset(50% 50% 50% 50% round 3px)';
@@ -34,7 +34,7 @@ function clipFrom(origin: HTMLElement) {
 
 /**
  * The papers Semantic Scholar recommends for `anchor`, as a feed of their own
- * in a full-screen layer over the page. It grows out of the Similar pill and
+ * in a full-screen layer over the page. It grows out of the card's Similar button and
  * folds back into it, so the feed underneath never moves: closing it — the X,
  * Escape, Back, or pulling the header down — leaves the reader on the card
  * they left. Nothing is shown until every paper has been classified
@@ -225,7 +225,7 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
         overlayClassName="similar-scrim"
         showClose={false}
         initialFocus={titleRef}
-        // Back to the pill it grew from, even when the press left no focus
+        // Back to the button it grew from, even when the press left no focus
         // behind to restore (Safari does not focus a clicked button).
         finalFocus={() => (origin.isConnected ? origin : true)}
         aria-label={`Papers similar to ${anchor.title}`}

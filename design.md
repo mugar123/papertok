@@ -122,7 +122,7 @@ components:
     padding: "2px 8px"
   rail-tile:
     rounded: "{rounded.md}"
-    size: "40px"
+    size: "48px"
   menu:
     backgroundColor: "{colors.warm-proof-paper}"
     textColor: "{colors.navy-ink}"
@@ -446,16 +446,18 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   in at the top, clear of the thumb.
 
 ### The Action Rail (signature)
-The card's right-hand column: Like, Save, Connections and More (⋯). Each is an
-icon-only ghost button, a 24px glyph in its own colour (`--rail`) on a 44px tap
-area, with no tile behind it; the active state is the filled glyph. Like and
+The card's right-hand column: Like, Save, Connections, Similar papers and More
+(⋯). Each is an icon-only ghost button, a 28px glyph in its own colour (`--rail`)
+on a 52px tap area, with no tile behind it; the active state is the filled glyph. Like and
 Save pulse when turned on and press in when turned off, and stay still under
 reduced motion. No counts until per-paper totals exist; the names stay in the
 DOM for assistive tech and in a native `title`. Save puts the paper in Read
 later at once, with an "Add to list" toast; a second press takes it out of
 Read later and every list, with Undo. Connections is a toggle: wider than a
 phone it swaps the abstract for the citation map until it is pressed again; on
-a phone it opens the map as a sheet. More opens the paper's options
+a phone it opens the map as a sheet. Similar papers opens a feed of
+recommended papers in a full-screen layer that grows out of the button and
+folds back into it (`Feed/SimilarFeedLayer.tsx`). More opens the paper's options
 (`Feed/PaperMenu.tsx`), a dialog on desktop and a drawer on a phone: the
 actions with a one-line hint each (Mark as read, About this paper, Not
 interested, the BibTeX/RIS exports), then the share destinations. About this

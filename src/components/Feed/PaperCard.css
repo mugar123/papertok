@@ -738,10 +738,6 @@ button.pc-topics-pop-item:focus-visible {
   }
 }
 
-.pc-similar-row {
-  flex-basis: 100%;
-}
-
 /* ── Clickable topics ── */
 .pc-topic-link {
   cursor: pointer;
@@ -1140,8 +1136,8 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .pc-side-icon {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
@@ -1155,11 +1151,12 @@ button.pc-topics-pop-item:focus-visible {
 .pc-side-btn--like { --rail: var(--accent-rose); }
 .pc-side-btn--bookmark { --rail: var(--accent-save); }
 .pc-side-btn--connections { --rail: var(--accent-primary); }
+.pc-side-btn--similar { --rail: var(--accent-violet); }
 .pc-side-btn--more { --rail: var(--text-tertiary); }
 
 .pc-side-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2754,6 +2751,11 @@ button.pc-topics-pop-item:focus-visible {
       padding-top: var(--space-2);
     }
 
+    /* Five 52px buttons at the usual step fill the ~310px card edge to edge. */
+    .pc-side-actions {
+      gap: var(--space-2);
+    }
+
     /* Petri is decoration; on a card this short the state is its words. */
     .pc-abstract-empty .empty-state {
       padding-block: var(--space-2);
@@ -2793,6 +2795,17 @@ button.pc-topics-pop-item:focus-visible {
 
   .pc-side-btn {
     width: 54px;
+  }
+
+  /* Beside a phone's 16px body text the desktop's 28px glyphs read loud. */
+  .pc-side-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .pc-side-icon svg {
+    width: 24px;
+    height: 24px;
   }
 
 
@@ -2845,19 +2858,27 @@ button.pc-topics-pop-item:focus-visible {
     opacity: 1;
   }
 
+  /* On a phone the field's glyph is the card's picture: it fills the lead and
+     runs on behind the title, about nine rem past the lead, no wider than the
+     column, and leans towards the rail until the screen's edge cuts it. The
+     box reaches that edge and clips there itself: overflowing the sheet would
+     leave the sheet (`overflow: hidden`, still scrollable from code) room to
+     slide sideways. The body sits above it (z-index 1), so the type stays on
+     top. */
   .pc-watermark {
     top: var(--space-5);
     left: var(--space-5);
-    right: 72px;
+    right: 0;
     display: grid;
-    place-items: center;
-    height: var(--pc-lead);
+    justify-items: center;
+    overflow: clip;
   }
 
   .pc-watermark svg {
-    width: auto;
-    height: 100%;
+    width: min(calc(100% - 66px), calc(var(--pc-lead) + 9rem));
+    height: auto;
     transform-origin: 50% 50%;
+    translate: 14% 0;
   }
 
   /* The rail sits beside the abstract, not the actions: the two reading
@@ -2915,7 +2936,6 @@ button.pc-topics-pop-item:focus-visible {
   .pc-watermark {
     top: var(--space-4);
     left: var(--space-4);
-    right: 66px;
   }
 }
 
