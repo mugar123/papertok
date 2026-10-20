@@ -159,6 +159,48 @@ test('the working-paper tag stays through a merge while the paper stays unreview
   assert.equal(reviewTagForPaper(merged), null);
 });
 
+test('a journal article joined to its working paper by title alone is not tagged as one', () => {
+  // A journal article and its working paper usually share title and first
+  // author but not a DOI. Synthetic records, shaped as the mappers return them.
+  const title = 'Monetary policy and bank lending in small open economies';
+  const authors = [{ name: 'Ana Economist' }];
+  const openAlex = { title, authors, publicationStatus: 'published' as const, sources: { primary: 'openalex', enrichedBy: [] } };
+  const arxiv = PaperBuilder.create({
+    id: '2601.00001',
+    arxivId: '2601.00001',
+    title,
+    authors,
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  const article = { ...openAlex, id: 'openalex:W100', doi: '10.1000/ijcb.1', publicationType: 'article', peerReviewed: true };
+  const imf = { ...openAlex, id: 'openalex:W200', doi: '10.5089/imf.1', publicationType: 'article', peerReviewed: false, workingPaper: true };
+
+  const rows = PaperBuilder.deduplicate([arxiv, article, imf]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].doi, '10.1000/ijcb.1');
+  assert.equal(reviewTagForPaper(rows[0]), null);
+
+  const nber = { ...openAlex, id: 'openalex:W300', doi: '10.3386/w1', publicationType: 'report', peerReviewed: false, workingPaper: true };
+  for (const primary of ['pubmed', 'crossref']) {
+    const journalArticle = {
+      id: `${primary}:1`,
+      doi: '10.1000/jhe.1',
+      title,
+      authors,
+      journal: 'Journal of Health Economics',
+      publicationType: 'journal-article',
+      publicationStatus: 'published' as const,
+      sources: { primary, enrichedBy: [] },
+    };
+    const joined = PaperBuilder.deduplicate([journalArticle, nber]);
+    assert.equal(joined.length, 1, primary);
+    assert.equal(joined[0].doi, '10.1000/jhe.1');
+    assert.equal(reviewTagForPaper(joined[0]), null, primary);
+  }
+});
+
 test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {
   const unknown = {
     id: 'openalex:W3',
