@@ -95,7 +95,7 @@ with `npm run build:welcome-title`; do not edit `welcomeTitlePaths.ts` by hand.
 Remaining JavaScript has a separate execution or ownership boundary:
 `public/sw-html-warm.js` is copied directly into the service worker;
 `scripts/backfill-user-profiles.js` is an optional admin utility requiring
-`firebase-admin`; `scripts/diagnostics/` contains historical manual probes;
+`firebase-admin`; `scripts/diagnostics/` contains manual probes;
 and `.agents/skills/impeccable/scripts/` is vendored code. These files are outside
 the application TypeScript configs. Existing JavaScript lint coverage remains.
 
