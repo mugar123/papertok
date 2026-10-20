@@ -373,27 +373,60 @@
   object-fit: contain;
 }
 
+/* The verification page is the app's status screen (EmptyState) on its own
+   route. Petri arrives as she does everywhere; the one moment of its own is
+   the confirmation: she changes into her university look, settles with a
+   small hop, and the university pill from Settings is pinned under her. */
 .institution-verification {
-  max-width: 38rem;
-  margin: var(--space-8) auto;
-  padding: var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
   color: var(--text-primary);
+}
+
+.institution-verification-state {
+  width: min(520px, 100%);
   overflow-wrap: anywhere;
 }
 
-.institution-verification h1 {
-  font-family: var(--font-serif);
-  font-size: var(--fs-2xl);
-  line-height: var(--lh-tight);
+.institution-verification-state .empty-state-art { gap: var(--space-2); }
+.institution-verification-state .empty-state-body { max-width: 42ch; }
+.institution-verification-state strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.institution-verification-state .institution-link-feedback {
+  flex-basis: 100%;
+  font-size: var(--fs-sm);
 }
 
-.institution-verification p {
-  line-height: var(--lh-normal);
+.is-connected .petri {
+  transform-origin: 50% 100%;
+  animation: institution-petri-settle 520ms 200ms var(--ease-out);
 }
 
-.institution-verification-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-6);
+.is-connected .institution-pill { animation: institution-pill-pin 420ms 480ms var(--ease-out) backwards; }
+
+/* A link that cannot be used arrives quietly: no overshoot, no shake. */
+.is-stopped .institution-verification-state { animation: institution-settle 320ms var(--ease-out) backwards; }
+.is-stopped .petri .onboarding-petri-body { animation: institution-fade 320ms ease-out backwards; }
+
+@keyframes institution-petri-settle {
+  35% { translate: 0 -7px; scale: 0.97 1.04; }
+  70% { translate: 0 0; scale: 1.03 0.97; }
+}
+
+@keyframes institution-pill-pin {
+  from { opacity: 0; translate: 0 -8px; scale: 1.12; }
+  65% { opacity: 1; translate: 0 1px; scale: 0.97; }
+}
+
+@keyframes institution-settle { from { opacity: 0; translate: 0 6px; } }
+@keyframes institution-fade { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .is-connected .petri,
+  .is-connected .institution-pill,
+  .is-stopped .institution-verification-state,
+  .is-stopped .petri .onboarding-petri-body { animation: none; }
 }
