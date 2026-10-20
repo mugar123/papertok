@@ -129,3 +129,61 @@ test('SOURCE: a failed chunk load reloads the tab once a minute at most', async 
   const reloadCalls = body.match(/window\.location\.reload\(\)/g) ?? [];
   assert.equal(reloadCalls.length, 1, 'the tab must be reloaded from exactly one place in this handler');
 });
+
+// Vercel applies every header rule whose source matches the requested path.
+// This models the two source forms vercel.json uses for site-wide rules: a
+// literal path, and `/:path(<pattern>)`, whose pattern is a plain regex over
+// the path without its leading slash. The second is taken not to match `/`:
+// measured on 2026-09-01, Vercel's router did not match `/:path*` against the
+// root, so the root needs a literal rule of its own.
+type HeaderRule = { source: string; headers: { key: string; value: string }[] };
+
+function headersFor(config: { headers: HeaderRule[] }, path: string) {
+  const applied: Record<string, string> = {};
+  for (const rule of config.headers) {
+    const pattern = rule.source.match(/^\/:path\((.+)\)$/)?.[1];
+    const matches = pattern
+      ? path !== '/' && new RegExp(`^${pattern}$`).test(path.slice(1))
+      : rule.source === path;
+    if (!matches) continue;
+    for (const { key, value } of rule.headers) applied[key.toLowerCase()] = value;
+  }
+  return applied;
+}
+
+test('every page refuses framing by other sites, MIME sniffing and referrers that reveal a path', async () => {
+  const config = JSON.parse(await readFile(VERCEL, 'utf8'));
+  const paths = ['/', '/feed', '/privacy.html', '/assets/pdf.worker.min-Bx1c2d3e.mjs', '/no-such-page'];
+  for (const path of paths) {
+    const headers = headersFor(config, path);
+    const frameAncestors = (headers['content-security-policy'] ?? '')
+      .split(';')
+      .map(directive => directive.trim())
+      .find(directive => directive.startsWith('frame-ancestors '));
+    assert.equal(frameAncestors, "frame-ancestors 'self'", `${path} can be framed by another site`);
+    // For browsers that predate frame-ancestors.
+    assert.equal(headers['x-frame-options'], 'SAMEORIGIN', path);
+    assert.equal(headers['x-content-type-options'], 'nosniff', path);
+    // The same rule as the referrer meta in index.html (see
+    // analyticsPageviews.test.ts): `strict-origin-when-cross-origin` sends the
+    // full URL to our own origin, which put /public/paper/<key> in a header.
+    assert.ok(
+      ['strict-origin', 'origin', 'no-referrer'].includes(headers['referrer-policy']),
+      `${path} gets referrer policy ${JSON.stringify(headers['referrer-policy'])}, which can send its path`,
+    );
+  }
+});
+
+test('Firebase\'s sign-in handler keeps its own headers', async () => {
+  const config = JSON.parse(await readFile(VERCEL, 'utf8'));
+  // The popup, the redirect and the iframe the SDK opens on our pages are all
+  // served by Firebase through the /__/auth/ proxy, so vercel.json leaves
+  // their framing and referrer rules to Firebase.
+  const keys = ['content-security-policy', 'x-frame-options', 'x-content-type-options', 'referrer-policy'];
+  for (const path of ['/__/auth/handler', '/__/auth/iframe', '/__/auth/handler.js']) {
+    const headers = headersFor(config, path);
+    for (const key of keys) {
+      assert.equal(headers[key], undefined, `${path} gets ${key} from vercel.json`);
+    }
+  }
+});
