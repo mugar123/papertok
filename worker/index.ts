@@ -8,6 +8,7 @@ import { handleRequest, routeForLog } from './router.ts';
 export { KimiBudgetLedger } from './kimi-budget-ledger.ts';
 export { EmailDeliveryLedger } from './email-delivery-ledger.ts';
 export { RequestQuotaLedger } from './request-quota-ledger.ts';
+export { PaperRewriteSession } from './ai-rewrite-session.ts';
 
 export default {
   // Workers Logs keeps console lines only (wrangler.toml turns invocation logs

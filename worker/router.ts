@@ -10,7 +10,6 @@ import {
   peekAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
-import { handlePaperRewrite } from './ai-rewrite.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
 import { isNanConfigured } from './nan-client.ts';
 import {
@@ -336,13 +335,11 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      // The handler answers with the response itself rather than a payload to
-      // wrap: a rewrite is streamed as NDJSON and its first line has to leave
-      // before the last one exists, so there is nothing here to serialize. That
-      // is also why CORS goes in as `extraHeaders` — those headers have to be
-      // on the streaming response when it is created, not added to a body this
-      // function never sees.
-      return await handlePaperRewrite(request, env, corsHeaders(origin, env));
+      const sessions = env.PAPER_REWRITE_SESSION;
+      if (!sessions) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+      // One object per request isolates generation CPU. Forward the body
+      // directly so the Free Worker does not execute per model fragment.
+      return await sessions.get(sessions.newUniqueId()).fetch(request);
     } catch (error) {
       const knownError = error instanceof AIExplanationError;
       return json(

@@ -23,8 +23,7 @@ import {
   canonicalPdfUrl,
   createSectionAssembler,
   createSseLineSplitter,
-  extractSseFinishReason,
-  extractSseTextDelta,
+  parseSseEvent,
   handlePaperRewrite,
   isRewriteLevel,
   parseRewriteSectionLine,
@@ -33,6 +32,32 @@ import {
   REWRITE_LEVEL_IDS,
   rewriteCacheKey,
 } from './ai-rewrite.ts';
+
+const extractSseTextDelta = (line: string) => parseSseEvent(line)?.text || '';
+const extractSseFinishReason = (line: string) => parseSseEvent(line)?.finishReason || '';
+
+test('one provider event carries both its text and finish reason', () => {
+  assert.deepEqual(parseSseEvent(`data: ${JSON.stringify({
+    choices: [{ delta: { content: 'Final text' }, finish_reason: 'stop' }],
+  })}`), { text: 'Final text', finishReason: 'STOP' });
+});
+
+test('SSE lines survive byte-sized fragments and split CRLF endings', () => {
+  const split = createSseLineSplitter();
+  const source = 'data: {"text":"one"}\r\ndata: {"text":"two"}\r\n';
+  const lines = [...source].flatMap(character => split(character)).filter(Boolean);
+  assert.deepEqual(lines, ['data: {"text":"one"}', 'data: {"text":"two"}']);
+});
+
+test('long sections survive token-sized deltas without losing their boundaries', () => {
+  const paragraphs = ['A long section. '.repeat(100).trim(), 'The final section.'];
+  const text = paragraphs.map(paragraph => JSON.stringify({ paragraphs: [paragraph] })).join('\n');
+  const assembler = createSectionAssembler();
+  const sections = [];
+  for (let offset = 0; offset < text.length; offset += 3) sections.push(...assembler.push(text.slice(offset, offset + 3)));
+  sections.push(...assembler.flush());
+  assert.deepEqual(sections.map(section => section.paragraphs[0]), paragraphs);
+});
 
 const paper = {
   title: 'A study of things',
