@@ -178,10 +178,10 @@ function ScriptTitle({ still }: { still: boolean }) {
 
 
 export default function OnboardingFlow() {
-  // What this visitor answered before they had an account (GuestWelcome, or
-  // the header chip's GuestInterestsPrompt). Read once: the answer is the
-  // starting point, not a live source. With areas in it, those areas and
-  // topics are the preferences and the pickers are not shown at all.
+  // What this visitor answered before they had an account (GuestWelcome).
+  // Read once: the answer is the starting point, not a live source. With
+  // areas in it, those areas and topics are the preferences and the pickers
+  // are not shown at all.
   // AuthContext clears the answer once completeOnboarding has written them.
   const [guestAnswer] = useState(() => readGuestInterests());
   const guestSeed = guestAnswer?.areas.length ? guestAnswer.areas : null;
@@ -229,13 +229,19 @@ export default function OnboardingFlow() {
   // answer never reaches the pickers, and its seed is cut at the rules' cap.
   const overCap = asksTopics && preferenceCount > USER_PREFERENCES_MAX;
 
+  // An onboarded account reaches this route by signing in from the welcome.
+  // It goes straight on, without drawing a greeting or counting a tutorial it
+  // never began. Read at mount, so an account finishing here keeps its page
+  // while it leaves.
+  const [arrivedOnboarded] = useState(onboardingComplete);
+
   useEffect(() => {
     if (onboardingComplete) navigate(returnTo, { replace: true });
   }, [onboardingComplete, navigate, returnTo]);
 
   useEffect(() => {
-    trackEvent('tutorial_begin', { language });
-  }, [language, trackEvent]);
+    if (!arrivedOnboarded) trackEvent('tutorial_begin', { language });
+  }, [arrivedOnboarded, language, trackEvent]);
 
   const goTo = (nextIndex: number) => {
     if (saving || nextIndex === stepIndex || nextIndex < 0 || nextIndex >= steps.length) return;
@@ -316,6 +322,7 @@ export default function OnboardingFlow() {
   // that would open it (InstitutionLink) and the primary says why.
   const linkPreparing = !usePopupReady(linksOnPress ? institutionLinkReadiness() : null)
     && needsUniversityProof(institutionEmail);
+  if (arrivedOnboarded) return null;
   return (
     <WelcomeShell
       // The way out of an account opened by mistake, beside the theme switch:
@@ -326,7 +333,7 @@ export default function OnboardingFlow() {
           size="icon"
           aria-label="Log out"
           title="Log out"
-          onClick={async () => { await signOut(); navigate('/feed'); }}
+          onClick={() => { void signOut(); }}
         >
           <SignOut size={18} aria-hidden="true" />
         </Button>

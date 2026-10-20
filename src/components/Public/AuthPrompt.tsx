@@ -11,8 +11,9 @@ import './AuthPrompt.css';
 // The one door. It signs the guest in on the spot, which is the whole point —
 // someone who tapped "save" on a paper should still be looking at that paper
 // afterwards. There is no sign-in page any more: a guest bounced off a
-// protected route lands on the feed with this open (App.jsx), and the route
-// they asked for waits there until the session exists.
+// protected route lands on the onboarding with this open (App.jsx), and the
+// route they asked for waits there until the session exists. The welcome's
+// last step opens it too: there is no feed without an account.
 //
 // App.jsx mounts this only while it is wanted (`{authPromptOpen && <AuthPrompt/>}`),
 // so the dialog opens on mount and owns its own `open` flag: closing — the X,

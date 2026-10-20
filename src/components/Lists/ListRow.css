@@ -1,0 +1,148 @@
+/* ─── A ruled row: the papers in a list, the results of a search ─── */
+
+.list-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline: calc(var(--space-2) * -1);
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list-row:hover {
+    background: var(--bg-sunken);
+  }
+}
+
+.list-row + .list-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-2);
+  right: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.list-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 6px;
+  font: var(--fw-medium) var(--fs-xs)/1.4 var(--font-body);
+}
+
+.list-row-lead {
+  min-width: 0;
+  color: var(--area-accent, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-meta {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.list-row-title {
+  max-width: 776px;
+  margin: 0 0 6px;
+  font-family: var(--font-serif);
+  font-size: 1.125rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.list-row-title-btn {
+  display: -webkit-box;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.list-row-byline {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row-authors {
+  width: fit-content;
+  margin: 0;
+}
+
+.pc-authors-list.list-row-authors-list {
+  display: grid;
+  margin-top: 0;
+}
+
+.pc-authors-list.list-row-authors-list[data-open] {
+  margin-top: var(--space-2);
+}
+
+.list-row-authors-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.list-row-authors-sheet {
+  max-height: 60dvh;
+  overflow-y: auto;
+}
+
+.list-row-authors-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  color: var(--text-primary);
+  font: 500 1rem/1.3 var(--font-body);
+}
+
+.list-row-authors-sheet-row .pc-author-avatar {
+  margin: 0;
+}
+
+.list-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+@media (max-width: 768px) {
+  .list-row-title {
+    font-size: 1.0625rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .list-row {
+    padding-right: var(--space-3);
+  }
+}

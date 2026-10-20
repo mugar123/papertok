@@ -126,7 +126,7 @@ const CARD_AT = 0.9;
 const CARD_SETTLE = 0.85;
 
 // A paywalled paper opening through the library: the paper lands wearing its
-// Subscription chip, a library card slides in over its corner, and the chip
+// Closed access chip, a library card slides in over its corner, and the chip
 // turns into "Via your library". Plays once and is still by two seconds
 // (WCAG 2.2.2); with motion refused it is drawn opened, the card in place.
 // Only the account onboarding's university screen (OnboardingFlow) draws it.
@@ -148,7 +148,7 @@ export function LibraryPreview({ still, stamp }: { still: boolean; stamp?: React
         {/* The two readings share a cell and cross-fade, like the envelope's
             label: the locked chip gives way to the one the library grants. */}
         <span className="gw-library-chip" data-opened={opened ? '' : undefined}>
-          <span><LockSimple size={11} weight="bold" />Subscription</span>
+          <span><LockSimple size={11} weight="bold" />Closed access</span>
           <span><LockSimpleOpen size={11} weight="bold" />Via your library</span>
         </span>
         <span className="gw-demo-title" />

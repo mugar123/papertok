@@ -4,6 +4,7 @@ export const EASE_OUT = Object.freeze([0.23, 1, 0.32, 1] as const); // --ease-ou
 export const EASE_OUT_EXPO = Object.freeze([0.16, 1, 0.3, 1] as const); // --ease-out-expo
 export const EASE_IN_OUT = Object.freeze([0.77, 0, 0.175, 1] as const); // --ease-in-out
 export const EASE_DRAWER = Object.freeze([0.32, 0.72, 0, 1] as const); // --ease-drawer
+export const EASE_OUT_QUAD = Object.freeze([0.25, 0.46, 0.45, 0.94] as const); // --ease-out-quad
 
 // A box whose size `auto` cannot interpolate: it travels from the size it had
 // (`from`, measured before the change) to the one it lands on, unless the two

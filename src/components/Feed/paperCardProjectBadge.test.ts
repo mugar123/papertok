@@ -42,7 +42,7 @@ test('the public project path carries the name, so a logged-out reader gets the 
  * Two search surfaces interpolate that field straight into a URL path
  * without encoding it, which would ship an unencoded "::" path segment:
  * the command palette (SearchCommand.tsx) and the search results list
- * (SearchPage.tsx, both the row click and its title button share the string).
+ * (SearchPage.tsx, where the row and its title button share one `onOpen`).
  */
 test('search results wrap the OpenAIRE project id in encodeURIComponent before it lands in a URL path', async () => {
   const command = strip(await read('../Search/SearchCommand.tsx'));
@@ -56,7 +56,7 @@ test('search results wrap the OpenAIRE project id in encodeURIComponent before i
   );
   assert.equal(
     (searchPage.match(encodedProjectPath) || []).length,
-    2,
-    'SearchPage: the row click and the title button both build the same route',
+    1,
+    'SearchPage: the project row',
   );
 });

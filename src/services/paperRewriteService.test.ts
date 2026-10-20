@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
 import {
   canRewritePaper,
   createNdjsonParser,
@@ -10,6 +13,94 @@ import {
   toRewriteError,
 } from './paperRewriteService.ts';
 import { WorkerApiAuthError } from './workerApiClient.ts';
+
+// Supply Vite's build value and the authenticated transport while exercising
+// the real client's parsing, completion checks and cache.
+const clientSource = stripTypeScriptTypes(readFileSync(new URL('./paperRewriteService.ts', import.meta.url), 'utf8'))
+  .replace(/^import .*;\n/gm, '')
+  .replace(/\bexport /g, '')
+  .replaceAll('import.meta.env.VITE_PAPER_API_BASE_URL', "'https://api.papertok.app'");
+function streamingClient(events: object[], breakConnection = false) {
+  let requests = 0;
+  const bodies: Record<string, unknown>[] = [];
+  const transport = async (_path: string, options: RequestInit) => {
+    requests++;
+    bodies.push(JSON.parse(String(options.body)));
+    let index = 0;
+    return new Response(new ReadableStream({
+      pull(controller) {
+        if (index < events.length) controller.enqueue(new TextEncoder().encode(`${JSON.stringify(events[index++])}\n`));
+        else if (breakConnection) controller.error(new TypeError('Connection lost'));
+        else controller.close();
+      },
+    }));
+  };
+  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl',
+    `${clientSource}; return { rewritePaper, getCachedRewrite };`)(transport, isAIReadablePdfUrl) as {
+      rewritePaper: typeof rewritePaper;
+      getCachedRewrite: typeof import('./paperRewriteService.ts').getCachedRewrite;
+    };
+  return { ...client, requests: () => requests, bodies };
+}
+const sectionEvent = { type: 'section', id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['First section.'], highlights: [] };
+const streamPaper = { id: 'stream-test', openAccessPdfUrl: 'https://arxiv.org/pdf/2610.23260' };
+
+test('Try again tells the server to replace a truncated cached rewrite', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1, truncated: true }]);
+  await client.rewritePaper(streamPaper);
+  await client.rewritePaper(streamPaper, 'university', { force: true });
+  assert.notEqual(client.bodies[0].retryIncomplete, true);
+  assert.equal(client.bodies[1].retryIncomplete, true);
+});
+
+test('EOF after sections without done keeps a visibly incomplete result out of the cache', async () => {
+  const client = streamingClient([sectionEvent]);
+  const result = await client.rewritePaper(streamPaper);
+  assert.equal(result.incomplete, true);
+  assert.deepEqual(result.sections[0].paragraphs, ['First section.']);
+  assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
+  await client.rewritePaper(streamPaper);
+  assert.equal(client.requests(), 2);
+});
+
+test('only a matching, non-truncated done event makes a rewrite cacheable', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }]);
+  assert.equal((await client.rewritePaper(streamPaper)).incomplete, false);
+  assert.ok(client.getCachedRewrite(streamPaper, 'university'));
+  await client.rewritePaper(streamPaper);
+  assert.equal(client.requests(), 1);
+});
+
+for (const done of [
+  { type: 'done', sectionCount: 1, truncated: true },
+  { type: 'done', sectionCount: 2 },
+  { type: 'done' },
+]) {
+  test(`an incomplete terminal event is not cached: ${JSON.stringify(done)}`, async () => {
+    const client = streamingClient([sectionEvent, done]);
+    assert.equal((await client.rewritePaper(streamPaper)).incomplete, true);
+    assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
+  });
+}
+
+test('a broken connection preserves received sections as incomplete', async () => {
+  const client = streamingClient([sectionEvent], true);
+  const result = await client.rewritePaper(streamPaper);
+  assert.equal(result.incomplete, true);
+  assert.equal(result.sections.length, 1);
+  assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
+});
+
+test('a stream error cannot be overwritten by a subsequent done event', async () => {
+  const client = streamingClient([sectionEvent, { type: 'error', code: 'AI_TIMEOUT' }, { type: 'done', sectionCount: 1 }]);
+  assert.equal((await client.rewritePaper(streamPaper)).incomplete, true);
+  assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
+});
+
+test('EOF before any section remains an error', async () => {
+  const client = streamingClient([{ type: 'meta', level: 'university', language: 'en' }]);
+  await assert.rejects(client.rewritePaper(streamPaper), { code: 'AI_INVALID_RESPONSE' });
+});
 
 test('assembles events only once their line closes', () => {
   const parser = createNdjsonParser<Record<string, unknown>>();

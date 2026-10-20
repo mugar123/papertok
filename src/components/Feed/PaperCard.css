@@ -842,6 +842,20 @@ button.pc-topics-pop-item:focus-visible {
   color: var(--text-tertiary);
 }
 
+.pc-topics-sheet .pc-topics-pop-list {
+  overflow-y: auto;
+}
+
+.pc-topics-sheet .pc-topics-pop-item {
+  min-height: 52px;
+  padding-inline: var(--space-2);
+  font-size: 1rem;
+}
+
+.pc-topics-sheet .pc-topics-pop-item:active {
+  background: var(--bg-sunken);
+}
+
 
 
 @media (hover: hover) and (pointer: fine) {
@@ -3365,7 +3379,7 @@ button.pc-topics-pop-item:focus-visible {
   min-width: 0;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--text-secondary);
   text-decoration: none;

@@ -84,8 +84,8 @@ export function describeSearchOutage({
 
 /**
  * Whether the outage is still true for the view being looked at. Switching to
- * the Papers pill during an OpenAlex outage must keep the notice — it is
- * exactly the pill it describes.
+ * the Papers scope during an OpenAlex outage must keep the notice — it is
+ * exactly the scope it describes.
  */
 export function outageAffectsFilter(outage: ReturnType<typeof describeSearchOutage>, filter: string) {
   if (!outage) return false;

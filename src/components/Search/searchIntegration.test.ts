@@ -133,11 +133,10 @@ function reducedMotionBlocks(css: string) {
   return blocks;
 }
 
-// The palette's entrances hold their first frame through the animation's fill,
-// never a static opacity (paletteMotion.test.ts pins that and their reduced
-// motion), so only the page is expected to have any here. A static one added to
-// the palette later is still checked.
-for (const [stylesheet, hidesStatically] of [['./SearchPage.css', true], ['./SearchCommand.css', false]] as const) {
+// Neither stylesheet hides content behind an entrance today (the page has no
+// entrance animations; the palette's hold their first frame through the fill,
+// pinned by paletteMotion.test.ts). One added later is still checked.
+for (const [stylesheet, hidesStatically] of [['./SearchPage.css', false], ['./SearchCommand.css', false]] as const) {
   test(`${stylesheet.replace('./', '')} keeps its content visible without motion`, async () => {
     const css = withoutComments(await readFile(new URL(stylesheet, import.meta.url), 'utf8'));
 

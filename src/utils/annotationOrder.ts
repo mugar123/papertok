@@ -79,16 +79,7 @@ export function filterAnnotations<T extends { kind?: string }>(annotations: read
   return annotations.slice();
 }
 
-/**
- * What the rail's header says. A bare highlight is not a note, so it is counted
- * separately: "4 marcas · 2 notas" is honest where "6 notas" is not.
- */
-export function countAnnotations(annotations: Array<{ note?: string }> = []) {
-  let notes = 0;
-  let marks = 0;
-  for (const item of annotations) {
-    if (item?.note) notes += 1;
-    else marks += 1;
-  }
-  return { notes, marks, total: notes + marks };
+export function countAnnotations(annotations: ReadonlyArray<{ kind?: string }> = []) {
+  const ai = filterAnnotations(annotations, 'ai').length;
+  return { all: annotations.length, mine: annotations.length - ai, ai };
 }

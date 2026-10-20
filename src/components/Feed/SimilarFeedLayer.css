@@ -154,6 +154,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid var(--tint-violet-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-violet-bg);
   font: var(--mono-label);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;

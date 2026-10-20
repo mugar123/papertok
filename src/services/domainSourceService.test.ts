@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUEST_CATEGORIES } from '../utils/guestFeedPlan.ts';
 import {
-  DOMAIN_SOURCE_PATHS,
-  PROTECTED_SOURCE_PATHS,
   getDomainSourcePlan,
   getEligibleDomainSources,
   reportDomainSourceFailures,
@@ -202,23 +199,6 @@ test('maps INSPIRE papers as a keyless high-energy physics fallback', () => {
   assert.equal(paper!.citationCountKnown, true);
   assert.equal(paper!.publicationStatus, 'published');
   assert.match(paper!.inspireUrl!, /inspirehep\.net\/literature\/12345/);
-});
-
-function eligiblePaths(plan: { biology: string[]; engineering: string[]; physics: string[]; inspirePhysics: string[]; scopus: string[]; biorxivCategory: string; osti: string[]; nasa: string[]; openReview: string[]; huggingFace: string[]; }, options: { hasSession?: boolean|undefined; scopusEnabled?: boolean|undefined; }|undefined) {
-  return Object.entries(getEligibleDomainSources(plan, options))
-    .filter(([, isEligible]) => isEligible)
-    .map(([source]) => DOMAIN_SOURCE_PATHS[source as keyof typeof DOMAIN_SOURCE_PATHS]);
-}
-
-// The guest feed used to spend every load asking `/sources/physics` for papers:
-// the route needs an ID token, the client threw before reaching the network, and
-// the `allSettled` made it look like a source with nothing to say.
-test('a guest plan requests nothing that needs a session', () => {
-  const plan = getDomainSourcePlan(GUEST_CATEGORIES);
-  const paths = eligiblePaths(plan, { hasSession: false, scopusEnabled: true });
-
-  assert.deepEqual(paths.filter(path => PROTECTED_SOURCE_PATHS.has(path)), []);
-  assert.ok(paths.length > 0, 'a guest still has public sources to read');
 });
 
 test('the same categories reach the protected sources once there is a session', () => {

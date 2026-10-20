@@ -39,6 +39,7 @@ export interface ResolverCitation {
  * a free proxy to the resolvers.
  */
 
+import { XMLValidator } from 'fast-xml-parser';
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { cacheResponse } from './provider-runtime.ts';
@@ -53,8 +54,10 @@ const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
 const RESOLVER_CITATION = 'article';
 // How the resolver's answer is read, in the cache keys of both routes that
 // read one: until 2026-10-19 a service Alma had filtered out for the date
-// still counted as access, and answers read that way must not be served on.
-export const RESOLVER_READING = 'filtered-services';
+// still counted as access, and then a single-service answer cut off before
+// its services read as a refusal; answers read either way must not be
+// served on.
+export const RESOLVER_READING = 'well-formed-answers';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -90,6 +93,9 @@ const MAX_ISSNS = 2;
 const GETFTR_API = 'https://entitlements.prod.getft.io';
 const DOI_PATTERN = /^10\.\d{4,9}\/.+/;
 const ROR_ID_PATTERN = /^https:\/\/ror\.org\/0[a-z0-9]{6}\d{2}$/;
+// SAML entity IDs include URN assigned names (USC) and HTTP URIs (Manitoba).
+// These are opaque identifiers, never URLs to fetch or reading links.
+const ENTITY_URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,30}[a-z0-9]:(?!\/)(?:[a-z0-9._~!$&'()*+,;=:@/-]|%[0-9a-f]{2})+$/i;
 const ISSN_PATTERN = /^\d{4}-\d{3}[\dX]$/;
 
 export class InstitutionAccessError extends Error {
@@ -112,6 +118,17 @@ function httpsUrl(value: string | null | undefined) {
   }
 }
 
+function isEntityId(value: string) {
+  if (ENTITY_URN_PATTERN.test(value)) return true;
+  if (!/^https?:\/\//i.test(value) || /\s/.test(value)) return false;
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /** The normalized query, or a 400 naming the first malformed parameter. */
 export function readAccessQuery(searchParams: URLSearchParams) {
   const doi = (searchParams.get('doi') || '').trim().toLowerCase();
@@ -125,7 +142,7 @@ export function readInstitutionQuery(searchParams: URLSearchParams) {
   if (!domain) throw new InstitutionAccessError('INVALID_DOMAIN', 400);
   const entityId = (searchParams.get('entityId') || '').trim();
   const rorId = (searchParams.get('rorId') || '').trim().toLowerCase();
-  if ((entityId && (entityId.length > 300 || !httpsUrl(entityId)))
+  if ((entityId && (entityId.length > 300 || !isEntityId(entityId)))
     || (rorId && !ROR_ID_PATTERN.test(rorId))) {
     throw new InstitutionAccessError('INVALID_INSTITUTION_ID', 400);
   }
@@ -158,8 +175,8 @@ function xmlKey(xml: string, id: string) {
 }
 
 /**
- * The resolver's `svc_dat=CTO` answer. Null when it carries no
- * `full_text_indicator`, which is not an answer about the journal at all.
+ * The resolver's `svc_dat=CTO` answer. Null when it carries no context
+ * object, which is not an answer about the journal at all.
  *
  * Alma lists every full-text service it knows and marks the ones it ruled
  * out for this request (`Filtered`, with a `Filter reason`), link included.
@@ -174,9 +191,18 @@ function xmlKey(xml: string, id: string) {
  * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
-  const indicator = xmlKey(String(xml), 'full_text_indicator');
-  if (indicator !== 'true' && indicator !== 'false') return null;
-  const matched = xmlKey(String(xml), 'rft.mms_id') !== null;
+  const text = String(xml);
+  // An answer cut off by the resolver or the network parses as far as it
+  // goes: a single-service answer cut before its services would read as a
+  // refusal. Only a complete document is read, and only one with a context
+  // object is an answer about the journal at all. A library set to send
+  // readers straight to one service answers with `available_services` =
+  // single_service and no indicator (Harvard, Helsinki, Amsterdam,
+  // 2026-10-19); its services still carry Alma's filter marks, so what is
+  // left unfiltered is the answer.
+  if (XMLValidator.validate(text) !== true || !/<context_object>/.test(text)) return null;
+  const indicator = xmlKey(text, 'full_text_indicator');
+  const matched = xmlKey(text, 'rft.mms_id') !== null;
   const services = [];
   let restricted = false;
   for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
@@ -192,7 +218,8 @@ export function parseResolverAnswer(xml: unknown) {
       url: resolution ? httpsUrl(unescapeXml(resolution[1].trim())) : null,
     });
   }
-  return { fullText: indicator === 'true', matched, services, restricted };
+  const fullText = indicator === 'true' || indicator === 'false' ? indicator === 'true' : services.length > 0;
+  return { fullText, matched, services, restricted };
 }
 
 /** The most DOIs one GetFTR request may carry (Entitlement API v2.7). */

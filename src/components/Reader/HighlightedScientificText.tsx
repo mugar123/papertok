@@ -1,9 +1,11 @@
 import type { HTMLAttributes, PropsWithChildren } from 'react';
 import type { HighlightInput, HighlightRange, HighlightMath } from '../../utils/textHighlights.ts';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { getKatex, loadKatex } from '../../utils/katexLoader.ts';
 import { displayProse, katexSource } from '../../utils/latex.ts';
 import { buildHighlightPlan } from '../../utils/textHighlights.ts';
+import NotePin from './NotePin.tsx';
+import type { NotePinData } from './NotePin.tsx';
 import {
   hiddenWidth,
   inlineMathNeedsScroll,
@@ -150,9 +152,11 @@ function MathRun({ Tag, display, html, ...rest }: HTMLAttributes<HTMLElement> & 
  * way a selection that touches a formula can be anchored at all (the rendered
  * maths shares no characters with the `$...$` it came from).
  */
-export default function HighlightedScientificText({ children, highlights = [] }: PropsWithChildren<{ highlights?: HighlightInput[] }>) {
+export default function HighlightedScientificText({ children, highlights = [], pins }: PropsWithChildren<{ highlights?: HighlightInput[]; pins?: ReadonlyMap<string, NotePinData> }>) {
   const text = Array.isArray(children) ? children.join('') : children;
   const plan = buildHighlightPlan(text, highlights);
+  const lastRunOf = new Map<string, number>();
+  plan.forEach((item, index) => { if (item.kind && item.id) lastRunOf.set(item.id, index); });
   const hasMath = plan.some(item => item.type === 'math');
   const [, rerender] = useReducer(count => count + 1, 0);
 
@@ -191,6 +195,8 @@ export default function HighlightedScientificText({ children, highlights = [] }:
           (item as Partial<HighlightMath>).under?.includes('ai') && (item as Partial<HighlightRange>).source !== 'ai' ? 'rd-mark--over-ai' : '',
         ].filter(Boolean).join(' ');
 
+        const pin = item.kind && item.id && lastRunOf.get(item.id) === index ? pins?.get(item.id) : undefined;
+
         if (item.type === 'math') {
           // A formula inside a highlight is wrapped whole. `<mark>` only paints
           // a background and inherits colour, so KaTeX's markup is untouched by
@@ -217,34 +223,40 @@ export default function HighlightedScientificText({ children, highlights = [] }:
           // Marked maths carries the same id as any other run of its
           // highlight: a tap on the formula is a tap on the highlight.
           const mathId = item.kind ? item.id || undefined : undefined;
-          return html === null
-            ? <Tag key={`math-raw-${index}`} {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass}>{item.raw}</Tag>
-            : (
-              <MathRun
-                key={`math-${index}`}
-                Tag={Tag}
-                display={Boolean(item.display)}
-                html={html}
-                {...bounds}
-                {...marks}
-                data-math=""
-                data-highlight-id={mathId}
-                className={markClass}
-              />
-            );
+          return (
+            <Fragment key={`math-${index}`}>
+              {html === null
+                ? <Tag {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass}>{item.raw}</Tag>
+                : (
+                  <MathRun
+                    Tag={Tag}
+                    display={Boolean(item.display)}
+                    html={html}
+                    {...bounds}
+                    {...marks}
+                    data-math=""
+                    data-highlight-id={mathId}
+                    className={markClass}
+                  />
+                )}
+              {pin && <NotePin {...pin} />}
+            </Fragment>
+          );
         }
 
         if (item.type === 'mark') {
           return (
-            <mark
-              key={`mark-${index}`}
-              {...bounds}
-              {...marks}
-              className={markClassFor(item.kind)}
-              data-highlight-id={item.id || undefined}
-            >
-              {displayProse(item.value)}
-            </mark>
+            <Fragment key={`mark-${index}`}>
+              <mark
+                {...bounds}
+                {...marks}
+                className={markClassFor(item.kind)}
+                data-highlight-id={item.id || undefined}
+              >
+                {displayProse(item.value)}
+              </mark>
+              {pin && <NotePin {...pin} />}
+            </Fragment>
           );
         }
 
