@@ -779,17 +779,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * asked, so only the two feeds call it, with the reader's own interests:
  * exploration and topic pages would fetch the same series again.
  *
- * The cards come from the OpenAlex mapper, which marks a report or a listed
- * series as a working paper, not peer reviewed, so the card shows the Working
- * paper tag. The landing page is the DOI (262 of 262 probed works), and a
- * missing abstract stays missing.
+ * The cards come from the OpenAlex mapper and are filed under econ.GN. The
+ * mapper marks a report or a listed series as a working paper, not peer
+ * reviewed, so the card shows the Working paper tag. The landing page is the
+ * DOI (262 of 262 probed works), and a missing abstract stays missing.
  * A failure rejects, so each feed counts a source that did not answer and
  * fills the page from the others.
  */
 export async function fetchWorkingPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
-  const economics = [...new Set(categories)]
-    .filter(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''));
-  if (economics.length === 0) return [];
+  if (!categories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''))) return [];
   // A UTC date, so every reader on one day sends the same filter and shares
   // the Worker's cache entry for each page.
   const since = new Date(Date.now() - WORKING_PAPER_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -813,9 +811,14 @@ export async function fetchWorkingPapers(categories: readonly string[], page = 1
       retries: 0,
     });
     const adapter = new OpenAlexAdapter();
+    // The request is the same whichever category asked, so the reader's
+    // categories say nothing about a paper's field. Matching their labels
+    // against the text is no better here: "public finances" in an abstract on
+    // immigration would make it Statistical Finance. What the record supports
+    // is that the series publish economics, so every card is General Economics.
     return assignRequestedCategories(
       data.results.map(work => adapter.mapToStandard(work)).filter(Boolean) as Paper[],
-      economics,
+      ['econ.GN'],
     );
   } catch (error) {
     console.warn('Working-paper series unavailable', error);

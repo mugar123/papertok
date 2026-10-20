@@ -370,7 +370,7 @@ const seriesWork = (id: string, doi: string, type: string, source: { id: string;
 const FRBSF = { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' };
 const CESIFO = { id: 'S7407053623', display_name: 'CESifo' };
 
-test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed cards', async () => {
+test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed General Economics cards', async () => {
   const realFetch = openAlexClient.fetchImpl;
   const realBase = openAlexClient.apiBase;
   const urls: URL[] = [];
@@ -379,7 +379,7 @@ test('an economics reader asks the Worker relay for one page of the working-pape
   openAlexClient.fetchImpl = async (input) => {
     urls.push(new URL(String(input)));
     return Response.json({ results: [
-      seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'From early 2021 through 2024, unauthorized immigration to the United States rose sharply.'),
+      seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'These findings help inform debates surrounding how unauthorized immigration impacts labor and housing markets and public finances in the U.S.'),
       seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
       seriesWork('W7144132107', '10.65864/cesifo/tqjga1w74a', 'article', CESIFO, null),
     ] });
@@ -406,10 +406,18 @@ test('an economics reader asks the Worker relay for one page of the working-pape
       assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper, not a reviewed article`);
       assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
       assert.equal(paper.landingPageUrl, `https://doi.org/${paper.doi}`);
-      assert.equal(paper.primaryCategory, 'q-fin.ST');
+      // Not the reader's q-fin.ST: the request did not depend on it, and
+      // "public finances" on immigration does not make a finance paper.
+      assert.equal(paper.primaryCategory, 'econ.GN');
     }
     assert.match(papers[0].abstract, /unauthorized immigration/);
     assert.equal(hasUsableAIAbstract(papers[1].abstract), false, 'a missing abstract stays missing');
+
+    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST']]) {
+      for (const paper of await fetchWorkingPapers(reader, 3)) {
+        assert.equal(paper.primaryCategory, 'econ.GN', `${paper.id} for a reader of ${reader.join(' and ')}`);
+      }
+    }
   } finally {
     openAlexClient.fetchImpl = realFetch;
     openAlexClient.apiBase = realBase;
