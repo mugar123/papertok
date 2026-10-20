@@ -21,7 +21,7 @@ test('SOURCE: the link form keeps its own Google button unless the caller draws 
   assert.match(code, /const email = controlled \? controlledEmail : ownEmail;/);
   assert.match(code, /const setEmail = controlled \? onEmailChange : setOwnEmail;/);
   assert.equal((code.match(/setOwnEmail\(/g) || []).length, 0, 'nothing writes the own copy past the switch');
-  assert.match(code, /useEffect\(\(\) => \{ onBusyChange\?\.\(busy\); \}, \[busy, onBusyChange\]\);/);
+  assert.match(code, /const setBusy = \(next: boolean\) => \{ setOwnBusy\(next\); onBusyChange\?\.\(next\); \};/);
   // The hint names no button: in the onboarding there is none beside it.
   assert.match(code, /hint: 'When you continue, Google opens so you can sign in with that account\. PaperTok keeps the institution, not the address\.',/);
 });

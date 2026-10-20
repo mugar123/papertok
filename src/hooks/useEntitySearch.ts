@@ -40,7 +40,7 @@ export function useEntitySearch(enabled: boolean, knownPapers: Paper[], section:
     if (!enabled || !query.trim()) return;
     const timer = setTimeout(() => { void startSearch(query.trim()); }, SEARCH_DEBOUNCE_MS);
     return () => { clearTimeout(timer); request.current?.abort(); };
-  }, [enabled, performSearch, query]);
+  }, [enabled, query]);
 
   const setQuery = useCallback((term: string) => {
     if (term === query) return;

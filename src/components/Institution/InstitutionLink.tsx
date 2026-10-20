@@ -59,8 +59,8 @@ export default function InstitutionLink({
   const controlled = controlledEmail !== undefined;
   const email = controlled ? controlledEmail : ownEmail;
   const setEmail = controlled ? onEmailChange : setOwnEmail;
-  const [busy, setBusy] = useState(false);
-  useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+  const [busy, setOwnBusy] = useState(false);
+  const setBusy = (next: boolean) => { setOwnBusy(next); onBusyChange?.(next); };
   // While the form shows, its Google window gets ready to open inside the
   // press (usePopupReady). Until then a submit that would open it is held; an
   // address the account already proves opens none and goes through.

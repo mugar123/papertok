@@ -223,8 +223,11 @@ export default function HighlightedScientificText({ children, highlights = [], p
           // Marked maths carries the same id as any other run of its
           // highlight: a tap on the formula is a tap on the highlight.
           const mathId = item.kind ? item.id || undefined : undefined;
+          // Keyed by offset, not position: a new highlight earlier in the
+          // paragraph shifts every index after it, which would remount this
+          // formula and throw its slider back to the start.
           return (
-            <Fragment key={`math-${index}`}>
+            <Fragment key={`math-${item.start}`}>
               {html === null
                 ? <Tag {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass}>{item.raw}</Tag>
                 : (
@@ -246,7 +249,7 @@ export default function HighlightedScientificText({ children, highlights = [], p
 
         if (item.type === 'mark') {
           return (
-            <Fragment key={`mark-${index}`}>
+            <Fragment key={`mark-${item.start}`}>
               <mark
                 {...bounds}
                 {...marks}
@@ -261,7 +264,7 @@ export default function HighlightedScientificText({ children, highlights = [], p
         }
 
         return (
-          <span key={`text-${index}`} {...bounds}>
+          <span key={`text-${item.start}`} {...bounds}>
             {displayProse(item.value)}
           </span>
         );
