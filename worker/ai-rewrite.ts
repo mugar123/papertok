@@ -561,37 +561,9 @@ async function readCachedRewrite(env: WorkerEnv, key: string) {
 }
 
 /**
- * Whether this rewrite may be cached, and as what: `'complete'`, `'truncated'`,
- * or `null` for one that must not be kept at all.
- *
- * Gemini names its reason. `STOP` is the document finishing. `MAX_TOKENS` is the
- * output ceiling, and it is a truncation worth keeping: the ceiling is a
- * property of the paper and the model, so the next attempt returns the identical
- * half — at the cost of another of the day's uses and another minute of waiting.
- * Refusing to cache it meant the longest papers, the ones this feature exists
- * for, were regenerated from scratch on every single open.
- *
- * Sections dropped past the cap are the other one, kept on the same terms. A
- * model that writes more than `MAX_SECTIONS` section lines still ends on `STOP`,
- * but the stream cut everything after the cap — Results and Conclusion, on
- * 2026-10-06 — and how many sections a model writes is decided by the paper,
- * the model and the prompt, which are what the cache key holds. The next attempt
- * would most likely overflow at the same place, for another use and another
- * minute, and refusing to keep it would regenerate the papers with the most
- * sections on every open. The fix — a prompt that folds harder, or a higher
- * cap, which the prompt quotes — ships as a new `REWRITE_PROMPT_VERSION`, and a
- * new version is a new key, so a kept half does not outlive it. The cap only
- * ever downgrades: `'complete'` becomes `'truncated'`, and a reason that is
- * about this attempt stays uncacheable however many sections came before it.
- *
- * Everything else is about *this* attempt rather than about the paper: `SAFETY`,
- * `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT` and `SPII` at a filter,
- * `LANGUAGE` and `OTHER` at the rest, and a stream that named no reason at all.
- * Freezing one of those into KV would serve a transient refusal for thirty days.
- *
- * What a `'truncated'` entry has to carry is that it *is* one: the replay path
- * closes with `done` and no `error` line, so a half paper stored without the
- * flag is served as a whole one.
+ * Keep token- or section-limited results readable without charging on every
+ * reopen. Their truncated flag must survive replay, and an explicit retry can
+ * replace them. Other stop reasons may be transient and are not cached.
  */
 export function cacheableFinish(finishReason: unknown, droppedSections = 0) {
   const reason = cleanText(finishReason, 40).toUpperCase();
@@ -1010,9 +982,6 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         await refund(new AIExplanationError(code, 502));
         await send({ type: 'error', code, ...(finishReason ? { finishReason } : {}) });
       } else {
-        // A half paper may be kept, but only marked as one — and only when the
-        // half is what the next attempt would produce too. `cacheableFinish`
-        // owns both halves of that decision, the section cap included.
         const finish = cacheableFinish(finishReason, droppedSections);
         // Where the reader's copy stops. Past the cap that is our cut rather than
         // the model's, whatever reason the model gave for its own.
@@ -1138,7 +1107,7 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
 
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
-  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; retryIncomplete?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });
@@ -1157,7 +1126,9 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
   const cacheKey = await rewriteCacheKey(paper, level, language, model);
 
   const cached = await readCachedRewrite(env, cacheKey);
-  if (cached) return replayCachedRewrite(cached, level, language, extraHeaders);
+  if (cached && !(cached.truncated === true && payload.retryIncomplete === true)) {
+    return replayCachedRewrite(cached, level, language, extraHeaders);
+  }
 
   // Last thing before the response commits, and deliberately so: everything
   // above is cheap and can still answer with a real status line, and everything
