@@ -443,6 +443,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
       search_type: 'all',
       result_count: resultCount,
       has_results: resultCount > 0,
+      query: searchTerm,
     });
   }, [language, trackEvent]);
 

@@ -593,6 +593,15 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
+    // Every stretch on screen is reported, skips included, so the time per
+    // paper averages over what was seen and not only over what was read.
+    const reportViewTime = (seconds: number) => {
+      if (seconds >= 1.0) trackViewTime(paper, seconds);
+      else if (seconds > 0.1) trackSkip(paper);
+      if (seconds > 0.1) {
+        trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+      }
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
@@ -602,7 +611,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            trackEvent('paper_view', { surface: analyticsSurface, position });
+            trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
           }
           if (!viewStartTime.current) viewStartTime.current = Date.now();
         } else {
@@ -611,11 +620,7 @@ const PaperCard = memo(function PaperCard({
             viewStartTime.current = null;
             
             // Paper just went out of view. Report time and trigger re-rank!
-            if (totalViewTime.current >= 1.0) {
-              trackViewTime(paper, totalViewTime.current);
-            } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-              trackSkip(paper);
-            }
+            reportViewTime(totalViewTime.current);
             
             // Reset to prevent double counting if they scroll back up
             totalViewTime.current = 0;
@@ -630,11 +635,7 @@ const PaperCard = memo(function PaperCard({
       observer.disconnect();
       if (viewStartTime.current) {
         totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
-        if (totalViewTime.current >= 1.0) {
-          trackViewTime(paper, totalViewTime.current);
-        } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-          trackSkip(paper);
-        }
+        reportViewTime(totalViewTime.current);
       }
     };
   }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
@@ -1496,7 +1497,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    trackEvent('paper_open', { surface: analyticsSurface, destination, position });
+    trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la

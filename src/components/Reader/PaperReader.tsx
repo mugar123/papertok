@@ -10,7 +10,7 @@ interface PaperReaderProps {
   closeRef?: Ref<() => void> | null;
 }
 export type ReaderCopy = typeof COPY.en;
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowClockwise,
@@ -458,7 +458,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     // Counted here rather than in the effect: only this branch reaches the
     // worker, so a cache hit no longer inflates the metric, and a retry — which
     // does spend a use — is no longer invisible to it.
-    trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader' });
+    trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
 
     try {
       const result = await rewritePaper(paper, targetLevel, {
@@ -484,6 +484,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       setStatus(result.incomplete ? 'incomplete' : 'ready');
     } catch (caught) {
       if (caught instanceof PaperRewriteError && caught.code === 'AI_CANCELLED') return;
+      if (caught instanceof PaperRewriteError && caught.code === 'AI_QUOTA_EXHAUSTED') {
+        trackEvent('ai_limit_reached', { feature: 'rewrite', scope: caught.quota?.scope });
+      }
       // The whole error, not only its code: `quota.scope` is what tells the
       // reader's own ceiling from the provider's, and those need opposite advice.
       setError(caught instanceof PaperRewriteError
@@ -548,6 +551,33 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     const timer = setTimeout(() => setSettled(true), prefersReducedMotion ? 140 : 380);
     return () => clearTimeout(timer);
   }, [open, prefersReducedMotion]);
+
+  // Time with the reader on screen, sent when it closes. A hidden tab's time
+  // is left out: a reader forgotten in a background tab was not being read.
+  // Keyed on the paper's identity: a new object for the same paper is not a
+  // second reading.
+  const paperTitle = paper.title;
+  const reportReaderTime = useEffectEvent((seconds: number, id: string, title: string) => {
+    trackEvent('reader_time', { level, seconds, paper_id: id, paper_title: title });
+  });
+  useEffect(() => {
+    let visibleSince: number | null = document.hidden ? null : Date.now();
+    let seconds = 0;
+    const pause = () => {
+      if (visibleSince !== null) seconds += (Date.now() - visibleSince) / 1000;
+      visibleSince = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) pause();
+      else visibleSince ??= Date.now();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      pause();
+      reportReaderTime(seconds, paperId, paperTitle);
+    };
+  }, [paperId, paperTitle]);
 
   useEffect(() => {
     if (!coversFeed) return undefined;

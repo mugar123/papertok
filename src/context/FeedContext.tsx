@@ -2103,12 +2103,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
+        void trackEvent('like_change', {
+          action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
+        });
       } catch (err) {
         console.error('Error saving like:', err);
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);

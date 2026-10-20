@@ -33,7 +33,7 @@ test('SOURCE: a page view is sent on every pathname change, to both services, on
   // real id, or the effect could fire without ever reading `location.pathname`.
   assert.match(
     code,
-    /if \(consent !== ANALYTICS_CONSENT\.GRANTED\) return;\s*const viewPath = normalizeAnalyticsPath\(location\.pathname\);\s*pageview\(\{ route: viewPath, path: viewPath \}\);\s*trackPageView\(location\.pathname\);\s*\}, \[consent, location\.pathname\]\);/,
+    /if \(consent === ANALYTICS_CONSENT\.DENIED\) return;\s*const viewPath = normalizeAnalyticsPath\(location\.pathname\);\s*pageview\(\{ route: viewPath, path: viewPath \}\);\s*trackPageView\(location\.pathname\);\s*\}, \[consent, location\.pathname\]\);/,
     'the page view must wait for consent, be keyed on the pathname and report only its normalized pattern',
   );
   // One emitter per service: a second one would count every visit twice.

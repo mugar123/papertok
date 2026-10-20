@@ -17,7 +17,7 @@ import './PrivacyPopover.css';
 
 const COPY = {
   name: 'Privacy',
-  lede: 'PaperTok counts pages and actions anonymously, without cookies. Never your searches, the papers you read or your interests.',
+  lede: 'Without an account, PaperTok counts pages and actions anonymously, without cookies. Never your searches, the papers you read or your interests.',
   toggle: 'Allow usage analytics',
   kept: 'Your choice is kept in this browser.',
   saveFailed: 'Not saved: this browser is blocking site storage, so analytics is unchanged.',
@@ -43,7 +43,7 @@ export default function PrivacyPopover({ className = '' }) {
   // second refusal would otherwise go unheard.
   const choose = async (checked: boolean) => {
     setSaveFailed(false);
-    const saved = await updateConsent(checked ? ANALYTICS_CONSENT.GRANTED : ANALYTICS_CONSENT.DENIED);
+    const saved = await updateConsent(checked ? ANALYTICS_CONSENT.ANONYMOUS : ANALYTICS_CONSENT.DENIED);
     setSaveFailed(!saved);
   };
 
@@ -63,7 +63,7 @@ export default function PrivacyPopover({ className = '' }) {
             it, and an `aria-label` as well would be read out twice. */}
         <Label className="privacy-popover-switch">
           {COPY.toggle}
-          <Switch checked={consent === ANALYTICS_CONSENT.GRANTED} onCheckedChange={choose} />
+          <Switch checked={consent !== ANALYTICS_CONSENT.DENIED} onCheckedChange={choose} />
         </Label>
         {/* Only the failure is announced; the note beside it is not news. */}
         <p className={`privacy-popover-status${saveFailed ? ' is-failed' : ''}`}>

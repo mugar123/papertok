@@ -42,8 +42,8 @@ test('arrow keys in the Privacy panel stay in the panel on the feed', async () =
 test('the switch reads and writes the one stored choice through the analytics context', async () => {
   const popover = await read('./PrivacyPopover.tsx');
   assert.match(popover, /const \{ consent, updateConsent \} = useAnalyticsConsent\(\);/);
-  assert.match(popover, /checked=\{consent === ANALYTICS_CONSENT\.GRANTED\}/);
-  assert.match(popover, /updateConsent\(checked \? ANALYTICS_CONSENT\.GRANTED : ANALYTICS_CONSENT\.DENIED\)/);
+  assert.match(popover, /checked=\{consent !== ANALYTICS_CONSENT\.DENIED\}/);
+  assert.match(popover, /updateConsent\(checked \? ANALYTICS_CONSENT\.ANONYMOUS : ANALYTICS_CONSENT\.DENIED\)/);
   // A second way to store the choice would be a second owner of it.
   assert.doesNotMatch(popover, /setAnalyticsConsent|persistAnalyticsConsent|localStorage|document\.cookie|papertok_analytics/);
   // Named by the label it sits in; an aria-label too is read out twice.

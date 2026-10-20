@@ -163,10 +163,10 @@ export function usePassageAnnotations({
 
   const highlight = useCallback(async () => {
     const saved = await store({ kind: 'user' });
-    if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level });
+    if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId, paper_title: paper?.title });
     setPending(null);
     return saved;
-  }, [level, store, trackEvent]);
+  }, [level, paper?.title, paperId, store, trackEvent]);
 
   const saveNote = useCallback(async (text: string) => {
     const note = String(text || '').trim();
@@ -174,13 +174,13 @@ export function usePassageAnnotations({
     setBusy('saving');
     try {
       const saved = await store({ kind: 'user', note });
-      if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user' });
+      if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user', paper_id: paperId, paper_title: paper?.title });
       setPending(null);
       return saved;
     } finally {
       setBusy(IDLE);
     }
-  }, [level, store, trackEvent]);
+  }, [level, paper?.title, paperId, store, trackEvent]);
 
   const ask = useCallback(async () => {
     if (!pending) return null;
@@ -195,7 +195,7 @@ export function usePassageAnnotations({
     setPending(null);
     setBusy('asking');
     setError(null);
-    trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'ai' });
+    trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'ai', paper_id: paperId, paper_title: paper?.title });
 
     try {
       const answer = await annotatePassage(paper, {
@@ -243,6 +243,9 @@ export function usePassageAnnotations({
       return entry;
     } catch (caught) {
       if (caught instanceof PaperAnnotationError && caught.code === 'AI_CANCELLED') return null;
+      if (caught instanceof PaperAnnotationError && caught.code === 'AI_QUOTA_EXHAUSTED') {
+        trackEvent?.('ai_limit_reached', { feature: 'annotation', scope: caught.quota?.scope });
+      }
       setError(caught instanceof PaperAnnotationError ? caught.code : 'AI_UNAVAILABLE');
       return null;
     } finally {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { EnvelopeSimple, Star } from '@phosphor-icons/react';
+import { ChartBar, EnvelopeSimple, Star } from '@phosphor-icons/react';
 import { GithubMark } from '../ui/GithubMark.tsx';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
 import {
@@ -26,8 +28,8 @@ import NudgePanel from './NudgePanel.tsx';
 //   · Not until a minute in, and only on the feed — asking somebody something
 //     before they have read a line is asking a stranger for a favour.
 // Guests are out entirely: they already have one thing being asked of them.
-// The analytics consent banner used to own this corner until it was answered;
-// it went on 2026-09-17, and the corner is this host's alone.
+// The analytics consent ask comes first and owns the corner until it is
+// answered. It does not wait the minute: until then, detailed analytics is off.
 
 export const REPO_URL = 'https://github.com/mugar123/papertok';
 const REPO_API_URL = 'https://api.github.com/repos/mugar123/papertok';
@@ -37,6 +39,16 @@ const THANKS_HOLD_MS = 600;
 
 const COPY = {
   en: {
+    consent: {
+      title: 'Help us improve PaperTok',
+      // The first layer stays short; the policy it links has the detail.
+      body: 'We use cookies to understand how PaperTok is used and make it better. If you reject, we only count visits anonymously.',
+      policy: 'Privacy policy',
+      newTab: ' (opens in a new tab)',
+      allow: 'Accept',
+      anonymous: 'Reject',
+      saveFailed: 'Not saved: this browser is blocking site storage.',
+    },
     dismiss: 'Dismiss and do not show again',
     starsLabel: (count: number) => `${count} ${count === 1 ? 'star' : 'stars'} on GitHub`,
     'open-source': {
@@ -60,6 +72,8 @@ const COPY = {
 
 export default function NudgeHost() {
   const { user, loading: authLoading, onboardingComplete } = useAuth();
+  const { decided, updateConsent } = useAnalyticsConsent();
+  const [consentSaveFailed, setConsentSaveFailed] = useState(false);
   const { locale } = useLanguage();
   const { health, loading: emailLoading } = useEmailNotifications();
   const location = useLocation();
@@ -91,8 +105,10 @@ export default function NudgeHost() {
     return () => window.clearTimeout(timer);
   }, [signedIn, dwellDone]);
 
+  const askConsent = signedIn && !decided;
   const openable = dwellDone
     && signedIn
+    && decided
     && location.pathname === '/feed';
 
   // Picked during render rather than in an effect: this derives state from
@@ -151,6 +167,17 @@ export default function NudgeHost() {
     navigate('/settings/notifications');
   }, [close, navigate]);
 
+  // Emptied first so a second refusal is announced too: a live region speaks
+  // only when its text changes.
+  const answerConsent = useCallback(async (value: string) => {
+    setConsentSaveFailed(false);
+    const saved = await updateConsent(value);
+    setConsentSaveFailed(!saved);
+    // The panel, and the button that had focus, leave with the answer: focus
+    // goes where the skip link would take it rather than to <body>.
+    if (saved) document.getElementById('main-content')?.focus({ preventScroll: true });
+  }, [updateConsent]);
+
   const copy = COPY.en;
   const isStar = picked === 'open-source';
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
@@ -158,7 +185,25 @@ export default function NudgeHost() {
 
   return (
     <AnimatePresence>
-      {ready && (isStar || emailCopy) && (
+      {askConsent ? (
+        <NudgePanel
+          key="analytics-consent"
+          icon={<ChartBar size={19} />}
+          title={copy.consent.title}
+          body={(
+            <>
+              {copy.consent.body}{' '}
+              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">
+                {copy.consent.policy}
+                <span className="visually-hidden">{copy.consent.newTab}</span>
+              </a>
+              <span role="status" className="nudge-status">{consentSaveFailed ? copy.consent.saveFailed : ''}</span>
+            </>
+          )}
+          action={{ label: copy.consent.allow, onClick: () => answerConsent(ANALYTICS_CONSENT.DETAILED) }}
+          secondaryAction={{ label: copy.consent.anonymous, onClick: () => answerConsent(ANALYTICS_CONSENT.ANONYMOUS) }}
+        />
+      ) : ready && (isStar || emailCopy) && (
         isStar ? (
           <NudgePanel
             key="nudge-open-source"

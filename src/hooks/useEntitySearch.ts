@@ -30,7 +30,7 @@ export function useEntitySearch(enabled: boolean, knownPapers: Paper[], section:
     });
     if (controller.signal.aborted) return;
     const count = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
-    trackEvent('search_performed', { search_type: 'all', result_count: count, has_results: count > 0 });
+    trackEvent('search_performed', { search_type: 'all', result_count: count, has_results: count > 0, query: term });
   }, [trackEvent]);
 
   const startSearch = useEffectEvent((term: string) => performSearch(term, knownPapers));
