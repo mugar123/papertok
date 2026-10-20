@@ -1,6 +1,5 @@
-import type { FocusEvent, KeyboardEvent, MouseEvent, Ref, RefObject } from 'react';
-import type { TargetAndTransition } from 'framer-motion';
-import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { KeyboardEvent, ReactNode, Ref } from 'react';
+import type { Paper } from '../../models/Paper.ts';
 import type { RewriteSection, ClientRewriteMeta } from '../../services/paperRewriteService.ts';
 import type { PassageAnnotation } from '../../hooks/usePassageAnnotations.ts';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
@@ -12,12 +11,15 @@ interface PaperReaderProps {
 }
 export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
   ArrowSquareOut,
-  DownloadSimple,
+  Flask,
+  GraduationCap,
+  Highlighter,
   PencilLine,
+  Plant,
   Sparkle,
   WarningCircle,
 } from '@phosphor-icons/react';
@@ -40,41 +42,27 @@ import {
   filterAnnotations,
   sortAnnotations,
 } from '../../utils/annotationOrder.ts';
-import {
-  PANEL_HIDE_DELAY_MS,
-  panelShouldShow,
-  pointerWakesPanel,
-} from '../../utils/panelReveal.ts';
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.ts';
 import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/textHighlights.ts';
-import { buildLatexDocument } from '../../utils/latexExport.ts';
-import {
-  exportFileName,
-  exportableAnnotations,
-  summarizeExport,
-} from '../../utils/exportDocument.ts';
-import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
-import { pickSelectionRoute } from '../../utils/readerSelection.ts';
-import { nextBarVisibility } from '../../utils/scrollDirection.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.ts';
 import { Button } from '../ui/button.tsx';
 import { Dialog, DialogContent } from '../ui/dialog.tsx';
-import { Popover, PopoverTrigger } from '../ui/popover.tsx';
 import { Toggle } from '../ui/toggle.tsx';
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
+import { toast } from 'sonner';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import AnnotationRail from './AnnotationRail.tsx';
-import ExportCard from './ExportCard.tsx';
+import { ListRowAuthors } from '../Lists/ListRow.tsx';
 import HighlightedScientificText from './HighlightedScientificText.tsx';
-import ReaderBar from './ReaderBar.tsx';
 import SelectionMenu from './SelectionMenu.tsx';
 import ThinkingDots from './ThinkingDots.tsx';
 import './PaperReader.css';
 import './Annotations.css';
-import './Export.css';
-import './ReaderBar.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover.tsx';
+
+const LEVEL_ICONS = { beginner: Plant, university: GraduationCap, researcher: Flask } as const;
 
 const COPY = {
   en: {
@@ -85,13 +73,10 @@ const COPY = {
     writing: 'Rewriting the paper',
     writingHint: 'Sections appear as they are written.',
     cached: 'Saved version',
+    cachedTitle: 'A rewrite made earlier, reused: no AI use was spent.',
+    adaptationTag: 'AI adaptation',
     original: 'View the original paper',
     adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
-    remaining: (count: number) => `${count} ${count === 1 ? 'use' : 'uses'} today`,
-    uses: (left: number, total: number) => `${left}/${total} today`,
-    usesTitle: (left: number, total: number) => (left === 0
-      ? `You have used all ${total} of today's AI uses. They return tomorrow.`
-      : `${left} of ${total} AI uses left today.`),
     stages: {
       source: 'Downloading the paper',
       reading: 'The model is reading the paper',
@@ -101,36 +86,9 @@ const COPY = {
     incomplete: 'The rewrite stopped before finishing. You can try again.',
     sections: 'sections',
     errorKicker: 'Could not rewrite',
-    download: 'Download',
-    whatGoes: 'What goes with it',
-    exportOptions: {
-      marks: 'Your highlights',
-      mine: 'Your notes',
-      ai: 'AI annotations',
-    },
-    optionCount: (id: string, count: number) => (id === 'marks'
-      ? `${count} ${count === 1 ? 'passage' : 'passages'}`
-      : `${count} ${count === 1 ? 'note' : 'notes'} · numbered at the foot`),
-    noneOfThese: 'none yet',
-    alwaysIncluded: 'The title, the authors, the link to the original and the note that an AI wrote the text always travel with it. The file can end up a long way from here.',
-    previewMasthead: 'PaperTok · plain-language version',
-    previewTitle: 'Paper title',
-    previewByline: 'authors · rewritten by PaperTok',
-    previewNotice: 'Notice',
-    previewSection: 'What the paper is about',
-    // Same value as the `es` block above, on purpose: the source paper's own
-    // heading, not a translation of it.
-    previewOrigin: '§1 Introduction',
-    previewNote: (format: string) => (format === 'pdf' ? 'How the PDF will look' : 'How it will look compiled'),
-    format: 'Format',
-    downloadTex: 'Download .tex',
-    downloadPdf: 'Download PDF',
-    generating: 'Generating…',
-    downloaded: 'Downloaded',
-    unlimitedUses: 'Unlimited AI',
-    unlimitedUsesTitle: 'This account has no daily limit on AI uses.',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
+    toggleAiMarks: 'Show AI highlights',
     settings: 'Settings',
     selectionTitle: 'What to do with the selection',
     annotateParagraphInstructions: 'Press Enter to open annotation options for this paragraph: highlight it, write a note on it, or ask the AI to explain it.',
@@ -145,20 +103,21 @@ const COPY = {
     oneUse: '1 use',
     noUsesLeftShort: 'no uses',
     noUsesLeft: 'Today’s AI uses have run out.',
-    usesLeftLine: (left: number) => `${left} AI ${left === 1 ? 'use' : 'uses'} left today.`,
+    usesLeftLine: (left: number, total?: number | null) => (total
+      ? `${left} of ${total} AI uses left today.`
+      : `${left} AI ${left === 1 ? 'use' : 'uses'} left today.`),
     reading: 'Reading the passage',
     originMine: 'Yours',
     originAi: 'AI',
     goToPassage: 'Go to the passage',
     removeAnnotation: 'Remove annotation',
+    noteActions: 'Note actions',
+    noteLabel: (number: number) => `Note ${number}`,
+    copyNote: 'Copy as Markdown',
+    noteCopied: 'Copied as Markdown',
+    noteCopyFailed: 'Could not copy the note',
+    emptyAllTitle: 'No notes yet',
     emptyAll: 'Select a sentence in the text to write a note on it, or to have the AI explain it.',
-    emptyFiltered: 'Nothing here yet.',
-    countLine: ({ notes, marks }: { notes: number; marks: number }) => {
-      const parts = [];
-      if (marks) parts.push(`${marks} ${marks === 1 ? 'mark' : 'marks'}`);
-      if (notes) parts.push(`${notes} ${notes === 1 ? 'note' : 'notes'}`);
-      return parts.join(' · ');
-    },
     filters: { all: 'All', mine: 'Yours', ai: 'AI' },
   },
 };
@@ -311,19 +270,6 @@ const GHOST_LINES = Object.freeze([
   '100%', '96%', '98%', '91%', '58%',
 ]);
 
-/**
- * For something travelling from one place on screen to another, where the
- * journey is the message — `--ease-out-quad` in variables.css, as JS.
- *
- * Measured on the bench against the two obvious alternatives, chip travelling
- * 106px: a strong ease-in-out sat still for 71ms before it moved at all, which
- * on something answering a click reads as a dropped press, and expo-out was
- * moving at 16ms but spent the distance in the first few frames and arrived
- * looking like a cut with a smear behind it. This one is off at 20ms and only
- * half-way at 103ms, so the eye can follow it across.
- */
-const EASE_TRAVEL: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
-
 /*
  * The reader's own entrance and exit — growing out of the button that opened
  * it, collapsing back into it, the floating chrome a beat behind — are CSS
@@ -343,183 +289,6 @@ const EASE_TRAVEL: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
  * Passed to `animate` as objects, never as variant labels, so the panel animates
  * whenever its own state changes and nothing above it can override that.
  */
-/**
- * The palette's own coming and going, which is not the reader's: this is the
- * pointer's answer, and it is watched far more often than the reader is opened.
- *
- * Short, and travelling a short way. The first version took 260ms to arrive
- * over 12px and 180ms to leave after a 300ms grace — close to half a second of
- * palette still on screen after the pointer had left, which reads as the app
- * being slow to let go. Cutting the durations alone would have raised the
- * speed of the same 12px journey and turned quick into brusque, so the travel
- * comes down with them.
- *
- * Both halves decelerate. An `easeIn` exit holds the panel almost still through
- * the first frames — exactly the moment the reader is looking at it to see
- * whether it heard them.
- *
- * And the fade is on a straight line while the travel keeps the curve. One
- * expo-out driving both is what the first version did, and measured by frame
- * it was not a fade at all: leaving, the panel dropped to 44% opacity in 12ms
- * and then spent 100ms going from nearly invisible to invisible. A curve that
- * spends itself in two frames is right for something moving — you see where it
- * went — and wrong for something dimming, where all it does is flash.
- */
-const PANEL_STATES: Record<string, TargetAndTransition> = {
-  shown: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    pointerEvents: 'auto',
-    transition: {
-      duration: 0.16,
-      ease: EASE_OUT_EXPO,
-      opacity: { duration: 0.16, ease: 'linear' },
-    },
-  },
-  hidden: {
-    opacity: 0,
-    y: 8,
-    scale: 0.97,
-    pointerEvents: 'none',
-    transition: {
-      duration: 0.13,
-      ease: EASE_OUT_EXPO,
-      opacity: { duration: 0.13, ease: 'linear' },
-    },
-  },
-};
-
-const STILL_PANEL_STATES: Record<string, TargetAndTransition> = {
-  shown: { opacity: 1, y: 0, scale: 1, pointerEvents: 'auto', transition: { duration: 0.12 } },
-  hidden: { opacity: 0, y: 0, scale: 1, pointerEvents: 'none', transition: { duration: 0.12 } },
-};
-
-/**
- * Wiring for the panel's reveal. The rule itself lives in `utils/panelReveal.js`;
- * what is here is only how the four inputs are gathered.
- *
- * The strip is watched with `mousemove` rather than with an invisible element
- * that has `pointer-events`. A strip across the bottom of the page would swallow
- * the `mousedown` of anyone selecting text in the last lines, which is exactly
- * the gesture the highlighter exists for.
- */
-function usePanelReveal() {
-  const canHover = useMemo(
-    () => typeof window === 'undefined'
-      || window.matchMedia('(hover: hover) and (pointer: fine)').matches,
-    [],
-  );
-  const [nearBottom, setNearBottom] = useState(false);
-  const [hasScrolled, setHasScrolled] = useState(false);
-  const [holdsFocus, setHoldsFocus] = useState(false);
-  const hideTimer = useRef<number | null>(null);
-
-  const scheduleHide = useCallback(() => {
-    if (hideTimer.current) return;
-    hideTimer.current = setTimeout(() => {
-      hideTimer.current = null;
-      setNearBottom(false);
-    }, PANEL_HIDE_DELAY_MS);
-  }, []);
-
-  const trackPointer = useCallback((event: MouseEvent) => {
-    // Not while a button is down: dragging a selection towards the last lines
-    // is not a request for the controls, it is reading.
-    if (event.buttons !== 0) return;
-    if (!pointerWakesPanel(event.clientY, window.innerHeight)) {
-      // Only when there is something to put away. Without the guard, moving the
-      // pointer anywhere in the upper page arms a timer every 300ms for a state
-      // change that was never going to happen.
-      if (nearBottom) scheduleHide();
-      return;
-    }
-    clearTimeout(hideTimer.current!);
-    hideTimer.current = null;
-    setNearBottom(true);
-  }, [nearBottom, scheduleHide]);
-
-  const releasePointer = useCallback(() => {
-    clearTimeout(hideTimer.current!);
-    hideTimer.current = null;
-    scheduleHide();
-  }, [scheduleHide]);
-
-  useEffect(() => () => clearTimeout(hideTimer.current!), []);
-
-  return {
-    shown: panelShouldShow({ canHover, hasScrolled, nearBottom, holdsFocus }),
-    onPointerMove: canHover ? trackPointer : undefined,
-    onPointerGone: canHover ? releasePointer : undefined,
-    onScrolled: useCallback(() => setHasScrolled(true), []),
-    onFocusIn: useCallback(() => setHoldsFocus(true), []),
-    onFocusOut: useCallback((event: FocusEvent<HTMLElement>) => {
-      // A move between two controls inside the panel is not a departure.
-      if (event.currentTarget.contains(event.relatedTarget)) return;
-      setHoldsFocus(false);
-    }, []),
-  };
-}
-
-/**
- * Whether the coarse-pointer bar should be up, driven by scroll direction
- * (`nextBarVisibility`, Task 2) rather than by `usePanelReveal` above.
- * `panelShouldShow` answers `!canHover`, which is permanently `true` on every
- * device that renders `ReaderBar` — a touch screen has no hover to ask with —
- * so it cannot be the thing that varies here. This hook is the first place
- * that makes the bar's visibility actually move.
- *
- * Position lives in a ref, not state: a bare `scrollTop` read on every frame
- * of a momentum scroll is not worth a re-render, only a *change* in
- * visibility is. `setVisible` is therefore called at most once per direction
- * reversal, never once per scroll event.
- */
-function useBarScrollVisibility({ scrollRef, enabled, frozen }: { scrollRef: RefObject<HTMLElement | null>; enabled: boolean; frozen: boolean }) {
-  const [visible, setVisible] = useState(true);
-  const visibleRef = useRef(true);
-  const previousTopRef = useRef(0);
-  // Read fresh inside the listener without re-subscribing it on every
-  // keystroke of a selection changing: the effect below installs the
-  // listener once per mount (per the project's usual cleanup pattern — see
-  // `usePanelReveal`'s own single `useEffect(() => () => clearTimeout(...))`
-  // above), and a ref is how a long-lived closure sees a value that changes
-  // between renders without becoming an effect dependency. Written from its
-  // own effect, not during render — mutating a ref while rendering is the
-  // thing `react-hooks/refs` exists to catch, even for a "just keep it
-  // fresh" ref like this one.
-  const frozenRef = useRef(frozen);
-  useEffect(() => { frozenRef.current = frozen; }, [frozen]);
-
-  useEffect(() => {
-    if (!enabled) return undefined;
-    const node = scrollRef.current;
-    if (!node) return undefined;
-    previousTopRef.current = node.scrollTop;
-
-    const handleScroll = () => {
-      const currentTop = node.scrollTop;
-      const previousTop = previousTopRef.current;
-      previousTopRef.current = currentTop;
-      // A live selection or an open composer must never lose its bar to a
-      // scroll underneath it — hiding the actions for the selection the
-      // reader just made would be the worst possible moment (decision 4).
-      // Position tracking above still runs while frozen, so the next real
-      // decision, once the selection ends, starts from an accurate delta
-      // instead of one stale from before the freeze.
-      if (frozenRef.current) return;
-      const next = nextBarVisibility({ previousTop, currentTop, visible: visibleRef.current });
-      if (next === visibleRef.current) return;
-      visibleRef.current = next;
-      setVisible(next);
-    };
-
-    node.addEventListener('scroll', handleScroll, { passive: true });
-    return () => node.removeEventListener('scroll', handleScroll);
-  }, [enabled, scrollRef]);
-
-  return visible;
-}
-
 /**
  * Turns a DOM selection into an anchor in the paragraph's *source*.
  *
@@ -573,6 +342,17 @@ const KIND_LABELS = {
   en: { abstract: 'Abstract', intro: 'Introduction', background: 'Background', methods: 'Methods', results: 'Results', discussion: 'Discussion', conclusion: 'Conclusion', other: 'Section' },
 };
 
+function InfoTag({ className, info, children }: { className: string; info: string; children: ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger render={<button type="button" className={className} />}>{children}</PopoverTrigger>
+      <PopoverContent side="bottom" align="start" className="rd-info-pop">
+        <p>{info}</p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
@@ -591,14 +371,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState<Pick<PaperRewriteError, 'code' | 'quota'> | null>(null);
   const [railOpen, setRailOpen] = useState(true);
+  const [showAiMarks, setShowAiMarks] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   // Which face the annotation sheet shows once open. Touch never gets a third
   // surface for the level/highlights controls — it gets a tab on this one.
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  /* Three switches rather than one "annotations": a bare mark and a mark you
-     wrote on are different things to want in a file. */
-  const [include, setInclude] = useState({ marks: true, mine: true, ai: true });
   const [annotationFilter, setAnnotationFilter] = useState('all');
   /**
    * Under this width the paper wants the whole page, so the margin becomes a
@@ -659,7 +435,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // Where focus lands on open: the way back, as it always was
   // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const panel = usePanelReveal();
 
   const supportsRewrite = canRewritePaper(paper);
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
@@ -835,52 +610,37 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
   const { begin: beginAnnotation } = annotations;
 
-  // Gated by pointer type, never by window width: the reader already switches
-  // layout below 1100px, and shrinking a laptop window must not flip a mouse
-  // user onto the touch selection path.
   const coarsePointer = useMemo(() => {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
   }, []);
-  const selectionRoute = pickSelectionRoute({ coarsePointer });
 
-  /**
-   * Whether the margin is a sheet rather than the desktop rail. Width alone:
-   * the rail only mounts on the fine-pointer route now (the touch route has
-   * no annotations UI at all — 2026-08-29), so a narrow mouse window gets
-   * the sheet and everything else gets the desktop rail.
-   */
   const railIsSheet = isNarrow;
 
-  // Only wired on the route that actually renders `ReaderBar` — on the
-  // desktop route this would be a scroll listener computing a value nothing
-  // reads. Frozen by a live selection or an open composer (both collapse to
-  // `annotations.pending` being truthy: `composing` cannot be `true` while
-  // `pending` is falsy — see the `if (!pending && composing)` guard in
-  // `ReaderBar.jsx` — so checking `pending` alone covers both).
-  const barScrollVisible = useBarScrollVisibility({
-    scrollRef,
-    enabled: selectionRoute === 'bar',
-    // Nothing left to freeze for: the touch route no longer creates
-    // selections or opens a composer (the mobile reader is level + download,
-    // 2026-08-29), so scroll direction is always an honest reading signal.
-    frozen: false,
-  });
+  useEffect(() => {
+    if (!railIsSheet || !sheetOpen) return undefined;
+    const closeOnPaper = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest('.rd-scroll') || target.closest('.rd-rail, .rd-pin')) return;
+      if (window.getSelection()?.isCollapsed === false) return;
+      setSheetOpen(false);
+    };
+    document.addEventListener('click', closeOnPaper);
+    return () => document.removeEventListener('click', closeOnPaper);
+  }, [railIsSheet, sheetOpen]);
 
   /**
    * A selection stops being a selection and becomes a decision.
    *
    * Everything the three outcomes could need is captured here, in one go, at
-   * the moment the selection is decided (mouse-up on the desktop route, raised
-   * by the document listener below; `selectionchange` settling on the touch
-   * route): the quote, where it is
+   * the moment the selection is decided (mouse-up, raised by the document
+   * listener below; `selectionchange` settling on touch): the quote, where it is
    * anchored, the paragraph around it (the model cannot explain "that
    * quantity" without the sentence that named it), and the rectangle to hang
    * the menu off. Capturing it all up front is what lets the browser's own
    * selection be cleared immediately — the reader paints its own provisional
    * mark instead, so the highlight you are deciding about is one you can
-   * already see. Fine pointers only: the touch route has no annotation
-   * actions (2026-08-29 — the mobile reader is level + download), so nothing
-   * wires this there.
+   * already see. On touch the browser's selection is kept instead, so its
+   * handles stay where the reader is dragging them.
    */
   const handleSelection = useCallback((sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement) => {
     if (!uid) return;
@@ -894,7 +654,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
     const rect = range.getBoundingClientRect();
-    selection.removeAllRanges();
+    if (!coarsePointer) selection.removeAllRanges();
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -909,7 +669,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         right: rect.right,
       },
     });
-  }, [beginAnnotation, uid]);
+  }, [beginAnnotation, coarsePointer, uid]);
 
   /**
    * The keyboard route into the same fork `handleSelection` opens from a
@@ -921,9 +681,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * toggle (F7 on Windows) this page cannot invoke, and does not exist on
    * macOS at all. So the keyboard's unit is the whole paragraph rather than
    * a phrase: WCAG does not require matching the mouse route's granularity,
-   * only that the function itself stays reachable (2.1.1). Wired only where
-   * `handleSelection` is -- the 'menu' route, fine pointers, desktop -- for
-   * the same reason its own comment gives.
+   * only that the function itself stays reachable (2.1.1).
    */
   const handleParagraphKeyDown = useCallback((event: KeyboardEvent<HTMLParagraphElement>, sectionId: string, paragraphIndex: number, paragraphText: string) => {
     if (event.key !== 'Enter' || !uid) return;
@@ -968,10 +726,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * given) — or, when the start itself is outside every paragraph (a drag
    * upwards that overshot into the gap above), the one holding where it
    * ENDS. Releases over the menu, the rail or a text field find no
-   * paragraph and do nothing, as before. Fine pointers only, like the menu.
+   * paragraph and do nothing, as before.
    */
   useEffect(() => {
-    if (selectionRoute !== 'menu') return undefined;
     const paragraphAround = (node: Node | null) => {
       const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement;
       return element?.closest<HTMLElement>('.rd-p[data-section]') || null;
@@ -988,9 +745,21 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       if (text === null) return;
       handleSelection(paragraph.dataset.section!, paragraphIndex, text, paragraph);
     };
+    if (coarsePointer) {
+      let settle: ReturnType<typeof setTimeout> | undefined;
+      const handleSelectionChange = () => {
+        clearTimeout(settle);
+        settle = setTimeout(handleDocumentMouseUp, 450);
+      };
+      document.addEventListener('selectionchange', handleSelectionChange);
+      return () => {
+        clearTimeout(settle);
+        document.removeEventListener('selectionchange', handleSelectionChange);
+      };
+    }
     document.addEventListener('mouseup', handleDocumentMouseUp);
     return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
-  }, [handleSelection, paragraphTextFor, selectionRoute]);
+  }, [coarsePointer, handleSelection, paragraphTextFor]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -1047,7 +816,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     // Touch cannot afford it: the OS handles live on that same selection, and
     // this repaint would silently drag them away mid-adjustment. On touch the
     // OS's own highlight is the provisional mark — nothing to add here.
-    const waiting = selectionRoute === 'menu' ? annotations.pending : null;
+    const waiting = coarsePointer ? null : annotations.pending;
     if (waiting) {
       const key = `${waiting.sectionId}:${waiting.paragraphIndex}`;
       index.set(key, [
@@ -1056,109 +825,44 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       ]);
     }
     return index;
-  }, [annotations.annotations, annotations.pending, level, selectionRoute]);
+  }, [annotations.annotations, annotations.pending, coarsePointer, level]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
     || safeExternalUrl(paper?.landingPageUrl)
     || safeDoiUrl(paper?.doi);
 
-  const levelLabel = PAPER_REWRITE_LEVELS.find(option => option.id === level) || { label: level };
-
-  // Counted on the same list the file will carry, not on the rail's: the rail
-  // shows every annotation for the paper, and the card would have promised to
-  // export notes written at another level.
-  const exportCounts = useMemo(
-    () => summarizeExport(exportableAnnotations(annotations.annotations, {
-      sections,
-      level,
-      language: 'en',
-    })),
-    [annotations.annotations, level, sections],
-  );
-
-  /**
-   * Hands the file over.
-   *
-   * A blob and an `<a download>`: there is no other way for a page to give the
-   * browser a file it made itself. The object URL is revoked on the next tick
-   * rather than immediately — revoking it in the same frame as the click can
-   * beat the download to it in Safari, and the leak of waiting a tick is
-   * nothing next to a download that silently does not happen.
-   */
-  const downloadTex = useCallback(() => {
-    const built = buildLatexDocument({
-      paper,
-      sections,
-      annotations: annotations.annotations,
-      language: 'en',
-      level,
-      kindLabels,
-      originalUrl,
-      include,
-    });
-    const url = URL.createObjectURL(new Blob([built.source], {
-      type: 'application/x-tex;charset=utf-8',
-    }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = built.fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    trackEvent('paper_export', {
-      surface: 'reader',
-      level,
-      format: 'tex',
-      notes: built.noteCount,
-    });
-  }, [annotations.annotations, include, kindLabels, level, originalUrl, paper, sections, trackEvent]);
-
-  /**
-   * The PDF is made, not written: pages laid out and rasterized in
-   * `downloadPdfDocument`, which takes long enough for the card to need a
-   * "generating" state. The libraries arrive as their own chunks on the first
-   * use, so the failure worth planning for is a chunk that never lands —
-   * `finally` gives the button back either way, and the card shows "saved"
-   * only when the await resolves.
-   */
-  const downloadPdf = useCallback(async () => {
-    const model = buildPdfModel({
-      paper,
-      sections,
-      annotations: annotations.annotations,
-      language: 'en',
-      level,
-      kindLabels,
-      originalUrl,
-      include,
-    });
-    setExporting(true);
-    try {
-      await downloadPdfDocument(model);
-    } finally {
-      setExporting(false);
-    }
-    trackEvent('paper_export', {
-      surface: 'reader',
-      level,
-      format: 'pdf',
-      notes: model.noteCount,
-    });
-  }, [annotations.annotations, include, kindLabels, level, originalUrl, paper, sections, trackEvent]);
-
-  const handleDownload = useCallback(
-    (format: string) => (format === 'pdf' ? downloadPdf() : downloadTex()),
-    [downloadPdf, downloadTex],
-  );
 
   /** Where the passage is, said in the reader's own vocabulary: "Método · §2". */
-  const annotationLabel = useCallback((annotation: PassageAnnotation) => {
+  const annotationLabel = useCallback((annotation: Pick<PassageAnnotation, 'sectionId' | 'paragraphIndex'>) => {
     const section = sections.find(item => String(item.id) === String(annotation.sectionId));
     const kind = kindLabels[section?.kind as keyof typeof kindLabels] || kindLabels.other;
     return `${kind} · §${Number(annotation.paragraphIndex) + 1}`;
   }, [kindLabels, sections]);
+
+  const notePins = useMemo(
+    () => new Map(orderedAnnotations.filter(item => item.note).map((item, index) => [
+      item.id,
+      {
+        number: index + 1,
+        note: item.note!,
+        kind: item.kind,
+        label: copy.noteLabel(index + 1),
+        origin: item.kind === 'ai' ? copy.originAi : copy.originMine,
+        where: annotationLabel(item),
+      },
+    ])),
+    [annotationLabel, copy, orderedAnnotations],
+  );
+  const pendingNoteNumber = useMemo(() => {
+    const pending = annotations.pending;
+    if (!pending) return undefined;
+    return 1 + orderedAnnotations.filter(item => item.note && sortAnnotations([item, pending], sectionOrder)[0] === item).length;
+  }, [annotations.pending, orderedAnnotations, sectionOrder]);
+  const textPins = useMemo(
+    () => (showAiMarks ? notePins : new Map([...notePins].filter(([, pin]) => pin.kind !== 'ai'))),
+    [notePins, showAiMarks],
+  );
 
   /**
    * The rail sends the reader back to a passage. `block: 'center'` is the whole
@@ -1166,6 +870,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * it in the middle of the screen puts it under the reader's eyes. It used to
    * glow on arrival as well, which mostly fired when nobody had asked.
    */
+  const cancelSweepRef = useRef<(() => void) | null>(null);
   const goToPassage = useCallback((annotation: PassageAnnotation) => {
     const selector = `[data-section="${CSS.escape(String(annotation.sectionId))}"][data-paragraph="${Number(annotation.paragraphIndex)}"]`;
     const paragraph = scrollRef.current?.querySelector(selector);
@@ -1174,7 +879,30 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       behavior: prefersReducedMotion ? 'auto' : 'smooth',
       block: 'center',
     });
+    const scroller = scrollRef.current;
+    cancelSweepRef.current?.();
+    if (prefersReducedMotion || !scroller) return;
+    const controller = new AbortController();
+    const sweep = () => {
+      if (controller.signal.aborted) return;
+      controller.abort();
+      paragraph.querySelectorAll<HTMLElement>(`[data-highlight-id="${CSS.escape(String(annotation.id))}"]`).forEach(mark => {
+        mark.removeAttribute('data-arrived');
+        void mark.offsetWidth;
+        mark.setAttribute('data-arrived', '');
+        mark.addEventListener('animationend', () => mark.removeAttribute('data-arrived'), { once: true });
+      });
+    };
+    const startTop = scroller.scrollTop;
+    scroller.addEventListener('scrollend', sweep, { signal: controller.signal });
+    const timer = setTimeout(sweep, 800);
+    controller.signal.addEventListener('abort', () => clearTimeout(timer));
+    cancelSweepRef.current = () => controller.abort();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (scroller.scrollTop === startTop) sweep();
+    }));
   }, [prefersReducedMotion]);
+  useEffect(() => () => cancelSweepRef.current?.(), []);
 
 
   const gateError = supportsRewrite ? null : 'AI_REWRITE_NEEDS_FULL_TEXT';
@@ -1194,25 +922,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError as keyof typeof ERROR_TONES] || 'broken');
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
-  // One truth for all the floating chrome. A rewrite in flight overrides the
-  // scroll state: the streaming indicator lives on the bar, so the bar (and
-  // the chrome that follows it) has to stay up for it to be seen.
-  //
-  // Declared HERE, after `isStreaming`, and that placement is load-bearing:
-  // an earlier draft sat next to `useBarScrollVisibility` above and shipped a
-  // crash the whole test suite missed — `||` short-circuits, so while
-  // `barScrollVisible` stayed `true` the `isStreaming` term was never
-  // evaluated, and the first scroll down was the first evaluation of a const
-  // still in its temporal dead zone. The reader worked until you scrolled,
-  // then the error boundary took the whole app down (production, 2026-08-29).
-  const barVisible = barScrollVisible || isStreaming;
-
-  // On the touch route the top chrome follows the bar: reading down, the back
-  // button and the uses counter recede with it instead of standing on the
-  // text for the whole read (asked for from a real iPhone, 2026-08-29); a
-  // scroll up brings both back. Fine pointers never hide chrome to begin with.
-  const chromeReceded = coarsePointer && selectionRoute === 'bar' && !barVisible;
-
   /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
      own box is the viewport and the button's viewport coordinates are already
      the right origin — no measuring, no offset parent to correct for. Handed
@@ -1222,131 +931,19 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
 
-  /* The dock's shared groups, each held once and rendered from both places
-     that need them — the floating dock (fine pointer, below) and `ReaderBar`
-     (touch), which receives them as `levelSlot`/`exportSlot`. One tree per
-     control, so the two surfaces cannot drift apart. The annotations-toggle
-     group stays inline in the dock only: the touch route has no annotations
-     UI to toggle (2026-08-29). */
-  const levelControl = (
-    <div className="rd-panel-group">
-      <span className="rd-panel-label">{copy.level}</span>
-      <ToggleGroup
-        value={[level]}
-        // Single-select: the array carries at most one id, and it is empty
-        // when the pressed level is pressed again — which is not a request
-        // for no level at all, so it is ignored.
-        onValueChange={([next]) => { if (next) setLevel(next as ReadingLevel); }}
-        aria-label={copy.level}
-      >
-        {PAPER_REWRITE_LEVELS.map(option => (
-          <ToggleGroupItem
-            key={option.id}
-            className="rd-level-item"
-            value={option.id}
-            disabled={isStreaming && level !== option.id}
-            aria-label={option.label}
-          >
-            {/* The mark is not a state of the button any more: it is one
-                element that moves to whichever button was chosen, which is the
-                only version of this that shows you *which way* the level went.
-                Mounted inside the pressed item and matched across the three by
-                `layoutId` — Motion measures the old box and the new one and
-                animates between them, so the markup stays one chip, not three
-                that take turns being visible. */}
-            {level === option.id && (
-              <motion.span
-                layoutId="rd-level-chip"
-                className="rd-level-chip"
-                aria-hidden="true"
-                transition={prefersReducedMotion
-                  ? { duration: 0 }
-                  : { duration: 0.22, ease: EASE_TRAVEL }}
-              />
-            )}
-            <span className="rd-level-label">{option.label}</span>
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-    </div>
-  );
-
-  /* Shared between the dock (fine pointer) and `ReaderBar` (touch): the
-     touch route has no dock, and the export must stay reachable there —
-     hiding it once already shipped a phone with no way to download.
-
-     The download button is the trigger of the export card's Popover, and
-     the card itself travels inside the same root so the two are one tree
-     wherever this slot is rendered: Base UI anchors the card above the
-     button, closes it on an outside press or Escape (and not on a press of
-     the button, which toggles), and returns focus to it afterwards. The
-     root renders no element of its own, so the group's markup is unchanged. */
-  const exportControl = (
-    <Popover open={exportOpen} onOpenChange={(next) => setExportOpen(next)}>
-      <div className="rd-panel-group">
-        <span className="rd-panel-label">{copy.download}</span>
-        <PopoverTrigger
-          render={<Toggle variant="brand" size="icon" pressed={exportOpen} />}
-          disabled={sections.length === 0}
-          title={copy.download}
-          aria-label={copy.download}
-        >
-          <DownloadSimple size={15} />
-        </PopoverTrigger>
-      </div>
-      <ExportCard
-        copy={{
-          download: copy.download,
-          whatGoes: copy.whatGoes,
-          options: copy.exportOptions,
-          optionCount: copy.optionCount,
-          noneOfThese: copy.noneOfThese,
-          alwaysIncluded: copy.alwaysIncluded,
-          previewMasthead: copy.previewMasthead,
-          previewTitle: copy.previewTitle,
-          previewByline: copy.previewByline,
-          previewNotice: copy.previewNotice,
-          previewSection: copy.previewSection,
-          previewOrigin: copy.previewOrigin,
-          previewNote: copy.previewNote,
-          format: copy.format,
-          downloadTex: copy.downloadTex,
-          downloadPdf: copy.downloadPdf,
-          generating: copy.generating,
-          downloaded: copy.downloaded,
-          cancel: copy.cancel,
-        }}
-        counts={exportCounts}
-        include={include}
-        onToggle={(id) => setInclude(current => ({ ...current, [id]: !current[id] }))}
-        onDownload={handleDownload}
-        busy={exporting}
-        fileNames={{
-          pdf: exportFileName(paper, 'pdf'),
-          tex: exportFileName(paper),
-        }}
-        stamp={`${levelLabel.label} · ${'English'}`}
-      />
-    </Popover>
-  );
-
-  // Shared with `ReaderBar` below: on the touch route the sheet holding
-  // `AnnotationRail` sits fully off-screen with no peek, so a failed
-  // "Que me lo explique" rendered only into the rail (as it always has been)
-  // would land in a surface nobody is looking at — and the next scroll's
-  // `dismiss()` clears it before it is ever seen. Null, not the fallback
-  // string, while there is no error: both consumers gate their own rendering
-  // on this being truthy, so a stray string here would show a phantom.
-  const askErrorText = annotations.error
-    ? (ANNOTATION_ERROR_COPY.en[annotations.error as keyof typeof ANNOTATION_ERROR_COPY.en]
-      || ANNOTATION_ERROR_COPY.en.AI_UNAVAILABLE)
-    : null;
+  const { error: askError, clearError: clearAskError } = annotations;
+  useEffect(() => {
+    if (!askError) return;
+    toast.error(ANNOTATION_ERROR_COPY.en[askError as keyof typeof ANNOTATION_ERROR_COPY.en]
+      || ANNOTATION_ERROR_COPY.en.AI_UNAVAILABLE);
+    clearAskError();
+  }, [askError, clearAskError]);
 
   return (
     /* A full-screen Base UI Dialog: modal (FeedContainer's scroll guard reads
        the `aria-modal` it sets), with pointer dismissal off because a surface
-       that covers the viewport has no outside to press — and the export card
-       and the selection menu are portaled popovers that must not read as one.
+       that covers the viewport has no outside to press — and the selection
+       menu is a portaled popover that must not read as one.
        The centred-sheet look of DialogContent is undone in `.rd` itself
        (PaperReader.css), which is also everything else the shell looks like. */
     <Dialog
@@ -1363,150 +960,120 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         initialFocus={closeButtonRef}
         aria-label={copy.title}
         style={{ '--rd-origin': transformOrigin }}
-        onMouseMove={panel.onPointerMove}
-        onMouseLeave={panel.onPointerGone}
       >
-        {/* Chrome floats over the document instead of sitting in bars above it:
-            the page is the interface, the controls are an overlay on top. */}
-        <div className="rd-float-close" data-receded={chromeReceded ? '' : undefined}>
-          <Button
-            ref={closeButtonRef}
-            variant="outline"
-            size="icon"
-            className="shadow-[var(--shadow-md)]"
-            onClick={requestClose}
-            aria-label={copy.close}
-            title={copy.back}
-          >
-            <ArrowLeft size={18} />
-          </Button>
-        </div>
-
-        <div className="rd-status" data-receded={chromeReceded ? '' : undefined}>
-          {/* Identity to the document, state to the chrome. The kicker names
-              *what this is* ("Leer en simple"), which is the same kind of fact
-              as the paper's own title next to it in `rd-doc-title` — so on a
-              coarse pointer it moves down there (see `.rd-doc-kicker` below)
-              and scrolls away with the text it names, instead of floating in
-              this fixed overlay for the whole read. The cache chip and the
-              uses counter report *state* — what is true right now, exactly
-              what a reader wants to check mid-scroll — so they stay pinned
-              here on every pointer. On a fine pointer there is no scrolling
-              chrome to hide behind in the first place, so the kicker simply
-              stays: decision 3 in the reader's mobile plan, desktop untouched. */}
-          {!coarsePointer && <span className="rd-status-kicker"><Sparkle size={11} /> {copy.title}</span>}
-          {meta?.cached && <span className="rd-status-chip">{copy.cached}</span>}
-          {quota && (
-            <span
-              className="rd-uses"
-              data-level={quota.unlimited ? 'ok' : quota.remainingUses === 0 ? 'out' : quota.remainingUses <= 2 ? 'low' : 'ok'}
-              title={quota.unlimited
-                ? copy.unlimitedUsesTitle
-                : quota.dailyLimit ? copy.usesTitle(quota.remainingUses, quota.dailyLimit) : undefined}
+          <header className="rd-topbar">
+            <Button
+              ref={closeButtonRef}
+              variant="ghost"
+              size="icon"
+              onClick={requestClose}
+              aria-label={copy.close}
+              title={copy.back}
             >
-              {/* A meter rather than a number alone: "three left" reads as plenty
-                  until you see how short the row is. Segments only while there are
-                  few enough to count at a glance. */}
-              {/* No meter where there is nothing to empty. */}
-              {!quota.unlimited && quota.dailyLimit! > 0 && quota.dailyLimit! <= 12 && (
-                <span className="rd-uses-meter" aria-hidden="true">
-                  {Array.from({ length: quota.dailyLimit! }, (_, index) => (
-                    <i key={index} data-spent={index >= quota.remainingUses ? '' : undefined} />
-                  ))}
-                </span>
-              )}
-              <span className="rd-uses-count">
-                {quota.unlimited
-                  ? copy.unlimitedUses
-                  : quota.dailyLimit
-                    ? copy.uses(quota.remainingUses, quota.dailyLimit)
-                    : copy.remaining(quota.remainingUses)}
-              </span>
-            </span>
-          )}
-        </div>
-
-        {/* Two elements, two jobs. The dock is what the reader's own entrance
-            and exit move (in CSS, with the rest of the chrome); the panel
-            inside it is what comes and goes with the pointer. One element
-            holding both animations fights itself — the second to write a
-            transform wins, and neither looks deliberate. */}
-        <div
-          className="rd-panel-dock"
-          onFocusCapture={panel.onFocusIn}
-          onBlurCapture={panel.onFocusOut}
-        >
-          <motion.div
-            className="rd-panel"
-            role="group"
-            aria-label={copy.title}
-            initial={false}
-            animate={(prefersReducedMotion ? STILL_PANEL_STATES : PANEL_STATES)[panel.shown ? 'shown' : 'hidden']}
-          >
-            {/* Each surface scopes its own chip. The dock is `display: none` on
-                a touch screen but stays mounted, so both it and the phone's bar
-                hold a level control at once — one shared `layoutId` across the
-                two would hand Motion a box that measures 0x0 and fly the chip
-                out of the screen on the first change. `LayoutGroup` prefixes
-                the id, so each surface animates only against itself. */}
-            <LayoutGroup id="rd-dock-level">{levelControl}</LayoutGroup>
-
-            <div className="rd-panel-divider" />
-
-            {/* Two switches, not one: what the model proposed and what you wrote
-                are different things to want on screen. Dock-only — see the
-                comment on `levelControl` above for why this one group isn't
-                shared with the sheet's settings tab. */}
-            <div className="rd-panel-group">
-              <span className="rd-panel-label">{copy.annotations}</span>
-              <Toggle
-                variant="brand"
-                size="icon"
-                pressed={isNarrow ? sheetOpen : railOpen}
-                onPressedChange={() => (isNarrow ? setSheetOpen(v => !v) : setRailOpen(v => !v))}
-                title={copy.toggleAnnotations}
-                aria-label={copy.toggleAnnotations}
+              <ArrowLeft size={18} />
+            </Button>
+            <div className="rd-panel rd-topbar-controls" role="group" aria-label={copy.title}>
+              <Select
+                items={PAPER_REWRITE_LEVELS.map(option => ({ value: option.id, label: option.label }))}
+                value={level}
+                onValueChange={(next) => { if (next) setLevel(next as ReadingLevel); }}
               >
-                <PencilLine size={15} />
-              </Toggle>
+                <SelectTrigger size="sm" className="rd-level-select" aria-label={copy.level}>
+                  {(() => {
+                    const LevelIcon = LEVEL_ICONS[level as keyof typeof LEVEL_ICONS];
+                    return LevelIcon && <LevelIcon size={15} aria-hidden="true" />;
+                  })()}
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end" alignItemWithTrigger={false}>
+                  {PAPER_REWRITE_LEVELS.map(option => {
+                    const LevelIcon = LEVEL_ICONS[option.id as keyof typeof LEVEL_ICONS];
+                    return (
+                      <SelectItem key={option.id} value={option.id} disabled={isStreaming && level !== option.id}>
+                        <LevelIcon size={15} aria-hidden="true" />
+                        {option.label}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <div className="rd-panel-group">
+                <span className="rd-panel-label">{copy.annotations}</span>
+                <Toggle
+                  variant="brand"
+                  size="icon"
+                  className="rd-topbar-switch"
+                  pressed={isNarrow ? sheetOpen : railOpen}
+                  onPressedChange={() => (isNarrow ? setSheetOpen(v => !v) : setRailOpen(v => !v))}
+                  title={copy.toggleAnnotations}
+                  aria-label={copy.toggleAnnotations}
+                >
+                  <PencilLine size={15} />
+                </Toggle>
+              </div>
+              <div className="rd-panel-group">
+                <Toggle
+                  variant="brand"
+                  size="icon"
+                  className="rd-topbar-switch"
+                  pressed={showAiMarks}
+                  onPressedChange={setShowAiMarks}
+                  title={copy.toggleAiMarks}
+                  aria-label={copy.toggleAiMarks}
+                >
+                  <Highlighter size={15} />
+                </Toggle>
+              </div>
+              {originalUrl && <div className="rd-panel-divider" />}
+              {originalUrl && (
+                <div className="rd-panel-group">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}
+                    aria-label={copy.original}
+                    title={copy.original}
+                  >
+                    <ArrowSquareOut size={15} />
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="rd-panel-divider" />
-
-            {exportControl}
-
-          </motion.div>
-        </div>
+          </header>
 
         <div
           ref={scrollRef}
           className="rd-scroll"
-          onScroll={() => {
-            panel.onScrolled();
-            annotations.dismiss();
-          }}
+          onScroll={() => annotations.dismiss()}
         >
-          <article className="rd-doc">
+          <article className="rd-doc" data-ai-marks={showAiMarks ? undefined : 'hidden'}>
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            {/* The kicker's other half of the split above: on a coarse pointer
-                it lives here, in flow, ahead of the title it names, so it
-                scrolls away with the paper instead of hovering over it. */}
-            {coarsePointer && <span className="rd-doc-kicker"><Sparkle size={11} /> {copy.title}</span>}
             <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
-            <p className="rd-doc-byline">
-              {(paper?.authors || []).slice(0, 6).map(author => (author as PaperAuthor)?.name || author).join(', ')}
-              {(paper?.authors || []).length > 6 && ' et al.'}
-              {paper?.year ? ` · ${paper.year}` : ''}
-            </p>
+            {(paper?.authors?.length ?? 0) > 0 && paper && (
+              <div className="rd-doc-byline">
+                <ListRowAuthors paper={paper} />
+              </div>
+            )}
+            {(sections.length > 0 || paper?.year) && (
+              <div className="rd-doc-tags">
+                {sections.length > 0 && (
+                  <InfoTag className="rd-tag rd-tag--ai" info={[copy.adaptation, meta?.model].filter(Boolean).join(' · ')}>
+                    <Sparkle size={12} aria-hidden="true" />
+                    {copy.adaptationTag}
+                  </InfoTag>
+                )}
+                {paper?.year && <span className="rd-tag">{paper.year}</span>}
+                {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
+              </div>
+            )}
 
             {/* Pointed at by every paragraph's `aria-describedby` below,
                 never read on its own: the keyboard route's instructions, for
                 the one audience that cannot see a hint that only paints on
                 focus. */}
-            {selectionRoute === 'menu' && (
-              <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
-            )}
+            <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
 
             {shownStatus === 'error' ? (
               /* A failure is a block on the page, not a note left in the middle of
@@ -1543,10 +1110,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                     data-reveal={section.reveal ? '' : undefined}
                   >
                     <div className="rd-section-head">
-                      <span className="rd-section-kind">{kindLabels[section.kind as keyof typeof kindLabels] || kindLabels.other}</span>
-                      {section.originalHeading && (
-                        <span className="rd-section-origin">{section.originalHeading}</span>
-                      )}
+                      <span className="rd-section-kind">
+                        {section.originalHeading?.trim() || kindLabels[section.kind as keyof typeof kindLabels] || kindLabels.other}
+                      </span>
                     </div>
                     {section.heading && <h2 className="rd-section-title">{section.heading}</h2>}
                     {section.paragraphs.map((paragraph, paragraphIndex) => {
@@ -1565,18 +1131,16 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           className="rd-p"
                           data-section={section.id}
                           data-paragraph={paragraphIndex}
-                          data-annotatable={selectionRoute === 'menu' ? '' : undefined}
-                          data-hint={selectionRoute === 'menu' ? copy.annotateParagraphBadge : undefined}
+                          data-annotatable=""
+                          data-hint={copy.annotateParagraphBadge}
                           style={{ '--i': Math.min(paragraphIndex, MAX_STAGGER_STEPS) }}
                           // Keyboard route into the same menu the mouse opens on
                           // mouse-up (WCAG 2.1.1) -- see `handleParagraphKeyDown`.
-                          tabIndex={selectionRoute === 'menu' ? 0 : undefined}
-                          aria-describedby={selectionRoute === 'menu' ? paragraphHintId : undefined}
-                          onKeyDown={selectionRoute === 'menu'
-                            ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph)
-                            : undefined}
+                          tabIndex={0}
+                          aria-describedby={paragraphHintId}
+                          onKeyDown={(event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph)}
                         >
-                          <HighlightedScientificText highlights={[...stored, ...aiHighlights]}>
+                          <HighlightedScientificText highlights={[...stored, ...aiHighlights]} pins={textPins}>
                             {paragraph}
                           </HighlightedScientificText>
                         </p>
@@ -1643,61 +1207,40 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
               </>
             )}
 
-            {sections.length > 0 && (
-              <footer className="rd-doc-footer">
-                <p className="rd-attribution">{copy.adaptation}</p>
-                {originalUrl && (
-                  <a className="rd-original" href={originalUrl} target="_blank" rel="noopener noreferrer">
-                    {copy.original} <ArrowSquareOut size={13} />
-                  </a>
-                )}
-                {meta?.model && (
-                  <span className="rd-model">{meta.model}</span>
-                )}
-              </footer>
-            )}
           </article>
 
-          {/* Fine pointers only. The rail hides by sliding out rather than
-              unmounting, so it comes back as the same margin and not a new
-              one; on a mouse-narrow window it is a sheet that peeks by its
-              header. The touch route mounts none of this: the mobile reader
-              is level + download (2026-08-29), and its annotations UI —
-              sheet, tabs, selection bar — went with that decision. */}
-          {selectionRoute === 'menu' && (
           <AnnotationRail
             surface={railIsSheet ? 'sheet' : 'rail'}
-            hidden={!railIsSheet && !railOpen}
+            hidden={railIsSheet ? !sheetOpen : !railOpen}
             expanded={sheetOpen}
             onToggle={() => setSheetOpen(value => !value)}
             annotations={visibleAnnotations}
+            pins={notePins}
             answerAt={answerAt}
             counts={annotationCounts}
             filter={annotationFilter}
             onFilter={setAnnotationFilter}
             thinking={annotations.busy === 'asking'}
-            error={Boolean(annotations.error)}
-            errorText={askErrorText || ANNOTATION_ERROR_COPY.en.AI_UNAVAILABLE}
             onFocus={goToPassage}
             onRemove={annotations.remove}
             labelFor={annotationLabel}
             copy={copy}
           />
-          )}
         </div>
 
         {/* Over the selection, not in a corner: what it acts on is the passage
             under it, and a menu that drifts away from its subject stops being
             about it. A popover anchored to the selection's rectangle; it stays
             mounted and follows `pending` with `open`, so its leave can play
-            over the passage it was about. (The export card lives with its
-            trigger, in `exportControl` above.) */}
-        {selectionRoute === 'menu' && (
-          <SelectionMenu
+            over the passage it was about. */}
+        <SelectionMenu
             open={Boolean(annotations.pending)}
             anchor={annotations.pending?.anchor}
             copy={copy}
+            noteNumber={pendingNoteNumber}
+            notePlace={annotations.pending ? annotationLabel(annotations.pending) : undefined}
             usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
+            usesLimit={quota?.dailyLimit ?? null}
             unlimited={Boolean(quota?.unlimited)}
             canAsk={quota ? quota.unlimited || quota.remainingUses > 0 : true}
             busy={annotations.busy === 'saving'}
@@ -1706,27 +1249,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             onAsk={askAboutPassage}
             onClose={annotations.dismiss}
           />
-        )}
-
-        {/* One island rather than a popover: always mounted on the touch
-            route, morphing in place and hiding with the scroll. The mobile
-            reader's whole control surface (2026-08-29): the level, the
-            download, and the streaming indicator while a rewrite is being
-            written. Gated on the first section having arrived: during the
-            initial download-and-skeleton phase the island floated over the
-            ghost lines saying nothing anyone could act on (seen on a real
-            iPhone, 2026-08-29). Annotations, highlights and "explain this"
-            live on the fine-pointer route only, until their mobile
-            redesign. */}
-        {selectionRoute === 'bar' && sections.length > 0 && (
-          <ReaderBar
-            copy={copy}
-            levelSlot={<LayoutGroup id="rd-bar-level">{levelControl}</LayoutGroup>}
-            exportSlot={exportControl}
-            streaming={isStreaming}
-            visible={barVisible}
-          />
-        )}
       </DialogContent>
     </Dialog>
   );

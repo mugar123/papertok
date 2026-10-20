@@ -3379,7 +3379,7 @@ button.pc-topics-pop-item:focus-visible {
   min-width: 0;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
   color: var(--text-secondary);
   text-decoration: none;

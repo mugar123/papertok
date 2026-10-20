@@ -28,18 +28,12 @@
   /* The corner it grows from is the one nearest the passage, and Base UI
      says which. */
   transform-origin: var(--transform-origin, top left);
-  /* Four properties, three jobs. The fade is a straight line — on the expo
-     curve the menu was at 79% opacity 60ms in, which is a flash rather than an
-     arrival (measured 2026-09-12, same defect as the export card's). The
-     arrival keeps the curve. And `width` is here because this box grows: the
-     composer is 348px against the list's 244, and until this line the menu
-     jumped between them with nothing animating at all — the one animation
-     Base UI could not carry over when this menu stopped being a framer
-     element (2026-09-05). */
-  transition: opacity 200ms linear,
-    scale 200ms var(--ease-out-expo),
-    translate 200ms var(--ease-out-expo),
-    width 220ms var(--ease-out-quad);
+  /* The fade is a straight line — on the expo curve the menu was at 79%
+     opacity 60ms in, which is a flash rather than an arrival. The arrival
+     keeps the curve. */
+  transition: opacity 120ms linear,
+    scale 150ms var(--ease-out-expo),
+    translate 150ms var(--ease-out-expo);
 }
 
 .rd-menu[data-composing] {
@@ -53,6 +47,7 @@
 }
 
 .rd-menu[data-ending-style] {
+  transition-duration: 100ms;
   opacity: 0;
   scale: 0.98;
   translate: 0 -4px;
@@ -98,96 +93,83 @@
 }
 
 /* The day's allowance, stated where it is about to be spent. */
-.rd-menu-foot {
-  padding: 6px var(--space-3) 4px;
-  margin-top: 2px;
-  border-top: 1px solid var(--border-subtle);
-  font: 400 0.625rem/1.5 var(--font-mono);
-  color: var(--text-tertiary);
-}
-
 .rd-menu-compose {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: var(--space-3);
+  padding: 12px 14px 10px;
 }
 
-.rd-menu-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+.rd-menu-compose-row {
+  display: flex;
+  gap: 6px;
+}
+
+.rd-menu-number {
+  flex: none;
+  margin-top: 6px;
+  font: 600 0.75rem/1 var(--font-mono);
   color: var(--text-tertiary);
 }
 
-.rd-menu-pen {
-  width: 13px;
-  height: 13px;
-  border: 1px solid rgba(17, 19, 24, 0.16);
-  border-radius: var(--radius-sm);
-  background: var(--brand-yellow);
-}
-
-.rd-menu-input {
-  width: 100%;
-  /* Three lines to start; `ui/textarea` sizes it to what is typed from
-     there, up to a share of the viewport, never a fixed em (design.md, 7). */
-  min-height: 78px;
+.rd-menu-input.rd-menu-input {
+  min-height: 4.5rem;
   max-height: min(12rem, 30vh);
-  padding: var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-serif);
+  font-size: 1rem;
   line-height: 1.5;
   resize: none;
 }
 
-.rd-menu-input:focus {
-  border-color: var(--border-ink);
+.rd-menu-input.rd-menu-input:focus-visible {
+  box-shadow: none;
+}
+
+.rd-menu-input::placeholder {
+  font-style: italic;
 }
 
 .rd-menu-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-subtle);
 }
 
-.rd-menu-save {
-  flex: 1;
+.rd-menu-act {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 32px;
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-md);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: 500 0.75rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
-.rd-menu-save:disabled {
+.rd-menu-act--save {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rd-menu-act:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.rd-menu-cancel {
-  min-height: 32px;
-  padding: 0 13px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
+@media (hover: hover) and (pointer: fine) {
+  .rd-menu-act:not(:disabled):hover {
+    background: var(--bg-secondary);
+  }
 }
 
 /* ── The margin ── */
@@ -200,7 +182,6 @@
   display: flex;
   flex-direction: column;
   padding-left: var(--space-5);
-  border-left: 1px solid var(--border-subtle);
 }
 
 /* ── Putting the margin away ──
@@ -240,9 +221,8 @@
      what the reader watches travel (the house rule since the page
      transition: quad for what should be seen moving). */
   transition:
-    margin-right 320ms var(--ease-out-quad),
     opacity 180ms linear,
-    transform 320ms var(--ease-out-quad),
+    transform 240ms var(--ease-out-quad),
     visibility 0s;
 }
 
@@ -253,66 +233,47 @@
   transform: translateX(28px);
   opacity: 0;
   visibility: hidden;
-  transition-delay: 0s, 0s, 0s, 320ms;
-}
-
-.rd-rail-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.rd-rail-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-primary);
-}
-
-.rd-rail-count {
-  font: 400 0.6875rem/1.5 var(--font-mono);
-  color: var(--text-tertiary);
+  transition-delay: 0s, 0s, 240ms;
 }
 
 .rd-rail-filters {
-  display: flex;
-  gap: 4px;
-  margin: var(--space-3) 0;
+  align-self: flex-end;
+  margin: 0 0 var(--space-3);
 }
 
-/* The items of a single-select `ui/toggle-group` (outline variant, which
-   fills with ink when pressed — the chip's own idea). What is set here is
-   the chip's size and voice; the pressed state is Base UI's `data-pressed`. */
 .rd-rail-filter {
   position: relative;
   height: auto;
-  min-height: 24px;
   padding: 4px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
   font: 500 0.625rem/1 var(--font-mono);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  cursor: pointer;
-  /* Deliberately fast and unanimated in position: a filter is a switch, and
-     animating a switch makes it feel slower than it is. */
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
-/* The chip draws at ~20px; WCAG 2.5.8 needs a 24px pointer target, and the
-   sheet variant below 1100px — a touch surface, no `.rd-rail-filters`
-   override of its own — is exactly where that gap matters most. Same
-   technique as `.theme-toggle::after`: an out-of-flow pseudo-element grows
-   the hit area without touching the drawn chip. It only grows vertically,
-   staying within the button's own width, so the 4px gap between filters
-   never becomes an overlap between two touch areas. */
+.rd-rail-filter[data-pressed] {
+  color: var(--text-primary);
+  background: transparent;
+  box-shadow: none;
+}
+
+.rd-rail-filter-chip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+}
+
+.rd-rail-filter-label,
+.rd-rail-filter-count {
+  position: relative;
+}
+
+.rd-rail-filter-count {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .rd-rail-filter::after {
   content: '';
   position: absolute;
@@ -323,13 +284,8 @@
   transform: translateY(-50%);
 }
 
-.rd-rail-filter[data-pressed] {
-  border-color: var(--border-ink);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-}
-
 .rd-rail-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -348,19 +304,45 @@
 
 .rd-rail-list::-webkit-scrollbar { display: none; }
 
-.rd-rail-empty {
-  font-size: var(--fs-sm);
-  line-height: 1.6;
-  color: var(--text-tertiary);
-  /* Delayed by exactly the cards' exit. Deleting the last note used to put this
-     on screen while that note was still animating off it, so for a fifth of a
-     second the rail said both things at once. */
-  animation: rdRailEmptyIn 240ms ease-out 180ms backwards;
+.rd-rail-list {
+  --fade-top: 0px;
+  --fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--fade-top), black calc(100% - var(--fade-bottom)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, black var(--fade-top), black calc(100% - var(--fade-bottom)), transparent);
 }
 
-@keyframes rdRailEmptyIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.rd-rail-list[data-more-above] {
+  --fade-top: 48px;
+}
+
+.rd-rail-list[data-more-below] {
+  --fade-bottom: 48px;
+}
+
+.petri.rd-rail-empty-petri .onboarding-petri-body {
+  animation: none;
+}
+
+.rd-rail-empty {
+  padding: var(--space-5) var(--space-3);
+}
+
+.rd-rail-empty .empty-state-art {
+  margin-bottom: var(--space-3);
+}
+
+.rd-rail-empty .empty-state-art:not(.empty-state-art--icon) > svg {
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+.rd-rail-empty .empty-state-title {
+  font-size: var(--fs-base);
+}
+
+.rd-rail-empty .empty-state-body {
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
 }
 
 /* ── One annotation ── */
@@ -368,11 +350,10 @@
   display: flex;
   flex-direction: column;
   gap: 9px;
-  padding: var(--space-3) var(--space-3) var(--space-3) 14px;
+  padding: var(--space-3);
   margin-bottom: 10px;
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--brand-yellow);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  border-radius: var(--radius-md);
   background: var(--bg-card);
   /* The exit collapses height; without this the content spills while it does. */
   overflow: hidden;
@@ -387,7 +368,6 @@
 
 .rd-note[data-kind='ai'],
 .rd-note--ai {
-  border-left-color: var(--accent-primary);
   background: var(--bg-sunken);
 }
 
@@ -427,27 +407,30 @@
   .rd-note-where:hover { color: var(--text-primary); }
 }
 
-.rd-note-remove {
+.rd-note-actions {
   margin-left: auto;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--border-strong);
+  color: var(--text-tertiary);
   cursor: pointer;
-  /* Quiet rather than hidden. It used to appear only under the pointer, which
-     on the sheet — where there is no pointer — meant it never appeared at all;
-     at this weight one small mark per card still reads as notes, not a toolbar. */
   transition: color var(--transition-fast), background var(--transition-fast);
 }
 
+.rd-note-actions:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .rd-note-remove:hover {
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
+  .rd-note-actions:hover,
+  .rd-note-actions[data-popup-open] {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
   }
 }
 
@@ -456,9 +439,8 @@
   font-family: var(--font-serif);
   font-size: 0.8125rem;
   line-height: 1.45;
+  font-style: italic;
   color: var(--text-secondary);
-  padding-left: var(--space-2);
-  border-left: 2px solid var(--border-subtle);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -499,7 +481,7 @@
     var(--bg-secondary) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.6s ease-in-out infinite;
+  animation: shimmer 1.6s linear infinite;
 }
 
 .rd-note-bar--short {
@@ -507,15 +489,99 @@
   animation-delay: -140ms;
 }
 
-.rd-note--failed {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  border-left-color: var(--tint-red-fg);
-  background: var(--tint-red-bg);
-  color: var(--tint-red-fg);
-  font-size: 0.8125rem;
+.rd-note-pin,
+.rd-pin::before {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  font: 600 0.625rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rd-pin {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.rd-pin::before {
+  content: attr(data-pin);
+  position: absolute;
+  right: -2px;
+  bottom: 1.35em;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  box-shadow: 0 0 0 2px var(--bg-primary);
+  user-select: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-pin:hover::before {
+    background: var(--accent-primary-hover);
+  }
+}
+
+.rd-pin:focus-visible {
+  outline: none;
+}
+
+.rd-pin:focus-visible::before {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.rd-pin-pop.rd-pin-pop {
+  width: max-content;
+  max-width: 20rem;
+  padding: 12px 14px 10px;
+}
+
+.rd-pin-pop-note {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1rem;
   line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+
+.rd-pin-pop-number {
+  margin-right: 6px;
+  font: 600 0.75rem/1 var(--font-mono);
+  vertical-align: 0.35em;
+  color: var(--text-tertiary);
+}
+
+.rd-pin-pop-source {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--space-2);
+  font: 400 0.6875rem/1.4 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.rd-info-pop.rd-info-pop {
+  max-width: 18rem;
+  padding: var(--space-3);
+}
+
+.rd-info-pop p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
 }
 
 /* ── The marks these leave in the text ── */
@@ -531,9 +597,9 @@
    is the only thing that says "saved" — a toast would say it worse. */
 .rd-mark[data-fresh] {
   background-color: transparent;
-  background-image: linear-gradient(var(--brand-yellow), var(--brand-yellow));
+  background-image: linear-gradient(var(--rd-pen), var(--rd-pen));
   background-repeat: no-repeat;
-  animation: rdPenDown 420ms var(--ease-out-expo) backwards;
+  animation: rdPenDown 260ms var(--ease-out-expo) backwards;
 }
 
 .rd-mark--ai[data-fresh] {
@@ -558,10 +624,8 @@
 
 /* ── The margin, where there is no margin ──
    Under 1100px the document has the whole width and the rail becomes a sheet:
-   pinned to the bottom, peeking by its header so the count is readable,
-   pulled up when wanted. Fixed rather than in flow, so it never takes width
-   from the paper. Fine pointers only by construction: the touch route mounts
-   no rail at all (the mobile reader is level + download, 2026-08-29). */
+   pinned to the bottom, peeking by its grab bar, pulled up when wanted. Fixed
+   rather than in flow, so it never takes width from the paper. */
 .rd-rail[data-surface='sheet'] {
   position: fixed;
   left: 0;
@@ -604,6 +668,10 @@
   transform: translateY(0);
 }
 
+.rd-rail[data-surface='sheet'][data-hidden] {
+  transform: translateY(100%);
+}
+
 /* While a finger is on the header the sheet is not animating, it is being
    moved. A transition here would put 260ms of lag between the thumb and the
    sheet, which is the difference between dragging something and asking it to
@@ -616,9 +684,8 @@
 .rd-rail-grab {
   display: block;
   width: 100%;
-  padding: 10px var(--space-4) 12px;
+  padding: 14px var(--space-4);
   border: none;
-  border-bottom: 1px solid var(--border-subtle);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -636,25 +703,9 @@
   display: block;
   width: 34px;
   height: 4px;
-  margin: 0 auto 12px;
+  margin: 0 auto;
   border-radius: var(--radius-sm);
   background: var(--border-default);
-}
-
-.rd-rail-headline {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.rd-rail-chevron {
-  margin-left: auto;
-  color: var(--text-tertiary);
-  transition: transform 220ms var(--ease-out-expo);
-}
-
-.rd-rail[data-expanded] .rd-rail-chevron {
-  transform: rotate(180deg);
 }
 
 .rd-rail[data-surface='sheet'] .rd-rail-filters {
@@ -684,10 +735,6 @@
 @media (prefers-reduced-motion: reduce) {
   .rd-rail[data-surface='sheet'],
   .rd-rail[data-surface='rail'],
-  .rd-rail-chevron {
-    transition: none;
-  }
-
   /* The menu still fades — a popup that pops reads as a glitch — but it
      neither scales nor travels. */
   .rd-menu {
@@ -711,8 +758,7 @@
   }
 
   .rd-mark[data-fresh],
-  .rd-note-body[data-fresh],
-  .rd-rail-empty {
+  .rd-note-body[data-fresh] {
     animation: none;
   }
 
@@ -722,7 +768,7 @@
   }
 
   .rd-mark[data-fresh] {
-    background-color: var(--brand-yellow);
+    background-color: var(--rd-pen);
     background-image: none;
   }
 

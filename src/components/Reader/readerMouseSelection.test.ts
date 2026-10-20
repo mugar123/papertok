@@ -25,11 +25,11 @@ test('a mouse selection is resolved from the Range, from the paragraph it starts
   assert.match(jsx, /const paragraph = paragraphAround\(start\) \|\| paragraphAround\(range\.endContainer\);/);
   assert.match(jsx, /\.closest<HTMLElement>\('\.rd-p\[data-section\]'\)/);
   assert.match(jsx, /if \(!paragraph \|\| !scrollRef\.current\?\.contains\(paragraph\)\) return;/);
-  // Only on the route that has a menu to open.
-  assert.match(jsx, /if \(selectionRoute !== 'menu'\) return undefined;/);
+  // A touch selection has no mouse-up: it is read once it stops changing.
+  assert.match(jsx, /document\.addEventListener\('selectionchange', handleSelectionChange\);/);
   // The paragraph's source text comes from state by the ids the DOM carries.
   assert.match(jsx, /const paragraphTextFor = useCallback(?:<[^;\n]+>)?\(\(sectionId: string \| undefined, paragraphIndex: number\) => \{/);
   assert.match(jsx, /handleSelection\(paragraph\.dataset\.section!, paragraphIndex, text, paragraph\);/);
   // Keyboard route untouched.
-  assert.match(jsx, /onKeyDown=\{selectionRoute === 'menu'\s*\? \(event\) => handleParagraphKeyDown\(event, section\.id, paragraphIndex, paragraph\)/);
+  assert.match(jsx, /onKeyDown=\{\(event\) => handleParagraphKeyDown\(event, section\.id, paragraphIndex, paragraph\)/);
 });

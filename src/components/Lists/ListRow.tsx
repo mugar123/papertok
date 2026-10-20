@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { HTMLMotionProps } from 'framer-motion';
 import type { Paper } from '../../models/Paper.ts';
+import { useId, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/utils.ts';
@@ -10,7 +11,6 @@ import { authorExplorerPath } from '../../utils/explorerPaths.ts';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import AuthorDots from '../Feed/AuthorDots.tsx';
 import ScientificText from '../ScientificText.ts';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import '../Feed/SharePanel.css';
 import './ListRow.css';
@@ -73,6 +73,8 @@ export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'met
 
 export function ListRowAuthors({ paper, onNavigate }: { paper: Partial<Paper>; onNavigate?: () => void }) {
   const isPhone = useIsPhone();
+  const [open, setOpen] = useState(false);
+  const listId = useId();
   const authors = paper.authors ?? [];
   const names = authors.map(author => (typeof author === 'string' ? author : author.name)).filter(Boolean).join(', ');
   if (isPhone) {
@@ -112,12 +114,47 @@ export function ListRowAuthors({ paper, onNavigate }: { paper: Partial<Paper>; o
     );
   }
   return (
-    <Tooltip>
-      <TooltipTrigger render={<p className="pc-author-avatars list-row-authors" />}>
+    <>
+      <button
+        type="button"
+        className="pc-author-avatars pc-authors-more list-row-authors"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={`Authors: ${names}`}
+        onClick={(event) => { event.stopPropagation(); setOpen(value => !value); }}
+      >
         <AuthorDots authors={authors} />
-        <span className="visually-hidden">{names}</span>
-      </TooltipTrigger>
-      <TooltipContent align="start" className="list-row-authors-tooltip" aria-hidden="true">{names}</TooltipContent>
-    </Tooltip>
+      </button>
+      <div id={listId} className="pc-authors-list list-row-authors-list" data-open={open || undefined} inert={!open}>
+        <ul>
+          {authors.map((author, index) => {
+            const name = typeof author === 'string' ? author : author.name;
+            if (!name) return null;
+            const path = authorExplorerPath(author, paper);
+            const inner = (
+              <>
+                <span className="pc-author-avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
+                <span className="pc-authors-list-name" title={name}>{name}</span>
+              </>
+            );
+            return (
+              <li key={index} style={{ '--i': index } as CSSProperties}>
+                {path
+                  ? (
+                    <Link
+                      to={path}
+                      className="pc-authors-list-item pc-author-link"
+                      onClick={(event) => { event.stopPropagation(); onNavigate?.(); }}
+                    >
+                      {inner}
+                    </Link>
+                  )
+                  : <span className="pc-authors-list-item">{inner}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </>
   );
 }

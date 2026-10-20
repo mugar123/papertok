@@ -323,6 +323,11 @@ test('`/following` passes its own landmark, with its own heading', async () => {
  */
 const OUTLINE_OFF_ON_PURPOSE = new Map([
   [
+    '.rd-pin:focus-visible',
+    'the pin is a zero-size anchor so it never moves the paragraph; the visible number '
+    + 'is its ::before, and .rd-pin:focus-visible::before draws the 2px --focus-ring on it',
+  ],
+  [
     '.account-menu',
     'the account menu’s popup is a container, not a control: Base UI moves focus on to '
     + 'its items as soon as it opens, and the items (.account-menu-item, the theme '
