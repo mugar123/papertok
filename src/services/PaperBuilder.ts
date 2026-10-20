@@ -299,13 +299,19 @@ export class PaperBuilder {
         && enrichmentData.publicationType
         && !['preprint', 'repository'].includes(enrichmentData.publicationType));
     // Evidence of publication reopens only a preprint's `false` or a missing
-    // answer; a published record's answer stands. A published record that says
-    // outright it was not reviewed wins from either side, so an IMF working
-    // paper that another provider also lists as published stays unreviewed
-    // whichever record arrives first.
+    // answer; a published record's answer stands.
     const reviewOpen = merged.peerReviewed === undefined
       || merged.publicationStatus === 'preprint'
       || merged.publicationType === 'preprint';
+    // A published record that says outright it was not reviewed wins from
+    // either side, so an IMF working paper that another provider also lists as
+    // published stays unreviewed whichever record arrives first. It does not
+    // replace an OpenAlex `true`, which is the base's own venue evidence
+    // (`create` derives none for OpenAlex): `deduplicate` also joins a journal
+    // article and its working paper on title and first author, and the row
+    // keeps the article's venue and DOI.
+    const reviewDenied = enrichmentData.peerReviewed === false
+      && !(merged.peerReviewed === true && isOpenAlexRecord(merged));
     if (shouldUpgradePublication) {
       merged.publicationType = enrichmentData.publicationType || merged.publicationType;
       merged.publicationStatus = 'published';
@@ -315,7 +321,7 @@ export class PaperBuilder {
     // A merge that carried nothing but an abstract once overwrote an explicit
     // `peerReviewed: false` with `true`, and deriving an answer for a record
     // that had none turned OpenAlex's unknown into `true` the same way.
-    if (shouldUpgradePublication && (reviewOpen || enrichmentData.peerReviewed === false)) {
+    if (shouldUpgradePublication && (reviewOpen || reviewDenied)) {
       merged.peerReviewed = enrichmentData.peerReviewed
         ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
     }

@@ -87,6 +87,47 @@ test('the Explorer\'s peer-reviewed filter keeps the journal paper and drops the
   assert.equal(papers.find(paper => paper.id === 'W3')!.peerReviewed, undefined);
 });
 
+test('a journal article keeps its review when its working paper shares the title and first author', () => {
+  // `deduplicate` joins the two versions on title and first author. The row
+  // keeps the article's id, venue and DOI, so it stays peer reviewed.
+  const article: OpenAlexWork = {
+    id: 'https://openalex.org/W100',
+    doi: 'https://doi.org/10.1000/ijcb.1',
+    title: 'Monetary policy and bank lending',
+    type: 'article',
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    primary_location: {
+      is_published: true,
+      source: { display_name: 'International Journal of Central Banking', type: 'journal' },
+    },
+  };
+  const imfWorkingPaper: OpenAlexWork = {
+    ...article,
+    id: 'https://openalex.org/W200',
+    doi: 'https://doi.org/10.5089/imf.1',
+    primary_location: {
+      is_published: true,
+      source: { id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Papers', type: 'journal' },
+    },
+  };
+  const nberReport: OpenAlexWork = {
+    ...article,
+    id: 'https://openalex.org/W300',
+    doi: 'https://doi.org/10.3386/w1',
+    type: 'report',
+    primary_location: { is_published: true, source: { display_name: 'NBER Working Paper Series' } },
+  };
+
+  for (const workingPaper of [imfWorkingPaper, nberReport]) {
+    const papers = PaperBuilder.deduplicate(slimWorksPage({ results: [article, workingPaper] }).papers);
+    assert.deepEqual(
+      filterAndSortEntityPapers(papers, { filters: { peerReviewed: true } })
+        .map(paper => [paper.id, paper.journal, paper.peerReviewed]),
+      [['W100', 'International Journal of Central Banking', true]],
+    );
+  }
+});
+
 test('an arXiv preprint whose OpenAlex record is a working paper is published but not peer reviewed', () => {
   const preprint = PaperBuilder.create({
     id: 'arxiv:2601.00001',
