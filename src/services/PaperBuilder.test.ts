@@ -1,9 +1,11 @@
-import type { PaperAuthor } from '../models/Paper.ts';
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
+import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
+import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
 
 test('normalizes category and publication metadata used by ranking', () => {
   const paper = PaperBuilder.create({
@@ -198,6 +200,101 @@ test('a journal article joined to its working paper by title alone is not tagged
     assert.equal(joined.length, 1, primary);
     assert.equal(joined[0].doi, '10.1000/jhe.1');
     assert.equal(reviewTagForPaper(joined[0]), null, primary);
+  }
+});
+
+test('a working paper joined to a different article by title alone does not unreview the article', () => {
+  // Synthetic records: an IMF working paper shaped as OpenAlex search returns
+  // it, and its journal version shaped as PubMed returns it and mapped by the
+  // Crossref institution fallback. Same title and first author, different
+  // DOIs, so `deduplicate` joins them on the title.
+  const title = 'Monetary policy and bank lending in small open economies';
+  const imfDoi = '10.5089/9798229063456.001';
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const workingPaper = {
+    id: 'openalex:W200',
+    sources: { primary: 'openalex', enrichedBy: [] },
+    doi: imfDoi,
+    title,
+    authors: [{ name: 'Ana Economist', id: 'https://openalex.org/A1' }],
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    peerReviewed: false,
+    workingPaper: true,
+    provider: 'openalex',
+  };
+  const pubmedArticle = (doi: string) => ({
+    id: 'pmid:41000001',
+    pmid: '41000001',
+    sources: { primary: 'pubmed', enrichedBy: [] },
+    doi,
+    title,
+    authors: [{ name: 'Economist A' }],
+    journal: 'J Int Econ',
+    publicationStatus: 'published' as const,
+    publicationType: 'article',
+    provider: 'pubmed',
+  });
+  const crossrefArticle = (doi: string) => mapCrossrefInstitutionWork({
+    DOI: doi,
+    title: [title],
+    type: 'journal-article',
+    author: [{ given: 'Ana', family: 'Economist' }],
+    'container-title': ['Journal of International Economics'],
+  })!;
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
+
+  for (const [provider, article] of [['pubmed', pubmedArticle], ['crossref', crossrefArticle]] as const) {
+    // The article first: the row keeps its DOI and journal, and its review.
+    const rows = PaperBuilder.deduplicate([article(journalDoi), workingPaper]);
+    assert.equal(rows.length, 1, provider);
+    assert.equal(rows[0].doi, journalDoi, provider);
+    assert.equal(rows[0].peerReviewed, true, provider);
+    assert.equal(reviewTagForPaper(rows[0]), null, provider);
+    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], provider);
+
+    // The working paper first: the row is the working paper, with its own DOI
+    // and its own answer. The article's review does not cross over either.
+    const [paper] = PaperBuilder.deduplicate([workingPaper, article(journalDoi)]);
+    assert.equal(paper.doi, imfDoi, provider);
+    assert.equal(paper.peerReviewed, false, provider);
+    assert.equal(reviewTagForPaper(paper)?.label, 'Working paper', provider);
+
+    // A shared DOI is one record, so the working paper's answer and tag still
+    // win in either order.
+    for (const order of [[article(imfDoi), workingPaper], [workingPaper, article(imfDoi)]]) {
+      const [twin] = PaperBuilder.deduplicate(order);
+      assert.equal(twin.peerReviewed, false, `${provider}, shared DOI`);
+      assert.equal(reviewTagForPaper(twin)?.label, 'Working paper', `${provider}, shared DOI`);
+      assert.deepEqual(peerReviewedOnly([twin]), [], `${provider}, shared DOI`);
+    }
+  }
+
+  // Nor does a different record's `false` fill a gap: an OpenAlex work with
+  // no venue stays unknown.
+  const noVenue = { ...workingPaper, id: 'openalex:W300', doi: '10.1000/no-venue', peerReviewed: undefined, workingPaper: undefined };
+  const [gap] = PaperBuilder.deduplicate([noVenue, workingPaper]);
+  assert.equal(gap.doi, '10.1000/no-venue');
+  assert.equal(gap.peerReviewed, undefined);
+  assert.equal(reviewTagForPaper(gap), null);
+
+  // So does a shared arXiv id, whatever the version: here a Semantic Scholar
+  // record of the journal version that also lists the eprint.
+  const semanticScholar = {
+    id: 's2:abc',
+    doi: journalDoi,
+    arxivId: '2601.00001v2',
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    publicationType: 'JournalArticle',
+    publicationStatus: 'published' as const,
+    sources: { primary: 'semantic_scholar', enrichedBy: [] },
+  };
+  const eprintWorkingPaper = { ...workingPaper, arxivId: '2601.00001' };
+  for (const order of [[semanticScholar, eprintWorkingPaper], [eprintWorkingPaper, semanticScholar]]) {
+    const [twin] = PaperBuilder.deduplicate(order);
+    assert.equal(twin.peerReviewed, false, 'shared arXiv id');
+    assert.equal(reviewTagForPaper(twin)?.label, 'Working paper', 'shared arXiv id');
   }
 });
 

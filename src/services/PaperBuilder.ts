@@ -310,13 +310,22 @@ export class PaperBuilder {
     const reviewOpen = merged.peerReviewed === undefined
       || merged.publicationStatus === 'preprint'
       || merged.publicationType === 'preprint';
+    // A `false` and the working-paper tag describe the record that sent them,
+    // so the row takes them only while it keeps that record's identity: the
+    // base had no DOI, or both share a DOI or arXiv id. `deduplicate` also
+    // joins a journal article and its working paper on title and first
+    // author, and a row that keeps the article's DOI and journal is not the
+    // working paper.
+    const baseDoi = normalizeDoi(existingPaper.doi);
+    const baseArxivId = arxivIdKey(existingPaper.arxivId);
+    const sameRecord = !existingPaper.doi
+      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
+      || (baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
     // A published record that says outright it was not reviewed wins from
     // either side, so an IMF working paper that another provider also lists as
     // published stays unreviewed whichever record arrives first. It does not
     // replace an OpenAlex `true`, which is the base's own venue evidence
-    // (`create` derives none for OpenAlex): `deduplicate` also joins a journal
-    // article and its working paper on title and first author, and the row
-    // keeps the article's venue and DOI.
+    // (`create` derives none for OpenAlex).
     const reviewDenied = enrichmentData.peerReviewed === false
       && !(merged.peerReviewed === true && isOpenAlexRecord(merged));
     if (shouldUpgradePublication) {
@@ -328,22 +337,14 @@ export class PaperBuilder {
     // A merge that carried nothing but an abstract once overwrote an explicit
     // `peerReviewed: false` with `true`, and deriving an answer for a record
     // that had none turned OpenAlex's unknown into `true` the same way.
-    if (shouldUpgradePublication && (reviewOpen || reviewDenied)) {
+    if (shouldUpgradePublication && (reviewOpen || reviewDenied)
+      && (enrichmentData.peerReviewed !== false || sameRecord)) {
       merged.peerReviewed = enrichmentData.peerReviewed
         ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
     }
     // The working-paper tag explains a `false`. It stays while the answer is
     // `false`, and goes when a venue's `true` stands, as for the journal article
-    // whose working paper merged in. It names one record, so the enrichment's
-    // tag is taken only when the row keeps that record's identity: the base had
-    // no DOI, or both share a DOI or arXiv id. `deduplicate` also joins a
-    // journal article to its working paper on title and first author, and a
-    // row that keeps the article's DOI is not the working paper.
-    const baseDoi = normalizeDoi(existingPaper.doi);
-    const baseArxivId = arxivIdKey(existingPaper.arxivId);
-    const sameRecord = !existingPaper.doi
-      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
-      || (baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
+    // whose working paper merged in.
     const workingPaper = merged.peerReviewed === false
       && (merged.workingPaper === true || (sameRecord && enrichmentData.workingPaper === true));
     // Written only when it changes: a merge that adds nothing must return a
