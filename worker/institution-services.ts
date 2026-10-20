@@ -87,6 +87,19 @@ const IOP_DISCOVERY = Object.freeze([
   'https://stang.sc.mahidol.ac.th/pdf/subscription/IOP_titlelist2021.pdf',
 ]);
 
+const HUMAN_KINETICS_DISCOVERY = Object.freeze([
+  'https://ub.uni-graz.at/en/news/neu-human-kinetics-journals/',
+  'https://www.humankinetics.com/AcuCustom/Sitename/DAM/169/HK_APR_catalog_US.pdf',
+  'https://www.humankinetics.com/AcuCustom/Sitename/DAM/158/Human_Kinetics_2017_Product_Guide.pdf',
+]);
+const POLICY_PRESS_DISCOVERY = Object.freeze([
+  'https://library.northsouth.edu/library-collections/online-database-journals/policy-press/',
+  'https://bristoluniversitypress.co.uk/asset/12107/journals-catalogue-autumn-23.pdf',
+]);
+const SAGE_DISCOVERY = 'https://niepa.ac.in/download/Sage-Education%20Subject%20Collection-%20List%20of%20Journals_120_2023.pdf';
+const OXFORD_LAW_DISCOVERY = 'https://scalsar.edu.in/assets/pdf/learning_resource_centre_SCALSAR.pdf';
+const OXFORD_HUMANITIES_DISCOVERY = 'https://sba.unipi.it/en/open-access-e-open-science-0/elenco-delle-pubblicazioni-oa/416';
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -209,6 +222,56 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     platformId: 'iop', packageHint: 'Institute of Physics', publisher: 'IOP Publishing',
     url: `https://iopscience.iop.org/journal/${journal.eissn}`,
     monogram: 'IOP', color: '#1D3C78', year: 2021, sources: IOP_DISCOVERY,
+  })),
+  // Broaden the journal samples beyond Nature/IOP; university lists identify
+  // candidates, while the resolver still decides access to the archived year.
+  ...[
+    { name: 'Adapted Physical Activity Quarterly', issn: '0736-5829', eissn: '1543-2777', url: 'https://journals.humankinetics.com/view/journals/apaq/apaq-overview.xml' },
+    { name: 'Journal of Teaching in Physical Education', issn: '0273-5024', eissn: '1543-2769', url: 'https://journals.humankinetics.com/view/journals/jtpe/jtpe-overview.xml' },
+    { name: 'International Sport Coaching Journal', issn: '2328-918X', eissn: '2328-9198', url: 'https://journals.humankinetics.com/view/journals/iscj/iscj-overview.xml' },
+    { name: 'Kinesiology Review', issn: '2163-0453', eissn: '2161-6035', url: 'https://journals.humankinetics.com/view/journals/krj/krj-overview.xml' },
+    { name: 'Sport History Review', issn: '1087-1659', eissn: '1543-2947', url: 'https://journals.humankinetics.com/view/journals/shr/shr-overview.xml' },
+    { name: 'Journal of Sport and Exercise Psychology', issn: '0895-2779', eissn: '1543-2904', url: 'https://journals.humankinetics.com/view/journals/jsep/jsep-overview.xml' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'humankinetics', packageHint: 'Human Kinetics', publisher: 'Human Kinetics',
+    monogram: 'HK', color: '#1D1D1B', year: 2021, sources: HUMAN_KINETICS_DISCOVERY,
+  })),
+  ...[
+    { name: 'Policy & Politics', issn: '0305-5736', eissn: '1470-8442', url: 'https://bristoluniversitypress.co.uk/journals/policy-and-politics' },
+    { name: 'Evidence & Policy', issn: '1744-2648', eissn: '1744-2656', url: 'https://bristoluniversitypress.co.uk/journals/evidence-and-policy' },
+    { name: 'Journal of Poverty and Social Justice', issn: '1759-8273', eissn: '1759-8281', url: 'https://bristoluniversitypress.co.uk/journals/journal-of-poverty-and-social-justice' },
+    { name: 'Voluntary Sector Review', issn: '2040-8056', eissn: '2040-8064', url: 'https://bristoluniversitypress.co.uk/journals/voluntary-sector-review' },
+    { name: 'Families, Relationships and Societies', issn: '2046-7435', eissn: '2046-7443', url: 'https://bristoluniversitypress.co.uk/journals/families-relationships-and-societies' },
+    { name: 'Critical and Radical Social Work', issn: '2049-8608', eissn: '2049-8675', url: 'https://bristoluniversitypress.co.uk/journals/critical-and-radical-social-work' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'bristol', packageHint: 'Policy Press', publisher: 'Policy Press',
+    monogram: 'PP', color: '#1D1D1B', year: 2021, sources: POLICY_PRESS_DISCOVERY,
+  })),
+  ...[
+    { name: 'American Educational Research Journal', issn: '0002-8312', eissn: '1935-1011', url: 'https://journals.sagepub.com/loi/AER' },
+    { name: 'Review of Educational Research', issn: '0034-6543', eissn: '1935-1046', url: 'https://journals.sagepub.com/loi/RER' },
+    { name: 'Journal of Learning Disabilities', issn: '0022-2194', eissn: '1538-4780', url: 'https://journals.sagepub.com/loi/LDX' },
+    { name: 'Educational Policy', issn: '0895-9048', eissn: '1552-3896', url: 'https://journals.sagepub.com/loi/EPX' },
+    { name: 'Urban Education', issn: '0042-0859', eissn: '1552-8340', url: 'https://journals.sagepub.com/loi/UEX' },
+    { name: 'Journal of Teacher Education', issn: '0022-4871', eissn: '1552-7816', url: 'https://journals.sagepub.com/loi/JTE' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'sage', packageHint: 'SAGE', publisher: 'SAGE',
+    monogram: 'SAGE', color: '#1D6E5B', year: 2021, sources: Object.freeze([SAGE_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'Oxford Journal of Legal Studies', issn: '0143-6503', eissn: '1464-3820', url: 'https://academic.oup.com/ojls', sources: Object.freeze([OXFORD_LAW_DISCOVERY, 'https://academic.oup.com/ojls']) },
+    { name: 'Human Rights Law Review', issn: '1461-7781', eissn: '1744-1021', url: 'https://academic.oup.com/hrlr', sources: Object.freeze([OXFORD_LAW_DISCOVERY, 'https://academic.oup.com/hrlr']) },
+    { name: 'International Journal of Constitutional Law', issn: '1474-2640', eissn: '1474-2659', url: 'https://academic.oup.com/icon', sources: Object.freeze([OXFORD_LAW_DISCOVERY, 'https://academic.oup.com/icon']) },
+    { name: 'History Workshop Journal', issn: '1363-3554', eissn: '1477-4569', url: 'https://academic.oup.com/hwj', sources: Object.freeze([OXFORD_HUMANITIES_DISCOVERY, 'https://academic.oup.com/hwj']) },
+    { name: 'Oxford Art Journal', issn: '0142-6540', eissn: '1741-7287', url: 'https://academic.oup.com/oaj', sources: Object.freeze([OXFORD_HUMANITIES_DISCOVERY, 'https://academic.oup.com/oaj']) },
+    { name: 'Applied Linguistics', issn: '0142-6001', eissn: '1477-450X', url: 'https://academic.oup.com/applij', sources: Object.freeze([OXFORD_HUMANITIES_DISCOVERY, 'https://academic.oup.com/applij']) },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'oup', packageHint: 'Oxford', publisher: 'Oxford University Press',
+    monogram: 'OUP', color: '#002147', year: 2021,
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
