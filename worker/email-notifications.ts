@@ -2765,6 +2765,13 @@ function shouldInspectPreviousDay(subscription: Subscription, now: Date) {
   return isSubscriptionCalendarDue(subscription, now) || [2, 3].includes(now.getUTCDay());
 }
 
+// The days on which `shouldInspectPreviousDay` can hold for anyone: Monday's
+// digest, Tuesday's source-failure retry, and the reconciliation of the day
+// before on Tuesday and Wednesday.
+function isDigestWorkDay(now: Date) {
+  return [1, 2, 3].includes(now.getUTCDay());
+}
+
 function allowsNewScheduledDelivery(now: Date) {
   return !(now.getUTCHours() === 13 && now.getUTCMinutes() >= 40);
 }
@@ -2856,7 +2863,12 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
   const checkedAt = now.toISOString();
   if (!(subscription.follows || []).length) {
     const code = 'EMAIL_SUBSCRIPTION_INVALID';
-    await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+    // Recorded once. Only a save can give the record follows, so writing the same
+    // outcome again in every window spent a KV write per window and changed
+    // nothing but its timestamp.
+    if (subscription.lastDelivery?.status !== 'invalid') {
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+    }
     return { invalid: true, failureCodes: { [code]: 1 } };
   }
   let sourceReport;
@@ -2962,7 +2974,11 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
   if (ledgerMissing) {
     console.error('Email delivery ledger binding is missing; refusing to send without an atomic daily limit');
   }
-  if (!env.NOTIFICATION_STORE || !provider || ledgerMissing) {
+  // Thursday to Sunday every subscription would be read only to be skipped: a KV
+  // list per three subscribers, two reads each and a cursor write per page, in
+  // every window. The window still records that it ran, for `/health/email`.
+  const disabled = !env.NOTIFICATION_STORE || !provider || ledgerMissing;
+  if (!env.NOTIFICATION_STORE || disabled || !isDigestWorkDay(now)) {
     const summary: ScheduleSummary = {
       scheduledAt: now.toISOString(),
       completedAt: new Date().toISOString(),
@@ -2981,7 +2997,7 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
       failed: 0,
       sources: compactSourceReport(),
       failureCodes: ledgerMissing ? { EMAIL_DELIVERY_LEDGER_MISSING: 1 } : {},
-      disabled: true,
+      ...(disabled ? { disabled: true } : {}),
     };
     await recordScheduleOutcome(env, summary);
     return summary;
