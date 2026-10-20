@@ -1248,7 +1248,7 @@ function replaceAfter(text: string, anchors: string[], find: string, replacement
 }
 
 // Damage the reader's expressions would read past, and markup they do not
-// match though XML allows it (the last seven), each made once to each answer
+// match though XML allows it (the last eight), each made once to each answer
 // in the test below, all of more than one service. Read by its keys alone,
 // such an answer can count a filtered service as live, a live one as
 // filtered or missing, or lose a service's link.
@@ -1270,6 +1270,7 @@ const MARKUP_DAMAGE: Array<[string, (answer: string) => string]> = [
   ['a key opened with a second attribute', answer => replaceAfter(answer, ['<context_service ', '<key '], '">', '" lang="en">')],
   ['a service type in single quotes', answer => replaceAfter(answer, [], 'service_type="getFullTxt"', "service_type='getFullTxt'")],
   ['a service type with a character reference', answer => replaceAfter(answer, [], 'service_type="getFullTxt"', 'service_type="getFull&#84;xt"')],
+  ['a service type with spaces around =', answer => replaceAfter(answer, [], 'service_type="getFullTxt"', 'service_type = "getFullTxt"')],
   ['a link opened with an attribute', answer => replaceAfter(answer, [], '<resolution_url>', '<resolution_url lang="en">')],
 ];
 
