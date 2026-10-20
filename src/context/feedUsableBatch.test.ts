@@ -67,7 +67,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
     userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
-    feedRequestId: ref(0), feedSessionId: ref(0),
+    feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<unknown[] | null>(null),
     openAlexEnrichmentAttempts: ref(new Set()), openAlexEnrichmentRequests: ref(new Map()),
     lateSourceCandidatesRef: ref([]), latePoolGenerationRef: ref(0),
     setLoading: (value: boolean) => { state.loading = value; }, setError: (value: string | null) => { state.error = value; },
@@ -368,6 +368,99 @@ test('automatic top-up respects the existing pagination ceiling', async () => {
   assert.equal(state.papers.length, 2);
   assert.deepEqual(state.continuations, []);
 });
+
+// The provider's hooks as React runs them: every render closes over that
+// render's state, and a commit publishes the render's loadPapers.
+function hookBody(anchor: string) {
+  const from = source.indexOf(anchor);
+  const to = source.indexOf('\n  }, [', from);
+  assert.ok(from >= 0 && to > from, `the hook at ${JSON.stringify(anchor)} must exist`);
+  return stripTypeScriptTypes(source.slice(source.indexOf('() => {', from), to) + '\n  }');
+}
+const loadMoreCallback = hookBody('const loadMore = useCallback(');
+const publishCallback = hookBody('useLayoutEffect(() => {\n    loadPapersRef.current = loadPapers;');
+const compile = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+
+for (const commitFirst of [true, false]) {
+  test(`only the reset load fills the first screen, and its short page continues when React commits it ${commitFirst ? 'before' : 'after'} the continuation fires`, async t => {
+    t.mock.method(Math, 'random', () => 0.5);
+    const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const { state, env } = feed();
+    const requests: Array<{ source: string; categories: string[]; start?: number; painted: boolean }> = [];
+    const send = (source: string, categories: string[], start?: number) => {
+      const painted = state.papers.length > 0;
+      requests.push({ source, categories, start, painted });
+      return painted;
+    };
+    let open!: () => void;
+    const answered = new Promise<void>(resolve => { open = resolve; });
+    const sources = {
+      // cs.LG is the nearby category that exploration adds.
+      getAllLeafCategories: () => [
+        { id: 'cs.AI', label: 'Artificial Intelligence', area: 'cs' },
+        { id: 'cs.LG', label: 'Machine Learning', area: 'cs' },
+      ],
+      CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence', 'cs.LG': 'Machine Learning' } } },
+      // Five papers before anything is shown, a full page after.
+      fetchPapers: async (categories: string[], start: number) => {
+        const painted = send('arxiv', categories, start);
+        await answered;
+        if (categories.includes('cs.LG')) return records('nearby', 2);
+        return painted ? records('next') : records('first', 5);
+      },
+      OpenAlexAdapter: class {
+        search(_query: string, _page: number, { internalCategories }: { internalCategories: string[] }) {
+          send('openalex', internalCategories);
+          return Promise.resolve({ papers: [] });
+        }
+      },
+      fetchDomainPapers: (categories: string[]) => {
+        send('domain', categories);
+        return Promise.resolve([]);
+      },
+    };
+    const render = () => {
+      const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
+      const loadPapers = compile(callback, scope);
+      return {
+        loadPapers,
+        loadMore: compile(loadMoreCallback, { ...scope, loadPapers }),
+        commit: () => compile(publishCallback, { ...scope, loadPapers })(),
+      };
+    };
+
+    const mounted = render();
+    mounted.commit();
+    // The preferences effect starts the reset load. While its sources are
+    // pending, the scroll sentinel from the same render reports itself in view
+    // before React commits the reset load's `loading`.
+    const resetLoad = mounted.loadPapers(true, null, true);
+    mounted.loadMore();
+    render().commit();
+    open();
+    await resetLoad;
+
+    const firstPage = records('first', 5).map(paper => paper.id);
+    const firstWave = requests.filter(request => !request.painted);
+    assert.deepEqual(['arxiv', 'openalex', 'domain'].map(source => firstWave.filter(request => request.source === source).length), [1, 1, 1],
+      'one request per source before the first page is shown');
+    assert.notEqual(firstWave.find(request => request.source === 'arxiv')?.start, 0, 'the reset load asks for its random start page');
+    assert.ok(firstWave.every(request => !request.categories.includes('cs.LG')), 'no exploration request before the first page is shown');
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), firstPage);
+
+    // Five cards are a short page, so the reset load has scheduled the next one.
+    const shown = render();
+    if (commitFirst) shown.commit();
+    await tick();
+    if (!commitFirst) shown.commit();
+    for (let waited = 0; waited < 1000 && !state.papers.some(paper => paper.id.startsWith('next-')); waited += 10) await pause(10);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.slice(0, firstPage.length).map(paper => paper.id), firstPage, 'the first page stays where it is');
+    assert.ok(state.papers.slice(firstPage.length).some(paper => paper.id.startsWith('next-')), 'the next page follows it');
+    assert.ok(requests.some(request => request.painted && request.categories.includes('cs.LG')), 'exploration comes with the next page');
+  });
+}
 
 for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
   test(`the personalized feed displays arXiv papers for ${category}`, async () => {
