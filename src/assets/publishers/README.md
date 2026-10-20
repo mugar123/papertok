@@ -131,3 +131,14 @@ publisher favicon; PNG files and the Financial Times SVG are unchanged.
 | `guardian.png` | https://assets.guim.co.uk/static/frontend/icons/homescreen/apple-touch-icon-120.png |
 | `hbr.png` | https://hbr.org/resources/images/apple-touch-icon.png |
 | `businessweek.ico` | https://www.bloomberg.com/favicon.ico |
+
+## Additional journal publishers
+
+Retrieved 2026-10-20. These original favicons are bundled unchanged. Policy
+Press is an imprint of Bristol University Press and uses its parent brand.
+The logo IDs group journal rows without adding another subscription probe.
+
+| File | Source |
+| --- | --- |
+| `humankinetics.png` | [Human Kinetics official touch icon](https://us.humankinetics.com/cdn/shop/files/favicon.png?crop=center&height=180&v=1695310794&width=180) |
+| `bristol.ico` | [Bristol University Press official favicon](https://bristoluniversitypress.co.uk/favicon.ico) |
