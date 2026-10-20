@@ -465,7 +465,9 @@ actions with a one-line hint each and their glyph on a tint of the action's own
 accent (About this paper, Mark as read, Not
 interested, the BibTeX/RIS exports), then the share destinations. About this
 paper replaces the actions in the same surface, with a back arrow, and holds
-the status chips, topics, funding and links that are not on the card face.
+the status chips, topics, funding and links that are not on the card face;
+topics and funding are ruled rows, the field's rule in its ink and its topics'
+in a lighter one.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
