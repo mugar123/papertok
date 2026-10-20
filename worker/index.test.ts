@@ -1578,11 +1578,11 @@ test('a cold citation graph reserves both OpenAlex ceilings in one call for what
   });
 
   // The `openalex:*` ceiling used to cover only `/openalex/*`. A miss here can
-  // spend nine billed calls -- one `works/doi:` lookup, then up to two batches
-  // for each of the two reference filters and the same for citations -- and the
-  // route reserves all nine before the work starts, minute and day together.
+  // spend seven billed calls -- one `works/doi:` lookup, then up to three
+  // batches for references and three for citations -- and the route reserves
+  // all seven before the work starts, minute and day together.
   const openAlex = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
-  assert.deepEqual(openAlex.map(entry => entry.amount), [9]);
+  assert.deepEqual(openAlex.map(entry => entry.amount), [7]);
   assert.match(openAlex[0].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
   assert.equal(openAlex[0].limit, 8_000);
 });
@@ -1636,6 +1636,35 @@ async function secondOpenAlexMiss(limits: Record<string, string>) {
   );
   return { responses, calls: ledger.calls };
 }
+
+test('the costliest cold citation graph spends exactly what it reserves', async () => {
+  // 21 candidates known by OpenAlex id and 19 by DOI alone, per relation: the
+  // split that needs the most batches of twenty from 40 candidates.
+  const rows = (field: string, prefix: string) => Array.from({ length: 40 }, (_, index) => ({
+    [field]: index < 21 ? `openalex:W${prefix}${index}` : `doi:10.9999/${prefix}${index}`,
+  }));
+  const ledger = recordingLedger();
+  const calls = await withCountedUpstream(async (url) => {
+    const address = String(url);
+    if (address.includes('/index/v2/references/')) return Response.json(rows('cited', '1'));
+    if (address.includes('/index/v2/citations/')) return Response.json(rows('citing', '2'));
+    if (address.includes('opencitations')) return Response.json([]);
+    return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 40, results: [] });
+  }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }), {
+        ...AUTHENTICATED_ENV,
+        REQUEST_QUOTA_LEDGER: ledger.binding,
+      });
+      assert.equal(response.status, 200);
+    });
+  });
+
+  const reserved = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
+  const spent = calls.filter(address => address.startsWith('https://api.openalex.org/')).length;
+  assert.equal(spent, 7);
+  assert.deepEqual(reserved.map(entry => entry.amount), [spent]);
+});
 
 test('the per-minute OpenAlex ceiling refuses within the day and asks for a minute', async () => {
   const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '1', OPENALEX_GLOBAL_DAILY_LIMIT: '100' });

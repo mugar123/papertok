@@ -191,7 +191,7 @@ is not one of them and should not be counted as one: a request with no `Origin` 
 to check, and one is trivially forged, so the ceiling is the frontier. The day matters because the
 budget is daily and a per-minute ceiling does not bound it — 300/min is 432.000/day. Every route
 that spends the budget reserves against both, `/openalex/*` for one call
-and `/citation-graph` for up to nine, so a caller who cannot be identified still cannot outspend the
+and `/citation-graph` for up to seven, so a caller who cannot be identified still cannot outspend the
 day. A
 refusal is relayed with its own status and `retry-after` rather than flattened into a 502, and the
 rate-limit headers are named in `access-control-expose-headers` so the browser can actually read
