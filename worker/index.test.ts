@@ -432,6 +432,27 @@ test('serves a guest without a session, because the guest feed reads OpenAlex', 
   assert.deepEqual(await response.json(), { results: [{ id: 'W1' }] });
 });
 
+test('an OpenAlex 404 is cached for an hour, an OpenAlex outage is not cached', async () => {
+  const upstreamCalls = (status: number) => withCountedUpstream(
+    async () => new Response(JSON.stringify({ error: 'x' }), { status }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const response = await reportApi.fetch(new Request(
+            'https://papertok-report-api.example/openalex/works/doi:10.1/unindexed',
+            { headers: { origin: 'https://mugar123.github.io' } },
+          ), openAlexEnv());
+          assert.equal(response.status, status);
+          if (status === 404) assert.equal(maxAgeSeconds(response), 3600);
+        }
+      });
+    },
+  );
+
+  assert.equal((await upstreamCalls(404)).length, 1, 'the second 404 comes from the edge');
+  assert.equal((await upstreamCalls(503)).length, 2, 'an outage is asked again');
+});
+
 test('relays an OpenAlex refusal with its own wait instead of flattening it', async () => {
   const response = await withWorkerFetchMock(
     async () => new Response(

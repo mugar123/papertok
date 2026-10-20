@@ -196,7 +196,7 @@ day. A
 refusal is relayed with its own status and `retry-after` rather than flattened into a 502, and the
 rate-limit headers are named in `access-control-expose-headers` so the browser can actually read
 them; otherwise the client's backoff falls back to guessing, and since the budget resets at midnight
-UTC that guess can be hours wrong. `/health/openalex` reports the remaining daily budget in dollars.
+UTC that guess can be hours wrong. A 404, a work OpenAlex has not indexed, is an answer rather than a refusal and is cached for an hour. `/health/openalex` reports the remaining daily budget in dollars.
 Both ceilings are one call to the day's `RequestQuotaLedger` object, which checks the current minute as its subject in the same transaction, so a miss costs one Durable Object request rather than two.
 
 `/sources/scopus` does not call Elsevier. `api.elsevier.com` is served by Cloudflare and so is this
