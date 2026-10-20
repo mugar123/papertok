@@ -114,7 +114,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (IS_DEMO) {
-      setTimeout(() => {
+      const demoTimeout = setTimeout(() => {
         // Demo mode: check if user has "logged in" before
         const demoUser = demoGet<AppUser | null>('user', null);
         if (demoUser) {
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
         setLoading(false);
       }, 0);
-      return;
+      return () => clearTimeout(demoTimeout);
     }
 
     let authChangeId = 0;

@@ -349,11 +349,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const latePoolGenerationRef = useRef(0);
   const openAlexEnrichmentRequests = useRef(new Map<string, ReturnType<typeof enrichPapersBatch>>());
   const activeUserId = useRef(user?.uid || null);
-  const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
+  // Initial ref values that read storage or allocate go through a lazy
+  // useState: the provider re-renders on every feed change, and useRef(value)
+  // would evaluate them each time only to discard them.
+  const [initialSeenPapers] = useState(() => readSeenPaperIds(user?.uid));
+  const sessionSeenPapers = useRef(initialSeenPapers);
   // The derived aggregate that replaced the full interactions scan. Kept in a
   // ref because every interaction mutates it synchronously while the durable
   // write is coalesced behind it.
-  const interactionProfile = useRef(createEmptyInteractionProfile());
+  const [initialInteractionProfile] = useState(createEmptyInteractionProfile);
+  const interactionProfile = useRef(initialInteractionProfile);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, which is worse than skipping a session's deltas: the
@@ -383,7 +388,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Semantic Scholar's answer for this profile's examples, drawn page by page.
   const personalCandidates = useRef<PersonalCandidate[]>([]);
   const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
-  const recommendationWeights = useRef(readRecommendationWeights());
+  const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
+  const recommendationWeights = useRef(initialRecommendationWeights);
   const boredomLevel = useRef(0); // 0 = happy, higher = more bored
   // Cold users get more patience before the algorithm assumes boredom; returning
   // users have a formed profile, so their bubble deserves earlier puncturing.

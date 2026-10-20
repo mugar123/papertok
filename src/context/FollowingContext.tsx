@@ -44,7 +44,7 @@ const FIRST_SNAPSHOT_GRACE_MS = 6500;
  * follows" from "this account follows nobody" — a distinction that decides
  * whether it is safe to write notification preferences derived from the list.
  */
-export class FollowsUnavailableError extends Error {
+class FollowsUnavailableError extends Error {
   declare code: string;
   declare retryable: boolean;
   constructor() {

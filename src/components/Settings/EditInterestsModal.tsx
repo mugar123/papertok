@@ -28,7 +28,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   const { userPreferences, updatePreferences } = useAuth();
   const [selected, setSelected] = useState(new Set<string>());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeArea, setActiveArea] = useState(Object.keys(INTEREST_AREAS)[0]);
+  const [activeArea, setActiveArea] = useState(() => Object.keys(INTEREST_AREAS)[0]);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const switcherRef = useRef<HTMLButtonElement | null>(null);
   const backRef = useRef<HTMLButtonElement | null>(null);
