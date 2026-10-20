@@ -104,9 +104,14 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * `rorId` names the university's record, which ROR is asked for by id. A
  * student domain then links to the record whose library `/access` serves:
  * `/access` finds a library by ROR id, and a student domain is not among the
- * row's domains. `rorDomain` names the domain ROR is asked about instead, for
- * a domain ROR lists under another record: ROR lists neu.edu, the legacy
- * domain of Northeastern in Boston, under Northeastern in Shenyang, and lists
+ * row's domains. The entry also wins over a record that ROR lists the domain
+ * under: ROR lists purdue.edu only under the Clifford B. Kinley Trust
+ * (049s7vz13), a funder record, and arizona.edu, univ-lille.fr and slu.se
+ * only under sub-units (checked 2026-10-19).
+ *
+ * `rorDomain` names the domain ROR is asked about instead, for a domain ROR
+ * lists under another record: ROR lists neu.edu, the legacy domain of
+ * Northeastern in Boston, under Northeastern in Shenyang, and lists
  * northeastern.edu under Boston (04t5xt781). The record found must list that
  * domain. Either way the name and acronym come from ROR.
  *
@@ -118,19 +123,31 @@ const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
   'husky.neu.edu': { rorDomain: 'northeastern.edu', source: 'https://cssh.northeastern.edu/writingcenter/tutoring/first-visit/', checked: '2026-10-19' },
   'alum.us.es': { rorId: 'https://ror.org/03yxnpp24', source: 'https://cat.us.es/orientacion/guia-de-estudiantes/', checked: '2026-10-19' },
   'alumnes.ub.edu': { rorId: 'https://ror.org/021018s57', source: 'https://www.ub.edu/campusvirtualub/ca/pmf/com-crear-la-teva-adreca-de-correu-ub', checked: '2026-10-19' },
+  'alumni.unav.es': { rorId: 'https://ror.org/02rxc7m23', source: 'https://www.unav.edu/web/it/cuentas-y-claves', checked: '2026-10-19' },
   'alumni.uv.es': { rorId: 'https://ror.org/043nxc105', source: 'https://www.uv.es/uvweb/social/en/faculty/office-secretary/faq-1286251981646.html', checked: '2026-10-19' },
   'alumno.uned.es': { rorId: 'https://ror.org/02msb5n36', source: 'https://www.uned.es/universidad/inicio/en/estudios/idiomas/servicios-estudiante/acceso-correo-estudiante.html', checked: '2026-10-19' },
   'alumnos.uc3m.es': { rorId: 'https://ror.org/03ths8210', source: 'https://www.uc3m.es/grado/informacion-practica/llegada-uc3m/correo-uc3m', checked: '2026-10-19' },
   'alumnos.upm.es': { rorId: 'https://ror.org/03n6nwv02', source: 'https://www.upm.es/internacional/UPM/Network%20Services/e-mail', checked: '2026-10-19' },
+  'alumnos.uvigo.es': { rorId: 'https://ror.org/05rdf8595', source: 'https://secretaria.uvigo.gal/uv/web/axuda/faq/documento/downloadbyhash/bf55f3e58f46c2cdd74a35e796f4930ccfdc833ec737d74694647c23c0fff004', checked: '2026-10-19' },
+  'arizona.edu': { rorId: 'https://ror.org/03m2x1q45', source: 'https://news.arizona.edu/node/21525', checked: '2026-10-19' },
+  'autonoma.cat': { rorId: 'https://ror.org/052g8jq94', source: 'https://www.uab.cat/doc/presentacio_acollida_2025_2026', checked: '2026-10-19' },
   'correo.ugr.es': { rorId: 'https://ror.org/04njjy449', source: 'https://csirc.ugr.es/estudiantes/acceso-servicios', checked: '2026-10-19' },
   'estudiant.upf.edu': { rorId: 'https://ror.org/04n0g0b29', source: 'https://www.upf.edu/web/phd-political-and-social-sciences/resources', checked: '2026-10-19' },
   'estudiantat.upc.edu': { rorId: 'https://ror.org/03mb6wj31', source: 'https://serveistic.upc.edu/ca/g-suite-for-education/faq/soc-estudiant-tinc-correu-g-suite-o-correu-google', checked: '2026-10-19' },
   'estudiante.uam.es': { rorId: 'https://ror.org/01cby8j38', source: 'https://www.uam.es/uam/tecnologias-informacion/servicios/correo-electronico', checked: '2026-10-19' },
   'g.ucla.edu': { rorId: 'https://ror.org/046rm7j60', source: 'https://www.psych.ucla.edu/admin-units/information-technology/technical-training-and-how-tos/ucla-email-faq/', checked: '2026-10-19' },
   'mail.utoronto.ca': { rorId: 'https://ror.org/03dbr7087', source: 'https://www.utsc.utoronto.ca/iits/student-email-and-calendar', checked: '2026-10-20' },
+  'opendeusto.es': { rorId: 'https://ror.org/00ne6sr39', source: 'https://icttraining.deusto.es/opendeusto-account', checked: '2026-10-19' },
+  'purdue.edu': { rorId: 'https://ror.org/02dqehb95', source: 'https://service.purdue.edu/TDClient/32/Purdue/KB/ArticleDet?ID=455', checked: '2026-10-19' },
+  'rai.usc.es': { rorId: 'https://ror.org/030eybx10', source: 'https://assets.usc.gal/sites/default/files/paragraphs/moreinfo/2025-09/guia-estudantes-curso-sep-2025.pdf', checked: '2026-10-19' },
+  'slu.se': { rorId: 'https://ror.org/02yy8x990', source: 'https://internt.slu.se/en/support-services/administrative-support/communication/templates-and-promotional-items/mallar/email-signature/', checked: '2026-10-19' },
   'student.bham.ac.uk': { rorId: 'https://ror.org/03angcq70', source: 'https://www.birmingham.ac.uk/welcome/essential-tasks/your-next-steps', checked: '2026-10-19' },
   'student.unimelb.edu.au': { rorId: 'https://ror.org/01ej9dk98', source: 'https://studentit.unimelb.edu.au/student-email', checked: '2026-10-20' },
   'terpmail.umd.edu': { rorId: 'https://ror.org/047s2c258', source: 'https://itsupport.umd.edu/kb_view.do?sysparm_article=KB0016507', checked: '2026-10-19' },
+  'ull.edu.es': { rorId: 'https://ror.org/01r9z8p25', source: 'https://campusvirtual.ull.es/static/ayuda-soporte/doc/guia_usuarios_estudiante.pdf', checked: '2026-10-19' },
+  'unav.es': { rorId: 'https://ror.org/02rxc7m23', source: 'https://www.unav.edu/web/it/cuentas-y-claves', checked: '2026-10-19' },
+  'univ-lille.fr': { rorId: 'https://ror.org/02kzqn938', source: 'https://sciences-technologies.univ-lille.fr/filefst/user_upload/sciences_de_la_terre/Secretariat_pedago/Activation_compte_Info_Etudiant.pdf', checked: '2026-10-19' },
+  'utexas.edu': { rorId: 'https://ror.org/00hj54h04', source: 'https://catalog.utexas.edu/archive/2025-26/general-information/libraries-and-other-academic-resources/computing-resources/', checked: '2026-10-19' },
 };
 
 /** A ROR question; any failure, the budget running out included, is the registry being unavailable. */
