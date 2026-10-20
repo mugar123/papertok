@@ -588,6 +588,8 @@ test('an answer with damaged markup is no answer, whatever its keys would read a
     assert.equal(await outcome(answer), 'entitled', library);
     const ampersand = answer.replace('<key id="package_public_name">', '<key id="package_public_name">A & ');
     assert.equal(await outcome(ampersand), 'entitled', `${library}: an unescaped &`);
+    const declared = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${answer}`;
+    assert.equal(await outcome(declared), 'entitled', `${library}: an XML declaration`);
     for (const [damage, apply] of MARKUP_DAMAGE) {
       const damaged = apply(answer);
       assert.notEqual(damaged, answer);
