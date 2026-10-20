@@ -121,7 +121,7 @@ import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
-import { rankPreferences } from '../utils/preferenceRanking.ts';
+import { preferencesForPage, rankPreferences } from '../utils/preferenceRanking.ts';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
@@ -1276,17 +1276,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // profile the five slots below used to go to the first five of the
         // first area, whatever else the account had picked.
         const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
+        // This page's turn of the ranked interests (preferenceRanking.ts); arXiv
+        // and PubMed take their turn of the interests they serve below.
+        const turn = preferencesForPage(rankedPreferences, currentPage, 5);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
-        const pref = temporalPreference.current || 0;
-        let queryMode;
-        if (pref > 0.3) {
-          queryMode = 'recent';
-        } else if (pref < -0.3) {
-          queryMode = 'relevance';
-        } else {
-          queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
-        }
+        // Relevance order is for a reader whose views lean to older papers. A
+        // new account is neutral, and a coin flip gave half of those loads
+        // arXiv's relevance order: older papers (none from this year on an AI
+        // profile's first page), and a query arXiv did not answer within the
+        // Worker's 5 s deadline (502 at 5.07 s, 2026-09-16), past the 4 s first
+        // paint.
+        const queryMode = (temporalPreference.current || 0) < -0.3 ? 'relevance' : 'recent';
 
         // Optional recommendation signals run alongside the primary sources.
         // They enrich the mix when available without extending first paint.
@@ -1311,15 +1312,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
              return null;
           };
 
-          const arxivCats = rankedPreferences.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!)).slice(0, 5);
+          const { ids: arxivCats, sourcePage: arxivPage } = preferencesForPage(rankedPreferences.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!)), currentPage, 5);
 
           let arxivProm = Promise.resolve<Paper[]>([]);
           if (arxivCats.length > 0) {
-              arxivProm = fetchPapers(arxivCats, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode);
+              arxivProm = fetchPapers(arxivCats, arxivPage * PAGE_SIZE, PAGE_SIZE, queryMode);
           }
 
           const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
-          const pubmedCats = rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
+          const { ids: pubmedCats, sourcePage: pubmedPage } = preferencesForPage(rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)), currentPage, 3);
 
           let pubmedProm = Promise.resolve<Paper[]>([]);
           if (pubmedCats.length > 0) {
@@ -1328,11 +1329,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
+             pubmedProm = pubmedAdapter.search(pubmedQuery, pubmedPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
           
           let openAlexProm = Promise.resolve<Paper[]>([]);
-          const openAlexCats = rankedPreferences.slice(0, 5);
+          const openAlexCats = turn.ids;
           if (openAlexCats.length > 0) {
              const openAlexAdapter = new OpenAlexAdapter();
              const openAlexQuery = openAlexCats.map(c => {
@@ -1340,13 +1341,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              openAlexProm = openAlexAdapter
-               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
+               .search(openAlexQuery, turn.sourcePage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
                .then(res => res.papers);
           }
           
           const domainProm = fetchDomainPapers(
-            rankedPreferences.slice(0, 5),
-            currentPage + 1,
+            turn.ids,
+            turn.sourcePage + 1,
             8,
             queryMode,
           );
@@ -1377,7 +1378,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // series pushed three followed authors past their 3.5 s budget (2026-10-20).
           // A topic follow enqueues only after an import, so source order is not enough.
           const workingPapersProm = Promise.all([personalCandidatesPromise, followedCandidatesPromise])
-            .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
+            .then(() => fetchWorkingPapers(turn.ids, turn.sourcePage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
             [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],

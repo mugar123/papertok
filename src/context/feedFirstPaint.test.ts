@@ -169,7 +169,7 @@ test('SOURCE: the main sources are requested before the optional candidates, and
   const code = stripComments(await read('./FeedContext.tsx'));
   const block = bounded(
     code,
-    "queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';",
+    "const queryMode = (temporalPreference.current || 0) < -0.3 ? 'relevance' : 'recent';",
     'let sourceResults = await first;',
     'the source fan-out',
     100,
@@ -186,7 +186,7 @@ test('SOURCE: the main sources are requested before the optional candidates, and
   assert.ok(followedAt > domainAt && followedAt < settleAt, 'the followed candidates are asked for after the main sources have been issued');
   assert.match(
     block,
-    /\.search\(openAlexQuery, currentPage \+ 1, \{ internalCategories: openAlexCats, priority: true, requireAbstract: true \}\)/,
+    /\.search\(openAlexQuery, turn\.sourcePage \+ 1, \{ internalCategories: openAlexCats, priority: true, requireAbstract: true \}\)/,
     'the feed search takes the priority lane of the OpenAlex queue',
   );
 });

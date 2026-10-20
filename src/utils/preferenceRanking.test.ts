@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
-import { rankPreferences } from './preferenceRanking.ts';
+import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent, type InteractionEvent } from './interactionProfile.ts';
+import { preferencesForPage, rankPreferences } from './preferenceRanking.ts';
 
 const firstN = (area: string, n: number|undefined) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
 
@@ -32,4 +33,43 @@ test('duplicates fold, unknown ids keep their order in a group of their own, and
   assert.deepEqual(ranked, ['cs.AI', 'topic:x', 'topic:y']);
   assert.deepEqual(rankPreferences(null!), []);
   assert.deepEqual(rankPreferences(['cs.AI'], { 'cs.AI': 'nope' as never }), ['cs.AI']);
+});
+
+// A reader with ten interests in two areas, as in the 2026-10-20 feed audit.
+const TEN = ['cs.AI', 'quant-ph', 'cs.LG', 'cond-mat.supr-con', 'cs.CV', 'cond-mat.str-el', 'cs.CL', 'cond-mat.mtrl-sci', 'cs.NE', 'cond-mat.mes-hall'];
+const affinitiesAfter = (events: InteractionEvent[], daysLater = 0) => {
+  const now = Date.parse('2026-10-20T12:00:00Z');
+  const profile = createEmptyInteractionProfile();
+  events.forEach(event => recordInteractionEvent(profile, event, now));
+  return readProfileSignals(profile, now + daysLater * 86_400_000).categoryAffinities;
+};
+
+test('one skip or one quick view leaves an interest where it was, today and a year on', () => {
+  const neutral = rankPreferences(TEN, {});
+  for (const event of [
+    { paperId: 'a', kind: 'skip', category: 'cs.AI' },
+    { paperId: 'a', kind: 'viewTime', category: 'cs.AI', viewTime: 2 },
+  ]) {
+    for (const days of [0, 365]) {
+      assert.deepEqual(rankPreferences(TEN, affinitiesAfter([event], days)), neutral, `${event.kind}, ${days} days later`);
+    }
+  }
+  // A long read still moves its interest up.
+  assert.equal(rankPreferences(TEN, affinitiesAfter([{ paperId: 'b', kind: 'viewTime', category: 'cs.NE', viewTime: 13 }]))[0], 'cs.NE');
+});
+
+test('pages take turns over the ranked interests, each turn paging its own results', () => {
+  const ranked = rankPreferences(TEN, {});
+  const pages = [0, 1, 2, 3].map(page => preferencesForPage(ranked, page, 5));
+  assert.deepEqual(pages.map(slice => slice.ids), [ranked.slice(0, 5), ranked.slice(5), ranked.slice(0, 5), ranked.slice(5)]);
+  assert.deepEqual(pages.map(slice => slice.sourcePage), [0, 0, 1, 1]);
+
+  // Turns are as even as the size allows, so no interest has a page to itself.
+  const eleven = [...ranked, 'cs.RO'];
+  assert.deepEqual([0, 1, 2].map(page => preferencesForPage(eleven, page, 5).ids.length), [4, 4, 3]);
+  assert.deepEqual([0, 1, 2].flatMap(page => preferencesForPage(eleven, page, 5).ids), eleven);
+
+  // A reader with no more interests than a source takes asks for all of them on every page.
+  assert.deepEqual(preferencesForPage(ranked.slice(0, 3), 2, 5), { ids: ranked.slice(0, 3), sourcePage: 2 });
+  assert.deepEqual(preferencesForPage([], 1, 5), { ids: [], sourcePage: 1 });
 });

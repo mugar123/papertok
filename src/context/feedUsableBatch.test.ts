@@ -10,7 +10,8 @@ import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
-import { readProfileSignals } from '../utils/interactionProfile.ts';
+import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent } from '../utils/interactionProfile.ts';
+import { preferencesForPage, rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
@@ -75,7 +76,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     setPage: (value: number) => { state.page = value; }, setHasMore: (value: boolean) => { state.hasMore = value; },
     getAllLeafCategories: () => [{ id: 'cs.AI', label: 'Artificial Intelligence', area: 'cs' }],
     followedEntities: [], profileSignals: ref(readProfileSignals(null)), temporalPreference: ref(0),
-    rankPreferences: <T>(values: T) => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } } as Record<string, { subcategories: Record<string, string | { label: string }> }>,
+    rankPreferences: <T>(values: T) => values, preferencesForPage, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } } as Record<string, { subcategories: Record<string, string | { label: string }> }>,
     ARXIV_FEED_AREAS, fetchPapers: (() => Promise.resolve(fast)) as (categories: string[]) => Promise<FeedRecord[]>, PubmedAdapter: class {},
     OpenAlexAdapter: class { search() { return Promise.resolve(slow).then(papers => ({ papers })); } },
     fetchDomainPapers: () => Promise.resolve([]), fetchWorkingPapers: (() => Promise.resolve([])) as typeof fetchWorkingPapers,
@@ -893,4 +894,49 @@ test('the working-paper series are asked for once the followed lookups settle, n
   await loading;
   assert.deepEqual(asked, ['followed', 'series']);
   assert.equal(state.error, null);
+});
+
+// What each load asks arXiv for: categories, first result and order.
+function arxivQueries(env: ReturnType<typeof feed>['env']) {
+  const asked: Array<{ categories: string[]; start: number; mode: string }> = [];
+  env.fetchPapers = ((...args: unknown[]) => {
+    const [categories, start, count, mode] = args as [string[], number, number, string];
+    // Exploration asks for a handful from nearby categories; the main lane asks for a page.
+    if (count === env.PAGE_SIZE) asked.push({ categories, start, mode });
+    return Promise.resolve(records(`arxiv-${start}-${categories[0]}`));
+  }) as typeof env.fetchPapers;
+  return asked;
+}
+
+test('one skipped card keeps its interest in the next load, and later pages ask for the interests left out', async () => {
+  const interests = ['cs.AI', 'quant-ph', 'cs.LG', 'cond-mat.supr-con', 'cs.CV', 'cond-mat.str-el', 'cs.CL', 'cond-mat.mtrl-sci', 'cs.NE', 'cond-mat.mes-hall'];
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'skipped', kind: 'skip', category: 'cs.AI' });
+  const { env, run } = feed();
+  Object.assign(env, { userPreferences: interests, rankPreferences, CATEGORIES, profileSignals: ref(readProfileSignals(profile)) });
+  const asked = arxivQueries(env);
+  await run(true);
+  for (const page of [1, 2]) await run(false, 'top', false, page);
+
+  assert.ok(asked[0].categories.includes('cs.AI'), `the first load asks for ${asked[0].categories}`);
+  assert.deepEqual([...asked[0].categories, ...asked[1].categories].sort(), [...interests].sort(), 'two pages ask for all ten');
+  assert.deepEqual(asked.map(query => query.start), [0, 0, env.PAGE_SIZE], 'each set of interests pages through its own results');
+  assert.deepEqual(asked[2].categories, asked[0].categories);
+});
+
+test('a reader with no lean towards older papers gets arXiv newest first on every load', async t => {
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  for (const [lean, preference, randomDraw, expected] of [
+    ['none', 0, 0.01, 'recent'],
+    ['none', 0, 0.99, 'recent'],
+    ['older papers', -0.5, 0.01, 'relevance'],
+  ] as const) {
+    draw = randomDraw;
+    const { env, run } = feed();
+    env.temporalPreference.current = preference;
+    const asked = arxivQueries(env);
+    await run(true);
+    assert.deepEqual(asked.map(query => query.mode), [expected], `lean ${lean}, Math.random() = ${draw}`);
+  }
 });
