@@ -19,14 +19,17 @@ export function ProviderSpinner() {
 // press (usePopupReady): "Preparing sign-in…", in a polite status that also
 // describes them. When the wait ends a screen reader hears "Sign-in ready."
 // and the line stays, empty, so the buttons do not move as they turn usable.
+// The welcome passes `keepLine={false}`: its provider stack is positioned by
+// its top edge, so the buttons stay put without the line, which would only
+// push the sign-in error under it further down.
 // Mounted with nothing to wait for, it takes no room and says nothing.
 // Settings and the institution link use it too.
-export function PreparingNote({ id, preparing }: { id: string; preparing: boolean }) {
+export function PreparingNote({ id, preparing, keepLine = true }: { id: string; preparing: boolean; keepLine?: boolean }) {
   // A readiness only ever turns ready (PopupReadiness), so only a note that
   // mounted preparing has a wait to report the end of.
   const [waited] = useState(preparing);
   return (
-    <p id={id} role="status" className={waited ? 'provider-preparing' : 'sr-only'}>
+    <p id={id} role="status" className={waited && (preparing || keepLine) ? 'provider-preparing' : 'sr-only'}>
       {preparing ? 'Preparing sign-in…' : waited && <span className="sr-only">Sign-in ready.</span>}
     </p>
   );

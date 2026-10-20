@@ -486,7 +486,7 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
                     {preparing || pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
-                  <PreparingNote id={preparingId} preparing={preparing} />
+                  <PreparingNote id={preparingId} preparing={preparing} keepLine={false} />
                   {/* Always mounted and displayed, even empty, so the alert is a
                       live region before its text arrives. */}
                   <p className="gw-providers-note" role="alert">

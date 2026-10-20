@@ -32,7 +32,7 @@ test('SOURCE: the provider buttons stay disabled but focusable until the window 
     assert.match(jsx, /preparing \|\| pendingProvider === 'github' \?/, `${file}: the spinner shows while preparing`);
     // Always mounted, so its status exists before the wait ends, and after
     // both buttons, so the line it keeps never moves them.
-    const note = jsx.indexOf('<PreparingNote id={preparingId} preparing={preparing} />');
+    const note = jsx.indexOf('<PreparingNote id={preparingId} preparing={preparing}');
     const lastPress = Math.max(...[...jsx.matchAll(/signIn\('(?:google|github)'\)/gi)].map(match => match.index));
     assert.ok(note > lastPress, `${file}: the note follows the buttons`);
   }
@@ -47,7 +47,8 @@ test('SOURCE: "Preparing sign-in…" shows under the buttons, and its end is ann
   const parts = await read('./ProviderSignIn.tsx');
   assert.doesNotMatch(parts, /\shidden[\s/>]/, 'no hidden attribute');
   assert.match(parts, /const \[waited\] = useState\(preparing\);/, 'a note that mounted ready never announces');
-  assert.match(parts, /<p id=\{id\} role="status" className=\{waited \? 'provider-preparing' : 'sr-only'\}>/);
+  assert.match(parts, /export function PreparingNote\(\{ id, preparing, keepLine = true \}/, 'the line stays unless a caller drops it');
+  assert.match(parts, /<p id=\{id\} role="status" className=\{waited && \(preparing \|\| keepLine\) \? 'provider-preparing' : 'sr-only'\}>/);
   assert.match(parts, /\{preparing \? 'Preparing sign-in…' : waited && <span className="sr-only">Sign-in ready\.<\/span>\}/);
 
   const css = await readFile(new URL('./ProviderSignIn.css', import.meta.url), 'utf8');
@@ -60,4 +61,26 @@ test('SOURCE: "Preparing sign-in…" shows under the buttons, and its end is ann
   // which would beat the Button's disabled look in its utility layer.
   const welcome = await readFile(new URL('./GuestWelcome.css', import.meta.url), 'utf8');
   assert.match(welcome, /\.gw-providers\[data-open\] > div > \[data-disabled\] \{\s*opacity: revert-layer;\s*\}/);
+});
+
+/**
+ * On the welcome the provider stack overlays the foot of the landing, over an
+ * engraving, and the landing clips what overflows it. "Preparing sign-in…"
+ * was cut off on a 320×568 phone, sat on the engraving's ink at 360 and 375
+ * wide, and the line it kept after the wait pushed the sign-in error 26px
+ * further down.
+ */
+test('SOURCE: on the welcome, "Preparing sign-in…" fits the landing, sits on paper and leaves no line after the wait', async () => {
+  assert.match(await read('./GuestWelcome.tsx'), /<PreparingNote id=\{preparingId\} preparing=\{preparing\} keepLine=\{false\} \/>/);
+  // The dialog keeps the line: it would shrink, and move its buttons, without it.
+  assert.match(await read('./SignInMethods.tsx'), /<PreparingNote id=\{preparingId\} preparing=\{preparing\} \/>/);
+
+  const css = await read('./GuestWelcome.css');
+  const stack = css.match(/\.gw-providers > div \{([^}]*)\}/)?.[1] ?? '';
+  assert.match(stack, /background: var\(--bg-primary\);/, 'no engraving behind the note or through the dimmed buttons');
+  const line = (await read('./ProviderSignIn.css')).match(/\.provider-preparing \{[^}]*min-height: calc\((.*)\);/)?.[1];
+  const gap = stack.match(/gap: ([^;]+);/)?.[1];
+  const reserve = css.match(/\.gw--landing \.gw-stage \{\s*padding-bottom: ([^;]+);/)?.[1] ?? '';
+  assert.ok(line && reserve.includes(line), `the landing's room (${reserve}) holds the note's line`);
+  assert.ok(gap && reserve.includes(gap), `the landing's room (${reserve}) holds the gap above the note`);
 });
