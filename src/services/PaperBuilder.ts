@@ -8,6 +8,14 @@ import type { Paper, PaperAuthor } from '../models/Paper.ts';
 // order-blind author keys in `deduplicate` are not issued for it.
 const HEURISTIC_LOOSE_TITLE_MIN_LENGTH = 20;
 
+// OpenAlex calls a working paper `published` as readily as a journal article,
+// so its mappers state peer review themselves (`openAlexPeerReviewed`) and a
+// gap in that answer stays a gap. Every other provider's `published` is still
+// read as a venue's acceptance.
+function isOpenAlexRecord(record: Pick<Partial<Paper>, 'sources'>, sourceName?: string) {
+  return sourceName === 'openalex' || record.sources?.primary === 'openalex';
+}
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -66,7 +74,7 @@ export class PaperBuilder {
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
-      peerReviewed: data.peerReviewed ?? !isPreprint,
+      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) ? undefined : !isPreprint),
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
       openAccessPdfUrl: data.openAccessPdfUrl || undefined,
@@ -290,18 +298,26 @@ export class PaperBuilder {
       || (!hasExplicitPublicationStatus
         && enrichmentData.publicationType
         && !['preprint', 'repository'].includes(enrichmentData.publicationType));
+    // Evidence of publication reopens only a preprint's `false` or a missing
+    // answer; a published record's answer stands. A published record that says
+    // outright it was not reviewed wins from either side, so an IMF working
+    // paper that another provider also lists as published stays unreviewed
+    // whichever record arrives first.
+    const reviewOpen = merged.peerReviewed === undefined
+      || merged.publicationStatus === 'preprint'
+      || merged.publicationType === 'preprint';
     if (shouldUpgradePublication) {
       merged.publicationType = enrichmentData.publicationType || merged.publicationType;
       merged.publicationStatus = 'published';
     }
 
-    // Re-calculate deterministic fields — but only when the enrichment brought
-    // publication evidence of its own, or when the base never had an answer.
-    // Recalculating unconditionally let a merge that carried nothing but an
-    // abstract overwrite an explicit `peerReviewed: false` with `true`.
-    if (shouldUpgradePublication || merged.peerReviewed === undefined) {
-      merged.peerReviewed = merged.publicationStatus === 'published'
-        && merged.publicationType !== 'preprint';
+    // Re-read only when the enrichment brought publication evidence of its own.
+    // A merge that carried nothing but an abstract once overwrote an explicit
+    // `peerReviewed: false` with `true`, and deriving an answer for a record
+    // that had none turned OpenAlex's unknown into `true` the same way.
+    if (shouldUpgradePublication && (reviewOpen || enrichmentData.peerReviewed === false)) {
+      merged.peerReviewed = enrichmentData.peerReviewed
+        ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
     }
 
     // Open Access logic

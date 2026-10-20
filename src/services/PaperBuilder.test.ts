@@ -102,6 +102,61 @@ test('merging an abstract does not manufacture peer review', () => {
   assert.equal(merged.peerReviewed, false);
 });
 
+test('a working paper stays unreviewed when another provider also lists it as published', () => {
+  // OpenAlex says what it is (`openAlexPeerReviewed`); a Semantic Scholar row
+  // for the same DOI only says `published`, which used to re-derive `true`.
+  const openAlex = {
+    id: 'openalex:W7215107402',
+    doi: '10.5089/9798229063456.001',
+    title: 'An IMF working paper',
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    peerReviewed: false,
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  const semanticScholar = {
+    id: 's2:abc',
+    doi: '10.5089/9798229063456.001',
+    title: 'An IMF working paper',
+    publicationType: 'JournalArticle',
+    publicationStatus: 'published' as const,
+    sources: { primary: 'semantic_scholar', enrichedBy: [] },
+  };
+
+  for (const order of [[openAlex, semanticScholar], [semanticScholar, openAlex]]) {
+    const [paper] = PaperBuilder.deduplicate(order);
+    assert.equal(paper.peerReviewed, false);
+  }
+});
+
+test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {
+  const unknown = {
+    id: 'openalex:W3',
+    doi: '10.1000/no-venue',
+    title: 'No venue',
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  const arxivTwin = {
+    id: 'arxiv:2601.00002',
+    doi: '10.1000/no-venue',
+    title: 'No venue',
+    publicationType: 'preprint',
+    publicationStatus: 'preprint' as const,
+    peerReviewed: false,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  };
+
+  assert.equal(PaperBuilder.create(unknown).peerReviewed, undefined);
+  assert.equal(PaperBuilder.merge(PaperBuilder.create(unknown), { abstract: 'Now with text.' }, 'arxiv').peerReviewed, undefined);
+  for (const order of [[unknown, arxivTwin], [arxivTwin, unknown]]) {
+    const [paper] = PaperBuilder.deduplicate(order);
+    assert.equal(paper.publicationStatus, 'published');
+    assert.equal(paper.peerReviewed, undefined);
+  }
+});
+
 test('a merged twin contributes the arXiv id the base was missing', () => {
   const merged = PaperBuilder.merge(
     { id: 'openalex:W1', title: 'A paper', sources: { primary: 'openalex', enrichedBy: [] } },

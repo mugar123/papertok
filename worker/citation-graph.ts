@@ -15,6 +15,7 @@ import {
   normalizeCitationDoi,
   normalizeCitationRows,
 } from '../src/utils/citationGraph.ts';
+import { openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';
@@ -36,7 +37,6 @@ function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
   const openAlexId = String(work.id).split('/').pop();
   const bestLocation = work.best_oa_location || work.primary_location || {};
   const publicationType = work.type || 'article';
-  const isPreprint = publicationType === 'preprint';
   const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
   return {
     id: doi || `openalex:${openAlexId}`,
@@ -53,8 +53,8 @@ function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
     published: work.publication_date || (work.publication_year ? `${work.publication_year}-01-01` : ''),
     journal: work.primary_location?.source?.display_name,
     publicationType,
-    publicationStatus: isPreprint ? 'preprint' : 'published',
-    peerReviewed: !isPreprint,
+    publicationStatus: openAlexPublicationStatus(work),
+    peerReviewed: openAlexPeerReviewed(work),
     openAccess: Boolean(work.open_access?.is_oa || bestLocation.pdf_url),
     pdfUrl: bestLocation.pdf_url || undefined,
     landingPageUrl: bestLocation.landing_page_url || (doi ? `https://doi.org/${doi}` : work.id),

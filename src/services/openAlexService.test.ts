@@ -6,6 +6,8 @@ import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
 import {
   dribblingFetch,
   settleWithin,
@@ -51,6 +53,54 @@ test('entity and followed-work normalization preserves book and scientific revie
     primary_location: { source: { type: 'journal' } },
   })) });
   assert.deepEqual(papers.map(paper => paper.publicationType), ['book', 'review']);
+});
+
+// The FEDS paper and the Nature paper as OpenAlex returned them on 2026-10-19:
+// both `article`, in a `journal`, published version.
+const FEDS_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W4414816997',
+  title: 'A FEDS paper',
+  type: 'article',
+  primary_location: {
+    is_published: true,
+    source: { id: 'https://openalex.org/S4210212089', display_name: 'Finance and Economics Discussion Series', type: 'journal' },
+  },
+};
+const NATURE_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W2919115771',
+  title: 'Deep learning',
+  type: 'article',
+  primary_location: {
+    is_published: true,
+    source: { display_name: 'Nature', type: 'journal' },
+  },
+};
+
+test('the Explorer\'s peer-reviewed filter keeps the journal paper and drops the working paper and the unknown', () => {
+  const unsourced: OpenAlexWork = { id: 'https://openalex.org/W3', title: 'No venue', type: 'article' };
+  const papers = PaperBuilder.deduplicate(slimWorksPage({ results: [FEDS_WORK, NATURE_WORK, unsourced] }).papers);
+
+  assert.deepEqual(
+    filterAndSortEntityPapers(papers, { filters: { peerReviewed: true } }).map(paper => paper.id),
+    ['W2919115771'],
+  );
+  assert.equal(papers.find(paper => paper.id === 'W3')!.peerReviewed, undefined);
+});
+
+test('an arXiv preprint whose OpenAlex record is a working paper is published but not peer reviewed', () => {
+  const preprint = PaperBuilder.create({
+    id: 'arxiv:2601.00001',
+    title: 'A FEDS paper',
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  const working = PaperBuilder.merge(preprint, mapOpenAlexEnrichmentWork(FEDS_WORK)!.enrichment, 'openalex');
+  const journal = PaperBuilder.merge(preprint, mapOpenAlexEnrichmentWork(NATURE_WORK)!.enrichment, 'openalex');
+
+  assert.equal(working.publicationStatus, 'published');
+  assert.equal(working.peerReviewed, false);
+  assert.equal(journal.peerReviewed, true);
 });
 
 /**

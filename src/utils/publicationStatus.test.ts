@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   arxivCommentSaysPublished,
+  openAlexPeerReviewed,
   openAlexPublicationStatus,
   semanticScholarIsPreprint,
 } from './publicationStatus.ts';
@@ -71,6 +72,61 @@ test('an OpenAlex work with no type falls back on whether any copy is published'
   assert.equal(openAlexPublicationStatus({ locations: [{ is_published: false }, { is_published: true }] }), 'published');
   assert.equal(openAlexPublicationStatus({ primary_location: { is_published: false } }), 'preprint');
   assert.equal(openAlexPublicationStatus(null), 'preprint');
+});
+
+// The primary locations OpenAlex returned on 2026-10-19, trimmed to what the
+// rule reads. The three series come back exactly as a Nature paper does:
+// `article`, in a `journal`, published version.
+const published = (display_name: string, type: string) => ({ is_published: true, source: { display_name, type } });
+const IMF_WORKING_PAPER = { type: 'article', primary_location: published('IMF Working Paper', 'journal') };
+const FEDS_PAPER = { type: 'article', primary_location: published('Finance and Economics Discussion Series', 'journal') };
+const FRBSF_PAPER = {
+  type: 'article',
+  primary_location: published('Federal Reserve Bank of San Francisco, Working Paper Series', 'journal'),
+};
+const NBER_PAPER = { type: 'report', primary_location: published('National Bureau of Economic Research', 'repository') };
+const NATURE_PAPER = { type: 'article', primary_location: published('Nature', 'journal') };
+
+test('a working paper OpenAlex files as a journal article is not peer reviewed', () => {
+  assert.equal(openAlexPeerReviewed(IMF_WORKING_PAPER), false);
+  assert.equal(openAlexPeerReviewed(FEDS_PAPER), false);
+  assert.equal(openAlexPeerReviewed(FRBSF_PAPER), false);
+  assert.equal(openAlexPeerReviewed(NBER_PAPER), false);
+  // A copy in a journal elsewhere does not turn the series' paper into one.
+  assert.equal(openAlexPeerReviewed({ ...IMF_WORKING_PAPER, locations: [published('Some Journal', 'journal')] }), false);
+});
+
+test('a paper in a journal or proceedings keeps the peer review its venue shows', () => {
+  assert.equal(openAlexPeerReviewed(NATURE_PAPER), true);
+  assert.equal(openAlexPeerReviewed({ type: 'review', primary_location: published('Nature Reviews Physics', 'journal') }), true);
+  // U-Net (W1901129140): MICCAI, in Lecture Notes in Computer Science.
+  assert.equal(openAlexPeerReviewed({
+    type: 'conference-paper',
+    primary_location: published('Lecture notes in computer science', 'book series'),
+  }), true);
+  // A preprint record whose journal version OpenAlex has found.
+  assert.equal(openAlexPeerReviewed({
+    type: 'preprint',
+    primary_location: { is_published: false, source: { display_name: 'arXiv (Cornell University)', type: 'repository' } },
+    locations: [published('Physical Review Letters', 'journal')],
+  }), true);
+});
+
+test('a record that shows no venue leaves peer review unknown rather than false', () => {
+  assert.equal(openAlexPeerReviewed({ type: 'article', primary_location: published('Zenodo', 'repository') }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'article', primary_location: { is_published: true, source: null } }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'article' }), undefined);
+  assert.equal(openAlexPeerReviewed({ primary_location: published('Nature', 'journal') }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'editorial', primary_location: published('Nature', 'journal') }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'book-chapter', primary_location: published('Routledge eBooks', 'ebook platform') }), undefined);
+  assert.equal(openAlexPeerReviewed(null), undefined);
+});
+
+test('a preprint with no published copy is not peer reviewed', () => {
+  assert.equal(openAlexPeerReviewed({
+    type: 'preprint',
+    primary_location: { is_published: false, source: { display_name: 'arXiv (Cornell University)', type: 'repository' } },
+  }), false);
 });
 
 test('a Semantic Scholar review is an article, not a preprint', () => {

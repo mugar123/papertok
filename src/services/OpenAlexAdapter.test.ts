@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient } from './openAlexClient.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
 import type { Paper } from '../models/Paper.ts';
 import type { PaperSearchFilters } from './adapters/index.ts';
 
@@ -77,6 +78,28 @@ test('does not mark repository preprints as published', () => {
 
   assert.equal(paper!.citationCountKnown, true);
   assert.equal(paper!.publicationStatus, 'preprint');
+});
+
+test('a feed card from OpenAlex is peer reviewed only when a venue shows it', () => {
+  // OpenAlex returns the IMF series exactly as it returns Nature: `article`, in
+  // a `journal`, published version. The card used to call both reviewed.
+  const adapter = new OpenAlexAdapter();
+  const work = (id: string, source: { display_name: string; type: string } | null) => adapter.mapToStandard({
+    id: `https://openalex.org/${id}`,
+    title: `Work ${id}`,
+    type: 'article',
+    authorships: [],
+    primary_location: { is_published: true, source },
+  });
+  const [imf, nature, unsourced] = PaperBuilder.deduplicate([
+    work('W7215107402', { display_name: 'IMF Working Paper', type: 'journal' }),
+    work('W2919115771', { display_name: 'Nature', type: 'journal' }),
+    work('W3', null),
+  ]);
+
+  assert.equal(imf.peerReviewed, false);
+  assert.equal(nature.peerReviewed, true);
+  assert.equal(unsourced.peerReviewed, undefined);
 });
 
 test('uses current OpenAlex topics when legacy concepts are missing', () => {
