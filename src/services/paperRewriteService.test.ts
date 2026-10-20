@@ -22,8 +22,10 @@ const clientSource = stripTypeScriptTypes(readFileSync(new URL('./paperRewriteSe
   .replaceAll('import.meta.env.VITE_PAPER_API_BASE_URL', "'https://api.papertok.app'");
 function streamingClient(events: object[], breakConnection = false) {
   let requests = 0;
-  const transport = async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const transport = async (_path: string, options: RequestInit) => {
     requests++;
+    bodies.push(JSON.parse(String(options.body)));
     let index = 0;
     return new Response(new ReadableStream({
       pull(controller) {
@@ -38,10 +40,18 @@ function streamingClient(events: object[], breakConnection = false) {
       rewritePaper: typeof rewritePaper;
       getCachedRewrite: typeof import('./paperRewriteService.ts').getCachedRewrite;
     };
-  return { ...client, requests: () => requests };
+  return { ...client, requests: () => requests, bodies };
 }
 const sectionEvent = { type: 'section', id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['First section.'], highlights: [] };
 const streamPaper = { id: 'stream-test', openAccessPdfUrl: 'https://arxiv.org/pdf/2610.23260' };
+
+test('Try again tells the server to replace a truncated cached rewrite', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1, truncated: true }]);
+  await client.rewritePaper(streamPaper);
+  await client.rewritePaper(streamPaper, 'university', { force: true });
+  assert.notEqual(client.bodies[0].retryIncomplete, true);
+  assert.equal(client.bodies[1].retryIncomplete, true);
+});
 
 test('EOF after sections without done keeps a visibly incomplete result out of the cache', async () => {
   const client = streamingClient([sectionEvent]);

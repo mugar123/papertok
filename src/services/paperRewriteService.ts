@@ -271,6 +271,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
         paper: serializePaperForRewrite(paper),
         level,
         language: rewriteLanguage,
+        retryIncomplete: force,
       }),
     });
 

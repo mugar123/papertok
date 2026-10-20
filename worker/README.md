@@ -226,6 +226,11 @@ The reader considers a rewrite complete only after a `done` event whose `section
 matches the received sections, with no error and no `truncated` flag. EOF alone is not
 completion. Interrupted or truncated text remains readable with an incomplete notice
 and a retry action, and is not stored in the browser's completed-rewrite cache.
+The retry sends `retryIncomplete: true` in the POST body. This bypasses a shared
+cache entry only when that entry is marked `truncated`; complete entries remain
+reusable. A retry reserves a new quota use and replaces the entry when it produces
+a cacheable result. A failed retry leaves the previous partial copy available to
+normal opens. Missing, false or non-boolean retry values use the ordinary cache path.
 
 `/ai/rewrite` forwards each POST to a new `PaperRewriteSession` Durable Object through
 the `PAPER_REWRITE_SESSION` binding. The existing handler verifies identity, validates
