@@ -280,6 +280,32 @@ test('a page the filters emptied asks for the next one', async () => {
   assert.match(jsx, /setIsLoadingPapers\(false\);\s*setIsFetchingMore\(continuing\);/, 'the list stays loading while it asks');
 });
 
+// entityExplorer.test.ts checks `explorerPageAllowance` by hand; this checks
+// that the component pages through it. A foot that turned the page itself, or
+// that asked as the reader every time, let one reader action load every page
+// the filters emptied until OpenAlex ran out.
+test('the list asks for its next page only through the allowance', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+
+  const ask = jsx.match(/const requestNextPapersPage = useCallback\(\(byReader: boolean\) => \{[\s\S]*?\n {2}\}, \[\]\);/)?.[0] || '';
+  assert.match(
+    ask,
+    /const left = explorerPageAllowance\(papersAutoPagesRef\.current, \{ byReader \}\);\s*if \(left === null\) \{\s*setPapersAwaitReader\(true\);\s*return false;\s*\}\s*papersAutoPagesRef\.current = left;/,
+    'a request spends what is left, and with nothing left waits for "Keep looking"',
+  );
+
+  const observer = jsx.match(/new IntersectionObserver\([\s\S]*?\{ threshold: 0\.1 \}/)?.[0] || '';
+  const papersFoot = observer.match(/if \(activeTab === 'papers'\) \{[\s\S]*?\} else if \(entries\[0\]\.isIntersecting && activeTab === 'authors'/)?.[0] || '';
+  assert.match(papersFoot, /requestNextPapersPage\(papersFootHiddenRef\.current\);/, 'the foot asks as the reader only after the reader scrolled it back into view');
+  assert.doesNotMatch(papersFoot, /setPage\(/, 'the foot does not turn the page outside the allowance');
+
+  assert.match(
+    jsx,
+    /if \(page === 1\) \{[^}]*papersAutoPagesRef\.current = EXPLORER_AUTO_PAGES;[^}]*\}\s*else setIsFetchingMore\(true\);/,
+    'a new list starts with the whole allowance',
+  );
+});
+
 // A failed page sets an error and ends `hasMore`. A button that unmounted
 // then took keyboard focus with it, back to the top of the document.
 test('"Keep looking" stays mounted and focusable after the page it asked for fails', async () => {

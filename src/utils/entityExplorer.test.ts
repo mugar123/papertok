@@ -263,9 +263,8 @@ test('a page the filters emptied keeps the list looking while more pages remain,
   assert.equal(explorerListState(emptiedPage), 'looking');
   assert.equal(explorerPageAllowance(1, { byReader: false }), 0, 'the list asks, with nothing left after');
 
-  // No allowance left: it waits for "Keep looking", still not the empty state.
+  // No allowance left: it waits for "Keep looking".
   assert.equal(explorerPageAllowance(0, { byReader: false }), null);
-  assert.equal(explorerListState(emptiedPage), 'looking');
   const restored = explorerPageAllowance(0, { byReader: true });
   assert.ok(restored !== null && restored > 0, 'the reader\'s request goes ahead and restores the allowance');
 
