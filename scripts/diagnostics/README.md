@@ -466,8 +466,9 @@ that, for the Journal of Materials Science 2021: a regional host can know the co
 library's data (eu03 answered for Pavia with no `rft.mms_id` and nothing listed while
 `unipv.alma…` listed five services), so an answer that lists nothing never verifies a host, and a
 library with nothing listed for either journal is `answers-without-services`, not shipped. Codes found
-by hand or in Zotero's public directory of OpenURL resolvers (zotero.org/openurl_resolvers) go
-in `alma-resolver-seeds.json` as `{ rorId, source, code?, host?, url?, product?, exclude? }` and
+by hand on a library's own pages or in Zotero's public directory of OpenURL resolvers
+(zotero.org/openurl_resolvers) go in `alma-resolver-seeds.json` as
+`{ rorId, source, code?, host?, url?, product?, evidence?, exclude? }` and
 are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
 worldcat, libkey) without assuming the library lacks Alma, and `exclude` keeps a library
 consortium out of the table. The census record, misses included, is `alma-resolver-census.json`:
