@@ -1219,6 +1219,19 @@ test('still answers 401 AUTH_REQUIRED when Identity Toolkit refuses the token', 
   assert.deepEqual(await response.json(), { code: 'AUTH_REQUIRED' });
 });
 
+test('answers an OpenAlex stall as a gateway timeout', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/openalex/works?per-page=1',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), openAlexEnv()));
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { code: 'UPSTREAM_TIMEOUT' });
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
 test('answers an OpenAlex network failure with CORS headers instead of throwing', async () => {
   const response = await withWorkerFetchMock(async () => {
     throw new TypeError('Network connection lost');

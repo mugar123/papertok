@@ -411,6 +411,15 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       // carries no `access-control-allow-origin`: the browser sees an opaque
       // CORS error and the 429 relay this route works to preserve is lost.
       console.error('OpenAlex relay failed', error);
+      // A stall already waited out the whole deadline, and OpenAlex received the
+      // call and billed it. 504 tells the client not to send it again: retrying
+      // every 5xx turned one stall into three billed calls and some 25 s.
+      if ((error as Error)?.name === 'TimeoutError') {
+        return json({ code: 'UPSTREAM_TIMEOUT' }, 504, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        });
+      }
       return json({ code: 'OPENALEX_UNREACHABLE' }, 502, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',

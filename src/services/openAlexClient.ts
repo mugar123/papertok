@@ -536,7 +536,9 @@ export class OpenAlexClient {
           });
         }
 
-        if (response.status >= 500 && attempt < retries) {
+        // A 504 is the Worker reporting that OpenAlex stalled through its whole
+        // deadline after receiving the call: asking again bills it again.
+        if (response.status >= 500 && response.status !== 504 && attempt < retries) {
           await this.sleep(this.withJitter(350 * (2 ** attempt)));
           continue;
         }

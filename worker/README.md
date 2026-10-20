@@ -193,7 +193,7 @@ budget is daily and a per-minute ceiling does not bound it — 3000/min is 4.320
 that spends the budget reserves against both, in list calls ($0.0001 each): `/openalex/*` for one call, or ten for a search (`search=` or a `.search` filter, billed $0.001, measured 2026-10-20),
 and `/citation-graph` for up to seven, so a caller who cannot be identified still cannot outspend the
 day. A
-refusal is relayed with its own status and `retry-after` rather than flattened into a 502, and the
+refusal is relayed with its own status and `retry-after` rather than flattened into a 502 (a stall past the deadline answers `504 UPSTREAM_TIMEOUT`, which the client does not retry, since OpenAlex received and billed the call), and the
 rate-limit headers are named in `access-control-expose-headers` so the browser can actually read
 them; otherwise the client's backoff falls back to guessing, and since the budget resets at midnight
 UTC that guess can be hours wrong. A 404, a work OpenAlex has not indexed, is an answer rather than a refusal and is cached for an hour. `/health/openalex` reports the remaining daily budget in dollars.
