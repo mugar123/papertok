@@ -227,6 +227,20 @@ matches the received sections, with no error and no `truncated` flag. EOF alone 
 completion. Interrupted or truncated text remains readable with an incomplete notice
 and a retry action, and is not stored in the browser's completed-rewrite cache.
 
+`/ai/rewrite` forwards each POST to a new `PaperRewriteSession` Durable Object through
+the `PAPER_REWRITE_SESSION` binding. The existing handler verifies identity, validates
+input, checks the shared cache and reserves quota inside that object. PDF conversion
+and provider stream parsing run there too; the edge Worker only checks method/origin
+and relays the response stream. This uses the Durable Object CPU allowance instead
+of the Workers Free 10 ms allowance. The object persists no state; the SQLite class
+registration keeps it available on the Free plan. Generation still consumes the
+account's daily Durable Object request and duration allowances.
+
+Deploy the `v4` migration in `wrangler.toml` before serving this route. A missing
+binding returns `AI_NOT_CONFIGURED`; an unavailable session returns `AI_UNAVAILABLE`.
+There is no edge-execution fallback. Existing cache, quota, refund, heartbeat and
+client-disconnect behavior remains owned by `handlePaperRewrite`.
+
 The Worker limits AI usage per user and globally per UTC day with atomic reservations in the
 `RequestQuotaLedger` Durable Object. A reservation is consumed before contacting the provider,
 so concurrent tabs cannot exceed the configured limit and failed provider calls fail safely.
