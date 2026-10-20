@@ -147,7 +147,8 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  const budget = await reserveOpenAlexBudget(env, origin, OPENALEX_CALLS.relay);
+  const searching = target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '');
+  const budget = await reserveOpenAlexBudget(env, origin, searching ? OPENALEX_CALLS.search : OPENALEX_CALLS.relay);
   if (budget.error) return budget.error;
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {

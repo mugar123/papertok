@@ -189,8 +189,8 @@ per-minute (`OPENALEX_GLOBAL_MINUTE_LIMIT`) and per-day (`OPENALEX_GLOBAL_DAILY_
 only after an edge-cache miss and for as many calls as the route is about to spend. The origin gate
 is not one of them and should not be counted as one: a request with no `Origin` header has nothing
 to check, and one is trivially forged, so the ceiling is the frontier. The day matters because the
-budget is daily and a per-minute ceiling does not bound it — 300/min is 432.000/day. Every route
-that spends the budget reserves against both, `/openalex/*` for one call
+budget is daily and a per-minute ceiling does not bound it — 3000/min is 4.320.000/day. Every route
+that spends the budget reserves against both, in list calls ($0.0001 each): `/openalex/*` for one call, or ten for a search (`search=` or a `.search` filter, billed $0.001, measured 2026-10-20),
 and `/citation-graph` for up to seven, so a caller who cannot be identified still cannot outspend the
 day. A
 refusal is relayed with its own status and `retry-after` rather than flattened into a 502, and the

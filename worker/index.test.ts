@@ -1666,6 +1666,25 @@ test('the costliest cold citation graph spends exactly what it reserves', async 
   assert.deepEqual(reserved.map(entry => entry.amount), [spent]);
 });
 
+test('an OpenAlex search reserves the ten list calls it is billed as', async () => {
+  const reserved = async (query: string) => {
+    const ledger = recordingLedger();
+    await withWorkerFetchMock(
+      async () => Response.json({ results: [] }),
+      () => withIdentityAndCacheStore(() => reportApi.fetch(new Request(
+        `https://papertok-report-api.example/openalex/works?${query}`,
+        { headers: BROWSER },
+      ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding }))),
+    );
+    return ledger.reservations.map(entry => entry.amount);
+  };
+
+  assert.deepEqual(await reserved('search=ultracold%20gas'), [10]);
+  assert.deepEqual(await reserved('filter=title_and_abstract.search:ultracold,type:article'), [10]);
+  assert.deepEqual(await reserved('filter=raw_author_name.search:Ada%20Lovelace'), [10]);
+  assert.deepEqual(await reserved('filter=publication_year:2019,type:article'), [1]);
+});
+
 test('the per-minute OpenAlex ceiling refuses within the day and asks for a minute', async () => {
   const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '1', OPENALEX_GLOBAL_DAILY_LIMIT: '100' });
 
