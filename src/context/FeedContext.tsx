@@ -56,7 +56,7 @@ import { useFollowing } from './FollowingContext.tsx';
 import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
 import { getDeviceInfo } from '../utils/device.ts';
 import { CATEGORIES, getAllLeafCategories } from '../data/categories.ts';
-import { PubmedAdapter } from '../services/adapters/PubmedAdapter.ts';
+import { PubmedAdapter, pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
 import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService.ts';
 import { getPapersByProject } from '../services/openAireService.ts';
@@ -1324,11 +1324,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           let pubmedProm = Promise.resolve<Paper[]>([]);
           if (pubmedCats.length > 0) {
              const pubmedAdapter = new PubmedAdapter();
-             const pubmedQuery = pubmedCats.map(c => {
-                const cat = allCategories.find(x => x.id === c);
-                return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-             }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
+             pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedCats), currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
           
           let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1481,12 +1477,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const pubmedNearby = nearbyCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
             let pubmedProm = Promise.resolve<Paper[]>([]);
             if (pubmedNearby.length > 0) {
-                const pubmedQuery = pubmedNearby.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedNearby), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
             
             let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1555,12 +1547,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const pubmedRandom = randomCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!));
             let pubmedProm = Promise.resolve<Paper[]>([]);
             if (pubmedRandom.length > 0) {
-                const pubmedQuery = pubmedRandom.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedRandom), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
             
             let openAlexProm = Promise.resolve<Paper[]>([]);

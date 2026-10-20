@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PubmedAdapter } from './PubmedAdapter.ts';
+import { PubmedAdapter, pubmedCategoryQuery } from './PubmedAdapter.ts';
+import { isFeedPublication } from '../feedPublicationService.ts';
 import { PaperBuilder } from '../PaperBuilder.ts';
 import { reviewStatusForPaper } from '../../utils/paperStatus.ts';
 
@@ -35,4 +36,78 @@ test('arXiv keeps the preprint default the builder used to hand everyone', () =>
   // arXiv is the one source whose silence really does mean preprint.
   const paper = PaperBuilder.create({ id: 'arxiv:1', sources: { primary: 'arxiv', enrichedBy: [] } });
   assert.equal(paper.publicationType, 'preprint');
+});
+
+// The feed asked for `"Molecular Biology"` in every field, which also matches
+// the journal "Methods in Molecular Biology", and for any date, so the chapters
+// it lists for next year's volume came first in a recent-first lane.
+test('the feed query searches each label in title and abstract, up to today', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const query = pubmedCategoryQuery(['bio.gen', 'bio.mol', 'med.psych']);
+
+  for (const label of ['Genetics', 'Molecular Biology', 'Psychiatry & Mental Health']) {
+    assert.ok(query.includes(`"${label}"[tiab]`), `${label} in title and abstract: ${query}`);
+  }
+  const fields = [...query.matchAll(/"[^"]*"(\[\w+\])?/g)].map(([, field]) => field);
+  assert.deepEqual([...new Set(fields)], ['[tiab]'], `no label is searched in every field: ${query}`);
+  assert.match(query, /\bAND \S+:2026\/10\/20\[dp\]$/);
+});
+
+// Synthetic esummary records, with the field names NCBI returned on
+// 2026-10-20 and the series identifiers of the Europe PMC record captured that
+// day (PMID 42879010).
+function feedSearch(query: string, records: Array<Record<string, unknown>>) {
+  return new PubmedAdapter({
+    apiBase: 'https://papertok-report-api.example',
+    fetchImpl: async () => Response.json({
+      esearchresult: { count: String(records.length), idlist: records.map(record => record.uid) },
+      result: Object.fromEntries(records.map(record => [record.uid, record])),
+      efetch: '',
+    }),
+  }).search(query, 1, { internalCategories: ['bio.mol'], requireAbstract: true });
+}
+
+const CHAPTER = {
+  uid: '42879010',
+  title: '(Immuno-)Histological Analysis of Ewing Sarcoma.',
+  source: 'Methods Mol Biol',
+  fulljournalname: 'Methods in molecular biology (Clifton, N.J.)',
+  issn: '1064-3745',
+  essn: '1940-6029',
+  nlmuniqueid: '9214969',
+  pubdate: '2027',
+  pubtype: ['Journal Article'],
+};
+
+test('a Methods in Molecular Biology chapter is typed as a book-series chapter, which the feed leaves out', async () => {
+  const { papers } = await feedSearch('chapter types', [
+    CHAPTER,
+    { ...CHAPTER, uid: '42879011', issn: '', essn: '', nlmuniqueid: '9214969' },
+    { ...CHAPTER, uid: '42879012', issn: '', essn: '1940-6029', nlmuniqueid: '' },
+    { uid: '42800001', title: 'A Nature article', source: 'Nature', issn: '0028-0836', essn: '1476-4687', nlmuniqueid: '0410462', pubdate: '2026 Oct 15', pubtype: ['Journal Article'] },
+  ]);
+  const shown = PaperBuilder.deduplicate(papers);
+
+  assert.equal(shown[0].publicationType, 'book-chapter');
+  assert.deepEqual(shown.filter(isFeedPublication).map(paper => paper.id), ['pmid:42800001']);
+  assert.equal(shown[3].publicationType, 'article');
+});
+
+test('a PubMed record dated after today shows no year and no date', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const { papers } = await feedSearch('chapter dates', [
+    CHAPTER,
+    { ...CHAPTER, uid: '2', pubdate: '2026 Nov' },
+    { ...CHAPTER, uid: '3', pubdate: '2026 Oct' },
+    { ...CHAPTER, uid: '4', pubdate: '2026 Oct 20' },
+  ]);
+  const [nextYear, nextMonth, thisMonth, today] = PaperBuilder.deduplicate(papers);
+
+  for (const paper of [nextYear, nextMonth]) {
+    assert.equal(paper.year, undefined, `${paper.id} is not given this year or next`);
+    assert.equal(paper.published, '');
+  }
+  assert.equal(thisMonth.year, 2026);
+  assert.equal(thisMonth.published, '2026 Oct');
+  assert.equal(today.year, 2026);
 });

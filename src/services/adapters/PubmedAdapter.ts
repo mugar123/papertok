@@ -7,6 +7,9 @@ export interface PubmedSummary {
   authors?: Array<{ name: string }>;
   articleids?: Array<{ idtype: string; value: string }>;
   source?: string;
+  issn?: string;
+  essn?: string;
+  nlmuniqueid?: string;
   pubdate?: string;
   pubtype?: string | string[];
 }
@@ -19,6 +22,7 @@ interface PubmedResponse {
 import { CATEGORIES } from '../../data/categories.ts';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.ts';
+import { isAfterToday, isProtocolBookSeries } from '../../utils/medlineRecord.ts';
 import { fetchWorkerSourceJson } from '../workerApiClient.ts';
 
 // E-utilities answer as three serial requests (esearch → esummary → efetch).
@@ -82,6 +86,19 @@ function getCategoryDefinition(categoryId: string|number) {
     if ((area.subcategories as Record<string, { label: string }>)?.[categoryId]) return (area.subcategories as Record<string, { label: string }>)[categoryId];
   }
   return null;
+}
+
+/**
+ * The feed's PubMed query for a reader's categories. Each label is searched in
+ * title and abstract: in every field `"Molecular Biology"` also matched the
+ * journal Methods in Molecular Biology. Only records published by today (UTC,
+ * print or electronic date) come back, so a recent-first lane is not filled
+ * with chapters printed next year.
+ */
+export function pubmedCategoryQuery(categoryIds: readonly string[]) {
+  const labels = categoryIds.map(categoryId => getCategoryDefinition(categoryId)?.label).filter(Boolean);
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+  return `(${labels.map(label => `"${label}"[tiab]`).join(' OR ')}) AND 1800/01/01:${today}[dp]`;
 }
 
 function containsTerm(text: string, term: string) {
@@ -301,6 +318,10 @@ export class PubmedAdapter {
     }
 
     const landingPageUrl = `https://pubmed.ncbi.nlm.nih.gov/${id}/`;
+    // esummary's date after today is the print date of an issue not out yet.
+    // Neither that year nor another date is shown in its place.
+    const published = isAfterToday(raw.pubdate) ? '' : raw.pubdate || '';
+    const chapter = isProtocolBookSeries({ issn: raw.issn, essn: raw.essn, nlmId: raw.nlmuniqueid });
 
     return {
       id: `pmid:${id}`,
@@ -312,10 +333,12 @@ export class PubmedAdapter {
       authors,
       doi,
       journal: raw.source || '',
-      year: raw.pubdate ? parseInt(raw.pubdate.substring(0, 4)) : new Date().getFullYear(),
-      published: raw.pubdate || '',
+      year: parseInt(published.substring(0, 4)) || undefined,
+      published,
       publicationStatus: 'published',
-      publicationType: publicationTypeFromPubtype(raw.pubtype),
+      // `book-series` is a venue `isFeedPublication` leaves out of the feed.
+      publicationType: chapter ? 'book-chapter' : publicationTypeFromPubtype(raw.pubtype),
+      sourceType: chapter ? 'book-series' : undefined,
       openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,
