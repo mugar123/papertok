@@ -319,3 +319,16 @@ test('duplicate entries across pages are shown once and a later unsupported resp
   assert.equal(answer!.unsupported, undefined);
   assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
 });
+
+
+test('journal rows retain separate ISSN identities while sharing the platform logo', async () => {
+  const api = worker({ status: 200, body: { services: [
+    { id: 'journal-1755-4330', name: 'Nature Chemistry', platformId: 'nature', url: 'https://library.example/journal/1755-4330' },
+    { id: 'journal-1476-1122', name: 'Nature Materials', platformId: 'nature', url: 'https://library.example/journal/1476-1122' },
+  ] } });
+  const answer = await findInstitutionServices(institution('journal-editions.es'), { ...api, apiBase: API });
+  assert.deepEqual(answer!.services.map(({ id, platformId, url }) => ({ id, platformId, url })), [
+    { id: 'journal-1755-4330', platformId: 'nature', url: 'https://library.example/journal/1755-4330' },
+    { id: 'journal-1476-1122', platformId: 'nature', url: 'https://library.example/journal/1476-1122' },
+  ]);
+});

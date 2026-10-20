@@ -144,6 +144,7 @@ function normalizeService(raw: Record<string, unknown> | null | undefined) {
   return {
     id,
     name,
+    ...(cleanString(raw!.platformId) ? { platformId: cleanString(raw!.platformId)! } : {}),
     publisher: cleanString(raw!.publisher),
     url: safeExternalUrl(raw!.url) || null,
     monogram: monogram && Array.from(monogram).length <= 4 ? monogram : Array.from(name)[0],

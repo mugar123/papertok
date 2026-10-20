@@ -2,6 +2,8 @@ import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery, InstitutionResolver, LookupOptions } from './institution-access.ts';
 
 interface ServiceEntry {
+  kind: 'platform' | 'publication' | 'journal';
+  eissn?: string; platformId?: string; sources?: readonly string[];
   id: string; packageHint: string; name: string; publisher: string; url: string;
   monogram: string; color: string; issn: string; year: number; doi?: string;
 }
@@ -79,6 +81,12 @@ const UNCHECKED = Symbol('unchecked');
 // `packageHint` is the word a library's own package for the platform carries
 // ("Wiley Online Library All Journals"): a package without it is an
 // aggregator's (ProQuest, EBSCO), and the row says so.
+const NATURE_DISCOVERY = 'https://library.harvard.edu/services-tools/nature';
+const IOP_DISCOVERY = Object.freeze([
+  'https://vilniustech.lt/files/4859/242/12/15_0/IOPscience%20EXTRA_list%20of%20journals_2023.pdf',
+  'https://stang.sc.mahidol.ac.th/pdf/subscription/IOP_titlelist2021.pdf',
+]);
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -148,15 +156,61 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
   { id: 'msp', packageHint: 'Mathematical Sciences Publishers', name: 'Mathematical Sciences Publishers', publisher: 'MSP', url: 'https://msp.org', monogram: 'MSP', color: '#2B4C7E', issn: '1465-3060', year: 2021, doi: '10.2140/gt.2021.25.2195' },
   // Candidates from MIT's news guide and publisher title lists (see worker/README.md).
   // No invented article DOI: these are resolved by ISSN for the last complete year.
-  { id: 'economist', packageHint: 'Economist', name: 'The Economist', publisher: 'The Economist Group', url: 'https://www.economist.com', monogram: 'E', color: '#E3120B', issn: '0013-0613', year: 2025 },
-  { id: 'financialtimes', packageHint: 'Financial Times', name: 'Financial Times', publisher: 'Financial Times', url: 'https://www.ft.com', monogram: 'FT', color: '#FFF1E5', issn: '0307-1766', year: 2025 },
-  { id: 'wsj', packageHint: 'Wall Street Journal', name: 'The Wall Street Journal', publisher: 'Dow Jones', url: 'https://www.wsj.com', monogram: 'WSJ', color: '#1C1C1C', issn: '0099-9660', year: 2025 },
-  { id: 'nytimes', packageHint: 'New York Times', name: 'The New York Times', publisher: 'The New York Times Company', url: 'https://www.nytimes.com', monogram: 'NYT', color: '#1C1C1C', issn: '0362-4331', year: 2025 },
-  { id: 'newyorker', packageHint: 'New Yorker', name: 'The New Yorker', publisher: 'Condé Nast', url: 'https://www.newyorker.com', monogram: 'NY', color: '#1C1C1C', issn: '0028-792X', year: 2025 },
-  { id: 'guardian', packageHint: 'Guardian', name: 'The Guardian', publisher: 'Guardian News & Media', url: 'https://www.theguardian.com', monogram: 'G', color: '#052962', issn: '0261-3077', year: 2025 },
-  { id: 'hbr', packageHint: 'Harvard Business', name: 'Harvard Business Review', publisher: 'Harvard Business Publishing', url: 'https://hbr.org', monogram: 'HBR', color: '#C8102E', issn: '0017-8012', year: 2025 },
-  { id: 'businessweek', packageHint: 'Bloomberg', name: 'Bloomberg Businessweek', publisher: 'Bloomberg', url: 'https://www.bloomberg.com/businessweek', monogram: 'BW', color: '#1C1C1C', issn: '0007-7135', year: 2025 },
-].map(entry => Object.freeze(entry)));
+  { kind: 'publication' as const, id: 'economist', packageHint: 'Economist', name: 'The Economist', publisher: 'The Economist Group', url: 'https://www.economist.com', monogram: 'E', color: '#E3120B', issn: '0013-0613', year: 2025 },
+  { kind: 'publication' as const, id: 'financialtimes', packageHint: 'Financial Times', name: 'Financial Times', publisher: 'Financial Times', url: 'https://www.ft.com', monogram: 'FT', color: '#FFF1E5', issn: '0307-1766', year: 2025 },
+  { kind: 'publication' as const, id: 'wsj', packageHint: 'Wall Street Journal', name: 'The Wall Street Journal', publisher: 'Dow Jones', url: 'https://www.wsj.com', monogram: 'WSJ', color: '#1C1C1C', issn: '0099-9660', year: 2025 },
+  { kind: 'publication' as const, id: 'nytimes', packageHint: 'New York Times', name: 'The New York Times', publisher: 'The New York Times Company', url: 'https://www.nytimes.com', monogram: 'NYT', color: '#1C1C1C', issn: '0362-4331', year: 2025 },
+  { kind: 'publication' as const, id: 'newyorker', packageHint: 'New Yorker', name: 'The New Yorker', publisher: 'Condé Nast', url: 'https://www.newyorker.com', monogram: 'NY', color: '#1C1C1C', issn: '0028-792X', year: 2025 },
+  { kind: 'publication' as const, id: 'guardian', packageHint: 'Guardian', name: 'The Guardian', publisher: 'Guardian News & Media', url: 'https://www.theguardian.com', monogram: 'G', color: '#052962', issn: '0261-3077', year: 2025 },
+  { kind: 'publication' as const, id: 'hbr', packageHint: 'Harvard Business', name: 'Harvard Business Review', publisher: 'Harvard Business Publishing', url: 'https://hbr.org', monogram: 'HBR', color: '#C8102E', issn: '0017-8012', year: 2025 },
+  { kind: 'publication' as const, id: 'businessweek', packageHint: 'Bloomberg', name: 'Bloomberg Businessweek', publisher: 'Bloomberg', url: 'https://www.bloomberg.com/businessweek', monogram: 'BW', color: '#1C1C1C', issn: '0007-7135', year: 2025 },
+  // PAP-71, 2026-10-20: journal candidates, not holdings. Print/electronic
+  // editions share one row; the existing Nature and IOP flagship ISSNs stay
+  // in their platform rows. No unverified article DOI is sent to GetFTR.
+  ...[
+    { name: 'Nature Chemistry', issn: '1755-4330', eissn: '1755-4349', url: 'https://www.nature.com/nchem/' },
+    { name: 'Nature Materials', issn: '1476-1122', eissn: '1476-4660', url: 'https://www.nature.com/nmat/' },
+    { name: 'Nature Nanotechnology', issn: '1748-3387', eissn: '1748-3395', url: 'https://www.nature.com/nnano/' },
+    { name: 'Nature Biotechnology', issn: '1087-0156', eissn: '1546-1696', url: 'https://www.nature.com/nbt/' },
+    { name: 'Nature Genetics', issn: '1061-4036', eissn: '1546-1718', url: 'https://www.nature.com/ng/' },
+    { name: 'Nature Methods', issn: '1548-7091', eissn: '1548-7105', url: 'https://www.nature.com/nmeth/' },
+    { name: 'Nature Chemical Biology', issn: '1552-4450', eissn: '1552-4469', url: 'https://www.nature.com/nchembio/' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'nature', packageHint: 'Nature', publisher: 'Springer Nature',
+    monogram: 'N', color: '#1C1C1C', year: 2021,
+    sources: Object.freeze([NATURE_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'Journal of Breath Research', issn: '1752-7155', eissn: '1752-7163' },
+    { name: 'Bioinspiration & Biomimetics', issn: '1748-3182', eissn: '1748-3190' },
+    { name: 'Biomedical Materials', issn: '1748-6041', eissn: '1748-605X' },
+    { name: 'Biofabrication', issn: '1758-5082', eissn: '1758-5090' },
+    { name: 'Journal of Physics A: Mathematical and Theoretical', issn: '1751-8113', eissn: '1751-8121' },
+    { name: 'Journal of Optics', issn: '2040-8978', eissn: '2040-8986' },
+    { name: 'Physiological Measurement', issn: '0967-3334', eissn: '1361-6579' },
+    { name: 'Modelling and Simulation in Materials Science and Engineering', issn: '0965-0393', eissn: '1361-651X' },
+    { name: 'Smart Materials and Structures', issn: '0964-1726', eissn: '1361-665X' },
+    { name: 'Plasma Sources Science and Technology', issn: '0963-0252', eissn: '1361-6595' },
+    { name: 'Journal of Micromechanics and Microengineering', issn: '0960-1317', eissn: '1361-6439' },
+    { name: 'Nanotechnology', issn: '0957-4484', eissn: '1361-6528' },
+    { name: 'Measurement Science and Technology', issn: '0957-0233', eissn: '1361-6501' },
+    { name: 'Superconductor Science and Technology', issn: '0953-2048', eissn: '1361-6668' },
+    { name: 'Journal of Physics B: Atomic, Molecular and Optical Physics', issn: '0953-4075', eissn: '1361-6455' },
+    { name: 'Journal of Radiological Protection', issn: '0952-4746', eissn: '1361-6498' },
+    { name: 'Nonlinearity', issn: '0951-7715', eissn: '1361-6544' },
+    { name: 'Plasma Physics and Controlled Fusion', issn: '0741-3335', eissn: '1361-6587' },
+    { name: 'Semiconductor Science and Technology', issn: '0268-1242', eissn: '1361-6641' },
+    { name: 'Inverse Problems', issn: '0266-5611', eissn: '1361-6420' },
+    { name: 'Classical and Quantum Gravity', issn: '0264-9381', eissn: '1361-6382' },
+    { name: 'European Journal of Physics', issn: '0143-0807', eissn: '1361-6404' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'iop', packageHint: 'Institute of Physics', publisher: 'IOP Publishing',
+    url: `https://iopscience.iop.org/journal/${journal.eissn}`,
+    monogram: 'IOP', color: '#1D3C78', year: 2021, sources: IOP_DISCOVERY,
+  })),
+].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
 export async function handleInstitutionServices(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -225,9 +279,9 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
   // and the row should name the package that is really the platform. SFX marks
   // no service free, only names its free collections; a service it does not
   // name free counts here because every catalogue journal is a subscription
-  // journal whose probe article was closed when it was chosen. The per-paper
-  // answer asks about the article itself. Press titles have no probe
-  // article; The Guardian, free on the web, came back from TUM and LMU only
+  // journal (including archived subscription years). The per-paper
+  // answer asks about the article itself. New journal and press titles have no
+  // probe article; The Guardian, free on the web, came back from TUM and LMU only
   // through PressReader, Gale and Nexis Uni (2026-10-20).
   const paid = answer.services.filter(service => service.url && !service.free);
   const own = paid.find(service => namesPlatform(service.name, entry));
@@ -235,7 +289,7 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
   if (subscription) return {
     collection: subscription.name,
     ownPlatform: Boolean(own),
-    // Press titles may only be available through an aggregator, whose library
+    // Journal and press titles may only be available through an aggregator, whose library
     // link must be used instead of sending the reader to the publisher paywall.
     ...(!entry.doi ? { accessUrl: libraryLink(resolver, subscription.url!) } : {}),
   };
@@ -323,11 +377,11 @@ export async function lookupInstitutionServices(
   if (asked.length > 0 && asked.every(outcome => outcome === FAILED)) {
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
-  const services: Array<Pick<ServiceEntry, 'id' | 'name' | 'publisher' | 'url' | 'monogram' | 'color'> & ServiceSubscription> = [];
-  entries.slice(0, end).forEach(({ id, name, publisher, url, monogram, color }, index) => {
+  const services: Array<Pick<ServiceEntry, 'id' | 'name' | 'publisher' | 'url' | 'monogram' | 'color' | 'platformId'> & ServiceSubscription> = [];
+  entries.slice(0, end).forEach(({ id, name, publisher, url, monogram, color, platformId }, index) => {
     const outcome = reported[index];
     if (outcome && outcome !== FAILED && outcome !== UNCHECKED) {
-      services.push({ id, name, publisher, url: outcome.accessUrl || url, monogram, color, collection: outcome.collection, ownPlatform: outcome.ownPlatform });
+      services.push({ id, name, publisher, url: outcome.accessUrl || url, monogram, color, collection: outcome.collection, ownPlatform: outcome.ownPlatform, ...(platformId ? { platformId } : {}) });
     }
   });
   return {
