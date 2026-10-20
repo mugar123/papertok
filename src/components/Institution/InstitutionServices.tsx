@@ -19,6 +19,7 @@ const COPY = {
   error: 'Your library could not be checked.',
   retry: 'Retry',
   newTab: ' (opens in a new tab)',
+  coverage: 'A sample of library access, not a complete subscription list. Coverage varies by journal, year and article.',
 };
 
 /**
@@ -52,7 +53,7 @@ function inkOn(hex: string) {
 }
 
 function ServiceRow({ service }: { service: InstitutionPlatform }) {
-  const logo = publisherLogoFor(service.id);
+  const logo = publisherLogoFor(service.platformId || service.id);
   const content = (
     <>
       {logo ? (
@@ -161,6 +162,9 @@ export default function InstitutionServices({ institution }: { institution: Link
         {COPY.kicker}
         {services.length > 0 && <span className="institution-services-count">{COPY.count(services.length)}</span>}
       </h3>
+      <div className="institution-services-status">
+        <p className="institution-services-note">{COPY.coverage}</p>
+      </div>
       {services.length > 0 && (
         <ul className="institution-services-list">
           {services.map(service => (

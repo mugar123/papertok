@@ -326,7 +326,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
     { id: 'nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', collection: null, ownPlatform: true },
   ]);
   assert.equal(result.partial, false);
-  assert.equal(result.unchecked, 8); // Titles without a DOI need a resolver.
+  assert.equal(result.unchecked, 37); // Eight press titles and 29 journals need a resolver.
   const bodies = stub.calls.map(call => JSON.parse(call.init.body as string));
   assert.equal(bodies.length, GETFTR_BATCHES);
   assert.ok(bodies.length < SUBREQUEST_BUDGET);
@@ -363,7 +363,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
   });
   const result = await lookupInstitutionServices({ domain: 'nowhere.example', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
-  assert.equal(result.unchecked, 12); // Four undecided DOIs and eight titles without DOIs.
+  assert.equal(result.unchecked, 41); // Four undecided DOIs plus 37 titles without DOIs.
   assert.equal(result.partial, false);
 });
 
@@ -384,9 +384,9 @@ test('GetFTR verdicts are final for DOIs; publications without DOIs still use th
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
-  assert.equal(result.unchecked, 0);
-  assert.equal(stub.calls.length, GETFTR_BATCHES + 8);
-  assert.deepEqual(stub.calls.filter(call => call.url.host === 'eu01.alma.exlibrisgroup.com').map(call => call.url.searchParams.get('rft.issn')), ['0013-0613', '0307-1766', '0099-9660', '0362-4331', '0028-792X', '0261-3077', '0017-8012', '0007-7135']);
+  assert.equal(result.unchecked, 1); // The last journal exceeds the unpaged request budget.
+  assert.equal(stub.calls.length, 40);
+  assert.deepEqual(stub.calls.filter(call => call.url.host === 'eu01.alma.exlibrisgroup.com').map(call => call.url.searchParams.get('rft.issn')), SERVICE_CATALOGUE.filter(entry => !entry.doi).slice(0, 36).map(entry => entry.issn));
 });
 
 test('a GetFTR outage with no resolver behind it is a failure, not an empty library', async () => {
@@ -412,7 +412,7 @@ test('without GetFTR the resolver is asked the budget\'s worth of platforms, fou
   assert.equal(result.partial, false);
 });
 
-test('catalogue identifiers are distinct and well-formed, with DOI optional for press', () => {
+test('catalogue identifiers are distinct and well-formed, with DOI optional for resolver-only titles', () => {
   const issns = SERVICE_CATALOGUE.map(entry => entry.issn);
   const dois = SERVICE_CATALOGUE.flatMap(entry => entry.doi ? [entry.doi] : []);
   const ids = SERVICE_CATALOGUE.map(entry => entry.id);
@@ -916,4 +916,77 @@ test('a press title read through an aggregator opens through the library\'s logi
   };
   assert.equal(await guardian(['GALE_ACADEMIC_ONEFILE', 'Gale Academic OneFile', galeLink], ['NEXIS_UNI', 'Nexis Uni', nexis]), galeLink);
   assert.equal(await guardian(['NEXIS_UNI', 'Nexis Uni', nexis]), `${LMU_LOGIN}${encodeURIComponent(nexis)}`);
+});
+
+
+test('journal candidates keep canonical editions and discovery provenance without duplicating a probe', () => {
+  const owners = new Map<string, string>();
+  for (const entry of SERVICE_CATALOGUE) {
+    for (const issn of [entry.issn, entry.eissn].filter((value): value is string => Boolean(value))) {
+      assert.match(issn, /^\d{4}-\d{3}[\dX]$/);
+      const digits = issn.replace('-', '').split('').map(value => value === 'X' ? 10 : Number(value));
+      assert.equal(digits.reduce((sum, digit, index) => sum + digit * (8 - index), 0) % 11, 0, issn);
+      assert.equal(owners.has(issn), false, `${issn} already belongs to ${owners.get(issn)}`);
+      owners.set(issn, entry.id);
+    }
+    if (entry.kind !== 'journal') continue;
+    assert.equal(entry.id, `journal-${entry.issn}`);
+    assert.ok(entry.eissn);
+    assert.equal(entry.doi, undefined);
+    assert.ok(SERVICE_CATALOGUE.some(platform => platform.kind === 'platform' && platform.id === entry.platformId));
+    assert.ok(entry.sources && entry.sources.length >= 2);
+    for (const source of entry.sources) assert.equal(new URL(source).protocol, 'https:');
+  }
+  assert.equal(owners.get('1361-6382'), 'journal-0264-9381');
+  assert.equal(owners.get('1755-4349'), 'journal-1755-4330');
+  assert.equal(owners.get('0953-8984'), 'iop');
+});
+
+test('new Nature and IOP journals resolve independently through Alma and SFX, preserving library links', async () => {
+  for (const domain of ['usal.es', 'tum.de']) {
+    const stub = upstreams({
+      resolver: issn => xml(issn === '1755-4330' ? ctoWith('Nature Journals')
+        : issn === '0264-9381' ? ctoWith('ProQuest Science Collection') : CTO_NONE),
+      sfx: issn => xml(issn === '1755-4330' ? sfxWith(issn, ['NATURE', 'Nature Journals'])
+        : issn === '0264-9381' ? sfxWith(issn, ['PROQUEST', 'ProQuest Science Collection']) : sfxWith(issn)),
+    });
+    const result = await lookupInstitutionServices({ domain }, { fetchImpl: stub.fetchImpl, offset: 74 });
+    assert.deepEqual(result.services.map(({ id, name, platformId, ownPlatform }) => ({ id, name, platformId, ownPlatform })), [
+      { id: 'journal-1755-4330', name: 'Nature Chemistry', platformId: 'nature', ownPlatform: true },
+      { id: 'journal-0264-9381', name: 'Classical and Quantum Gravity', platformId: 'iop', ownPlatform: false },
+    ]);
+    assert.equal(result.partial, false);
+    assert.equal(result.unchecked, 0);
+    assert.equal(result.nextOffset, null);
+    assert.ok(stub.calls.every(({ url }) => url.searchParams.get('rft.date') === '2021'));
+    assert.equal(stub.calls.length, 29);
+    assert.equal(stub.maxInFlight(), 4);
+    for (const service of result.services) {
+      assert.match(service.url, domain === 'tum.de' ? /^https:\/\/tum-eaccess\.de\/login\?qurl=/ : /^https:\/\/buc-usal\.alma\.exlibrisgroup\.com\//);
+    }
+  }
+});
+
+test('new journal no-access, inconclusive and unavailable outcomes remain distinct', async () => {
+  for (const domain of ['usal.es', 'tum.de']) {
+    const stub = upstreams({
+      resolver: issn => xml(issn === '1755-4330' ? '<html>Maintenance</html>' : CTO_NONE),
+      sfx: issn => xml(issn === '1755-4330' ? '<html>Maintenance</html>'
+        : issn === '1476-1122' ? sfxWith('0028-0836', ['NATURE', 'Nature']) : sfxWith(issn)),
+    });
+    const result = await lookupInstitutionServices({ domain }, { fetchImpl: stub.fetchImpl, offset: 74 });
+    assert.deepEqual(result.services, []);
+    assert.equal(result.partial, true);
+    assert.equal(result.unchecked, domain === 'tum.de' ? 1 : 0);
+    const unavailable = upstreams({ resolver: timeout, sfx: timeout });
+    await assert.rejects(lookupInstitutionServices({ domain }, { fetchImpl: unavailable.fetchImpl, offset: 74 }),
+      error => error instanceof InstitutionAccessError && error.code === 'ACCESS_LOOKUP_UNAVAILABLE');
+  }
+  const stub = upstreams();
+  const unchecked = await lookupInstitutionServices({ domain: 'nowhere.example', entityId: ENTITY_ID },
+    { fetchImpl: stub.fetchImpl, env: GETFTR_ENV, offset: 74 });
+  assert.deepEqual(unchecked.services, []);
+  assert.equal(unchecked.partial, false);
+  assert.equal(unchecked.unchecked, 29);
+  assert.equal(stub.calls.length, 0);
 });
