@@ -19,6 +19,7 @@ import {
   fetchWorkingPapers,
 } from './domainSourceService.ts';
 import { openAlexClient } from './openAlexClient.ts';
+import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 
@@ -338,9 +339,10 @@ test('the failure report shows the upstream status once the body travels on the 
   assert.match(logged[0], /\/sources\/openreview failed: \/sources\/openreview returned 502 \(upstream 400\)/);
 });
 
-// Two works as OpenAlex returned them on 2026-10-19 (trimmed): a San Francisco
-// Fed working paper filed as a journal article, and a CESifo working paper
-// typed `report`, here without its abstract.
+// Works as OpenAlex returned them on 2026-10-19 (trimmed): a San Francisco Fed
+// working paper filed as a journal article, a CESifo working paper typed
+// `report`, here without its abstract, and the one CESifo work typed `article`
+// in a journal, W7144132107.
 const invertedIndex = (text: string) => {
   const index: Record<string, number[]> = {};
   text.split(' ').forEach((word, position) => { (index[word] ||= []).push(position); });
@@ -379,6 +381,7 @@ test('an economics reader asks the Worker relay for one page of the working-pape
     return Response.json({ results: [
       seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'From early 2021 through 2024, unauthorized immigration to the United States rose sharply.'),
       seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
+      seriesWork('W7144132107', '10.65864/cesifo/tqjga1w74a', 'article', CESIFO, null),
     ] });
   };
   try {
@@ -391,11 +394,6 @@ test('an economics reader asks the Worker relay for one page of the working-pape
     assert.equal(`${url.origin}${url.pathname}`, 'https://api.papertok.app/openalex/works');
     assert.ok(!url.searchParams.has('api_key') && !url.searchParams.has('mailto'), 'the Worker attaches the credential');
     const filters = url.searchParams.get('filter')!.split(',');
-    const sources = filters.find(filter => filter.startsWith('primary_location.source.id:'))!;
-    assert.deepEqual(sources.slice('primary_location.source.id:'.length).split('|').sort(), [
-      'S2809516038', 'S4210171147', 'S7407053623', 'S4393913881',
-      'S4393919745', 'S4306510381', 'S4210230366', 'S4210212089',
-    ].sort());
     const since = filters.find(filter => filter.startsWith('from_publication_date:'))!.split(':')[1];
     const ageDays = (Date.now() - Date.parse(since)) / 86_400_000;
     assert.ok(ageDays > 0 && ageDays <= 366, `a bounded recent window, got ${since}`);
@@ -403,7 +401,7 @@ test('an economics reader asks the Worker relay for one page of the working-pape
     assert.equal(url.searchParams.get('page'), '3');
     assert.ok(Number(url.searchParams.get('per-page')) <= 6, 'no more of a page than OSTI or NASA may take');
 
-    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626']);
+    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7144132107']);
     for (const paper of papers) {
       assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper, not a reviewed article`);
       assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
@@ -415,5 +413,30 @@ test('an economics reader asks the Worker relay for one page of the working-pape
   } finally {
     openAlexClient.fetchImpl = realFetch;
     openAlexClient.apiBase = realBase;
+  }
+});
+
+test("every series the economics request names is on the review rule's list, so its journal articles carry the Working paper tag", async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  let requested: string[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    const sources = new URL(String(input)).searchParams.get('filter')!.split(',')
+      .find(filter => filter.startsWith('primary_location.source.id:'))!;
+    requested = sources.slice('primary_location.source.id:'.length).split('|');
+    return Response.json({ results: [] });
+  };
+  try {
+    await fetchWorkingPapers(['econ.GN'], 1);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+  assert.ok(requested.length > 0, 'the request names its series');
+  const adapter = new OpenAlexAdapter();
+  for (const id of requested) {
+    // An `article` in a `journal` source: only the rule's list tells it apart
+    // from a reviewed journal paper.
+    const card = adapter.mapToStandard(seriesWork('W1', '10.1/w1', 'article', { id, display_name: 'A series' }, null));
+    assert.equal(reviewStatusForPaper(card), 'workingPaper', `${id} is on the review rule's list`);
   }
 });

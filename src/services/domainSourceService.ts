@@ -742,15 +742,21 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
   ).slice(0, safeLimit * 2);
 }
 
-// Working-paper series, by OpenAlex source ID, each checked with a keyless
-// OpenAlex request on 2026-10-19 (PAP-53). The economics search cannot reach
-// most of them: OpenAlex types NBER, CESifo, Banco de España and the New York
-// and Philadelphia Fed series as `report`, which that search leaves out, and
-// it finds the IMF, FEDS and San Francisco Fed articles only when a category
-// label matches their text. World Bank Policy Research Working Papers are not
-// listed: OpenAlex files the recent ones under the bank's general eBooks
-// source (S4306464317), and its two PRWP sources hold nothing from this window.
-const WORKING_PAPER_SOURCE_IDS = [
+// The series this feed requests, by OpenAlex source ID, each checked with a
+// keyless OpenAlex request on 2026-10-19 (PAP-53). The review rule in
+// publicationStatus.ts owns which sources are working-paper series. A test
+// checks that each ID here is on its list; one that is not would bring its
+// articles in as reviewed journal papers without the Working paper tag. That
+// list also holds FEDS Notes, short notes rather than working papers, and the
+// Kansas City Fed series, which the checks behind this request did not cover.
+// The economics search cannot reach most of these series: OpenAlex types NBER,
+// CESifo, Banco de España and the New York and Philadelphia Fed series as
+// `report`, which that search leaves out, and it finds the IMF, FEDS and San
+// Francisco Fed articles only when a category label matches their text. World
+// Bank Policy Research Working Papers are not listed: OpenAlex files the recent
+// ones under the bank's general eBooks source (S4306464317), and its two PRWP
+// sources hold nothing from this window.
+const REQUESTED_SERIES_IDS = [
   'S2809516038', // National Bureau of Economic Research
   'S4210171147', // IMF Working Papers
   'S7407053623', // CESifo Working Papers
@@ -789,7 +795,7 @@ export async function fetchWorkingPapers(categories: readonly string[], page = 1
   const since = new Date(Date.now() - WORKING_PAPER_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
   const url = new URL('https://api.openalex.org/works');
   url.searchParams.set('filter', [
-    `primary_location.source.id:${WORKING_PAPER_SOURCE_IDS.join('|')}`,
+    `primary_location.source.id:${REQUESTED_SERIES_IDS.join('|')}`,
     // The window also held one dataset.
     'type:article|report',
     `from_publication_date:${since}`,
