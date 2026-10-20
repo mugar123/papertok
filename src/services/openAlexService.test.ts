@@ -7,7 +7,7 @@ import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
-import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
+import { EXPLORER_AUTO_PAGES, explorerPageAllowance, filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
 import { openAlexPeerReviewed } from '../utils/publicationStatus.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import {
@@ -823,6 +823,62 @@ test('an author whose most cited works are FEDS papers gets reviewed rows on the
     assert.equal(total, 30);
     assert.equal(rows.length, 30);
     assert.ok(rows.every(paper => paper.journal === 'Journal of Labor Economics'));
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+// The Explorer's list after one request by the reader, who then waits: the
+// page they asked for and, while a page adds no row and OpenAlex has more, the
+// pages the list asks for on its own (`explorerPageAllowance`).
+async function readerAsks({ authorId, page, autoPagesLeft }: { authorId: string; page: number; autoPagesLeft: number }) {
+  let left: number | null = autoPagesLeft;
+  for (;;) {
+    const { papers, total } = await getWorksByEntity('author', authorId, 'cited_by_count:desc', page, '', reviewedOnly, 'Ana Economist');
+    const rows = explorerRows(papers);
+    const hasMore = page * 30 < total;
+    if (rows.length > 0 || !hasMore) return { rows, page, hasMore, waiting: false };
+    left = explorerPageAllowance(left, { byReader: false });
+    if (left === null) return { rows, page, hasMore, waiting: true };
+    page += 1;
+  }
+}
+
+test('a first "Peer-reviewed only" page the rule empties leads on to the reviewed page after it', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const pages: number[] = [];
+  openAlexClient.fetchImpl = stubAuthorWorks([
+    ...Array.from({ length: 30 }, (_, n) => authorWork(n, UNLISTED_SERIES)),
+    ...Array.from({ length: 30 }, (_, n) => authorWork(30 + n, JOURNAL)),
+  ], pages);
+  try {
+    const shown = await readerAsks({ authorId: 'A7000000004', page: 1, autoPagesLeft: EXPLORER_AUTO_PAGES });
+
+    assert.deepEqual(pages, [1, 2]);
+    assert.equal(shown.rows.length, 30);
+    assert.ok(shown.rows.every(paper => paper.peerReviewed === true && paper.journal === 'Journal of Labor Economics'));
+    assert.equal(shown.hasMore, false);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});
+
+test('pages the rule keeps emptying cost a bounded number of requests per reader action', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const pages: number[] = [];
+  openAlexClient.fetchImpl = stubAuthorWorks(Array.from({ length: 300 }, (_, n) => authorWork(n, UNLISTED_SERIES)), pages);
+  try {
+    // A new list: page 1 and the pages the list asks for on its own, then it waits.
+    const opened = await readerAsks({ authorId: 'A7000000005', page: 1, autoPagesLeft: EXPLORER_AUTO_PAGES });
+    assert.deepEqual(opened, { rows: [], page: 1 + EXPLORER_AUTO_PAGES, hasMore: true, waiting: true });
+    assert.equal(pages.length, 1 + EXPLORER_AUTO_PAGES);
+    assert.ok(pages.length < 10, 'it stops well before the last of the ten pages');
+
+    // "Keep looking": the same number again, from where it stopped.
+    const again = await readerAsks({ authorId: 'A7000000005', page: opened.page + 1, autoPagesLeft: explorerPageAllowance(0, { byReader: true })! });
+    assert.equal(again.waiting, true);
+    assert.equal(pages.length, 2 * (1 + EXPLORER_AUTO_PAGES));
+    assert.deepEqual(pages, Array.from({ length: pages.length }, (_, i) => i + 1), 'no page is asked for twice');
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }

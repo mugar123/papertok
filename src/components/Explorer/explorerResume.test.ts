@@ -71,5 +71,5 @@ test('an author card hands its row over, so the author page is born with a name 
 test('the first page of papers waits out the page\'s arrival before it mounts', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /if \(page === 1\) \{\s*const arriving = afterPageArrival\(\);\s*if \(arriving\) await arriving;\s*if \(request\.cancelled\) return;\s*setPapers\(fetchedPapers\);\s*\}/);
-  assert.match(jsx, /\}, \[afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey\]\);/);
+  assert.match(jsx, /\}, \[afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey, publicMode, requestNextPapersPage\]\);/);
 });

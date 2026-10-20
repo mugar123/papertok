@@ -214,7 +214,7 @@ test('switching tabs neither cancels nor repeats a papers request', async () => 
   assert.match(jsx, /const papersRequestRef = useRef<\{ key: string; cancelled: boolean \} \| null>\(null\);/);
   assert.match(jsx, /const requestKey = entityPapersRequestKey\(\{/);
   assert.match(jsx, /if \(papersRequestRef\.current\?\.key === requestKey && !papersRequestRef\.current\.cancelled\) return;/);
-  const deps = jsx.match(/\n {2}\}, \[(afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey)\]\);/);
+  const deps = jsx.match(/\n {2}\}, \[(afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey, publicMode, requestNextPapersPage)\]\);/);
   assert.ok(deps, 'the papers effect is keyed by its inputs, and activeTab is not one of them');
 });
 
