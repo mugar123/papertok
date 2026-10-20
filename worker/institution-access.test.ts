@@ -1087,6 +1087,11 @@ test('an answer without an indicator is read from what it lists unfiltered', asy
   assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
 });
 
+test('a service is full text by its own service type, not by an attribute whose name ends in one', () => {
+  const holdings = CTO_SINGLE_SERVICE.replaceAll('service_type="getFullTxt"', 'service_type="getHolding" data-service_type="getFullTxt"');
+  assert.deepEqual(parseResolverAnswer(holdings), { fullText: false, matched: true, services: [], restricted: false });
+});
+
 test('an answer without an indicator whose services are all filtered is a refusal', async () => {
   assert.deepEqual(parseResolverAnswer(CTO_SINGLE_SERVICE_FILTERED), { fullText: false, matched: true, services: [], restricted: false });
   const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE_FILTERED) });

@@ -300,7 +300,9 @@ export function parseResolverAnswer(xml: unknown) {
   const services = [];
   let restricted = false;
   for (const [, attributes, body] of text.matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
-    if (!/\bservice_type="getFullTxt"/.test(attributes)) continue;
+    // The tag check let each attribute through after exactly one space, so
+    // the space keeps `data-service_type="getFullTxt"` from matching.
+    if (!/ service_type="getFullTxt"/.test(attributes)) continue;
     if (xmlKey(body, 'Filtered') === 'true') {
       if (!/date/i.test(xmlKey(body, 'Filter reason') || '')) restricted = true;
       continue;
