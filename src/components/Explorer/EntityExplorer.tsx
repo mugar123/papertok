@@ -2823,13 +2823,14 @@ export default function EntityExplorer({
               {/* The list stopped asking for pages on its own
                   (`explorerPageAllowance`). The status is mounted before it
                   has anything to say, so its first words are spoken. The
-                  button stays mounted and focusable while a page loads and
-                  after the last one, so a keyboard reader keeps their place;
-                  a failed page takes it away, and the error says why. */}
+                  button stays mounted and focusable while a page loads, after
+                  the last one and after a failed one, so a keyboard reader
+                  keeps their place. On a failure the error strip or the error
+                  state says what happened and offers Try again. */}
               {!publicMode && (
                 <p className="explorer-list-more-status" role="status">{papersMoreStatus}</p>
               )}
-              {!publicMode && papersAwaitReader && (hasMore || !papersError) && (
+              {!publicMode && papersAwaitReader && (
                 <div className="explorer-list-more">
                   <Button
                     variant="outline"

@@ -280,6 +280,18 @@ test('a page the filters emptied asks for the next one', async () => {
   assert.match(jsx, /setIsLoadingPapers\(false\);\s*setIsFetchingMore\(continuing\);/, 'the list stays loading while it asks');
 });
 
+// A failed page sets an error and ends `hasMore`. A button that unmounted
+// then took keyboard focus with it, back to the top of the document.
+test('"Keep looking" stays mounted and focusable after the page it asked for fails', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+  assert.match(jsx, /setPapersError\('PUBLICATIONS_LOAD_FAILED'\);\s*setHasMore\(false\);/);
+  assert.match(
+    jsx,
+    /\{!publicMode && papersAwaitReader && \(\s*<div className="explorer-list-more">\s*<Button[^>]*disabled=\{isFetchingMore \|\| !hasMore\}\s*focusableWhenDisabled/,
+    'neither the error nor the end of the pages takes the button away',
+  );
+});
+
 /**
  * OpenAIRE's `total` counts every publication of the project, whether or not
  * it carries a DOI or an arXiv id; `getPapersByProject` already drops the ones
