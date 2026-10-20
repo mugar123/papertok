@@ -615,3 +615,31 @@ test('a resolved institution is served from the cache; a miss is not remembered'
     upstream.restore();
   }
 });
+
+test('an answer cached before a domain was hand-checked is not served once it is', async () => {
+  const store = new Map<string, Response>();
+  const cache = {
+    async match(request: RequestInfo | URL) { return store.get((request as Request).url)?.clone() || null; },
+    async put(request: RequestInfo | URL, response: Response) { store.set((request as Request).url, response); },
+  };
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/03ths8210' ? ROR_UC3M : ROR_USAL),
+    mdq: () => Response.json([]),
+  });
+  try {
+    await resolveInstitution('usal.es', { cache });
+    const [outsideKey] = store.keys();
+    // What ROR's exact domain search gave for alumnos.uc3m.es before it had
+    // an entry, stored the way any domain outside the list is.
+    const stale = { domain: 'alumnos.uc3m.es', rorId: 'https://ror.org/004aqbt71', name: 'A UC3M institute', acronym: null, entityId: null };
+    store.set(outsideKey.replace('usal.es', 'alumnos.uc3m.es'), Response.json(stale));
+
+    const institution = await resolveInstitution('alumnos.uc3m.es', { cache });
+    assert.equal(institution.rorId, 'https://ror.org/03ths8210');
+    // A domain outside the list is still answered from the cache.
+    await resolveInstitution('usal.es', { cache });
+    assert.deepEqual(rorQuestions(upstream.calls), ['domains:usal.es', '03ths8210']);
+  } finally {
+    upstream.restore();
+  }
+});

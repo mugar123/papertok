@@ -190,9 +190,16 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: A
 
 // The cache's third generation: the first could hold a record that does not
 // own its domain (neu.edu resolved to Shenyang until 2026-10-19), and the
-// second one linked through a parent domain (alumni.cmu.edu to CMU).
+// second one linked through a parent domain (alumni.cmu.edu to CMU). A
+// hand-checked domain's key also names what its entry asks ROR, so the answer
+// cached before an entry was added, changed or removed is not served for
+// another week.
 function cacheRequest(domain: string) {
-  return new Request(`https://papertok.internal/institution/v3/${encodeURIComponent(domain)}`);
+  const url = new URL(`https://papertok.internal/institution/v3/${encodeURIComponent(domain)}`);
+  const checked = CHECKED_MAIL_DOMAINS[domain];
+  if (checked && 'rorId' in checked) url.searchParams.set('rorId', checked.rorId);
+  else if (checked) url.searchParams.set('rorDomain', checked.rorDomain);
+  return new Request(url);
 }
 
 /**
