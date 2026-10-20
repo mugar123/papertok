@@ -26,15 +26,8 @@
   margin-top: var(--space-3);
 }
 
-.institution-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.institution-link-row > .institution-link-input {
-  flex: 1 1 220px;
-  min-width: 0;
+.institution-link-field {
+  position: relative;
 }
 
 .institution-link-hint,
@@ -99,9 +92,16 @@
   padding-right: var(--space-6);
 }
 
-/* The Google button: outline with Google's own mark, as at sign-in. */
+/* The submit sits inside the field, at its right edge, and the field's text
+   stops short of it. */
+.institution-link-field:has(.institution-link-submit) > .institution-link-input {
+  padding-right: calc(32px + var(--space-2));
+}
+
 .institution-link-submit {
-  gap: var(--space-2);
+  position: absolute;
+  top: 4px;
+  right: 4px;
 }
 
 /* With its margin it fills the 16px of the Google mark it replaces, so the
