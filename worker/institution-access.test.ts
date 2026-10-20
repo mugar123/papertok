@@ -672,6 +672,16 @@ test('a SAML URN is preserved in GetFTR requests and its cache identity', async 
   assert.equal(upstreamParams(institution, GETFTR_ENV).entityId, entityId);
 });
 
+test('an HTTP SAML identifier is preserved in GetFTR requests and its cache identity', async () => {
+  const entityId = 'http://CAF.AD.UMANITOBA.CA/adfs/services/trust';
+  const institution = query({ doi: DOI, domain: 'myumanitoba.ca', entityId, rorId: 'https://ror.org/02gfys938' });
+  const stub = upstreams({ getftr: () => jsonResponse({ entitlements: [{ doi: DOI, statusCode: 200, entitled: 'no' }] }) });
+  const answer = await lookupInstitutionAccess(institution, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  assert.equal(answer.status, 'not-entitled');
+  assert.deepEqual(JSON.parse(stub.getftrCalls()[0].init.body as string).org, { entityID: entityId, rorID: 'https://ror.org/02gfys938' });
+  assert.equal(upstreamParams(institution, GETFTR_ENV).entityId, entityId);
+});
+
 test('GetFTR not entitled is the answer, even for a library with a resolver', async () => {
   const stub = upstreams({
     getftr: () => jsonResponse({ entitlements: [{ doi: DOI, statusCode: 200, entitled: 'no', document: 'https://doi.org/x' }] }),
@@ -745,7 +755,7 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
     if (url.host === 'api.crossref.org') return jsonResponse({ message: CELL_WORK });
-    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com') return resolver(url);
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com') return resolver(url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -800,8 +810,29 @@ test('the access route accepts USC\'s stored SAML URN and uses its Alma library'
   assert.deepEqual(anonymous.calls, []);
 });
 
+test('the access route accepts Manitoba\'s HTTP SAML identifier and uses its Alma library', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938', entityId: 'http://CAF.AD.UMANITOBA.CA/adfs/services/trust' }).toString();
+  const articleUrl = 'https://libproxy.umanitoba.ca/login?url=https://publisher.example/article';
+  const { response, body, accessPuts } = await requestAccess(search, {
+    resolver: target => {
+      assert.equal(target.host, 'ca01.alma.exlibrisgroup.com');
+      assert.equal(target.pathname, '/view/uresolver/01UMB_INST/openurl');
+      return xml(`<uresolver_content><context_object><keys><key id="full_text_indicator">true</key></keys></context_object>
+        <context_services><context_service service_type="getFullTxt"><keys><key id="package_public_name">Manitoba subscription</key></keys>
+        <resolution_url>${articleUrl}</resolution_url></context_service></context_services></uresolver_content>`);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { status: 'entitled', collection: 'Manitoba subscription', url: articleUrl });
+  assert.equal(accessPuts.length, 1);
+  assert.equal(new URL(accessPuts[0].key).searchParams.get('library'), '01UMB_INST');
+  const anonymous = await requestAccess(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
 test('the access route rejects malformed URNs and unsafe schemes without provider work or caching', async () => {
-  for (const entityId of ['urn:mace:', 'urn::usc.edu', 'urn:mace:incommon:usc edu', 'urn:mace:usc%ZZ', 'javascript:alert(1)', 'http://idp.usc.edu', `urn:mace:${'x'.repeat(300)}`]) {
+  for (const entityId of ['urn:mace:', 'urn::usc.edu', 'urn:mace:incommon:usc edu', 'urn:mace:usc%ZZ', 'javascript:alert(1)', 'http://', 'http://bad host/idp', 'ftp://idp.example.edu', `urn:mace:${'x'.repeat(300)}`]) {
     const { response, body, calls, accessPuts } = await requestAccess(new URLSearchParams({ doi: DOI, domain: 'usc.edu', entityId }).toString());
     assert.equal(response.status, 400, entityId);
     assert.deepEqual(body, { code: 'INVALID_INSTITUTION_ID' });
@@ -831,6 +862,14 @@ test('the route maps validation, unsupported institutions and outages to codes i
   }
   const { response } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { method: 'POST' });
   assert.equal(response.status, 405);
+});
+
+
+test('accepting HTTP entity identifiers does not allow HTTP reading links', () => {
+  const answer = parseResolverAnswer(CTO_CELL.replaceAll('https://', 'http://'));
+  assert.ok(answer);
+  assert.ok(answer.services.length > 0);
+  assert.ok(answer.services.every(service => service.url === null));
 });
 
 test('the access route refuses the Hawaiʻi system instead of answering with Mānoa\'s subscriptions', async () => {

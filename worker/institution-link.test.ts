@@ -767,3 +767,107 @@ test('an answer cached before a domain was hand-checked is not served once it is
     upstream.restore();
   }
 });
+
+// Live ROR searches on 2026-10-20 either omitted these student domains or
+// returned a research unit before its university for a shared primary domain.
+for (const entry of [
+  {
+    domain: 'student.ethz.ch', primary: 'ethz.ch', rorId: 'https://ror.org/05a28rw58',
+    name: 'ETH Zurich', wrongId: null,
+    resolver: { host: 'eu03.alma.exlibrisgroup.com', institution: '41SLSP_ETH' },
+  },
+  {
+    domain: 'sms.ed.ac.uk', primary: 'ed.ac.uk', rorId: 'https://ror.org/01nrxwf90',
+    name: 'University of Edinburgh', wrongId: null,
+    resolver: { host: 'eu01.alma.exlibrisgroup.com', institution: '44UOE_INST' },
+  },
+  {
+    domain: 'umail.leidenuniv.nl', primary: 'leidenuniv.nl', rorId: 'https://ror.org/027bh9e22',
+    name: 'Leiden University', wrongId: null,
+    resolver: { host: 'eu00.alma.exlibrisgroup.com', institution: '31UKB_LEU' },
+  },
+  {
+    domain: 'ugent.be', primary: 'ugent.be', rorId: 'https://ror.org/00cv9y106',
+    name: 'Ghent University', wrongId: 'https://ror.org/0027txx50',
+    resolver: { host: 'eu06.alma.exlibrisgroup.com', institution: '32RUG_INST' },
+  },
+  {
+    domain: 'sydney.edu.au', primary: 'sydney.edu.au', rorId: 'https://ror.org/0384j8v12',
+    name: 'University of Sydney', wrongId: 'https://ror.org/00zqx9e28',
+    resolver: { host: 'ap02.alma.exlibrisgroup.com', institution: '61USYD_INST' },
+  },
+  {
+    domain: 'uni.sydney.edu.au', primary: 'sydney.edu.au', rorId: 'https://ror.org/0384j8v12',
+    name: 'University of Sydney', wrongId: null,
+    resolver: { host: 'ap02.alma.exlibrisgroup.com', institution: '61USYD_INST' },
+  },
+  {
+    domain: 'umanitoba.ca', primary: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938',
+    name: 'University of Manitoba', wrongId: 'https://ror.org/05pcf2t08',
+    resolver: { host: 'ca01.alma.exlibrisgroup.com', institution: '01UMB_INST' },
+  },
+  {
+    domain: 'myumanitoba.ca', primary: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938',
+    name: 'University of Manitoba', wrongId: null,
+    resolver: { host: 'ca01.alma.exlibrisgroup.com', institution: '01UMB_INST' },
+  },
+  {
+    domain: 'unr.edu', primary: 'unr.edu', rorId: 'https://ror.org/01keh0577',
+    name: 'University of Nevada, Reno', wrongId: 'https://ror.org/048c68826',
+    resolver: { host: 'na07.alma.exlibrisgroup.com', institution: '01UNR_INST' },
+  },
+  {
+    domain: 'rochester.edu', primary: 'rochester.edu', rorId: 'https://ror.org/022kthw22',
+    name: 'University of Rochester', wrongId: 'https://ror.org/006rjbv46',
+    resolver: { host: 'na04.alma.exlibrisgroup.com', institution: '01ROCH_INST' },
+  },
+  {
+    domain: 'u.rochester.edu', primary: 'rochester.edu', rorId: 'https://ror.org/022kthw22',
+    name: 'University of Rochester', wrongId: null,
+    resolver: { host: 'na04.alma.exlibrisgroup.com', institution: '01ROCH_INST' },
+  },
+]) {
+  test(`${entry.domain} links to the verified university despite missing or ambiguous ROR search results`, async () => {
+    const record = { id: entry.rorId, domains: [entry.primary], names: [{ value: entry.name, types: ['ror_display'] }] };
+    const wrong = { id: entry.wrongId, domains: [entry.domain], names: [{ value: 'Research unit', types: ['ror_display'] }] };
+    const id = entry.rorId.split('/').pop()!;
+    const store = new Map<string, Response>();
+    if (entry.wrongId) {
+      store.set(`https://papertok.internal/institution/v3/${entry.domain}`, Response.json({
+        domain: entry.domain, rorId: entry.wrongId, name: 'Research unit', acronym: null, entityId: null,
+      }));
+    }
+    const cache = {
+      async match(request: RequestInfo | URL) { return store.get((request as Request).url)?.clone(); },
+      async put(request: RequestInfo | URL, response: Response) { store.set((request as Request).url, response); },
+    };
+    const upstream = stubUpstreams({
+      users: { [SESSION_TOKEN]: { localId: UID, email: `alice@${entry.domain}`, emailVerified: true } },
+      ror: url => {
+        if (url === `https://api.ror.org/v2/organizations/${id}`) return Response.json(record);
+        const domain = new URL(url).searchParams.get('query.advanced');
+        return Response.json({ items: domain === `domains:${entry.domain}` && entry.wrongId ? [wrong, record] : [] });
+      },
+      mdq: () => Response.json([]),
+    });
+    const admin = memoryAdmin();
+    try {
+      const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache });
+      assert.equal(institution!.rorId, entry.rorId);
+      assert.equal(institution!.domain, entry.domain);
+      assert.equal(institution!.name, entry.name);
+      assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+      assert.deepEqual(findResolver(institution!), entry.resolver);
+      assert.deepEqual(rorQuestions(upstream.calls), [id]);
+      const { verifiedAt, ...resolved } = institution!;
+      assert.ok(verifiedAt);
+      assert.deepEqual(await resolveInstitution(entry.domain, { cache }), resolved);
+      assert.deepEqual(rorQuestions(upstream.calls), [id], 'the corrected identity is cached');
+      for (const other of [`alumni.${entry.domain}`, `${entry.domain}.example`]) {
+        await rejectsWith(resolveInstitution(other, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+      }
+    } finally {
+      upstream.restore();
+    }
+  });
+}
