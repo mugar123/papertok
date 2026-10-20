@@ -30,7 +30,9 @@ test('a mouse selection is resolved from the Range, from the paragraph it starts
   assert.doesNotMatch(jsx, /'selectionchange'/);
   // The paragraph's source text comes from state by the ids the DOM carries.
   assert.match(jsx, /const paragraphTextFor = useCallback(?:<[^;\n]+>)?\(\(sectionId: string \| undefined, paragraphIndex: number\) => \{/);
-  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section!, paragraphIndex, text, paragraph\);/);
+  assert.match(jsx, /handleSelection\(sectionId, paragraphIndex, text, paragraph, /);
+  // A selection that ends in a later paragraph of the same section is one passage.
+  assert.match(jsx, /last\.dataset\.section === sectionId && lastIndex > paragraphIndex/);
   // Keyboard route untouched.
   assert.match(jsx, /onKeyDown=\{annotating \? \(event\) => handleParagraphKeyDown\(event, section\.id, paragraphIndex, paragraph\)/);
 });

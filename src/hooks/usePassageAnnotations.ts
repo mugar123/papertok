@@ -1,6 +1,6 @@
 import type { Paper } from '../models/Paper.ts';
 import type { UserHighlight } from '../services/userHighlightService.ts';
-export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
@@ -145,6 +145,8 @@ export function usePassageAnnotations({
       sectionId: pending.sectionId,
       paragraphIndex: pending.paragraphIndex,
       quote: pending.quote,
+      endParagraphIndex: pending.endParagraphIndex,
+      endQuote: pending.endQuote,
       kind,
       note,
     });
@@ -197,7 +199,7 @@ export function usePassageAnnotations({
 
     try {
       const answer = await annotatePassage(paper, {
-        quote: passage.quote,
+        quote: passage.text ?? passage.quote,
         context: passage.context,
         level,
         language,
@@ -212,6 +214,8 @@ export function usePassageAnnotations({
         sectionId: passage.sectionId,
         paragraphIndex: passage.paragraphIndex,
         quote: passage.quote,
+        endParagraphIndex: passage.endParagraphIndex,
+        endQuote: passage.endQuote,
         kind: 'ai',
         note: answer.note,
       });
@@ -228,6 +232,7 @@ export function usePassageAnnotations({
           sectionId: passage.sectionId,
           paragraphIndex: passage.paragraphIndex,
           quote: passage.quote,
+          ...(passage.endParagraphIndex === undefined ? {} : { endParagraphIndex: passage.endParagraphIndex, endQuote: passage.endQuote }),
           kind: 'ai',
           note: answer.note,
           fresh: true,
