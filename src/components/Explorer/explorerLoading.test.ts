@@ -292,6 +292,20 @@ test('"Keep looking" stays mounted and focusable after the page it asked for fai
   );
 });
 
+// The status was emptied when that page failed, leaving the failure to the
+// error strip, which is inserted with its text in it and may go unannounced.
+// The status is the region that is mounted before it speaks.
+test('a "Keep looking" page that fails under rows is said by the mounted status', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+  const statusChain = jsx.match(/let papersMoreStatus[^\n]*\n\s*if \(papersAwaitReader\) \{[\s\S]*?\n\s*\}/)?.[0] || '';
+  assert.match(
+    statusChain,
+    /else if \(!papersError\) papersMoreStatus = '[^']+';\s*else if \(filteredPapers\.length > 0\) papersMoreStatus = '[^']+';\s*\}$/,
+    'after the end of the pages, a failure with rows on screen has words of its own',
+  );
+  assert.match(jsx, /\{!publicMode && \(\s*<p className="explorer-list-more-status" role="status">\{papersMoreStatus\}<\/p>/);
+});
+
 /**
  * OpenAIRE's `total` counts every publication of the project, whether or not
  * it carries a DOI or an arXiv id; `getPapersByProject` already drops the ones

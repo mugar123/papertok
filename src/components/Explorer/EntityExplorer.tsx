@@ -1501,14 +1501,17 @@ export default function EntityExplorer({
   const rowsSettled = rowBudget >= filteredPapers.length;
   // What the foot of the list says once it waits for "Keep looking", and what
   // each press found. Nothing before that: the pages the list asks for on its
-  // own have the sentinel's spinner. Nothing after a failed page either: the
-  // error strip or the error state says so.
+  // own have the sentinel's spinner. A failed page under rows is said here
+  // too, because the error strip is inserted with its text already in it and
+  // a screen reader may not announce it. With no rows the error state is an
+  // alert and says it.
   let papersMoreStatus: string | null = null;
   if (papersAwaitReader) {
     if (isFetchingMore) papersMoreStatus = 'Checking more publications…';
     else if (hasMore && filteredPapers.length === 0) papersMoreStatus = 'No matches yet. More publications remain to check.';
     else if (hasMore) papersMoreStatus = `${filteredPapers.length.toLocaleString(locale)} listed so far. More publications remain to check.`;
     else if (!papersError) papersMoreStatus = 'No more publications to check.';
+    else if (filteredPapers.length > 0) papersMoreStatus = 'More publications could not be checked.';
   }
   useEffect(() => {
     if (rowsSettled) return undefined;
@@ -2825,8 +2828,9 @@ export default function EntityExplorer({
                   has anything to say, so its first words are spoken. The
                   button stays mounted and focusable while a page loads, after
                   the last one and after a failed one, so a keyboard reader
-                  keeps their place. On a failure the error strip or the error
-                  state says what happened and offers Try again. */}
+                  keeps their place. A failure under rows is said by the
+                  status, with no rows by the error state; the error strip or
+                  the error state offers Try again. */}
               {!publicMode && (
                 <p className="explorer-list-more-status" role="status">{papersMoreStatus}</p>
               )}
