@@ -470,29 +470,6 @@ button.rd-tag {
   margin-bottom: var(--space-8);
 }
 
-.rd-ghost[data-start] {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-6) var(--space-4);
-  text-align: center;
-}
-
-.rd-ghost[data-start] .rd-ghost-head {
-  justify-content: center;
-  margin-bottom: 0;
-}
-
-.rd-ghost[data-start] .rd-ghost-head small {
-  flex-basis: 100%;
-}
-
-.petri.rd-ghost-petri {
-  width: 6rem;
-  height: 6rem;
-  margin: 0 auto var(--space-3);
-}
-
 .rd-ghost-head {
   display: flex;
   align-items: center;
@@ -718,30 +695,16 @@ button.rd-tag {
   animation: rdErrorIn 360ms var(--ease-out-expo);
 }
 
-.rd-error-petri {
-  width: 6rem;
-  height: 6rem;
+.rd-error-code {
+  display: block;
+  margin-top: var(--space-2);
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
 }
 
 @keyframes rdErrorIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
-}
-
-.rd-retry {
-  min-height: 34px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-md);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rd-retry:hover { background: var(--accent-primary-hover); }
 }
 
 /* ── Responsive ── */
@@ -861,10 +824,6 @@ button.rd-tag {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rd-retry {
-    transition: none;
-  }
-
   /* No sweep, no pen, no shimmer — a section still has to announce that it just
      arrived, so it does it with a short fade and nothing else. */
   .rd-section[data-reveal] .rd-p {

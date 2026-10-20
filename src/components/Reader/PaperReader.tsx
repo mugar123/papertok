@@ -58,6 +58,7 @@ import AnnotationRail from './AnnotationRail.tsx';
 import { ListRowAuthors } from '../Lists/ListRow.tsx';
 import HighlightedScientificText from './HighlightedScientificText.tsx';
 import SelectionMenu from './SelectionMenu.tsx';
+import UsesCount from './UsesCount.tsx';
 import ThinkingDots from './ThinkingDots.tsx';
 import './PaperReader.css';
 import './Annotations.css';
@@ -133,7 +134,7 @@ const ERROR_COPY = {
   en: {
     AI_REWRITE_NEEDS_FULL_TEXT: {
       title: 'There is no paper to read',
-      body: 'The rewrite needs the full text, and this one has only an abstract or a PDF that will not open.',
+      body: 'The full text could not be loaded. It may be paywalled, or the source may be down.',
     },
     AI_AUTH_REQUIRED: {
       title: 'You need to sign in',
@@ -212,28 +213,21 @@ const ANNOTATION_ERROR_COPY = {
   },
 };
 
-/**
- * What the failure is, so the screen can say it in colour as well as in words:
- * `wait` is amber (come back and it will work), `broken` is red (this attempt
- * went wrong), `closed` is neutral (nothing here is going to change by trying).
- */
-const ERROR_POSES = { wait: 'thinking', broken: 'upset', closed: 'lost' } as const;
-
-const ERROR_TONES = {
-  AI_QUOTA_EXHAUSTED: 'wait',
-  AI_TIMEOUT: 'wait',
-  AI_BUSY: 'wait',
-  AI_CANCELLED: 'wait',
-  AI_UNAVAILABLE: 'broken',
-  AI_INVALID_RESPONSE: 'broken',
-  AI_EMPTY_RESPONSE: 'broken',
-  AI_AUTH_REQUIRED: 'closed',
-  AI_NOT_CONFIGURED: 'closed',
-  AI_INVALID_PAPER: 'closed',
-  AI_REWRITE_NEEDS_FULL_TEXT: 'closed',
-  AI_REQUEST_TOO_LARGE: 'closed',
-  AI_INVALID_REQUEST_UPSTREAM: 'closed',
-};
+const ERROR_POSES = {
+  AI_QUOTA_EXHAUSTED: 'thinking',
+  AI_TIMEOUT: 'thinking',
+  AI_BUSY: 'thinking',
+  AI_CANCELLED: 'thinking',
+  AI_UNAVAILABLE: 'upset',
+  AI_INVALID_RESPONSE: 'upset',
+  AI_EMPTY_RESPONSE: 'upset',
+  AI_AUTH_REQUIRED: 'lost',
+  AI_NOT_CONFIGURED: 'lost',
+  AI_INVALID_PAPER: 'lost',
+  AI_REWRITE_NEEDS_FULL_TEXT: 'lost',
+  AI_REQUEST_TOO_LARGE: 'lost',
+  AI_INVALID_REQUEST_UPSTREAM: 'lost',
+} as const;
 
 /**
  * Codes where pressing the button again cannot possibly help — the allowance is
@@ -922,7 +916,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const isStreaming = shownStatus === 'streaming';
   const errorCopy = ERROR_COPY.en[(providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError) as keyof typeof ERROR_COPY.en]
     || ERROR_COPY.en.AI_UNAVAILABLE;
-  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError as keyof typeof ERROR_TONES] || 'broken') as keyof typeof ERROR_POSES;
+  const stageLabel = copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing;
+  const errorPose = providerQuota ? 'thinking' : ERROR_POSES[shownError as keyof typeof ERROR_POSES] || 'upset';
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
   /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
@@ -934,7 +929,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
 
-  const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? quota : null;
+  const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
   const { error: askError, clearError: clearAskError } = annotations;
   useEffect(() => {
     if (!askError) return;
@@ -1059,8 +1054,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {usesQuota && (
                   <span className="rd-tag rd-tag--ai rd-uses">
                     <Sparkle size={12} aria-hidden="true" />
-                    <span aria-hidden="true">{`${usesQuota.remainingUses}/${usesQuota.dailyLimit}`}</span>
-                    <span className="visually-hidden">{copy.usesLeftLine(usesQuota.remainingUses, usesQuota.dailyLimit)}</span>
+                    <UsesCount left={usesQuota.left} limit={usesQuota.limit} copy={copy} />
                   </span>
                 )}
                 {sections.length > 0 && (
@@ -1090,7 +1084,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
               <EmptyState
                 role="alert"
                 className="rd-error-state"
-                art={<Petri pose={ERROR_POSES[errorTone]} className="rd-error-petri" />}
+                art={<Petri pose={errorPose} />}
                 title={errorCopy.title}
                 actions={(canRetry || originalUrl) && (
                   <>
@@ -1110,6 +1104,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 )}
               >
                 {errorCopy.body}
+                {shownError && <code className="rd-error-code">{shownError}</code>}
               </EmptyState>
             ) : (
               <>
@@ -1167,7 +1162,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   {isStreaming && (
                   <motion.div
                     className="rd-ghost"
-                    data-start={sections.length === 0 ? '' : undefined}
                     /* The last ghost has no section to turn into: the stream
                        simply ends. Without an exit of its own it blinked out one
                        frame after growing a fresh skeleton nobody would fill. */
@@ -1175,16 +1169,26 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                       ? { opacity: 0, transition: { duration: 0.12 } }
                       : { opacity: 0, transform: 'translateY(-6px)', transition: { duration: 0.2, ease: EASE_OUT } }}
                   >
-                    {sections.length === 0 && <Petri pose="download" className="rd-ghost-petri" />}
+                    {sections.length === 0 ? (
+                      <EmptyState
+                        role="status"
+                        aria-live="polite"
+                        as="p"
+                        art={<Petri pose="download" />}
+                        title={<span key={stage} className="rd-ghost-stage">{stageLabel}</span>}
+                      >
+                        {copy.writingHint}
+                      </EmptyState>
+                    ) : (
+                    <>
                     <p className="rd-ghost-head" role="status" aria-live="polite">
                       <ThinkingDots />
                       {/* Keyed by stage so the label is remounted, and its own
                           entrance animation replays, on every change of stage —
                           "downloading" does not jump into "reading". */}
-                      <span key={stage} className="rd-ghost-stage">{copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing}</span>
-                      <small>{sections.length > 0 ? `${sections.length} ${copy.sections}` : copy.writingHint}</small>
+                      <span key={stage} className="rd-ghost-stage">{stageLabel}</span>
+                      <small>{`${sections.length} ${copy.sections}`}</small>
                     </p>
-                    {sections.length > 0 && (
                     <AnimatePresence mode="wait">
                       <motion.div
                         key={sections.length}
@@ -1205,6 +1209,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                         </div>
                       </motion.div>
                     </AnimatePresence>
+                    </>
                     )}
                   </motion.div>
                   )}
@@ -1213,9 +1218,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {shownStatus === 'incomplete' && (
                   <p className="rd-notice" role="alert">
                     {copy.incomplete}
-                    <button type="button" className="rd-retry" onClick={() => load(level, { force: true })}>
+                    <Button size="sm" onClick={() => load(level, { force: true })}>
+                      <ArrowClockwise size={14} aria-hidden="true" />
                       {copy.retry}
-                    </button>
+                    </Button>
                   </p>
                 )}
               </>
