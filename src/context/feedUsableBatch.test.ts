@@ -386,6 +386,10 @@ for (const commitFirst of [true, false]) {
     t.mock.method(Math, 'random', () => 0.5);
     const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     const { state, env } = feed();
+    // commit() puts the real loader in loadPapersRef. A reset load that fails
+    // after paint schedules a retry through it every 2.5 s, which would keep
+    // the test process alive. A new session cancels its retries and continuations.
+    t.after(() => { env.feedSessionId.current += 1; });
     const requests: Array<{ source: string; categories: string[]; start?: number; painted: boolean }> = [];
     const send = (source: string, categories: string[], start?: number) => {
       const painted = state.papers.length > 0;
