@@ -20,6 +20,10 @@ import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 import { mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
+import { fetchWorkingPapers } from '../services/domainSourceService.ts';
+import { openAlexClient } from '../services/openAlexClient.ts';
+import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
@@ -73,7 +77,8 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     rankPreferences: <T>(values: T) => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } } as Record<string, { subcategories: Record<string, string | { label: string }> }>,
     ARXIV_FEED_AREAS, fetchPapers: (() => Promise.resolve(fast)) as (categories: string[]) => Promise<FeedRecord[]>, PubmedAdapter: class {},
     OpenAlexAdapter: class { search() { return Promise.resolve(slow).then(papers => ({ papers })); } },
-    fetchDomainPapers: () => Promise.resolve([]), relatedCandidates: ref([]),
+    fetchDomainPapers: () => Promise.resolve([]), fetchWorkingPapers: (() => Promise.resolve([])) as typeof fetchWorkingPapers,
+    relatedCandidates: ref([]),
     personalCandidates: ref([]), fetchPersonalPapers: () => Promise.resolve([]), PERSONAL_CANDIDATES_PER_PAGE: 5,
     pickExplorationCategories,
     FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
@@ -565,4 +570,116 @@ test('a restored snapshot is written again only when a late answer changes a car
     assert.equal(state.papers === snapshot.papers, !rewritten);
     assert.deepEqual(writes.map(write => [write.papers[0].abstract, write.savedAt]), rewritten ? [['Europe PMC source text.', 1_000]] : []);
   }
+});
+
+// PAP-53: the economics working-paper series reach a reader's page through one
+// OpenAlex request per page, and only for a reader who follows economics or
+// finance. Two works as OpenAlex returned them on 2026-10-19, trimmed.
+const SERIES_ABSTRACT = 'Between 2000 and 2015, services offshoring reshaped local labour markets across regions.';
+const invertedIndex = (text: string) => {
+  const index: Record<string, number[]> = {};
+  text.split(' ').forEach((word, position) => { (index[word] ||= []).push(position); });
+  return index;
+};
+const seriesWork = (id: string, doi: string, type: string, source: { id: string; display_name: string }) => ({
+  id: `https://openalex.org/${id}`,
+  doi: `https://doi.org/${doi}`,
+  title: `Working paper ${id}`,
+  type,
+  publication_date: '2026-10-14',
+  publication_year: 2026,
+  authorships: [{ author: { id: `https://openalex.org/A${id.slice(1)}`, display_name: `Author ${id}` }, institutions: [] }],
+  abstract_inverted_index: invertedIndex(SERIES_ABSTRACT),
+  primary_location: {
+    landing_page_url: `https://doi.org/${doi}`,
+    is_published: true,
+    version: 'publishedVersion',
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: 'journal' },
+  },
+  locations: [],
+  open_access: { is_oa: true, oa_url: null },
+  cited_by_count: 0,
+});
+const frbsfPaper = seriesWork('W7221947410', '10.24148/wp2026-23', 'article', { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' });
+const cesifoReport = seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', { id: 'S7407053623', display_name: 'CESifo' });
+
+// The OpenAlex client binds its fetch when it is built, so the relay is
+// stubbed on the client. Crossref, which classifies OpenAlex DOIs before
+// display, is stubbed on the global fetch.
+function stubSeriesRelay(t: import('node:test').TestContext, works: unknown[] | null) {
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: 'report' })) } });
+  });
+  const realFetch = openAlexClient.fetchImpl;
+  const seriesRequests: string[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    const url = decodeURIComponent(String(input));
+    if (url.includes('primary_location.source.id:')) seriesRequests.push(url);
+    return works ? Response.json({ results: works }) : new Response('{}', { status: 503 });
+  };
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  return seriesRequests;
+}
+
+test('an economics reader gets each working paper once, not peer reviewed, and other readers do not ask', async t => {
+  const seriesRequests = stubSeriesRelay(t, [frbsfPaper, cesifoReport]);
+  // The economics search can find a series article too.
+  const searched = new OpenAlexAdapter().mapToStandard(frbsfPaper)! as FeedRecord;
+  const load = async (preferences: string[]) => {
+    seriesRequests.length = 0;
+    const { state, env, run } = feed({ fast: [], slow: [searched] });
+    env.userPreferences = preferences;
+    env.fetchWorkingPapers = fetchWorkingPapers;
+    await run(true);
+    assert.equal(state.error, null);
+    return state.papers;
+  };
+
+  assert.deepEqual((await load(['cs.AI'])).map(paper => paper.id), [searched.id]);
+  assert.equal(seriesRequests.length, 0, 'a reader without economics or finance interests does not ask');
+
+  const page = await load(['econ.GN']);
+  assert.equal(seriesRequests.length, 1);
+  assert.deepEqual(page.map(paper => paper.id).sort(), ['openalex:W7221947410', 'openalex:W7222541626']);
+  for (const paper of page) {
+    assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper`);
+    assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
+  }
+});
+
+test('a failed working-paper request leaves the page to the other sources', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const seriesRequests = stubSeriesRelay(t, null);
+  const searched = records('search', 4);
+  const { state, env, run } = feed({ fast: [], slow: searched });
+  env.userPreferences = ['econ.GN'];
+  env.fetchWorkingPapers = fetchWorkingPapers;
+  await run(true);
+  assert.equal(seriesRequests.length, 1, 'the series were asked for');
+  assert.equal(state.error, null);
+  assert.deepEqual(state.papers.map(paper => paper.id), searched.map(paper => paper.id));
+});
+
+// Both ask OpenAlex, whose queue has two slots for requests without priority,
+// and the page waits for the followed lookups but not for the series.
+test('the working-paper series are asked for once the followed lookups settle, not ahead of them', async () => {
+  const followed = deferred();
+  const asked: string[] = [];
+  const { state, env, run } = feed();
+  Object.assign(env, {
+    userPreferences: ['econ.GN'],
+    followedEntities: [{ type: 'author', canonicalId: 'A5026475124', displayName: 'Martina Magli' }],
+    fetchFollowedEntityCandidates: () => { asked.push('followed'); return followed.promise; },
+    fetchWorkingPapers: () => { asked.push('series'); return Promise.resolve([]); },
+    OPTIONAL_SOURCE_RENDER_BUDGET_MS: 1000,
+  });
+  const loading = run(true);
+  await tick();
+  assert.deepEqual(asked, ['followed'], 'no series request while a followed lookup runs');
+  followed.resolve([]);
+  await loading;
+  assert.deepEqual(asked, ['followed', 'series']);
+  assert.equal(state.error, null);
 });

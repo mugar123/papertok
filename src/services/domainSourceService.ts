@@ -1,4 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
+import type { OpenAlexWork } from './adapters/openAlexTypes.ts';
 import type { EuropePmcRecord } from '../utils/europePmcRecord.ts';
 import type { OpenReviewNote } from './openReviewService.ts';
 import type { HuggingFaceRecord } from './huggingFaceService.ts';
@@ -47,9 +48,12 @@ interface InspireRecord {
 interface PhysicsResponse { _papertok?: { source?: string }; response?: { docs?: AdsRecord[] }; hits?: { hits?: InspireRecord[] }; }
 type SourceRequest<T> = { path: string; promise: Promise<T> };
 
-import { CATEGORIES } from '../data/categories.ts';
+import { CATEGORIES, getCategoryArea } from '../data/categories.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { assignRequestedCategories } from './arxivService.ts';
+import { openAlexJson } from './openAlexClient.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';
 import { mapOpenReviewNote } from './openReviewService.ts';
 import { mapHuggingFacePaper } from './huggingFaceService.ts';
@@ -736,4 +740,88 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
   return PaperBuilder.deduplicate(
     settled.flatMap(result => result.status === 'fulfilled' ? result.value.filter(Boolean) as Paper[] : [])
   ).slice(0, safeLimit * 2);
+}
+
+// The series this feed requests, by OpenAlex source ID, each checked with a
+// keyless OpenAlex request on 2026-10-19 (PAP-53). The review rule in
+// publicationStatus.ts owns which sources are working-paper series. A test
+// checks that each ID here is on its list; one that is not would bring its
+// articles in as reviewed journal papers without the Working paper tag. That
+// list also holds FEDS Notes, short notes rather than working papers, and the
+// Kansas City Fed series, which the checks behind this request did not cover.
+// The economics search cannot reach most of these series: OpenAlex types NBER,
+// CESifo, Banco de España and the New York and Philadelphia Fed series as
+// `report`, which that search leaves out, and it finds the IMF, FEDS and San
+// Francisco Fed articles only when a category label matches their text. World
+// Bank Policy Research Working Papers are not listed: OpenAlex files the recent
+// ones under the bank's general eBooks source (S4306464317), and its two PRWP
+// sources hold nothing from this window.
+const REQUESTED_SERIES_IDS = [
+  'S2809516038', // National Bureau of Economic Research
+  'S4210171147', // IMF Working Papers
+  'S7407053623', // CESifo Working Papers
+  'S4393913881', // Banco de España, Documentos de Trabajo
+  'S4393919745', // Federal Reserve Bank of New York, Staff Reports
+  'S4306510381', // Federal Reserve Bank of San Francisco, Working Paper Series
+  'S4210230366', // Federal Reserve Bank of Philadelphia, Working Papers
+  'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
+];
+// 672 works in the 90 days to 2026-10-19, or 112 pages.
+const WORKING_PAPER_WINDOW_DAYS = 90;
+// The per-request cap OSTI and NASA have.
+const WORKING_PAPER_PAGE_SIZE = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One page of the series above, newest first, for a reader whose interests
+ * include an economics or quantitative-finance category. Any other reader
+ * costs no request. The answer does not depend on which of those categories
+ * asked, so only the feed calls it, with the reader's own interests:
+ * exploration and topic pages would fetch the same series again.
+ *
+ * The cards come from the OpenAlex mapper and are filed under econ.GN. The
+ * mapper marks a report or a listed series as a working paper, not peer
+ * reviewed, so the card shows the Working paper tag. The landing page is the
+ * DOI (262 of 262 probed works), and a missing abstract stays missing.
+ * A failure rejects, so each feed counts a source that did not answer and
+ * fills the page from the others.
+ */
+export async function fetchWorkingPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
+  if (!categories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''))) return [];
+  // A UTC date, so every reader on one day sends the same filter and shares
+  // the Worker's cache entry for each page.
+  const since = new Date(Date.now() - WORKING_PAPER_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const url = new URL('https://api.openalex.org/works');
+  url.searchParams.set('filter', [
+    `primary_location.source.id:${REQUESTED_SERIES_IDS.join('|')}`,
+    // The window also held one dataset.
+    'type:article|report',
+    `from_publication_date:${since}`,
+  ].join(','));
+  url.searchParams.set('sort', 'publication_date:desc');
+  url.searchParams.set('page', String(Math.max(1, Number(page) || 1)));
+  url.searchParams.set('per-page', String(WORKING_PAPER_PAGE_SIZE));
+  url.searchParams.set('select', OPENALEX_WORK_SEARCH_FIELDS.join(','));
+  try {
+    const data = await openAlexJson<{ results: OpenAlexWork[] }>(url, {
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      cacheTtlMs: 10 * 60 * 1000,
+      staleIfError: true,
+      // One attempt per page; the other sources fill a page this one misses.
+      retries: 0,
+    });
+    const adapter = new OpenAlexAdapter();
+    // The request is the same whichever category asked, so the reader's
+    // categories say nothing about a paper's field. Matching their labels
+    // against the text is no better here: "public finances" in an abstract on
+    // immigration would make it Statistical Finance. What the record supports
+    // is that the series publish economics, so every card is General Economics.
+    return assignRequestedCategories(
+      data.results.map(work => adapter.mapToStandard(work)).filter(Boolean) as Paper[],
+      ['econ.GN'],
+    );
+  } catch (error) {
+    console.warn('Working-paper series unavailable', error);
+    throw error;
+  }
 }

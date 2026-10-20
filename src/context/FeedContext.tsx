@@ -106,7 +106,7 @@ import {
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
 } from '../services/interactionProfileStore.ts';
-import { fetchDomainPapers } from '../services/domainSourceService.ts';
+import { fetchDomainPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import {
   abstractsInFlight,
   getOpenAlexEnrichmentId,
@@ -1342,9 +1342,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               [],
             );
           }
+          // Asked once the personal and followed lookups settle: they share the
+          // queue's two OpenAlex slots, and the page waits for them. Asked first, the
+          // series pushed three followed authors past their 3.5 s budget (2026-10-20).
+          // A topic follow enqueues only after an import, so source order is not enough.
+          const workingPapersProm = Promise.all([personalCandidatesPromise, followedCandidatesPromise])
+            .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
-            [arxivProm, pubmedProm, openAlexProm, domainProm],
+            [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
             (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
           );
