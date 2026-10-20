@@ -6,6 +6,9 @@ import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
+import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import {
   dribblingFetch,
   settleWithin,
@@ -51,6 +54,97 @@ test('entity and followed-work normalization preserves book and scientific revie
     primary_location: { source: { type: 'journal' } },
   })) });
   assert.deepEqual(papers.map(paper => paper.publicationType), ['book', 'review']);
+});
+
+// The FEDS paper and the Nature paper as OpenAlex returned them on 2026-10-19:
+// both `article`, in a `journal`, published version.
+const FEDS_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W4414816997',
+  title: 'A FEDS paper',
+  type: 'article',
+  primary_location: {
+    is_published: true,
+    source: { id: 'https://openalex.org/S4210212089', display_name: 'Finance and Economics Discussion Series', type: 'journal' },
+  },
+};
+const NATURE_WORK: OpenAlexWork = {
+  id: 'https://openalex.org/W2919115771',
+  title: 'Deep learning',
+  type: 'article',
+  primary_location: {
+    is_published: true,
+    source: { display_name: 'Nature', type: 'journal' },
+  },
+};
+
+test('the Explorer\'s peer-reviewed filter keeps the journal paper and drops the working paper and the unknown', () => {
+  const unsourced: OpenAlexWork = { id: 'https://openalex.org/W3', title: 'No venue', type: 'article' };
+  const papers = PaperBuilder.deduplicate(slimWorksPage({ results: [FEDS_WORK, NATURE_WORK, unsourced] }).papers);
+
+  assert.deepEqual(
+    filterAndSortEntityPapers(papers, { filters: { peerReviewed: true } }).map(paper => paper.id),
+    ['W2919115771'],
+  );
+  assert.equal(papers.find(paper => paper.id === 'W3')!.peerReviewed, undefined);
+});
+
+test('a journal article keeps its review when its working paper shares the title and first author', () => {
+  // `deduplicate` joins the two versions on title and first author. The row
+  // keeps the article's id, venue and DOI, so it stays peer reviewed.
+  const article: OpenAlexWork = {
+    id: 'https://openalex.org/W100',
+    doi: 'https://doi.org/10.1000/ijcb.1',
+    title: 'Monetary policy and bank lending',
+    type: 'article',
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    primary_location: {
+      is_published: true,
+      source: { display_name: 'International Journal of Central Banking', type: 'journal' },
+    },
+  };
+  const imfWorkingPaper: OpenAlexWork = {
+    ...article,
+    id: 'https://openalex.org/W200',
+    doi: 'https://doi.org/10.5089/imf.1',
+    primary_location: {
+      is_published: true,
+      source: { id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Papers', type: 'journal' },
+    },
+  };
+  const nberReport: OpenAlexWork = {
+    ...article,
+    id: 'https://openalex.org/W300',
+    doi: 'https://doi.org/10.3386/w1',
+    type: 'report',
+    primary_location: { is_published: true, source: { display_name: 'NBER Working Paper Series' } },
+  };
+
+  for (const workingPaper of [imfWorkingPaper, nberReport]) {
+    const papers = PaperBuilder.deduplicate(slimWorksPage({ results: [article, workingPaper] }).papers);
+    assert.deepEqual(
+      filterAndSortEntityPapers(papers, { filters: { peerReviewed: true } })
+        .map(paper => [paper.id, paper.journal, paper.peerReviewed, reviewTagForPaper(paper)]),
+      [['W100', 'International Journal of Central Banking', true, null]],
+    );
+  }
+});
+
+test('an arXiv preprint whose OpenAlex record is a working paper is published, not peer reviewed, and tagged as one', () => {
+  const preprint = PaperBuilder.create({
+    id: 'arxiv:2601.00001',
+    title: 'A FEDS paper',
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  const working = PaperBuilder.merge(preprint, mapOpenAlexEnrichmentWork(FEDS_WORK)!.enrichment, 'openalex');
+  const journal = PaperBuilder.merge(preprint, mapOpenAlexEnrichmentWork(NATURE_WORK)!.enrichment, 'openalex');
+
+  assert.equal(working.publicationStatus, 'published');
+  assert.equal(working.peerReviewed, false);
+  assert.equal(reviewTagForPaper(working)?.label, 'Working paper');
+  assert.equal(journal.peerReviewed, true);
+  assert.equal(reviewTagForPaper(journal), null);
 });
 
 /**
@@ -578,13 +672,46 @@ test('a works page and an authors page persist as what the Explorer shows, not a
   assert.deepEqual(authors, { authors: [{ id: 'A1', display_name: 'Ada', works_count: 2, cited_by_count: 0, h_index: 5, institution: 'Uni', concepts: [1, 2, 3] }], total: 9 });
 });
 
-test('SOURCE: the works and authors requests persist through persistentSlim under v2 keys', async () => {
+test('SOURCE: the works and authors requests persist through persistentSlim under versioned keys', async () => {
   const { readFile } = await import('node:fs/promises');
   const code = await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8');
-  assert.match(code, /const worksCacheKey = `entity-works-v2:/);
+  assert.match(code, /const worksCacheKey = `entity-works-v3:/);
   assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
   assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
   assert.match(code, /persistentKey: authorsCacheKey,[\s\S]*?persistentSlim: slimAuthorsPage,/);
+});
+
+// The previous release built this page with `peerReviewed: true` on the FEDS
+// working paper and persisted it for six hours, and at any age as the answer
+// when OpenAlex fails. Read back, it put the working paper through
+// "Peer-reviewed only" without a request.
+test('an Explorer works page persisted before the review rule is fetched again', async () => {
+  const previousStorage = openAlexClient.storage;
+  const previousStore = openAlexClient.persistentStore;
+  const realFetch = openAlexClient.fetchImpl;
+  const memory = new Map<string, string>();
+  openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k: string) => memory.delete(k) } as NonNullable<typeof openAlexClient.storage> & Record<string, unknown>;
+  openAlexClient.persistentStore = null;
+  const filters = { peerReviewed: true };
+  writeOpenAlexPersistent(`entity-works-v2:author:A7000000001:cited_by_count:desc:1::${JSON.stringify(filters)}`, {
+    papers: [{ id: 'W4414816997', title: 'A FEDS paper', publicationStatus: 'published', peerReviewed: true, sources: { primary: 'openalex', enrichedBy: [] } }],
+    total: 1,
+  });
+  const urls: string[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(String(url));
+    return Response.json({ meta: { count: 1 }, results: [FEDS_WORK] });
+  };
+  try {
+    const { papers } = await getWorksByEntity('author', 'A7000000001', 'cited_by_count:desc', 1, '', filters, 'Ada Lovelace');
+
+    assert.equal(urls.filter(url => url.includes('/works?')).length, 1);
+    assert.deepEqual(filterAndSortEntityPapers(PaperBuilder.deduplicate(papers), { filters }), []);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.storage = previousStorage;
+    openAlexClient.persistentStore = previousStore;
+  }
 });
 
 test('the enrichment carries the authors with their OpenAlex ids', () => {

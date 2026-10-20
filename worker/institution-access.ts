@@ -39,7 +39,6 @@ export interface ResolverCitation {
  * a free proxy to the resolvers.
  */
 
-import { XMLValidator } from 'fast-xml-parser';
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { cacheResponse } from './provider-runtime.ts';
@@ -53,11 +52,11 @@ const ACCESS_UNKNOWN_CACHE_SECONDS = 6 * 60 * 60;
 // home page. Those answers would otherwise be served for a week more.
 const RESOLVER_CITATION = 'article';
 // How the resolver's answer is read, in the cache keys of both routes that
-// read one: until 2026-10-19 a service Alma had filtered out for the date
-// still counted as access, and then a single-service answer cut off before
-// its services read as a refusal; answers read either way must not be
-// served on.
-export const RESOLVER_READING = 'well-formed-answers';
+// read one, so that results read an older way are not served on. Until
+// 2026-10-19 a service Alma had filtered out for the date counted as access;
+// then a single-service answer cut off before its services read as a
+// refusal; then a complete answer that was not well-formed XML was not read.
+export const RESOLVER_READING = 'complete-answers';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -194,13 +193,20 @@ export function parseResolverAnswer(xml: unknown) {
   const text = String(xml);
   // An answer cut off by the resolver or the network parses as far as it
   // goes: a single-service answer cut before its services would read as a
-  // refusal. Only a complete document is read, and only one with a context
-  // object is an answer about the journal at all. A library set to send
-  // readers straight to one service answers with `available_services` =
-  // single_service and no indicator (Harvard, Helsinki, Amsterdam,
-  // 2026-10-19); its services still carry Alma's filter marks, so what is
-  // left unfiltered is the answer.
-  if (XMLValidator.validate(text) !== true || !/<context_object>/.test(text)) return null;
+  // refusal. Only a complete answer is read: its root element closes, and
+  // every service that opens also closes, so no service is read with
+  // another's keys. Validating the whole answer as XML took about a
+  // millisecond per answer in Node, and one services page reads up to 36
+  // answers within the 10 ms CPU limit of Workers Free; the expressions
+  // below read keys, not a document tree, so a complete answer is enough.
+  // Only one with a context object is an answer about the journal at all.
+  // A library set to send readers straight to one service answers with
+  // `available_services` = single_service and no indicator (Harvard,
+  // Helsinki, Amsterdam, 2026-10-19); its services still carry Alma's
+  // filter marks, so what is left unfiltered is the answer.
+  const opened = text.match(/<context_service\b/g)?.length ?? 0;
+  const closed = text.match(/<\/context_service>/g)?.length ?? 0;
+  if (!text.trimEnd().endsWith('</uresolver_content>') || opened !== closed || !/<context_object>/.test(text)) return null;
   const indicator = xmlKey(text, 'full_text_indicator');
   const matched = xmlKey(text, 'rft.mms_id') !== null;
   const services = [];

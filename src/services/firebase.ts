@@ -7,11 +7,23 @@ declare const window: { location: { href: string }; history: { state: unknown; r
 
 export const IS_DEMO = false;
 
+import type { PopupReadiness } from './popupRedirectResolver.ts';
 import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, GithubAuthProvider, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  connectAuthEmulator,
+  GithubAuthProvider,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  signInWithCredential,
+} from 'firebase/auth';
 import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.ts';
 import { createStreamRecovery } from '../utils/streamRecovery.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -35,7 +47,25 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+// Firebase's popup resolver, without its start-up load (popupRedirectResolver.ts).
+// The institution link's second Auth instance takes it too (institutionService.ts).
+export const popupRedirectResolver = deferPopupRedirectResolver(browserPopupRedirectResolver);
+// What `getAuth` sets up, with a popup resolver that loads its scripts after
+// Auth reports the session instead of before (popupRedirectResolver.ts).
+// Popup and redirect calls pass no resolver, so they use this one. Passing
+// `browserPopupRedirectResolver` would get a separate instance that nothing
+// has loaded ahead of the tap.
+const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+  popupRedirectResolver,
+});
+// Whether a Google or GitHub window would open inside the press
+// (usePopupReady). Demo mode opens no popups, so it loads nothing and no
+// control waits.
+const popupReadiness: PopupReadiness = IS_DEMO
+  ? { ready: true, subscribe: () => () => {} }
+  : preparePopupRedirectResolver(auth);
+
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();
 // `user:email` is requested on purpose (F5). Without it GitHub only hands over
@@ -105,5 +135,5 @@ registerStallRecovery(createStreamRecovery({
   isOffline,
 }));
 
-export { auth, googleProvider, githubProvider, db };
+export { auth, googleProvider, githubProvider, db, popupReadiness };
 export default app;

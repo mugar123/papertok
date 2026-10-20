@@ -104,9 +104,12 @@
   gap: var(--space-2);
 }
 
+/* With its margin it fills the 16px of the Google mark it replaces, so the
+   button keeps its width while the window is prepared. */
 .institution-link-spinner {
   width: 14px;
   height: 14px;
+  margin: 1px;
   border: 2px solid var(--border-strong);
   border-top-color: var(--text-primary);
   border-radius: var(--radius-full);

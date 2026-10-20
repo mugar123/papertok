@@ -1,8 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
 
-export type GuestWelcomeAnswer = { areas: string[]; topics: string[]; readingLevel: ReadingLevel; emailDigest: boolean };
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowRight,
@@ -20,10 +19,10 @@ import { GithubMark } from '../ui/GithubMark.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import GoogleMark from './GoogleMark.tsx';
 import { useProviderSignIn } from './useProviderSignIn.ts';
-import { CollisionNote, ProviderSpinner } from './ProviderSignIn.tsx';
+import { CollisionNote, PreparingNote, ProviderSpinner } from './ProviderSignIn.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import PetriStamp from '../Onboarding/PetriStamp.tsx';
-import { normalizeGuestAreas, normalizeGuestTopics } from '../../utils/guestInterests.ts';
+import { normalizeGuestAreas, normalizeGuestTopics, saveGuestInterests } from '../../utils/guestInterests.ts';
 import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.tsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.tsx';
 import PrivacyPopover from './PrivacyPopover.tsx';
@@ -37,10 +36,12 @@ import './GuestWelcome.css';
 // over it. The intro covers what PaperTok is, what you do in it (its three
 // gestures side by side, arriving one after another), and which areas to
 // build the first feed from. Reading, the optional email digest, and project
-// support follow in the same layout, and then the feed itself. The areas have
-// to be answered; the first two screens can skip there. Nothing here asks for
-// an account, but the bar offers Sign in on every screen: someone onboarded on
-// another device goes straight to their account instead of answering again.
+// support follow in the same layout. The areas have to be answered; the first
+// two screens can skip there. There is no feed without an account: the last
+// screen stores the answer and opens the sign-up, and the account onboarding
+// adopts it (OnboardingFlow). The bar offers Sign in on every screen too:
+// someone onboarded on another device goes straight to their account instead
+// of answering again.
 // It offers Privacy too, so analytics can be turned off before anything else.
 //
 // The first screen is the landing page: the hero centred on the paper with its
@@ -116,7 +117,7 @@ const COPY = {
       kicker: 'Before you dive in',
       title: 'Free for you. Powered by stars.',
       lede: 'PaperTok is free and open source. Stars are how it grows.',
-      cta: 'Start exploring papers',
+      cta: 'Create your account',
     },
   },
 };
@@ -292,25 +293,25 @@ function Beat({ beat, index, still }: { beat: { title: string; body: string }; i
   );
 }
 
-export default function GuestWelcome({ initialAreas = [], initialTopics = [], initialReadingLevel = 'university', initialEmailDigest = false, onComplete, onSignIn }: { initialAreas?: readonly string[]; initialTopics?: readonly string[]; initialReadingLevel?: ReadingLevel; initialEmailDigest?: boolean; onComplete?: (answer: GuestWelcomeAnswer) => void; onSignIn?: () => void }) {
+export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const prefersReducedMotion = useReducedMotion();
   const still = Boolean(prefersReducedMotion);
   const copy = COPY.en;
   const [stepIndex, setStepIndex] = useState(0);
-  const [readingLevel, setReadingLevel] = useState(initialReadingLevel);
+  const [readingLevel, setReadingLevel] = useState<ReadingLevel>('university');
   // Opt-in: off until the visitor turns it on.
-  const [emailDigest, setEmailDigest] = useState(initialEmailDigest);
+  const [emailDigest, setEmailDigest] = useState(false);
   const [direction, setDirection] = useState(1);
-  const [leaving, setLeaving] = useState(false);
   const hero = useRef<HTMLDivElement | null>(null);
 
   const [shownStep, setShownStep] = useState(STEPS[0]);
   const onLanding = shownStep === 'welcome';
   // The landing's account button opens the two providers under it, in place.
   const [accountOpen, setAccountOpen] = useState(false);
-  const { pendingProvider, collision, error: signInError, signIn } = useProviderSignIn('onboarding');
-  const [selected, setSelected] = useState(() => new Set(normalizeGuestAreas(initialAreas)));
-  const [selectedTopics, setSelectedTopics] = useState(() => new Set(normalizeGuestTopics(initialTopics, initialAreas)));
+  const { pendingProvider, collision, error: signInError, preparing, signIn } = useProviderSignIn('onboarding');
+  const preparingId = useId();
+  const [selected, setSelected] = useState(() => new Set<string>());
+  const [selectedTopics, setSelectedTopics] = useState(() => new Set<string>());
   const [expandedAreas, setExpandedAreas] = useState(() => new Set<string>());
   const toggleExpanded = (key: string) => setExpandedAreas((previous) => {
     const next = new Set(previous);
@@ -359,16 +360,14 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
     });
   };
 
-  const answer = () => {
-    const areas = normalizeGuestAreas(Array.from(selected));
-    return { areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest };
-  };
-
+  // Stored before the sign-up opens, so the answer survives a provider's
+  // redirect, and stored again on every press, so a dialog closed and the
+  // answer changed signs up with the latest one.
   const finish = () => {
-    if (selected.size === 0 || leaving) return;
-    setLeaving(true);
-    // With motion refused there is no leave to wait for.
-    if (still) onComplete?.(answer());
+    if (selected.size === 0) return;
+    const areas = normalizeGuestAreas(Array.from(selected));
+    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest });
+    onSignIn?.();
   };
 
   const primary = () => {
@@ -400,8 +399,6 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
       stepKey={step}
       direction={direction}
       still={still}
-      leaving={leaving}
-      onLeaveComplete={() => onComplete?.(answer())}
       className={onLanding ? 'gw--landing' : undefined}
       landing={onLanding}
       onStepShown={setShownStep}
@@ -461,14 +458,31 @@ export default function GuestWelcome({ initialAreas = [], initialTopics = [], in
                   closed it is inert, so the keyboard never lands on a hidden provider. */}
               <div id="gw-providers" className="gw-providers" data-open={accountOpen ? '' : undefined} inert={!accountOpen}>
                 <div>
-                  <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('github')}>
-                    {pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="w-full"
+                    onClick={() => signIn('github')}
+                    disabled={preparing}
+                    focusableWhenDisabled
+                    aria-describedby={preparing ? preparingId : undefined}
+                  >
+                    {preparing || pendingProvider === 'github' ? <ProviderSpinner /> : <GithubMark size={18} />}
                     {copy.welcome.github}
                   </Button>
-                  <Button variant="outline" size="lg" className="w-full" onClick={() => signIn('google')}>
-                    {pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="w-full"
+                    onClick={() => signIn('google')}
+                    disabled={preparing}
+                    focusableWhenDisabled
+                    aria-describedby={preparing ? preparingId : undefined}
+                  >
+                    {preparing || pendingProvider === 'google' ? <ProviderSpinner /> : <GoogleMark size={18} />}
                     {copy.welcome.google}
                   </Button>
+                  <PreparingNote id={preparingId} preparing={preparing} keepLine={false} />
                   {/* Always mounted and displayed, even empty, so the alert is a
                       live region before its text arrives. */}
                   <p className="gw-providers-note" role="alert">

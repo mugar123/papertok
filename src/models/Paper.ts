@@ -123,6 +123,9 @@ export interface Paper {
   publicationType?: string;
   publicationStatus?: 'preprint' | 'published' | 'accepted' | 'retracted';
   peerReviewed?: boolean;
+  // True when the record shows a working paper or report
+  // (`openAlexIsWorkingPaper`); absent when it does not say.
+  workingPaper?: boolean;
   openAccess?: boolean;
   pdfUrl?: string | null;
   openAccessPdfUrl?: string;

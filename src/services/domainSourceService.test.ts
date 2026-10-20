@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUEST_CATEGORIES } from '../utils/guestFeedPlan.ts';
 import {
-  DOMAIN_SOURCE_PATHS,
-  PROTECTED_SOURCE_PATHS,
   getDomainSourcePlan,
   getEligibleDomainSources,
   reportDomainSourceFailures,
@@ -16,7 +13,12 @@ import {
   mapNasaRecord,
   mapOstiRecord,
   readBioRxivResponse,
+  fetchWorkingPapers,
 } from './domainSourceService.ts';
+import { openAlexClient } from './openAlexClient.ts';
+import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { reviewStatusForPaper } from '../utils/paperStatus.ts';
+import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 
 // The Worker answers a bioRxiv outage with an empty collection marked
 // `_papertok.degraded` (cached briefly). Read as papers it would be "bioRxiv has
@@ -204,23 +206,6 @@ test('maps INSPIRE papers as a keyless high-energy physics fallback', () => {
   assert.match(paper!.inspireUrl!, /inspirehep\.net\/literature\/12345/);
 });
 
-function eligiblePaths(plan: { biology: string[]; engineering: string[]; physics: string[]; inspirePhysics: string[]; scopus: string[]; biorxivCategory: string; osti: string[]; nasa: string[]; openReview: string[]; huggingFace: string[]; }, options: { hasSession?: boolean|undefined; scopusEnabled?: boolean|undefined; }|undefined) {
-  return Object.entries(getEligibleDomainSources(plan, options))
-    .filter(([, isEligible]) => isEligible)
-    .map(([source]) => DOMAIN_SOURCE_PATHS[source as keyof typeof DOMAIN_SOURCE_PATHS]);
-}
-
-// The guest feed used to spend every load asking `/sources/physics` for papers:
-// the route needs an ID token, the client threw before reaching the network, and
-// the `allSettled` made it look like a source with nothing to say.
-test('a guest plan requests nothing that needs a session', () => {
-  const plan = getDomainSourcePlan(GUEST_CATEGORIES);
-  const paths = eligiblePaths(plan, { hasSession: false, scopusEnabled: true });
-
-  assert.deepEqual(paths.filter(path => PROTECTED_SOURCE_PATHS.has(path)), []);
-  assert.ok(paths.length > 0, 'a guest still has public sources to read');
-});
-
 test('the same categories reach the protected sources once there is a session', () => {
   const plan = getDomainSourcePlan(['astro-ph.CO', 'mech.aero', 'bio.cell']);
 
@@ -332,4 +317,114 @@ test('the failure report shows the upstream status once the body travels on the 
 
   assert.equal(logged.length, 1);
   assert.match(logged[0], /\/sources\/openreview failed: \/sources\/openreview returned 502 \(upstream 400\)/);
+});
+
+// Works as OpenAlex returned them on 2026-10-19 (trimmed): a San Francisco Fed
+// working paper filed as a journal article, a CESifo working paper typed
+// `report`, here without its abstract, and the one CESifo work typed `article`
+// in a journal, W7144132107.
+const invertedIndex = (text: string) => {
+  const index: Record<string, number[]> = {};
+  text.split(' ').forEach((word, position) => { (index[word] ||= []).push(position); });
+  return index;
+};
+const seriesWork = (id: string, doi: string, type: string, source: { id: string; display_name: string }, abstract: string | null) => ({
+  id: `https://openalex.org/${id}`,
+  doi: `https://doi.org/${doi}`,
+  title: `Working paper ${id}`,
+  type,
+  publication_date: '2026-10-14',
+  publication_year: 2026,
+  authorships: [{ author: { id: `https://openalex.org/A${id.slice(1)}`, display_name: `Author ${id}` }, institutions: [] }],
+  abstract_inverted_index: abstract ? invertedIndex(abstract) : null,
+  primary_location: {
+    landing_page_url: `https://doi.org/${doi}`,
+    is_published: true,
+    version: 'publishedVersion',
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: 'journal' },
+  },
+  locations: [],
+  open_access: { is_oa: true, oa_url: null },
+  cited_by_count: 0,
+});
+const FRBSF = { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' };
+const CESIFO = { id: 'S7407053623', display_name: 'CESifo' };
+
+test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed General Economics cards', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const realBase = openAlexClient.apiBase;
+  const urls: URL[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.apiBase = 'https://api.papertok.app';
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(new URL(String(input)));
+    return Response.json({ results: [
+      seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'These findings help inform debates surrounding how unauthorized immigration impacts labor and housing markets and public finances in the U.S.'),
+      seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
+      seriesWork('W7144132107', '10.65864/cesifo/tqjga1w74a', 'article', CESIFO, null),
+    ] });
+  };
+  try {
+    assert.deepEqual(await fetchWorkingPapers(['cs.AI', 'math.PR'], 3), []);
+    assert.equal(urls.length, 0, 'a reader without economics or finance interests costs no request');
+
+    const papers = await fetchWorkingPapers(['q-fin.ST', 'cs.AI'], 3);
+    assert.equal(urls.length, 1);
+    const [url] = urls;
+    assert.equal(`${url.origin}${url.pathname}`, 'https://api.papertok.app/openalex/works');
+    assert.ok(!url.searchParams.has('api_key') && !url.searchParams.has('mailto'), 'the Worker attaches the credential');
+    const filters = url.searchParams.get('filter')!.split(',');
+    const since = filters.find(filter => filter.startsWith('from_publication_date:'))!.split(':')[1];
+    const ageDays = (Date.now() - Date.parse(since)) / 86_400_000;
+    assert.ok(ageDays > 0 && ageDays <= 366, `a bounded recent window, got ${since}`);
+    assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+    assert.equal(url.searchParams.get('page'), '3');
+    assert.ok(Number(url.searchParams.get('per-page')) <= 6, 'no more of a page than OSTI or NASA may take');
+
+    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7144132107']);
+    for (const paper of papers) {
+      assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper, not a reviewed article`);
+      assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
+      assert.equal(paper.landingPageUrl, `https://doi.org/${paper.doi}`);
+      // Not the reader's q-fin.ST: the request did not depend on it, and
+      // "public finances" on immigration does not make a finance paper.
+      assert.equal(paper.primaryCategory, 'econ.GN');
+    }
+    assert.match(papers[0].abstract, /unauthorized immigration/);
+    assert.equal(hasUsableAIAbstract(papers[1].abstract), false, 'a missing abstract stays missing');
+
+    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST']]) {
+      for (const paper of await fetchWorkingPapers(reader, 3)) {
+        assert.equal(paper.primaryCategory, 'econ.GN', `${paper.id} for a reader of ${reader.join(' and ')}`);
+      }
+    }
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.apiBase = realBase;
+  }
+});
+
+test("every series the economics request names is on the review rule's list, so its journal articles carry the Working paper tag", async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  let requested: string[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    const sources = new URL(String(input)).searchParams.get('filter')!.split(',')
+      .find(filter => filter.startsWith('primary_location.source.id:'))!;
+    requested = sources.slice('primary_location.source.id:'.length).split('|');
+    return Response.json({ results: [] });
+  };
+  try {
+    await fetchWorkingPapers(['econ.GN'], 1);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+  assert.ok(requested.length > 0, 'the request names its series');
+  const adapter = new OpenAlexAdapter();
+  for (const id of requested) {
+    // An `article` in a `journal` source: only the rule's list tells it apart
+    // from a reviewed journal paper.
+    const card = adapter.mapToStandard(seriesWork('W1', '10.1/w1', 'article', { id, display_name: 'A series' }, null));
+    assert.equal(reviewStatusForPaper(card), 'workingPaper', `${id} is on the review rule's list`);
+  }
 });

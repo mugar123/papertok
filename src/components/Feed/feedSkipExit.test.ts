@@ -47,28 +47,14 @@ test('the exit is short enough to stay out of the way', () => {
     'a UI exit over 300ms reads as sluggish; this one has no reason to be long');
 });
 
-/**
- * Both doors into "not interested" go through the exit: the signed-in one
- * (`markNotInterested`) and the guest one (a surface that owns its own list).
- * Wiring only one leaves the other teleporting.
- */
-test('SOURCE: both skip paths run the card out before removing it', async () => {
+test('SOURCE: the skip runs the card out before removing it', async () => {
   const code = stripComments(await read('./FeedContainer.tsx'));
 
   const signedIn = bounded(code, 'const handleNotInterested = useCallback(', '}, [', 'handleNotInterested', 14);
   assert.match(signedIn, /beginSkipExit\(/, 'the signed-in skip starts the exit');
   assert.match(signedIn, /markNotInterested\(paper\)/, 'and its commit is the real removal');
 
-  const guest = bounded(code, 'const handleGuestNotInterested = useCallback(', '}, [', 'handleGuestNotInterested', 14);
-  assert.match(guest, /beginSkipExit\(/, 'the guest skip starts the same exit');
-  assert.match(guest, /dismissFromSource/, 'and its commit is the surface dropping the card');
-
   assert.match(code, /onNotInterested=\{handleNotInterested\}/);
-  // PaperCard decides whether a guest is offered Skip at all by whether this
-  // prop is there. A handler passed unconditionally would offer it on every
-  // public surface, including the ones with no list to remove from.
-  assert.match(code, /onGuestNotInterested=\{dismissFromSource \? handleGuestNotInterested : undefined\}/,
-    'a surface with no list of its own still gets no guest handler, and so still asks for the account');
 });
 
 /**

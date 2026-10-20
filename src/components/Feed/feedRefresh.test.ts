@@ -12,10 +12,10 @@ test('SOURCE: el feed expone un refresco visible en el primer paper, y pasarse p
   assert.match(src, /setActiveIndex\(index\)/);
 });
 
-test('SOURCE: la píldora no existe para el invitado', async () => {
+test('SOURCE: la píldora no existe en un feed que no se puede refrescar', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
-  assert.match(src, /\{!publicMode && papers\.length > 0 && \(!source \|\| source\.refresh\) && \(\s*<button/,
-    'sin cuenta no hay píldora, ni en un feed que no se puede refrescar (la capa de Similar)');
+  assert.match(src, /\{papers\.length > 0 && \(!source \|\| source\.refresh\) && \(\s*<button/,
+    'ni en un feed que no se puede refrescar (la capa de Similar)');
   // La captura NO se acota con el literal de las dependencias: cuando cambiaron
   // (el nodo entró en la lista) ese `indexOf` pasó a valer -1 y el slice se
   // comió medio fichero, con lo que estos asserts casaban contra código de otro
@@ -24,25 +24,9 @@ test('SOURCE: la píldora no existe para el invitado', async () => {
   const hoverTo = src.indexOf("wrapper.addEventListener('mousemove', onMove");
   assert.ok(hoverFrom > 0 && hoverTo > hoverFrom, 'el handler del hover y su enganche siguen ahí, en ese orden');
   const hover = src.slice(hoverFrom, hoverTo);
-  assert.match(hover, /if \(publicMode\) return;/);
   assert.match(hover, /pointer: fine/, 'el hover es solo de puntero fino');
   assert.match(hover, /feedNode\?\.parentElement/, 'se escucha en el envoltorio, padre del scroller y de la píldora');
   assert.doesNotMatch(src, /onMouseMove=\{handleMouseMove\}|onMouseLeave=/, 'nunca en el scroller: la píldora es su hermano y entrar en ella era un mouseleave');
-});
-
-test('SOURCE: la primera visita es la bienvenida, en el primer render y sin cargar el feed', async () => {
-  const src = strip(await read('../Public/GuestFeedPage.tsx'));
-  // Decided from the stored answer during render: no efecto que llegue un
-  // commit tarde, y ninguna espera al feed.
-  assert.match(src, /const firstVisit = interests === null;/);
-  assert.match(src, /if \(firstVisit\) \{\s*return \(\s*<GuestWelcome/);
-  assert.doesNotMatch(src, /askedOnce|feedReady/);
-  // El feed no pregunta a ninguna fuente mientras la bienvenida está arriba:
-  // se construye con su respuesta.
-  assert.match(src, /useGuestFeed\(\{ areas, topics, enabled: !firstVisit \}\)/);
-  const hook = strip(await read('../../hooks/useGuestFeed.ts'));
-  // `guestFeedLoadDecision` answers null while the feed is not enabled.
-  assert.match(hook, /const decision = guestFeedLoadDecision\(\{ enabled, previousKey, planKey: plan\.key \}\);\s*if \(!decision\) return undefined;/);
 });
 
 /**

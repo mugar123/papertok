@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { Paper } from '../models/Paper.ts';
 import {
+  abstractsInFlight,
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
@@ -149,4 +151,27 @@ test('late metadata keeps displayed abstract and summary stable without losing c
   assert.equal(result[0].summary, '');
   assert.equal(result[0].citationCount, 16);
   assert.equal(preserveFeedAbstracts(current, [{ ...current[0], abstract: 'Late text' }])[0], current[0]);
+});
+
+test('late text fills only a card that says its abstract is loading', () => {
+  const card = (id: string, abstract: string) => ({ id, title: `Synthetic paper ${id}`, authors: [], abstract, summary: abstract, sources: { primary: 'openalex', enrichedBy: [] } }) as Paper;
+  const current = [card('loading', ''), card('settled', ''), card('shown', 'Publisher text.')];
+  const enriched = current.map(paper => ({ ...paper, abstract: 'Late text', summary: 'Late text' }));
+  const result = preserveFeedAbstracts(current, enriched, new Set(['loading', 'shown']));
+  assert.deepEqual(result.map(paper => paper.abstract), ['Late text', '', 'Publisher text.']);
+  assert.equal(result[0].summary, 'Late text');
+});
+
+test('a card is loading only while a request that can supply its abstract is running', () => {
+  const papers = [
+    { id: 'pubmed', pmid: '123', abstract: '', sources: { primary: 'pubmed', enrichedBy: [] } },
+    { id: 'linked', arxivId: '1109.5103', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } },
+    { id: 'physics-doi', doi: '10.1016/j.nuclphysb.2011.08.011', primaryCategory: 'hep-th', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } },
+    { id: 'medicine-doi', doi: '10.5555/clinical-trial', primaryCategory: 'med.onc', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } },
+    { id: 'with-text', pmid: '456', abstract: 'Publisher text.', sources: { primary: 'pubmed', enrichedBy: [] } },
+  ].map(paper => ({ title: `Synthetic paper ${paper.id}`, authors: [], ...paper }) as Paper);
+  const all = { openAlex: true, europePmc: true, recovery: true };
+  assert.deepEqual([...abstractsInFlight(papers, all)], ['pubmed', 'linked', 'physics-doi']);
+  assert.deepEqual([...abstractsInFlight(papers, { ...all, recovery: false })], ['pubmed']);
+  assert.deepEqual([...abstractsInFlight(papers, { openAlex: false, europePmc: false, recovery: false })], []);
 });

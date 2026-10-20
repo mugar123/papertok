@@ -473,8 +473,12 @@
 }
 
 
+/* Room under the account button for the provider stack. It overlays the foot
+   of the stage, and the landing clips what overflows: 104px for its two
+   buttons, then the gap and the "Preparing sign-in…" line under them
+   (PreparingNote). */
 .gw--landing .gw-stage {
-  padding-bottom: 104px;
+  padding-bottom: calc(104px + var(--fs-xs) * var(--lh-normal) + var(--space-2));
 }
 
 .gw-step--welcome {
@@ -532,9 +536,12 @@
 }
 
 
+/* On paper: the stack overlays the engravings, which would otherwise sit
+   behind its text and show through its dimmed buttons. */
 .gw-providers > div {
   display: grid;
   gap: var(--space-2);
+  background: var(--bg-primary);
   clip-path: inset(0 0 100% 0);
   transition: clip-path 220ms var(--ease-out-expo);
 }
@@ -556,6 +563,12 @@
 .gw-providers[data-open] > div > * {
   opacity: 1;
   translate: 0 0;
+}
+
+/* A provider waiting for its window keeps the Button's disabled opacity
+   (button-variants.ts), which sits in a cascade layer below this sheet. */
+.gw-providers[data-open] > div > [data-disabled] {
+  opacity: revert-layer;
 }
 
 .gw-providers[data-open] > div > :nth-child(2) {

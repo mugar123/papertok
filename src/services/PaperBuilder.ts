@@ -1,5 +1,6 @@
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
+import { normalizeArxivId, normalizeDoi } from '../utils/publicNavigation.ts';
 
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
 
@@ -7,6 +8,19 @@ import type { Paper, PaperAuthor } from '../models/Paper.ts';
 // paper -- "editorial", "introduction", "lettertotheeditor" (17) -- and the
 // order-blind author keys in `deduplicate` are not issued for it.
 const HEURISTIC_LOOSE_TITLE_MIN_LENGTH = 20;
+
+// OpenAlex calls a working paper `published` as readily as a journal article,
+// so its mappers state peer review themselves (`openAlexPeerReviewed`) and a
+// gap in that answer stays a gap. Every other provider's `published` is still
+// read as a venue's acceptance.
+function isOpenAlexRecord(record: Pick<Partial<Paper>, 'sources'>, sourceName?: string) {
+  return sourceName === 'openalex' || record.sources?.primary === 'openalex';
+}
+
+// Versionless, as `deduplicate` keys it: 2601.00001v2 is the same work.
+function arxivIdKey(value: unknown) {
+  return normalizeArxivId(value).replace(/v\d+$/, '');
+}
 
 /**
  * Builder class for creating unified Paper objects from various adapters
@@ -66,7 +80,8 @@ export class PaperBuilder {
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
-      peerReviewed: data.peerReviewed ?? !isPreprint,
+      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) ? undefined : !isPreprint),
+      workingPaper: data.workingPaper || undefined,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
       openAccessPdfUrl: data.openAccessPdfUrl || undefined,
@@ -290,19 +305,50 @@ export class PaperBuilder {
       || (!hasExplicitPublicationStatus
         && enrichmentData.publicationType
         && !['preprint', 'repository'].includes(enrichmentData.publicationType));
+    // Evidence of publication reopens only a preprint's `false` or a missing
+    // answer; a published record's answer stands.
+    const reviewOpen = merged.peerReviewed === undefined
+      || merged.publicationStatus === 'preprint'
+      || merged.publicationType === 'preprint';
+    // A published record that says outright it was not reviewed wins from
+    // either side, so an IMF working paper that another provider also lists as
+    // published stays unreviewed whichever record arrives first. It does not
+    // replace an OpenAlex `true`, which is the base's own venue evidence
+    // (`create` derives none for OpenAlex): `deduplicate` also joins a journal
+    // article and its working paper on title and first author, and the row
+    // keeps the article's venue and DOI.
+    const reviewDenied = enrichmentData.peerReviewed === false
+      && !(merged.peerReviewed === true && isOpenAlexRecord(merged));
     if (shouldUpgradePublication) {
       merged.publicationType = enrichmentData.publicationType || merged.publicationType;
       merged.publicationStatus = 'published';
     }
 
-    // Re-calculate deterministic fields — but only when the enrichment brought
-    // publication evidence of its own, or when the base never had an answer.
-    // Recalculating unconditionally let a merge that carried nothing but an
-    // abstract overwrite an explicit `peerReviewed: false` with `true`.
-    if (shouldUpgradePublication || merged.peerReviewed === undefined) {
-      merged.peerReviewed = merged.publicationStatus === 'published'
-        && merged.publicationType !== 'preprint';
+    // Re-read only when the enrichment brought publication evidence of its own.
+    // A merge that carried nothing but an abstract once overwrote an explicit
+    // `peerReviewed: false` with `true`, and deriving an answer for a record
+    // that had none turned OpenAlex's unknown into `true` the same way.
+    if (shouldUpgradePublication && (reviewOpen || reviewDenied)) {
+      merged.peerReviewed = enrichmentData.peerReviewed
+        ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
     }
+    // The working-paper tag explains a `false`. It stays while the answer is
+    // `false`, and goes when a venue's `true` stands, as for the journal article
+    // whose working paper merged in. It names one record, so the enrichment's
+    // tag is taken only when the row keeps that record's identity: the base had
+    // no DOI, or both share a DOI or arXiv id. `deduplicate` also joins a
+    // journal article to its working paper on title and first author, and a
+    // row that keeps the article's DOI is not the working paper.
+    const baseDoi = normalizeDoi(existingPaper.doi);
+    const baseArxivId = arxivIdKey(existingPaper.arxivId);
+    const sameRecord = !existingPaper.doi
+      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
+      || (baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
+    const workingPaper = merged.peerReviewed === false
+      && (merged.workingPaper === true || (sameRecord && enrichmentData.workingPaper === true));
+    // Written only when it changes: a merge that adds nothing must return a
+    // paper equal to the one it got (`paperFieldsEqual`), key for key.
+    if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {

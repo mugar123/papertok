@@ -8,16 +8,22 @@ import { ARXIV_FEED_AREAS } from '../services/arxivService.ts';
 import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '../utils/asyncTiming.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
-import { takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
+import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { readProfileSignals } from '../utils/interactionProfile.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
-import { classifyFeedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
+import { settleWithin } from '../test-support/deadlineHarness.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 import { mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
+import { fetchWorkingPapers } from '../services/domainSourceService.ts';
+import { openAlexClient } from '../services/openAlexClient.ts';
+import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
@@ -26,8 +32,22 @@ const start = source.indexOf('async (reset = false, mode?: string | null, random
 const end = source.indexOf('\n  }, [\n    userPreferences, page, papers, loading, feedMode,', start);
 assert.ok(start >= 0 && end > start, 'the feed loader callback must exist');
 const callback = stripTypeScriptTypes(source.slice(start, end) + '\n  }');
+// The follow-up the loader and a snapshot restore share, run the same way.
+function componentCallback(name: string, deps: string) {
+  const from = source.indexOf(`const ${name} = useCallback(`);
+  const to = source.indexOf(`\n  }, [${deps}]);`, from);
+  assert.ok(from >= 0 && to > from, `${name} must exist`);
+  return stripTypeScriptTypes(source.slice(from + `const ${name} = useCallback(`.length, to) + '\n  }');
+}
+const followCallback = componentCallback('followShownPapers', 'scheduleFeedSnapshotWrite');
+const restoreCallback = componentCallback('restoreFeedSnapshot', 'followShownPapers');
+const notInterestedCallback = componentCallback('markNotInterested', 'withInteractionId, reRankFeed, recordProfileEvent, user?.uid');
+const refreshCallback = componentCallback('refreshFeed', '');
 const ref = <T>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// A separate instance of the publication service: its own Crossref cache.
+const freshPublications = (name: string) => import(new URL(`../services/feedPublicationService.ts?${name}`, import.meta.url).href) as Promise<typeof import('../services/feedPublicationService.ts')>;
 type FeedRecord = Pick<Paper, 'id' | 'title' | 'authors' | 'primaryCategory'> & Partial<Paper>;
 const records = (prefix: string, count = 15): FeedRecord[] => Array.from({ length: count }, (_, index) => ({
   id: `${prefix}-${index}`,
@@ -43,7 +63,7 @@ function deferred() {
 }
 
 function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
-  const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][] };
+  const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
     userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
     feedRequestId: ref(0), feedSessionId: ref(0),
@@ -57,13 +77,15 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     rankPreferences: <T>(values: T) => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } } as Record<string, { subcategories: Record<string, string | { label: string }> }>,
     ARXIV_FEED_AREAS, fetchPapers: (() => Promise.resolve(fast)) as (categories: string[]) => Promise<FeedRecord[]>, PubmedAdapter: class {},
     OpenAlexAdapter: class { search() { return Promise.resolve(slow).then(papers => ({ papers })); } },
-    fetchDomainPapers: () => Promise.resolve([]), relatedCandidates: ref([]),
+    fetchDomainPapers: () => Promise.resolve([]), fetchWorkingPapers: (() => Promise.resolve([])) as typeof fetchWorkingPapers,
+    relatedCandidates: ref([]),
     personalCandidates: ref([]), fetchPersonalPapers: () => Promise.resolve([]), PERSONAL_CANDIDATES_PER_PAGE: 5,
     pickExplorationCategories,
     FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
     settleSourcesForFirstPaint: (promises: Iterable<unknown[]|PromiseLike<unknown[]>>, ms: number, ready: ((papers: unknown[]) => boolean)|undefined) => settleSourcesForFirstPaint(promises, ms, ready, { allTimeoutMs: 200 }),
     resolveWithin, fulfilledPaperLists, PaperBuilder, lateSourceCandidates, shouldAbortFeedLoad,
-    classifyFeedPublications, isFeedPublication,
+    classifyFeedPublications, isFeedPublication, applyKnownPublicationTypes, dropUnreachedPublications,
+    visiblePaperIdRef: ref<string | null>(null),
     boredomLevel: ref(0), getBoredomThreshold: () => 5,
     likedPaperIdsRef: ref(new Set(known)), savedPaperIdsRef: ref(new Set()),
     readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
@@ -74,23 +96,39 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
     fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
-    awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract, recoverFeedAbstracts: async (papers: Paper[]) => papers,
+    awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract,
+    recoverFeedAbstracts: (async () => []) as (papers: Paper[]) => Promise<Partial<Paper>[]>,
     mergeOpenAlexEnrichment, preserveFeedAbstracts, mergeFeedAbstracts, mergeEuropePmcEnrichment, mergeICiteEnrichment,
-    scheduleFeedSnapshotWrite: () => {},
+    abstractsInFlight,
+    openAbstractWait, setAbstractWaits: (update: (current: typeof state.abstractWaits) => typeof state.abstractWaits) => { state.abstractWaits = update(state.abstractWaits); },
+    scheduleFeedSnapshotWrite: (() => {}) as (userId: string, key: string, snapshot: { papers: Paper[] }) => void,
     logRankingBatch: () => {}, saveSeenPaperIds: () => {}, activeUserId: ref('test-user'),
-    autoRetryUsedRef: ref(false), feedCache: ref({}),
+    autoRetryUsedRef: ref(false), feedCache: ref<Record<string, unknown>>({}), restoredFeedKeyRef: ref(''),
     feedPreferenceSignature: (values: string[]) => values.join('|'), pendingSnapshotWritesRef: ref(new Map()),
     writeFeedSnapshot: () => {},
     loadPapersRef: ref((...args: unknown[]) => { state.continuations.push(args); }),
   };
+  const build = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+  const withFollowUp = () => ({ ...env, followShownPapers: build(followCallback, env) });
   const run = (...args: unknown[]) => {
     Object.assign(env, { papers: state.papers, page: state.page, loading: state.loading });
-    return new Function(...Object.keys(env), `return (${callback});`)(...Object.values(env))(...args);
+    return build(callback, withFollowUp())(...args);
   };
-  return { state, env, run };
+  const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }) => build(restoreCallback, withFollowUp())(snapshot, 'top', 'cs.AI');
+  // Not interested in demo mode: nothing written to Firestore, no re-rank.
+  const dismiss = (paper: FeedRecord) => build(notInterestedCallback, {
+    ...env, user: null, IS_DEMO: true, demoSet: () => {}, withInteractionId: <T>(value: T) => value,
+    setNotInterestedIds: () => {}, papersRef: ref(state.papers), recordProfileEvent: () => {}, reRankFeed: () => {},
+  })(paper);
+  // Pull to refresh, with its 800 ms minimum.
+  const refresh = () => build(refreshCallback, {
+    ...env, setIsRefreshing: () => {}, clearCache: () => {}, loadPapersRef: ref(run),
+  })();
+  const loadingAbstracts = () => abstractWaitIds(state.abstractWaits);
+  return { state, env, run, restore, dismiss, refresh, loadingAbstracts };
 }
 
-test('the signed-in loader excludes the video books and book review before display, including pagination', async t => {
+test('the signed-in loader shows a page before Crossref answers, then drops only the books the reader has not reached', async t => {
   const video: Paper[] = [
     { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
     { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
@@ -98,16 +136,126 @@ test('the signed-in loader excludes the video books and book review before displ
     { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
     { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
   ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const shown = ['W568341909', 'W93572185', 'W3029239115', 'scientific-review'];
+  const read = records('read', 3);
+  for (const [page, existing, kept] of [
+    // On the first page the two books are the cards on screen, so they stay.
+    [0, [], shown],
+    [1, read, [...read.map(paper => paper.id), 'W3029239115', 'scientific-review']],
+  ] as const) {
+    const publications = await freshPublications(`signed-in-${page}`);
+    const { state, env, run } = feed({ fast: [], slow: video, page, papers: [...existing] });
+    Object.assign(env, publications);
+    env.visiblePaperIdRef.current = existing[0]?.id ?? null;
+    const loading = run(page === 0);
+    await wait(100);
+    assert.deepEqual(state.papers.map(paper => paper.id), [...existing.map(paper => paper.id), ...shown],
+      'the bibliographic review is excluded at once and the unchecked DOIs are shown');
+    answer();
+    await loading;
+    await wait(20);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), kept);
+  }
+});
+
+test('a Crossref answer that lands during the first-screen wait keeps its books off the first paint', async t => {
+  const page = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  const books = new Set(['W568341909', 'W93572185']);
   t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
     const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
     return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
   });
-  for (const page of [0, 1]) {
-    const { state, run } = feed({ fast: [], slow: video, page });
-    await run(page === 0);
-    assert.equal(state.error, null);
-    assert.deepEqual(state.papers.map(paper => paper.id), ['W3029239115', 'scientific-review']);
+  for (const [name, slow, shown] of [
+    ['an article among books', page, ['W3029239115']],
+    ['only books', page.filter(paper => books.has(paper.id)), []],
+  ] as const) {
+    const { state, env, run } = feed({ fast: [], slow: [...slow] });
+    Object.assign(env, await freshPublications(`answered-during-wait-${shown.length}`));
+    // Recovery is still running, so the first screen waits its whole budget.
+    const recovery = pendingRecords();
+    env.recoverFeedAbstracts = () => recovery.promise;
+    env.CITATION_GATE_MAX_WAIT_MS = 300;
+    const paints: string[][] = [];
+    const setPapers = env.setPapers;
+    env.setPapers = value => {
+      if (Array.isArray(value)) paints.push(value.map(paper => paper.id));
+      setPapers(value);
+    };
+    await run(true);
+    await wait(20);
+    assert.equal(state.error, null, name);
+    assert.ok(paints.every(ids => !ids.some(id => books.has(id))), `${name}: ${JSON.stringify(paints)}`);
+    assert.deepEqual(state.papers.map(paper => paper.id), shown, name);
+    // A short or emptied first page asks for the next one instead of ending the feed.
+    assert.deepEqual(state.continuations, [[false, 'top', false, 1]], name);
+    recovery.resolve([]);
   }
+});
+
+test('a card dismissed before Crossref answers leaves its successor where the reader is, even if it is a book', async t => {
+  const page = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const read = records('read', 3);
+  const { state, env, run, dismiss } = feed({ fast: [], slow: page, page: 1, papers: [...read] });
+  Object.assign(env, await freshPublications('dismissed-visible'));
+  // The reader is on the last card of the first page when the next one is added.
+  env.visiblePaperIdRef.current = read[2].id;
+  const loading = run(false);
+  await wait(100);
+  assert.deepEqual(state.papers.map(paper => paper.id), [...read.map(paper => paper.id), ...page.map(paper => paper.id)]);
+  await dismiss(read[2]);
+  answer();
+  await loading;
+  await wait(20);
+  // The first book now fills the dismissed card's place; the second is two cards further.
+  assert.deepEqual(state.papers.map(paper => paper.id), ['read-0', 'read-1', 'W568341909', 'W3029239115', 'scientific-review']);
+});
+
+test('a refreshed page drops the books the reader has not reached, though the scroll reported a card of the old list', async t => {
+  const page = [
+    { id: 'W568341909', doi: '10.1007/978-3-540-76956-9', title: 'Mathematical Theory of Feynman Path Integrals' },
+    { id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', title: 'Applications of Algebraic Combinatorics to Algebraic Geometry' },
+    { id: 'scientific-review', doi: '10.5555/review-feed', title: 'Synthetic scientific review', publicationType: 'review' },
+    { id: 'W93572185', doi: '10.1007/978-3-319-04870-3', title: 'Combinatorial algebraic geometry : Levico Terme, Italy 2013' },
+  ].map(work => ({ publicationType: 'article', abstract: '', authors: [], sources: { primary: 'openalex', enrichedBy: [] }, ...work }));
+  const old = records('old', 8);
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+  });
+  const { state, env, refresh } = feed({ fast: [], slow: page, page: 2, papers: [...old] });
+  Object.assign(env, await freshPublications('refreshed-page'));
+  const refreshing = refresh();
+  // FeedContainer's jump to the top reports the old list's first card.
+  env.visiblePaperIdRef.current = old[0].id;
+  await refreshing;
+  assert.deepEqual(state.papers.map(paper => paper.id), page.map(paper => paper.id));
+  answer();
+  await wait(20);
+  assert.deepEqual(state.papers.map(paper => paper.id), ['W568341909', 'W3029239115', 'scientific-review']);
 });
 
 test('an entirely excluded page advances pagination without restoring books through the seen bypass', async () => {
@@ -259,58 +407,279 @@ for (const [name, preference, boredom] of [
   });
 }
 
-for (const existing of [[], records('already-visible', 15)]) {
-  test(`abstract recovery finishes before ${existing.length ? 'pagination' : 'first paint'} publishes the screenshot paper`, async () => {
-    const record = { ...records('electron', 1)[0], id: 'W2020715063', title: 'Effective action for strongly correlated electron systems', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
-    const { state, env, run } = feed({ fast: [record], papers: existing });
-    const pending = deferred();
-    env.recoverFeedAbstracts = async () => await pending.promise as Paper[];
-    let saved: Paper[] = [];
-    Object.assign(env, { writeFeedSnapshot: (_uid: string, _key: string, snapshot: { papers: Paper[] }) => { saved = snapshot.papers; } });
-    const loading = run(existing.length === 0);
-    await tick();
-    assert.deepEqual(state.papers, existing);
-    pending.resolve([{ ...record, abstract: 'Recovered source text.' }]);
-    await loading;
-    assert.equal(state.error, null);
-    assert.equal((state.papers.at(-1) as Paper).abstract, 'Recovered source text.');
-    assert.equal(saved.at(-1)?.abstract, 'Recovered source text.');
-  });
+// Trimmed OpenAlex W2020715063: no abstract in the record, linked to arXiv 1109.5103.
+const electron = { ...records('electron', 1)[0], id: 'W2020715063', title: 'Effective action for strongly correlated electron systems', arxivId: '1109.5103', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
+function pendingRecords() {
+  let resolve!: (records: Partial<Paper>[]) => void;
+  const promise = new Promise<Partial<Paper>[]>(done => { resolve = done; });
+  return { promise, resolve };
 }
+
+test('a later page is shown without waiting for recovery, and its card says the abstract is loading until it arrives', async () => {
+  const existing = records('already-visible', 15).map(paper => ({ ...paper, sources: { primary: 'arxiv', enrichedBy: [] } }));
+  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: existing });
+  const recovery = pendingRecords();
+  env.recoverFeedAbstracts = () => recovery.promise;
+  let saved: Paper[] = [];
+  env.scheduleFeedSnapshotWrite = (_uid, _key, snapshot) => { saved = snapshot.papers; };
+  const loading = run(false);
+  await wait(100);
+  assert.deepEqual(state.papers.map(paper => paper.id), [...existing.map(paper => paper.id), electron.id]);
+  assert.equal(hasUsableAIAbstract(state.papers.at(-1)!.abstract), false);
+  assert.deepEqual([...loadingAbstracts()], [electron.id]);
+  // Synthetic text; the identifiers above are captured.
+  recovery.resolve([{ arxivId: '1109.5103', abstract: 'Recovered source text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
+  await loading;
+  await tick();
+  assert.equal(state.error, null);
+  assert.equal(state.papers.at(-1)!.abstract, 'Recovered source text.');
+  assert.equal(saved.at(-1)?.abstract, 'Recovered source text.');
+  assert.deepEqual([...loadingAbstracts()], []);
+});
+
+test('a card already shown with no abstract keeps it when a later page offers it again through the seen bypass', async t => {
+  const existing = records('already-visible', 3).map(paper => ({ ...paper, sources: { primary: 'arxiv', enrichedBy: [] } }));
+  const shown = [...existing, electron];
+  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: shown, seen: shown.map(paper => paper.id) });
+  t.mock.method(console, 'log', () => {});
+  const recovery = pendingRecords();
+  env.recoverFeedAbstracts = () => recovery.promise;
+  const loading = run(false);
+  await wait(100);
+  assert.deepEqual(state.papers.map(paper => paper.id), shown.map(paper => paper.id));
+  assert.deepEqual([...loadingAbstracts()], []);
+  recovery.resolve([{ arxivId: '1109.5103', abstract: 'Late recovered text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
+  await loading;
+  await tick();
+  assert.equal(state.error, null);
+  assert.equal(state.papers.at(-1)!.abstract, '');
+});
+
+test('the first screen waits only its short budget for a missing abstract, then settles on none if recovery finds nothing', async () => {
+  const { state, env, run, loadingAbstracts } = feed({ fast: [electron] });
+  const recovery = pendingRecords();
+  env.recoverFeedAbstracts = () => recovery.promise;
+  env.CITATION_GATE_MAX_WAIT_MS = 40;
+  assert.equal(await settleWithin(1_000, () => run(true)), 'resolved');
+  assert.deepEqual(state.papers.map(paper => paper.id), [electron.id]);
+  assert.deepEqual([...loadingAbstracts()], [electron.id]);
+  recovery.resolve([]);
+  await tick();
+  assert.deepEqual([...loadingAbstracts()], []);
+  assert.equal(hasUsableAIAbstract(state.papers[0].abstract), false);
+});
 
 for (const stale of ['request', 'account'] as const) {
   test(`an abstract response from a stale ${stale} cannot publish its page`, async () => {
     const { state, env, run } = feed();
-    const pending = deferred();
-    env.recoverFeedAbstracts = async () => await pending.promise as Paper[];
+    const pending = pendingRecords();
+    env.recoverFeedAbstracts = () => pending.promise;
     const loading = run(true);
     await tick();
     if (stale === 'request') env.feedRequestId.current += 1;
     else env.feedSessionId.current += 1;
-    pending.resolve(records('stale'));
+    pending.resolve([{ arxivId: '1109.5103', abstract: 'Stale source text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
     await loading;
     assert.deepEqual(state.papers, []);
   });
 }
 
-test('signed-in Europe PMC recovery is visible on first paint and late responses cannot change text', async () => {
+test('signed-in Europe PMC text is on the first paint when it is fast, and replaces the loading state when it is late', async () => {
   for (const late of [false, true]) {
     const record = { ...records('pubmed', 1)[0], pmid: '123', abstract: '', sources: { primary: 'pubmed', enrichedBy: [] } };
-    const { state, env, run } = feed({ fast: [record] });
+    const { state, env, run, loadingAbstracts } = feed({ fast: [record] });
     let deliver!: (records: Map<string, Partial<Paper> & { pmid: string }>) => void;
     const pending = new Promise<Map<string, Partial<Paper> & { pmid: string }>>(resolve => { deliver = resolve; });
     const response = new Map([['123', { pmid: '123', abstract: 'Europe PMC source text.', citationCount: 16, openAccess: true }]]);
     env.enrichPubmedIds = () => late ? pending : Promise.resolve(response);
-    Object.assign(env, { awaitWithinGate: (promises: unknown[]) => awaitWithinGate(promises, { maxWaitMs: 10 }) });
+    env.CITATION_GATE_MAX_WAIT_MS = 10;
     await run(true);
     assert.equal(state.error, null);
-    const initial = state.papers[0].abstract;
-    assert.equal(hasUsableAIAbstract(initial), !late);
-    if (!late) assert.equal(initial, 'Europe PMC source text.');
+    assert.equal(hasUsableAIAbstract(state.papers[0].abstract), !late);
+    assert.equal(loadingAbstracts().has(record.id), late);
     deliver(response);
     await tick();
-    assert.equal(state.papers[0].abstract, initial);
+    assert.equal(state.papers[0].abstract, 'Europe PMC source text.');
     assert.equal(state.papers[0].citationCount, 16);
     assert.equal(state.papers[0].openAccess, true);
+    assert.equal(loadingAbstracts().size, 0);
   }
+});
+
+test('a restored snapshot asks again for the abstract and the type its session had not received', async t => {
+  const visible = { ...records('visible', 1)[0], abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } };
+  const unchecked = { ...records('unchecked', 1)[0], id: 'W568341909', doi: '10.1007/978-3-540-76956-9', publicationType: 'article', abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } };
+  const snapshot = { papers: [visible, electron, unchecked], page: 1, hasMore: true };
+  let answer!: () => void;
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: 'book' })) } });
+  });
+  const { state, env, restore, loadingAbstracts } = feed();
+  Object.assign(env, await freshPublications('restored-snapshot'));
+  env.visiblePaperIdRef.current = visible.id;
+  const recovery = pendingRecords();
+  let recoveryRequests = 0;
+  env.recoverFeedAbstracts = () => { recoveryRequests += 1; return recovery.promise; };
+  let saved: Paper[] = [];
+  env.scheduleFeedSnapshotWrite = (_uid, _key, written) => { saved = written.papers; };
+
+  restore(snapshot);
+  restore(snapshot);
+  await wait(20);
+  assert.deepEqual(state.papers.map(paper => paper.id), [visible.id, electron.id, unchecked.id]);
+  assert.deepEqual([...loadingAbstracts()], [electron.id]);
+  assert.equal(recoveryRequests, 1, 'the second restore of the same snapshot sends nothing');
+
+  recovery.resolve([{ arxivId: '1109.5103', abstract: 'Recovered source text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
+  await tick();
+  assert.equal(state.papers[1].abstract, 'Recovered source text.');
+  assert.deepEqual([...loadingAbstracts()], []);
+
+  answer();
+  await wait(20);
+  // Crossref calls the third card a book; the reader is on the first.
+  assert.deepEqual(state.papers.map(paper => paper.id), [visible.id, electron.id]);
+  assert.deepEqual(saved.map(paper => paper.abstract), ['Source text.', 'Recovered source text.']);
+});
+
+test('a restored snapshot is written again only when a late answer changes a card, and keeps its save time', async () => {
+  // The real writer, not a stub: it sets the save time that the next cold open
+  // checks. It writes at once, without the 500 ms debounce, into a stand-in
+  // for localStorage.
+  const from = source.indexOf('function feedSnapshotKey(');
+  const to = source.indexOf('// ── Demo mode storage helpers', from);
+  assert.ok(from >= 0 && to > from, 'the snapshot helpers must exist');
+  const snapshotWriter = (localStorage: { setItem: (key: string, value: string) => void }) => new Function(
+    'localStorage', 'FEED_SNAPSHOT_MAX_PAPERS', `${stripTypeScriptTypes(source.slice(from, to))}; return writeFeedSnapshot;`,
+  )(localStorage, 30);
+  // Synthetic PubMed letter: Europe PMC has its record, and the card already carries it.
+  const letter = PaperBuilder.create({ id: 'pmid:1', pmid: '1', title: 'Synthetic letter', authors: [], abstract: '', citationCount: 3, sources: { primary: 'pubmed', enrichedBy: ['europepmc'] } });
+  for (const [record, rewritten] of [
+    [{ pmid: '1', citationCount: 3 }, false],
+    [{ pmid: '1', citationCount: 3, abstract: 'Europe PMC source text.' }, true],
+  ] as const) {
+    const { state, env, restore } = feed();
+    env.enrichPubmedIds = async () => new Map([['1', record]]);
+    const writes: Array<{ papers: Paper[]; savedAt: number }> = [];
+    env.scheduleFeedSnapshotWrite = snapshotWriter({ setItem: (_key, value) => { writes.push(JSON.parse(value)); } });
+    const snapshot = { papers: [letter], page: 1, hasMore: true, savedAt: 1_000 };
+    restore(snapshot);
+    await wait(20);
+    assert.equal(state.papers === snapshot.papers, !rewritten);
+    assert.deepEqual(writes.map(write => [write.papers[0].abstract, write.savedAt]), rewritten ? [['Europe PMC source text.', 1_000]] : []);
+  }
+});
+
+// PAP-53: the economics working-paper series reach a reader's page through one
+// OpenAlex request per page, and only for a reader who follows economics or
+// finance. Two works as OpenAlex returned them on 2026-10-19, trimmed.
+const SERIES_ABSTRACT = 'Between 2000 and 2015, services offshoring reshaped local labour markets across regions.';
+const invertedIndex = (text: string) => {
+  const index: Record<string, number[]> = {};
+  text.split(' ').forEach((word, position) => { (index[word] ||= []).push(position); });
+  return index;
+};
+const seriesWork = (id: string, doi: string, type: string, source: { id: string; display_name: string }) => ({
+  id: `https://openalex.org/${id}`,
+  doi: `https://doi.org/${doi}`,
+  title: `Working paper ${id}`,
+  type,
+  publication_date: '2026-10-14',
+  publication_year: 2026,
+  authorships: [{ author: { id: `https://openalex.org/A${id.slice(1)}`, display_name: `Author ${id}` }, institutions: [] }],
+  abstract_inverted_index: invertedIndex(SERIES_ABSTRACT),
+  primary_location: {
+    landing_page_url: `https://doi.org/${doi}`,
+    is_published: true,
+    version: 'publishedVersion',
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: 'journal' },
+  },
+  locations: [],
+  open_access: { is_oa: true, oa_url: null },
+  cited_by_count: 0,
+});
+const frbsfPaper = seriesWork('W7221947410', '10.24148/wp2026-23', 'article', { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' });
+const cesifoReport = seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', { id: 'S7407053623', display_name: 'CESifo' });
+
+// The OpenAlex client binds its fetch when it is built, so the relay is
+// stubbed on the client. Crossref, which classifies OpenAlex DOIs before
+// display, is stubbed on the global fetch.
+function stubSeriesRelay(t: import('node:test').TestContext, works: unknown[] | null) {
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: 'report' })) } });
+  });
+  const realFetch = openAlexClient.fetchImpl;
+  const seriesRequests: string[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    const url = decodeURIComponent(String(input));
+    if (url.includes('primary_location.source.id:')) seriesRequests.push(url);
+    return works ? Response.json({ results: works }) : new Response('{}', { status: 503 });
+  };
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  return seriesRequests;
+}
+
+test('an economics reader gets each working paper once, not peer reviewed, and other readers do not ask', async t => {
+  const seriesRequests = stubSeriesRelay(t, [frbsfPaper, cesifoReport]);
+  // The economics search can find a series article too.
+  const searched = new OpenAlexAdapter().mapToStandard(frbsfPaper)! as FeedRecord;
+  const load = async (preferences: string[]) => {
+    seriesRequests.length = 0;
+    const { state, env, run } = feed({ fast: [], slow: [searched] });
+    env.userPreferences = preferences;
+    env.fetchWorkingPapers = fetchWorkingPapers;
+    await run(true);
+    assert.equal(state.error, null);
+    return state.papers;
+  };
+
+  assert.deepEqual((await load(['cs.AI'])).map(paper => paper.id), [searched.id]);
+  assert.equal(seriesRequests.length, 0, 'a reader without economics or finance interests does not ask');
+
+  const page = await load(['econ.GN']);
+  assert.equal(seriesRequests.length, 1);
+  assert.deepEqual(page.map(paper => paper.id).sort(), ['openalex:W7221947410', 'openalex:W7222541626']);
+  for (const paper of page) {
+    assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper`);
+    assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
+  }
+});
+
+test('a failed working-paper request leaves the page to the other sources', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const seriesRequests = stubSeriesRelay(t, null);
+  const searched = records('search', 4);
+  const { state, env, run } = feed({ fast: [], slow: searched });
+  env.userPreferences = ['econ.GN'];
+  env.fetchWorkingPapers = fetchWorkingPapers;
+  await run(true);
+  assert.equal(seriesRequests.length, 1, 'the series were asked for');
+  assert.equal(state.error, null);
+  assert.deepEqual(state.papers.map(paper => paper.id), searched.map(paper => paper.id));
+});
+
+// Both ask OpenAlex, whose queue has two slots for requests without priority,
+// and the page waits for the followed lookups but not for the series.
+test('the working-paper series are asked for once the followed lookups settle, not ahead of them', async () => {
+  const followed = deferred();
+  const asked: string[] = [];
+  const { state, env, run } = feed();
+  Object.assign(env, {
+    userPreferences: ['econ.GN'],
+    followedEntities: [{ type: 'author', canonicalId: 'A5026475124', displayName: 'Martina Magli' }],
+    fetchFollowedEntityCandidates: () => { asked.push('followed'); return followed.promise; },
+    fetchWorkingPapers: () => { asked.push('series'); return Promise.resolve([]); },
+    OPTIONAL_SOURCE_RENDER_BUDGET_MS: 1000,
+  });
+  const loading = run(true);
+  await tick();
+  assert.deepEqual(asked, ['followed'], 'no series request while a followed lookup runs');
+  followed.resolve([]);
+  await loading;
+  assert.deepEqual(asked, ['followed', 'series']);
+  assert.equal(state.error, null);
 });
