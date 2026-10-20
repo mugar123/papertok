@@ -38,9 +38,12 @@
      half of it that runs on the way back up (.feed-container--refreshing in
      FeedContainer.css holds the way down). */
   --pc-travel: 340ms 80ms var(--ease-out-quad);
+  /* `transform` is the pull-to-refresh's (FeedContainer.css): a pull let go
+     short of the threshold springs back on this. */
   transition:
     opacity 0.9s ease,
-    translate var(--pc-travel);
+    translate var(--pc-travel),
+    transform 320ms var(--ease-out-expo);
 }
 
 /* ── The page ──
@@ -1159,7 +1162,13 @@ button.pc-topics-pop-item:focus-visible {
   height: 28px;
 }
 
+/* Ghost at rest, so the hover is the tile: a wash of the button's own colour
+   behind the glyph, the area a click lands on. */
 @media (hover: hover) and (pointer: fine) {
+  .pc-side-btn:hover .pc-side-icon {
+    background: color-mix(in srgb, var(--rail, var(--text-secondary)) 10%, transparent);
+  }
+
   .pc-side-btn:hover .pc-side-label {
     color: var(--rail, var(--text-secondary));
   }
