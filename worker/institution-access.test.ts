@@ -1087,6 +1087,11 @@ test('an answer without an indicator is read from what it lists unfiltered', asy
   assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
 });
 
+test('a service is full text by its own service type, not by an attribute whose name ends in one', () => {
+  const holdings = CTO_SINGLE_SERVICE.replaceAll('service_type="getFullTxt"', 'service_type="getHolding" data-service_type="getFullTxt"');
+  assert.deepEqual(parseResolverAnswer(holdings), { fullText: false, matched: true, services: [], restricted: false });
+});
+
 test('an answer without an indicator whose services are all filtered is a refusal', async () => {
   assert.deepEqual(parseResolverAnswer(CTO_SINGLE_SERVICE_FILTERED), { fullText: false, matched: true, services: [], restricted: false });
   const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE_FILTERED) });
@@ -1248,7 +1253,7 @@ function replaceAfter(text: string, anchors: string[], find: string, replacement
 }
 
 // Damage the reader's expressions would read past, and markup they do not
-// match though XML allows it (the last seven), each made once to each answer
+// match though XML allows it (the last eight), each made once to each answer
 // in the test below, all of more than one service. Read by its keys alone,
 // such an answer can count a filtered service as live, a live one as
 // filtered or missing, or lose a service's link.
@@ -1270,6 +1275,7 @@ const MARKUP_DAMAGE: Array<[string, (answer: string) => string]> = [
   ['a key opened with a second attribute', answer => replaceAfter(answer, ['<context_service ', '<key '], '">', '" lang="en">')],
   ['a service type in single quotes', answer => replaceAfter(answer, [], 'service_type="getFullTxt"', "service_type='getFullTxt'")],
   ['a service type with a character reference', answer => replaceAfter(answer, [], 'service_type="getFullTxt"', 'service_type="getFull&#84;xt"')],
+  ['a service type with spaces around =', answer => replaceAfter(answer, [], 'service_type="getFullTxt"', 'service_type = "getFullTxt"')],
   ['a link opened with an attribute', answer => replaceAfter(answer, [], '<resolution_url>', '<resolution_url lang="en">')],
 ];
 
@@ -1297,6 +1303,17 @@ test('an answer with damaged markup is no answer, whatever its keys would read a
       assert.equal(await outcome(damaged), 'ACCESS_LOOKUP_UNAVAILABLE', `${library}: ${damage}`);
     }
   }
+  // XML allows a namespace prefix on an element, and an XML declaration only
+  // at the start. Read anyway, Pau's only service, filtered out for the date,
+  // would count as access, and Harvard's services would be missed: a refusal.
+  const prefix = 'xmlns:u="http://com/exlibris/urm/uresolver/xmlbeans/u"';
+  const filtered = '<key id="Filtered">true</key>';
+  assert.equal(await outcome(CTO_FILTERED_BY_DATE), 'not-entitled');
+  for (const spelling of ['<key id="Filtered"><?xml version="1.0"?>true</key>', `<u:key ${prefix} id="Filtered">true</u:key>`]) {
+    assert.equal(await outcome(CTO_FILTERED_BY_DATE.replace(filtered, spelling)), 'ACCESS_LOOKUP_UNAVAILABLE', `Pau: ${spelling}`);
+  }
+  const prefixed = CTO_SINGLE_SERVICE.replaceAll('<context_service ', `<u:context_service ${prefix} `).replaceAll('</context_service>', '</u:context_service>');
+  assert.equal(await outcome(prefixed), 'ACCESS_LOOKUP_UNAVAILABLE', 'Harvard: prefixed services');
 });
 
 test('CDATA is literal text, including split values and markup in public notes', () => {
