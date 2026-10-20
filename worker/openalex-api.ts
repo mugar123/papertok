@@ -71,11 +71,16 @@ export function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   return url;
 }
 
+// Only a refusal of the key itself is worth asking again without it: a key that
+// was rejected or whose budget is spent. A 404 or an outage answers the same
+// without the key, and retrying a timeout doubled the wait.
+const KEY_REFUSALS = new Set([401, 403, 429]);
+
 export async function fetchOpenAlexJsonWithFallback<T = unknown>(url: URL, env: WorkerEnv, timeoutMs: number) {
   try {
     return await fetchJsonWithTimeout<T>(url, { headers: { accept: 'application/json' } }, timeoutMs);
   } catch (error) {
-    if (!env.OPENALEX_API_KEY || !url.searchParams.has('api_key')) throw error;
+    if (!KEY_REFUSALS.has(Number((error as UpstreamError)?.status)) || !env.OPENALEX_API_KEY || !url.searchParams.has('api_key')) throw error;
     const anonymousUrl = new URL(url);
     anonymousUrl.searchParams.delete('api_key');
     return fetchJsonWithTimeout<T>(anonymousUrl, { headers: { accept: 'application/json' } }, timeoutMs);

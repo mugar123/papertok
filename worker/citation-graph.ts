@@ -247,11 +247,15 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
   const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 10);
 
   return cacheResponse(request, origin, env, citationGraphCacheSeconds, async () => {
+    // The references do not depend on the OpenAlex lookup, so they no longer wait
+    // for it. The citations do: past three hundred, OpenAlex answers them instead.
+    const referenceRows = fetchOpenCitationsRows(doi, 'references', env);
+    referenceRows.catch(() => {});
     const { work: currentWork, failed: currentWorkFailed } = await fetchOpenAlexCurrentWork(doi, env);
     const currentOpenAlexId = String(currentWork?.id || '').split('/').pop();
     const shouldUseOpenAlexForCitations = (currentWork?.cited_by_count || 0) > 300;
     const [referenceResult, citationResult] = await Promise.allSettled([
-      fetchOpenCitationsRows(doi, 'references', env),
+      referenceRows,
       shouldUseOpenAlexForCitations
         ? Promise.resolve([])
         : fetchOpenCitationsRows(doi, 'citations', env),
@@ -283,21 +287,20 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
       partial = true;
     }
 
-    const resolvedReferences = await resolveCitationConnections(referenceConnections, env, limit, 'reference');
+    const citationsFromOpenAlex = shouldUseOpenAlexForCitations || !citationConnections.length;
+    const [resolvedReferences, resolvedCitations] = await Promise.all([
+      resolveCitationConnections(referenceConnections, env, limit, 'reference'),
+      citationsFromOpenAlex
+        ? fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).then(
+          papers => ({ papers, failed: false }),
+          () => ({ papers: [], failed: true }),
+        )
+        : resolveCitationConnections(citationConnections, env, limit, 'citation'),
+    ]);
     const references = resolvedReferences.papers;
-    degraded = degraded || resolvedReferences.failed;
-    let citations;
-    if (shouldUseOpenAlexForCitations || !citationConnections.length) {
-      citations = await fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).catch(() => {
-        degraded = true;
-        return [];
-      });
-      if (shouldUseOpenAlexForCitations || citations.length) partial = true;
-    } else {
-      const resolvedCitations = await resolveCitationConnections(citationConnections, env, limit, 'citation');
-      citations = resolvedCitations.papers;
-      degraded = degraded || resolvedCitations.failed;
-    }
+    const citations = resolvedCitations.papers;
+    degraded = degraded || resolvedReferences.failed || resolvedCitations.failed;
+    if (citationsFromOpenAlex && (shouldUseOpenAlexForCitations || citations.length)) partial = true;
 
     return {
       references,

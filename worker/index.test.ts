@@ -1513,6 +1513,52 @@ async function citationGraphAnswer(upstream: MockProvider) {
   });
 }
 
+// One cold graph against an upstream that answers `works/doi:` with `lookup`,
+// recording when each call starts and when the lookup ends.
+async function coldGraph(lookup: (url: URL) => Response | Promise<Response>) {
+  const events: string[] = [];
+  await withCountedUpstream(async (address) => {
+    const url = new URL(String(address));
+    if (url.pathname.startsWith('/works/doi:')) {
+      events.push(`lookup${url.searchParams.has('api_key') ? '' : ' without key'}`);
+      const response = await lookup(url);
+      events.push('lookup done');
+      return response;
+    }
+    if (url.pathname.includes('/index/v2/references/')) events.push('references');
+    return Response.json(url.hostname.includes('opencitations') ? [] : { results: [] });
+  }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }), {
+        ...AUTHENTICATED_ENV,
+        OPENALEX_API_KEY: 'worker-key',
+      });
+      assert.equal(response.status, 200);
+    });
+  });
+  return events;
+}
+
+test('a citation graph asks OpenCitations for references while the OpenAlex lookup is out', async () => {
+  const events = await coldGraph(async () => {
+    await new Promise(resolve => { setTimeout(resolve, 20); });
+    return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 3 });
+  });
+  assert.ok(events.indexOf('references') < events.indexOf('lookup done'), events.join(', '));
+});
+
+test('a DOI OpenAlex has not indexed is looked up once, not again without the key', async () => {
+  const events = await coldGraph(() => Response.json({ error: 'not found' }, { status: 404 }));
+  assert.deepEqual(events.filter(event => event.startsWith('lookup') && event !== 'lookup done'), ['lookup']);
+});
+
+test('a refused OpenAlex key is asked again without it', async () => {
+  const events = await coldGraph(url => (url.searchParams.has('api_key')
+    ? Response.json({ error: 'budget spent' }, { status: 429 })
+    : Response.json({ id: 'https://openalex.org/W1', cited_by_count: 3 })));
+  assert.deepEqual(events.filter(event => event.startsWith('lookup') && event !== 'lookup done'), ['lookup', 'lookup without key']);
+});
+
 test('an OpenCitations failure does not own the citation graph for a week', async () => {
   const response = await citationGraphAnswer((url: string|string[]) => (url.includes('opencitations')
     ? new Response('gateway timeout', { status: 504 })
