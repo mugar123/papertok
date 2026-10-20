@@ -349,11 +349,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const latePoolGenerationRef = useRef(0);
   const openAlexEnrichmentRequests = useRef(new Map<string, ReturnType<typeof enrichPapersBatch>>());
   const activeUserId = useRef(user?.uid || null);
-  const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
+  // Initial ref values that read storage or allocate go through a lazy
+  // useState: the provider re-renders on every feed change, and useRef(value)
+  // would evaluate them each time only to discard them.
+  const [initialSeenPapers] = useState(() => readSeenPaperIds(user?.uid));
+  const sessionSeenPapers = useRef(initialSeenPapers);
   // The derived aggregate that replaced the full interactions scan. Kept in a
   // ref because every interaction mutates it synchronously while the durable
   // write is coalesced behind it.
-  const interactionProfile = useRef(createEmptyInteractionProfile());
+  const [initialInteractionProfile] = useState(createEmptyInteractionProfile);
+  const interactionProfile = useRef(initialInteractionProfile);
   // False until a profile has actually been read back for this account. Writing
   // a half-built aggregate over a good one would silently reset the user's
   // recommendations, which is worse than skipping a session's deltas: the
@@ -383,7 +388,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Semantic Scholar's answer for this profile's examples, drawn page by page.
   const personalCandidates = useRef<PersonalCandidate[]>([]);
   const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
-  const recommendationWeights = useRef(readRecommendationWeights());
+  const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
+  const recommendationWeights = useRef(initialRecommendationWeights);
   const boredomLevel = useRef(0); // 0 = happy, higher = more bored
   // Cold users get more patience before the algorithm assumes boredom; returning
   // users have a formed profile, so their bubble deserves earlier puncturing.
@@ -1298,7 +1304,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers);
+             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
           
           let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1310,7 +1316,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              openAlexProm = openAlexAdapter
-               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true })
+               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
                .then(res => res.papers);
           }
           
@@ -1456,7 +1462,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
             
             let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1468,7 +1474,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby })
+                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby, requireAbstract: true })
                   .then(res => res.papers)
                   .catch(() => []);
             }
@@ -1530,7 +1536,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
             
             let openAlexProm = Promise.resolve<Paper[]>([]);
@@ -1542,7 +1548,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                    return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
                 openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom })
+                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom, requireAbstract: true })
                   .then(res => res.papers)
                   .catch(() => []);
             }
@@ -2097,12 +2103,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
+        void trackEvent('like_change', {
+          action: isCurrentlyLiked ? 'remove' : 'add', paper_id: paper.id, paper_title: paper.title,
+        });
       } catch (err) {
         console.error('Error saving like:', err);
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent]);
 
   const markNotInterested = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);

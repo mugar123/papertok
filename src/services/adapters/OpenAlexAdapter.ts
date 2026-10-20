@@ -69,7 +69,7 @@ export class OpenAlexAdapter {
     this.mailto = 'app@papertok.io';
   }
 
-  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [], typeahead = false }: PaperSearchFilters = {}) {
+  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [], typeahead = false, requireAbstract = false }: PaperSearchFilters = {}) {
     const perPage = 25;
 
     let searchField = 'default.search';
@@ -88,7 +88,11 @@ export class OpenAlexAdapter {
     const workTypes = types || (economicCategories
       ? [...OPENALEX_PUBLISHED_TYPES, 'preprint']
       : OPENALEX_PUBLISHED_TYPES);
-    const typeFilter = `type:${workTypes.join('|')}`;
+    // A label search ranks first works whose publisher withholds the abstract
+    // from OpenAlex: 7 to 19 of 25 on the first page (probed 2026-10-20), and
+    // with no arXiv copy nothing recovers one later. The filter drops 10-15%
+    // of the matches.
+    const typeFilter = `type:${workTypes.join('|')}${requireAbstract ? ',has_abstract:true' : ''}`;
 
     return `${this.baseUrl}?filter=${searchField}:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
   }

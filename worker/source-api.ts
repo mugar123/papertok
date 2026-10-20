@@ -50,13 +50,14 @@ export async function handleBioRxiv(request: Request, env: WorkerEnv) {
   const ttl = (payload: { _papertok?: { degraded?: string } }) => (payload?._papertok?.degraded ? DEGRADED_CACHE_SECONDS : SOURCE_CACHE_SECONDS.biorxiv);
 
   return cacheResponse(request, context.origin, env, ttl, async () => {
-    // bioRxiv pages in fixed groups of 30, so request the matching cursor and trim client-side.
+    // bioRxiv pages in fixed groups of 30 whatever the caller's limit, so the
+    // whole group is answered and keyed without the limit, and the client trims.
     const cursor = (context.page - 1) * 30;
     const encodedCategory = encodeURIComponent(category.replace(/\s+/g, '_'));
     const url = `https://api.biorxiv.org/details/biorxiv/${utcDateOffset(-180)}/${utcDateOffset(0)}/${cursor}/json?category=${encodedCategory}`;
     try {
       const data = await fetchJsonUpstream<{ collection?: unknown[]; _papertok?: { degraded?: string } }>(url);
-      return { ...data, collection: (data?.collection || []).slice(0, context.limit) };
+      return { ...data, collection: data?.collection || [] };
     } catch (error) {
       // bioRxiv hangs on some calls (4 of 6 over 20 s on 2026-09-23) and on
       // 2026-09-24 answered every call with an empty 200. As an uncached 502
@@ -65,7 +66,7 @@ export async function handleBioRxiv(request: Request, env: WorkerEnv) {
       // tells the client this is a failure, not an empty category.
       return { collection: [], _papertok: { degraded: bioRxivDegradedCode(error) } };
     }
-  }, { canonicalParams: sourceCacheParams(context, { category }) });
+  }, { canonicalParams: { page: String(context.page), category } });
 }
 
 export async function handleEuropePmc(request: Request, env: WorkerEnv) {
@@ -407,6 +408,14 @@ export async function handlePaperFigures(request: Request, env: WorkerEnv) {
   );
 }
 
+// CORE's search took 7.4 s and 8.0 s to answer (measured 2026-10-20), past the
+// shared six seconds, so a successful search was cut before it could reach the
+// edge cache. The browser keeps the request open for 10 s (`REQUEST_TIMEOUT_MS`
+// in domainSourceService.ts) after the feed stops waiting for it; nine seconds
+// lets the answer finish and be cached for the next reader, with room left for
+// the identity and quota checks that run first.
+const CORE_UPSTREAM_TIMEOUT_MS = 9_000;
+
 export async function handleCore(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -419,7 +428,7 @@ export async function handleCore(request: Request, env: WorkerEnv, identity?: Pi
     url.searchParams.set('limit', String(context.limit));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
     const headers: Record<string, string> = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
-    return fetchJsonUpstream(url, headers);
+    return fetchJsonUpstream(url, headers, CORE_UPSTREAM_TIMEOUT_MS);
     // No `sort`: this handler never sends it upstream, so two entries would hold
     // one identical answer.
   }, { identity, canonicalParams: sourceCacheParams(context, { q: query }) });

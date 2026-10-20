@@ -1,7 +1,6 @@
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { ShareProviders, OpenAireProjects } from './share-pages.ts';
 import type { UpstreamError } from './provider-runtime.ts';
-import type { QuotaRequest } from './request-quota-ledger.ts';
 import type { WorkerEnv } from './env.ts';
 
 import { createFirestoreRest } from '../src/utils/firestoreRest.ts';
@@ -28,28 +27,25 @@ const SHARE_LOOKUP_DAILY_LIMIT = 1_000;
 const SHARE_ARXIV_HOURLY_LIMIT = 120;
 const SHARE_UPSTREAM_TIMEOUT_MS = 6_000;
 
-// What was reserved, for whoever has to give it back, or null when a ceiling
-// refused (having given back what it had taken).
-async function reserveShareCeilings(env: WorkerEnv, periods: Array<[string, number]>) {
-  const taken: QuotaRequest[] = [];
-  for (const [periodKey, limit] of periods) {
-    const ledgerRequest = { periodKey, subject: 'share:pages', subjectLimit: limit, globalLimit: limit, amount: 1 };
-    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
-    if (!reservation.accepted) {
-      await releaseHeld(env, taken);
-      return null;
-    }
-    taken.push(ledgerRequest);
-  }
-  return taken;
+// What was reserved, for whoever has to give it back, or null when the ceiling
+// refused.
+async function reserveShareCeiling(env: WorkerEnv, periodKey: string, limit: number) {
+  const ledgerRequest = { periodKey, subject: 'share:pages', subjectLimit: limit, globalLimit: limit, amount: 1 };
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
+  return reservation.accepted ? [ledgerRequest] : null;
 }
 
+// The minute is the subject inside the day's object, so one ledger call checks
+// both ceilings in one transaction, like `reserveOpenAlexBudget`.
 async function admitShareLookup(env: WorkerEnv) {
   const now = new Date().toISOString();
-  return Boolean(await reserveShareCeilings(env, [
-    [`share:${now.slice(0, 16)}`, SHARE_LOOKUP_MINUTE_LIMIT],
-    [`share:day:${now.slice(0, 10)}`, SHARE_LOOKUP_DAILY_LIMIT],
-  ]));
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `share:day:${now.slice(0, 10)}`,
+    subject: `share:minute:${now.slice(0, 16)}`,
+    subjectLimit: SHARE_LOOKUP_MINUTE_LIMIT,
+    globalLimit: SHARE_LOOKUP_DAILY_LIMIT,
+  });
+  return Boolean(reservation.accepted);
 }
 
 function shareUpstreamError(provider: string, response: Response) {
@@ -73,7 +69,7 @@ function shareProviders(env: WorkerEnv): ShareProviders {
     },
     async arxiv(id) {
       const hour = new Date().toISOString().slice(0, 13);
-      const held = await reserveShareCeilings(env, [[`share:arxiv:${hour}`, SHARE_ARXIV_HOURLY_LIMIT]]);
+      const held = await reserveShareCeiling(env, `share:arxiv:${hour}`, SHARE_ARXIV_HOURLY_LIMIT);
       if (!held) throw new Error('The arXiv ceiling for share pages is spent');
       // The same beat as `/arxiv`: a share page waits its turn like the feed.
       const seat = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, {

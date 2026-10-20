@@ -26,7 +26,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -414,8 +414,7 @@ const PaperCard = memo(function PaperCard({
   // Read by the measurement below, which must not re-run when the panel opens:
   // a reading taken while it travels between its two heights is of the height
   // the animation is passing through, not the one it rests at.
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
+  const isExpanded = useEffectEvent(() => expanded);
   const [showHeart, setShowHeart] = useState(false);
   const heartTimer = useRef<number | null>(null);
   useEffect(() => () => clearTimeout(heartTimer.current!), []);
@@ -528,11 +527,15 @@ const PaperCard = memo(function PaperCard({
   // one mounted card a different paper, and the old paper's
   // clippings must not be painted against the new one. Adjusted during render
   // — React's documented way to reset state when a prop changes — because an
-  // effect only runs AFTER the frame that already showed them.
+  // effect only runs AFTER the frame that already showed them. The loaded set
+  // goes with them: a new paper means new URLs, and carrying the old set over
+  // would flash the next paper's frames in before their images.
+  const [loadedFigures, setLoadedFigures] = useState(() => new Set<string>());
   const [figuresPaperKey, setFiguresPaperKey] = useState(paperViewKey);
   if (figuresPaperKey !== paperViewKey) {
     setFiguresPaperKey(paperViewKey);
     setFigures(peekPaperFigures(paper)?.slice(0, 4) ?? []);
+    setLoadedFigures(new Set());
   }
 
   useEffect(() => {
@@ -590,6 +593,15 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
+    // Every stretch on screen is reported, skips included, so the time per
+    // paper averages over what was seen and not only over what was read.
+    const reportViewTime = (seconds: number) => {
+      if (seconds >= 1.0) trackViewTime(paper, seconds);
+      else if (seconds > 0.1) trackSkip(paper);
+      if (seconds > 0.1) {
+        trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+      }
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
@@ -599,7 +611,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            trackEvent('paper_view', { surface: analyticsSurface, position });
+            trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
           }
           if (!viewStartTime.current) viewStartTime.current = Date.now();
         } else {
@@ -608,11 +620,7 @@ const PaperCard = memo(function PaperCard({
             viewStartTime.current = null;
             
             // Paper just went out of view. Report time and trigger re-rank!
-            if (totalViewTime.current >= 1.0) {
-              trackViewTime(paper, totalViewTime.current);
-            } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-              trackSkip(paper);
-            }
+            reportViewTime(totalViewTime.current);
             
             // Reset to prevent double counting if they scroll back up
             totalViewTime.current = 0;
@@ -627,11 +635,7 @@ const PaperCard = memo(function PaperCard({
       observer.disconnect();
       if (viewStartTime.current) {
         totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
-        if (totalViewTime.current >= 1.0) {
-          trackViewTime(paper, totalViewTime.current);
-        } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-          trackSkip(paper);
-        }
+        reportViewTime(totalViewTime.current);
       }
     };
   }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
@@ -680,13 +684,8 @@ const PaperCard = memo(function PaperCard({
   // seen going — and comes back when the card does, and an element being given
   // an animation again is what restarts it. This is also what the rest of the
   // card already does: `pcArrive` is on the pieces unconditionally and plays
-  // every time they mount, rather than once per paper.
-  const [loadedFigures, setLoadedFigures] = useState(() => new Set<string>());
-
-  // A new paper means new URLs; carrying the old set over would flash the next
-  // paper's frames in before their images.
-  useEffect(() => { setLoadedFigures(new Set()); }, [paperViewKey]);
-
+  // every time they mount, rather than once per paper. The state itself is
+  // declared with `figures`, where a new paper resets both.
   const markFigureLoaded = useCallback((url: string) => {
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
@@ -974,7 +973,7 @@ const PaperCard = memo(function PaperCard({
    * moment takes the settled answer instead of one the transition passed
    * through, which is also what stops the button blinking out and back.
    *
-   * `expandedRef` rather than `expanded` keeps all of this out of the effect's
+   * `isExpanded()` rather than `expanded` keeps all of this out of the effect's
    * dependencies: an open panel clips nothing, and re-running on open would
    * throw away the verdict that earned the button its place.
    */
@@ -990,7 +989,7 @@ const PaperCard = memo(function PaperCard({
     let settleTimer: number | null = null;
     const read = () => {
       const node = abstractRef.current;
-      if (!alive || !node || expandedRef.current) return;
+      if (!alive || !node || isExpanded()) return;
       // While the slot holds a passing height the box is not the abstract's
       // own, and an answer read from it blinks the button: ask again later.
       if (slotRef.current?.classList.contains('pc-slot--morphing')) {
@@ -1498,7 +1497,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    trackEvent('paper_open', { surface: analyticsSurface, destination, position });
+    trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
@@ -2028,6 +2027,13 @@ const PaperCard = memo(function PaperCard({
               aria-controls={authorsListId}
               onClick={(e) => {
                 e.stopPropagation();
+                // Below 768px the list below is hidden (PaperCard.css) and the
+                // row opens the sheet; this button stops that click, so it
+                // opens the same sheet for a tap or a key press.
+                if (window.matchMedia('(max-width: 767px)').matches) {
+                  setShowAuthorsModal(true);
+                  return;
+                }
                 if (!authorsExpanded) pinSheet();
                 setAuthorsExpanded((open) => !open);
               }}

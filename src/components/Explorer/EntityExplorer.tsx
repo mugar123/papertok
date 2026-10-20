@@ -135,8 +135,8 @@ const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 // is a click's answer — the reader is waiting on it.
 //
 // The curve itself was chosen by measurement on the Wikipedia fold, back when
-// that one still closed its own height (four probe runs, written up in
-// `plans/README.md`): what a collapse costs the reader is its worst single
+// that one still closed its own height (four probe runs with
+// `scripts/diagnostics/explorer-loading-probe.mjs`): what a collapse costs the reader is its worst single
 // frame — travel × steepness ÷ frames — not its duration, and a steep
 // ease-in-out given too few frames measured WORSE than the front-loaded curve
 // it replaced. Shortening this is no free way to make it feel quicker.
@@ -779,10 +779,11 @@ export default function EntityExplorer({
   }, [searchQuery]);
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setPage(1);
       setAuthorsPage(1);
     }, 0);
+    return () => clearTimeout(timer);
   }, [type, id, sortBy, filters]);
 
   useEffect(() => {
@@ -2662,10 +2663,6 @@ export default function EntityExplorer({
                   key={`${paper.id}-${idx}`} 
                   className="explorer-list-item"
                   onClick={() => setSelectedPaper(paper)}
-                  onKeyDown={(event) => handleActivationKey(event, () => setSelectedPaper(paper))}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${'Open publication'}: ${normalizeScientificMarkup(paper.title) || ('Untitled')}`}
                   style={{ '--i': Math.min(idx, 8), '--area-accent': rowAreas[idx].accent }}
                 >
                   <div className="eli-header">
@@ -2694,8 +2691,17 @@ export default function EntityExplorer({
                       <span className="eli-date">{paper.year}</span>
                     </div>
                   </div>
+                  {/* The row's click is a pointer shortcut; this button is the
+                      control, so the Scopus link above stays a link of its own. */}
                   <h3 className="eli-title">
-                    <ScientificText>{paper.title}</ScientificText>
+                    <button
+                      type="button"
+                      className="eli-title-btn"
+                      onClick={(event) => { event.stopPropagation(); setSelectedPaper(paper); }}
+                      aria-label={`${'Open publication'}: ${normalizeScientificMarkup(paper.title) || ('Untitled')}`}
+                    >
+                      <ScientificText>{paper.title}</ScientificText>
+                    </button>
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => (a as PaperAuthor).name || a).join(', ')}</p>
                   <p className="eli-summary">

@@ -38,7 +38,7 @@ test('a quote renders its formulas through the paper\'s own renderer, not as LaT
   const jsx = await rail;
   assert.match(jsx, /import ScientificText from '\.\.\/ScientificText\.ts';/);
   const quote = element(jsx, 'rd-note-quote');
-  assert.match(quote.children, /^\s*<ScientificText>\{annotation\.quote\}<\/ScientificText>\s*$/);
+  assert.match(quote.children, /^\s*<ScientificText>\{passageQuote\(annotation\)\}<\/ScientificText>\s*$/);
 });
 
 test('a quote, and the model\'s answer about it, say which language they are in', async () => {

@@ -672,8 +672,9 @@ export default function SaveToListModal({
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
       if (unsavesPaper) await unmarkSaved(paper);
 
-      toAdd.forEach(() => trackEvent('save_change', { action: 'add', surface: 'lists' }));
-      toRemove.forEach(() => trackEvent('save_change', { action: 'remove', surface: 'lists' }));
+      const paperDetail = { paper_id: paper.id, paper_title: paper.title };
+      toAdd.forEach(() => trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }));
+      toRemove.forEach(() => trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }));
       if (savesPaper) markActivation();
 
       closeDialog();

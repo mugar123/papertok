@@ -53,7 +53,29 @@
   100% { translate: var(--dx, 0px) -14px; opacity: 0; }
 }
 
+.petri-loader .petri-download-arrow {
+  animation: petriDrop 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes petriDrop {
+  0% { translate: 0 -6px; opacity: 0; }
+  30%, 65% { opacity: 1; }
+  100% { translate: 0 8px; opacity: 0; }
+}
+
+.petri-loader .petri-download-line {
+  animation: petriLine 2.8s linear calc(var(--line) * 0.35s) infinite both;
+}
+
+@keyframes petriLine {
+  0%, 10% { opacity: 0; }
+  25%, 85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .petri-loader .petri-download-arrow,
+  .petri-loader .petri-download-line,
   .petri-loader .petri-bubble,
   .petri .onboarding-petri-body,
   .petri .onboarding-petri-body.petri-swap {

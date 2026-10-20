@@ -164,6 +164,15 @@ test('the type filter speaks OpenAlex\'s current vocabulary and never the retire
   assert.equal(searchFilter, 'default.search:segment anything,type:article|conference-paper|review|preprint');
 });
 
+test('a feed search asks only for works OpenAlex holds an abstract for', () => {
+  const adapter = new OpenAlexAdapter();
+  const filterFor = (requireAbstract?: boolean) => new URL(adapter.buildSearchUrl('"Oncology"', 1, { requireAbstract }))
+    .searchParams.get('filter');
+  assert.equal(filterFor(true), 'default.search:"Oncology",type:article|conference-paper|review,has_abstract:true');
+  // A reader looking up one paper still finds it when its publisher withholds the abstract.
+  assert.equal(filterFor(undefined), 'default.search:"Oncology",type:article|conference-paper|review');
+});
+
 test('a conference paper maps to the conference source type', () => {
   const paper = new OpenAlexAdapter().mapToStandard({
     id: 'https://openalex.org/W4390874575',

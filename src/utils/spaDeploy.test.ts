@@ -82,6 +82,15 @@ test('analytics leaves through our own domain and reaches PostHog\'s EU host', a
   assert.equal(proxy.destination, 'https://eu.i.posthog.com/:path');
   const spa = config.rewrites.findIndex((rule: { source: string; }) => rule.source.startsWith('/:path('));
   assert.ok(config.rewrites.indexOf(proxy) < spa, 'the proxy must come before the SPA rewrite');
+
+  // Replay, surveys and the other lazily loaded scripts, and the remote
+  // config, come from PostHog's asset host. Behind the catch-all they would be
+  // sent to the ingestion host instead and never load.
+  for (const kind of ['static', 'array']) {
+    const assets = config.rewrites.find((rule: { source: string; }) => rule.source === `${apiHost}/${kind}/:path(.*)`);
+    assert.equal(assets?.destination, `https://eu-assets.i.posthog.com/${kind}/:path`);
+    assert.ok(config.rewrites.indexOf(assets) < config.rewrites.indexOf(proxy), `${kind} must come before the catch-all proxy`);
+  }
 });
 
 test('SOURCE: a failed chunk load reloads the tab once a minute at most', async () => {

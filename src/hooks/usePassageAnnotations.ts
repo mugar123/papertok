@@ -1,6 +1,6 @@
 import type { Paper } from '../models/Paper.ts';
 import type { UserHighlight } from '../services/userHighlightService.ts';
-export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
+export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
@@ -27,12 +27,10 @@ import { annotatePassage, PaperAnnotationError } from '../services/paperAnnotati
  *
  * `pending` is the fork itself: the selection, captured whole (quote, anchor,
  * the paragraph around it, and where it sits on screen) at the moment the
- * selection is decided — mouse-up on a fine pointer, `selectionchange` settling
- * on a coarse one. Capturing it up front is what lets the desktop route clear
- * the browser's own selection immediately — the reader paints its own mark on
- * the passage instead, so the highlight you are about to make is the highlight
- * you can already see. Touch leaves the native selection alone; its own OS
- * handles and callout serve as that same provisional mark there.
+ * selection is decided on mouse-up. Capturing it up front is what lets the
+ * reader clear the browser's own selection immediately — it paints its own mark
+ * on the passage instead, so the highlight you are about to make is the
+ * highlight you can already see.
  */
 
 const IDLE = 'idle';
@@ -147,6 +145,8 @@ export function usePassageAnnotations({
       sectionId: pending.sectionId,
       paragraphIndex: pending.paragraphIndex,
       quote: pending.quote,
+      endParagraphIndex: pending.endParagraphIndex,
+      endQuote: pending.endQuote,
       kind,
       note,
     });
@@ -163,10 +163,10 @@ export function usePassageAnnotations({
 
   const highlight = useCallback(async () => {
     const saved = await store({ kind: 'user' });
-    if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level });
+    if (saved) trackEvent?.('paper_highlight', { surface: 'reader', level, paper_id: paperId, paper_title: paper?.title });
     setPending(null);
     return saved;
-  }, [level, store, trackEvent]);
+  }, [level, paper?.title, paperId, store, trackEvent]);
 
   const saveNote = useCallback(async (text: string) => {
     const note = String(text || '').trim();
@@ -174,13 +174,13 @@ export function usePassageAnnotations({
     setBusy('saving');
     try {
       const saved = await store({ kind: 'user', note });
-      if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user' });
+      if (saved) trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'user', paper_id: paperId, paper_title: paper?.title });
       setPending(null);
       return saved;
     } finally {
       setBusy(IDLE);
     }
-  }, [level, store, trackEvent]);
+  }, [level, paper?.title, paperId, store, trackEvent]);
 
   const ask = useCallback(async () => {
     if (!pending) return null;
@@ -195,11 +195,11 @@ export function usePassageAnnotations({
     setPending(null);
     setBusy('asking');
     setError(null);
-    trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'ai' });
+    trackEvent?.('paper_annotation', { surface: 'reader', level, origin: 'ai', paper_id: paperId, paper_title: paper?.title });
 
     try {
       const answer = await annotatePassage(paper, {
-        quote: passage.quote,
+        quote: passage.text ?? passage.quote,
         context: passage.context,
         level,
         language,
@@ -214,6 +214,8 @@ export function usePassageAnnotations({
         sectionId: passage.sectionId,
         paragraphIndex: passage.paragraphIndex,
         quote: passage.quote,
+        endParagraphIndex: passage.endParagraphIndex,
+        endQuote: passage.endQuote,
         kind: 'ai',
         note: answer.note,
       });
@@ -230,6 +232,7 @@ export function usePassageAnnotations({
           sectionId: passage.sectionId,
           paragraphIndex: passage.paragraphIndex,
           quote: passage.quote,
+          ...(passage.endParagraphIndex === undefined ? {} : { endParagraphIndex: passage.endParagraphIndex, endQuote: passage.endQuote }),
           kind: 'ai',
           note: answer.note,
           fresh: true,
@@ -240,6 +243,9 @@ export function usePassageAnnotations({
       return entry;
     } catch (caught) {
       if (caught instanceof PaperAnnotationError && caught.code === 'AI_CANCELLED') return null;
+      if (caught instanceof PaperAnnotationError && caught.code === 'AI_QUOTA_EXHAUSTED') {
+        trackEvent?.('ai_limit_reached', { feature: 'annotation', scope: caught.quota?.scope });
+      }
       setError(caught instanceof PaperAnnotationError ? caught.code : 'AI_UNAVAILABLE');
       return null;
     } finally {

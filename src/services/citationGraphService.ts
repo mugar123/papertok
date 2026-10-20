@@ -16,8 +16,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  *
  * StrictMode mounts the sheet, tears it down and mounts it again, so two views
  * ask for the same neighbourhood in the same millisecond — and `/citation-graph`
- * reserves nine OpenAlex calls per request. The cache only holds answers, so
- * without this the pair costs eighteen. Only successes are remembered: a
+ * reserves seven OpenAlex calls per request. The cache only holds answers, so
+ * without this the pair costs fourteen. Only successes are remembered: a
  * rejection leaves the key clear so the next view can ask again.
  */
 const IN_FLIGHT = new Map<string, Promise<CitationGraph>>();

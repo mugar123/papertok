@@ -76,8 +76,12 @@ been loaded when the session started at the root. Worker configuration also foll
 - Personal responses must not share global cache keys. Canonicalize keys from the parameters
   actually sent upstream. Reserve paid-provider budgets atomically; do not replace shared
   ledgers with process memory or non-atomic read-then-write counters.
-- Keep analytics within the existing allowlist. Do not send paper titles, entity IDs, search
-  text, interests, account identifiers or unsanitized URLs as telemetry.
+- Analytics has two levels (`src/services/analyticsService.ts`). Anonymous is the default
+  and needs no permission, so it stays cookieless and within the event allowlist: no paper
+  titles, entity IDs, search text, interests, account identifiers or unsanitized URLs.
+  Detailed analytics may identify the account, record sessions and send which paper or search,
+  but only after an explicit opt-in. Route new identifying fields through the `detail` schema
+  type so the anonymous level drops them, and update `privacy.html` when either level changes.
 
 ## Accessibility and interface
 

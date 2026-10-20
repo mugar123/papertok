@@ -995,9 +995,24 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
     quote: 'a'.repeat(400),
     note: 'a'.repeat(2000),
     paperTitle: 'a'.repeat(1000),
-    paragraphIndex: 100,
+    paragraphIndex: 99,
+    endParagraphIndex: 100,
+    endQuote: 'a'.repeat(400),
     kind: 'caveat',
   })));
+});
+
+test('P19: a passage across paragraphs ends later in the same section, with its end quote', async () => {
+  await reset();
+  const alice = asAlice();
+  await assertSucceeds(setDoc(highlightRef(alice, 'span'), highlightBody({ endParagraphIndex: 4, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'back'), highlightBody({ endParagraphIndex: 3, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'far'), highlightBody({ endParagraphIndex: 101, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'float'), highlightBody({ endParagraphIndex: 4.5, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'noquote'), highlightBody({ endParagraphIndex: 4 })));
+  await assertFails(setDoc(highlightRef(alice, 'empty'), highlightBody({ endParagraphIndex: 4, endQuote: '' })));
+  await assertFails(setDoc(highlightRef(alice, 'long'), highlightBody({ endParagraphIndex: 4, endQuote: 'a'.repeat(401) })));
+  await assertFails(setDoc(highlightRef(alice, 'orphan'), highlightBody({ endQuote: 'the end' })));
 });
 
 /* --- The payload the save modal actually sends ---------------------------- */

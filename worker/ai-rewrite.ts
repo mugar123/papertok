@@ -872,13 +872,21 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
     // before the heartbeat because the heartbeat is what aborts it.
     const modelDeadline = new AbortController();
     let modelTimer: ReturnType<typeof setTimeout> | null = null;
+    // Why we cut the model off. The read it interrupts fails with a bare
+    // AbortError, which the refund predicate would take for a crash of ours and
+    // pay back, so the failure is charged to this reason instead.
+    let abortedBy: AIExplanationError | null = null;
+    const stopModel = (reason: AIExplanationError) => {
+      abortedBy ||= reason;
+      modelDeadline.abort();
+    };
 
     const heartbeat = setInterval(() => {
       void send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt })
         // During the model's silence the ping is the only write in flight, so it
         // is the only thing that can discover the reader left. Nobody is waiting
         // for the answer any more: stop paying for it.
-        .catch(() => modelDeadline.abort());
+        .catch(() => stopModel(new AIExplanationError('AI_CLIENT_GONE', 499)));
     }, HEARTBEAT_INTERVAL_MS);
 
     try {
@@ -903,7 +911,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
       // Before the model's budget is armed, like the download: the extraction
       // has its own ceiling and must not eat the time the rewrite needs.
       source = await paperSourceFor(provider, env, pdfData);
-      modelTimer = setTimeout(() => modelDeadline.abort(), STREAM_BUDGET_MS);
+      modelTimer = setTimeout(() => stopModel(new AIExplanationError('AI_TIMEOUT', 504)), STREAM_BUDGET_MS);
       const askModel = (candidate: string) => requestModelStream({
         provider,
         env,
@@ -1035,7 +1043,11 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         // Only logged when nothing parsed, to show what the model actually emitted.
         ...(sections.length === 0 && rawAll ? { rawHead: rawAll.slice(0, 400) } : {}),
       }));
-    } catch (error) {
+    } catch (thrown) {
+      // Only the read our abort interrupted is charged to its reason. The
+      // heartbeat runs from the download on, so a ping can fail before the model
+      // is asked; a download or provider failure after it keeps its own code.
+      const error = abortedBy && (thrown as Error)?.name === 'AbortError' ? abortedBy : thrown;
       // Whatever went wrong, nothing is going to consume the rest of this run:
       // cut the model off before doing anything else with the failure.
       modelDeadline.abort();
