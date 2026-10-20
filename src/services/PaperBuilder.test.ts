@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
+import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
@@ -367,6 +368,53 @@ test('a working paper joined to a different article by title alone does not unre
       assert.equal(twin.peerReviewed, false, label);
       assert.equal(reviewTagForPaper(twin)?.label, 'Working paper', label);
     }
+  }
+});
+
+test('an unreviewed row that is not a working paper still takes the DOI it was missing', () => {
+  // Semantic Scholar sends no publication type, which `create` reads as
+  // unreviewed, and NASA ADS marks a proceedings paper NOT REFEREED. Neither
+  // is a working paper, so the DOI OpenAlex lists for the same work fills the
+  // gap. The Semantic Scholar record goes through its adapter; the others are
+  // shaped as their mappers return them.
+  const title = 'Dust attenuation curves in star forming galaxies at cosmic noon';
+  const doi = '10.1117/12.3000001';
+  const openAlex = {
+    id: 'openalex:W9',
+    sources: { primary: 'openalex', enrichedBy: [] },
+    doi,
+    arxivId: '2602.00002',
+    title,
+    authors: [{ name: 'Bea Astronomer', id: 'https://openalex.org/A9' }],
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    peerReviewed: true,
+    provider: 'openalex',
+  };
+  const semanticScholar = new SemanticScholarAdapter().mapToStandard({
+    paperId: 'f'.repeat(40),
+    title,
+    authors: [{ name: 'Bea Astronomer', authorId: '1' }],
+    venue: 'SPIE',
+    externalIds: {},
+  });
+  const ads = {
+    id: 'ads:2026SPIE00001A',
+    sources: { primary: 'nasa-ads', enrichedBy: [] },
+    adsBibcode: '2026SPIE00001A',
+    arxivId: '2602.00002',
+    title,
+    authors: [{ name: 'Astronomer, Bea' }],
+    journal: 'Proceedings of the SPIE',
+    publicationType: 'inproceedings',
+    publicationStatus: 'published' as const,
+    peerReviewed: false,
+    provider: 'nasa-ads',
+  };
+
+  for (const [label, record] of [['Semantic Scholar', semanticScholar], ['NASA ADS', ads]] as const) {
+    const [row] = PaperBuilder.deduplicate([record, openAlex]);
+    assert.equal(row.doi, doi, label);
   }
 });
 

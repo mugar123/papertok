@@ -168,13 +168,15 @@ export class PaperBuilder {
       newDoi = newDoi.replace('https://doi.org/', '');
     }
 
-    // A published `false` stands against a record that does not deny review
-    // too, so the row stays the working paper and does not take that record's
-    // publisher DOI either. The journal's DOI beside a working paper's `false`
-    // would give one DOI two answers: the same pair shows it reviewed when the
-    // journal version arrives first.
+    // A working paper's published `false` stands against a record that does
+    // not deny review too, so the row stays the working paper and does not
+    // take that record's publisher DOI either. The journal's DOI beside a
+    // working paper's `false` would give one DOI two answers: the same pair
+    // shows it reviewed when the journal version arrives first. Any other
+    // `false` (an untyped Semantic Scholar record, a non-refereed ADS one)
+    // says nothing about which work the row is, and the DOI fills its gap.
     const keepsOwnFalse = !reviewOpen && merged.peerReviewed === false
-      && enrichmentData.peerReviewed !== false;
+      && merged.workingPaper === true && enrichmentData.peerReviewed !== false;
     if (!merged.doi && newDoi && !(keepsOwnFalse && isPublisherDoi(normalizeDoi(newDoi)))) {
       merged.doi = newDoi;
       // NOTE: Do NOT overwrite merged.id here. The id must remain stable (arXiv ID)
