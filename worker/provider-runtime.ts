@@ -451,14 +451,14 @@ export function sourceCacheParams(context: { page: number; limit: number }, extr
 // upstream measured is OpenReview at 5.2 s cold, and letting it finish still
 // pays off because the answer lands in the edge cache for the next reader,
 // even though the reader who triggered it has moved on.
-export function fetchJsonUpstream<T = unknown>(url: RequestInfo | URL, headers: Record<string, string> = {}) {
+export function fetchJsonUpstream<T = unknown>(url: RequestInfo | URL, headers: Record<string, string> = {}, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS) {
   return fetchJsonWithTimeout<T>(url, {
     headers: {
       accept: 'application/json',
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
       ...headers,
     },
-  }, SOURCE_UPSTREAM_TIMEOUT_MS);
+  }, timeoutMs);
 }
 
 export function numberOrNull(value: unknown) {
