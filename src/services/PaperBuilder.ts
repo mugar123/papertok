@@ -348,7 +348,9 @@ export class PaperBuilder {
     // of it: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for
     // the paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
     // 2026-10-20, each listed series' prefix held only its own institution's
-    // publications, and no academic publisher's journal.
+    // publications, and no academic publisher's journal. Other records get no
+    // such reading: Springer registers journal articles and chapters alike
+    // under 10.1007.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);

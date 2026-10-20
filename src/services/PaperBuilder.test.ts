@@ -509,6 +509,24 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     assert.equal(reviewTagForPaper(rows[0]), null, flow);
     assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], flow);
   }
+
+  // A shared registrant joins only a working paper's versions. A Springer
+  // chapter, which the Crossref fallback maps as unreviewed, does not unreview
+  // the Springer journal article that shares its title and first author.
+  const springer = (DOI: string, type: string, container: string) => mapCrossrefInstitutionWork({
+    DOI,
+    title: [title],
+    type,
+    author: [{ given: 'Ana', family: 'Economist' }],
+    'container-title': [container],
+    publisher: 'Springer',
+  })!;
+  const [springerArticle] = PaperBuilder.deduplicate([
+    springer('10.1007/s11222-026-00001-1', 'journal-article', 'Statistics and Computing'),
+    springer('10.1007/978-3-031-00001-1_1', 'book-chapter', 'Lecture Notes in Statistics'),
+  ]);
+  assert.equal(springerArticle.doi, '10.1007/s11222-026-00001-1');
+  assert.equal(springerArticle.peerReviewed, true);
 });
 
 test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {
