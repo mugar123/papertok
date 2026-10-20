@@ -250,6 +250,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
   const reportVisiblePaper = source ? null : feed.reportVisiblePaper;
+  const loadingAbstractIds = source ? undefined : feed.loadingAbstractIds;
   // Only once nothing more is coming: a page still loading or still pending
   // would put the ending in front of papers the reader has not seen yet.
   const endCard = source?.endCard ?? null;
@@ -1008,6 +1009,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               showFollowReason={Boolean(source?.showFollowReason)}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              abstractLoading={Boolean(loadingAbstractIds?.has(paper.id))}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

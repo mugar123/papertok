@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/Paper.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
-import { classifyFeedPublications, isFeedPublication } from './feedPublicationService.ts';
+import { classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from './feedPublicationService.ts';
 import { dribblingFetch } from '../test-support/deadlineHarness.ts';
 
 // Reduced from the OpenAlex and Crossref responses captured on 2026-10-18
@@ -25,6 +25,27 @@ function paper(doi: string, publicationType = 'article'): Paper {
 const doisFrom = (input: string | URL | Request) => new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
 const response = (items: Array<{ DOI: string; type: string }>) => Response.json({ message: { items, 'total-results': items.length } });
 const typesResponse = (input: string | URL | Request, type: string) => response(doisFrom(input).map(DOI => ({ DOI, type })));
+// A separate instance of the module, as after a reload: its own cache, lane and pause.
+const freshSession = (name: string) => import(new URL(`./feedPublicationService.ts?${name}`, import.meta.url).href) as Promise<typeof import('./feedPublicationService.ts')>;
+const flush = () => new Promise(resolve => setImmediate(resolve));
+
+function withStorage(t: import('node:test').TestContext) {
+  const store = new Map<string, string>();
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => { store.set(key, String(value)); },
+      removeItem: (key: string) => { store.delete(key); },
+    },
+  });
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
+  });
+  return store;
+}
 
 test('the seven audited OpenAlex records exclude only confirmed books and bibliographic reviews', async t => {
   // Reduced from the 2026-10-18 live audit; Crossref calls all five DOIs journal-article.
@@ -188,12 +209,81 @@ test('overlapping loads share cached DOI results and leave other providers immed
   assert.equal(fetch.mock.callCount(), 1);
 });
 
-test('a stalled response body reaches the batch deadline and can recover on a later load', { timeout: 5_000 }, async t => {
+test('a stalled lookup ends at its deadline and pauses Crossref for the next pages, then retries', { timeout: 5_000 }, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const { classifyFeedPublications: classify } = await freshSession('stalled');
   const records = [paper('10.5555/stalled-body')];
   const fetch = t.mock.method(globalThis, 'fetch', dribblingFetch());
-  assert.deepEqual(await classifyFeedPublications(records), records);
+  const stalled = classify(records);
+  await flush();
+  t.mock.timers.tick(10_000);
+  assert.deepEqual(await stalled, records);
+  assert.equal(fetch.mock.callCount(), 1);
+
   fetch.mock.mockImplementation(async (input: string | URL | Request) => typesResponse(input, 'book'));
-  assert.deepEqual((await classifyFeedPublications(records)).filter(isFeedPublication), []);
+  assert.deepEqual(await classify([paper('10.5555/next-page')]), [paper('10.5555/next-page')]);
+  assert.equal(fetch.mock.callCount(), 1, 'the next page does not ask a Crossref that just timed out');
+
+  t.mock.timers.tick(60 * 60 * 1000);
+  assert.deepEqual((await classify(records)).filter(isFeedPublication), []);
+  assert.equal(fetch.mock.callCount(), 2);
+});
+
+test('a lookup queued behind another gets its own deadline, so Crossref answering in time is asked for the next page', { timeout: 5_000 }, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() });
+  const { classifyFeedPublications: classify } = await freshSession('queued');
+  // 3.5 s per request, the slowest Crossref answer in the PAP-51 measurements.
+  const fetch = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 3_500);
+      init?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(init.signal!.reason); }, { once: true });
+    });
+    return typesResponse(input, 'journal-article');
+  });
+  const advance = async (ms: number) => {
+    for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+      t.mock.timers.tick(100);
+      for (let turn = 0; turn < 5; turn += 1) await flush();
+    }
+  };
+  const first = classify([paper('10.5555/first-page')]);
+  await advance(500);
+  const second = classify([paper('10.5555/top-up')]);
+  await advance(8_000);
+  await Promise.all([first, second]);
+  assert.equal(fetch.mock.callCount(), 2);
+  const third = classify([paper('10.5555/next-page')]);
+  await advance(4_000);
+  await third;
+  assert.equal(fetch.mock.callCount(), 3);
+});
+
+test('types found before a reload exclude a book without asking Crossref again', async t => {
+  withStorage(t);
+  const fetch = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => typesResponse(input, 'book'));
+  const records = [paper('10.5555/remembered-book')];
+  assert.deepEqual((await (await freshSession('before-reload')).classifyFeedPublications(records)).filter(isFeedPublication), []);
+  const afterReload = await freshSession('after-reload');
+  assert.deepEqual((await afterReload.classifyFeedPublications(records)).filter(isFeedPublication), []);
+  assert.equal(fetch.mock.callCount(), 1);
+  assert.deepEqual(afterReload.applyKnownPublicationTypes(records).filter(isFeedPublication), []);
+});
+
+test('stored types that are not a valid DOI, type or lifetime are ignored', async t => {
+  const store = withStorage(t);
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => typesResponse(input, 'journal-article'));
+  const remembered = paper('10.5555/remembered-article');
+  await (await freshSession('valid-store')).classifyFeedPublications([remembered]);
+  const [key] = [...store.keys()];
+  const now = Date.now();
+  store.set(key, JSON.stringify({
+    '10.5555/far-future': ['book', now + 365 * 24 * 60 * 60 * 1000],
+    '10.5555/odd-type': ['Book; drop', now + 60_000],
+    'https://doi.org/10.5555/raw-doi': ['book', now + 60_000],
+  }));
+  const later = await freshSession('tampered-store');
+  const stored = ['10.5555/far-future', '10.5555/odd-type', 'https://doi.org/10.5555/raw-doi'].map(doi => paper(doi));
+  assert.deepEqual(later.applyKnownPublicationTypes(stored), stored);
 });
 
 test('malformed and truncated batch responses do not create cached classifications', async t => {
@@ -218,4 +308,13 @@ test('a rate limit stops the batch and honors Retry-After across subsequent load
   t.mock.method(Date, 'now', () => now + 121_000);
   fetch.mock.mockImplementation(async (input: string | URL | Request) => typesResponse(input, 'book'));
   assert.deepEqual((await classifyFeedPublications([records[0]])).filter(isFeedPublication), []);
+});
+
+test('a reported card that is no longer listed leaves every card in place, since the reader could be on any of them', () => {
+  const papers = Array.from({ length: 8 }, (_, index) => paper(`10.5555/card-${index}`));
+  const classified = [paper(papers[6].doi!, 'book')];
+  // A preference reset can replace the list while the ref still names a card of the old one.
+  assert.equal(dropUnreachedPublications(papers, classified, '10.5555/replaced-card'), papers);
+  assert.deepEqual(dropUnreachedPublications(papers, classified, null).map(work => work.id), papers.filter((_, index) => index !== 6).map(work => work.id));
+  assert.deepEqual(dropUnreachedPublications(papers, classified, papers[5].id), papers);
 });

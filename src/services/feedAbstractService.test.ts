@@ -35,10 +35,11 @@ const arxivPaper = PaperBuilder.create({
 
 const source = stripTypeScriptTypes(readFileSync(new URL('./feedAbstractService.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export async function', 'async function'));
 function recovery(arxiv: (ids: string[]) => Promise<Paper[]>, inspire: (dois: string[]) => Promise<Partial<Paper>[]> = async () => [], waitMs = 100) {
-  const env = { fetchPapersByIds: arxiv, fetchInspireAbstracts: inspire, getMissingArxivAbstractIds, getMissingAbstractDois, mergeFeedAbstracts,
+  const env = { fetchPapersByIds: arxiv, fetchInspireAbstracts: inspire, getMissingArxivAbstractIds, getMissingAbstractDois,
     awaitWithinGate: (promises: PromiseLike<unknown>[]) => awaitWithinGate(promises, { maxWaitMs: waitMs }),
   };
-  return new Function(...Object.keys(env), `${source}; return recoverFeedAbstracts;`)(...Object.values(env)) as (papers: Paper[]) => Promise<Paper[]>;
+  const recover = new Function(...Object.keys(env), `${source}; return recoverFeedAbstracts;`)(...Object.values(env)) as (papers: Paper[]) => Promise<Partial<Paper>[]>;
+  return async (papers: Paper[]) => mergeFeedAbstracts(papers, await recover(papers));
 }
 function deferred() {
   let resolve!: (papers: Paper[]) => void;
@@ -76,7 +77,7 @@ test('the video abstract is recovered before admission without changing publishe
 });
 
 test('scientific reviews recover by exact DOI while a failed arXiv source leaves its paper usable', async () => {
-  const review = { ...videoPaper, id: 'review', arxivId: undefined, doi: '10.1016/0370-2693(86)90963-9', publicationType: 'review', openAccess: false };
+  const review = { ...videoPaper, id: 'review', arxivId: undefined, doi: '10.1016/0370-2693(86)90963-9', primaryCategory: 'hep-th', publicationType: 'review', openAccess: false };
   const result = await recovery(async () => { throw new Error('Unavailable'); }, async dois => {
     assert.deepEqual(dois, [review.doi]);
     return [{ doi: review.doi, abstract: 'Verified publisher text.', sources: { primary: 'inspire', enrichedBy: [] } }];
@@ -89,7 +90,7 @@ test('scientific reviews recover by exact DOI while a failed arXiv source leaves
 
 test('the deadline keeps a usable paper and a late response never mutates the admitted batch', async () => {
   const pending = deferred();
-  const review = { ...videoPaper, id: 'review', arxivId: undefined, doi: '10.5555/independent-review' };
+  const review = { ...videoPaper, id: 'review', arxivId: undefined, doi: '10.5555/independent-review', primaryCategory: 'hep-ph' };
   const result = await recovery(() => pending.promise, async () => [{ doi: review.doi, abstract: 'Available DOI abstract.', sources: { primary: 'inspire', enrichedBy: [] } }], 10)([videoPaper, review]);
   assert.equal(result[0], videoPaper);
   assert.equal(result[1].abstract, 'Available DOI abstract.');
@@ -99,7 +100,7 @@ test('the deadline keeps a usable paper and a late response never mutates the ad
 });
 
 test('DOI recovery skips existing abstracts and arXiv links, and preserves unmatched work', () => {
-  const unlinked = { ...videoPaper, arxivId: undefined, doi: 'https://doi.org/10.5555/KNOWN' };
+  const unlinked = { ...videoPaper, arxivId: undefined, doi: 'https://doi.org/10.5555/KNOWN', primaryCategory: 'hep-th' };
   const unavailable = { ...unlinked, doi: undefined };
   const existing = { ...unlinked, abstract: 'Existing source text.' };
   assert.deepEqual(getMissingAbstractDois([unlinked, unavailable, existing, videoPaper, { ...unlinked, doi: '10.5555/known' }]), ['10.5555/known']);
@@ -135,4 +136,13 @@ test('preserves existing abstracts, missing records, and closed access', () => {
   assert.equal(mergeFeedAbstracts(papers, []), papers);
   assert.equal(mergeFeedAbstracts(papers, [{ ...arxivPaper, abstract: 'No abstract available.' }]), papers);
   assert.equal(mergeFeedAbstracts(merged, [arxivPaper]), merged);
+});
+
+test('INSPIRE is asked only for physics papers, since it holds no other field', async () => {
+  const physics = { ...videoPaper, id: 'physics', arxivId: undefined, doi: '10.1016/j.nuclphysb.2011.08.011', primaryCategory: 'hep-th' };
+  const medicine = { ...videoPaper, id: 'medicine', arxivId: undefined, doi: '10.5555/clinical-trial', primaryCategory: 'med.onc' };
+  const unfiled = { ...videoPaper, id: 'unfiled', arxivId: undefined, doi: '10.5555/no-field' };
+  const asked: string[][] = [];
+  await recovery(async () => [], async dois => { asked.push(dois); return []; })([physics, medicine, unfiled]);
+  assert.deepEqual(asked, [[physics.doi]]);
 });

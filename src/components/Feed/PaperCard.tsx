@@ -22,6 +22,8 @@ export interface PaperCardProps {
   onAuthRequired?: (reason: string) => void;
   analyticsSurface?: string;
   position?: number;
+  /** A feed request may still supply this paper's missing abstract. */
+  abstractLoading?: boolean;
 }
 
 import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
@@ -120,6 +122,7 @@ import { CARD_DURATION_MS } from '../../utils/scrollTween.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
+import { abstractStatusText, nextAbstractAnnouncement } from '../../utils/feedAbstractWait.ts';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
 
 /**
@@ -383,6 +386,7 @@ const PaperCard = memo(function PaperCard({
   onAuthRequired,
   analyticsSurface = 'feed',
   position,
+  abstractLoading = false,
 }: PaperCardProps) {
   // `position` is optional and PaperCard renders on five different surfaces,
   // so it cannot anchor a stable, collision-free id for aria-controls.
@@ -911,7 +915,17 @@ const PaperCard = memo(function PaperCard({
   };
   const abstractKey = abstractText
     ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
-    : 'abstract:none';
+    : abstractLoading ? 'abstract:loading' : 'abstract:none';
+
+  // The abstract's live region says "Loading abstract" while a feed request
+  // may still supply it, then how the wait ended (nextAbstractAnnouncement).
+  // Adjusted during render, like `figuresPaperKey` above, so the words change
+  // in the frame the face does.
+  const abstractRender = { awaiting: abstractLoading && !abstractText, hasText: Boolean(abstractText), visible: isCardVisible };
+  const [abstractAnnouncement, setAbstractAnnouncement] = useState(() => nextAbstractAnnouncement(undefined, abstractRender));
+  const nextAnnouncement = nextAbstractAnnouncement(abstractAnnouncement, abstractRender);
+  if (nextAnnouncement !== abstractAnnouncement) setAbstractAnnouncement(nextAnnouncement);
+  const abstractStatus = abstractStatusText(nextAnnouncement, isCardVisible);
 
   // The paragraph the panel is showing, the height it stands at, and the way to
   // end a resize that is still running.
@@ -2142,6 +2156,24 @@ const PaperCard = memo(function PaperCard({
               >
                 <ScientificText>{abstractText}</ScientificText>
               </motion.p>
+            ) : abstractLoading ? (
+              // The feed is still asking a source for the missing abstract.
+              // Saying so means the words that arrive replace a stated wait,
+              // not a "No abstract" the reader has already read.
+              <motion.div
+                key={abstractKey}
+                ref={attachAbstractBody}
+                className="pc-abstract-empty"
+                {...abstractSwap}
+              >
+                <EmptyState
+                  as="p"
+                  art={<Petri pose="flask" className="pc-abstract-empty-petri" />}
+                  title={'Loading abstract'}
+                >
+                  {"Checking other sources for this paper's abstract."}
+                </EmptyState>
+              </motion.div>
             ) : (
               // No abstract in the record: the shared empty state, centred in
               // the abstract's place like every other one, not set as the first
@@ -2193,6 +2225,10 @@ const PaperCard = memo(function PaperCard({
         </div>
         </div>
 
+        {/* Mounted with the card, outside the faces: they leave and arrive
+            with the cross-fade and the map, and a region that is removed, or
+            inserted already holding its words, is not reliably spoken. */}
+        <span className="visually-hidden" role="status">{abstractStatus}</span>
 
         {/* Two reading actions first, then the utilities behind a rule: what to
             read is the decision, sharing and related work are afterthoughts. */}
