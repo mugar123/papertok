@@ -29,6 +29,7 @@ import {
   readInstitutionQuery,
   askGetFtrBatch,
   askResolver,
+  libraryLink,
   upstreamParams,
 } from './institution-access.ts';
 
@@ -51,6 +52,13 @@ const PROBE_CONCURRENCY = 4;
 export const SUBREQUEST_BUDGET = 40;
 // Leaves room for two GetFTR batches even when every DOI needs a resolver fallback.
 const SERVICES_PAGE_SIZE = 36;
+// No probe starts later than this after a page's first resolver probe, so the
+// slowest one in flight still has half the deadline when GetFTR was quick, and
+// the page ends at the first platform not yet asked about, where the next page
+// begins. TUM's SFX took about 1.3 s a probe: 36 at four at a time ran into the
+// deadline on 2026-10-20, and every retry of the list probed the same first
+// titles and lost the same last ones.
+const SERVICES_START_WINDOW_MS = 6000;
 const FAILED = Symbol('failed');
 const UNCHECKED = Symbol('unchecked');
 
@@ -156,8 +164,9 @@ export async function handleInstitutionServices(request: Request, env: WorkerEnv
   const query = readInstitutionQuery(url.searchParams);
   const rawOffset = url.searchParams.get('offset');
   const offset = rawOffset === null ? undefined : Number(rawOffset);
+  // Any platform can start a page: a page ends where its time ran out.
   if (rawOffset !== null && (!/^\d+$/.test(rawOffset) || !Number.isSafeInteger(offset)
-    || offset! < 0 || offset! >= SERVICE_CATALOGUE.length || offset! % SERVICES_PAGE_SIZE !== 0)) {
+    || offset! < 0 || offset! >= SERVICE_CATALOGUE.length)) {
     throw new InstitutionAccessError('INVALID_SERVICES_OFFSET', 400);
   }
   const ttl = (payload: { partial: boolean }) => (payload.partial ? SERVICES_PARTIAL_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
@@ -168,11 +177,12 @@ export async function handleInstitutionServices(request: Request, env: WorkerEnv
 
 /**
  * A short fingerprint of what a list depends on besides the library: the
- * catalogue entries, paging and the budget. Includes ISSN/year and displayed metadata.
+ * catalogue entries, paging (the page size and the window that ends a page)
+ * and the budget. Includes ISSN/year and displayed metadata.
  */
 export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budget: number) {
   let hash = 0x811c9dc5;
-  for (const char of JSON.stringify([budget, SERVICES_PAGE_SIZE, entries])) {
+  for (const char of JSON.stringify([budget, SERVICES_PAGE_SIZE, SERVICES_START_WINDOW_MS, entries])) {
     hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, '0');
@@ -206,7 +216,13 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
   // A free service is open access, which says nothing about the library. Among
   // the paid ones, the publisher's own package outranks an aggregator's: the
   // USAL lists Nature under a ProQuest collection before its "Nature" package,
-  // and the row should name the package that is really the platform.
+  // and the row should name the package that is really the platform. SFX marks
+  // no service free, only names its free collections; a service it does not
+  // name free counts here because every catalogue journal is a subscription
+  // journal whose probe article was closed when it was chosen. The per-paper
+  // answer also reads the article's licence. Press titles have no probe
+  // article; The Guardian, free on the web, came back from TUM and LMU only
+  // through PressReader, Gale and Nexis Uni (2026-10-20).
   const paid = answer.services.filter(service => service.url && !service.free);
   const own = paid.find(service => namesPlatform(service.name, entry));
   const subscription = own || paid[0];
@@ -215,7 +231,7 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
     ownPlatform: Boolean(own),
     // Press titles may only be available through an aggregator, whose library
     // link must be used instead of sending the reader to the publisher paywall.
-    ...(!entry.doi ? { accessUrl: subscription.url! } : {}),
+    ...(!entry.doi ? { accessUrl: libraryLink(resolver, subscription.url!) } : {}),
   };
   // A service hidden by an IP or group filter is one this probe cannot see:
   // the platform is unchecked, not absent.
@@ -281,32 +297,40 @@ export async function lookupInstitutionServices(
     else outcomes[index] = UNCHECKED;
   });
   let next = 0;
+  // The window opens with the resolver's probes, so the time GetFTR took does
+  // not shorten the page: what the deadline then cuts is partial. A request
+  // without paging has no next page to leave platforms to, so it is not windowed.
+  const startedAt = now();
+  const mayStart = () => offset === undefined || now() - startedAt < SERVICES_START_WINDOW_MS;
   const drain = async () => {
-    while (next < pending.length) {
+    while (next < pending.length && mayStart()) {
       const index = pending[next++];
       outcomes[index] = await probeResolver(entries[index], resolver!, fetchImpl, signal).catch(() => FAILED);
     }
   };
   await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
+  // A page ends at the first platform no probe started for, and the next page starts there.
+  const end = next < pending.length ? pending[next] : entries.length;
+  const reported = outcomes.slice(0, end);
 
-  const asked = outcomes.filter(outcome => outcome !== UNCHECKED);
+  const asked = reported.filter(outcome => outcome !== UNCHECKED);
   if (asked.length > 0 && asked.every(outcome => outcome === FAILED)) {
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
   const services: Array<Pick<ServiceEntry, 'id' | 'name' | 'publisher' | 'url' | 'monogram' | 'color'> & ServiceSubscription> = [];
-  entries.forEach(({ id, name, publisher, url, monogram, color }, index) => {
-    const outcome = outcomes[index];
+  entries.slice(0, end).forEach(({ id, name, publisher, url, monogram, color }, index) => {
+    const outcome = reported[index];
     if (outcome && outcome !== FAILED && outcome !== UNCHECKED) {
       services.push({ id, name, publisher, url: outcome.accessUrl || url, monogram, color, collection: outcome.collection, ownPlatform: outcome.ownPlatform });
     }
   });
   return {
     services,
-    partial: outcomes.includes(FAILED),
-    unchecked: outcomes.filter(outcome => outcome === UNCHECKED).length,
+    partial: reported.includes(FAILED),
+    unchecked: reported.filter(outcome => outcome === UNCHECKED).length,
     checkedAt: new Date(now()).toISOString(),
     ...(offset === undefined ? {} : {
-      nextOffset: offset + entries.length < SERVICE_CATALOGUE.length ? offset + entries.length : null,
+      nextOffset: offset + end < SERVICE_CATALOGUE.length ? offset + end : null,
     }),
   };
 }

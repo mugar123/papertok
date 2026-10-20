@@ -1,9 +1,15 @@
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
+import type { CrossrefLicense } from '../src/utils/crossrefLicense.ts';
 
 export interface InstitutionQuery { domain: string; entityId?: string | null; rorId?: string | null }
-/** An Alma resolver (`institution` is its code), or an SFX instance (`product: 'sfx'`, `institution` its path). */
-export interface InstitutionResolver { host: string; institution: string; product?: 'sfx' }
+/**
+ * An Alma resolver (`institution` is its code), or an SFX instance
+ * (`product: 'sfx'`, `institution` its path) with the remote-access login its
+ * library documents (`proxy`) and the hosts whose links start the library's
+ * sign-in by themselves (`signsIn`).
+ */
+export interface InstitutionResolver { host: string; institution: string; product?: 'sfx'; proxy?: string; signsIn?: readonly string[] }
 type InstitutionIds = Pick<InstitutionQuery, 'entityId' | 'rorId'>;
 export interface LookupOptions { fetchImpl?: typeof fetch; env?: WorkerEnv; now?: () => number }
 interface GetFtrEntry {
@@ -12,7 +18,7 @@ interface GetFtrEntry {
 }
 type CrossrefWork = Partial<Record<'issued' | 'published-online' | 'published-print', { 'date-parts'?: number[][] }>> & {
   'issn-type'?: Array<{ type?: string; value?: unknown }>; ISSN?: unknown[];
-  volume?: unknown; issue?: unknown; page?: unknown;
+  volume?: unknown; issue?: unknown; page?: unknown; license?: CrossrefLicense[];
 };
 
 /** What the resolver is asked about: a journal and year, or one article in it. */
@@ -41,6 +47,7 @@ export interface ResolverCitation {
  * a free proxy to the resolvers.
  */
 
+import { openLicenseFromCrossref } from '../src/utils/crossrefLicense.ts';
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { cacheResponse } from './provider-runtime.ts';
@@ -83,7 +90,31 @@ export function findResolver({ domain, rorId = null }: Pick<InstitutionQuery, 'd
   const entry = (rorId && INSTITUTION_RESOLVERS.find(row => row.rorId === rorId))
     || INSTITUTION_RESOLVERS.find(row => row.domains.includes(domain));
   if (!entry) return null;
-  return { host: entry.host, institution: entry.institution, ...(entry.product ? { product: entry.product } : {}) };
+  return {
+    host: entry.host,
+    institution: entry.institution,
+    ...(entry.product ? { product: entry.product } : {}),
+    ...(entry.proxy ? { proxy: entry.proxy } : {}),
+    ...(entry.signsIn ? { signsIn: entry.signsIn } : {}),
+  };
+}
+
+/**
+ * The link a reader follows for one of the library's services. An SFX link
+ * goes straight to the publisher, where a reader off campus meets the
+ * paywall, so it goes through the remote-access login the library documents,
+ * encoded as `qurl` (EZproxy at TUM and LMU kept such targets whole,
+ * 2026-10-20). A link already on that login's host, or one whose host starts
+ * the library's sign-in itself (Gale's links for LMU go on to LMU's
+ * Shibboleth), is left as it is; so is every link of a library without a
+ * documented login, Alma's included, whose own links apply its proxy.
+ */
+export function libraryLink(resolver: InstitutionResolver, url: string) {
+  if (!resolver.proxy) return url;
+  const { hostname } = new URL(url);
+  const login = new URL(resolver.proxy).hostname;
+  if (hostname === login || hostname.endsWith(`.${login}`) || resolver.signsIn?.includes(hostname)) return url;
+  return `${resolver.proxy}${encodeURIComponent(url)}`;
 }
 
 // One deadline for the whole lookup, not one per fetch: a Crossref call and
@@ -453,15 +484,17 @@ export function parseSfxAnswer(xml: unknown, issn: string) {
 }
 
 const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null });
+const NOT_ENTITLED = Object.freeze({ status: 'not-entitled', collection: null, url: null });
 
 /**
  * The parameters a lookup actually sends upstream, for the edge cache key:
  * the library asked (its institution code and the host it is asked on,
  * since every mail domain of a university reaches the same resolver, and a
  * regional host may answer for a code without the library's data, plus the
- * product when it is not Alma, since each is asked and read its own way), or
- * the domain when there is none, and the institution ids only with a GetFTR
- * key, since only GetFTR gets them.
+ * product when it is not Alma, since each is asked and read its own way, and
+ * the login and the self-signing hosts its links are built with), or the
+ * domain when there is none, and the institution ids only with a GetFTR key,
+ * since only GetFTR gets them.
  */
 export function upstreamParams(query: InstitutionQuery & { doi?: string | null }, env: WorkerEnv = {}) {
   const { doi = null, domain, entityId = null, rorId = null } = query;
@@ -470,7 +503,13 @@ export function upstreamParams(query: InstitutionQuery & { doi?: string | null }
   return {
     ...(doi ? { doi } : {}),
     ...(resolver
-      ? { library: resolver.institution, host: resolver.host, ...(resolver.product ? { product: resolver.product } : {}) }
+      ? {
+        library: resolver.institution,
+        host: resolver.host,
+        ...(resolver.product ? { product: resolver.product } : {}),
+        ...(resolver.proxy ? { proxy: resolver.proxy } : {}),
+        ...(resolver.signsIn ? { signsIn: resolver.signsIn.join(',') } : {}),
+      }
       : { domain }),
     ...(getFtr && entityId ? { entityId } : {}),
     ...(getFtr && rorId ? { rorId } : {}),
@@ -509,6 +548,13 @@ export async function lookupInstitutionAccess(
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
 
+  // An SFX menu has no free flag and lists an open article's own platform the
+  // way it lists a subscription: TUM listed MDPI's for an Entropy article and
+  // SpringerLink for a Scientific Reports one (2026-10-20). An article whose
+  // version of record Crossref says is openly licensed, by the rule `/oa`
+  // reads, is open access, so no SFX service for it is the library's
+  // subscription. Alma marks its free services itself.
+  if (resolver!.product === 'sfx' && openLicenseFromCrossref(work)) return NOT_ENTITLED;
   const year = crossrefYear(work);
   const article = crossrefArticle(work);
   let refusals = 0;
@@ -528,14 +574,12 @@ export async function lookupInstitutionAccess(
       // A subscription is what the reader cannot get elsewhere; a free
       // service is open access that the `/oa` route already reports.
       const best = usable.find(service => !service.free) || usable[0];
-      return { status: 'entitled', collection: best.name, url: best.url };
+      return { status: 'entitled', collection: best.name, url: libraryLink(resolver!, best.url!) };
     }
     // A service hidden by an IP or group filter may be the library's own
     // subscription: no answer, rather than a refusal.
     if (answer.restricted) continue;
     if (!answer.fullText) refusals += 1;
   }
-  return issns.length && refusals === issns.length
-    ? { status: 'not-entitled', collection: null, url: null }
-    : UNKNOWN;
+  return issns.length && refusals === issns.length ? NOT_ENTITLED : UNKNOWN;
 }

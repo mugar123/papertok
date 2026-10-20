@@ -202,7 +202,38 @@ const NATURE_WORK = {
   volume: '586',
   issue: '7829',
   page: '378-384',
+  // Springer Nature's own terms on the version of record: not an open licence.
+  license: [
+    { URL: 'https://www.springernature.com/gp/researchers/text-and-data-mining', start: { 'date-time': '2020-10-14T00:00:00Z' }, 'content-version': 'tdm', 'delay-in-days': 0 },
+    { URL: 'https://www.springernature.com/gp/researchers/text-and-data-mining', start: { 'date-time': '2020-10-14T00:00:00Z' }, 'content-version': 'vor', 'delay-in-days': 0 },
+  ],
 };
+// Crossref's records for the two open-access articles, licences as deposited.
+const ENTROPY_DOI = '10.3390/e23010001';
+const ENTROPY_WORK = {
+  DOI: ENTROPY_DOI,
+  'issn-type': [{ value: '1099-4300', type: 'electronic' }],
+  issued: { 'date-parts': [[2020, 12, 22]] },
+  volume: '23',
+  issue: '1',
+  page: '1',
+  license: [{ URL: 'https://creativecommons.org/licenses/by/4.0/', start: { 'date-time': '2020-12-22T00:00:00Z' }, 'content-version': 'vor', 'delay-in-days': 0 }],
+};
+const SCIREP_DOI = '10.1038/s41598-021-86323-x';
+const SCIREP_WORK = {
+  DOI: SCIREP_DOI,
+  'issn-type': [{ value: '2045-2322', type: 'electronic' }],
+  issued: { 'date-parts': [[2021, 3, 26]] },
+  volume: '11',
+  issue: '1',
+  license: [
+    { URL: 'https://creativecommons.org/licenses/by/4.0', start: { 'date-time': '2021-03-26T00:00:00Z' }, 'content-version': 'tdm', 'delay-in-days': 0 },
+    { URL: 'https://creativecommons.org/licenses/by/4.0', start: { 'date-time': '2021-03-26T00:00:00Z' }, 'content-version': 'vor', 'delay-in-days': 0 },
+  ],
+};
+// The remote-access logins TUM and LMU document for their readers.
+const TUM_LOGIN = 'https://tum-eaccess.de/login?qurl=';
+const LMU_LOGIN = 'https://emedien.ub.uni-muenchen.de/login?qurl=';
 
 // sfx_tum, Nature 1476-4687, 2020, with the article's DOI, volume, issue and
 // first page, full-text services only: the journal's own package and
@@ -445,6 +476,259 @@ const SFX_TUM_OTHER_JOURNAL = `<?xml version="1.0" encoding="utf-8"?>
     <service_type>getFullTxt</service_type>
     <proxy>no</proxy>
     <target_url>https://riviste.unimi.it/index.php/BEO</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+// sfx_tum and sfx_ubm, asked on 2026-10-20 the way the Worker asks about two
+// open-access articles: Entropy (MDPI) and Scientific Reports, both CC BY in
+// Crossref. Besides free collections, TUM lists MDPI's own platform for one and
+// SpringerLink's package for the other, and LMU lists EBSCO, with no word that
+// they are free. The Scientific Reports answer is cut to three of its seven
+// targets; the others are free collections too.
+const SFX_TUM_ENTROPY = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.year"&gt;2021&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Entropy&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;1099-4300&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;39095494300041&lt;/item&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.3390/e23010001&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;1099-4300&lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>DOAJ_DIRECTORY_OPEN_ACCESS_JOURNALS</target_name>
+    <target_public_name>DOAJ Directory of Open Access Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.3390/e23010001?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>EZB-FREE-00999_FREELY_AVAILABLE_EZB_JOURNALS</target_name>
+    <target_public_name>EZB-FREE-00999 freely available EZB journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>http://www.mdpi.com/journal/entropy</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>MDPI_MULTIDISCIPLINARY_DIGITAL_PUBLISHING_INSTITUTE</target_name>
+    <target_public_name>MDPI - Multidisciplinary Digital Publishing Institute</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.3390/e23010001</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>PUBMED_CENTRAL_JOURNALS</target_name>
+    <target_public_name>PubMed Central</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://www.ncbi.nlm.nih.gov/pmc/ivip/1099-4300/23/1/1</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+const SFX_TUM_SCIREP = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.jtitle"&gt;Scientific Reports&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2021&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;2045-2322&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;3130000000000245&lt;/item&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.1038/s41598-021-86323-x&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;2045-2322&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>SPRINGER_NATURE_OA_FREE_JOURNALS</target_name>
+    <target_public_name>Springer Nature OA Free Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41598-021-86323-x?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>SPRINGER_LINK_JOURNALS_AUTOLOAD</target_name>
+    <target_public_name>SpringerLink Journals - AutoHoldings</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41598-021-86323-x?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>SPRINGER_NATURE_NATURE_COM_JOURNALS_FULLY_OPEN_ACCESS</target_name>
+    <target_public_name>Springer Nature - nature.com Journals - Fully Open Access</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41598-021-86323-x?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+const SFX_LMU_ENTROPY = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2021&lt;/item&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.3390/e23010001&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;1099-4300&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;1099-4300&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;39095494300041&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Entropy&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>DOAJ_DIRECTORY_OPEN_ACCESS_JOURNALS</target_name>
+    <target_public_name>DOAJ Directory of Open Access Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.3390/e23010001?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>EBSCOHOST_ACADEMIC_SEARCH_COMPLETE</target_name>
+    <target_public_name>EBSCOhost Academic Search Complete</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://openurl.ebsco.com/linksvc/linking.aspx?issn=1099-4300&amp;sid=Primo&amp;doi=10.3390%2Fe23010001&amp;issue=1&amp;genre=article&amp;title=Entropy&amp;spage=1&amp;date=2021-1&amp;volume=23&amp;custid=s5865125&amp;authtype=ip%2Cuid</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>MISCELLANEOUS_FREE_EJOURNALS</target_name>
+    <target_public_name>Free E- Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>http://www.mdpi.com/journal/entropy</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>MDPI_MULTIDISCIPLINARY_DIGITAL_PUBLISHING_INSTITUTE</target_name>
+    <target_public_name>MDPI - Multidisciplinary Digital Publishing Institute</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.3390/e23010001</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>PUBMED_CENTRAL_JOURNALS</target_name>
+    <target_public_name>PubMed Central</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://www.ncbi.nlm.nih.gov/pmc/ivip/1099-4300/23/1/1</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+// sfx_ubm, Nature 1476-4687, 2020, with the article's locators: Springer's and
+// Nature's packages and two Gale databases, whose links carry LMU's Gale
+// location and go on to LMU's Shibboleth sign-in.
+const SFX_LMU_NATURE = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.1038/s41586-020-2782-y&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2020&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Nature&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;0028-0836&lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;1476-4687&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;954925427238&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>SPRINGER_LINK_JOURNALS_AUTOLOAD</target_name>
+    <target_public_name>SpringerLink Journals - AutoHoldings</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41586-020-2782-y?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>GALE_ACADEMIC_ONEFILE</target_name>
+    <target_public_name>Gale Academic OneFile</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://find.gale.com/openurl/openurl?ctx_enc=info%3Aofi%3Aenc%3AUTF-8&amp;rft.spage=378&amp;rft.volume=586&amp;rft.issue=7829&amp;rft.date=2020&amp;url_ctx_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Actx&amp;res_id=info%3Asid%2Fgale%3AAONE&amp;url_ver=Z39.88-2004&amp;req_dat=info%3Asid%2Fgale%3Augnid%3Almum&amp;rft.jtitle=Nature&amp;rft_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Ajournal&amp;rft.issn=0028-0836&amp;rft.eissn=1476-4687&amp;rft.atitle=A+system+hierarchy+for+brain-inspired+computing</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>GALE_GENERAL_ONEFILE</target_name>
+    <target_public_name>Gale General OneFile</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://find.gale.com/openurl/openurl?rft_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Ajournal&amp;rft.eissn=1476-4687&amp;rft.issn=0028-0836&amp;rft.atitle=A+system+hierarchy+for+brain-inspired+computing&amp;ctx_enc=info%3Aofi%3Aenc%3AUTF-8&amp;rft.volume=586&amp;rft.spage=378&amp;rft.date=2020&amp;rft.issue=7829&amp;url_ctx_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Actx&amp;res_id=info%3Asid%2Fgale%3AITOF&amp;url_ver=Z39.88-2004&amp;req_dat=info%3Asid%2Fgale%3Augnid%3Almum&amp;rft.jtitle=Nature</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>NATURE</target_name>
+    <target_public_name>Nature</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1038/s41586-020-2782-y?nosfx=y</target_url>
     <is_related>no</is_related>
    </target>
   </ctx_obj_targets>
@@ -1217,10 +1501,12 @@ test('a related journal nested in an SFX answer\'s attributes does not stand in 
   assert.equal(parseSfxAnswer(SFX_NESTED_RELATED, '2058-1106')!.matched, false);
 });
 
-test('a subscription in an SFX library is entitled, with the link SFX gives to the article', async () => {
+test('a subscription in an SFX library is entitled, its article link through the library\'s login', async () => {
   const stub = upstreams({ crossref: askedAbout(NATURE_WORK) });
   const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
-  assert.deepEqual(result, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: NATURE_LINK });
+  assert.deepEqual(result, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` });
+  // The login keeps the article whole, its own query included.
+  assert.equal(new URL(result.url!).searchParams.get('qurl'), NATURE_LINK);
   const [call, ...more] = stub.sfxCalls();
   assert.equal(more.length, 0);
   assert.equal(call.url.pathname, '/sfx_tum');
@@ -1333,13 +1619,19 @@ test('TUM, LMU and FAU each reach their own SFX instance, and their answers are 
     { domain: 'fau.de', student: 'fau.de', rorId: FAU_ROR, instance: 'sfx_uben' },
   ];
   const keys = new Set();
+  const links: Record<string, Record<string, string>> = {
+    sfx_tum: { proxy: TUM_LOGIN },
+    sfx_ubm: { proxy: LMU_LOGIN, signsIn: 'find.gale.com,link.gale.com' },
+    sfx_uben: {},
+  };
   for (const { domain, student, rorId, instance } of libraries) {
-    const resolver = { host: SFX_HOST, institution: instance, product: 'sfx' };
+    const { proxy, signsIn } = links[instance];
+    const resolver = { host: SFX_HOST, institution: instance, product: 'sfx', ...(proxy ? { proxy } : {}), ...(signsIn ? { signsIn: signsIn.split(',') } : {}) };
     assert.deepEqual(findResolver({ domain }), resolver);
     // A student domain is not a row's; the link stores the ROR id that reaches it.
     assert.deepEqual(findResolver({ domain: student, rorId }), resolver);
     const key = upstreamParams({ doi: NATURE_DOI, domain: student, rorId }, {});
-    assert.deepEqual(key, { doi: NATURE_DOI, library: instance, host: SFX_HOST, product: 'sfx' });
+    assert.deepEqual(key, { doi: NATURE_DOI, library: instance, host: SFX_HOST, product: 'sfx', ...links[instance] });
     keys.add(JSON.stringify(key));
     const stub = upstreams({ crossref: askedAbout(NATURE_WORK) });
     await lookupInstitutionAccess({ doi: NATURE_DOI, domain: student, rorId }, { fetchImpl: stub.fetchImpl });
@@ -1350,17 +1642,21 @@ test('TUM, LMU and FAU each reach their own SFX instance, and their answers are 
   assert.deepEqual(upstreamParams({ doi: DOI, domain: 'usal.es' }, {}), { doi: DOI, library: '34BUC_USAL', host: USAL_HOST });
 });
 
-test('the access route answers for an SFX library and caches under its instance and the product', async () => {
-  for (const [domain, rorId, instance] of [['mytum.de', TUM_ROR, 'sfx_tum'], ['campus.lmu.de', LMU_ROR, 'sfx_ubm'], ['fau.de', FAU_ROR, 'sfx_uben']]) {
+test('the access route answers for an SFX library and caches under its instance, the product and the login', async () => {
+  for (const [domain, rorId, instance, url, linkParams] of [
+    ['mytum.de', TUM_ROR, 'sfx_tum', `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}`, [['proxy', TUM_LOGIN]]],
+    ['campus.lmu.de', LMU_ROR, 'sfx_ubm', `${LMU_LOGIN}${encodeURIComponent(NATURE_LINK)}`, [['proxy', LMU_LOGIN], ['signsIn', 'find.gale.com,link.gale.com']]],
+    ['fau.de', FAU_ROR, 'sfx_uben', NATURE_LINK, []],
+  ] as Array<[string, string, string, string, string[][]]>) {
     const { response, body, accessPuts } = await requestAccess(new URLSearchParams({ doi: NATURE_DOI, domain, rorId }).toString(), {
       crossref: askedAbout(NATURE_WORK),
       resolver: target => xml(target.pathname === `/${instance}` ? SFX_TUM_NATURE : '<html>wrong instance</html>'),
     });
     assert.equal(response.status, 200, domain);
-    assert.deepEqual(body, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: NATURE_LINK });
+    assert.deepEqual(body, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url });
     assert.equal(accessPuts.length, 1);
     assert.deepEqual([...new URL(accessPuts[0].key).searchParams], [
-      ['doi', NATURE_DOI], ['library', instance], ['host', SFX_HOST], ['product', 'sfx'], ['citation', 'article'], ['reading', 'complete-answers'],
+      ['doi', NATURE_DOI], ['library', instance], ['host', SFX_HOST], ['product', 'sfx'], ...linkParams, ['citation', 'article'], ['reading', 'complete-answers'],
     ]);
   }
   const outage = await requestAccess(new URLSearchParams({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }).toString(), {
@@ -1371,4 +1667,81 @@ test('the access route answers for an SFX library and caches under its instance 
   assert.deepEqual(outage.body, { code: 'ACCESS_LOOKUP_UNAVAILABLE' });
   assert.equal(outage.response.headers.get('cache-control'), 'no-store');
   assert.equal(outage.accessPuts.length, 0);
+});
+
+test('an article Crossref says is openly licensed is open access, whatever an SFX menu lists for it', async () => {
+  // Read alone, these menus would make each article a subscription: MDPI's and
+  // Springer's platforms and EBSCO carry no word that they are free.
+  assert.deepEqual(parseSfxAnswer(SFX_TUM_ENTROPY, '1099-4300')!.services.map(service => service.name), ['MDPI - Multidisciplinary Digital Publishing Institute']);
+  assert.deepEqual(parseSfxAnswer(SFX_TUM_SCIREP, '2045-2322')!.services.map(service => service.name), ['SpringerLink Journals - AutoHoldings']);
+  assert.deepEqual(parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services.map(service => service.name), ['EBSCOhost Academic Search Complete', 'MDPI - Multidisciplinary Digital Publishing Institute']);
+  for (const [doi, work, domain, rorId, answer] of [
+    [ENTROPY_DOI, ENTROPY_WORK, 'tum.de', TUM_ROR, SFX_TUM_ENTROPY],
+    [SCIREP_DOI, SCIREP_WORK, 'tum.de', TUM_ROR, SFX_TUM_SCIREP],
+    [ENTROPY_DOI, ENTROPY_WORK, 'campus.lmu.de', LMU_ROR, SFX_LMU_ENTROPY],
+  ] as Array<[string, object, string, string, string]>) {
+    const stub = upstreams({ crossref: askedAbout(work), sfx: () => xml(answer) });
+    const result = await lookupInstitutionAccess({ doi, domain, rorId }, { fetchImpl: stub.fetchImpl });
+    assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null }, `${domain} ${doi}`);
+    // The licence decides it; the library is not asked.
+    assert.equal(stub.sfxCalls().length, 0);
+  }
+});
+
+// The closed Nature answer with the free collections TUM listed for an open
+// article added after the licensed ones.
+const SFX_TUM_NATURE_WITH_FREE = SFX_TUM_NATURE.replace('  </ctx_obj_targets>', `${SFX_TUM_ENTROPY.match(/ {3}<target>\n {4}<target_name>DOAJ[\s\S]*?\n {3}<\/target>/)![0]}
+${SFX_TUM_ENTROPY.match(/ {3}<target>\n {4}<target_name>PUBMED_CENTRAL[\s\S]*?\n {3}<\/target>/)![0]}
+  </ctx_obj_targets>`);
+
+test('a closed article keeps its subscription, beside free collections and whatever Crossref leaves unsaid', async () => {
+  assert.equal((SFX_TUM_NATURE_WITH_FREE.match(/<target>/g) || []).length, 4);
+  const expected = { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` };
+  // Springer Nature's own terms; none at all, as for most closed articles in the
+  // catalogue; an open licence on the accepted manuscript only; and one that
+  // starts tomorrow. None opens the version of record today.
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const cc = 'https://creativecommons.org/licenses/by/4.0/';
+  for (const license of [
+    NATURE_WORK.license,
+    [],
+    [{ URL: cc, start: { 'date-time': '2020-10-14T00:00:00Z' }, 'content-version': 'am', 'delay-in-days': 0 }],
+    [{ URL: cc, start: { 'date-time': tomorrow }, 'content-version': 'vor', 'delay-in-days': 0 }],
+  ]) {
+    const stub = upstreams({ crossref: askedAbout({ ...NATURE_WORK, license }), sfx: () => xml(SFX_TUM_NATURE_WITH_FREE) });
+    const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+    assert.deepEqual(result, expected, JSON.stringify(license));
+  }
+});
+
+test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSCO links go through E-Medien whole', async () => {
+  // Gale only: the Springer and Nature packages taken out of LMU's answer.
+  const galeOnly = SFX_LMU_NATURE.replace(/ {3}<target>\n {4}<target_name>(?:SPRINGER_LINK_JOURNALS_AUTOLOAD|NATURE)<[\s\S]*?\n {3}<\/target>\n?/g, '');
+  const gale = parseSfxAnswer(galeOnly, '1476-4687')!.services[0].url!;
+  assert.match(gale, /^https:\/\/find\.gale\.com\/openurl\/openurl\?/);
+  let stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx: () => xml(galeOnly) });
+  let result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'Gale Academic OneFile', url: gale });
+  // EBSCO's link, from LMU's Entropy answer, for a closed article in the same
+  // journal: its own query and the %2F inside it reach EBSCO unchanged.
+  const ebsco = parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services[0].url!;
+  stub = upstreams({ crossref: askedAbout({ ...ENTROPY_WORK, license: [] }), sfx: () => xml(SFX_LMU_ENTROPY) });
+  result = await lookupInstitutionAccess({ doi: ENTROPY_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.equal(result.collection, 'EBSCOhost Academic Search Complete');
+  assert.ok(result.url!.startsWith(LMU_LOGIN));
+  assert.equal(new URL(result.url!).searchParams.get('qurl'), ebsco);
+  assert.match(ebsco, /doi=10\.3390%2Fe23010001&.*authtype=ip%2Cuid/);
+});
+
+test('a link already on the library\'s login stays as it is, and FAU\'s go to the article directly', async () => {
+  for (const already of [`${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}`, 'https://login.tum-eaccess.de/connect?session=s1&qurl=https%3a%2f%2fdoi.org%2f10.1038%2fs41586-020-2782-y']) {
+    const answer = SFX_TUM_NATURE.replaceAll(`<target_url>${NATURE_LINK}</target_url>`, `<target_url>${already.replace(/&/g, '&amp;')}</target_url>`);
+    const stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx: () => xml(answer) });
+    const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+    assert.equal(result.url, already);
+  }
+  // FAU documents eduVPN and Shibboleth per database, and no login to send a link through.
+  const stub = upstreams({ crossref: askedAbout(NATURE_WORK) });
+  const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'fau.de', rorId: FAU_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.equal(result.url, NATURE_LINK);
 });

@@ -24,8 +24,8 @@ export interface OpenTarget { mode: 'external' | 'inline'; url: string; }
  * The reader's library link is here, and first: it is the version of record
  * through the resolver of a university that subscribes to it. It always opens
  * in a new tab, where the reader may have to sign in with the university:
- * through the library's resolver (Alma), or at the publisher, which an SFX
- * link reaches directly.
+ * through the library's resolver or remote-access login, or at the publisher
+ * when the library documents no login.
  */
 import { isTrustedInlinePdfUrl, safeExternalUrl } from './externalUrl.ts';
 import { isAIReadablePdfUrl } from './aiExplanationAccess.ts';

@@ -918,7 +918,8 @@ for (const entry of [
       assert.equal(institution!.rorId, entry.record.id);
       assert.equal(institution!.name, entry.record.names[0].value);
       assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
-      assert.deepEqual(findResolver(institution!), { host: 'sfx.bib-bvb.de', institution: entry.instance, product: 'sfx' });
+      const { host, institution: library, product } = findResolver(institution!)!;
+      assert.deepEqual({ host, library, product }, { host: 'sfx.bib-bvb.de', library: entry.instance, product: 'sfx' });
       assert.deepEqual(rorQuestions(upstream.calls), [id]);
       for (const unverified of [`other.${domain}`, `${domain}.example`]) {
         await rejectsWith(resolveInstitution(unverified, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
@@ -940,7 +941,8 @@ test('fau.de links to FAU through ROR\'s own listing and selects its SFX library
     const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
     assert.equal(institution!.rorId, 'https://ror.org/00f7hpc57');
     assert.equal(institution!.acronym, 'FAU');
-    assert.deepEqual(findResolver(institution!), { host: 'sfx.bib-bvb.de', institution: 'sfx_uben', product: 'sfx' });
+    const { host, institution: library, product } = findResolver(institution!)!;
+    assert.deepEqual({ host, library, product }, { host: 'sfx.bib-bvb.de', library: 'sfx_uben', product: 'sfx' });
   } finally {
     upstream.restore();
   }

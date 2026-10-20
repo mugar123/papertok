@@ -468,7 +468,7 @@ library's data (eu03 answered for Pavia with no `rft.mms_id` and nothing listed 
 library with nothing listed for either journal is `answers-without-services`, not shipped. Codes found
 by hand on a library's own pages or in Zotero's public directory of OpenURL resolvers
 (zotero.org/openurl_resolvers) go in `alma-resolver-seeds.json` as
-`{ rorId, source, code?, host?, url?, product?, resolverProduct?, evidence?, exclude? }` and
+`{ rorId, source, code?, host?, url?, product?, resolverProduct?, proxy?, proxySource?, signsIn?, evidence?, exclude? }` and
 are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
 worldcat, libkey) without assuming the library lacks Alma, and `exclude` keeps a library
 consortium out of the table. The census record, misses included, is `alma-resolver-census.json`:
@@ -483,6 +483,10 @@ the row stays `compatibility-pending`. Since 2026-10-20 that covers TUM, LMU and
 Each seed records its evidence: TUM's library page and LMU's catalogue name their instance, while
 FAU's library names its SFX resolver without the address, and the instance's own configuration
 (contact address, loan service) names FAU. The other SFX libraries stay `compatibility-pending`.
+An SFX seed may also name the remote-access login its library documents (`proxy`, the EZproxy
+prefix ending in `qurl=`, with `proxySource`) and the hosts whose links start the library's
+sign-in themselves (`signsIn`); the table copies both onto the row, and `/access` and the
+services list send the row's links through that login. TUM's and LMU's are set; FAU documents none.
 
 ```bash
 node scripts/diagnostics/alma-resolver-census.mjs --countries US --limit 150

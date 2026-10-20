@@ -75,13 +75,17 @@ const getftrAnswering = (verdict: (doi: string) => Record<string, unknown>) => (
 // The SFX pilot's instances on the Bavarian network's server (2026-10-20).
 const SFX_HOST = 'sfx.bib-bvb.de';
 const TUM_ROR = 'https://ror.org/02kkvpp62';
+const LMU_ROR = 'https://ror.org/05591te55';
+const FAU_ROR = 'https://ror.org/00f7hpc57';
+const TUM_LOGIN = 'https://tum-eaccess.de/login?qurl=';
+const LMU_LOGIN = 'https://emedien.ub.uni-muenchen.de/login?qurl=';
 
 /**
  * An SFX answer resolving `issn` with the given full-text targets, as
- * `[KB name, public name]`, shaped like the captures in
+ * `[KB name, public name, link?]`, shaped like the captures in
  * institution-access.test.ts (sfx_tum, 2026-10-20).
  */
-const sfxWith = (issn: string, ...targets: Array<[string, string]>) => `<?xml version="1.0" encoding="utf-8"?>
+const sfxWith = (issn: string, ...targets: Array<[string, string, string?]>) => `<?xml version="1.0" encoding="utf-8"?>
 
 <ctx_obj_set>
  <ctx_obj identifier="">
@@ -92,13 +96,13 @@ const sfxWith = (issn: string, ...targets: Array<[string, string]>) => `<?xml ve
  &lt;/hash&gt;
 &lt;/perldata&gt;
 </ctx_obj_attributes>
-  <ctx_obj_targets>${targets.map(([name, publicName]) => `
+  <ctx_obj_targets>${targets.map(([name, publicName, link = `https://journals.example.org/${name.toLowerCase()}`]) => `
    <target>
     <target_name>${name}</target_name>
     <target_public_name>${publicName}</target_public_name>
     <service_type>getFullTxt</service_type>
     <proxy>no</proxy>
-    <target_url>https://journals.example.org/${name.toLowerCase()}</target_url>
+    <target_url>${link.replace(/&/g, '&amp;')}</target_url>
     <is_related>no</is_related>
    </target>`).join('')}
   </ctx_obj_targets>
@@ -619,7 +623,12 @@ test('paged responses and their cache keys keep offsets separate and canonical',
   assert.equal(new URL(first.servicePuts[0].key).searchParams.get('offset'), '0');
   assert.equal(new URL(next.servicePuts[0].key).searchParams.get('offset'), '36');
   assert.notEqual(first.servicePuts[0].key, next.servicePuts[0].key);
-  for (const raw of ['', '-1', '1.5', '1', 'NaN', '108', '9007199254740992']) {
+  // A page can start at any platform, since it ends where its time ran out.
+  const later = await requestServices('domain=usal.es&offset=1');
+  assert.equal(later.response.status, 200);
+  assert.equal(later.body.nextOffset, 37);
+  assert.equal(new URL(later.servicePuts[0].key).searchParams.get('offset'), '1');
+  for (const raw of ['', '-1', '1.5', 'NaN', String(SERVICE_CATALOGUE.length), '108', '9007199254740992']) {
     const result = await requestServices(`domain=usal.es&offset=${raw}`);
     assert.equal(result.response.status, 400, raw);
     assert.deepEqual(result.body, { code: 'INVALID_SERVICES_OFFSET' });
@@ -684,4 +693,180 @@ test('the services route answers for an SFX library and caches its list under th
   assert.equal(servicePuts.length, 1);
   const key = new URL(servicePuts[0].key).searchParams;
   assert.deepEqual([key.get('library'), key.get('host'), key.get('product')], ['sfx_tum', SFX_HOST, 'sfx']);
+});
+
+/**
+ * A page clock that each SFX probe moves on by `step`, the stand-in for a slow
+ * resolver: TUM's took about 1.3 s a probe, four at a time (2026-10-20).
+ */
+function slowSfx(step: number, answer: (issn: string) => string = issn => sfxWith(issn)) {
+  let clock = 0;
+  const stub = upstreams({ sfx: issn => { clock += step; return xml(answer(issn)); } });
+  return { stub, now: () => clock, later: () => { clock += 60_000; } };
+}
+
+test('a slow library\'s list goes on from where each page ran out of time, through the catalogue once', async () => {
+  const { stub, now, later } = slowSfx(400, issn => (issn === ISSN_OF.nature || issn === ISSN_OF.economist ? sfxWith(issn, ['NATURE', 'Nature']) : sfxWith(issn)));
+  const pages: Array<{ offset: number; next: number | null; probed: string[] }> = [];
+  const listed: string[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const before = stub.calls.length;
+    const result = await lookupInstitutionServices({ domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now, offset });
+    assert.equal(result.partial, false);
+    assert.equal(result.unchecked, 0);
+    pages.push({ offset, next: result.nextOffset!, probed: stub.calls.slice(before).map(call => call.url.searchParams.get('rft.issn')!) });
+    listed.push(...result.services.map(service => service.id));
+    later();
+    offset = result.nextOffset!;
+  }
+  // Every platform asked about once, in catalogue order, with no gap and no repeat.
+  assert.deepEqual(pages.flatMap(page => page.probed), SERVICE_CATALOGUE.map(entry => entry.issn));
+  for (const [index, page] of pages.entries()) {
+    assert.equal(page.offset + page.probed.length, page.next ?? SERVICE_CATALOGUE.length);
+    if (index > 0) assert.equal(page.offset, pages[index - 1].next);
+  }
+  // Pages ended on time, well short of the 36 a fast library gets.
+  assert.ok(pages.length > 3);
+  assert.ok(pages.every(page => page.probed.length < 36));
+  assert.deepEqual(listed, ['nature', 'economist']);
+  assert.ok(stub.maxInFlight() <= 4);
+});
+
+test('a probe cut short by the deadline is a partial page, not a missing platform, and the next page goes on', async () => {
+  const cut = new Set([ISSN_OF.springerlink, ISSN_OF.wiley]);
+  const stub = upstreams({
+    sfx: issn => (cut.has(issn) ? timeout() : xml(issn === ISSN_OF.nature || issn === ISSN_OF.acs ? sfxWith(issn, ['NATURE', 'Nature']) : sfxWith(issn))),
+  });
+  const first = await lookupInstitutionServices({ domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now: NOW, offset: 0 });
+  assert.equal(first.partial, true);
+  assert.deepEqual(first.services.map(service => service.id), ['nature', 'acs']);
+  assert.equal(first.nextOffset, 36);
+  const next = await lookupInstitutionServices({ domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now: NOW, offset: first.nextOffset! });
+  assert.equal(next.partial, false);
+  assert.equal(next.nextOffset, 72);
+});
+
+test('the time GetFTR takes does not shorten a page, and a GetFTR held to the deadline makes it an outage', async () => {
+  // GetFTR undecided, quickly or after 8 s, then a resolver at 400 ms a probe: the page is as long either way.
+  const pageAfter = async (wait: number) => {
+    let clock = 0;
+    const stub = upstreams({
+      getftr: dois => { clock = Math.max(clock, wait); return getftrAnswering(() => ({ statusCode: 200, entitled: 'maybe' }))(dois); },
+      resolver: () => { clock += 400; return xml(CTO_NONE); },
+    });
+    return lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV, now: () => clock, offset: 0 });
+  };
+  const quick = await pageAfter(0);
+  const slow = await pageAfter(8_000);
+  assert.ok(quick.nextOffset! > 4 && quick.nextOffset! < 36);
+  assert.equal(slow.nextOffset, quick.nextOffset);
+  assert.equal(slow.partial, false);
+  // GetFTR held until the deadline, which cuts every probe after it: an outage, not an empty page.
+  let clock = 0;
+  const held = upstreams({ getftr: () => { clock = 12_000; return timeout(); }, resolver: () => timeout() });
+  await assert.rejects(
+    lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: held.fetchImpl, env: GETFTR_ENV, now: () => clock, offset: 0 }),
+    error => error instanceof InstitutionAccessError && error.status === 502,
+  );
+});
+
+test('a request without paging is not cut at the start window: a slow library is asked the budget\'s worth', async () => {
+  const { stub, now } = slowSfx(400);
+  const result = await lookupInstitutionServices({ domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now });
+  assert.equal(stub.calls.length, SUBREQUEST_BUDGET);
+  assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET);
+  assert.equal(result.nextOffset, undefined);
+});
+
+/** The services route with an edge cache that keeps what it is given, for a run that stops and one that resumes. */
+function keptEdgeCache() {
+  const store = new Map<string, Response>();
+  return {
+    store,
+    match: async (key: RequestInfo | URL) => store.get((key as Request).url)?.clone() ?? null,
+    put: async (key: RequestInfo | URL, response: Response) => { store.set((key as Request).url, response.clone()); },
+  };
+}
+
+test('a list stopped after its first page resumes from the edge cache without asking again for what it has', async () => {
+  const edge = keptEdgeCache();
+  const asked: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
+    if (url.host !== SFX_HOST) throw new Error(`unexpected upstream ${url}`);
+    asked.push(url.searchParams.get('rft.issn')!);
+    const issn = url.searchParams.get('rft.issn')!;
+    return xml(issn === ISSN_OF.nature || issn === ISSN_OF.businessweek ? sfxWith(issn, ['NATURE', 'Nature']) : sfxWith(issn));
+  };
+  (globalThis as TestGlobals).caches = { default: edge };
+  const page = async (offset: number) => {
+    const response = await reportApi.fetch(new Request(`https://api.papertok.test/institution/services?${new URLSearchParams({ domain: 'mytum.de', rorId: TUM_ROR, offset: String(offset) })}`, {
+      headers: { origin: 'https://papertok.app', authorization: `Bearer ${TOKEN}` },
+    }), ROUTE_ENV);
+    return response.json<Awaited<ReturnType<typeof lookupInstitutionServices>>>();
+  };
+  try {
+    // The first run stops after one page.
+    const first = await page(0);
+    const askedFirst = asked.length;
+    assert.equal(first.nextOffset, 36);
+    // The next run starts over: the page it has is served from the edge, the
+    // rest is asked about, and nothing is lost or asked twice.
+    const listed: string[] = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const result = await page(offset);
+      listed.push(...result.services.map(service => service.id));
+      offset = result.nextOffset!;
+    }
+    assert.deepEqual(listed, ['nature', 'businessweek']);
+    assert.deepEqual(asked, SERVICE_CATALOGUE.map(entry => entry.issn));
+    assert.equal(askedFirst, 36);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
+  }
+});
+
+test('the cached pages of each library, product and page are kept apart, and an Alma library\'s carry no product', () => {
+  const keys = new Set<string>();
+  for (const [domain, rorId, product] of [['mytum.de', TUM_ROR, 'sfx'], ['campus.lmu.de', LMU_ROR, 'sfx'], ['fau.de', FAU_ROR, 'sfx'], ['usal.es', null, null]] as Array<[string, string | null, string | null]>) {
+    for (const offset of [0, 18, 36]) {
+      const params = servicesCacheParams({ domain, rorId }, {}, offset) as Record<string, unknown>;
+      assert.equal(params.product, product ?? undefined, domain);
+      assert.equal(params.offset, String(offset));
+      keys.add(JSON.stringify(params));
+    }
+  }
+  assert.equal(keys.size, 12);
+});
+
+test('a press title read through an aggregator opens through the library\'s login, except where that host signs in itself', async () => {
+  const ebsco = 'https://search.ebscohost.com/direct.asp?jid=ARW&site=ehost-live&db=bsu';
+  const gale = 'https://find.gale.com/openurl/openurl?res_id=info%3Asid%2Fgale%3AAONE&req_dat=info%3Asid%2Fgale%3Augnid%3Almum&rft.issn=0013-0613';
+  const answer = (link: string) => (issn: string) => xml(issn === ISSN_OF.economist ? sfxWith(issn, ['EBSCOHOST_BUSINESS_SOURCE_ULTIMATE', 'EBSCOhost Business Source Ultimate', link]) : sfxWith(issn));
+  const tum = await lookupInstitutionServices({ domain: 'mytum.de', rorId: TUM_ROR }, { fetchImpl: upstreams({ sfx: answer(ebsco) }).fetchImpl, now: NOW, offset: 36 });
+  const economist = tum.services.find(service => service.id === 'economist')!;
+  assert.equal(economist.url, `${TUM_LOGIN}${encodeURIComponent(ebsco)}`);
+  assert.equal(new URL(economist.url).searchParams.get('qurl'), ebsco);
+  const lmu = await lookupInstitutionServices({ domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: upstreams({ sfx: answer(gale) }).fetchImpl, now: NOW, offset: 36 });
+  assert.equal(lmu.services.find(service => service.id === 'economist')!.url, gale);
+  const fau = await lookupInstitutionServices({ domain: 'fau.de', rorId: FAU_ROR }, { fetchImpl: upstreams({ sfx: answer(ebsco) }).fetchImpl, now: NOW, offset: 36 });
+  assert.equal(fau.services.find(service => service.id === 'economist')!.url, ebsco);
+  // LMU's links for The Guardian (2026-10-20): Gale's reaches LMU's sign-in through Gale's own,
+  // Nexis Uni's ends at LexisNexis's sign-in and goes through E-Medien.
+  const galeLink = 'https://link.gale.com/apps/pub/0IOB/AONE?u=lmum';
+  const nexis = 'https://advance.lexis.com/api/search?source=MTA2OTMyOA&context=1516831';
+  const guardian = async (...targets: Array<[string, string, string]>) => {
+    const fetchImpl = upstreams({ sfx: issn => xml(issn === ISSN_OF.guardian ? sfxWith(issn, ...targets) : sfxWith(issn)) }).fetchImpl;
+    const result = await lookupInstitutionServices({ domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl, now: NOW, offset: 36 });
+    return result.services.find(service => service.id === 'guardian')!.url;
+  };
+  assert.equal(await guardian(['GALE_ACADEMIC_ONEFILE', 'Gale Academic OneFile', galeLink], ['NEXIS_UNI', 'Nexis Uni', nexis]), galeLink);
+  assert.equal(await guardian(['NEXIS_UNI', 'Nexis Uni', nexis]), `${LMU_LOGIN}${encodeURIComponent(nexis)}`);
 });
