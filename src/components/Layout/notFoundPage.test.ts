@@ -33,10 +33,10 @@ test('SOURCE: the not-found page says so and is kept out of an index', async () 
   assert.match(code, /noIndex: true/);
 });
 
-test('SOURCE: / reaches the feed, and every other undeclared address the not-found page', async () => {
+test('SOURCE: / reaches the feed or the onboarding, and every other undeclared address the not-found page', async () => {
   const code = stripComments(await read('../../App.tsx'));
   const routes = code.slice(code.indexOf('<Routes'), code.indexOf('</Routes>'));
-  const root = routes.indexOf('<Route path="/" element={<Navigate to="/feed" replace />} />');
+  const root = routes.indexOf(`<Route path="/" element={<Navigate to={authLoading || user ? '/feed' : '/onboarding'} replace />} />`);
   const wildcard = routes.search(/<Route\s+path="\*"\s+element=\{\s*<PageTransition>\s*<NotFoundPage \/>\s*<\/PageTransition>\s*\}\s*\/>/);
   assert.ok(root >= 0, 'the explicit / route is gone');
   assert.ok(wildcard > root, 'the not-found route is the last one');

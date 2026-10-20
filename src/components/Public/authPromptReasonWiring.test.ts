@@ -32,12 +32,6 @@ test('a guest bounced off a protected route gets the general door, not a stale r
   assert.match(app, /onClose=\{\(\) => \{\s*setAuthPromptOpen\(false\)\s*setAuthPromptReason\('default'\)\s*\}\}/);
 });
 
-test('the guest page forwards the action it was given', () => {
-  const page = read('./GuestFeedPage.tsx');
-  const requestAccount = bounded(page, 'const requestAccount = useCallback(', '}, [', 'requestAccount', 8);
-  assert.match(requestAccount, /onAuthRequired\?\.\(action\);/);
-});
-
 test('the dialog reads its headline and lede from the reason', () => {
   const prompt = read('./AuthPrompt.tsx');
   assert.match(prompt, /export default function AuthPrompt\(\{ onClose, reason = 'default' \}: \{ onClose: \(\) => void; reason\?: unknown \}\)/);

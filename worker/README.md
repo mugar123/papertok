@@ -99,9 +99,9 @@ returns 200, marked `_papertok.efetch: "unavailable"`, because the client alread
 OpenAlex and Europe PMC for the abstract — and the ten-minute TTL bounds how long that degraded
 answer can be served.
 
-`/sources/pubmed` and `/sources/s2` deliberately do **not** require a Firebase identity: the guest
-feed reads PubMed and the author pages are public, so demanding a session would make those branches
-run, fail locally and be swallowed. They take the same trade `/openalex/*` does — origin gate, edge
+`/sources/pubmed` and `/sources/s2` deliberately do **not** require a Firebase identity: the author
+pages are public, so demanding a session would make those branches run, fail locally and be
+swallowed. They take the same trade `/openalex/*` does — origin gate, edge
 cache, and a **global** per-minute ceiling reserved only after a cache miss
 (`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` and `/recommendations` share
 the Semantic Scholar ceiling with `/sources/s2` because all three spend the same provider allowance;
@@ -184,7 +184,7 @@ so the browser can no longer hold the credential: an OpenAlex key accepts prepai
 makes a key in the bundle someone else's spending, not just someone else's quota. The route rebuilds
 the upstream URL from an entity allowlist and a parameter allowlist, drops any `api_key` the caller
 sends, and attaches the Worker's own. It deliberately does **not** require a Firebase identity —
-the guest feed reads OpenAlex — so what protects the budget is a pair of global ceilings,
+the public entity pages read OpenAlex — so what protects the budget is a pair of global ceilings,
 per-minute (`OPENALEX_GLOBAL_MINUTE_LIMIT`) and per-day (`OPENALEX_GLOBAL_DAILY_LIMIT`), reserved
 only after an edge-cache miss and for as many calls as the route is about to spend. The origin gate
 is not one of them and should not be counted as one: a request with no `Origin` header has nothing
