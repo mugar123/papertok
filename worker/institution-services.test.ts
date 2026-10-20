@@ -715,6 +715,8 @@ test('a slow library\'s list goes on from where each page ran out of time, throu
     const result = await lookupInstitutionServices({ domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl, now, offset });
     assert.equal(result.partial, false);
     assert.equal(result.unchecked, 0);
+    // Each page names the catalogue it was cut from, the one in its cache key.
+    assert.equal(result.catalogue, catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET));
     pages.push({ offset, next: result.nextOffset!, probed: stub.calls.slice(before).map(call => call.url.searchParams.get('rft.issn')!) });
     listed.push(...result.services.map(service => service.id));
     later();
@@ -777,6 +779,7 @@ test('a request without paging is not cut at the start window: a slow library is
   assert.equal(stub.calls.length, SUBREQUEST_BUDGET);
   assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET);
   assert.equal(result.nextOffset, undefined);
+  assert.equal(result.catalogue, undefined);
 });
 
 /** The services route with an edge cache that keeps what it is given, for a run that stops and one that resumes. */

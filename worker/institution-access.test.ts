@@ -231,6 +231,38 @@ const SCIREP_WORK = {
     { URL: 'https://creativecommons.org/licenses/by/4.0', start: { 'date-time': '2021-03-26T00:00:00Z' }, 'content-version': 'vor', 'delay-in-days': 0 },
   ],
 };
+// Crossref's records for an open article with no licence deposited and a
+// closed one with none either (captured 2026-10-20, cut to what is read).
+const ENTROPY_2017_DOI = '10.3390/e19020087';
+const ENTROPY_2017_WORK = {
+  DOI: ENTROPY_2017_DOI,
+  'issn-type': [{ value: '1099-4300', type: 'electronic' }],
+  issued: { 'date-parts': [[2017, 2, 23]] },
+  volume: '19',
+  issue: '2',
+  page: '87',
+};
+const SCIENCE_DOI = '10.1126/science.abd8911';
+const SCIENCE_WORK = {
+  DOI: SCIENCE_DOI,
+  'issn-type': [{ value: '0036-8075', type: 'print' }, { value: '1095-9203', type: 'electronic' }],
+  issued: { 'date-parts': [[2020, 11, 27]] },
+  volume: '370',
+  issue: '6520',
+  page: '1066-1071',
+};
+// Unpaywall's records for them and for the Nature article (captured
+// 2026-10-20, cut to the status read and what explains it).
+const UNPAYWALL_RECORDS: Record<string, object> = {
+  [ENTROPY_2017_DOI]: { doi: ENTROPY_2017_DOI, is_oa: true, oa_status: 'gold', journal_is_oa: true, best_oa_location: { host_type: 'publisher', version: 'publishedVersion', license: 'cc-by' } },
+  [SCIENCE_DOI]: { doi: SCIENCE_DOI, is_oa: false, oa_status: 'closed', journal_is_oa: false, best_oa_location: null },
+  [NATURE_DOI]: { doi: NATURE_DOI, is_oa: false, oa_status: 'closed', journal_is_oa: false, best_oa_location: null },
+};
+/** Unpaywall answering from the records above by the DOI in the path, and 404 for any other. */
+const unpaywallRecord = (target: URL) => {
+  const record = UNPAYWALL_RECORDS[decodeURIComponent(target.pathname.replace(/^\/v2\//, ''))];
+  return record ? jsonResponse(record) : jsonResponse({ HTTP_status_code: 404, error: true }, 404);
+};
 // The remote-access logins TUM and LMU document for their readers.
 const TUM_LOGIN = 'https://tum-eaccess.de/login?qurl=';
 const LMU_LOGIN = 'https://emedien.ub.uni-muenchen.de/login?qurl=';
@@ -602,6 +634,106 @@ const SFX_TUM_SCIREP = `<?xml version="1.0" encoding="utf-8"?>
  </ctx_obj>
 </ctx_obj_set>`;
 
+// TUM's answers for those two articles (captured 2026-10-20, cut to what the
+// Worker reads): Entropy's lists MDPI's platform beside two free collections.
+const SFX_TUM_ENTROPY_2017 = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="rft.eissn"&gt;1099-4300&lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.3390/e19020087&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Entropy&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2017&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;1099-4300&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;39095494300041&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>DOAJ_DIRECTORY_OPEN_ACCESS_JOURNALS</target_name>
+    <target_public_name>DOAJ Directory of Open Access Journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.3390/e19020087?nosfx=y</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>EZB-FREE-00999_FREELY_AVAILABLE_EZB_JOURNALS</target_name>
+    <target_public_name>EZB-FREE-00999 freely available EZB journals</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>http://www.mdpi.com/journal/entropy</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>MDPI_MULTIDISCIPLINARY_DIGITAL_PUBLISHING_INSTITUTE</target_name>
+    <target_public_name>MDPI - Multidisciplinary Digital Publishing Institute</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.3390/e19020087</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
+const SFX_TUM_SCIENCE = `<?xml version="1.0" encoding="utf-8"?>
+
+<ctx_obj_set>
+ <ctx_obj identifier="">
+  <ctx_obj_attributes>&lt;perldata&gt;
+ &lt;hash&gt;
+  &lt;item key="_stash"&gt;
+   &lt;hash&gt;
+    &lt;item key="@rft_id"&gt;
+     &lt;array&gt;
+      &lt;item key="0"&gt;info:doi/10.1126/science.abd8911&lt;/item&gt;
+     &lt;/array&gt;
+    &lt;/item&gt;
+   &lt;/hash&gt;
+  &lt;/item&gt;
+  &lt;item key="sfx.has_full_text"&gt;yes&lt;/item&gt;
+  &lt;item key="rft.eissn"&gt;1095-9203&lt;/item&gt;
+  &lt;item key="rft.year"&gt;2020&lt;/item&gt;
+  &lt;item key="rft.jtitle"&gt;Science&lt;/item&gt;
+  &lt;item key="rft.issn"&gt;0036-8075&lt;/item&gt;
+  &lt;item key="rft.object_id"&gt;954925443632&lt;/item&gt;
+ &lt;/hash&gt;
+&lt;/perldata&gt;
+</ctx_obj_attributes>
+  <ctx_obj_targets>
+   <target>
+    <target_name>JSTOR_COMPLETE_LEGACY</target_name>
+    <target_public_name>Jstor Complete Legacy</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://www.jstor.org/openurl?volume=370&amp;issue=6520&amp;spage=1066&amp;issn=00368075&amp;date=2020&amp;aulast=Zani&amp;aufirst=Deborah&amp;sid=primo</target_url>
+    <is_related>no</is_related>
+   </target>
+   <target>
+    <target_name>AMERICAN_ASSOCIATION_FOR_THE_ADVANCEMENT_OF_SCIENCE</target_name>
+    <target_public_name>American Association for the Advancement of Science</target_public_name>
+    <service_type>getFullTxt</service_type>
+    <proxy>no</proxy>
+    <target_url>https://doi.org/10.1126/science.abd8911?locatt=mode:legacy</target_url>
+    <is_related>no</is_related>
+   </target>
+  </ctx_obj_targets>
+ </ctx_obj>
+</ctx_obj_set>`;
+
 const SFX_LMU_ENTROPY = `<?xml version="1.0" encoding="utf-8"?>
 
 <ctx_obj_set>
@@ -736,7 +868,7 @@ const SFX_LMU_NATURE = `<?xml version="1.0" encoding="utf-8"?>
 </ctx_obj_set>`;
 
 /**
- * Crossref, the resolver and GetFTR, each answering per call. `resolver`
+ * Crossref, the resolver, GetFTR and Unpaywall, each answering per call. `resolver`
  * receives the ISSN asked about so a test can answer per journal; `sfx`
  * answers for the Bavarian SFX instances the same way.
  */
@@ -745,7 +877,8 @@ function upstreams({
   resolver = () => xml(CTO_CELL),
   sfx = () => xml(SFX_TUM_NATURE),
   getftr = () => jsonResponse({ entitlements: [] }),
-}: { crossref?: (target: URL) => Response | Promise<Response>; resolver?: Resolver; sfx?: Resolver; getftr?: (body: unknown, init: RequestInit) => Response | Promise<Response> } = {}) {
+  unpaywall = unpaywallRecord,
+}: { crossref?: (target: URL) => Response | Promise<Response>; resolver?: Resolver; sfx?: Resolver; getftr?: (body: unknown, init: RequestInit) => Response | Promise<Response>; unpaywall?: (target: URL) => Response | Promise<Response> } = {}) {
   const calls: Array<{ url: URL; init: RequestInit & { headers?: Record<string, string> } }> = [];
   const fetchImpl: typeof fetch = async (url, init = {}) => {
     const target = new URL(String(url));
@@ -754,6 +887,7 @@ function upstreams({
     if (target.host === 'eu01.alma.exlibrisgroup.com') return resolver(target.searchParams.get('rft.issn')!, target);
     if (target.host === SFX_HOST) return sfx(target.searchParams.get('rft.issn')!, target);
     if (target.host === 'entitlements.prod.getft.io') return getftr(JSON.parse(init.body as string), init);
+    if (target.host === 'api.unpaywall.org') return unpaywall(target);
     throw new Error(`unexpected fetch ${target}`);
   };
   const of = (host: string) => calls.filter(call => call.url.host === host);
@@ -764,6 +898,7 @@ function upstreams({
     resolverCalls: () => of('eu01.alma.exlibrisgroup.com'),
     sfxCalls: () => of(SFX_HOST),
     getftrCalls: () => of('entitlements.prod.getft.io'),
+    unpaywallCalls: () => of('api.unpaywall.org'),
   };
 }
 
@@ -1332,6 +1467,7 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
     if (url.host === 'api.crossref.org') return crossref();
     if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com' || url.host === SFX_HOST) return resolver(url);
+    if (url.host === 'api.unpaywall.org') return unpaywallRecord(url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -1528,6 +1664,7 @@ test('free collections in an SFX answer are open access, not the library\'s subs
   const result = await lookupInstitutionAccess({ doi: PLOS_DOI, domain: 'fau.de', rorId: FAU_ROR }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
   assert.equal(stub.sfxCalls()[0].url.pathname, '/sfx_uben');
+  assert.equal(stub.unpaywallCalls().length, 0);
   // Only a whole word marks a collection free: Elsevier's licensed Freedom
   // Collection is a subscription.
   const freedom = SFX_TUM_NATURE.replace('<target_name>NATURE</target_name>', '<target_name>ELSEVIER_SD_FREEDOM_COLLECTION</target_name>');
@@ -1540,6 +1677,7 @@ test('an SFX answer without full text is a refusal: holdings, loans and delivery
   const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
   assert.deepEqual(stub.sfxCalls().map(call => call.url.searchParams.get('rft.issn')), ['1476-4687', '0028-0836']);
+  assert.equal(stub.unpaywallCalls().length, 0);
 });
 
 // No captured answer had an object without a record; this one is the 1800
@@ -1683,8 +1821,9 @@ test('an article Crossref says is openly licensed is open access, whatever an SF
     const stub = upstreams({ crossref: askedAbout(work), sfx: () => xml(answer) });
     const result = await lookupInstitutionAccess({ doi, domain, rorId }, { fetchImpl: stub.fetchImpl });
     assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null }, `${domain} ${doi}`);
-    // The licence decides it; the library is not asked.
+    // The licence decides it; neither the library nor Unpaywall is asked.
     assert.equal(stub.sfxCalls().length, 0);
+    assert.equal(stub.unpaywallCalls().length, 0);
   }
 });
 
@@ -1699,7 +1838,8 @@ test('a closed article keeps its subscription, beside free collections and whate
   const expected = { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` };
   // Springer Nature's own terms; none at all, as for most closed articles in the
   // catalogue; an open licence on the accepted manuscript only; and one that
-  // starts tomorrow. None opens the version of record today.
+  // starts tomorrow. None opens the version of record today, and Unpaywall has
+  // the article as closed.
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const cc = 'https://creativecommons.org/licenses/by/4.0/';
   for (const license of [
@@ -1714,6 +1854,80 @@ test('a closed article keeps its subscription, beside free collections and whate
   }
 });
 
+test('an open article Crossref gives no licence for is not the library\'s: Unpaywall has it as gold', async () => {
+  // Read alone, TUM's answer would make MDPI's platform a subscription.
+  assert.deepEqual(parseSfxAnswer(SFX_TUM_ENTROPY_2017, '1099-4300')!.services.map(service => service.name), ['MDPI - Multidisciplinary Digital Publishing Institute']);
+  const stub = upstreams({ crossref: askedAbout(ENTROPY_2017_WORK), sfx: () => xml(SFX_TUM_ENTROPY_2017) });
+  const result = await lookupInstitutionAccess({ doi: ENTROPY_2017_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+  const [call, ...more] = stub.unpaywallCalls();
+  assert.equal(more.length, 0);
+  assert.equal(decodeURIComponent(call.url.pathname), `/v2/${ENTROPY_2017_DOI}`);
+  assert.equal(call.url.searchParams.get('email'), 'app@papertok.io');
+  // Asked with the contact `/oa` uses when one is configured.
+  const configured = upstreams({ crossref: askedAbout(ENTROPY_2017_WORK), sfx: () => xml(SFX_TUM_ENTROPY_2017) });
+  await lookupInstitutionAccess({ doi: ENTROPY_2017_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: configured.fetchImpl, env: { UNPAYWALL_EMAIL: 'library@papertok.test' } });
+  assert.equal(configured.unpaywallCalls()[0].url.searchParams.get('email'), 'library@papertok.test');
+});
+
+test('a closed article without a licence keeps its subscription once Unpaywall has its published version behind the paywall', async () => {
+  const jstor = parseSfxAnswer(SFX_TUM_SCIENCE, '1095-9203')!.services[0];
+  assert.equal(jstor.name, 'Jstor Complete Legacy');
+  // As captured (closed), and with a repository copy (green, synthetic): a
+  // copy elsewhere does not open the published version.
+  for (const oaStatus of ['closed', 'green']) {
+    const stub = upstreams({
+      crossref: askedAbout(SCIENCE_WORK),
+      sfx: () => xml(SFX_TUM_SCIENCE),
+      unpaywall: () => jsonResponse({ ...UNPAYWALL_RECORDS[SCIENCE_DOI], oa_status: oaStatus }),
+    });
+    const result = await lookupInstitutionAccess({ doi: SCIENCE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+    assert.deepEqual(result, { status: 'entitled', collection: 'Jstor Complete Legacy', url: `${TUM_LOGIN}${encodeURIComponent(jstor.url!)}` }, oaStatus);
+  }
+});
+
+test('beside free collections, the article\'s own access decides: a published version open at the publisher is not the library\'s', async () => {
+  // The closed Nature answer with DOAJ and PubMed Central, for the article as
+  // Unpaywall could have it (synthetic statuses on the captured record).
+  for (const [oaStatus, expected] of [
+    ['closed', { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` }],
+    ['green', { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` }],
+    ['hybrid', { status: 'not-entitled', collection: null, url: null }],
+    ['bronze', { status: 'not-entitled', collection: null, url: null }],
+    ['gold', { status: 'not-entitled', collection: null, url: null }],
+  ] as Array<[string, object]>) {
+    const stub = upstreams({
+      crossref: askedAbout(NATURE_WORK),
+      sfx: () => xml(SFX_TUM_NATURE_WITH_FREE),
+      unpaywall: () => jsonResponse({ ...UNPAYWALL_RECORDS[NATURE_DOI], oa_status: oaStatus }),
+    });
+    const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
+    assert.deepEqual(result, expected, oaStatus);
+  }
+});
+
+test('without Unpaywall\'s word an SFX service not named free proves nothing: unknown, and an Unpaywall outage is a 502', async () => {
+  const lookup = (unpaywall: (target: URL) => Response | Promise<Response>) => lookupInstitutionAccess(
+    { doi: ENTROPY_2017_DOI, domain: 'tum.de', rorId: TUM_ROR },
+    { fetchImpl: upstreams({ crossref: askedAbout(ENTROPY_2017_WORK), sfx: () => xml(SFX_TUM_ENTROPY_2017), unpaywall }).fetchImpl },
+  );
+  // Not indexed, or no status Unpaywall gives.
+  for (const unpaywall of [
+    () => jsonResponse({ HTTP_status_code: 404, error: true }, 404),
+    () => jsonResponse({ doi: ENTROPY_2017_DOI, is_oa: null, oa_status: null }),
+  ]) {
+    assert.deepEqual(await lookup(unpaywall), { status: 'unknown', collection: null, url: null });
+  }
+  // Down, not JSON, or cut off by the deadline: nothing is claimed either way.
+  for (const unpaywall of [
+    () => jsonResponse({}, 503),
+    () => new Response('<html>Service Unavailable</html>', { status: 200 }),
+    () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')),
+  ]) {
+    await rejectsWith(lookup(unpaywall), 'ACCESS_LOOKUP_UNAVAILABLE', 502);
+  }
+});
+
 test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSCO links go through E-Medien whole', async () => {
   // Gale only: the Springer and Nature packages taken out of LMU's answer.
   const galeOnly = SFX_LMU_NATURE.replace(/ {3}<target>\n {4}<target_name>(?:SPRINGER_LINK_JOURNALS_AUTOLOAD|NATURE)<[\s\S]*?\n {3}<\/target>\n?/g, '');
@@ -1723,9 +1937,14 @@ test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSC
   let result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result, { status: 'entitled', collection: 'Gale Academic OneFile', url: gale });
   // EBSCO's link, from LMU's Entropy answer, for a closed article in the same
-  // journal: its own query and the %2F inside it reach EBSCO unchanged.
+  // journal (licence and Unpaywall status synthetic): its own query and the %2F
+  // inside it reach EBSCO unchanged.
   const ebsco = parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services[0].url!;
-  stub = upstreams({ crossref: askedAbout({ ...ENTROPY_WORK, license: [] }), sfx: () => xml(SFX_LMU_ENTROPY) });
+  stub = upstreams({
+    crossref: askedAbout({ ...ENTROPY_WORK, license: [] }),
+    sfx: () => xml(SFX_LMU_ENTROPY),
+    unpaywall: () => jsonResponse({ doi: ENTROPY_DOI, is_oa: false, oa_status: 'closed' }),
+  });
   result = await lookupInstitutionAccess({ doi: ENTROPY_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
   assert.equal(result.collection, 'EBSCOhost Academic Search Complete');
   assert.ok(result.url!.startsWith(LMU_LOGIN));

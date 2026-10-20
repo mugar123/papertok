@@ -50,6 +50,7 @@ export interface ResolverCitation {
 import { openLicenseFromCrossref } from '../src/utils/crossrefLicense.ts';
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
+import { unpaywallUrl } from './open-access.ts';
 import { cacheResponse } from './provider-runtime.ts';
 
 // A library's holdings change slowly; `unknown` (no ISSN, or GetFTR down with
@@ -486,6 +487,30 @@ export function parseSfxAnswer(xml: unknown, issn: string) {
 const UNKNOWN = Object.freeze({ status: 'unknown', collection: null, url: null });
 const NOT_ENTITLED = Object.freeze({ status: 'not-entitled', collection: null, url: null });
 
+// Unpaywall's `oa_status` for a version of record anyone can read at the
+// publisher (in an open journal, openly licensed, or free to read there), and
+// for one behind its paywall, where a repository copy (`green`) changes nothing.
+const FREE_AT_PUBLISHER = new Set(['gold', 'hybrid', 'bronze']);
+const PAYWALLED_AT_PUBLISHER = new Set(['green', 'closed']);
+
+/**
+ * Whether Unpaywall, the `/oa` route's source, says the article's version of
+ * record is free at the publisher: true, false, or null when it has no record
+ * of the DOI or does not say. Throws when Unpaywall did not answer.
+ */
+async function freeAtPublisher(doi: string, env: WorkerEnv, fetchImpl: typeof fetch, signal: AbortSignal) {
+  let record: { oa_status?: unknown } | null;
+  try {
+    record = JSON.parse(await fetchText(unpaywallUrl(doi, env), { headers: { accept: 'application/json' } }, fetchImpl, signal));
+  } catch (error) {
+    if ((error as UpstreamError)?.status === 404) return null;
+    throw error;
+  }
+  const status = String(record?.oa_status);
+  if (FREE_AT_PUBLISHER.has(status)) return true;
+  return PAYWALLED_AT_PUBLISHER.has(status) ? false : null;
+}
+
 /**
  * The parameters a lookup actually sends upstream, for the edge cache key:
  * the library asked (its institution code and the host it is asked on,
@@ -574,6 +599,21 @@ export async function lookupInstitutionAccess(
       // A subscription is what the reader cannot get elsewhere; a free
       // service is open access that the `/oa` route already reports.
       const best = usable.find(service => !service.free) || usable[0];
+      // Nor does a licence missing from Crossref make an SFX service the
+      // library's: TUM listed MDPI's for Entropy 19(2):87, which Crossref
+      // gives none (2026-10-20). It is the library's only for an article whose
+      // published version Unpaywall has behind the publisher's paywall;
+      // without Unpaywall's word, the answer stays unknown.
+      if (resolver!.product === 'sfx') {
+        let free;
+        try {
+          free = await freeAtPublisher(doi, env, fetchImpl, signal);
+        } catch {
+          throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
+        }
+        if (free === null) return UNKNOWN;
+        if (free) return NOT_ENTITLED;
+      }
       return { status: 'entitled', collection: best.name, url: libraryLink(resolver!, best.url!) };
     }
     // A service hidden by an IP or group filter may be the library's own

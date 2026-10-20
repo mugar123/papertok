@@ -188,6 +188,10 @@ export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budge
   return hash.toString(16).padStart(8, '0');
 }
 
+// Also sent with each page, so a client that keeps where a list stopped can
+// tell a page of another catalogue, whose positions may not match.
+const CATALOGUE_FINGERPRINT = catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET);
+
 /**
  * The edge cache key's parameters for a services list: the upstream ones
  * (`upstreamParams`) and the catalogue's fingerprint, so a platform added,
@@ -196,7 +200,7 @@ export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budge
  * kept seeing yesterday's 12 until the entry expired.
  */
 export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv, offset?: number) {
-  return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET), reading: RESOLVER_READING, ...(offset === undefined ? {} : { offset: String(offset) }) };
+  return { ...upstreamParams(query, env), catalogue: CATALOGUE_FINGERPRINT, reading: RESOLVER_READING, ...(offset === undefined ? {} : { offset: String(offset) }) };
 }
 
 /** Whether a package name is the platform's or its publisher's own. */
@@ -220,7 +224,7 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
   // no service free, only names its free collections; a service it does not
   // name free counts here because every catalogue journal is a subscription
   // journal whose probe article was closed when it was chosen. The per-paper
-  // answer also reads the article's licence. Press titles have no probe
+  // answer asks about the article itself. Press titles have no probe
   // article; The Guardian, free on the web, came back from TUM and LMU only
   // through PressReader, Gale and Nexis Uni (2026-10-20).
   const paid = answer.services.filter(service => service.url && !service.free);
@@ -331,6 +335,7 @@ export async function lookupInstitutionServices(
     checkedAt: new Date(now()).toISOString(),
     ...(offset === undefined ? {} : {
       nextOffset: offset + end < SERVICE_CATALOGUE.length ? offset + end : null,
+      catalogue: CATALOGUE_FINGERPRINT,
     }),
   };
 }
