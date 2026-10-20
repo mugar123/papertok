@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and serves scientific queries, AI,
 
 ## Source structure
 
-Wrangler loads `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, runs the email schedule, and exports the three Durable Object classes.
+Wrangler loads `worker/index.ts`. It delegates HTTP requests to `handleRequest(request, env)` in `router.ts`, logs one line for every 429 and 5xx answer (see [Logs](#logs)), runs the email schedule, and exports the three Durable Object classes.
 
 - `router.ts` owns dispatch order, the Origin checks for the feature and health routes (`/health` and `/notifications/unsubscribe` have none), Firebase identity for `PROTECTED_PROVIDER_PATHS`, institution access and `/ai/quota`, a GET-only check for every route after the AI POST routes, and error responses. Most feature handlers check their own methods.
 - Provider handlers refuse a disallowed Origin themselves. A request without an Origin passes, except on `/pdf`, which requires one. The `/sources/*` handlers check through `sourceRequestContext` in `provider-runtime.ts`. `/share/*` has no Origin check because it serves crawlers.
@@ -52,7 +52,7 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put RESEND_FROM_EMAIL # optional after verifying a custom domain
 npx wrangler secret put GETFTR_API_KEY # optional; /access asks GetFTR first once set (GETFTR_API_URL overrides the endpoint)
 npm run worker:deploy:dry-run
-npm run worker:deploy
+npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
 
 Brevo is the primary notification provider when `EMAIL_PROVIDER = "brevo"`.
@@ -277,3 +277,22 @@ Within one schedule run, identical OpenAlex requests (the date-only exploration 
 `EMAIL_DAILY_SEND_LIMIT` is enforced by the `EmailDeliveryLedger` Durable Object, using one atomic object per UTC day for scheduled and test sends. The object stores each reservation in its own bounded value plus a small counter, so a full production day remains below Durable Object value limits. Each send reserves quota before provider contact and then commits or releases it. Scheduled reservations and provider idempotency UUIDs are deterministic per subscription generation and UTC day, preventing concurrent cron windows from sending twice while isolating a later resubscription. If a provider response is lost or is not definitively rejected, the exact bounded email draft is retained for one retry between 5 and 25 minutes later; an expired uncertain reservation is conservatively committed rather than risk a duplicate. Committed reservations discard the draft, keep bounded delivery metadata, and every daily object deletes itself after three days. The following day can reconcile a successful provider delivery after a KV write failure without querying scientific sources or sending again, but only while the delivery state has not caught up with the ledger: a reservation whose delivery is already recorded in `lastSentAt` is skipped, so yesterday's committed send cannot swallow today's digest. Provider logs contain only status and stable error codes. The KV emulation of the ledger is serialized only inside one isolate, so it is limited to tests and local runs and requires the explicit `EMAIL_DELIVERY_LEDGER_FALLBACK = "kv"` variable; a deployment with a configured provider and no Durable Object binding aborts the cron with `EMAIL_DELIVERY_LEDGER_MISSING` and reports it in `/health/email` instead of degrading silently.
 
 Subscription preferences and delivery state use separate, generation-scoped KV records with 120-day rolling retention, so a scheduled write cannot overwrite a concurrent preference change, recreate a deleted subscription, or contaminate a later resubscription. Schedule summaries remain at `notification:schedule:last-run` and are also written to 14-day `notification:schedule:history:*` keys; each subscription stores separate PII-free digest and test outcomes. `/health/email` returns an unhealthy HTTP status when the provider is unavailable, the latest schedule is stale, or the delivery ledger is not the Durable Object, and exposes only aggregate freshness, processed/deferred/uncertain counts, and stable failure codes, never recipient data. Because the Brevo probe shares the provider rate limit with real delivery, the answer is served from the edge cache for five minutes, like the Scopus and OpenAlex probes.
+
+`GET /health` needs no `Origin` and reports configuration, not whether providers answer: `ok`, booleans such as `aiConfigured` and `semanticScholarKeyConfigured` (described above), and `version: { id, tag }` from the `[version_metadata]` binding (`CF_VERSION_METADATA`). `id` is the Cloudflare version id and `tag` is what the deploy passed to `--tag`, or `null` when it passed none. `version` is `null` where the binding does not exist, as in the Node tests.
+
+### Logs
+
+Workers Logs stores the Worker's `console.*` lines. The per-request invocation logs are off
+(`invocation_logs = false` in `wrangler.toml`), because each one would store the request's URL
+with its search text or unsubscribe token. The stored lines are the route handlers' error details,
+the AI rewrite and annotation outcomes, the email schedule summary, and one `{ route, status }`
+line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
+500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
+`/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan
+Cloudflare keeps the lines for 3 days and stores up to 200,000 a day. Its Workers Logs page does
+not say what Free does with lines past that number, so a sparse day in the dashboard does not prove
+there were few failures. Those limits are from that page in October 2026; from 1 December 2026
+Workers Logs moves to Cloudflare Observability pricing. Read the lines in the Cloudflare dashboard
+under Workers & Pages → `papertok-report-api` → Observability, or live with `npx wrangler tail`.
+Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: without it, every
+`wrangler deploy` switches Workers Logs off, whatever the dashboard says.
