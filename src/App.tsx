@@ -137,9 +137,9 @@ function AppContent() {
   }, [])
   const location = useLocation()
   // A deploy this tab is behind on is applied when the reader changes page,
-  // once Firestore has acknowledged the writes already issued and the
-  // interaction aggregate flushed here (utils/serviceWorkerUpdates.ts). The
-  // liked, saved and read lists load from that aggregate after the reload.
+  // once Firestore has acknowledged every write issued by then, the
+  // interaction aggregate flushed here included (utils/serviceWorkerUpdates.ts).
+  // The liked, saved and read lists load from that aggregate after the reload.
   // Without the flush its write waits for the debounce timer, the tab being
   // hidden or pagehide, and the reload fires the last two only as it unloads
   // the page.

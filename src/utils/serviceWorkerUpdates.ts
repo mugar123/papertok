@@ -142,7 +142,8 @@ export async function noteDeployActivated(entryUrl: string) {
 
 /**
  * How long a route-change reload waits for Firestore to acknowledge the writes
- * already issued. Past it, the reload waits for the next route change.
+ * issued before and during the wait. Past it, the reload waits for the next
+ * route change.
  */
 const WRITES_SETTLE_MS = 1_000
 
@@ -153,10 +154,10 @@ const WRITES_SETTLE_MS = 1_000
  * unacknowledged writes in memory only (services/firebase.ts), so a reload
  * would drop them, and a route change can follow one closely: onboarding
  * sends the email opt-in without awaiting it, then navigates to the feed.
- * Writes still pending after WRITES_SETTLE_MS, a write issued during the wait
- * and still unacknowledged when it ends, a rejected wait (Firestore rejects it
- * when the signed-in user changes), or a dialog open when the wait ends leave
- * the reload to the next route change.
+ * Writes still unacknowledged after WRITES_SETTLE_MS, those issued during the
+ * wait included, a rejected wait (Firestore rejects it when the signed-in user
+ * changes), or a dialog open when the wait ends leave the reload to the next
+ * route change.
  * A further route change during the wait, such as a redirect, does not: the
  * reload opens the page the tab is on by then.
  *
@@ -168,15 +169,24 @@ const WRITES_SETTLE_MS = 1_000
 export async function reloadIfBehindDeploy(pathname: string, writesSettled: () => Promise<unknown>) {
   if (behindSince === null) return
   if (shouldReloadForDeploy(behindSince, { pathname, online: navigator.onLine !== false })) {
-    const issuedBefore = await settleWithin(writesSettled(), WRITES_SETTLE_MS)
+    const deadline = Date.now() + WRITES_SETTLE_MS
+    let writes = await settleWithin(writesSettled(), WRITES_SETTLE_MS)
     // Firestore's wait covers only the writes issued before it was called, and
-    // a like during it issues a write and arms the aggregate's debounce again.
-    // So the wait is called once more, sending that aggregate too, with no
-    // time given: Firestore resolves it in microtasks when no write is
-    // outstanding, and a slower answer only holds the reload until the next
-    // route change.
-    const issuedDuring = issuedBefore.status === 'fulfilled' ? await settleWithin(writesSettled(), 0) : issuedBefore
-    if (issuedDuring.status === 'fulfilled' && !document.querySelector('[aria-modal="true"]')) {
+    // the page keeps writing during it: a like, or the view time the leaving
+    // page's card records when its exit animation ends, issues a write and
+    // arms the aggregate's debounce again. So the wait is called again with no
+    // time given, which sends that aggregate too: Firestore resolves it in
+    // microtasks only when no write is outstanding. Until it does, the newer
+    // writes get what is left of WRITES_SETTLE_MS, and the wait is called again.
+    while (writes.status === 'fulfilled') {
+      const idle = await settleWithin(writesSettled(), 0)
+      if (idle.status !== 'timed_out' || Date.now() >= deadline) {
+        writes = idle
+        break
+      }
+      writes = await settleWithin(writesSettled(), deadline - Date.now())
+    }
+    if (writes.status === 'fulfilled' && !document.querySelector('[aria-modal="true"]')) {
       markAppForcedReload()
       window.location.reload()
       return

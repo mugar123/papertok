@@ -308,7 +308,14 @@ test('a tab behind a deploy reloads at a route change taken online, once the wri
   tab.dialog = null
 
   // And a wait that rejects, as Firestore's does when the signed-in user
-  // changes.
+  // changes. Firestore rejects only the waits outstanding at the change, so
+  // the one rejected can be the wait called again after the first settled.
+  let asked = 0
+  tab.pathname = '/lists'
+  await reloadIfBehindDeploy('/lists', () => (asked++ === 1 ? Promise.reject(new Error('user changed')) : Promise.resolve()))
+  assert.equal(tab.reloads, 3)
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+  // Or the first one.
   tab.pathname = '/feed'
   await reloadIfBehindDeploy('/feed', () => Promise.reject(new Error('user changed')))
   assert.equal(tab.reloads, 3)
@@ -347,28 +354,41 @@ test('a tab behind a deploy reloads at a route change taken online, once the wri
 // Firestore writes as App.tsx waits for them, acknowledged when the test says
 // so. The wait first issues the interaction aggregate if its debounce is
 // armed, then covers the writes issued before it was called, like
-// `waitForPendingWrites`, and none issued after.
+// `waitForPendingWrites`, and none issued after. Acknowledging a name
+// acknowledges every write issued under it so far.
 function firestoreWrites() {
-  const writes = new Map<string, { acknowledged: Promise<void>; acknowledge(): void }>()
+  const writes: Array<{ name: string; acknowledged: Promise<void>; acknowledge(): void }> = []
   let aggregateArmed = false
   const issue = (name: string) => {
     let acknowledge!: () => void
     const acknowledged = new Promise<void>((resolve) => { acknowledge = resolve })
-    writes.set(name, { acknowledged, acknowledge })
+    writes.push({ name, acknowledged, acknowledge })
   }
   return {
     issue,
     armAggregate: () => { aggregateArmed = true },
-    acknowledge: (name: string) => writes.get(name)!.acknowledge(),
+    acknowledge: (name: string) => writes.filter((write) => write.name === name).forEach((write) => write.acknowledge()),
     settled: () => {
       if (aggregateArmed) issue('aggregate')
       aggregateArmed = false
-      return Promise.all([...writes.values()].map(({ acknowledged }) => acknowledged))
+      return Promise.all(writes.map(({ acknowledged }) => acknowledged))
     },
   }
 }
 
-test('a like issued while the reload waits holds it until the next route change', async (t) => {
+// Moves the mocked clock on to `ms`. The reload awaits several promises
+// before it starts its next wait, so microtasks are drained on both sides of
+// the tick: a wait started by then has its timeout registered, and what a
+// timeout settled has run when the test goes on.
+async function advanceTo(t: TestContext, ms: number) {
+  const drain = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve() }
+  await drain()
+  t.mock.timers.tick(ms - Date.now())
+  await drain()
+}
+
+test('a like issued while the reload waits and not acknowledged within its second holds it until the next route change', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
   const tab = tabAfterDeploy(t, '/onboarding')
   // The module's own copy, as in the crash test below, so `behindSince` starts
   // unset whichever test ran before.
@@ -387,7 +407,14 @@ test('a like issued while the reload waits holds it until the next route change'
   firestore.issue('like')
   firestore.armAggregate()
   firestore.acknowledge('opt-in')
-  await reload
+  // The like is never acknowledged. The clock moves in two steps: by 500 ms
+  // the reload has found the like outstanding and waits on it for what is
+  // left of the second that began at the route change, not a full second more.
+  let decided = false
+  void reload.then(() => { decided = true })
+  await advanceTo(t, 500)
+  await advanceTo(t, 1_000)
+  assert.ok(decided, 'the reload waits no longer than its second')
   assert.equal(tab.reloads, 0, 'the like is still unacknowledged')
   assert.equal(tab.session.has(APP_RELOAD_KEY), false)
 
@@ -395,6 +422,72 @@ test('a like issued while the reload waits holds it until the next route change'
   tab.pathname = '/lists'
   await reloadIfBehindDeploy('/lists', async () => {})
   assert.equal(tab.reloads, 1)
+})
+
+test('a write acknowledged as the reload\'s second ends holds it while a newer one is outstanding', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
+  const tab = tabAfterDeploy(t, '/onboarding')
+  const specifier = './serviceWorkerUpdates.ts?page=slow-opt-in'
+  const { noteDeployActivated, reloadIfBehindDeploy }: typeof import('./serviceWorkerUpdates.ts') = await import(specifier)
+  await noteDeployActivated(OLD_ENTRY)
+  const firestore = firestoreWrites()
+
+  // The email opt-in is acknowledged 999 ms after onboarding moves to the
+  // feed, and the reader likes the first card at 500 ms.
+  firestore.issue('opt-in')
+  tab.pathname = '/feed'
+  const reload = reloadIfBehindDeploy('/feed', firestore.settled)
+  let decided = false
+  void reload.then(() => { decided = true })
+  await advanceTo(t, 500)
+  firestore.issue('like')
+  firestore.armAggregate()
+  await advanceTo(t, 999)
+  firestore.acknowledge('opt-in')
+  await advanceTo(t, 1_000)
+  assert.ok(decided, 'the reload waits no longer than its second')
+  assert.equal(tab.reloads, 0, 'the like is still unacknowledged')
+  assert.equal(tab.session.has(APP_RELOAD_KEY), false)
+})
+
+test('writes issued while the reload waits and acknowledged within its second let it reload', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
+  const tab = tabAfterDeploy(t, '/feed')
+  const specifier = './serviceWorkerUpdates.ts?page=left-feed'
+  const { noteDeployActivated, reloadIfBehindDeploy }: typeof import('./serviceWorkerUpdates.ts') = await import(specifier)
+  await noteDeployActivated(OLD_ENTRY)
+  const firestore = firestoreWrites()
+
+  // The reader scrolled past a card less than 4 s before opening Lists, so
+  // the aggregate's debounce is armed and the reload sends it.
+  firestore.armAggregate()
+  tab.pathname = '/lists'
+  const reload = reloadIfBehindDeploy('/lists', firestore.settled)
+  // In ms from the route change: the feed stays mounted until its exit
+  // animation ends at 240, when its visible card unmounts and records its
+  // view time. At 400 the reader likes a paper in Lists. Each issues a write
+  // and arms the aggregate's debounce again. Firestore acknowledges the
+  // writes in the order they were issued.
+  await advanceTo(t, 240)
+  firestore.issue('view time')
+  firestore.armAggregate()
+  await advanceTo(t, 300)
+  firestore.acknowledge('aggregate')
+  await advanceTo(t, 400)
+  firestore.issue('like')
+  firestore.armAggregate()
+  await advanceTo(t, 540)
+  firestore.acknowledge('view time')
+  await advanceTo(t, 600)
+  firestore.acknowledge('aggregate')
+  await advanceTo(t, 700)
+  firestore.acknowledge('like')
+  await advanceTo(t, 760)
+  assert.equal(tab.reloads, 0, 'the aggregate the like armed is still unacknowledged')
+  firestore.acknowledge('aggregate')
+  await reload
+  assert.equal(tab.reloads, 1)
+  assert.ok(tab.session.has(APP_RELOAD_KEY), 'the reload is marked as the app\'s own')
 })
 
 test('the page a deploy reload is replacing reports no crash, and the page it boots reports a render crash', async (t) => {
