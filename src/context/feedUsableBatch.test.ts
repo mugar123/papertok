@@ -382,10 +382,9 @@ const publishCallback = hookBody('useLayoutEffect(() => {\n    loadPapersRef.cur
 const compile = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
 
 for (const commitFirst of [true, false]) {
-  test(`only the reset load fills the first screen, and its short page continues when React commits it ${commitFirst ? 'before' : 'after'} the continuation fires`, async t => {
+  test(`only the reset load fills the first screen, and its short page continues without a first screen's wait when React commits it ${commitFirst ? 'before' : 'after'} the continuation fires`, async t => {
     t.mock.method(Math, 'random', () => 0.5);
-    const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const { state, env } = feed();
+    const { state, env, loadingAbstracts } = feed();
     // commit() puts the real loader in loadPapersRef. A reset load that fails
     // after paint schedules a retry through it every 2.5 s, which would keep
     // the test process alive. A new session cancels its retries and continuations.
@@ -398,6 +397,12 @@ for (const commitFirst of [true, false]) {
     };
     let open!: () => void;
     const answered = new Promise<void>(resolve => { open = resolve; });
+    // An OpenAlex card on the next page whose abstract recovery has not
+    // answered. It answers when the test ends, so the abstract wait the card
+    // holds open does not keep the test process alive for ABSTRACT_WAIT_MS.
+    const awaiting = { ...records('awaiting', 1)[0], arxivId: '2401.00001', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
+    const recovery = pendingRecords();
+    t.after(() => recovery.resolve([]));
     const sources = {
       // cs.LG is the nearby category that exploration adds.
       getAllLeafCategories: () => [
@@ -405,23 +410,25 @@ for (const commitFirst of [true, false]) {
         { id: 'cs.LG', label: 'Machine Learning', area: 'cs' },
       ],
       CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence', 'cs.LG': 'Machine Learning' } } },
-      // Five papers before anything is shown, a full page after.
+      // Five papers before anything is shown. Twelve after, so the next page
+      // of fifteen, filled in source order, still has room for the OpenAlex card.
       fetchPapers: async (categories: string[], start: number) => {
         const painted = send('arxiv', categories, start);
         await answered;
         if (categories.includes('cs.LG')) return records('nearby', 2);
-        return painted ? records('next') : records('first', 5);
+        return painted ? records('next', 12) : records('first', 5);
       },
       OpenAlexAdapter: class {
         search(_query: string, _page: number, { internalCategories }: { internalCategories: string[] }) {
-          send('openalex', internalCategories);
-          return Promise.resolve({ papers: [] });
+          const painted = send('openalex', internalCategories);
+          return Promise.resolve({ papers: painted ? [awaiting] : [] });
         }
       },
       fetchDomainPapers: (categories: string[]) => {
         send('domain', categories);
         return Promise.resolve([]);
       },
+      recoverFeedAbstracts: (papers: Paper[]) => papers.some(paper => paper.id === awaiting.id) ? recovery.promise : Promise.resolve([]),
     };
     const render = () => {
       const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
@@ -458,10 +465,15 @@ for (const commitFirst of [true, false]) {
     if (commitFirst) shown.commit();
     await tick();
     if (!commitFirst) shown.commit();
-    for (let waited = 0; waited < 1000 && !state.papers.some(paper => paper.id.startsWith('next-')); waited += 10) await pause(10);
+    // Run from the closure rendered during the reset load, whose `papers` are
+    // empty, the next page would wait CITATION_GATE_MAX_WAIT_MS for recovery
+    // as a first screen does.
+    await wait(100);
     assert.equal(state.error, null);
     assert.deepEqual(state.papers.slice(0, firstPage.length).map(paper => paper.id), firstPage, 'the first page stays where it is');
     assert.ok(state.papers.slice(firstPage.length).some(paper => paper.id.startsWith('next-')), 'the next page follows it');
+    assert.ok(state.papers.some(paper => paper.id === awaiting.id), 'with the card recovery has not answered for');
+    assert.deepEqual([...loadingAbstracts()], [awaiting.id], 'which says its abstract is loading');
     assert.ok(requests.some(request => request.painted && request.categories.includes('cs.LG')), 'exploration comes with the next page');
   });
 }
