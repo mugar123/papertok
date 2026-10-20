@@ -185,6 +185,7 @@ export class PubmedAdapter {
       page,
       filters?.type || '',
       [...(filters?.internalCategories || [])].sort().join(','),
+      filters?.requireAbstract ? 'abstract' : '',
     ].join('|');
 
     const cached = readSourceCache<PaperSearchResult>(cacheKey, PUBMED_CACHE_TTL_MS);
@@ -203,6 +204,7 @@ export class PubmedAdapter {
       if (filters && filters.type === 'author') {
          finalQuery = `${query}[Author]`;
       }
+      if (filters.requireAbstract) finalQuery = `(${finalQuery}) AND hasabstract`;
 
       // 1. The whole E-utilities chain, in one call to the Worker. It returns the
       // three upstream payloads unchanged — esearch, esummary and the efetch XML —

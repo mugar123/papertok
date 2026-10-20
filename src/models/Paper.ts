@@ -73,6 +73,7 @@ export interface PaperRecommendationScore {
   graphBoost: number;
   personalBoost: number;
   followBoost: number;
+  missingAbstract: number;
   diversityBoost: number;
   authorBoost: number;
   followedEntityMatches: Record<PaperFollowMatch['type'], boolean>;
