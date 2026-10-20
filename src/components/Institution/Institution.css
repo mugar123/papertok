@@ -142,42 +142,125 @@
 .institution-services-kicker {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: baseline;
+  gap: var(--space-3);
   margin: 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
 }
 
-.institution-services-count::before {
-  content: '· ';
+.institution-services-count {
+  color: var(--text-secondary);
+  font: var(--mono-label);
 }
 
 .institution-services-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-  gap: var(--space-2);
-  margin: 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--border-default);
 }
 
-.institution-service-row {
+.institution-services-list > li {
+  border-bottom: 1px solid var(--border-default);
+  animation: institution-source-arrive 240ms cubic-bezier(0.16, 1, 0.3, 1) var(--service-delay, 0ms) backwards;
+}
+
+.institution-service-summary {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-height: 80px;
+  padding: var(--space-3) var(--space-1);
+  list-style: none;
+  cursor: pointer;
+}
+
+.institution-service-summary::-webkit-details-marker { display: none; }
+.institution-service-summary > .institution-service-text { flex: 1; }
+
+.institution-service-chevron {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  transition: transform 180ms ease-out;
+}
+
+.institution-service-group[open] .institution-service-chevron { transform: rotate(180deg); }
+
+.institution-service-coverage, .institution-service-route, .institution-service-detail-note {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.institution-service-count {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--mono-label);
+}
+
+.institution-service-details {
+  padding: 0 var(--space-2) var(--space-3);
+}
+
+.institution-service-group[open] .institution-service-details {
+  animation: institution-titles-arrive 180ms ease-out;
+}
+
+.institution-service-detail-note { margin: 0 0 var(--space-2); }
+.institution-service-titles { list-style: none; margin: 0; padding: 0; }
+.institution-service-titles > li + li { border-top: 1px solid var(--border-subtle); }
+
+.institution-service-title-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   min-height: 48px;
-  padding: var(--space-1);
-  border-radius: var(--radius-md);
-  color: inherit;
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-primary);
   text-decoration: none;
 }
 
+.institution-service-title-link > span:first-child { min-width: 0; }
+.institution-service-title-link > svg { flex: 0 0 auto; }
+.institution-service-title-name { display: block; overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.institution-service-route { display: block; overflow-wrap: anywhere; }
+
+.institution-service-summary:focus-visible, .institution-service-title-link:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.institution-services-list > li:focus-within { animation: none; }
+
 @media (hover: hover) and (pointer: fine) {
-  a.institution-service-row:hover {
-    background: var(--bg-glass-hover);
-  }
+  .institution-service-summary:hover, a.institution-service-title-link:hover { background: var(--bg-glass-hover); }
+  a.institution-service-title-link:hover .institution-service-title-name { text-decoration: underline; text-underline-offset: 3px; }
+}
+
+@keyframes institution-source-arrive {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes institution-titles-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .institution-services-list > li { animation: institution-titles-arrive 100ms ease-out; }
+  .institution-service-chevron { transition: none; }
+  .institution-service-group[open] .institution-service-details { animation: none; }
+}
+
+@media (max-width: 480px) {
+  .institution-service-summary { gap: var(--space-2); }
+  .institution-service-summary .institution-service-plate { width: 64px; }
 }
 
 /* The brand colour is data from the Worker's catalogue, like a field's
@@ -222,14 +305,6 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   line-height: var(--lh-tight);
-}
-
-.institution-service-publisher {
-  overflow-wrap: anywhere;
-  color: var(--text-tertiary);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
 }
 
 .institution-services-status {
