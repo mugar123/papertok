@@ -52,7 +52,11 @@ export class PaperBuilder {
     // `preprint` into it turned every PubMed journal article into one.
     const publicationType = data.publicationType
       || ((data.sources?.primary === 'arxiv' || data.provider === 'arxiv') ? 'preprint' : undefined);
-    
+    // A record that has merged another holds the answer `merge` gave it, an
+    // unknown included. The Explorer deduplicates its rows again with each
+    // page, and deriving one here turned that unknown into `true`.
+    const reviewedByMerge = (data.sources?.enrichedBy?.length ?? 0) > 0;
+
     // Normalize DOI
     let doi = data.doi;
     if (doi && doi.startsWith('https://doi.org/')) {
@@ -91,7 +95,7 @@ export class PaperBuilder {
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
-      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) ? undefined : !isPreprint),
+      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) || reviewedByMerge ? undefined : !isPreprint),
       workingPaper: data.workingPaper || undefined,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
@@ -402,6 +406,11 @@ export class PaperBuilder {
       merged.peerReviewed = enrichmentData.peerReviewed
         ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
     }
+    // A working paper the row is not still contradicts a `true` that rests on
+    // a DOI alone. That DOI may be the journal version's, the paper's own SSRN
+    // entry or the working paper's when OpenAlex lists none, so the answer is
+    // unknown rather than either record's.
+    if (otherWorkingPaper && arxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
     // The working-paper tag explains a `false`. It stays while the answer is
     // `false`, and goes when a venue's `true` stands, as for the journal article
     // whose working paper merged in.

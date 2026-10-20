@@ -577,12 +577,19 @@ test('an arXiv record beside a working paper it is not takes neither its series 
     publicationType: 'article',
     publicationStatus: 'published',
   });
-  const flows = (arxiv: Paper, work: OpenAlexWork): Array<[string, Paper[]]> => [
-    ['search', PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(work)!])],
-    ['Explorer page', PaperBuilder.deduplicate([arxiv, slimWorksPage({ results: [work] }).papers[0]])],
-    ['Explorer across pages', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), slimWorksPage({ results: [work] }).papers[0]])],
-    ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(work)!.enrichment, 'openalex')]],
-  ];
+  const nberSource = { id: 'S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository' };
+  const flows = (arxiv: Paper, work: OpenAlexWork): Array<[string, Paper[]]> => {
+    const explorerPage = PaperBuilder.deduplicate([arxiv, slimWorksPage({ results: [work] }).papers[0]]);
+    return [
+      ['search', PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(work)!])],
+      ['Explorer page', explorerPage],
+      ['Explorer across pages', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), slimWorksPage({ results: [work] }).papers[0]])],
+      // Each further page deduplicates the rows already shown again.
+      ['Explorer, a later page', PaperBuilder.deduplicate(explorerPage)],
+      ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(work)!.enrichment, 'openalex')]],
+    ];
+  };
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
 
   // The journal version, which arXiv lists with the journal's DOI and its
   // reference, keeps its own journal and takes no publisher from the series.
@@ -604,6 +611,26 @@ test('an arXiv record beside a working paper it is not takes neither its series 
     assert.equal(rows[0].journal, undefined, flow);
     assert.equal(rows[0].publisher, undefined, flow);
     assert.equal(reviewTagForPaper(rows[0]), null, flow);
+  }
+
+  // A DOI alone does not say which work it is: a journal's, the paper's own
+  // SSRN entry, or the NBER paper itself when OpenAlex's NBER record has no
+  // DOI. Beside a working paper that shares the eprint, the answer is
+  // unknown: neither the DOI's `true` nor the working paper's `false`.
+  for (const [label, doi, work] of [
+    ['journal DOI, FEDS', journalDoi, feds],
+    ['SSRN DOI, NBER', '10.2139/ssrn.4400000', workingPaperWork('10.3386/w31999', nberSource, 'report')],
+    ['NBER DOI, NBER without a DOI', '10.3386/w30000', workingPaperWork(null, nberSource, 'report')],
+  ] as Array<[string, string, OpenAlexWork]>) {
+    for (const [flow, rows] of flows(arxivRecord(doi), work)) {
+      const where = `${label}, ${flow}`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, doi, where);
+      assert.equal(rows[0].peerReviewed, undefined, where);
+      assert.equal(reviewTagForPaper(rows[0]), null, where);
+      assert.equal(rows[0].journal, undefined, where);
+      assert.deepEqual(peerReviewedOnly(rows), [], where);
+    }
   }
 });
 
