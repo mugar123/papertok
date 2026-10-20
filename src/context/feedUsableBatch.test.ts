@@ -67,7 +67,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
     userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
-    feedRequestId: ref(0), feedSessionId: ref(0),
+    feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<object | null>(null),
     openAlexEnrichmentAttempts: ref(new Set()), openAlexEnrichmentRequests: ref(new Map()),
     lateSourceCandidatesRef: ref([]), latePoolGenerationRef: ref(0),
     setLoading: (value: boolean) => { state.loading = value; }, setError: (value: string | null) => { state.error = value; },
@@ -368,6 +368,165 @@ test('automatic top-up respects the existing pagination ceiling', async () => {
   assert.equal(state.papers.length, 2);
   assert.deepEqual(state.continuations, []);
 });
+
+// The provider's hooks as React runs them: every render closes over that
+// render's state, and a commit publishes the render's loadPapers.
+function hookBody(anchor: string) {
+  const from = source.indexOf(anchor);
+  const to = source.indexOf('\n  }, [', from);
+  assert.ok(from >= 0 && to > from, `the hook at ${JSON.stringify(anchor)} must exist`);
+  return stripTypeScriptTypes(source.slice(source.indexOf('() => {', from), to) + '\n  }');
+}
+const loadMoreCallback = hookBody('const loadMore = useCallback(');
+const publishCallback = hookBody('useLayoutEffect(() => {\n    loadPapersRef.current = loadPapers;');
+const compile = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+type Loader = ReturnType<typeof feed>;
+function renders(state: Loader['state'], env: Loader['env'], sources: object) {
+  return () => {
+    const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
+    const loadPapers = compile(callback, scope);
+    return {
+      loadPapers,
+      loadMore: compile(loadMoreCallback, { ...scope, loadPapers }),
+      // `timers` can replace the effect's setTimeout, to choose when its callback runs.
+      commit: (timers = {}) => compile(publishCallback, { ...scope, loadPapers, ...timers })(),
+    };
+  };
+}
+
+for (const commitFirst of [true, false]) {
+  test(`only the reset load fills the first screen, and its short page continues without a first screen's wait when React commits it ${commitFirst ? 'before' : 'after'} the continuation fires`, async t => {
+    t.mock.method(Math, 'random', () => 0.5);
+    const { state, env, loadingAbstracts } = feed();
+    // commit() puts the real loader in loadPapersRef. A reset load that fails
+    // after paint schedules a retry through it every 2.5 s, which would keep
+    // the test process alive. A new session cancels its retries and continuations.
+    t.after(() => { env.feedSessionId.current += 1; });
+    const requests: Array<{ source: string; categories: string[]; start?: number; painted: boolean }> = [];
+    const send = (source: string, categories: string[], start?: number) => {
+      const painted = state.papers.length > 0;
+      requests.push({ source, categories, start, painted });
+      return painted;
+    };
+    let open!: () => void;
+    const answered = new Promise<void>(resolve => { open = resolve; });
+    // An OpenAlex card on the next page whose abstract recovery has not
+    // answered. It answers when the test ends, so the abstract wait the card
+    // holds open does not keep the test process alive for ABSTRACT_WAIT_MS.
+    const awaiting = { ...records('awaiting', 1)[0], arxivId: '2401.00001', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };
+    const recovery = pendingRecords();
+    t.after(() => recovery.resolve([]));
+    const sources = {
+      // cs.LG is the nearby category that exploration adds.
+      getAllLeafCategories: () => [
+        { id: 'cs.AI', label: 'Artificial Intelligence', area: 'cs' },
+        { id: 'cs.LG', label: 'Machine Learning', area: 'cs' },
+      ],
+      CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence', 'cs.LG': 'Machine Learning' } } },
+      // Five papers before anything is shown. Twelve after, so the next page
+      // of fifteen, filled in source order, still has room for the OpenAlex card.
+      fetchPapers: async (categories: string[], start: number) => {
+        const painted = send('arxiv', categories, start);
+        await answered;
+        if (categories.includes('cs.LG')) return records('nearby', 2);
+        return painted ? records('next', 12) : records('first', 5);
+      },
+      OpenAlexAdapter: class {
+        search(_query: string, _page: number, { internalCategories }: { internalCategories: string[] }) {
+          const painted = send('openalex', internalCategories);
+          return Promise.resolve({ papers: painted ? [awaiting] : [] });
+        }
+      },
+      fetchDomainPapers: (categories: string[]) => {
+        send('domain', categories);
+        return Promise.resolve([]);
+      },
+      recoverFeedAbstracts: (papers: Paper[]) => papers.some(paper => paper.id === awaiting.id) ? recovery.promise : Promise.resolve([]),
+    };
+    const render = renders(state, env, sources);
+
+    const mounted = render();
+    mounted.commit();
+    // The preferences effect starts the reset load. While its sources are
+    // pending, the scroll sentinel from the same render reports itself in view
+    // before React commits the reset load's `loading`.
+    const resetLoad = mounted.loadPapers(true, null, true);
+    mounted.loadMore();
+    render().commit();
+    open();
+    await resetLoad;
+
+    const firstPage = records('first', 5).map(paper => paper.id);
+    const firstWave = requests.filter(request => !request.painted);
+    assert.deepEqual(['arxiv', 'openalex', 'domain'].map(source => firstWave.filter(request => request.source === source).length), [1, 1, 1],
+      'one request per source before the first page is shown');
+    assert.notEqual(firstWave.find(request => request.source === 'arxiv')?.start, 0, 'the reset load asks for its random start page');
+    assert.ok(firstWave.every(request => !request.categories.includes('cs.LG')), 'no exploration request before the first page is shown');
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), firstPage);
+
+    // Five cards are a short page, so the reset load has scheduled the next one.
+    const shown = render();
+    if (commitFirst) shown.commit();
+    await tick();
+    if (!commitFirst) shown.commit();
+    // Run from the closure rendered during the reset load, whose `papers` are
+    // empty, the next page would wait CITATION_GATE_MAX_WAIT_MS for recovery
+    // as a first screen does.
+    await wait(100);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.slice(0, firstPage.length).map(paper => paper.id), firstPage, 'the first page stays where it is');
+    assert.ok(state.papers.slice(firstPage.length).some(paper => paper.id.startsWith('next-')), 'the next page follows it');
+    assert.ok(state.papers.some(paper => paper.id === awaiting.id), 'with the card recovery has not answered for');
+    assert.deepEqual([...loadingAbstracts()], [awaiting.id], 'which says its abstract is loading');
+    assert.ok(requests.some(request => request.painted && request.categories.includes('cs.LG')), 'exploration comes with the next page');
+  });
+}
+
+for (const change of ['a reset load runs', 'the account changes'] as const) {
+  test(`a continuation stored for the next commit is dropped when ${change} before its timer fires`, async t => {
+    const random = t.mock.method(Math, 'random', () => 0.5);
+    const { state, env } = feed();
+    // As above: cancels what the real loader in loadPapersRef still has scheduled.
+    t.after(() => { env.feedSessionId.current += 1; });
+    const starts: number[] = [];
+    const render = renders(state, env, {
+      // Five papers on the first load's random start page, 2, and fifteen elsewhere.
+      fetchPapers: async (_categories: string[], start: number) => {
+        starts.push(start);
+        return start === 30 ? records('first', 5) : records(`page-${start / 15}`, 15);
+      },
+    });
+
+    const mounted = render();
+    mounted.commit();
+    const firstLoad = mounted.loadPapers(true, null, true);
+    render().commit();
+    await firstLoad;
+    // The short page's continuation reaches the closure rendered during the
+    // load, which stores it; the painted render's commit schedules it.
+    await tick();
+    const scheduled: Array<() => void> = [];
+    render().commit({ setTimeout: (callback: () => void) => { scheduled.push(callback); } });
+    assert.equal(scheduled.length, 1, 'the painted render schedules the stored continuation');
+
+    const reset = change === 'a reset load runs';
+    if (reset) {
+      random.mock.mockImplementation(() => 0);
+      await render().loadPapers(true, null, true);
+      render().commit();
+    } else {
+      // What the account effect does when the user changes.
+      env.feedSessionId.current += 1;
+    }
+    scheduled[0]();
+    await wait(20);
+    // The first feed's next page, 3, starts at 45.
+    assert.deepEqual(starts, reset ? [30, 0] : [30], 'no request for the stored page');
+    assert.deepEqual(state.papers.map(paper => paper.id), (reset ? records('page-0', 15) : records('first', 5)).map(paper => paper.id));
+    assert.equal(state.page, reset ? 1 : 3);
+  });
+}
 
 for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
   test(`the personalized feed displays arXiv papers for ${category}`, async () => {

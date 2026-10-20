@@ -338,6 +338,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const notInterestedIdsRef = useRef(notInterestedIds);
   const isTraversingNetwork = useRef(false);
   const feedRequestId = useRef(0);
+  // Whether a feed load is running. Set and cleared with `setLoading`, and
+  // visible at once: `loading` reaches a callback only after React commits it.
+  const feedLoadInFlight = useRef(false);
+  // A non-reset load asked of a closure rendered before the last load ended,
+  // with the request and session it was asked in. The next committed
+  // loadPapers runs it, unless a load starts or the account changes first.
+  const loadAfterCommit = useRef<{ args: Parameters<FeedContextValue['loadPapers']>; requestId: number; sessionId: number } | null>(null);
   const feedSessionId = useRef(0);
   const openAlexEnrichmentAttempts = useRef(new Set<string>());
   // Papers the slower sources returned after the page painted (see
@@ -1199,10 +1206,27 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const loadPapers = useCallback(async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number, { keepThroughVisible = false } = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
-    if (!reset && loading) return;
+    // The ref, not `loading`: the scroll sentinel can fire before React commits
+    // the reset load's `loading`, and the first-page load it started replaced
+    // the reset one.
+    if (!reset && feedLoadInFlight.current) return;
+    // Rendered while a load that has since ended was running: `papers` lack
+    // the page it showed, so this load would hold its page for enrichment as
+    // a first screen does and rank it as if no card were shown. The
+    // short-page continuation's timer usually fires before React commits
+    // that page.
+    if (!reset && loading) {
+      loadAfterCommit.current = {
+        args: [reset, mode, randomizeStart, pageOverride, { keepThroughVisible }],
+        requestId: feedRequestId.current,
+        sessionId: feedSessionId.current,
+      };
+      return;
+    }
 
     const activeMode = mode || feedMode;
     const requestId = ++feedRequestId.current;
+    feedLoadInFlight.current = true;
     const activeSessionId = feedSessionId.current;
 
     if (reset) {
@@ -1630,7 +1654,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         } else if (currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
           console.log(`All fetched papers were seen and interacted, fetching page ${currentPage + 1} automatically...`);
           const nextPageToFetch = currentPage + 1;
-          // Set loading to false so the next loadPapers doesn't get blocked by the `if (!reset && loading) return;` check
+          // This load ends here, so the next page's load is not refused as a second one.
+          feedLoadInFlight.current = false;
           setLoading(false);
           setPage(nextPageToFetch);
           
@@ -1825,6 +1850,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     } finally {
       if (requestId === feedRequestId.current) {
+        feedLoadInFlight.current = false;
         setLoading(false);
       }
     }
@@ -2023,12 +2049,24 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
   const loadMore = useCallback(() => {
-    if (hasMore && !loading) loadPapers(false);
-  }, [hasMore, loading, loadPapers]);
+    if (hasMore && !feedLoadInFlight.current) loadPapers(false);
+  }, [hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
   useLayoutEffect(() => {
     loadPapersRef.current = loadPapers;
+    const stored = loadAfterCommit.current;
+    if (!stored) return;
+    loadAfterCommit.current = null;
+    // From a timer: a load started inside this effect would add a render
+    // before the browser shows the page. Checked when it fires, like the
+    // continuation timer's call: after another load or an account change,
+    // the stored page no longer follows the cards on screen.
+    setTimeout(() => {
+      if (stored.requestId === feedRequestId.current && stored.sessionId === feedSessionId.current) {
+        loadPapersRef.current?.(...stored.args);
+      }
+    }, 0);
   }, [loadPapers]);
 
   const refreshFeed = useCallback(async () => {
