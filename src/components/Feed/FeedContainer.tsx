@@ -667,7 +667,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
         const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
         if (nextIndex >= 0 && nextIndex < itemCount) {
-          container.scrollTo({ top: nextIndex * cardHeight, behavior: 'auto' });
+          // Smooth, as the browser's own arrow scroll is when a focused
+          // control leaves the key to it: an instant jump here made the same
+          // key move the feed two different ways depending on focus.
+          container.scrollTo({ top: nextIndex * cardHeight, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
         }
       }
     };
@@ -684,7 +687,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, showEndCard, feedNode]);
+  }, [papers.length, loading, showEndCard, feedNode, prefersReducedMotion]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
