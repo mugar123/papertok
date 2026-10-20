@@ -222,6 +222,11 @@ Since 2026-10-06 every AI route (`/ai/rewrite`, `/ai/annotate`) answers through 
 
 With `AI_PROVIDER = "gemini"`, `/ai/rewrite` streams from `AI_REWRITE_MODEL` (or `AI_MODEL` when that is unset) and retries the call that opens the stream once on `AI_FALLBACK_MODEL` when Gemini answers `AI_BUSY`, `AI_UNAVAILABLE` or `AI_QUOTA_EXHAUSTED`. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes.
 
+Rewrite prompt v3 allocates the word budget across the whole document, including
+discussion and conclusion. University requests up to 24,000 output tokens; its
+previous 16,000-token ceiling cut JWST off before those final sections. The prompt
+version is part of the cache key, so older rewrites are regenerated on the next open.
+
 The reader considers a rewrite complete only after a `done` event whose `sectionCount`
 matches the received sections, with no error and no `truncated` flag. EOF alone is not
 completion. Interrupted or truncated text remains readable with an incomplete notice

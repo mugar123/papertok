@@ -73,12 +73,8 @@ import {
 } from './nan-client.ts';
 import { extractPaperText, formatPaperTextForPrompt } from './paper-text.ts';
 
-/**
- * v2 (2026-10-06): the structure asks for top-level sections and folds
- * subsections into them. DeepSeek on NaN followed v1 down to "3.2.1", reached
- * the section cap at "5 Training" and dropped Results and Conclusion unseen.
- */
-export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v2';
+// Bump when the prompt or output budget changes so cached rewrites use that policy.
+export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v3';
 const DEFAULT_REWRITE_MODEL = 'gemini-3.5-flash';
 const MAX_REQUEST_BYTES = 100_000;
 const MAX_SECTIONS = 14;
@@ -122,7 +118,7 @@ const REWRITE_LEVELS = {
     label: 'University',
     thinkingLevel: 'low',
     wordBudget: 2_000,
-    maxOutputTokens: 16_000,
+    maxOutputTokens: 24_000,
     instruction: `Register: university student in the broad field, not the specialty.
 - Keep essential notation and equations, but explain what each symbol represents the first time.
 - Keep the technical name of each method and add a short gloss.
@@ -193,7 +189,11 @@ Scientific formatting:
 - Use LaTeX for variables, symbols, subscripts, superscripts, equations, and units with exponents: $...$ inline, $$...$$ standalone. Write $\\omega_b$ and $10^{-4}$, never ω_b or 10^-4.
 - Escape backslashes correctly inside the JSON strings.
 
-Length: aim for about ${config.wordBudget} words across all sections.
+Length:
+- The total budget is about ${config.wordBudget} words for the entire rewrite, not per section.
+- Before writing, allocate that budget across all top-level sections, reserving space for the discussion and conclusion.
+- Condense repeated background and procedural detail to stay within the budget. Preserve the methods, key quantitative findings, uncertainty and limitations.
+- Do not spend the budget on early sections and omit later ones. Reach the end of the paper within the total budget.
 
 Output format — this matters:
 - Emit JSON Lines: exactly one complete JSON object per line, one line per section, in reading order.

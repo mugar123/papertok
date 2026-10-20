@@ -16,6 +16,7 @@ type RewriteLog = Record<string, unknown>;
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { normalizePaperForExplanation } from './ai-explanation.ts';
 import {
   buildRewritePrompt,
   buildRewriteSystemInstruction,
@@ -325,7 +326,7 @@ test('cache keys separate level, model and paper', async () => {
   const keys = new Set([base, otherLevel, otherModel, otherPaper]);
   assert.equal(keys.size, 4);
   // The key format keeps its language segment; it is always 'en' now.
-  assert.match(base, /^paper-rewrite-v2:gemini-3\.5-flash:en:university:/);
+  assert.match(base, /^paper-rewrite-v3:gemini-3\.5-flash:en:university:/);
 });
 
 test('the same paper and settings reuse one cache key', async () => {
@@ -1571,6 +1572,33 @@ const nanRewrite = () => sseResponse([
   chunkFrame(null, 'stop'),
   'data: [DONE]\n\n',
 ]);
+
+test('University requests enough output headroom and does not replay a rewrite from the old length policy', async () => {
+  const store = fakeRewriteStore();
+  const state = newLedgerState();
+  const env = nanEnv({ AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
+  const key = await rewriteCacheKey(normalizePaperForExplanation({ title: paper.title, pdfUrl: paper.pdfUrl }), 'university', 'en', 'deepseek-v4-flash');
+  const oldKey = key.replace(/^[^:]+:/, 'paper-rewrite-v2:');
+  store.entries.set(oldKey, { value: JSON.stringify({
+    meta: { level: 'university', language: 'en' },
+    sections: [{ kind: 'intro', paragraphs: ['Old truncated rewrite.'] }],
+    truncated: true,
+  }) });
+  let maxTokens: unknown;
+  const { events } = await runRewrite({
+    provider: async (_url, options) => {
+      const body = JSON.parse(String(options?.body));
+      maxTokens = body.max_tokens;
+      return nanRewrite();
+    },
+  }, env);
+  assert.equal(events[0].cached, false);
+  assert.equal(maxTokens, 24_000);
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, undefined);
+  assert.equal(state.reserve, 1);
+  assert.notEqual(key, oldKey);
+});
 
 test('reads the text of an OpenAI chunk and never its reasoning', () => {
   assert.equal(extractSseTextDelta(chunkFrame('Hello').trim()), 'Hello');
