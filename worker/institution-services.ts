@@ -178,6 +178,10 @@ export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budge
   return hash.toString(16).padStart(8, '0');
 }
 
+// Hashing the 17 KB catalogue took 0.07 ms warm and up to 0.65 ms in a fresh
+// isolate on every request, cache hits included. Its inputs are module constants.
+const SERVICE_CATALOGUE_FINGERPRINT = catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET);
+
 /**
  * The edge cache key's parameters for a services list: the upstream ones
  * (`upstreamParams`) and the catalogue's fingerprint, so a platform added,
@@ -186,7 +190,7 @@ export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budge
  * kept seeing yesterday's 12 until the entry expired.
  */
 export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv, offset?: number) {
-  return { ...upstreamParams(query, env), catalogue: catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET), reading: RESOLVER_READING, ...(offset === undefined ? {} : { offset: String(offset) }) };
+  return { ...upstreamParams(query, env), catalogue: SERVICE_CATALOGUE_FINGERPRINT, reading: RESOLVER_READING, ...(offset === undefined ? {} : { offset: String(offset) }) };
 }
 
 /** Whether a package name is the platform's or its publisher's own. */
