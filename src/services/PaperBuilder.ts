@@ -344,13 +344,13 @@ export class PaperBuilder {
     // arXiv eprint among a FEDS paper's locations while arXiv lists the
     // journal's DOI for it. A row that keeps the article's DOI and journal is
     // not the working paper.
-    // A base DOI from the working paper's own registrant is another version
-    // of it: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for
-    // the paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
-    // 2026-10-20, each listed series' prefix held only its own institution's
-    // publications, and no academic publisher's journal. Other records get no
-    // such reading: Springer registers journal articles and chapters alike
-    // under 10.1007.
+    // A base DOI from the working paper's own registrant keeps that identity
+    // too: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for the
+    // paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
+    // 2026-10-20, the prefix of each series in `WORKING_PAPER_SOURCE_IDS`
+    // held only its institution's own publications, and no academic
+    // publisher's journal. Other records get no such reading: Springer
+    // registers journal articles and chapters alike under 10.1007.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
