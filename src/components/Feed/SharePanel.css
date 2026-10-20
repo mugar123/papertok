@@ -1,8 +1,9 @@
-/* The paper card's share panel (SharePanel.jsx): one list of destinations,
-   a menu on desktop and a bottom drawer on a phone. */
+/* Menus and sheets of rows: the paper card's options menu (PaperMenu.tsx)
+   and the rail menus that share its sheet (RailMenu.tsx, the lists and
+   search pages).
 
-/* The account menu's look (AccountMenu.css): a hairline frame, rows that
-   take a sunken fill when highlighted, grown from the share button. */
+   The account menu's look (AccountMenu.css): a hairline frame, rows that
+   take a sunken fill when highlighted. */
 .pc-share-menu-positioner {
   z-index: 12055;
 }
@@ -25,38 +26,6 @@
   transform: scale(0.97);
 }
 
-.pc-share-menu-item {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.pc-share-menu-item svg {
-  color: var(--text-secondary);
-}
-
-.pc-share-menu-item[data-highlighted] {
-  background: var(--bg-sunken);
-}
-
-.pc-share-menu-note {
-  margin-left: auto;
-  font: 500 0.6875rem/1 var(--font-mono);
-  color: var(--text-tertiary);
-}
-
-.pc-share-menu-separator {
-  height: 1px;
-  margin: 6px 4px;
-  background: var(--border-subtle);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .pc-share-menu {
     transition: opacity 120ms linear;
@@ -68,8 +37,7 @@
   }
 }
 
-/* On a phone: the same list in a bottom drawer, its rows grown to a thumb's
-   52px; the first one shows the link itself, with a copy button. */
+/* On a phone: a bottom drawer, its rows grown to a thumb's 52px. */
 .pc-share-sheet {
   background: var(--bg-card);
   border-top: 1px solid var(--border-default);
@@ -116,42 +84,168 @@
   background: var(--bg-sunken);
 }
 
-.pc-share-row--link {
-  color: var(--text-secondary);
-  font-weight: 400;
-  font-size: var(--fs-sm);
+@media (prefers-reduced-motion: reduce) {
+  .pc-share-row {
+    transition: none;
+  }
 }
 
-.pc-share-url {
+/* On desktop the paper's options sit in a centred dialog. */
+.pc-paper-menu {
+  max-height: min(85vh, 640px);
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-2) var(--space-3);
+}
+
+.pc-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) var(--space-3) var(--space-3);
+}
+
+.pc-menu-head .pc-share-sheet-title {
+  margin: 0;
+}
+
+.pc-menu-back {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.pc-menu-back:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-menu-back:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+.pc-menu-group {
+  margin: 0 var(--space-3);
+  padding: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-sunken);
+  list-style: none;
+}
+
+ul.pc-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.pc-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pc-menu-item-label {
+  display: block;
+  font: var(--fw-semibold) var(--fs-sm)/1.3 var(--font-body);
+  color: var(--text-primary);
+}
+
+.pc-menu-item-hint {
+  display: block;
+  font: var(--fs-xs)/1.4 var(--font-body);
+  color: var(--text-tertiary);
+}
+
+.pc-menu-heading {
+  margin: var(--space-4) var(--space-5) var(--space-2);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.pc-menu-share {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.pc-menu-nets {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pc-menu-link,
+.pc-menu-net {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.pc-menu-link {
   flex: 1;
   min-width: 0;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font: var(--fs-sm)/1 var(--font-body);
+  color: var(--text-secondary);
+}
+
+.pc-menu-link span {
+  flex: 1;
+  text-align: left;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* The rail's icon tile (PaperCard.css .pc-side-icon), a size down. */
-.pc-share-copy {
-  --rail: var(--text-tertiary);
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  color: var(--rail);
-  background: color-mix(in srgb, var(--rail) 7%, var(--bg-card));
-  border: 1px solid color-mix(in srgb, var(--rail) 20%, var(--bg-card));
+.pc-menu-net {
+  width: 40px;
 }
 
-.pc-share-list-separator {
-  height: 1px;
-  margin: 4px var(--space-3);
-  background: var(--border-subtle);
+.pc-menu-item:focus-visible,
+.pc-menu-link:focus-visible,
+.pc-menu-net:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .pc-share-row {
-    transition: none;
+@media (hover: hover) and (pointer: fine) {
+  .pc-menu-item:hover,
+  .pc-menu-link:hover,
+  .pc-menu-net:hover {
+    background: var(--bg-secondary);
   }
+}
+
+/* As in Settings, the hairline steps up on ink, where it all but vanishes. */
+:root[data-theme='dark'] :is(.pc-menu-group, .pc-menu-item, .pc-menu-link, .pc-menu-net) {
+  border-color: var(--border-strong);
 }

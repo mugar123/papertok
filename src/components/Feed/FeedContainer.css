@@ -145,6 +145,14 @@
    reveals it is the same swipe that reveals a paper. The `--end` modifier on
    it carries no styles — it is there to name the last item in devtools. */
 
+/* Cards compose in only until the feed first moves. After that every card is
+   already there when it slides up, the way the next video is: the arrival
+   replayed on each swipe kept pieces landing for half a second after the
+   card had. `data-moved` is set by FeedContainer on the first scroll. */
+.feed-container[data-moved] :is(.pc-sheet, .pc-meta, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
+  animation: none;
+}
+
 .feed-sentinel {
   height: 1px;
 }

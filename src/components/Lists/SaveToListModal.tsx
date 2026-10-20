@@ -6,14 +6,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { IS_DEMO, db } from '../../services/firebase.ts';
 import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
-import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.ts';
 import {
-  OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists, withPaperMembership,
+  OWN_LISTS_PAGE_SIZE, listsHolding, mergeCreatedLists, readOwnLists,
 } from '../../utils/ownLists.ts';
-import { queuePublicListSync } from '../../services/publicListSync.ts';
+import { writeListMembership } from '../../services/paperListMembership.ts';
 import { publishPublicList } from '../../services/publicListService.ts';
-import { publicListSyncKey } from '../../utils/publicListFreshness.ts';
 import {
   commitTagInput,
   diffListSelection,
@@ -572,6 +571,11 @@ export default function SaveToListModal({
           demoSet('savedPapersData', allSaved);
         }
       } else {
+        // A list created in this window while the read had not landed is
+        // folded into the cache first, or the membership written below would
+        // be recorded against a list the cache has never heard of.
+        const cached = ownListsCache.get(user!.uid);
+        if (cached) reviseOwnLists(user!.uid, mergeCreatedLists(cached, createdLists.current));
         /**
          * The paper's document FIRST, before any list is told about it.
          *
@@ -602,70 +606,9 @@ export default function SaveToListModal({
         // `updatedAt` rides along on every list write. It is what tells a
         // later visit that an edit happened here, so a sync lost to a closed
         // tab or a dead connection can still be found and replayed (P25).
-        for (const listId of toAdd) {
-          await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
-            paperIds: arrayUnion(paper.id),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        for (const listId of toRemove) {
-          await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
-            paperIds: arrayRemove(paper.id),
-            updatedAt: serverTimestamp(),
-          });
-        }
-        /**
-         * Published lists rebuild their public copy from here, with no button
-         * and no visit to Mis listas (P25).
-         *
-         * This modal has exactly one paper hydrated, which is why the sync
-         * sends the membership separately: the ids are authoritative, and the
-         * Worker keeps every other paper from the published document. A
-         * whole-payload update from this screen would have published a list
-         * of one and called it an update.
-         *
-         * Fire-and-forget on purpose — the queue lives outside React, so it
-         * survives this dialog closing a moment from now.
-         */
-        for (const listId of [...toAdd, ...toRemove]) {
-          const list = lists.find((entry) => entry.id === listId);
-          if (!list?.publicShareId) continue;
-          const added = toAdd.includes(listId);
-          queuePublicListSync({
-            key: publicListSyncKey(user!.uid, listId),
-            shareId: list.publicShareId,
-            listId,
-            title: list.name,
-            description: list.description,
-            language,
-            paperIds: added
-              ? [...new Set([...(list.paperIds || []), paper.id])]
-              : (list.paperIds || []).filter((id) => id !== paper.id),
-            // `listPaperId` is what the Worker joins on, and it is the id
-            // this modal just wrote into `paperIds`. Explicit rather than
-            // implied: the paper's own id must survive sanitizing intact.
-            papers: added ? [{ ...paper, listPaperId: paper.id }] : [],
-          });
-        }
-      }
-
-      // The cache this modal paints from has to learn what the save just
-      // wrote, or reopening on the same paper would show the checkbox as it
-      // was BEFORE the save — a worse lie than the spinner the cache removes.
-      if (user?.uid) {
-        const cached = ownListsCache.get(user!.uid);
-        if (cached) {
-          // `revise`, not `remember`: the lists were edited, not re-read, so
-          // this must not renew the freshness window. A list created in this
-          // window while the read had not landed is folded in here too, or the
-          // membership just written would be recorded against a list the cache
-          // has never heard of and silently dropped.
-          reviseOwnLists(user!.uid, withPaperMembership(
-            mergeCreatedLists(cached, createdLists.current), paper.id,
-            { added: toAdd, removed: toRemove },
-          ));
-          saveStoredLists(user!.uid, ownListsCache.get(user!.uid));
-        }
+        const listById = (listId: string) => lists.find(entry => entry.id === listId) ?? { id: listId };
+        await writeListMembership({ uid: user!.uid, paper, lists: toAdd.map(listById), added: true, language });
+        await writeListMembership({ uid: user!.uid, paper, lists: toRemove.map(listById), added: false, language });
       }
 
       if (readLaterChanged) await toggleReadLater(paper);

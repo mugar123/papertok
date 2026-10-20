@@ -285,9 +285,9 @@ test('SOURCE: the lists page has no manual public-list update control', async ()
  * to think about it, not to stamp it to keep this quiet.
  */
 test('SOURCE: every list edit stamps updatedAt, or the recovery check goes blind', async () => {
-  for (const path of ['../components/Lists/ListsPage.tsx', '../components/Lists/SaveToListModal.tsx']) {
+  for (const path of ['../components/Lists/ListsPage.tsx', './paperListMembership.ts']) {
     const source = await readFile(new URL(path, import.meta.url), 'utf8');
-    const writes = source.match(/updateDoc\(/g) || [];
+    const writes = source.match(/updateDoc\(|batch\.update\(/g) || [];
     const membership = source.match(/arrayUnion\(|arrayRemove\(/g) || [];
     const stamps = source.match(/updatedAt: serverTimestamp\(\)/g) || [];
     assert.ok(membership.length > 0, `${path}: expected membership writes`);

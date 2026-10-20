@@ -152,14 +152,14 @@ test('la marca se llama por su propio texto, no por un aria-label que lo contrad
     + 'pasa a anunciarse «PT PaperTok»');
 });
 
-test('the logo stays on every width, and on the narrowest it is clipped, never removed', async () => {
+test('the logo stays on every width, and on a phone the word is clipped, never removed', async () => {
   const css = await navbarCss;
   assert.doesNotMatch(css, /\.navbar-brand \{\s*display:\s*none;/,
-    'the brand is hidden at some width again; with two links the bar has room for it down to 320px');
-  const tramo = css.slice(css.indexOf('@media (max-width: 359px)'));
-  assert.ok(tramo.startsWith('@media (max-width: 359px)'), 'no 359px block in Navbar.css');
+    'the brand is hidden at some width again; the PT mark stays on every width');
+  const tramo = css.slice(css.indexOf('@media (max-width: 768px)'));
+  assert.ok(tramo.startsWith('@media (max-width: 768px)'), 'no 768px block in Navbar.css');
   const regla = tramo.match(/\.navbar-brand-word \{[^}]*\}/)?.[0];
-  assert.ok(regla, 'the 359px block no longer clips `.navbar-brand-word`');
+  assert.ok(regla, 'the 768px block no longer clips `.navbar-brand-word`');
   assert.doesNotMatch(regla, /display:\s*none/,
     'the word is removed instead of clipped: the PT mark is `aria-hidden`, so the button '
     + 'would have no name (`button-name`)');

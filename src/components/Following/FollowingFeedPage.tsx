@@ -152,7 +152,6 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
     refresh,
     isRefreshing: refreshing,
     emptyState,
-    showFollowReason: true,
     onPaperViewed: markSeen,
   }), [shownPapers, items, loading, lastUpdatedAt, error, refresh, refreshing, emptyState, markSeen]);
 

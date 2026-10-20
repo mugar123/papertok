@@ -26,7 +26,7 @@ function bounded(code: string, from: string, to: string, label: string, maxLines
 test('SOURCE: the saved-paper document is addressed by its encoded name, after which the aggregate learns of it', async () => {
   const code = stripComments(await read('./SaveToListModal.tsx'));
   assert.doesNotMatch(code, /doc\(db, 'users', user\.uid, 'savedPapers'/);
-  const save = bounded(code, 'if (savesPaper) {\n          await setDoc(', 'for (const listId of toAdd)', 'the saved-paper write', 20);
+  const save = bounded(code, 'if (savesPaper) {\n          await setDoc(', 'await writeListMembership(', 'the saved-paper write', 20);
   assert.match(
     save,
     /await setDoc\(\s*savedPaperDocRef\(user!\.uid, paper\.id\),[\s\S]*?\);\s*markSaved\(paper\);/,

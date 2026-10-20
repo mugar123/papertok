@@ -1,3 +1,4 @@
+import type { OwnList } from '../../utils/ownLists.ts';
 import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { Paper } from '../../models/Paper.ts';
@@ -14,7 +15,6 @@ interface FeedSource {
   isRefreshing?: boolean;
   onPaperViewed?: (paper: Paper) => void;
   surface?: string;
-  showFollowReason?: boolean;
   endCard?: ReactNode;
   emptyState?: ReactNode;
   initialLoadPending?: boolean;
@@ -29,6 +29,13 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { IS_DEMO } from '../../services/firebase.ts';
+import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
+import { readListsHoldingPaper, writeListMembership } from '../../services/paperListMembership.ts';
+import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.ts';
+import { setDoc } from 'firebase/firestore';
+import { toast } from 'sonner';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 
@@ -219,18 +226,19 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  * `source` swaps WHERE the papers come from while every interaction (like,
  * save, read, view tracking) keeps flowing into the recommendation profile
  * through useFeed. Shape: { papers, loading, error, hasMore, loadMore,
- * refresh, isRefreshing, emptyState, endCard, showFollowReason, onPaperViewed }.
+ * refresh, isRefreshing, emptyState, endCard, onPaperViewed }.
  *
  * `endCard` is a node the source appends as one more snap item once the feed
  * has genuinely run out — same height, same snapping, same swipe.
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
   const feed = useFeed();
-  const { trackEvent } = useAnalyticsConsent();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
     likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
+    personalLibrary, toggleReadLater, markSaved, unmarkSaved,
     trackViewTime, trackSkip, trackSkips: trackSkippedPapers,
   } = feed;
   const papers = source ? source.papers : feed.papers;
@@ -619,6 +627,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // keeps cards aligned without a non-passive listener blocking momentum
   // scrolling, and nothing here listens to the wheel.
 
+  useEffect(() => {
+    if (!feedNode) return undefined;
+    const moved = () => { feedNode.dataset.moved = ''; };
+    feedNode.addEventListener('scroll', moved, { once: true, passive: true });
+    return () => feedNode.removeEventListener('scroll', moved);
+  }, [feedNode]);
+
   // Implement keyboard arrow navigation on desktop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -772,9 +787,57 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     onOpenPdf!(paper);
   }, [onOpenPdf, trackPdfOpened]);
 
-  const handleSaveToList = useCallback((paper: Paper) => {
-    onSaveToList!(paper);
-  }, [onSaveToList]);
+  const { user } = useAuth();
+  const saveState = useRef({ personalLibrary, toggleReadLater, markSaved });
+  useEffect(() => {
+    saveState.current = { personalLibrary, toggleReadLater, markSaved };
+  }, [markSaved, personalLibrary, toggleReadLater]);
+
+  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean) => {
+    const id = interactionIdFor(paper)!;
+    const latest = saveState.current;
+    if (user && !IS_DEMO) {
+      await setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true });
+      await writeListMembership({ uid: user.uid, paper, lists, added: true, language: 'en' });
+    }
+    if (readLater && !latest.personalLibrary[id]?.readLater) await latest.toggleReadLater(paper);
+    await latest.markSaved(paper);
+  }, [interactionIdFor, user]);
+
+  const handleSaveToList = useCallback(async (paper: Paper) => {
+    const id = interactionIdFor(paper)!;
+    const readLater = Boolean(personalLibrary[id]?.readLater);
+    if (savedPaperIds.has(id)) {
+      try {
+        const lists = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
+        if (!lists) {
+          onSaveToList!(paper);
+          return;
+        }
+        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists, added: false, language: 'en' });
+        if (readLater) await toggleReadLater(paper);
+        await unmarkSaved(paper);
+        toast('Removed from your saved papers', {
+          action: {
+            label: 'Undo',
+            onClick: () => { restoreSave(paper, lists, readLater).catch(() => toast.error('Could not save this paper')); },
+          },
+        });
+      } catch {
+        toast.error('Could not remove this paper');
+      }
+      return;
+    }
+    try {
+      await restoreSave(paper, [], true);
+      markActivation();
+      toast.success('Saved to Read later', {
+        action: { label: 'Add to list', onClick: () => onSaveToList!(paper) },
+      });
+    } catch {
+      toast.error('Could not save this paper');
+    }
+  }, [interactionIdFor, markActivation, onSaveToList, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
 
   /**
    * El `setActiveIndex` de aquí va en transición, y conviene saber exactamente
@@ -1006,7 +1069,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
               getInteractionState={getInteractionState}
-              showFollowReason={Boolean(source?.showFollowReason)}
               analyticsSurface={analyticsSurface}
               position={index + 1}
               abstractLoading={Boolean(loadingAbstractIds?.has(paper.id))}
