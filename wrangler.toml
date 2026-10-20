@@ -94,6 +94,10 @@ class_name = "EmailDeliveryLedger"
 name = "REQUEST_QUOTA_LEDGER"
 class_name = "RequestQuotaLedger"
 
+[[durable_objects.bindings]]
+name = "PAPER_REWRITE_SESSION"
+class_name = "PaperRewriteSession"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KimiBudgetLedger"]
@@ -105,6 +109,10 @@ new_sqlite_classes = ["EmailDeliveryLedger"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["RequestQuotaLedger"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["PaperRewriteSession"]
 
 [triggers]
 crons = ["*/20 7-13 * * *"]

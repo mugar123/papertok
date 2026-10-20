@@ -23,8 +23,7 @@ import {
   canonicalPdfUrl,
   createSectionAssembler,
   createSseLineSplitter,
-  extractSseFinishReason,
-  extractSseTextDelta,
+  parseSseEvent,
   handlePaperRewrite,
   isRewriteLevel,
   parseRewriteSectionLine,
@@ -33,6 +32,32 @@ import {
   REWRITE_LEVEL_IDS,
   rewriteCacheKey,
 } from './ai-rewrite.ts';
+
+const extractSseTextDelta = (line: string) => parseSseEvent(line)?.text || '';
+const extractSseFinishReason = (line: string) => parseSseEvent(line)?.finishReason || '';
+
+test('one provider event carries both its text and finish reason', () => {
+  assert.deepEqual(parseSseEvent(`data: ${JSON.stringify({
+    choices: [{ delta: { content: 'Final text' }, finish_reason: 'stop' }],
+  })}`), { text: 'Final text', finishReason: 'STOP' });
+});
+
+test('SSE lines survive byte-sized fragments and split CRLF endings', () => {
+  const split = createSseLineSplitter();
+  const source = 'data: {"text":"one"}\r\ndata: {"text":"two"}\r\n';
+  const lines = [...source].flatMap(character => split(character)).filter(Boolean);
+  assert.deepEqual(lines, ['data: {"text":"one"}', 'data: {"text":"two"}']);
+});
+
+test('long sections survive token-sized deltas without losing their boundaries', () => {
+  const paragraphs = ['A long section. '.repeat(100).trim(), 'The final section.'];
+  const text = paragraphs.map(paragraph => JSON.stringify({ paragraphs: [paragraph] })).join('\n');
+  const assembler = createSectionAssembler();
+  const sections = [];
+  for (let offset = 0; offset < text.length; offset += 3) sections.push(...assembler.push(text.slice(offset, offset + 3)));
+  sections.push(...assembler.flush());
+  assert.deepEqual(sections.map(section => section.paragraphs[0]), paragraphs);
+});
 
 const paper = {
   title: 'A study of things',
@@ -949,16 +974,6 @@ test('does not cache a rewrite a filter cut short, and says so on the wire', asy
   assert.equal(state.release, 0);
 });
 
-/**
- * The token ceiling is the one truncation worth keeping.
- *
- * A paper long enough to hit `maxOutputTokens` hits it again on every reopen —
- * same paper, same model, same ceiling — so regenerating buys the reader the
- * identical half paper and costs another of the day's ten uses plus a minute of
- * waiting. What must survive the trip through KV is the *knowing* that it is a
- * half: the replay path closes with `done` and carries no `error` line, so
- * without a flag on it the cached half is served as the whole paper.
- */
 test('a rewrite cut off at the token ceiling is cached, and replayed as the half paper it is', async () => {
   const state = newLedgerState();
   const store = fakeRewriteStore();
@@ -992,6 +1007,71 @@ test('a rewrite cut off at the token ceiling is cached, and replayed as the half
   // Served from KV: the second reader pays nothing and waits for nothing.
   assert.equal(state.reserve, 1);
   assert.equal(state.release, 0);
+});
+
+test('an explicit retry replaces a truncated cache entry and subsequent opens reuse the complete result', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Old incomplete introduction.')),
+      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+    ]),
+  }, env);
+
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'New introduction.')),
+      sseFrame(sectionLine('conclusion', 'The final findings.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env, { retryIncomplete: true });
+  assert.equal(events[0].cached, false);
+  assert.deepEqual(events.filter(event => event.type === 'section').map(event => event.paragraphs), [
+    ['New introduction.'], ['The final findings.'],
+  ]);
+  assert.equal(events.at(-1)!.truncated, undefined);
+  assert.equal(state.reserve, 2);
+  assert.equal(state.release, 0);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A complete cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A complete cache hit must not reach the model'); },
+  }, env, { retryIncomplete: true });
+  assert.equal(replay[0].cached, true);
+  assert.deepEqual(replay.filter(event => event.type === 'section').map(event => event.paragraphs), [
+    ['New introduction.'], ['The final findings.'],
+  ]);
+  assert.equal(replay.at(-1)!.truncated, undefined);
+  assert.equal(state.reserve, 2);
+});
+
+test('a failed explicit retry preserves the old partial result for a normal reopen', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Still readable.')),
+      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+    ]),
+  }, env);
+  const { events } = await runRewrite({
+    pdf: async () => new Response('Unavailable', { status: 503 }),
+  }, env, { retryIncomplete: true });
+  assert.equal(events.at(-1)!.type, 'error');
+  assert.equal(state.reserve, 2);
+  assert.equal(state.release, 1);
+  for (const retryIncomplete of [undefined, false, 'true', 1]) {
+    const { events: replay } = await runRewrite({
+      pdf: async () => { throw new Error('Only boolean true requests regeneration'); },
+    }, env, { retryIncomplete });
+    assert.equal(replay[0].cached, true);
+    assert.equal(replay[1].paragraphs![0], 'Still readable.');
+    assert.equal(replay.at(-1)!.truncated, true);
+  }
+  assert.equal(state.reserve, 2);
 });
 
 test('a rewrite that finished is not replayed as truncated', async () => {
