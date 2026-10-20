@@ -313,6 +313,8 @@
 .rd-doc {
   flex: 0 1 68ch;
   min-width: 0;
+  align-self: flex-start;
+  margin-bottom: var(--space-12);
 }
 
 .rd-doc-title {
