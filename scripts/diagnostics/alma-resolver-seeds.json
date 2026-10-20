@@ -2562,11 +2562,11 @@
     "rorId": "https://ror.org/04teye511",
     "name": "Pontificia Universidad Católica de Chile",
     "country": "CL",
-    "source": "libraries.org",
+    "source": "manual (library page, 2026-10-19)",
     "product": "alma",
     "code": "56PUC_INST",
     "host": "puc.alma.exlibrisgroup.com",
-    "evidence": "https://librarytechnology.org/library/45378",
-    "notes": "The libraries.org entry for Bibliotecas UC (read 2026-10-19) lists Alma as the library system since 2016 and an online catalogue link on todosibuc.uc.cl with institution=56PUC_INST&vid=56PUC_INST. The entry names no Alma host; puc.alma.exlibrisgroup.com is the host that answered for this code with services listed."
+    "evidence": "https://bibliotecas.uc.cl/",
+    "notes": "The library homepage's search box sends queries to https://buscador.bibliotecas.uc.cl/discovery/search with vid=56PUC_INST:56PUC_INST, and its research assistant link opens https://buscador.bibliotecas.uc.cl/discovery/researchAssistant?vid=56PUC_INST:56PUC_INST (both in the page's script, main-PZAD75PX.js, read 2026-10-19). The page names no Alma host; puc.alma.exlibrisgroup.com is the host that answered for this code with services listed."
   }
 ]

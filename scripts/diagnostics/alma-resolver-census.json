@@ -21517,7 +21517,7 @@
       "country": "CL",
       "worksCount": 87302,
       "homepage": "https://www.uc.cl/",
-      "probedAt": "2026-10-19T22:33:20.589Z",
+      "probedAt": "2026-10-20T03:33:15.101Z",
       "domains": [
         "uc.cl"
       ],
@@ -21527,7 +21527,7 @@
       "code": "56PUC_INST",
       "host": "puc.alma.exlibrisgroup.com",
       "status": "verified",
-      "source": "libraries.org",
+      "source": "manual (library page, 2026-10-19)",
       "product": "alma",
       "route": "seed",
       "primoSlug": null,
@@ -22252,5 +22252,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-19T22:33:21.415Z"
+  "generatedAt": "2026-10-20T03:33:16.018Z"
 }
