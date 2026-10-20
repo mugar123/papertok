@@ -10,7 +10,7 @@ import { getArxivIdFromWork } from '../openAlexService.ts';
 import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.ts';
 import { usableOpenAlexConcepts } from '../../utils/openAlexConcepts.ts';
 import { normalizePmid } from '../../utils/publicNavigation.ts';
-import { openAlexPeerReviewed, openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
 import { normalizeSearchText } from '../../utils/searchRelevance.ts';
 import { openAlexTypeaheadExpression } from '../openAlexSearchQuery.ts';
 
@@ -181,6 +181,7 @@ export class OpenAlexAdapter {
       publicationType,
       publicationStatus,
       peerReviewed: openAlexPeerReviewed(work),
+      workingPaper: openAlexIsWorkingPaper(work) || undefined,
       openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,

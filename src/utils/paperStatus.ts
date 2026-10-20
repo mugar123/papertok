@@ -22,7 +22,8 @@ type OpenCopy = Partial<NonNullable<ReturnType<typeof mapUnpaywallResult>>> | nu
  */
 
 /**
- * Peer review, as far as the record goes: 'preprint', 'verified', or null.
+ * Peer review, as far as the record goes: 'preprint', 'workingPaper',
+ * 'verified', or null.
  *
  * The contract in `Paper.ts` keeps review and publication metadata optional.
  * If either `publicationStatus` or `publicationType` says preprint, the
@@ -37,6 +38,9 @@ export function reviewStatusForPaper(paper: Partial<Paper> | null | undefined) {
   if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') {
     return 'preprint';
   }
+  // OpenAlex files an IMF or Fed working paper as a published journal article,
+  // so without this the card looks the same as one from Nature.
+  if (paper.workingPaper === true) return 'workingPaper';
   // A record that says outright it was not reviewed outranks every inference
   // drawn from the publication fields: a technical report is `published` and
   // typed, and a bulletin has a `journal`, and neither went through review.
@@ -85,12 +89,20 @@ const REVIEW_TAGS = {
       en: 'Preprint: shared before peer review.',
     },
   },
-  /* Sin entrada para 'verified', a propósito. El distintivo azul se retiró el
-     12-09-2026: marcaba la norma, no la excepción. La mayoría de lo que se
-     lee aquí ha pasado por revisión, así que el sello no informaba de nada y
-     competía por la mirada con el título. `reviewStatusForPaper` sigue
-     devolviendo 'verified' —es un hecho del registro y los filtros lo usan—,
-     pero no hay distintivo que pintar: sólo la salvedad, el preprint. */
+  workingPaper: {
+    key: 'workingPaper',
+    tone: 'amber',
+    label: { en: 'Working paper' },
+    hint: {
+      en: 'Working paper or report: issued without journal peer review.',
+    },
+  },
+  /* No entry for 'verified', on purpose. The blue badge was retired on
+     2026-09-12: it marked the norm, not the exception. Most of what is read
+     here has been through review, so the badge said nothing and competed with
+     the title for attention. `reviewStatusForPaper` still returns 'verified'
+     (it is a fact of the record), but only the caveats get a tag: preprint
+     and working paper. */
 };
 
 const ACCESS_TAGS = {

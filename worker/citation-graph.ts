@@ -15,7 +15,7 @@ import {
   normalizeCitationDoi,
   normalizeCitationRows,
 } from '../src/utils/citationGraph.ts';
-import { openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';
@@ -55,6 +55,7 @@ function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
     publicationType,
     publicationStatus: openAlexPublicationStatus(work),
     peerReviewed: openAlexPeerReviewed(work),
+    workingPaper: openAlexIsWorkingPaper(work) || undefined,
     openAccess: Boolean(work.open_access?.is_oa || bestLocation.pdf_url),
     pdfUrl: bestLocation.pdf_url || undefined,
     landingPageUrl: bestLocation.landing_page_url || (doi ? `https://doi.org/${doi}` : work.id),

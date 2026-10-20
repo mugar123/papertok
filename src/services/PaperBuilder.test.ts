@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
+import { reviewTagForPaper } from '../utils/paperStatus.ts';
 
 test('normalizes category and publication metadata used by ranking', () => {
   const paper = PaperBuilder.create({
@@ -127,6 +128,35 @@ test('a working paper stays unreviewed when another provider also lists it as pu
     const [paper] = PaperBuilder.deduplicate(order);
     assert.equal(paper.peerReviewed, false);
   }
+});
+
+test('the working-paper tag stays through a merge while the paper stays unreviewed', () => {
+  const doi = '10.5089/9798229063456.001';
+  const imf = {
+    id: 'openalex:W7215107402',
+    doi,
+    title: 'An IMF working paper',
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    peerReviewed: false,
+    workingPaper: true,
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  // Records for the same DOI that say published, reviewed or not, and nothing
+  // about a working paper.
+  const semanticScholar = { ...imf, id: 's2:abc', publicationType: 'JournalArticle', peerReviewed: undefined, workingPaper: undefined, sources: { primary: 'semantic_scholar', enrichedBy: [] } };
+  const crossref = { ...imf, id: 'crossref:1', publicationType: 'publication', workingPaper: undefined, sources: { primary: 'crossref', enrichedBy: [] } };
+
+  for (const order of [[imf, semanticScholar], [semanticScholar, imf], [imf, crossref], [crossref, imf]]) {
+    const [paper] = PaperBuilder.deduplicate(order);
+    assert.equal(reviewTagForPaper(paper)?.label, 'Working paper', order.map(record => record.id).join(' then '));
+  }
+
+  // A venue's answer clears it: OpenAlex's journal article stays reviewed and untagged.
+  const article = { ...imf, id: 'openalex:W100', peerReviewed: true, workingPaper: undefined };
+  const merged = PaperBuilder.merge(PaperBuilder.create(article), imf, 'openalex');
+  assert.equal(merged.peerReviewed, true);
+  assert.equal(reviewTagForPaper(merged), null);
 });
 
 test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {

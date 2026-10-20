@@ -24,7 +24,7 @@ import { openAlexTypeaheadExpression } from './openAlexSearchQuery.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory, openAlexFilterForArea } from '../utils/areaAccent.ts';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.ts';
-import { openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publicationStatus.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publicationStatus.ts';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
 import { paperReferenceFor } from '../utils/explorerPaths.ts';
@@ -186,6 +186,7 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
       publicationType: work.type || work.primary_location?.source?.type || 'preprint',
       publicationStatus: openAlexPublicationStatus(work),
       peerReviewed: openAlexPeerReviewed(work),
+      workingPaper: openAlexIsWorkingPaper(work) || undefined,
       doi: arxivId
         ? getReliableEnrichmentDoi(work, arxivId)
         : (normalizeDoi(work.doi || work.ids?.doi) || undefined),
@@ -1783,6 +1784,7 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     publicationType: work.type || work.primary_location?.source?.type || 'journal',
     publicationStatus: openAlexPublicationStatus(work),
     peerReviewed: openAlexPeerReviewed(work),
+    workingPaper: openAlexIsWorkingPaper(work) || undefined,
     openAccess: work.open_access?.is_oa,
     pdfUrl: work.open_access?.oa_url,
     landingPageUrl: work.primary_location?.landing_page_url || work.id,

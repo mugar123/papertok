@@ -75,6 +75,7 @@ export class PaperBuilder {
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
       peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) ? undefined : !isPreprint),
+      workingPaper: data.workingPaper || undefined,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
       openAccessPdfUrl: data.openAccessPdfUrl || undefined,
@@ -325,6 +326,14 @@ export class PaperBuilder {
       merged.peerReviewed = enrichmentData.peerReviewed
         ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
     }
+    // The working-paper tag explains a `false`. It stays while the answer is
+    // `false` and either record shows a working paper, and goes when a venue's
+    // `true` stands, as for the journal article whose working paper merged in.
+    const workingPaper = merged.peerReviewed === false
+      && (merged.workingPaper === true || enrichmentData.workingPaper === true);
+    // Written only when it changes: a merge that adds nothing must return a
+    // paper equal to the one it got (`paperFieldsEqual`), key for key.
+    if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {

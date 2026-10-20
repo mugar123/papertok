@@ -47,36 +47,65 @@ const OPENALEX_REVIEWED_TYPES = new Set(['article', 'review', 'conference-paper'
 const OPENALEX_VENUE_SOURCE_TYPES = new Set(['journal', 'conference', 'book series']);
 
 // OpenAlex files many working-paper series as journals and their papers as
-// articles. IMF Working Paper (S4210171147), the Fed Board's Finance and
-// Economics Discussion Series (S4210212089) and the FRBSF Working Paper Series
-// (S4306510381) come back as `article`, in a `journal`, `is_published`,
-// `publishedVersion` and CWTS core, exactly like a Nature paper (probed
-// 2026-10-19). Only the series' own name says what it is. NBER, CESifo and the
-// New York Fed's Staff Reports arrive typed `report` instead.
-const WORKING_PAPER_SERIES = /\b(?:working|discussion) papers?\b|\bdiscussion (?:series|notes?)\b/i;
+// articles. IMF Working Paper, FEDS, the FRBSF and Kansas City Fed series and
+// FEDS Notes come back as `article`, in a `journal`, `is_published`,
+// `publishedVersion` and CWTS core, exactly like a Nature paper. NBER, CESifo,
+// Banco de España and the New York and Philadelphia Fed series arrive typed
+// `report`, but CESifo also holds an `article` in its `journal` source
+// (W7144132107). Probed 2026-10-19. Only the source ID identifies these series.
+const WORKING_PAPER_SOURCE_IDS = new Set([
+  'S2809516038', // National Bureau of Economic Research
+  'S4210171147', // IMF Working Paper
+  'S7407053623', // CESifo
+  'S4393913881', // Banco de España, Documentos de Trabajo
+  'S4393919745', // Federal Reserve Bank of New York, Staff Reports
+  'S4306510381', // Federal Reserve Bank of San Francisco, Working Paper Series
+  'S4210230366', // Federal Reserve Bank of Philadelphia, Working Papers
+  'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
+  'S4210173933', // Federal Reserve Bank of Kansas City, Research Working Papers
+  'S4210225578', // Federal Reserve Board, FEDS Notes
+]);
 
-function isWorkingPaperSeries(location: OpenAlexLocation | null | undefined) {
-  return WORKING_PAPER_SERIES.test(String(location?.source?.display_name || ''));
+// A name that says working or discussion paper is not evidence either way:
+// 'Working Paper of Public Health' (S4210222596) is a journal. Such a source
+// does not count as a venue, so a series missing from the list stays unknown.
+const WORKING_PAPER_NAME = /\b(?:working|discussion) papers?\b|\bdiscussion (?:series|notes?)\b/i;
+
+function isListedSeries(location: OpenAlexLocation | null | undefined) {
+  return WORKING_PAPER_SOURCE_IDS.has(String(location?.source?.id || '').replace('https://openalex.org/', ''));
+}
+
+function isVenue(location: OpenAlexLocation | null | undefined) {
+  return OPENALEX_VENUE_SOURCE_TYPES.has(String(location?.source?.type || ''))
+    && !isListedSeries(location)
+    && !WORKING_PAPER_NAME.test(String(location?.source?.display_name || ''));
+}
+
+/**
+ * Whether an OpenAlex record is a working paper or report: typed `report`, or
+ * filed under a listed series. Mappers store it as `Paper.workingPaper`, which
+ * the card's "Working paper" tag reads.
+ */
+export function openAlexIsWorkingPaper(work: OpenAlexStatusFields) {
+  return openAlexType(work) === 'report' || isListedSeries(work?.primary_location);
 }
 
 /**
  * Peer review as far as an OpenAlex record shows it: true when a venue carries
- * the work, false for a preprint, a report or a working-paper series, and
- * undefined when the record shows neither. Every OpenAlex mapper reads it here,
- * because `published` alone also covers working papers.
+ * the work, false for a preprint, a report or a listed working-paper series,
+ * and undefined when the record shows neither. Every OpenAlex mapper reads it
+ * here, because `published` alone also covers working papers.
  */
 export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | undefined {
+  if (openAlexIsWorkingPaper(work)) return false;
   const type = openAlexType(work);
-  if (type === 'report' || isWorkingPaperSeries(work?.primary_location)) return false;
   if (OPENALEX_PREPRINT_TYPES.has(type)) {
     if (openAlexPublicationStatus(work) === 'preprint') return false;
   } else if (!OPENALEX_REVIEWED_TYPES.has(type)) {
     return undefined;
   }
   const locations = [work?.primary_location, ...(Array.isArray(work?.locations) ? work.locations : [])];
-  const inVenue = locations.some(location => OPENALEX_VENUE_SOURCE_TYPES.has(String(location?.source?.type || ''))
-    && !isWorkingPaperSeries(location));
-  return inVenue ? true : undefined;
+  return locations.some(isVenue) ? true : undefined;
 }
 
 // Semantic Scholar's `Review` is a kind of article: PMID 30617335, a review

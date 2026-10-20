@@ -8,6 +8,7 @@ import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
+import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import {
   dribblingFetch,
   settleWithin,
@@ -122,13 +123,13 @@ test('a journal article keeps its review when its working paper shares the title
     const papers = PaperBuilder.deduplicate(slimWorksPage({ results: [article, workingPaper] }).papers);
     assert.deepEqual(
       filterAndSortEntityPapers(papers, { filters: { peerReviewed: true } })
-        .map(paper => [paper.id, paper.journal, paper.peerReviewed]),
-      [['W100', 'International Journal of Central Banking', true]],
+        .map(paper => [paper.id, paper.journal, paper.peerReviewed, reviewTagForPaper(paper)]),
+      [['W100', 'International Journal of Central Banking', true, null]],
     );
   }
 });
 
-test('an arXiv preprint whose OpenAlex record is a working paper is published but not peer reviewed', () => {
+test('an arXiv preprint whose OpenAlex record is a working paper is published, not peer reviewed, and tagged as one', () => {
   const preprint = PaperBuilder.create({
     id: 'arxiv:2601.00001',
     title: 'A FEDS paper',
@@ -141,7 +142,9 @@ test('an arXiv preprint whose OpenAlex record is a working paper is published bu
 
   assert.equal(working.publicationStatus, 'published');
   assert.equal(working.peerReviewed, false);
+  assert.equal(reviewTagForPaper(working)?.label, 'Working paper');
   assert.equal(journal.peerReviewed, true);
+  assert.equal(reviewTagForPaper(journal), null);
 });
 
 /**

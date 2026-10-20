@@ -1485,10 +1485,10 @@ test('a heavily cited paper is partial by design and keeps its week', async () =
   assert.equal(maxAgeSeconds(response), 604800);
 });
 
-test('a citing working paper from OpenAlex is not peer reviewed, and a citing work with no venue is unknown', async () => {
+test('a citing working paper from OpenAlex is not peer reviewed and is marked one, and a citing work with no venue is unknown', async () => {
   // OpenAlex returns the IMF series as it returns Nature: `article`, in a
   // `journal`, published version (probed 2026-10-19).
-  const citingWork = (id: string, title: string, source: { display_name: string; type: string } | null) => ({
+  const citingWork = (id: string, title: string, source: { id: string; display_name: string; type: string } | null) => ({
     id: `https://openalex.org/${id}`,
     title,
     type: 'article',
@@ -1502,17 +1502,19 @@ test('a citing working paper from OpenAlex is not peer reviewed, and a citing wo
       id: 'https://openalex.org/W1',
       cited_by_count: 5_000,
       results: [
-        citingWork('W7215107402', 'Working paper', { display_name: 'IMF Working Paper', type: 'journal' }),
-        citingWork('W2919115771', 'Journal article', { display_name: 'Nature', type: 'journal' }),
+        citingWork('W7215107402', 'Working paper', { id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Paper', type: 'journal' }),
+        citingWork('W2919115771', 'Journal article', { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal' }),
         citingWork('W3', 'No venue', null),
       ],
     }), { headers: { 'content-type': 'application/json' } });
   });
 
-  const { citations } = await response.json<{ citations: Array<{ title: string; peerReviewed?: boolean }> }>();
+  const { citations } = await response.json<{ citations: Array<{ title: string; peerReviewed?: boolean; workingPaper?: boolean }> }>();
   const byTitle = new Map(citations.map(paper => [paper.title, paper]));
   assert.equal(byTitle.get('Working paper')!.peerReviewed, false);
+  assert.equal(byTitle.get('Working paper')!.workingPaper, true);
   assert.equal(byTitle.get('Journal article')!.peerReviewed, true);
+  assert.equal(byTitle.get('Journal article')!.workingPaper, undefined);
   assert.equal(byTitle.get('No venue')!.peerReviewed, undefined);
 });
 
