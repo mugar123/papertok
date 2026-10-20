@@ -461,7 +461,8 @@ a phone it opens the map as a sheet. Similar papers opens a feed of
 recommended papers in a full-screen layer that grows out of the button and
 folds back into it (`Feed/SimilarFeedLayer.tsx`). More opens the paper's options
 (`Feed/PaperMenu.tsx`), a dialog on desktop and a drawer on a phone: the
-actions with a one-line hint each (Mark as read, About this paper, Not
+actions with a one-line hint each and their glyph on a tint of the action's own
+accent (About this paper, Mark as read, Not
 interested, the BibTeX/RIS exports), then the share destinations. About this
 paper replaces the actions in the same surface, with a back arrow, and holds
 the status chips, topics, funding and links that are not on the card face.
