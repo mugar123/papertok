@@ -50,13 +50,15 @@ const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 300;
 // digest cron -- which spends outside this ledger -- and the health probe.
 const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // What a cold answer costs OpenAlex, per route, worst case. Reserved in one go
-// before the work starts: a route that spends nine calls and reserves one is a
-// route the daily ceiling does not actually cover.
+// before the work starts: a route that spends seven calls and reserves one is a
+// route the daily ceiling does not actually cover, and one that reserves more
+// than it can spend refuses other readers for calls nobody makes.
 export const OPENALEX_CALLS = Object.freeze({
   relay: 1,
-  // One `works/doi:` lookup, then up to two batches of twenty for each of the two
-  // reference filters and the same again for citations.
-  citationGraph: 9,
+  // One `works/doi:` lookup, then batches of twenty for references and the same
+  // for citations. Each relation's two filters share its 40 candidates, so they
+  // need at most three batches between them (21 + 19 is two plus one).
+  citationGraph: 7,
 });
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
