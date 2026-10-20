@@ -1079,6 +1079,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               trackSkip={handleSkip}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
+              onPickList={onSaveToList}
               getInteractionState={getInteractionState}
               analyticsSurface={analyticsSurface}
               position={index + 1}

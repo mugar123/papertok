@@ -454,8 +454,9 @@ Save pulse when turned on and press in when turned off, and stay still under
 reduced motion. No counts until per-paper totals exist; the names stay in the
 DOM for assistive tech and in a native `title`. Save puts the paper in Read
 later at once, with an "Add to list" toast; a second press takes it out of
-Read later and every list, with Undo. Connections is a toggle: wider than a
-phone it swaps the abstract for the citation map until it is pressed again; on
+Read later and every list, with Undo. On a touch screen, holding Save for half
+a second opens the list picker instead, saved or not. Connections is a toggle:
+wider than a phone it swaps the abstract for the citation map until it is pressed again; on
 a phone it opens the map as a sheet. Similar papers opens a feed of
 recommended papers in a full-screen layer that grows out of the button and
 folds back into it (`Feed/SimilarFeedLayer.tsx`). More opens the paper's options
