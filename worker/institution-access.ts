@@ -237,9 +237,14 @@ const MARKUP = /<(?:\/([A-Za-z_][\w.-]*)|([A-Za-z_][\w.-]*)((?: [\w.:-]+="[^"<>&
  * service would be skipped or lose its link, or a service would be read
  * with the next one's keys. Every saved answer writes its tags this way.
  * Text is not checked, so an unescaped `&` does not stop an answer from
- * being read. No saved answer starts with an XML declaration, but XML
- * allows one at the start, and refusing it would make every answer an
- * outage if Alma began to send one.
+ * being read. `parseResolverAnswer` reads CDATA as literal text, so a
+ * `Filtered` value in CDATA still excludes its service. Outside CDATA,
+ * `unescapeXml` decodes only `&lt;`, `&gt;`, `&quot;`, `&#39;` and `&amp;`;
+ * any other reference stays as written, so a `Filtered` value written
+ * `&#116;rue` would not exclude its service. The 42 saved answers use only
+ * `&lt;` and `&amp;` outside CDATA. No saved answer starts with an XML
+ * declaration, but XML allows one at the start, and refusing it would make
+ * every answer an outage if Alma began to send one.
  */
 function markupHolds(text: string) {
   const open: string[] = [];
