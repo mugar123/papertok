@@ -341,9 +341,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Whether a feed load is running. Set and cleared with `setLoading`, and
   // visible at once: `loading` reaches a callback only after React commits it.
   const feedLoadInFlight = useRef(false);
-  // A non-reset load asked of a closure rendered before the last load ended.
-  // The next committed loadPapers runs it, unless another load starts first.
-  const loadAfterCommit = useRef<Parameters<FeedContextValue['loadPapers']> | null>(null);
+  // A non-reset load asked of a closure rendered before the last load ended,
+  // with the request and session it was asked in. The next committed
+  // loadPapers runs it, unless a load starts or the account changes first.
+  const loadAfterCommit = useRef<{ args: Parameters<FeedContextValue['loadPapers']>; requestId: number; sessionId: number } | null>(null);
   const feedSessionId = useRef(0);
   const openAlexEnrichmentAttempts = useRef(new Set<string>());
   // Papers the slower sources returned after the page painted (see
@@ -1215,14 +1216,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // short-page continuation's timer usually fires before React commits
     // that page.
     if (!reset && loading) {
-      loadAfterCommit.current = [reset, mode, randomizeStart, pageOverride, { keepThroughVisible }];
+      loadAfterCommit.current = {
+        args: [reset, mode, randomizeStart, pageOverride, { keepThroughVisible }],
+        requestId: feedRequestId.current,
+        sessionId: feedSessionId.current,
+      };
       return;
     }
 
     const activeMode = mode || feedMode;
     const requestId = ++feedRequestId.current;
     feedLoadInFlight.current = true;
-    loadAfterCommit.current = null;
     const activeSessionId = feedSessionId.current;
 
     if (reset) {
@@ -2051,12 +2055,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
   useLayoutEffect(() => {
     loadPapersRef.current = loadPapers;
-    const call = loadAfterCommit.current;
-    if (!call) return;
+    const stored = loadAfterCommit.current;
+    if (!stored) return;
     loadAfterCommit.current = null;
     // From a timer: a load started inside this effect would add a render
-    // before the browser shows the page.
-    setTimeout(() => loadPapersRef.current?.(...call), 0);
+    // before the browser shows the page. Checked when it fires, like the
+    // continuation timer's call: after another load or an account change,
+    // the stored page no longer follows the cards on screen.
+    setTimeout(() => {
+      if (stored.requestId === feedRequestId.current && stored.sessionId === feedSessionId.current) {
+        loadPapersRef.current?.(...stored.args);
+      }
+    }, 0);
   }, [loadPapers]);
 
   const refreshFeed = useCallback(async () => {

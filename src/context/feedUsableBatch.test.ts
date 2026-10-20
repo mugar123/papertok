@@ -67,7 +67,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
     userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
-    feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<unknown[] | null>(null),
+    feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<object | null>(null),
     openAlexEnrichmentAttempts: ref(new Set()), openAlexEnrichmentRequests: ref(new Map()),
     lateSourceCandidatesRef: ref([]), latePoolGenerationRef: ref(0),
     setLoading: (value: boolean) => { state.loading = value; }, setError: (value: string | null) => { state.error = value; },
@@ -380,6 +380,19 @@ function hookBody(anchor: string) {
 const loadMoreCallback = hookBody('const loadMore = useCallback(');
 const publishCallback = hookBody('useLayoutEffect(() => {\n    loadPapersRef.current = loadPapers;');
 const compile = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+type Loader = ReturnType<typeof feed>;
+function renders(state: Loader['state'], env: Loader['env'], sources: object) {
+  return () => {
+    const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
+    const loadPapers = compile(callback, scope);
+    return {
+      loadPapers,
+      loadMore: compile(loadMoreCallback, { ...scope, loadPapers }),
+      // `timers` can replace the effect's setTimeout, to choose when its callback runs.
+      commit: (timers = {}) => compile(publishCallback, { ...scope, loadPapers, ...timers })(),
+    };
+  };
+}
 
 for (const commitFirst of [true, false]) {
   test(`only the reset load fills the first screen, and its short page continues without a first screen's wait when React commits it ${commitFirst ? 'before' : 'after'} the continuation fires`, async t => {
@@ -430,15 +443,7 @@ for (const commitFirst of [true, false]) {
       },
       recoverFeedAbstracts: (papers: Paper[]) => papers.some(paper => paper.id === awaiting.id) ? recovery.promise : Promise.resolve([]),
     };
-    const render = () => {
-      const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
-      const loadPapers = compile(callback, scope);
-      return {
-        loadPapers,
-        loadMore: compile(loadMoreCallback, { ...scope, loadPapers }),
-        commit: () => compile(publishCallback, { ...scope, loadPapers })(),
-      };
-    };
+    const render = renders(state, env, sources);
 
     const mounted = render();
     mounted.commit();
@@ -475,6 +480,51 @@ for (const commitFirst of [true, false]) {
     assert.ok(state.papers.some(paper => paper.id === awaiting.id), 'with the card recovery has not answered for');
     assert.deepEqual([...loadingAbstracts()], [awaiting.id], 'which says its abstract is loading');
     assert.ok(requests.some(request => request.painted && request.categories.includes('cs.LG')), 'exploration comes with the next page');
+  });
+}
+
+for (const change of ['a reset load runs', 'the account changes'] as const) {
+  test(`a continuation stored for the next commit is dropped when ${change} before its timer fires`, async t => {
+    const random = t.mock.method(Math, 'random', () => 0.5);
+    const { state, env } = feed();
+    // As above: cancels what the real loader in loadPapersRef still has scheduled.
+    t.after(() => { env.feedSessionId.current += 1; });
+    const starts: number[] = [];
+    const render = renders(state, env, {
+      // Five papers on the first load's random start page, 2, and fifteen elsewhere.
+      fetchPapers: async (_categories: string[], start: number) => {
+        starts.push(start);
+        return start === 30 ? records('first', 5) : records(`page-${start / 15}`, 15);
+      },
+    });
+
+    const mounted = render();
+    mounted.commit();
+    const firstLoad = mounted.loadPapers(true, null, true);
+    render().commit();
+    await firstLoad;
+    // The short page's continuation reaches the closure rendered during the
+    // load, which stores it; the painted render's commit schedules it.
+    await tick();
+    const scheduled: Array<() => void> = [];
+    render().commit({ setTimeout: (callback: () => void) => { scheduled.push(callback); } });
+    assert.equal(scheduled.length, 1, 'the painted render schedules the stored continuation');
+
+    const reset = change === 'a reset load runs';
+    if (reset) {
+      random.mock.mockImplementation(() => 0);
+      await render().loadPapers(true, null, true);
+      render().commit();
+    } else {
+      // What the account effect does when the user changes.
+      env.feedSessionId.current += 1;
+    }
+    scheduled[0]();
+    await wait(20);
+    // The first feed's next page, 3, starts at 45.
+    assert.deepEqual(starts, reset ? [30, 0] : [30], 'no request for the stored page');
+    assert.deepEqual(state.papers.map(paper => paper.id), (reset ? records('page-0', 15) : records('first', 5)).map(paper => paper.id));
+    assert.equal(state.page, reset ? 1 : 3);
   });
 }
 
