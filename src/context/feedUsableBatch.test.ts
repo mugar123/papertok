@@ -14,6 +14,7 @@ import { readProfileSignals } from '../utils/interactionProfile.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
+import { mergeFreshFeedPage } from '../utils/feedReRankSplit.ts';
 import { settleWithin } from '../test-support/deadlineHarness.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
@@ -92,7 +93,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     sessionSeenPapers: ref(new Set(seen)), isKnownPaper: (id: string) => known.includes(id),
     mergeFollowEntityMatches: (...groups: unknown[][]) => groups.flat(),
     diversifiedWeightedShuffle: <T>(values: T) => values, calculateAndAttachScore: () => 0,
-    recommendationWeights: ref({}), takeFeedPage,
+    recommendationWeights: ref({}), takeFeedPage, mergeFreshFeedPage,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
     fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
@@ -105,7 +106,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     logRankingBatch: () => {}, saveSeenPaperIds: () => {}, activeUserId: ref('test-user'),
     autoRetryUsedRef: ref(false), feedCache: ref<Record<string, unknown>>({}), restoredFeedKeyRef: ref(''),
     feedPreferenceSignature: (values: string[]) => values.join('|'), pendingSnapshotWritesRef: ref(new Map()),
-    writeFeedSnapshot: () => {},
+    writeFeedSnapshot: (() => {}) as (userId: string, key: string, snapshot: { papers: Paper[] }) => void,
     loadPapersRef: ref((...args: unknown[]) => { state.continuations.push(args); }),
   };
   const build = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
@@ -189,8 +190,8 @@ test('a Crossref answer that lands during the first-screen wait keeps its books 
     const paints: string[][] = [];
     const setPapers = env.setPapers;
     env.setPapers = value => {
-      if (Array.isArray(value)) paints.push(value.map(paper => paper.id));
       setPapers(value);
+      paints.push(state.papers.map(paper => paper.id));
     };
     await run(true);
     await wait(20);
@@ -436,6 +437,57 @@ test('a later page is shown without waiting for recovery, and its card says the 
   assert.equal(saved.at(-1)?.abstract, 'Recovered source text.');
   assert.deepEqual([...loadingAbstracts()], []);
 });
+
+for (const [name, args] of [
+  ['a later page', [false, 'top', false, 1]],
+  ['a follow change', [true, null, true, undefined, { keepThroughVisible: true }]],
+] as const) {
+  test(`${name} lands below the cards as answers during its load left them: the recovered abstract stays, the removed book stays out`, async t => {
+    const first = { ...records('first', 1)[0], abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } };
+    const book = { ...records('book', 1)[0], id: 'W568341909', doi: '10.1007/978-3-540-76956-9', publicationType: 'article', abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } };
+    const article = { ...records('article', 1)[0], id: 'W3029239115', doi: '10.1016/j.indag.2021.09.002', publicationType: 'article', abstract: 'Publisher text.', sources: { primary: 'openalex', enrichedBy: [] } };
+    let answer!: () => void;
+    t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+      await new Promise<void>(resolve => { answer = resolve; });
+      const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+      return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: DOI.startsWith('10.1007/') ? 'book' : 'journal-article' })) } });
+    });
+    const { state, env, run, loadingAbstracts } = feed({ fast: [], slow: [first, electron, book, article] });
+    Object.assign(env, await freshPublications(`answers-during-${name}`));
+    const recovery = pendingRecords();
+    env.recoverFeedAbstracts = async papers => papers.some(paper => paper.id === electron.id) ? recovery.promise : [];
+    env.CITATION_GATE_MAX_WAIT_MS = 20;
+    await run(true);
+    assert.deepEqual(state.papers.map(paper => paper.id), [first.id, electron.id, book.id, article.id]);
+    assert.deepEqual([...loadingAbstracts()], [electron.id]);
+
+    // The next cards come from a source that answers after the first page's recovery and Crossref.
+    const next = deferred();
+    env.fetchPapers = () => next.promise;
+    let written: Paper[] = [];
+    env.writeFeedSnapshot = (_uid, _key, snapshot) => { written = snapshot.papers; };
+    const loading = run(...args);
+    await tick();
+    recovery.resolve([{ arxivId: '1109.5103', abstract: 'Recovered source text.', sources: { primary: 'arxiv', enrichedBy: [] } }]);
+    answer();
+    await wait(20);
+    // The reader is on the first card, so the book two cards further leaves.
+    const kept = [[first.id, 'Source text.'], [electron.id, 'Recovered source text.'], [article.id, 'Publisher text.']];
+    assert.deepEqual(state.papers.map(paper => [paper.id, paper.abstract]), kept);
+    assert.deepEqual([...loadingAbstracts()], []);
+
+    next.resolve(records('next', 15));
+    await loading;
+    assert.equal(state.error, null);
+    assert.deepEqual([...loadingAbstracts()], []);
+    // The feed cache and the snapshot the next cold open restores hold the same list.
+    const ids = [...kept.map(([id]) => id), ...records('next', 15).map(paper => paper.id)];
+    for (const list of [state.papers, (env.feedCache.current.top as { papers: Paper[] }).papers, written]) {
+      assert.deepEqual(list.map(paper => paper.id), ids);
+      assert.deepEqual(list.slice(0, 3).map(paper => [paper.id, paper.abstract]), kept);
+    }
+  });
+}
 
 test('a card already shown with no abstract keeps it when a later page offers it again through the seen bypass', async t => {
   const existing = records('already-visible', 3).map(paper => ({ ...paper, sources: { primary: 'arxiv', enrichedBy: [] } }));

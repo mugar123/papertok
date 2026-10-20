@@ -1730,51 +1730,53 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       filtered.forEach(p => sessionSeenPapers.current.add(p.id));
       saveSeenPaperIds(activeUserId.current, sessionSeenPapers.current);
 
-      let nextPapers;
-      let nextPage;
-      if (reset) {
-        // A follow change refreshes the ranking but the reader keeps their
-        // place: the cards through the visible one stay, the fresh page lands
-        // below them (mergeFreshFeedPage). A plain reset still replaces all.
-        nextPapers = keepThroughVisible
-          ? mergeFreshFeedPage(papers, filtered, { anchorPaperIds: [visiblePaperIdRef.current] })
-          : filtered;
-        nextPage = currentPage + 1;
-      } else {
-        const prev = papers;
-        const existingIds = new Set(prev.map((p) => p.id));
-        const unique = filtered.filter((p) => !existingIds.has(p.id));
-        nextPapers = [...prev, ...unique];
-        nextPage = currentPage + 1;
-      }
+      // The page joins the list as it is now, not `papers` as this load found
+      // it: while the page loaded, late answers may have filled or removed
+      // cards on screen, and a network expansion may have inserted some.
+      // A follow change refreshes the ranking but the reader keeps their
+      // place: the cards through the visible one stay, the fresh page lands
+      // below them (mergeFreshFeedPage). A plain reset still replaces all.
+      const addPage = (shown: Paper[]) => {
+        if (reset) {
+          return keepThroughVisible
+            ? mergeFreshFeedPage(shown, filtered, { anchorPaperIds: [visiblePaperIdRef.current] })
+            : filtered;
+        }
+        const existingIds = new Set(shown.map((p) => p.id));
+        return [...shown, ...filtered.filter((p) => !existingIds.has(p.id))];
+      };
+      const nextPage = currentPage + 1;
       const nextHasMore = newPapers.length > 0;
+      const snapshotUserId = activeUserId.current;
+      const preferenceSignature = feedPreferenceSignature(userPreferences);
 
-      setPapers(nextPapers);
+      setPapers(current => {
+        const nextPapers = addPage(current);
+        // The cache and the snapshot keep the list the reader sees.
+        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
+        // This write is synchronous and bypasses the debounce map on purpose —
+        // it's the primary persist, not a merge, so it should land immediately.
+        // But it shares its localStorage key (userId, preferenceSignature) with
+        // whatever an in-flight enrichment's `scheduleFeedSnapshotWrite` may
+        // already have pending from an earlier `loadPapers` call (feedSessionId
+        // does not guard this key — only `traverseAndExpandNetwork` bumps it):
+        // an enrichment can schedule against a smaller, older cache object,
+        // and if this fresher write lands before that timer fires, the stale
+        // one would overwrite it 500ms later and regress the snapshot. Cancel
+        // any pending write for this exact key first so this fresher write is
+        // always the one left standing.
+        const snapshotWriteKey = `${snapshotUserId}:${preferenceSignature}`;
+        const pendingSnapshotWrite = pendingSnapshotWritesRef.current.get(snapshotWriteKey);
+        if (pendingSnapshotWrite) {
+          clearTimeout(pendingSnapshotWrite.timer);
+          pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
+        }
+        writeFeedSnapshot(snapshotUserId, preferenceSignature, feedCache.current[activeMode]);
+        return nextPapers;
+      });
       setPage(nextPage);
       setHasMore(nextHasMore);
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
-
-      // Save to cache
-      feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
-      const preferenceSignature = feedPreferenceSignature(userPreferences);
-      // This write is synchronous and bypasses the debounce map on purpose —
-      // it's the primary persist, not a merge, so it should land immediately.
-      // But it shares its localStorage key (userId, preferenceSignature) with
-      // whatever an in-flight enrichment's `scheduleFeedSnapshotWrite` may
-      // already have pending from an earlier `loadPapers` call (feedSessionId
-      // does not guard this key — only `traverseAndExpandNetwork` bumps it):
-      // an enrichment can schedule against a smaller, older cache object,
-      // and if this fresher write lands before that timer fires, the stale
-      // one would overwrite it 500ms later and regress the snapshot. Cancel
-      // any pending write for this exact key first so this fresher write is
-      // always the one left standing.
-      const snapshotWriteKey = `${activeUserId.current}:${preferenceSignature}`;
-      const pendingSnapshotWrite = pendingSnapshotWritesRef.current.get(snapshotWriteKey);
-      if (pendingSnapshotWrite) {
-        clearTimeout(pendingSnapshotWrite.timer);
-        pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
-      }
-      writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
       followShownPapers({
         mode: activeMode, sessionId: activeSessionId, signature: preferenceSignature, waiting: abstractsComing,
@@ -1787,8 +1789,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
       // A short first screen should fill itself even before the reader reaches
       // the scroll sentinel. Use the same bounded pagination as excluded pages;
-      // a competing load or reset cancels this scheduled continuation.
-      if (nextPapers.length < PAGE_SIZE && newPapers.length > 0 && currentPage < 10) {
+      // a competing load or reset cancels this scheduled continuation. The
+      // joined list exists only inside the update above, so this counts from
+      // the list this load found: a card removed since can skip a
+      // continuation, which the scroll sentinel then makes up for, and a card
+      // inserted since can ask for one page more.
+      if (addPage(papers).length < PAGE_SIZE && newPapers.length > 0 && currentPage < 10) {
         setTimeout(() => {
           if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
             loadPapersRef.current?.(false, activeMode, false, nextPage);
