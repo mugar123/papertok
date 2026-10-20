@@ -54,7 +54,7 @@ test('SOURCE: a stored copy from a list opens on the skeleton', async () => {
 
 test('SOURCE: la acción de leído dice «Mark as read»/«Mark as unread», nunca la acción de abrir', async () => {
   const card = stripComments(await read('./PaperCard.tsx'));
-  // In the rail's More menu (MoreActions): the item says what it will do.
+  // In the rail's More panel (PaperMenu): the item says what it will do.
   const item = card.slice(card.indexOf("id: 'read'"), card.indexOf("id: 'skip'"));
   assert.doesNotMatch(item, /Read article|Open version|Open source/);
   assert.match(item, /label: isReadActive \? 'Mark as unread' : 'Mark as read'/);

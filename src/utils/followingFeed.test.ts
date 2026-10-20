@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildFollowReasonLabel,
   getFollowingFeedRelevanceScore,
   orderFollowingFeedPapers,
 } from './followingFeed.ts';
@@ -22,79 +21,6 @@ function followedPaper(id: string, followId: string, overrides = {}) {
     ...overrides,
   };
 }
-
-test('names the followed entity behind a paper', () => {
-  assert.equal(
-    buildFollowReasonLabel([{ type: 'author' as const, displayName: 'Haim Goldberg' }]),
-    'Because you follow Haim Goldberg',
-  );
-  assert.equal(
-    buildFollowReasonLabel([{ type: 'topic' as const, displayName: 'Cosmology' }]),
-    'Because you follow Cosmology',
-  );
-  assert.equal(
-    buildFollowReasonLabel([{ type: 'institution' as const, displayName: 'Leiden University' }]),
-    'Because you follow Leiden University',
-  );
-  assert.equal(
-    buildFollowReasonLabel([{ type: 'project' as const, displayName: 'NuBSM' }]),
-    'Because you follow the project NuBSM',
-  );
-});
-
-test('localizes followed taxonomy topics without changing stored follow data', () => {
-  const galacticAstrophysics = {
-    type: 'topic' as const,
-    canonicalId: 'astro-ph.GA',
-    displayName: 'Astrofísica Galáctica',
-  };
-
-  assert.equal(
-    buildFollowReasonLabel([galacticAstrophysics]),
-    'Because you follow Astrophysics of Galaxies',
-  );
-  assert.equal(galacticAstrophysics.displayName, 'Astrofísica Galáctica');
-});
-
-test('localizes followed institutions without changing their official identity', () => {
-  const university = {
-    type: 'institution' as const,
-    canonicalId: '02f40zc51',
-    displayName: 'Universidad de Salamanca',
-    metadata: {
-      localizedNames: {
-        es: 'Universidad de Salamanca',
-        en: 'University of Salamanca',
-      },
-    },
-  };
-
-  assert.equal(
-    buildFollowReasonLabel([university]),
-    'Because you follow University of Salamanca',
-  );
-  assert.equal(university.displayName, 'Universidad de Salamanca');
-});
-
-test('joins two reasons and collapses three or more', () => {
-  assert.equal(
-    buildFollowReasonLabel([
-      { type: 'author' as const, displayName: 'Ada Lovelace' },
-      { type: 'topic' as const, displayName: 'Computing' },
-    ]),
-    'Because you follow Ada Lovelace and Computing',
-  );
-  assert.equal(
-    buildFollowReasonLabel([
-      { type: 'author' as const, displayName: 'A' },
-      { type: 'topic' as const, displayName: 'B' },
-      { type: 'project' as const, displayName: 'C' },
-    ]),
-    'Matches several things you follow',
-  );
-  assert.equal(buildFollowReasonLabel([]), '');
-  assert.equal(buildFollowReasonLabel([{ type: 'author' as const }]), '');
-});
 
 test('uses seen state as a novelty signal without hiding a much stronger paper', () => {
   const items = [
@@ -187,17 +113,6 @@ test('SOURCE: the Following page ranks on its first render and merges refreshes'
   assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
     'an empty initial state painted the empty state for a frame before the cards');
   assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
-});
-
-test('SOURCE: the follow-reason pill arrives after the paper it explains, not on a fade of its own ahead of it', async () => {
-  const jsx = await readSource('../components/Feed/PaperCard.tsx');
-  const css = await readSource('../components/Feed/PaperCard.css');
-  assert.match(jsx, /<div className="pc-follow-reason">/);
-  assert.doesNotMatch(jsx, /<motion\.div\s+className="pc-follow-reason"/);
-  assert.match(css, /\.pc-title \{ --arrive: 0; \}/, 'the paper comes first');
-  assert.match(css, /\.pc-follow-reason \{ --arrive: 4; \}/, 'and its label after the abstract, never alone ahead of it');
-  assert.match(css, /@keyframes pcArrive \{/);
-  assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/, 'the sheet only travels; the pieces carry the fade');
 });
 
 /**

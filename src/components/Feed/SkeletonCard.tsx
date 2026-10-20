@@ -23,17 +23,6 @@ export default function SkeletonCard() {
             <span className="sk-block" style={{ width: '2.5rem' }} />
             <span className="sk-block" style={{ width: '5rem' }} />
           </div>
-          <div className="pc-filed">
-            <div className="pc-topics sk-topics">
-              <span className="sk-block" style={{ width: '7rem' }} />
-              <span className="sk-block" style={{ width: '5.5rem' }} />
-              <span className="sk-block" style={{ width: '4rem' }} />
-            </div>
-            <div className="pc-chips sk-chips">
-              <span className="sk-block" style={{ width: '5.5rem' }} />
-              <span className="sk-block" style={{ width: '3.5rem' }} />
-            </div>
-          </div>
           <div className="sk-title">
             <span className="sk-block" style={{ width: '94%' }} />
             <span className="sk-block" style={{ width: '58%' }} />

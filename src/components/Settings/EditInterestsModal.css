@@ -113,6 +113,12 @@
   font-size: var(--fs-sm);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .eim-rail-tab:not([data-active]):hover {
+    background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  }
+}
+
 .eim-rail-label {
   flex: 1;
   min-width: 0;

@@ -9,7 +9,7 @@
   animation: none;
 }
 
-.sk :is(.pc-meta, .pc-topics, .pc-chips, .pc-authors, .pc-action-bar) {
+.sk :is(.pc-meta, .pc-authors, .pc-action-bar) {
   animation: none;
 }
 
@@ -52,14 +52,6 @@
 
 .sk-meta .sk-block {
   height: 11px;
-}
-
-.sk-topics .sk-block {
-  height: 24px;
-}
-
-.sk-chips .sk-block {
-  height: 22px;
 }
 
 /* Two lines of the 33.6px serif title on its 39px line. */

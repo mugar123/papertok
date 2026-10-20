@@ -64,6 +64,6 @@ test('the collapsed abstract fades out on a whole line, never half of one', asyn
   const words = css.match(/\.pc-abstract > p \{[^}]*\}/)?.[0] || '';
   assert.doesNotMatch(words, /\{[^}]*\{/, 'no rule nested inside the paragraph rule');
   assert.match(words, /line-height: 1\.6;/);
-  assert.match(css, /\n\.pc-abstract \{\s*-webkit-mask-image: linear-gradient\(to bottom, black 60%, transparent 100%\);[^}]*mask-size: 100% calc\(100% - var\(--pc-abstract-cut, 0px\)\);[^}]*mask-repeat: no-repeat;/);
+  assert.match(css, /\n\.pc-abstract \{\s*-webkit-mask-image: linear-gradient\(to bottom, black calc\(100% - 4em\), transparent 100%\);[^}]*mask-size: 100% calc\(100% - var\(--pc-abstract-cut, 0px\)\);[^}]*mask-repeat: no-repeat;/);
   assert.match(css, /\n\.pc-abstract \{[^}]*cursor: pointer;\s*\}/, 'the cursor is a declaration again, not comment text');
 });

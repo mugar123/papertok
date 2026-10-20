@@ -5,15 +5,17 @@ import { readFile } from 'node:fs/promises';
 const read = (path: string | URL) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-test('SOURCE: the subjects and the status chips sit between the masthead and the title, and none leaves no gap', async () => {
+test('SOURCE: the topics, status and links live in About this paper, and the field still leads the masthead', async () => {
   const jsx = stripComments(await read('./PaperCard.tsx'));
-  const meta = jsx.indexOf('<div className="pc-meta">');
-  const filed = jsx.indexOf('<div className="pc-filed">');
-  const topics = jsx.indexOf('className="pc-topics"');
-  const chips = jsx.indexOf('<div className="pc-chips">');
   const title = jsx.indexOf('className="pc-title"');
-  assert.ok(meta > 0 && filed > meta && topics > filed && chips > topics && title > chips, 'masthead, then the subjects and the chips, then the title');
-  assert.equal((jsx.match(/<div className="pc-chips">/g) || []).length, 1, 'one row of chips');
+  assert.doesNotMatch(jsx, /className="pc-filed"/, 'no status row on the card');
+  assert.match(jsx, /\{ id: 'about', label: 'About this paper', hint: '[^']+', Icon: Info,/, 'the More menu opens it');
+  const about = jsx.slice(jsx.indexOf('const aboutSections = ('));
+  assert.match(jsx, /panel=\{menuView === 'about' \? \{[\s\S]*?<div className="pc-about">\{aboutSections\}<\/div>/, 'the menu turns into it');
+  assert.match(about, /<div className="pc-chips">[\s\S]*reviewTag[\s\S]*accessTag/, 'status chips in the panel');
+  assert.match(about, /\{topicsList\}/, 'topics in the panel');
+  assert.doesNotMatch(jsx, /pc-project-badge/, 'no funding badge on the card');
+  assert.match(about, /\{project && \([\s\S]*?'Funding'[\s\S]*?onClick=\{openProject\}/, 'the funding project in the panel');
   assert.match(jsx.slice(jsx.indexOf('<div className="pc-meta">'), title), /className="pc-masthead-field pc-topic-link"/, 'the field leads the masthead');
 
   const css = await read('./PaperCard.css');
