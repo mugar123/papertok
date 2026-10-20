@@ -351,7 +351,7 @@ export function salvageSections(rawText: unknown) {
  * would have been a section. That count is the only trace of the cut.
  */
 export function createSectionAssembler() {
-  let buffer = '';
+  let fragments: string[] = [];
   let index = 0;
   let dropped = 0;
   const take = (line: string) => {
@@ -366,22 +366,24 @@ export function createSectionAssembler() {
   };
   return {
     push(text: string) {
-      buffer += text;
       const sections: RewriteSection[] = [];
-      let newlineAt = buffer.indexOf('\n');
+      let start = 0;
+      let newlineAt = text.indexOf('\n');
       while (newlineAt !== -1) {
-        const line = buffer.slice(0, newlineAt);
-        buffer = buffer.slice(newlineAt + 1);
-        const section = take(line);
+        fragments.push(text.slice(start, newlineAt));
+        const section = take(fragments.join(''));
+        fragments = [];
         if (section) sections.push(section);
-        newlineAt = buffer.indexOf('\n');
+        start = newlineAt + 1;
+        newlineAt = text.indexOf('\n', start);
       }
+      if (start < text.length) fragments.push(text.slice(start));
       return sections;
     },
     /** The last line usually arrives without a trailing newline. */
     flush() {
-      const line = buffer;
-      buffer = '';
+      const line = fragments.join('');
+      fragments = [];
       const section = take(line);
       return section ? [section] : [];
     },
@@ -395,6 +397,13 @@ export function createSectionAssembler() {
    Provider SSE
    ============================================================ */
 
+/** OpenAI finish reasons normalized to the existing cache contract. */
+const OPENAI_FINISH_REASONS: Readonly<Partial<Record<string, string>>> = Object.freeze({
+  stop: 'STOP',
+  length: 'MAX_TOKENS',
+  content_filter: 'SAFETY',
+});
+
 /**
  * Extracts the text delta from one SSE line.
  *
@@ -405,61 +414,41 @@ export function createSectionAssembler() {
  * so a line is a sufficient unit. NaN's is the OpenAI chunk, where a reasoning
  * delta travels apart from the answer and is not part of the rewrite.
  */
-export function extractSseTextDelta(line: unknown) {
+export function parseSseEvent(line: unknown) {
   const trimmed = String(line || '').trim();
-  if (!trimmed.startsWith('data:')) return '';
+  if (!trimmed.startsWith('data:')) return null;
   const payload = trimmed.slice(5).trim();
-  if (!payload || payload === '[DONE]') return '';
+  if (!payload || payload === '[DONE]') return null;
   try {
     const parsed: SsePayload = JSON.parse(payload);
     if (Array.isArray(parsed?.choices)) {
-      const content = parsed.choices[0]?.delta?.content;
-      return typeof content === 'string' ? content : '';
+      const choice = parsed.choices[0];
+      const content = choice?.delta?.content;
+      const reason = cleanText(choice?.finish_reason, 40);
+      return {
+        text: typeof content === 'string' ? content : '',
+        finishReason: OPENAI_FINISH_REASONS[reason] || reason.toUpperCase(),
+      };
     }
-    return (parsed?.candidates?.[0]?.content?.parts || [])
-      .map(part => part?.text || '')
-      .join('');
+    const candidate = parsed?.candidates?.[0];
+    return {
+      text: (candidate?.content?.parts || []).map(part => part?.text || '').join(''),
+      finishReason: cleanText(candidate?.finishReason, 40),
+    };
   } catch {
-    return '';
-  }
-}
-
-/**
- * OpenAI's finish reasons in Gemini's words, which are the ones
- * `cacheableFinish` and the logs already speak.
- */
-const OPENAI_FINISH_REASONS: Readonly<Partial<Record<string, string>>> = Object.freeze({
-  stop: 'STOP',
-  length: 'MAX_TOKENS',
-  content_filter: 'SAFETY',
-});
-
-/** Reads why the model stopped, so an empty rewrite can be explained. */
-export function extractSseFinishReason(line: unknown) {
-  const trimmed = String(line || '').trim();
-  if (!trimmed.startsWith('data:')) return '';
-  try {
-    const parsed: SsePayload = JSON.parse(trimmed.slice(5).trim());
-    const openAIReason = cleanText(parsed?.choices?.[0]?.finish_reason, 40);
-    if (openAIReason) return OPENAI_FINISH_REASONS[openAIReason] || openAIReason.toUpperCase();
-    return cleanText(parsed?.candidates?.[0]?.finishReason, 40);
-  } catch {
-    return '';
+    return null;
   }
 }
 
 /** Splits an SSE byte stream into lines, tolerating LF and CRLF endings. */
 export function createSseLineSplitter() {
-  let buffer = '';
+  let fragments: string[] = [];
   return (chunk: unknown) => {
-    buffer += String(chunk).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const lines = [];
-    let newlineAt = buffer.indexOf('\n');
-    while (newlineAt !== -1) {
-      lines.push(buffer.slice(0, newlineAt));
-      buffer = buffer.slice(newlineAt + 1);
-      newlineAt = buffer.indexOf('\n');
-    }
+    const parts = String(chunk).split(/\r\n|[\r\n]/);
+    fragments.push(parts[0]);
+    if (parts.length === 1) return [];
+    const lines = [fragments.join(''), ...parts.slice(1, -1)];
+    fragments = parts.at(-1) ? [parts.at(-1)!] : [];
     return lines;
   };
 }
@@ -488,8 +477,10 @@ export async function* streamModelSections(upstreamBody: { getReader(): Pick<Rea
       if (done) break;
       const chunk = typeof value === 'string' ? value : decoder.decode(value, { stream: true });
       for (const line of splitLines(chunk)) {
-        finishReason = extractSseFinishReason(line) || finishReason;
-        const delta = extractSseTextDelta(line);
+        const event = parseSseEvent(line);
+        if (!event) continue;
+        finishReason = event.finishReason || finishReason;
+        const delta = event.text;
         if (!delta) continue;
         if (!firstTextAtMs) firstTextAtMs = Date.now() - startedAt;
         rawText += delta;

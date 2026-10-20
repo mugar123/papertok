@@ -222,6 +222,11 @@ Since 2026-10-06 every AI route (`/ai/rewrite`, `/ai/annotate`) answers through 
 
 With `AI_PROVIDER = "gemini"`, `/ai/rewrite` streams from `AI_REWRITE_MODEL` (or `AI_MODEL` when that is unset) and retries the call that opens the stream once on `AI_FALLBACK_MODEL` when Gemini answers `AI_BUSY`, `AI_UNAVAILABLE` or `AI_QUOTA_EXHAUSTED`. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes.
 
+The reader considers a rewrite complete only after a `done` event whose `sectionCount`
+matches the received sections, with no error and no `truncated` flag. EOF alone is not
+completion. Interrupted or truncated text remains readable with an incomplete notice
+and a retry action, and is not stored in the browser's completed-rewrite cache.
+
 The Worker limits AI usage per user and globally per UTC day with atomic reservations in the
 `RequestQuotaLedger` Durable Object. A reservation is consumed before contacting the provider,
 so concurrent tabs cannot exceed the configured limit and failed provider calls fail safely.
