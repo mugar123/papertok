@@ -448,7 +448,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 ### The Action Rail (signature)
 The card's right-hand column: Like, Save, Connections, Similar papers and More
 (⋯). Each is an icon-only ghost button, a 28px glyph in its own colour (`--rail`)
-on a 52px tap area, with no tile behind it; the active state is the filled glyph. Like and
+on a 52px tap area, with no tile behind it at rest; a fine pointer's hover fills
+that area with its colour at 10%, and the active state is the filled glyph. Like and
 Save pulse when turned on and press in when turned off, and stay still under
 reduced motion. No counts until per-paper totals exist; the names stay in the
 DOM for assistive tech and in a native `title`. Save puts the paper in Read

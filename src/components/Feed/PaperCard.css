@@ -1159,7 +1159,13 @@ button.pc-topics-pop-item:focus-visible {
   height: 28px;
 }
 
+/* Ghost at rest, so the hover is the tile: a wash of the button's own colour
+   behind the glyph, the area a click lands on. */
 @media (hover: hover) and (pointer: fine) {
+  .pc-side-btn:hover .pc-side-icon {
+    background: color-mix(in srgb, var(--rail, var(--text-secondary)) 10%, transparent);
+  }
+
   .pc-side-btn:hover .pc-side-label {
     color: var(--rail, var(--text-secondary));
   }
