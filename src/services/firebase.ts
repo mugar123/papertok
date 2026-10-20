@@ -7,11 +7,23 @@ declare const window: { location: { href: string }; history: { state: unknown; r
 
 export const IS_DEMO = false;
 
+import type { PopupReadiness } from './popupRedirectResolver.ts';
 import { initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, GithubAuthProvider, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  connectAuthEmulator,
+  GithubAuthProvider,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  signInWithCredential,
+} from 'firebase/auth';
 import { connectFirestoreEmulator, disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
 import { isOffline, registerStallRecovery } from '../utils/boundedRead.ts';
 import { createStreamRecovery } from '../utils/streamRecovery.ts';
+import { deferPopupRedirectResolver, preparePopupRedirectResolver } from './popupRedirectResolver.ts';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -35,7 +47,25 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+// Firebase's popup resolver, without its start-up load (popupRedirectResolver.ts).
+// The institution link's second Auth instance takes it too (institutionService.ts).
+export const popupRedirectResolver = deferPopupRedirectResolver(browserPopupRedirectResolver);
+// What `getAuth` sets up, with a popup resolver that loads its scripts after
+// Auth reports the session instead of before (popupRedirectResolver.ts).
+// Popup and redirect calls pass no resolver, so they use this one. Passing
+// `browserPopupRedirectResolver` would get a separate instance that nothing
+// has loaded ahead of the tap.
+const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+  popupRedirectResolver,
+});
+// Whether a Google or GitHub window would open inside the press
+// (usePopupReady). Demo mode opens no popups, so it loads nothing and no
+// control waits.
+const popupReadiness: PopupReadiness = IS_DEMO
+  ? { ready: true, subscribe: () => () => {} }
+  : preparePopupRedirectResolver(auth);
+
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();
 // `user:email` is requested on purpose (F5). Without it GitHub only hands over
@@ -52,13 +82,24 @@ githubProvider.addScope('user:email');
 // separately, so database persistence is unnecessary here.
 const db = getFirestore(app);
 
+// The Auth emulator accepts an unsigned JSON claim set as a Google credential.
+// Emulator sign-in below and re-authentication (authIdentityService.ts) both
+// build it here, so the same name always reaches the same emulator account.
+export function emulatorGoogleCredential(name: string) {
+  return GoogleAuthProvider.credential(JSON.stringify({
+    sub: name,
+    email: `${name}@example.com`,
+    email_verified: true,
+    name,
+  }));
+}
+
 // `npm run dev:emulators` starts the Firebase emulators and runs Vite in
 // `emulators` mode, which points both SDKs at them, so every account and every
 // Firestore read and write stays on this machine. Ports match firebase.json.
 //
 // A page load with nobody signed in signs in as `tester@example.com`, and
-// `?as=<name>` switches to `<name>@example.com`. The Auth emulator accepts an
-// unsigned JSON claim set as a Google credential, so the same name always
+// `?as=<name>` switches to `<name>@example.com`. The same name always
 // reopens the same account, and a new one goes through onboarding like any
 // first sign-in. The production build drops this whole block.
 if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'emulators') {
@@ -77,12 +118,7 @@ if ((import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'emu
     auth.authStateReady().then(() => {
       const name = requested || (auth.currentUser ? '' : 'tester');
       if (!name || auth.currentUser?.email === `${name}@example.com`) return undefined;
-      return signInWithCredential(auth, GoogleAuthProvider.credential(JSON.stringify({
-        sub: name,
-        email: `${name}@example.com`,
-        email_verified: true,
-        name,
-      })));
+      return signInWithCredential(auth, emulatorGoogleCredential(name));
     }).catch(error => console.error('Emulator sign-in failed', error));
   }
 }
@@ -99,5 +135,5 @@ registerStallRecovery(createStreamRecovery({
   isOffline,
 }));
 
-export { auth, googleProvider, githubProvider, db };
+export { auth, googleProvider, githubProvider, db, popupReadiness };
 export default app;

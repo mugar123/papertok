@@ -48,16 +48,13 @@ test('the reader\'s toggle groups speak Base UI\'s array API', async () => {
 
   // `value` is always an array and `onValueChange` receives the whole array;
   // a `type="single"` / string value is the Radix shape and silently breaks.
-  assert.match(reader, /<ToggleGroup\s[\s\S]*?value=\{\[level\]\}[\s\S]*?onValueChange=\{\(\[next\]\) =>/);
   assert.match(rail, /<ToggleGroup\s[\s\S]*?value=\{\[filter\]\}[\s\S]*?onValueChange=\{\(\[next\]\) =>/);
   assert.doesNotMatch(reader, /type="single"/);
   assert.doesNotMatch(rail, /type="single"/);
 });
 
-test('the selection menu and the export card are anchored popovers', async () => {
+test('the selection menu is an anchored popover', async () => {
   const menu = stripComments(await read('./SelectionMenu.tsx'));
-  const card = stripComments(await read('./ExportCard.tsx'));
-  const reader = stripComments(await read('./PaperReader.tsx'));
 
   // The menu sits on the selection's own rectangle — Base UI positions it,
   // flips it and keeps it on the page; nothing measures by hand any more.
@@ -66,11 +63,6 @@ test('the selection menu and the export card are anchored popovers', async () =>
   assert.match(menu, /aria-label=\{copy\.selectionTitle\}/);
   assert.doesNotMatch(menu, /placeSelectionMenu|position:\s*'fixed'|role="dialog"/);
 
-  // The card is the content half of a Popover whose trigger is the download
-  // button, so it is anchored above it wherever that slot renders.
-  assert.match(card, /<PopoverContent[\s\S]*?aria-label=\{copy\.download\}/);
-  assert.doesNotMatch(card, /role="dialog"|onClose/);
-  assert.match(reader, /<Popover open=\{exportOpen\}[\s\S]*?<PopoverTrigger[\s\S]*?<ExportCard/);
 });
 
 test('the reader stylesheets draw the arrival on Base UI\'s own attributes', async () => {

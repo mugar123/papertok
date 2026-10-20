@@ -27,6 +27,38 @@ test('deleting an account is confirmed in an AlertDialog that nothing dismisses 
   assert.match(jsx, /role="status"\s+aria-live="polite"/);
 });
 
+test('deleting an account signs the person in again from the click, before anything is deleted', async () => {
+  // Browsers block a popup that is not opened by the user's gesture, so the
+  // sign-in has to be the handler's first await and has to come before the
+  // deletion service.
+  const jsx = await read('./DeleteAccountDialog.tsx');
+  const handler = jsx.match(/const handleDelete = async \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? '';
+  const awaited = [...handler.matchAll(/await (\w+)\(/g)].map(match => match[1]);
+  assert.deepEqual(awaited.slice(0, 2), ['reauthenticateCurrentUser', 'deleteAccount']);
+  // The account deleted is the one that signed in again, not whoever holds the
+  // session when the window closes.
+  const confirmedUid = handler.match(/const (\w+) = await reauthenticateCurrentUser\(\)/)?.[1];
+  assert.ok(confirmedUid, 'the sign-in result is kept');
+  assert.match(handler, new RegExp(`await deleteAccount\\(${confirmedUid}\\)`));
+});
+
+/**
+ * The sign-in again is a popup too: until its scripts have loaded, a confirmed
+ * delete waits, focusable and described by "Preparing sign-in…", and a press
+ * starts nothing.
+ */
+test('a confirmed delete waits until its sign-in window can open inside the press', async () => {
+  const jsx = await read('./DeleteAccountDialog.tsx');
+  assert.match(jsx, /const popupReady = usePopupReady\(popupReadiness\);\s*const held = confirmed && !popupReady;/);
+  const handler = jsx.match(/const handleDelete = async \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? '';
+  assert.match(handler, /^\s*if \(!confirmed \|\| working \|\| held\) return;/);
+  const confirm = jsx.match(/<Button\b[^>]*?className="delete-account-confirm"[\s\S]*?\n\s*>/)?.[0] ?? '';
+  assert.match(confirm, /disabled=\{!confirmed \|\| working \|\| held\}/);
+  assert.match(confirm, /focusableWhenDisabled=\{held\}/);
+  assert.match(confirm, /aria-describedby=\{held \? errorId : undefined\}/);
+  assert.match(jsx, /\{held && copy\.preparing\}/);
+});
+
 test('the interests editor is a modal Dialog with a named close and pressed chips', async () => {
   const jsx = await read('./EditInterestsModal.tsx');
   assert.match(jsx, /from '\.\.\/ui\/dialog\.tsx'/);
@@ -91,4 +123,23 @@ test('the settings pages carry their own field and switch styles, with no public
   assert.ok(dark, 'SettingsPage.css has no dark-theme block for .settings-page');
   assert.match(dark[0], /--settings-panel-line:\s*var\(--border-strong\)/);
   assert.match(css, /\.profile-fields\s*\{[^}]*border:\s*1px solid var\(--settings-panel-line\)/);
+});
+
+/**
+ * Connect opens a Google or GitHub window. Opened after its scripts finish
+ * loading, it can land outside the press, where Safari blocks it, so the
+ * button waits for them (usePopupReady), focusable and described as preparing.
+ */
+test('Connect stays disabled but focusable until its window can open inside the press', async () => {
+  const jsx = await read('./SettingsPage.tsx');
+  assert.match(jsx, /const preparing = !usePopupReady\(popupReadiness\);/);
+  const connect = jsx.match(/<Button\b(?:(?!<Button\b)[\s\S])*?onClick=\{\(\) => handleLink\(method\)\}[\s\S]*?\n\s*>/)?.[0] ?? '';
+  assert.match(connect, /disabled=\{Boolean\(linking\) \|\| preparing\}/);
+  assert.match(connect, /focusableWhenDisabled=\{preparing\}/);
+  assert.match(connect, /aria-describedby=\{preparing \? `\$\{preparingId\}-\$\{method\.id\}` : undefined\}/);
+  assert.match(jsx, /\{linking === method\.id \|\| preparing\s*\? <CircleNotch\b/);
+  // "Preparing sign-in…" shows in the row it holds, under its description,
+  // rather than between the ruled rows.
+  const content = jsx.match(/<div className="settings-row-content">\s*<h3 className="settings-method-name">[\s\S]*?\n\s*<\/div>/)?.[0] ?? '';
+  assert.match(content, /\{!method\.linked && <PreparingNote id=\{`\$\{preparingId\}-\$\{method\.id\}`\} preparing=\{preparing\} \/>\}/);
 });

@@ -227,17 +227,16 @@ test('FeedContainer renders its landmark as <main> with a visually hidden h1', a
   );
 });
 
-test('the feed landmark stays opt-in, or the guest route nests two <main> elements', async () => {
+test('the feed landmark stays opt-in, or the Similar layer adds a second <main>', async () => {
   const feed = await readSource(FEED_CONTAINER_JSX);
 
   assert.match(
     feed,
     /function FeedLandmark\(\{ landmark, className = 'feed-wrapper', children \}: PropsWithChildren<\{ landmark: FeedContainerProps\['landmark'\]; className\?: string \}>\) \{\s*if \(!landmark\) \{\s*return <div className=\{className\}>\{children\}<\/div>;/,
     'FeedLandmark no longer falls back to a plain `<div>` when no `landmark` prop is '
-    + 'passed. This branch is not defensive coding: GuestFeedPage renders its own '
-    + '`<main className="guest-feed-page">` around this component, so an unconditional '
-    + '`<main>` here puts one landmark inside the other on the public route — invalid '
-    + 'HTML and two "main" regions. FollowingFeedPage passes a landmark of its own '
+    + 'passed. This branch is not defensive coding: the Similar layer renders this '
+    + 'component as an overlay over a page that already has its `<main>`, so an '
+    + 'unconditional one here puts two "main" regions on the screen. FollowingFeedPage passes a landmark of its own '
     + '("Following" / "Siguiendo") since 2026-09-18, which is why the prop is opt-in '
     + 'per consumer rather than defaulted on.',
   );
@@ -323,6 +322,11 @@ test('`/following` passes its own landmark, with its own heading', async () => {
  */
 const OUTLINE_OFF_ON_PURPOSE = new Map([
   [
+    '.rd-pin:focus-visible',
+    'the pin is a zero-size anchor so it never moves the paragraph; the visible number '
+    + 'is its ::before, and .rd-pin:focus-visible::before draws the 2px --focus-ring on it',
+  ],
+  [
     '.account-menu',
     'the account menu’s popup is a container, not a control: Base UI moves focus on to '
     + 'its items as soon as it opens, and the items (.account-menu-item, the theme '
@@ -341,18 +345,10 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'rendering bug rather than as focus',
   ],
   [
-    '.gip-title:focus-visible',
-    'GuestInterestsPrompt moves initialFocus to the sheet’s h2 (tabIndex={-1}) so the '
-    + 'browser does not scroll the sheet to the first chip instead. Like #main-content '
-    + 'above, it is never a normal tab stop: a keyboard user moving through the sheet '
-    + 'never lands here from their own Tab press, so a ring around plain dialog prose '
-    + 'would read as a rendering bug rather than as focus',
-  ],
-  [
     '.gw-title:focus-visible',
     'WelcomeShell moves focus to each step’s h1 (tabIndex={-1}) when the reader moves '
     + 'between steps, so a screen reader starts reading the new step and Tab starts from '
-    + 'its top. It is never a tab stop of its own; like .gip-title above, a ring round '
+    + 'its top. It is never a tab stop of its own; like #main-content above, a ring round '
     + 'a headline would read as a rendering bug rather than as focus',
   ],
   [
@@ -640,21 +636,9 @@ test('no component outranks the global focus ring from JSX', async () => {
 // `page-has-heading-one` was closed for the signed-in routes on 2026-09-18;
 // these are the routes that pass went round.
 
-test('the guest feed names itself with a visually hidden h1 inside its own <main>', async () => {
-  // A JSX comment leaves its braces behind once the comment is stripped.
-  const guest = (await readSource(new URL('./components/Public/GuestFeedPage.tsx', import.meta.url)))
-    .replace(/\{\s*\}/g, '');
-  assert.match(
-    guest,
-    /<main className="guest-feed-page">\s*<h1 className="visually-hidden">\{'[^']+'\}<\/h1>\s*<header className="guest-feed-header"/,
-    'the guest route has no h1 above the paper titles, or it sits outside its <main>.',
-  );
-  assert.equal((guest.match(/<main\b/g) || []).length, 1, 'one main, no nesting');
-  assert.equal((guest.match(/<h1\b/g) || []).length, 1);
-  // The welcome, which the same route shows first, brings its own pair
-  // through the shared shell.
+test('the welcome names itself with one h1 inside its own <main>', async () => {
   const welcome = await readSource(new URL('./components/Public/WelcomeShell.tsx', import.meta.url));
-  assert.equal((welcome.match(/<motion\.main\b/g) || []).length, 1);
+  assert.equal((welcome.match(/<main\b/g) || []).length, 1);
   assert.equal((welcome.match(/<h1\b/g) || []).length, 1);
 });
 

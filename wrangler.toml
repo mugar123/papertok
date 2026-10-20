@@ -94,6 +94,10 @@ class_name = "EmailDeliveryLedger"
 name = "REQUEST_QUOTA_LEDGER"
 class_name = "RequestQuotaLedger"
 
+[[durable_objects.bindings]]
+name = "PAPER_REWRITE_SESSION"
+class_name = "PaperRewriteSession"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KimiBudgetLedger"]
@@ -106,5 +110,25 @@ new_sqlite_classes = ["EmailDeliveryLedger"]
 tag = "v3"
 new_sqlite_classes = ["RequestQuotaLedger"]
 
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["PaperRewriteSession"]
+
 [triggers]
 crons = ["*/20 7-13 * * *"]
+
+# Workers Logs: keeps the Worker's console lines, 3 days on the Free plan
+# (worker/README.md, "Logs"). This block has to stay: without it every
+# `wrangler deploy` switches Workers Logs off, whatever the dashboard says.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Invocation logs would add one record per request with its full URL, and the
+# URL carries search text and unsubscribe tokens. Off: only console lines.
+[observability.logs]
+invocation_logs = false
+
+# Gives GET /health the id and tag of the version that is answering.
+[version_metadata]
+binding = "CF_VERSION_METADATA"

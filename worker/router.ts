@@ -10,7 +10,6 @@ import {
   peekAIQuota,
   verifyFirebaseAccount,
 } from './ai-explanation.ts';
-import { handlePaperRewrite } from './ai-rewrite.ts';
 import { handlePassageAnnotation } from './ai-annotation.ts';
 import { isNanConfigured } from './nan-client.ts';
 import {
@@ -120,6 +119,21 @@ function providerAuthFailure(error: unknown, origin: string, env: WorkerEnv) {
 async function authenticateProtectedProviderRequest(request: Request, env: WorkerEnv, pathname: string) {
   if (!PROTECTED_PROVIDER_PATHS.has(pathname)) return null;
   return verifyFirebaseIdentity(request, env);
+}
+
+// What a log line may say about a request: the route's fixed part. The query
+// string is never read, `/share/*` keeps no key and `/openalex/*` no id, and a
+// segment that is not a lowercase route word ends the route, so a DOI, a
+// token or an address never reaches Workers Logs.
+export function routeForLog(pathname: string) {
+  const segments = pathname.split('/').slice(1, 3);
+  if (segments[0] === 'share') return '/share';
+  const fixed: string[] = [];
+  for (const segment of segments) {
+    if (!/^[a-z][a-z0-9-]*$/.test(segment)) break;
+    fixed.push(segment);
+  }
+  return `/${fixed.join('/')}`;
 }
 
 const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
@@ -321,13 +335,11 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      // The handler answers with the response itself rather than a payload to
-      // wrap: a rewrite is streamed as NDJSON and its first line has to leave
-      // before the last one exists, so there is nothing here to serialize. That
-      // is also why CORS goes in as `extraHeaders` — those headers have to be
-      // on the streaming response when it is created, not added to a body this
-      // function never sees.
-      return await handlePaperRewrite(request, env, corsHeaders(origin, env));
+      const sessions = env.PAPER_REWRITE_SESSION;
+      if (!sessions) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+      // One object per request isolates generation CPU. Forward the body
+      // directly so the Free Worker does not execute per model fragment.
+      return await sessions.get(sessions.newUniqueId()).fetch(request);
     } catch (error) {
       const knownError = error instanceof AIExplanationError;
       return json(
@@ -379,6 +391,11 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
       ),
       publishingConfigured: isServiceAccountConfigured(env),
+      // The `[version_metadata]` binding: which deploy is answering. `tag` is
+      // the one given to `wrangler deploy --tag`, and null for an untagged one.
+      version: env.CF_VERSION_METADATA
+        ? { id: env.CF_VERSION_METADATA.id, tag: env.CF_VERSION_METADATA.tag || null }
+        : null,
     }, 200, corsHeaders(origin, env));
   }
   if (url.pathname === '/health/email') {

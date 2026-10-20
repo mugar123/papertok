@@ -12,9 +12,6 @@ interface FeedSource {
   // A source without one (the Similar layer's fixed list) gets no refresh pill.
   refresh?: () => void;
   isRefreshing?: boolean;
-  publicMode?: boolean;
-  onAuthRequired?: (reason: string) => void;
-  onNotInterested?: (paperId: string) => void;
   onPaperViewed?: (paper: Paper) => void;
   surface?: string;
   showFollowReason?: boolean;
@@ -32,6 +29,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 
 import PaperCard from './PaperCard.tsx';
@@ -165,9 +163,8 @@ const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
-// into every return: GuestFeedPage already renders its own `<main>` around
-// this component, so an unconditional one here would nest two landmarks and
-// produce invalid HTML. Sólo lo pasa quien ES la raíz de una ruta: App.jsx
+// into every return: the Similar layer renders a feed too, and it is an
+// overlay over a page, not a page of its own. Sólo lo pasa quien ES la raíz de una ruta: App.jsx
 // para `/feed` y FollowingFeedPage para `/following`. Todas las ramas —feed,
 // esqueleto, error, vacío y el vacío que trae la fuente— lo comparten, porque
 // una pantalla sin papers sigue siendo la página y necesita su landmark y su
@@ -225,14 +222,11 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  * refresh, isRefreshing, emptyState, endCard, showFollowReason, onPaperViewed }.
  *
  * `endCard` is a node the source appends as one more snap item once the feed
- * has genuinely run out — same height, same snapping, same swipe. The guest
- * feed uses it to end on a sign-up card instead of on nothing.
+ * has genuinely run out — same height, same snapping, same swipe.
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
   const feed = useFeed();
-  const publicMode = Boolean(source?.publicMode);
-  const onAuthRequired = source?.onAuthRequired;
-  const dismissFromSource = source?.onNotInterested;
+  const { trackEvent } = useAnalyticsConsent();
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
@@ -252,21 +246,21 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
-  // Only the For You feed owns the context's list; Following and the guest
-  // feed render a `source` of their own and must not anchor For You's
+  // Only the For You feed owns the context's list; Following and the Similar
+  // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
   const reportVisiblePaper = source ? null : feed.reportVisiblePaper;
+  const loadingAbstractIds = source ? undefined : feed.loadingAbstractIds;
   // Only once nothing more is coming: a page still loading or still pending
-  // would put the ending in front of papers the guest has not seen yet.
+  // would put the ending in front of papers the reader has not seen yet.
   const endCard = source?.endCard ?? null;
   const showEndCard = Boolean(endCard) && papers.length > 0 && !loading && !hasMore;
   const prefersReducedMotion = useReducedMotion();
 
   const handleViewTime = useCallback((paper: Paper, seconds: number) => {
-    if (publicMode) return;
     source?.onPaperViewed?.(paper);
     trackViewTime(paper, seconds);
-  }, [publicMode, source, trackViewTime]);
+  }, [source, trackViewTime]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   // El scroller, además de en el ref: el oyente del hover (más abajo) tiene
   // que atarse al envoltorio VIVO, y un ref no despierta a nadie cuando
@@ -420,17 +414,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
   const skipExitRef = useRef<(NonNullable<ReturnType<typeof skipExitSlot>> & { commit: () => void }) | null>(null);
   const skipExitTimerRef = useRef<number | null>(null);
-  const getInteractionState = useCallback((paper: Paper) => publicMode ? {} : ({
+  const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)!),
     isSaved: savedPaperIds.has(interactionIdFor(paper)!),
     isRead: readPaperIds?.has(interactionIdFor(paper)!),
-  }), [interactionIdFor, likedPaperIds, publicMode, readPaperIds, savedPaperIds]);
+  }), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
 
   const flushPendingSkips = useCallback(() => {
-    if (publicMode) {
-      pendingSkippedPapersRef.current.clear();
-      return;
-    }
     const skippedPapers = Array.from(pendingSkippedPapersRef.current.values());
     pendingSkippedPapersRef.current.clear();
     if (skippedPapers.length === 0) return;
@@ -440,7 +430,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       return;
     }
     skippedPapers.forEach((paper) => void trackSkip(paper));
-  }, [publicMode, trackSkip, trackSkippedPapers]);
+  }, [trackSkip, trackSkippedPapers]);
 
   const schedulePendingSkipFlush = useCallback(() => {
     if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
@@ -496,17 +486,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     beginSkipExit(paper?.id, () => markNotInterested(paper));
   }, [beginSkipExit, markNotInterested]);
 
-  const handleGuestNotInterested = useCallback((paperId: string) => {
-    beginSkipExit(paperId, () => dismissFromSource?.(paperId));
-  }, [beginSkipExit, dismissFromSource]);
-
   const handleSkip = useCallback((paper: Paper) => {
-    if (publicMode) return;
     source?.onPaperViewed?.(paper);
     if (!paper?.id) return;
     pendingSkippedPapersRef.current.set(paper.id, paper);
     schedulePendingSkipFlush();
-  }, [publicMode, schedulePendingSkipFlush, source]);
+  }, [schedulePendingSkipFlush, source]);
 
   // Restore scroll position instantly before browser paints. Must run only once
   // per mount: re-assigning scrollTop on later papers.length changes (infinite
@@ -704,7 +689,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the pointer leaves the band once; after that, hover works as before.
   // A pointerdown outside the wrapper (sheet, modal, navbar) re-locks.
   const handleMouseMove = useCallback((e: MouseEvent, wrapper: HTMLElement) => {
-    if (publicMode) return;
     if (!window.matchMedia('(pointer: fine)').matches) return;
     const inBand = e.clientY - wrapper.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
     if (refreshHoverLockedRef.current) {
@@ -715,7 +699,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       refreshHoverLockedRef.current = false;
     }
     setRefreshPillHover((prev) => (prev === inBand ? prev : inBand));
-  }, [publicMode]);
+  }, []);
   // Enganchado al NODO, no a una lectura del ref en el primer commit. Las dos
   // dependencias de antes —`handleMouseMove` y `publicMode`— eran estables, así
   // que el efecto corría una sola vez por montaje; y el scroller sólo existe en
@@ -727,7 +711,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // envoltorio y CDP no le veía un solo oyente.
   useEffect(() => {
     const wrapper = feedNode?.parentElement;
-    if (!wrapper || publicMode) return undefined;
+    if (!wrapper) return undefined;
     const onMove = (e: MouseEvent) => handleMouseMove(e, wrapper);
     const onLeave = () => {
       refreshHoverLockedRef.current = true;
@@ -748,7 +732,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       wrapper.removeEventListener('mouseleave', onLeave);
       document.removeEventListener('pointerdown', onPointerDownCapture, true);
     };
-  }, [feedNode, handleMouseMove, publicMode]);
+  }, [feedNode, handleMouseMove]);
 
   // A short "done" beat once a refresh lands, before the pill hides again.
   // Long enough for the face crossfade to enter, hold, and leave — 600ms
@@ -784,9 +768,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [doneHold, pillOnScreen]);
 
   const handleOpenPdf = useCallback((paper: Paper) => {
-    if (!publicMode) trackPdfOpened(paper);
+    trackPdfOpened(paper);
     onOpenPdf!(paper);
-  }, [onOpenPdf, publicMode, trackPdfOpened]);
+  }, [onOpenPdf, trackPdfOpened]);
 
   const handleSaveToList = useCallback((paper: Paper) => {
     onSaveToList!(paper);
@@ -867,6 +851,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
+  const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
+  useEffect(() => {
+    if (feedFailed) trackEvent('app_error', { kind: 'feed_load_failed' });
+  }, [feedFailed, trackEvent]);
 
 
 
@@ -935,7 +923,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
     <FeedLandmark landmark={landmark}>
-      {!publicMode && papers.length > 0 && (!source || source.refresh) && (
+      {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
           ref={refreshPillRef}
@@ -1006,12 +994,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           >
             <PaperCard
               paper={paper}
-              isLiked={!publicMode && likedPaperIds.has(interactionIdFor(paper)!)}
-              isSaved={!publicMode && savedPaperIds.has(interactionIdFor(paper)!)}
-              isRead={!publicMode && readPaperIds?.has(interactionIdFor(paper)!)}
+              isLiked={likedPaperIds.has(interactionIdFor(paper)!)}
+              isSaved={savedPaperIds.has(interactionIdFor(paper)!)}
+              isRead={readPaperIds?.has(interactionIdFor(paper)!)}
               onLike={toggleLike}
               onNotInterested={handleNotInterested}
-              onGuestNotInterested={dismissFromSource ? handleGuestNotInterested : undefined}
               onMarkAsRead={markAsRead}
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}
@@ -1020,10 +1007,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onSaveToList={handleSaveToList}
               getInteractionState={getInteractionState}
               showFollowReason={Boolean(source?.showFollowReason)}
-              publicMode={publicMode}
-              onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              abstractLoading={Boolean(loadingAbstractIds?.has(paper.id))}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

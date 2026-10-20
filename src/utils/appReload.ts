@@ -8,12 +8,12 @@
  *
  *   - `main.jsx` reloads on `vite:preloadError`, when a deploy has taken away
  *     the chunk an `import()` was reaching for;
- *   - the service worker takes control on `activated` after a deploy and
- *     workbox reloads the page itself (see the long note in `main.jsx`).
+ *   - a tab that a deploy left on an older build reloads at the next route
+ *     change (`utils/serviceWorkerUpdates.ts`).
  *
- * Either can land mid-reading-session. Dropping the reader at the top of a
- * freshly ranked feed there reads as the whole app having lost their place,
- * which is the bug the continuity was built to fix.
+ * The reader asked for neither. Dropping them at the top of a freshly ranked
+ * feed afterwards reads as the whole app having lost their place, which is
+ * the bug the continuity was built to fix.
  *
  * But it also caught the reload the reader DID ask for. Pressing the browser's
  * reload button and getting the same paper back is the opposite failure: the
@@ -21,14 +21,27 @@
  * gesture that changed nothing.
  *
  * So the app marks its own reloads on the way out, and a boot that finds no
- * mark treats a reload as the reader's. A mark is consumed when it is read, so
+ * mark treats a reload as the reader's. The boot consumes the mark it reads, so
  * it can never make a later, genuine reload look forced.
  */
 
 import { FEED_RESUME_STORAGE_PREFIX } from './feedResumeMemory.ts';
 import { FOLLOWING_ORDER_STORAGE_KEY } from './followingOrderStorage.ts';
 
+/**
+ * analyticsService.ts also reads this mark, without consuming it, to recognise
+ * a crash on the page that wrote it: the app is already reloading that page.
+ */
 export const APP_RELOAD_KEY = 'papertok_app_forced_reload_at';
+
+/**
+ * The mark main.tsx's `vite:preloadError` handler leaves when it reloads for a
+ * chunk a deploy took away, and how long it keeps a second failure from
+ * reloading again. analyticsService.ts reads the same mark to tell a chunk
+ * that is still missing from any other crash.
+ */
+export const PRELOAD_RELOAD_KEY = 'papertok_preload_reloaded_at';
+export const PRELOAD_RELOAD_WINDOW_MS = 60_000;
 
 /** The snapshot's own prefix, from `context/FeedContext.jsx`. */
 export const FEED_SNAPSHOT_STORAGE_PREFIX = 'papertok_feed_snapshot_';

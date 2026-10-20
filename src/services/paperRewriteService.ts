@@ -6,7 +6,7 @@ export type ClientRewriteMeta = Pick<RewriteMeta, 'level' | 'language'> & Partia
 export interface RewriteResult { meta: ClientRewriteMeta; sections: RewriteSection[]; incomplete?: boolean }
 type RewriteEvent = ({ type: 'meta' } & ClientRewriteMeta) | ({ type: 'section' } & RewriteSection)
   | { type: 'error'; code?: string; quota?: AIQuota | null; partial?: boolean; finishReason?: string }
-  | { type: 'ping'; stage?: string } | { type: 'done' };
+  | { type: 'ping'; stage?: string } | { type: 'done'; sectionCount?: number; truncated?: boolean };
 interface RewriteOptions {
   language?: string;
   force?: boolean;
@@ -259,6 +259,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
   let meta: ClientRewriteMeta | null = null;
   const sections: RewriteSection[] = [];
   let streamError: PaperRewriteError | null = null;
+  let completion: Extract<RewriteEvent, { type: 'done' }> | null = null;
 
   try {
     resetStallTimer();
@@ -270,6 +271,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
         paper: serializePaperForRewrite(paper),
         level,
         language: rewriteLanguage,
+        retryIncomplete: force,
       }),
     });
 
@@ -315,6 +317,10 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
         if (event.finishReason) streamError.finishReason = event.finishReason;
         return;
       }
+      if (event.type === 'done') {
+        completion = event;
+        return;
+      }
       // A `ping` carries no rewrite, and receiving one is most of the point: it
       // is what keeps the stall timer above from firing while the worker is
       // downloading the paper and the model is reading it. What it does carry is
@@ -339,10 +345,17 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
     const result = { meta: meta || { level, language: rewriteLanguage }, sections };
     // A stream cut short is still worth showing, but must not be cached as if
     // it were the whole paper.
-    if (!streamError) rewriteCache.set(cacheKey, result);
-    return { ...result, incomplete: Boolean(streamError) };
+    const terminal = completion as Extract<RewriteEvent, { type: 'done' }> | null;
+    const incomplete = Boolean(streamError) || !terminal
+      || terminal.sectionCount !== sections.length || terminal.truncated === true;
+    if (!incomplete) rewriteCache.set(cacheKey, result);
+    return { ...result, incomplete };
   } catch (error) {
-    throw toRewriteError(error, { cancelled: Boolean(signal?.aborted) });
+    const failure = toRewriteError(error, { cancelled: Boolean(signal?.aborted) });
+    if (sections.length > 0 && failure.code !== 'AI_CANCELLED') {
+      return { meta: meta || { level, language: rewriteLanguage }, sections, incomplete: true };
+    }
+    throw failure;
   } finally {
     if (stallTimer) clearTimeout(stallTimer);
     signal?.removeEventListener('abort', abortFromCaller);

@@ -23,8 +23,8 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
   // onboarding "to return to /feed", over the destination it had just reached.
   const requestedPath = `${location.pathname}${location.search}`;
   const signInState = useMemo(() => ({ authRequired: true, returnTo: requestedPath }), [requestedPath]);
-  // A new account signing in from a bounce reaches the onboarding from the
-  // feed it was bounced to, so "return to this route" would mean the feed. The
+  // A new account can be sent to the onboarding from a route other than the
+  // one it asked for, so "return to this route" would be the wrong one. The
   // destination the sign-in is carrying wins, read once at mount: taking it
   // later would change the state and re-issue the redirect.
   const [carriedDestination] = useState(peekAuthReturn);
@@ -77,11 +77,13 @@ export default function ProtectedRoute({ children, requireOnboarding = true }: P
   }
 
   if (!user) {
-    // There is no sign-in page: a guest lands on the feed with the sign-in
-    // dialog open (App.jsx reads `authRequired`). The route they asked for
-    // travels with them, and App sends them there once a session exists,
-    // instead of dropping everyone on the feed.
-    return <Navigate to="/feed" replace state={signInState} />;
+    // There is no sign-in page and no guest feed: a visitor lands on the
+    // onboarding with the sign-in dialog open (App.jsx reads `authRequired`).
+    // The route they asked for travels with them, and App sends them there
+    // once a session exists, instead of dropping everyone on the feed. The
+    // feed is the home address, so a visitor arriving there gets the welcome
+    // without a dialog over it.
+    return <Navigate to="/onboarding" replace state={location.pathname === '/feed' ? undefined : signInState} />;
   }
 
   if (profileLoadError) {

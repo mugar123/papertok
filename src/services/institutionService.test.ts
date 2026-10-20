@@ -1,10 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { deleteApp, initializeApp } from 'firebase/app';
+import { inMemoryPersistence, initializeAuth } from 'firebase/auth';
+import type { PopupRedirectResolver } from 'firebase/auth';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
+import { deferPopupRedirectResolver } from './popupRedirectResolver.ts';
 import {
   InstitutionLinkError,
   institutionLabel,
+  institutionLinkReadiness,
   linkInstitution,
+  needsUniversityProof,
   normalizeInstitution,
   unlinkInstitution,
 } from './institutionService.ts';
@@ -38,7 +45,6 @@ function popupStub({ email = 'alice@usal.es', isNewUser = true } = {}) {
     log,
     overrides: {
       secondaryAuth: () => secondary,
-      setPersistence: async (instance, persistence) => { log.push(['persistence', instance === secondary, persistence?.type]); },
       provider: () => ({ setCustomParameters(params) { log.push(['params', params]); } }),
       popupSignIn: async (instance: { name: string; }) => { log.push(['popup', instance === secondary]); return { user: holder }; },
       additionalUserInfo: () => ({ isNewUser }),
@@ -105,12 +111,102 @@ test('a personal account proves the university through a second sign-in that is 
   assert.deepEqual(linked, INSTITUTION);
   assert.deepEqual(worker.calls, [{ url: 'https://worker.test/institution/link', body: { institutionToken: 'university-token' } }]);
   assert.deepEqual(popup.log, [
-    ['persistence', true, 'NONE'],
     ['params', { login_hint: 'alice@usal.es', hd: 'usal.es', prompt: 'select_account' }],
     ['popup', true],
     // Firebase had to create an account for the proof: it is removed again.
     ['delete', true],
   ]);
+});
+
+// Safari can block a window opened after the tap, so nothing is awaited
+// between the press and the request for Google's window.
+test('the press asks for Google\'s window before it awaits anything', async () => {
+  const popup = popupStub();
+  const linking = linkInstitution('alice@usal.es', {
+    ...BASE,
+    ...popup.overrides,
+    request: workerAnswering(200, { institution: INSTITUTION }).request,
+    currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
+  });
+  assert.deepEqual(popup.log.at(-1), ['popup', true]);
+  await linking;
+});
+
+// The link form and the onboarding's primary hold a press only while it would
+// open Google's window, so the answer has to be what linking then does.
+test('needsUniversityProof says whether linking that address opens Google\'s window', async () => {
+  const cases = [
+    { account: { email: 'alice@usal.es', emailVerified: true }, typed: 'Alice@USAL.es', opens: false },
+    { account: { email: 'alice@gmail.com', emailVerified: true }, typed: 'alice@usal.es', opens: true },
+    { account: { email: 'alice@usal.es', emailVerified: false }, typed: 'alice@usal.es', opens: true },
+    { account: { email: 'alice@usal.es', emailVerified: true }, typed: 'alice@cs.usal.es', opens: true },
+  ];
+  for (const { account, typed, opens } of cases) {
+    const currentUser = () => ({ uid: 'alice', ...account });
+    assert.equal(needsUniversityProof(typed, { currentUser }), opens, `${account.email} (verified: ${account.emailVerified}) typing ${typed}`);
+    const popup = popupStub({ email: typed.toLowerCase() });
+    await linkInstitution(typed, { ...BASE, ...popup.overrides, request: workerAnswering(200, { institution: INSTITUTION }).request, currentUser });
+    assert.equal(popup.log.some(([step]) => step === 'popup'), opens, `linking ${typed} as ${account.email}`);
+  }
+  // An account without an address proves no domain, not even an empty one.
+  assert.equal(needsUniversityProof('alice', { currentUser: () => ({ uid: 'alice', email: null, emailVerified: true }) }), true);
+});
+
+// The proof's sign-in must not outlive the tab. The second instance starts in
+// memory, rather than switching to it at the press. It takes the shared
+// resolver, whose scripts load when institutionLinkReadiness asks; Firebase's
+// own would load them while the instance starts, where nothing waits for them.
+// Firebase's Node build has no browser resolver, so this is read from source.
+test('SOURCE: the second instance starts in memory, with the shared deferred resolver', async () => {
+  const code = await readFile(new URL('./institutionService.ts', import.meta.url), 'utf8');
+  assert.match(code, /initializeAuth\(initializeApp\(app\.options, SECONDARY_APP_NAME\), \{\s*persistence: inMemoryPersistence,\s*popupRedirectResolver,\s*\}\);/);
+  assert.match(code, /^import app, \{[^}]*\bpopupRedirectResolver\b[^}]*\} from '\.\/firebase\.ts';$/m);
+  const firebase = await readFile(new URL('./firebase.ts', import.meta.url), 'utf8');
+  assert.match(firebase, /^export const popupRedirectResolver = deferPopupRedirectResolver\(browserPopupRedirectResolver\);$/m);
+});
+
+/**
+ * The link's window opens on the second instance, which loads its own popup
+ * scripts, so the form has to wait for that load and not the main instance's.
+ * The instance is found by its app name; registering it first with a phone's
+ * resolver whose load the test finishes lets the test hold that load.
+ */
+test('the link waits for the second instance\'s own popup load', async (t) => {
+  let finish = () => {};
+  const load = new Promise<void>((resolve) => { finish = resolve; });
+  const loads: unknown[] = [];
+  class PhoneResolver {
+    _redirectPersistence = inMemoryPersistence;
+    get _shouldInitProactively() {
+      return true;
+    }
+    _initialize(instance: unknown) {
+      loads.push(instance);
+      return load;
+    }
+    async _completeRedirectFn() {
+      return null;
+    }
+    _overrideRedirectResult() {}
+  }
+  const app = initializeApp({ apiKey: 'test-key', authDomain: 'papertok.test', projectId: 'papertok-test' }, 'institution-link');
+  t.after(() => deleteApp(app));
+  const second = initializeAuth(app, {
+    persistence: inMemoryPersistence,
+    popupRedirectResolver: deferPopupRedirectResolver(PhoneResolver as unknown as PopupRedirectResolver),
+  });
+
+  const readiness = institutionLinkReadiness();
+  await second.authStateReady();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(loads.length, 1);
+  assert.equal(loads[0], second, 'the second instance loads its own scripts');
+  assert.equal(readiness.ready, false, 'not ready while they load');
+
+  const ready = new Promise<void>(resolve => readiness.subscribe(resolve));
+  finish();
+  await ready;
+  assert.equal(readiness.ready, true);
 });
 
 test('an existing account used as proof is signed out of the second instance, not deleted', async () => {

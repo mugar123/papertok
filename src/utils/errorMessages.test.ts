@@ -16,6 +16,15 @@ test('never exposes an unknown Spanish message in the English interface', () => 
   );
 });
 
+test('a failed sign-in check before deletion says why instead of the generic deletion failure', () => {
+  const generic = getUiErrorMessage('ACCOUNT_DELETION_FAILED');
+  for (const code of ['auth/user-mismatch', 'AUTH_PROVIDERS_UNSUPPORTED_IN_DEMO']) {
+    const message = getUiErrorMessage({ code, message: 'raw provider copy' }, 'ACCOUNT_DELETION_FAILED');
+    assert.notEqual(message, generic, code);
+    assert.notEqual(message, 'raw provider copy', code);
+  }
+});
+
 test('supports provider error objects without exposing their raw message', () => {
   assert.equal(
     getUiErrorMessage({ code: 'auth/popup-blocked', message: 'raw provider copy' }, 'AUTH_FAILED'),
