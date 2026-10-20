@@ -1,6 +1,7 @@
 import type { LinkedInstitution } from '../../services/institutionService.ts';
 type ServicesAnswer = Awaited<ReturnType<typeof findInstitutionServices>>;
 type InstitutionPlatform = NonNullable<ServicesAnswer>['services'][number];
+import { Collapsible } from '@base-ui/react/collapsible';
 import { CaretDownIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import { groupInstitutionServices } from './institutionServiceGroups.ts';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -75,8 +76,8 @@ function ServiceLogo({ service }: { service: InstitutionPlatform }) {
 function ServiceGroup({ group }: { group: ReturnType<typeof groupInstitutionServices>[number] }) {
   const journals = group.services.filter(service => service.platformId).length;
   return (
-    <details className="institution-service-group">
-      <summary className="institution-service-summary">
+    <Collapsible.Root className="institution-service-group">
+      <Collapsible.Trigger className="institution-service-summary">
         <ServiceLogo service={group.representative} />
         <span className="institution-service-text">
           <span className="institution-service-name">{group.name}</span>
@@ -86,33 +87,38 @@ function ServiceGroup({ group }: { group: ReturnType<typeof groupInstitutionServ
           </span>
         </span>
         <CaretDownIcon className="institution-service-chevron" size={18} aria-hidden="true" />
-      </summary>
-      <div className="institution-service-details">
-        <p className="institution-service-detail-note">{'These results cover sampled titles and years. Check access on the article you want to read.'}</p>
-        <ul className="institution-service-titles">
-          {group.services.map(service => (
-            <li key={service.id}>
-              {service.url ? (
-                <a className="institution-service-title-link" href={service.url} target="_blank" rel="noreferrer">
-                  <span>
-                    <span className="institution-service-title-name">{service.name}</span>
-                    <span className="institution-service-route">
-                      {!service.platformId && 'Platform or publication sample · '}{subtitleFor(service)}
+      </Collapsible.Trigger>
+      <Collapsible.Panel
+        className="institution-service-panel"
+        render={(props, state) => <div {...props} inert={!state.open} />}
+      >
+        <div className="institution-service-details">
+          <p className="institution-service-detail-note">{'These results cover sampled titles and years. Check access on the article you want to read.'}</p>
+          <ul className="institution-service-titles">
+            {group.services.map(service => (
+              <li key={service.id}>
+                {service.url ? (
+                  <a className="institution-service-title-link" href={service.url} target="_blank" rel="noreferrer">
+                    <span>
+                      <span className="institution-service-title-name">{service.name}</span>
+                      <span className="institution-service-route">
+                        {!service.platformId && 'Platform or publication sample · '}{subtitleFor(service)}
+                      </span>
                     </span>
+                    <ArrowUpRightIcon size={16} aria-hidden="true" />
+                    <span className="sr-only">{COPY.newTab}</span>
+                  </a>
+                ) : (
+                  <span className="institution-service-title-link">
+                    <span><span className="institution-service-title-name">{service.name}</span><span className="institution-service-route">{subtitleFor(service)}</span></span>
                   </span>
-                  <ArrowUpRightIcon size={16} aria-hidden="true" />
-                  <span className="sr-only">{COPY.newTab}</span>
-                </a>
-              ) : (
-                <span className="institution-service-title-link">
-                  <span><span className="institution-service-title-name">{service.name}</span><span className="institution-service-route">{subtitleFor(service)}</span></span>
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }
 
@@ -199,7 +205,7 @@ export default function InstitutionServices({ institution }: { institution: Link
       {services.length > 0 && (
         <ul className="institution-services-list">
           {groups.map((group, index) => (
-            <li key={`${subject}:${group.id}`} style={{ '--service-delay': `${Math.min(index, 5) * 30}ms` }}>
+            <li key={`${subject}:${group.id}`} style={{ '--service-delay': `${Math.min(index, 4) * 45}ms` }}>
               <ServiceGroup group={group} />
             </li>
           ))}

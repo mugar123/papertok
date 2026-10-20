@@ -165,7 +165,7 @@
 
 .institution-services-list > li {
   border-bottom: 1px solid var(--border-default);
-  animation: institution-source-arrive 240ms cubic-bezier(0.16, 1, 0.3, 1) var(--service-delay, 0ms) backwards;
+  animation: institution-source-arrive 360ms cubic-bezier(0.16, 1, 0.3, 1) var(--service-delay, 0ms) backwards;
 }
 
 .institution-service-summary {
@@ -174,20 +174,24 @@
   gap: var(--space-3);
   min-height: 80px;
   padding: var(--space-3) var(--space-1);
-  list-style: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.institution-service-summary::-webkit-details-marker { display: none; }
 .institution-service-summary > .institution-service-text { flex: 1; }
 
 .institution-service-chevron {
   flex: 0 0 auto;
   color: var(--text-secondary);
-  transition: transform 180ms ease-out;
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.institution-service-group[open] .institution-service-chevron { transform: rotate(180deg); }
+.institution-service-summary[data-panel-open] .institution-service-chevron { transform: rotate(180deg); }
 
 .institution-service-coverage, .institution-service-route, .institution-service-detail-note {
   color: var(--text-secondary);
@@ -201,12 +205,32 @@
   font: var(--mono-label);
 }
 
-.institution-service-details {
-  padding: 0 var(--space-2) var(--space-3);
+/* Height moves the following sources with the panel; Base UI measures the content. */
+.institution-service-panel {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition: height 280ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.institution-service-group[open] .institution-service-details {
-  animation: institution-titles-arrive 180ms ease-out;
+.institution-service-panel[data-starting-style],
+.institution-service-panel[data-ending-style] { height: 0; }
+.institution-service-panel[data-ending-style] { transition-duration: 200ms; }
+
+.institution-service-details {
+  padding: 0 var(--space-2) var(--space-3);
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 180ms ease-out, transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.institution-service-panel[data-starting-style] .institution-service-details,
+.institution-service-panel[data-ending-style] .institution-service-details {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.institution-service-panel[data-ending-style] .institution-service-details {
+  transition-duration: 100ms, 200ms;
 }
 
 .institution-service-detail-note { margin: 0 0 var(--space-2); }
@@ -237,13 +261,18 @@
 
 .institution-services-list > li:focus-within { animation: none; }
 
+/* Keyboard focus must never wait for content to finish moving into view. */
+.institution-service-group:has(:focus-visible) .institution-service-panel,
+.institution-service-group:has(:focus-visible) .institution-service-details,
+.institution-service-group:has(:focus-visible) .institution-service-chevron { transition: none; }
+
 @media (hover: hover) and (pointer: fine) {
   .institution-service-summary:hover, a.institution-service-title-link:hover { background: var(--bg-glass-hover); }
   a.institution-service-title-link:hover .institution-service-title-name { text-decoration: underline; text-underline-offset: 3px; }
 }
 
 @keyframes institution-source-arrive {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -254,8 +283,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .institution-services-list > li { animation: institution-titles-arrive 100ms ease-out; }
-  .institution-service-chevron { transition: none; }
-  .institution-service-group[open] .institution-service-details { animation: none; }
+  .institution-service-chevron, .institution-service-panel { transition: none; }
+  .institution-service-details { transition: opacity 100ms ease-out; }
+  .institution-service-panel .institution-service-details { transform: none; }
 }
 
 @media (max-width: 480px) {
