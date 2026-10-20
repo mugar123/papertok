@@ -11,6 +11,7 @@ import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
+import { RequestQuotaLedger } from './request-quota-ledger.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
@@ -1564,7 +1565,7 @@ function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accept
   };
 }
 
-test('a cold citation graph reserves both OpenAlex periods for what it may spend', async () => {
+test('a cold citation graph reserves both OpenAlex ceilings in one call for what it may spend', async () => {
   const ledger = recordingLedger();
   await withCountedUpstream(citationGraphPage, async () => {
     await withIdentityAndCacheStore(async () => {
@@ -1579,26 +1580,83 @@ test('a cold citation graph reserves both OpenAlex periods for what it may spend
   // The `openalex:*` ceiling used to cover only `/openalex/*`. A miss here can
   // spend nine billed calls -- one `works/doi:` lookup, then up to two batches
   // for each of the two reference filters and the same for citations -- and the
-  // route reserves all nine before the work starts.
+  // route reserves all nine before the work starts, minute and day together.
   const openAlex = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
-  assert.deepEqual(openAlex.map(entry => entry.amount), [9, 9]);
-  assert.match(openAlex[0].periodKey, /^openalex:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-  assert.match(openAlex[1].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
-  assert.equal(openAlex[1].limit, 8_000);
+  assert.deepEqual(openAlex.map(entry => entry.amount), [9]);
+  assert.match(openAlex[0].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
+  assert.equal(openAlex[0].limit, 8_000);
+});
+
+// The ledger itself behind every period key, so the ceilings are checked the way
+// the Durable Object checks them, and every call to it is counted.
+function inMemoryQuotaLedger() {
+  const objects = new Map<string, RequestQuotaLedger>();
+  const calls: string[] = [];
+  const binding = {
+    idFromName: (name: string): unknown => name,
+    get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => {
+      const key = String(name);
+      if (!objects.has(key)) {
+        const values = new Map<string, unknown>();
+        let alarm: number | null = null;
+        objects.set(key, new RequestQuotaLedger({ storage: {
+          transaction: callback => callback({
+            get: <T>(item: string) => values.get(item) as T | undefined,
+            put: (item: string, value: unknown) => { values.set(item, value); },
+            delete: (item: string) => values.delete(item),
+          }),
+          getAlarm: async () => alarm,
+          setAlarm: async (value: number | Date) => { alarm = Number(value); },
+          deleteAll: async () => values.clear(),
+        } as RequestQuotaLedger['state']['storage'] }));
+      }
+      return {
+        fetch: async (url, init) => {
+          calls.push(key);
+          return objects.get(key)!.fetch(new Request(String(url), init));
+        },
+      };
+    },
+  } as Env['REQUEST_QUOTA_LEDGER'];
+  return { binding, calls };
+}
+
+// Two misses in a row against ceilings of one: the second is refused by whichever
+// ceiling is spent, and each miss is one call to the ledger.
+async function secondOpenAlexMiss(limits: Record<string, string>) {
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding, ...limits });
+  const relay = (doi: string) => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/openalex/works?filter=doi:${doi}`,
+    { headers: BROWSER },
+  ), env);
+  const responses = await withWorkerFetchMock(
+    async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
+    () => withIdentityAndCacheStore(async () => [await relay('10.1/x'), await relay('10.1/y')]),
+  );
+  return { responses, calls: ledger.calls };
+}
+
+test('the per-minute OpenAlex ceiling refuses within the day and asks for a minute', async () => {
+  const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '1', OPENALEX_GLOBAL_DAILY_LIMIT: '100' });
+
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[1].status, 429);
+  assert.deepEqual(await responses[1].json(), { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(responses[1].headers.get('retry-after'), '60');
+  assert.equal(calls.length, 2, 'one ledger call per miss');
 });
 
 test('the daily OpenAlex ceiling refuses a request the per-minute one would allow', async () => {
-  const ledger = recordingLedger((periodKey: string) => ({ accepted: !periodKey.startsWith('openalex:day:') }));
-  const response = await withIdentityAndCacheStore(() => reportApi.fetch(new Request(
-    'https://papertok-report-api.example/openalex/works?filter=doi:10.1/x',
-    { headers: BROWSER },
-  ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding })));
+  const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '100', OPENALEX_GLOBAL_DAILY_LIMIT: '1' });
 
-  assert.equal(response.status, 429);
-  assert.deepEqual(await response.json(), { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[1].status, 429);
+  assert.deepEqual(await responses[1].json(), { code: 'PROVIDER_RATE_LIMITED' });
   // Bounded on purpose. The true wait is the seconds left until UTC midnight, and
   // handing the client six hours is a tab that stops asking until it is reloaded.
-  assert.equal(response.headers.get('retry-after'), '300');
+  assert.equal(responses[1].headers.get('retry-after'), '300');
+  assert.equal(calls.length, 2, 'one ledger call per miss');
 });
 
 test('a cached citation graph spends nothing against either ceiling', async () => {
@@ -2404,12 +2462,11 @@ function scriptedQuotaLedger(state: QuotaScriptState, { refuse = () => false, un
 
 // The period keys the gates use, as predicates: the minute ceiling is
 // `s2:<minute>`, the beat is `s2:pace`, identity is `provider:<minute>`, and
-// OpenAlex is `openalex:<minute>` then `openalex:day:<date>`.
+// OpenAlex is `openalex:day:<date>`, which checks the minute as its subject.
 const IS_MINUTE = (key: string) => key.startsWith('s2:') && !key.endsWith(':pace');
 const IS_PACE = (key: string) => key.endsWith(':pace');
 const IS_IDENTITY = (key: string) => key.startsWith('provider:');
-const IS_OPENALEX_MINUTE = (key: string) => key.startsWith('openalex:') && !key.includes(':day:');
-const IS_OPENALEX_DAY = (key: string) => key.startsWith('openalex:day:');
+const IS_OPENALEX = (key: string) => key.startsWith('openalex:');
 
 const releasesOf = (state: QuotaScriptState) => state.actions.filter((a: { action: string; }) => a.action === 'release');
 
@@ -2488,7 +2545,7 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
   const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
     new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
-    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_MINUTE }) },
+    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX }) },
   )));
 
   assert.equal(response.status, 429);
@@ -2497,40 +2554,22 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
   assert.equal(releasesOf(state).length, 1, 'only the identity unit was held');
 });
 
-// L6: the OpenAlex day ceiling refuses after the minute ceiling accepted. The
-// function used to leave the minute unit to expire -- "the leak lives in the
-// minute bucket, which is thrown away sixty seconds later" -- as the lesser of
-// two leaks, before giving a unit back was a pattern in this file.
-test('gives the OpenAlex minute unit back when the day ceiling refuses after it', async () => {
-  const state: QuotaScriptState = { actions: [] };
-  const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
-    new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
-    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) },
-  )));
-
-  assert.equal(response.status, 429);
-  assert.equal(response.headers.get('retry-after'), '300', 'the day ceiling names its own wait');
-  assertRefunded(state, IS_OPENALEX_MINUTE);
-  // The graph also holds an identity unit, and `reserveGates` gives that back too.
-  assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 2, 'the OpenAlex minute unit and the identity unit were held');
-});
-
-// The relay reaches the budget without `cacheResponse`, so the refund inside
-// the function is the only one it gets.
-test('the /openalex relay gives the minute unit back when the day ceiling refuses', async () => {
+// The relay reaches the budget without `cacheResponse`, so nothing else would
+// give back a unit the budget took before refusing. Both ceilings are one call,
+// so a refusal holds nothing.
+test('a refused /openalex relay holds no OpenAlex unit', async () => {
   const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
     () => reportApi.fetch(new Request(
       RELAY_WORKS_URL,
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ...OPEN_ROUTE_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) }),
+    ), { ...OPEN_ROUTE_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX }) }),
   );
 
   assert.equal(response.status, 429);
-  assertRefunded(state, IS_OPENALEX_MINUTE);
-  assert.equal(releasesOf(state).length, 1, 'only the OpenAlex minute unit was held');
+  assert.equal(state.actions.filter(a => a.action === 'reserve' && IS_OPENALEX(a.periodKey)).length, 1);
+  assert.equal(releasesOf(state).length, 0);
 });
 
 // The accepted path gives nothing back: every unit taken was spent on a real
@@ -3151,6 +3190,20 @@ test('a share lookup its ceiling refuses spends nothing upstream and answers the
     false,
     'OpenAlex budget untouched',
   );
+});
+
+test('a share lookup checks its minute and day ceilings in one ledger call', async () => {
+  const state: QuotaScriptState = { actions: [] };
+  await withWorkerFetchMock(
+    shareUpstream([]),
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`), {
+      ...openAlexEnv(),
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state),
+    }),
+  );
+  const lookups = state.actions.filter(action => action.periodKey.startsWith('share:') && !action.periodKey.startsWith('share:arxiv:'));
+  assert.equal(lookups.length, 1, JSON.stringify(state.actions));
+  assert.match(lookups[0].periodKey, /^share:day:\d{4}-\d{2}-\d{2}$/);
 });
 
 // The hourly arXiv unit was taken before the seat and kept when no seat came,
