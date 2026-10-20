@@ -175,12 +175,13 @@ function xmlKey(xml: string, id: string) {
   return match ? unescapeXml(match[1]) : null;
 }
 
-// A closing tag; an opening tag, with the rest of the element when it is
-// empty or holds only text (most keys, so most elements take one match); a
-// CDATA section; an XML declaration; or a `<` that starts none of them. A
-// quote left open pairs with the next attribute's opening quote, and what
-// follows that is no attribute, so the tag does not match.
-const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)\s*|([A-Za-z_][\w.:-]*)(?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(\/|>[^<]*<\/\2\s*)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
+// A closing tag, with no space before its `>`; an opening tag, with the
+// rest of the element when it is empty or holds only text (most keys, so
+// most elements take one match); a CDATA section; an XML declaration; or a
+// `<` that starts none of them. A quote left open pairs with the next
+// attribute's opening quote, and what follows that is no attribute, so the
+// tag does not match.
+const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)|([A-Za-z_][\w.:-]*)(?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*(\/|>[^<]*<\/\2)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
 
 /**
  * Whether an answer's markup holds together the way `parseResolverAnswer`
@@ -188,10 +189,14 @@ const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)\s*|([A-Za-z_][\w.:-]*)(?:\s+[\w.:-]+\s
  * CDATA section or an XML declaration, every element closes inside the
  * element it opened in, the root element, `uresolver_content`, closes at
  * the end, a key holds no element, and no service opens inside another.
- * Text is not checked, so an unescaped `&` does not stop an answer from
- * being read. No saved answer starts with an XML declaration, but one is
- * well-formed XML, and refusing it would make every answer an outage if
- * Alma began to send one.
+ * The reader matches `</key>` and `</context_service>` exactly and reads a
+ * service up to the next `</context_service>`, so a closing tag with a
+ * space before its `>` fails, and so does a service closed in its own
+ * opening tag: read anyway, a key would count as absent or a service would
+ * be read with the next one's keys. Text is not checked, so an unescaped
+ * `&` does not stop an answer from being read. No saved answer starts with
+ * an XML declaration, but one is well-formed XML, and refusing it would
+ * make every answer an outage if Alma began to send one.
  */
 function markupHolds(text: string) {
   const open: string[] = [];
@@ -201,7 +206,7 @@ function markupHolds(text: string) {
       if (open.pop() !== closing) return false;
       if (!open.length) return closing === 'uresolver_content' && !text.slice(index + tag.length).trim();
     } else if (name) {
-      if (open.at(-1) === 'key' || (name === 'context_service' && open.includes(name))) return false;
+      if (open.at(-1) === 'key' || (name === 'context_service' && (closed === '/' || open.includes(name)))) return false;
       if (!closed) open.push(name);
     }
   }

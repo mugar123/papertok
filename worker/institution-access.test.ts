@@ -554,9 +554,10 @@ function replaceAfter(text: string, anchors: string[], find: string, replacement
   return text.slice(0, start) + replacement + text.slice(start + find.length);
 }
 
-// Damage the reader's expressions would read past, each made once to each
-// answer in the test below, all of more than one service. Read by its keys
-// alone, such an answer can count a filtered service as live, a live one as
+// Damage the reader's expressions would read past, and markup they do not
+// match though XML allows it (the last two), each made once to each answer
+// in the test below, all of more than one service. Read by its keys alone,
+// such an answer can count a filtered service as live, a live one as
 // filtered or missing, or lose a service's link.
 const MARKUP_DAMAGE: Array<[string, (answer: string) => string]> = [
   ['a key left open in the context object', answer => replaceAfter(answer, ['<context_object>'], '</key>', '')],
@@ -570,6 +571,8 @@ const MARKUP_DAMAGE: Array<[string, (answer: string) => string]> = [
   ['the context object left open', answer => replaceAfter(answer, [], '</context_object>', '')],
   ['a service closed by the next one', answer => replaceAfter(answer, [], '</context_service>', '')],
   ['a service opened inside another', answer => replaceAfter(replaceAfter(answer, [], '</context_service>', ''), [], '</context_services>', '</context_service></context_services>')],
+  ['a self-closing service before the first', answer => replaceAfter(answer, [], '<context_service ', '<context_service service_type="getHolding"/>\n    <context_service ')],
+  ['a service closed with a space before >', answer => replaceAfter(answer, [], '</context_service>', '</context_service >')],
 ];
 
 test('an answer with damaged markup is no answer, whatever its keys would read as', async () => {
@@ -976,9 +979,11 @@ test('the route maps validation, unsupported institutions and outages to codes i
     ['doi=nope&domain=usal.es', {}, 400, 'INVALID_DOI'],
     [`doi=${encodeURIComponent(DOI)}&domain=nowhere.example`, {}, 404, 'INSTITUTION_NOT_SUPPORTED'],
     [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => new Response('down', { status: 503 }) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
-    // The Pau answer with only the `</key>` of `Filtered` lost: read by its
-    // keys, the service filtered out for the date counts as access.
+    // The Pau answer with only the `</key>` of `Filtered` lost, or written
+    // `</key >`: read by its keys, the service filtered out for the date
+    // counts as access.
     [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => xml(CTO_FILTERED_BY_DATE.replace('<key id="Filtered">true</key>', '<key id="Filtered">true')) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
+    [`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { resolver: () => xml(CTO_FILTERED_BY_DATE.replace('<key id="Filtered">true</key>', '<key id="Filtered">true</key >')) }, 502, 'ACCESS_LOOKUP_UNAVAILABLE'],
   ] as Array<[string, AccessOptions, number, string]>) {
     const { response, body, accessPuts } = await requestAccess(search, options);
     assert.equal(response.status, status, search);
