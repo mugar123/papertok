@@ -1289,6 +1289,8 @@ test('a background sync never brings back a digest the reader turned off', async
   assert.equal(onDisabled.enabled, false);
   assert.equal(onDisabled.maxPapers, 10);
   assert.deepEqual(await legacyKv.get(SYNC_READER_KEY, 'json'), disabled);
+  // The disabled record's token has no index, and a sync must not add one.
+  assert.deepEqual([...legacyKv.values.keys()], [SYNC_READER_KEY]);
 });
 
 test('a background sync refreshes follows and previews and keeps the stored settings', async () => {
@@ -1353,6 +1355,30 @@ test('a background sync writes nothing unless follows, previews, name or address
     { ...SYNC_READER, displayName: 'Reader Renamed' },
   );
   assert.equal((await kv.get<Subscription>(SYNC_READER_KEY, 'json'))?.displayName, 'Reader Renamed');
+});
+
+test('a background sync restores an unsubscribe link whose first write failed', async () => {
+  const body = { enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] };
+  const kv = createMemoryKv();
+  const env = { NOTIFICATION_STORE: kv };
+  const basePut = kv.put.bind(kv);
+  kv.put = async (key, value, options) => {
+    if (key.startsWith('notification:unsubscribe:')) throw new Error('KV write failed');
+    return basePut(key, value, options);
+  };
+  await assert.rejects(() => saveSubscription(preferencesPut(body), env, SYNC_READER), /KV write failed/);
+  kv.put = basePut;
+  const stored = await kv.get<Subscription>(SYNC_READER_KEY, 'json');
+  assert.ok(stored?.enabled, 'the opt-in stored the subscription');
+
+  await saveSubscription(preferencesPut({ ...body, sync: true }), env, SYNC_READER);
+
+  const unsubscribed = await handleEmailUnsubscribe(new Request(
+    `https://example.com/notifications/unsubscribe?token=${stored.unsubscribeToken}`,
+    { method: 'POST' },
+  ), env);
+  assert.equal(unsubscribed.status, 200);
+  assert.equal(await kv.get(SYNC_READER_KEY), null);
 });
 
 test('unsubscribe GET confirms without mutating and POST removes the subscription', async () => {

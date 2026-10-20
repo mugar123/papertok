@@ -1020,19 +1020,25 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   if (!follows.length) {
     throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   }
+  const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
+  const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`;
   // A subscriber's app syncs on every open, usually with nothing new, and each
-  // write costs two KV puts.
+  // write costs two KV puts. The token index is still checked: a save whose
+  // index put failed leaves an enabled subscription whose unsubscribe link
+  // answers 400, and this sync may be the only retry that save gets.
   if (
     sync
-    && existingRaw
+    && existingRaw?.unsubscribeToken
     && existingRaw.email === identity.email
     && existingRaw.displayName === identity.displayName
     && JSON.stringify(existingRaw.follows) === JSON.stringify(follows)
     && JSON.stringify(existingRaw.previewItems) === JSON.stringify(previewItems)
   ) {
+    if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
+      await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
+    }
     return publicSubscription(existing, identity.email);
   }
-  const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
   const now = new Date().toISOString();
   const persistedBase = existingRecord?.state
     ? stripDeliveryState(existingRaw!)
@@ -1052,7 +1058,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   };
   await Promise.all([
     env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
-    env.NOTIFICATION_STORE.put(`${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`, identity.uid),
+    env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
   ]);
   return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
 }
