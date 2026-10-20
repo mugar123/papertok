@@ -413,7 +413,7 @@ export async function handlePaperFigures(request: Request, env: WorkerEnv) {
 // in domainSourceService.ts) after the feed stops waiting for it; nine seconds
 // lets the answer finish and be cached for the next reader, with room left for
 // the identity and quota checks that run first.
-export const CORE_UPSTREAM_TIMEOUT_MS = 9_000;
+const CORE_UPSTREAM_TIMEOUT_MS = 9_000;
 
 export async function handleCore(request: Request, env: WorkerEnv, identity?: Pick<VerifiedIdentity, 'uid'> | null) {
   const context = sourceRequestContext(request, env);
