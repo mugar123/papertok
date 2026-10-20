@@ -1,8 +1,11 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
+import type { OpenAlexWork } from './adapters/openAlexTypes.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
+import { mapOpenAlexEnrichmentWork, slimWorksPage } from './openAlexService.ts';
+import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
@@ -421,6 +424,90 @@ test('an unreviewed row that is not a working paper still takes the DOI it was m
   for (const [label, record] of [['Semantic Scholar', semanticScholar], ['NASA ADS', ads]] as const) {
     const [row] = PaperBuilder.deduplicate([record, openAlex]);
     assert.equal(row.doi, doi, label);
+  }
+});
+
+test('a FEDS revision that arXiv lists under its own DOI stays a working paper beside the original', () => {
+  // Synthetic records. The Federal Reserve Board issues a revised FEDS paper
+  // under the original DOI plus `r1`, and arXiv records carry whichever DOI
+  // the authors entered, with no journal reference. OpenAlex files the
+  // original in the listed FEDS source with the eprint among its locations,
+  // so `deduplicate` joins the two on the arXiv id. The working paper reaches
+  // the feed and search through the OpenAlex adapter, the Explorer through
+  // its works page, and an arXiv card through the enrichment.
+  const title = 'Bank capital and the transmission of monetary policy';
+  const arxivId = '2601.00007';
+  const fedsDoi = '10.17016/FEDS.2026.007';
+  const fedsLocation = {
+    landing_page_url: `https://doi.org/${fedsDoi}`,
+    is_published: true,
+    source: {
+      id: 'https://openalex.org/S4210212089',
+      display_name: 'Finance and Economics Discussion Series',
+      type: 'journal',
+      host_organization_name: 'Board of Governors of the Federal Reserve System',
+    },
+  };
+  const fedsWork: OpenAlexWork = {
+    id: 'https://openalex.org/W500',
+    doi: `https://doi.org/${fedsDoi}`,
+    title,
+    type: 'article',
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    publication_year: 2026,
+    primary_location: fedsLocation,
+    locations: [fedsLocation, {
+      landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+      is_published: false,
+      source: { display_name: 'arXiv (Cornell University)', type: 'repository' },
+    }],
+  };
+  // As `arxivService` maps an entry: a DOI or a journal reference makes it a
+  // published article.
+  const arxivRecord = (doi: string, journal = '') => PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    doi,
+    journal,
+    publicationType: 'article',
+    publicationStatus: 'published',
+  });
+  const searchRecord = () => new OpenAlexAdapter().mapToStandard(fedsWork)!;
+  const explorerRecord = () => slimWorksPage({ results: [fedsWork] }).papers[0];
+  const flows = (arxiv: Paper, { workingPaperFirst = true } = {}): Array<[string, Paper[]]> => [
+    ['search, arXiv first', PaperBuilder.deduplicate([arxiv, searchRecord()])],
+    ['Explorer page, arXiv first', PaperBuilder.deduplicate([arxiv, explorerRecord()])],
+    ['Explorer across pages, arXiv first', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), explorerRecord()])],
+    ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(fedsWork)!.enrichment, 'openalex')]],
+    ...(workingPaperFirst ? [
+      ['search, working paper first', PaperBuilder.deduplicate([searchRecord(), arxiv])],
+      ['Explorer page, working paper first', PaperBuilder.deduplicate([explorerRecord(), arxiv])],
+      ['Explorer across pages, working paper first', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([explorerRecord()]), arxiv])],
+    ] as Array<[string, Paper[]]> : []),
+  ];
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
+
+  // The revision's DOI comes from the registrant that issued the working
+  // paper's, so the row is that working paper in every flow and order.
+  for (const [flow, rows] of flows(arxivRecord(`${fedsDoi}r1`))) {
+    assert.equal(rows.length, 1, flow);
+    assert.equal(rows[0].peerReviewed, false, flow);
+    assert.equal(reviewTagForPaper(rows[0])?.label, 'Working paper', flow);
+    assert.deepEqual(peerReviewedOnly(rows), [], flow);
+  }
+
+  // The same eprint published in a journal, which arXiv records with the
+  // journal's DOI and reference, stays reviewed when it arrives first.
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  for (const [flow, rows] of flows(arxivRecord(journalDoi, 'J. Int. Econ. 160 (2026) 103900'), { workingPaperFirst: false })) {
+    assert.equal(rows.length, 1, flow);
+    assert.equal(rows[0].doi, journalDoi, flow);
+    assert.equal(rows[0].peerReviewed, true, flow);
+    assert.equal(reviewTagForPaper(rows[0]), null, flow);
+    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], flow);
   }
 });
 

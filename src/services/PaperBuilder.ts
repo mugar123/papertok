@@ -28,6 +28,11 @@ function isPublisherDoi(normalizedDoi: string) {
   return normalizedDoi !== '' && !normalizedDoi.startsWith('10.48550/arxiv.');
 }
 
+// The registrant prefix, `10.17016` in 10.17016/feds.2026.007r1.
+function doiRegistrant(normalizedDoi: string) {
+  return normalizedDoi.split('/')[0];
+}
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -339,10 +344,18 @@ export class PaperBuilder {
     // arXiv eprint among a FEDS paper's locations while arXiv lists the
     // journal's DOI for it. A row that keeps the article's DOI and journal is
     // not the working paper.
+    // A base DOI from the working paper's own registrant is another version
+    // of it: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for
+    // the paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
+    // 2026-10-20, each listed series' prefix held only its own institution's
+    // publications, and no academic publisher's journal.
     const baseDoi = normalizeDoi(existingPaper.doi);
+    const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
     const sameRecord = !existingPaper.doi
-      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
+      || (baseDoi !== '' && baseDoi === enrichmentDoi)
+      || (enrichmentData.workingPaper === true && enrichmentDoi !== ''
+        && doiRegistrant(baseDoi) === doiRegistrant(enrichmentDoi))
       || (!isPublisherDoi(baseDoi)
         && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
     // A published record that says outright it was not reviewed wins from
