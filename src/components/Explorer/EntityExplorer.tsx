@@ -135,8 +135,8 @@ const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 // is a click's answer — the reader is waiting on it.
 //
 // The curve itself was chosen by measurement on the Wikipedia fold, back when
-// that one still closed its own height (four probe runs, written up in
-// `plans/README.md`): what a collapse costs the reader is its worst single
+// that one still closed its own height (four probe runs with
+// `scripts/diagnostics/explorer-loading-probe.mjs`): what a collapse costs the reader is its worst single
 // frame — travel × steepness ÷ frames — not its duration, and a steep
 // ease-in-out given too few frames measured WORSE than the front-loaded curve
 // it replaced. Shortening this is no free way to make it feel quicker.
