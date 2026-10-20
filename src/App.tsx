@@ -27,7 +27,7 @@ import ProtectedRoute from './components/Auth/ProtectedRoute.tsx'
 import FeedContainer from './components/Feed/FeedContainer.tsx'
 import Navbar from './components/Layout/Navbar.tsx'
 import NudgeHost from './components/Nudges/NudgeHost.tsx'
-import GuestFeedPage from './components/Public/GuestFeedPage.tsx'
+import GuestWelcome from './components/Public/GuestWelcome.tsx'
 import AuthPrompt from './components/Public/AuthPrompt.tsx'
 import { normalizeAuthReason } from './components/Public/authPromptCopy.ts'
 import { getPublicPaperPath } from './utils/publicNavigation.ts'
@@ -64,11 +64,10 @@ const PublicPaperPage = lazyWithPreload(() => import('./components/Public/Public
 const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicListPage.tsx'))
 const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCommand.tsx'))
 
-// The standalone routes a guest can reach without a session — `/feed` is
-// also guest-reachable but excluded on purpose, since it handles onboarding
-// itself. A sign-in from one of these doors (like, save, follow) leaves the
-// new account right there, and none of them is behind ProtectedRoute, so App
-// itself has to take it to the onboarding (the effect below).
+// The standalone routes a guest can reach without a session. A sign-in from
+// one of these doors (like, save, follow) leaves the new account right there,
+// and none of them is behind ProtectedRoute, so App itself has to take it to
+// the onboarding (the effect below).
 const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
 function isPublicRoute(path: string) {
   return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
@@ -79,7 +78,7 @@ function LoginRedirect() {
   const requested = location.state?.returnTo || new URLSearchParams(location.search).get('returnTo')
   return (
     <Navigate
-      to="/feed"
+      to="/onboarding"
       replace
       state={{ authRequired: true, returnTo: isInAppPath(requested) ? requested : '/feed' }}
     />
@@ -168,13 +167,13 @@ function AppContent() {
   }, [])
 
   // There is no sign-in page. A guest bounced off a protected route (or an
-  // old /login link) lands on the feed with `authRequired` in the location
-  // state: the sign-in dialog opens over the feed, and the route they asked
-  // for waits in `utils/authReturn.js` until a session exists — outside this
-  // component, because signing in remounts it (see that file). Each arrival
-  // is read once (keyed on the history entry, adjusted during render so the
-  // door is in the same paint as the feed), and the state is then cleared from
-  // the entry so a reload does not reopen it.
+  // old /login link) lands on the onboarding with `authRequired` in the
+  // location state: the sign-in dialog opens over the welcome, and the route
+  // they asked for waits in `utils/authReturn.js` until a session exists —
+  // outside this component, because signing in remounts it (see that file).
+  // Each arrival is read once (keyed on the history entry, adjusted during
+  // render so the door is in the same paint as the welcome), and the state is
+  // then cleared from the entry so a reload does not reopen it.
   const navigate = useNavigate()
   const authArrivalKey = location.state?.authRequired ? location.key : null
   const arrivalReturnTo = authArrivalKey ? location.state?.returnTo : undefined
@@ -310,43 +309,46 @@ function AppContent() {
       <AnimatePresence mode="sync" initial={false} custom={pageTransitionCustom}>
         <Routes location={location} key={location.pathname.startsWith('/settings/') ? '/settings' : location.pathname}>
           {/* The sign-in page is gone; the address still works for old links
-              and bookmarks: the feed, with the sign-in dialog open. */}
-          {/* The root is the feed by its own route now, not by the wildcard:
-              the wildcard answers an undeclared address with NotFoundPage. */}
-          <Route path="/" element={<Navigate to="/feed" replace />} />
+              and bookmarks: the onboarding, with the sign-in dialog open. */}
+          {/* The entry address, by its own route rather than the wildcard
+              (which answers an undeclared address with NotFoundPage): an
+              account goes to its feed, a visitor to the onboarding. While the
+              session is unknown it is the feed, whose veil is the boot screen;
+              ProtectedRoute sends a visitor on from there. */}
+          <Route path="/" element={<Navigate to={authLoading || user ? '/feed' : '/onboarding'} replace />} />
           <Route path="/login" element={<LoginRedirect />} />
+          {/* Signed out, the onboarding is the welcome, and it ends in a
+              sign-up: there is no guest feed. Signed in, it is the account's
+              own steps, which adopt what the welcome answered. */}
           <Route
             path="/onboarding"
             element={
-              <ProtectedRoute requireOnboarding={false}>
-                <PageTransition><OnboardingFlow /></PageTransition>
-              </ProtectedRoute>
+              authLoading || user ? (
+                <ProtectedRoute requireOnboarding={false}>
+                  <PageTransition><OnboardingFlow /></PageTransition>
+                </ProtectedRoute>
+              ) : (
+                <PageTransition>
+                  <GuestWelcome onSignIn={requestAuthentication} />
+                </PageTransition>
+              )
             }
           />
           <Route
             path="/feed"
             element={
-              authLoading || user ? (
-                <ProtectedRoute>
-                  <PageTransition>
-                    <FeedContainer
-                      landmark={{
-                        label: 'Paper feed',
-                        heading: 'For you',
-                      }}
-                      onOpenPdf={openPdf}
-                      onSaveToList={setSaveModalPaper}
-                    />
-                  </PageTransition>
-                </ProtectedRoute>
-              ) : (
+              <ProtectedRoute>
                 <PageTransition>
-                  <GuestFeedPage
-                    onAuthRequired={requestAuthentication}
+                  <FeedContainer
+                    landmark={{
+                      label: 'Paper feed',
+                      heading: 'For you',
+                    }}
                     onOpenPdf={openPdf}
+                    onSaveToList={setSaveModalPaper}
                   />
                 </PageTransition>
-              )
+              </ProtectedRoute>
             }
           />
           <Route

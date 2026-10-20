@@ -47,7 +47,13 @@ export const INSTITUTION_PATHS = new Set([INSTITUTION_LINK_PATH, INSTITUTION_UNL
 // A Firebase ID token runs to about a kilobyte; the body carries at most one.
 const BODY_LIMIT_BYTES = 16_384;
 const LOOKUP_TIMEOUT_MS = 6000;
+// One budget for every registry question of a link: the browser waits 15 s
+// for the whole request, which also verifies one or two tokens and writes
+// the document, and one ROR and two federation questions at 6 s each would
+// outrun it.
+export const LINK_LOOKUP_BUDGET_MS = 10_000;
 const ROR_API = 'https://api.ror.org/v2/organizations';
+const ROR_ID_PREFIX = 'https://ror.org/';
 // SeamlessAccess publishes the eduGAIN metadata as a query service: each entry
 // carries the email `scope` its identity provider authenticates.
 const FEDERATION_MDQ = 'https://md.seamlessaccess.org/entities/';
@@ -69,10 +75,10 @@ export class InstitutionLinkError extends Error {
  * Reads the body inside the deadline as well: a registry that sends its
  * headers and then stalls is as unavailable as one that never answered.
  */
-async function fetchJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
+async function fetchJson<T>(url: string, fetchImpl: typeof fetch, budget: AbortSignal): Promise<T> {
   const response = await fetchImpl(url, {
     headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    signal: AbortSignal.any([budget, AbortSignal.timeout(LOOKUP_TIMEOUT_MS)]),
   });
   const text = await response.text();
   if (!response.ok) throw new Error(`${url} returned ${response.status}`);
@@ -85,28 +91,110 @@ function rorName(record: RorRecord, type: string) {
   return typeof match?.value === 'string' && match.value.trim() ? match.value.trim() : null;
 }
 
+type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string } | { rorDomain: string });
+
 /**
- * The ROR record whose registered domains include this one. ROR's search is
- * a text query, so the answer is filtered again on the `domains` field: a
- * record that merely mentions the domain somewhere is not a match.
+ * Mail domains checked by hand against the university's own pages: each is a
+ * domain the university gives its students or staff, with the page that says
+ * so and the date it was read. An address links only when ROR lists its exact
+ * domain or when its domain is here. A parent domain proves no membership:
+ * alumni.cmu.edu is alumni mail, mgh.harvard.edu a hospital, and nhs.uk or
+ * gob.es are public suffixes that ROR lists as organisations.
+ *
+ * `rorId` names the university's record, which ROR is asked for by id. A
+ * student domain then links to the record whose library `/access` serves:
+ * `/access` finds a library by ROR id, and a student domain is not among the
+ * row's domains. The entry also wins over a record that ROR lists the domain
+ * under: ROR lists purdue.edu only under the Clifford B. Kinley Trust
+ * (049s7vz13), a funder record, and arizona.edu, univ-lille.fr and slu.se
+ * only under sub-units (checked 2026-10-19).
+ *
+ * `rorDomain` names the domain ROR is asked about instead, for a domain ROR
+ * lists under another record: ROR lists neu.edu, the legacy domain of
+ * Northeastern in Boston, under Northeastern in Shenyang, and lists
+ * northeastern.edu under Boston (04t5xt781). The record found must list that
+ * domain. Either way the name and acronym come from ROR.
+ *
+ * `/access` does not read this list, so a record stored under another
+ * organisation is never answered with this university's library.
  */
-async function lookupRor(domain: string, fetchImpl: typeof fetch) {
-  const url = `${ROR_API}?query.advanced=${encodeURIComponent(`domains:${domain}`)}`;
-  let payload;
+const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
+  'myumanitoba.ca': { rorId: 'https://ror.org/02gfys938', source: 'https://umanitoba.ca/information-services-technology/my-accounts-email/claim-umnetid', checked: '2026-10-20' },
+  'rochester.edu': { rorId: 'https://ror.org/022kthw22', source: 'https://it.rochester.edu/rochedualiaspages/FAQ.aspx', checked: '2026-10-20' },
+  'sms.ed.ac.uk': { rorId: 'https://ror.org/01nrxwf90', source: 'https://information-services.ed.ac.uk/computing/comms-and-collab/email/directories/student-directory', checked: '2026-10-20' },
+  'student.ethz.ch': { rorId: 'https://ror.org/05a28rw58', source: 'https://blogs.ethz.ch/its/2026/09/11/new-to-eth-your-it-starter-pack-for-your-studies/', checked: '2026-10-20' },
+  'sydney.edu.au': { rorId: 'https://ror.org/0384j8v12', source: 'https://www.sydney.edu.au/policies/showdoc.aspx?RendNum=0&recnum=PDOC2011%2F139', checked: '2026-10-20' },
+  'u.rochester.edu': { rorId: 'https://ror.org/022kthw22', source: 'https://tech.rochester.edu/faqs/gmail-faqs/', checked: '2026-10-20' },
+  'ugent.be': { rorId: 'https://ror.org/00cv9y106', source: 'https://www.ugent.be/student/en/ict/ict-services/account.htm', checked: '2026-10-20' },
+  'umail.leidenuniv.nl': { rorId: 'https://ror.org/027bh9e22', source: 'https://researchwiki.solo.universiteitleiden.nl/xwiki/wiki/researchwiki.solo.universiteitleiden.nl/view/Online%20Research/Pavlovia/', checked: '2026-10-20' },
+  'umanitoba.ca': { rorId: 'https://ror.org/02gfys938', source: 'https://umanitoba.ca/information-services-technology/my-accounts-email/claim-umnetid', checked: '2026-10-20' },
+  'uni.sydney.edu.au': { rorId: 'https://ror.org/0384j8v12', source: 'https://www.sydney.edu.au/students/student-responsibilities/university-correspondence.html', checked: '2026-10-20' },
+  'unr.edu': { rorId: 'https://ror.org/01keh0577', source: 'https://library.unr.edu/help/troubleshooting/technology-updates', checked: '2026-10-20' },
+  'neu.edu': { rorDomain: 'northeastern.edu', source: 'https://www.northeastern.edu/privacy-information/', checked: '2026-10-19' },
+  'husky.neu.edu': { rorDomain: 'northeastern.edu', source: 'https://cssh.northeastern.edu/writingcenter/tutoring/first-visit/', checked: '2026-10-19' },
+  'alum.us.es': { rorId: 'https://ror.org/03yxnpp24', source: 'https://cat.us.es/orientacion/guia-de-estudiantes/', checked: '2026-10-19' },
+  'alumnes.ub.edu': { rorId: 'https://ror.org/021018s57', source: 'https://www.ub.edu/campusvirtualub/ca/pmf/com-crear-la-teva-adreca-de-correu-ub', checked: '2026-10-19' },
+  'alumni.unav.es': { rorId: 'https://ror.org/02rxc7m23', source: 'https://www.unav.edu/web/it/cuentas-y-claves', checked: '2026-10-19' },
+  'alumni.uv.es': { rorId: 'https://ror.org/043nxc105', source: 'https://www.uv.es/uvweb/social/en/faculty/office-secretary/faq-1286251981646.html', checked: '2026-10-19' },
+  'alumno.uned.es': { rorId: 'https://ror.org/02msb5n36', source: 'https://www.uned.es/universidad/inicio/en/estudios/idiomas/servicios-estudiante/acceso-correo-estudiante.html', checked: '2026-10-19' },
+  'alumnos.uc3m.es': { rorId: 'https://ror.org/03ths8210', source: 'https://www.uc3m.es/grado/informacion-practica/llegada-uc3m/correo-uc3m', checked: '2026-10-19' },
+  'alumnos.upm.es': { rorId: 'https://ror.org/03n6nwv02', source: 'https://www.upm.es/internacional/UPM/Network%20Services/e-mail', checked: '2026-10-19' },
+  'alumnos.uvigo.es': { rorId: 'https://ror.org/05rdf8595', source: 'https://secretaria.uvigo.gal/uv/web/axuda/faq/documento/downloadbyhash/bf55f3e58f46c2cdd74a35e796f4930ccfdc833ec737d74694647c23c0fff004', checked: '2026-10-19' },
+  'arizona.edu': { rorId: 'https://ror.org/03m2x1q45', source: 'https://news.arizona.edu/node/21525', checked: '2026-10-19' },
+  'autonoma.cat': { rorId: 'https://ror.org/052g8jq94', source: 'https://www.uab.cat/doc/presentacio_acollida_2025_2026', checked: '2026-10-19' },
+  'correo.ugr.es': { rorId: 'https://ror.org/04njjy449', source: 'https://csirc.ugr.es/estudiantes/acceso-servicios', checked: '2026-10-19' },
+  'estudiant.upf.edu': { rorId: 'https://ror.org/04n0g0b29', source: 'https://www.upf.edu/web/phd-political-and-social-sciences/resources', checked: '2026-10-19' },
+  'estudiantat.upc.edu': { rorId: 'https://ror.org/03mb6wj31', source: 'https://serveistic.upc.edu/ca/g-suite-for-education/faq/soc-estudiant-tinc-correu-g-suite-o-correu-google', checked: '2026-10-19' },
+  'estudiante.uam.es': { rorId: 'https://ror.org/01cby8j38', source: 'https://www.uam.es/uam/tecnologias-informacion/servicios/correo-electronico', checked: '2026-10-19' },
+  'g.ucla.edu': { rorId: 'https://ror.org/046rm7j60', source: 'https://www.psych.ucla.edu/admin-units/information-technology/technical-training-and-how-tos/ucla-email-faq/', checked: '2026-10-19' },
+  'mail.utoronto.ca': { rorId: 'https://ror.org/03dbr7087', source: 'https://www.utsc.utoronto.ca/iits/student-email-and-calendar', checked: '2026-10-20' },
+  'opendeusto.es': { rorId: 'https://ror.org/00ne6sr39', source: 'https://icttraining.deusto.es/opendeusto-account', checked: '2026-10-19' },
+  'purdue.edu': { rorId: 'https://ror.org/02dqehb95', source: 'https://service.purdue.edu/TDClient/32/Purdue/KB/ArticleDet?ID=455', checked: '2026-10-19' },
+  'rai.usc.es': { rorId: 'https://ror.org/030eybx10', source: 'https://assets.usc.gal/sites/default/files/paragraphs/moreinfo/2025-09/guia-estudantes-curso-sep-2025.pdf', checked: '2026-10-19' },
+  'slu.se': { rorId: 'https://ror.org/02yy8x990', source: 'https://internt.slu.se/en/support-services/administrative-support/communication/templates-and-promotional-items/mallar/email-signature/', checked: '2026-10-19' },
+  'student.bham.ac.uk': { rorId: 'https://ror.org/03angcq70', source: 'https://www.birmingham.ac.uk/welcome/essential-tasks/your-next-steps', checked: '2026-10-19' },
+  'student.unimelb.edu.au': { rorId: 'https://ror.org/01ej9dk98', source: 'https://studentit.unimelb.edu.au/student-email', checked: '2026-10-20' },
+  'terpmail.umd.edu': { rorId: 'https://ror.org/047s2c258', source: 'https://itsupport.umd.edu/kb_view.do?sysparm_article=KB0016507', checked: '2026-10-19' },
+  'ull.edu.es': { rorId: 'https://ror.org/01r9z8p25', source: 'https://campusvirtual.ull.es/static/ayuda-soporte/doc/guia_usuarios_estudiante.pdf', checked: '2026-10-19' },
+  'unav.es': { rorId: 'https://ror.org/02rxc7m23', source: 'https://www.unav.edu/web/it/cuentas-y-claves', checked: '2026-10-19' },
+  'univ-lille.fr': { rorId: 'https://ror.org/02kzqn938', source: 'https://sciences-technologies.univ-lille.fr/filefst/user_upload/sciences_de_la_terre/Secretariat_pedago/Activation_compte_Info_Etudiant.pdf', checked: '2026-10-19' },
+  'utexas.edu': { rorId: 'https://ror.org/00hj54h04', source: 'https://catalog.utexas.edu/archive/2025-26/general-information/libraries-and-other-academic-resources/computing-resources/', checked: '2026-10-19' },
+};
+
+/** A ROR question; any failure, the budget running out included, is the registry being unavailable. */
+async function askRor<T>(url: string, fetchImpl: typeof fetch, budget: AbortSignal): Promise<T> {
   try {
-    payload = await fetchJson<{ items?: RorRecord[] }>(url, fetchImpl);
+    return await fetchJson<T>(url, fetchImpl, budget);
   } catch {
     throw new InstitutionLinkError('INSTITUTION_LOOKUP_UNAVAILABLE', 502);
   }
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  const record = items.find(item => Array.isArray(item?.domains)
-    && item.domains.some(value => String(value).toLowerCase() === domain));
-  if (!record || typeof record.id !== 'string') {
-    throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
+}
+
+/**
+ * The ROR record for an address's exact domain, asked in one question, with
+ * the domain the federation may list the university under (`scope`). For a
+ * domain that is not hand-checked, ROR's search is a text query, so the
+ * answer is filtered again on the `domains` field: a record that merely
+ * mentions the domain somewhere is not a match.
+ */
+async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
+  const checked = CHECKED_MAIL_DOMAINS[domain];
+  let record: RorRecord | undefined;
+  let scope = domain;
+  if (checked && 'rorId' in checked) {
+    const answer = await askRor<RorRecord>(`${ROR_API}/${checked.rorId.slice(ROR_ID_PREFIX.length)}`, fetchImpl, budget);
+    record = answer?.id === checked.rorId ? answer : undefined;
+    const [listed] = Array.isArray(record?.domains) ? record.domains : [];
+    if (typeof listed === 'string') scope = listed.toLowerCase();
+  } else {
+    if (checked) scope = checked.rorDomain;
+    const payload = await askRor<{ items?: RorRecord[] }>(`${ROR_API}?query.advanced=${encodeURIComponent(`domains:${scope}`)}`, fetchImpl, budget);
+    record = (Array.isArray(payload?.items) ? payload.items : []).find(item => Array.isArray(item?.domains)
+      && item.domains.some(value => String(value).toLowerCase() === scope));
   }
-  const name = rorName(record, 'ror_display') || rorName(record, 'label');
-  if (!name) throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
-  return { rorId: record.id, name, acronym: rorName(record, 'acronym') };
+  const name = record && (rorName(record, 'ror_display') || rorName(record, 'label'));
+  if (!record || typeof record.id !== 'string' || !name) throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
+  return { rorId: record.id, name, acronym: rorName(record, 'acronym'), scope };
 }
 
 /**
@@ -115,9 +203,11 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch) {
  * federation, or a metadata service that is down, leaves it null rather than
  * blocking the link. Null here means "not found now", not "has none".
  */
-async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
+async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
+  // Optional, so a budget already spent on the registry is not spent again.
+  if (budget.aborted) return null;
   try {
-    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl);
+    const entries = await fetchJson<Array<{ scope?: unknown; entityID?: unknown }>>(`${FEDERATION_MDQ}?q=${encodeURIComponent(domain)}`, fetchImpl, budget);
     const entry = (Array.isArray(entries) ? entries : []).find(candidate => String(candidate?.scope || '')
       .split(',')
       .map(scope => scope.trim().toLowerCase())
@@ -128,23 +218,38 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch) {
   }
 }
 
+// The cache's third generation: the first could hold a record that does not
+// own its domain (neu.edu resolved to Shenyang until 2026-10-19), and the
+// second one linked through a parent domain (alumni.cmu.edu to CMU). A
+// hand-checked domain's key also names what its entry asks ROR, so the answer
+// cached before an entry was added, changed or removed is not served for
+// another week.
 function cacheRequest(domain: string) {
-  return new Request(`https://papertok.internal/institution/${encodeURIComponent(domain)}`);
+  const url = new URL(`https://papertok.internal/institution/v3/${encodeURIComponent(domain)}`);
+  const checked = CHECKED_MAIL_DOMAINS[domain];
+  if (checked && 'rorId' in checked) url.searchParams.set('rorId', checked.rorId);
+  else if (checked) url.searchParams.set('rorDomain', checked.rorDomain);
+  return new Request(url);
 }
 
 /**
  * What a domain resolves to. Cached a week on success: the registries change
  * slowly and every member of one institution asks the same question. Not
  * found and unavailable are not cached, so a registry outage or a record
- * added tomorrow is not remembered as a refusal.
+ * added tomorrow is not remembered as a refusal. Every registry question
+ * shares one `budget`, `LINK_LOOKUP_BUDGET_MS` by default.
  */
-export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> = {}): Promise<ResolvedInstitution> {
+export async function resolveInstitution(domain: string, { fetchImpl = fetch, cache = (globalThis as WorkerGlobals).caches?.default, signal: budget = AbortSignal.timeout(LINK_LOOKUP_BUDGET_MS) }: Pick<InstitutionLinkOptions, 'fetchImpl' | 'cache'> & { signal?: AbortSignal } = {}): Promise<ResolvedInstitution> {
   const key = cacheRequest(domain);
   const cached = cache ? await cache.match(key) : null;
   if (cached) return cached.json<ResolvedInstitution>();
 
-  const ror = await lookupRor(domain, fetchImpl);
-  const institution = { domain, ...ror, entityId: await lookupEntityId(domain, fetchImpl) };
+  const { scope, ...ror } = await lookupRor(domain, fetchImpl, budget);
+  // The federation lists the identity provider by the university's own
+  // scope, which a hand-checked student domain may not be.
+  const entityId = await lookupEntityId(domain, fetchImpl, budget)
+    ?? (scope !== domain ? await lookupEntityId(scope, fetchImpl, budget) : null);
+  const institution = { domain, ...ror, entityId };
   if (cache) {
     await cache.put(key, new Response(JSON.stringify(institution), {
       headers: {

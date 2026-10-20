@@ -167,6 +167,18 @@ test('a service filtered for a reason other than the date leaves the platform un
   assert.equal(result.unchecked, SERVICE_CATALOGUE.length - SUBREQUEST_BUDGET + 1);
 });
 
+// A library that sends readers straight to one service answers without an
+// indicator (Harvard, 2026-10-19); the package it lists is still its own.
+const ctoSingleService = (...packages: string[]) => ctoWith(...packages)
+  .replace('<key id="full_text_indicator">true</key>', '<key id="available_services">single_service</key>\n    <key id="rft.mms_id">990001299870203941</key>');
+
+test('a platform answered without an indicator is listed from what it lists', async () => {
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? ctoSingleService('Nature') : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services.map(service => [service.id, service.collection, service.ownPlatform]), [['nature', 'Nature', true]]);
+  assert.equal(result.partial, false);
+});
+
 test('a probe cut short leaves its platform out and marks the list partial', async () => {
   const stub = upstreams({
     resolver: (issn: string) => (issn === ISSN_OF.wiley ? timeout() : xml(issn === ISSN_OF.ieee || issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE)),
@@ -178,6 +190,14 @@ test('a probe cut short leaves its platform out and marks the list partial', asy
 
 test('an unreadable resolver answer is a failed probe, not a missing subscription', async () => {
   const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.acs ? '<html>Maintenance</html>' : CTO_NONE) });
+  const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result.services, []);
+  assert.equal(result.partial, true);
+});
+
+test('a single-service answer cut off before its services is a failed probe, not an empty list', async () => {
+  const truncated = '<uresolver_content><context_object><keys><key id="rft.mms_id">990001299870203941</key><key id="available_services">single_service</key></keys></context_object><context_services>';
+  const stub = upstreams({ resolver: (issn: string) => xml(issn === ISSN_OF.nature ? truncated : CTO_NONE) });
   const result = await lookupInstitutionServices({ domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result.services, []);
   assert.equal(result.partial, true);
@@ -203,6 +223,33 @@ test('refuses an institution no provider can answer for, without asking anyone',
     );
     assert.equal(stub.calls.length, 0);
   }
+});
+
+// One @hawaii.edu address serves every campus of the University of Hawaiʻi,
+// and the only resolver found is Mānoa's library: the system's identity
+// gets no list rather than Mānoa's (row withdrawn 2026-10-20).
+const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
+
+test('the Hawaiʻi system is refused rather than listed from Mānoa\'s library', async () => {
+  const stub = upstreams();
+  await assert.rejects(
+    lookupInstitutionServices({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR } as InstitutionQuery, { fetchImpl: stub.fetchImpl }),
+    error => (error as Error & { code?: string; status?: number }).code === 'INSTITUTION_NOT_SUPPORTED' && (error as Error & { code?: string; status?: number }).status === 404,
+  );
+  assert.equal(stub.calls.length, 0);
+  assert.equal('library' in servicesCacheParams({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR } as InstitutionQuery, {} as WorkerEnv), false);
+});
+
+test('UVic-UCC and PUC Chile are listed from their own libraries', () => {
+  const catalogue = catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET);
+  assert.deepEqual(
+    servicesCacheParams({ domain: 'uvic-ucc.cat', rorId: 'https://ror.org/006zjws59' } as InstitutionQuery, {} as WorkerEnv),
+    { library: '34CSUC_UVIC', host: 'csuc-uvic.alma.exlibrisgroup.com', catalogue, reading: 'well-formed-answers' },
+  );
+  assert.deepEqual(
+    servicesCacheParams({ domain: 'uc.cl', rorId: 'https://ror.org/04teye511' } as InstitutionQuery, {} as WorkerEnv),
+    { library: '56PUC_INST', host: 'puc.alma.exlibrisgroup.com', catalogue, reading: 'well-formed-answers' },
+  );
 });
 
 // With a key, the catalogue goes to GetFTR twenty DOIs per request.
@@ -340,7 +387,7 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
-    if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn')!);
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn')!, url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -362,6 +409,63 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
   }
 }
 
+test('the services route accepts USC\'s stored SAML URN and queries its Alma library', async () => {
+  const search = new URLSearchParams({ domain: 'usc.edu', rorId: 'https://ror.org/03taz7m60', entityId: 'urn:mace:incommon:usc.edu', offset: '0' }).toString();
+  const { response, body, servicePuts } = await requestServices(search, {
+    resolver: (issn, target) => {
+      assert.equal(target!.host, 'na03.alma.exlibrisgroup.com');
+      assert.equal(target!.pathname, '/view/uresolver/01USC_INST/openurl');
+      return xml(issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.services.map(service => service.id), ['sciencedirect']);
+  assert.equal(body.partial, false);
+  assert.equal(servicePuts.length, 1);
+  assert.equal(new URL(servicePuts[0].key).searchParams.get('library'), '01USC_INST');
+  const anonymous = await requestServices(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
+test('the services route accepts Manitoba\'s HTTP SAML identifier and queries its Alma library', async () => {
+  const search = new URLSearchParams({ domain: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938', entityId: 'http://CAF.AD.UMANITOBA.CA/adfs/services/trust', offset: '0' }).toString();
+  const { response, body, servicePuts } = await requestServices(search, {
+    resolver: (issn, target) => {
+      assert.equal(target!.host, 'ca01.alma.exlibrisgroup.com');
+      assert.equal(target!.pathname, '/view/uresolver/01UMB_INST/openurl');
+      return xml(issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.services.map(service => service.id), ['sciencedirect']);
+  assert.equal(body.partial, false);
+  assert.equal(servicePuts.length, 1);
+  assert.equal(new URL(servicePuts[0].key).searchParams.get('library'), '01UMB_INST');
+  const anonymous = await requestServices(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
+test('the services route rejects malformed URNs and unsafe schemes without provider work or caching', async () => {
+  for (const entityId of ['urn:mace:', 'urn::usc.edu', 'urn:mace:incommon:usc edu', 'urn:mace:usc%ZZ', 'javascript:alert(1)', 'http://', 'http://bad host/idp', 'ftp://idp.example.edu', `urn:mace:${'x'.repeat(300)}`]) {
+    const { response, body, calls, servicePuts } = await requestServices(new URLSearchParams({ domain: 'usc.edu', entityId }).toString());
+    assert.equal(response.status, 400, entityId);
+    assert.deepEqual(body, { code: 'INVALID_INSTITUTION_ID' });
+    assert.ok(calls.every(host => host === 'identitytoolkit.googleapis.com'));
+    assert.equal(servicePuts.length, 0);
+  }
+});
+
+test('the services route refuses the Hawaiʻi system without asking Mānoa\'s resolver or caching', async () => {
+  const search = new URLSearchParams({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR, offset: '0' }).toString();
+  const { response, body, calls, servicePuts } = await requestServices(search);
+  assert.equal(response.status, 404);
+  assert.deepEqual(body, { code: 'INSTITUTION_NOT_SUPPORTED' });
+  assert.equal(servicePuts.length, 0);
+  assert.ok(calls.every(host => !host.endsWith('.alma.exlibrisgroup.com')), `asked a resolver: ${calls.join(', ')}`);
+});
+
 test('the route caches a complete list for seven days under the library', async () => {
   const { response, body, servicePuts } = await requestServices('domain=USAL.es&entityId=https%3A%2F%2Fidp.usal.es%2Fentity');
   assert.equal(response.status, 200);
@@ -377,7 +481,7 @@ test('the route caches a complete list for seven days under the library', async 
     ['library', '34BUC_USAL'],
     ['host', 'eu01.alma.exlibrisgroup.com'],
     ['catalogue', catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET)],
-    ['reading', 'filtered-services'],
+    ['reading', 'well-formed-answers'],
   ]);
   assert.match(servicePuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
 });
@@ -390,10 +494,10 @@ test('the cache key changes with the catalogue and the budget, and with nothing 
   assert.notEqual(catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET + 30), fingerprint);
   const swapped = SERVICE_CATALOGUE.map((entry, index) => (index === 0 ? { ...entry, doi: '10.1016/j.other.2021.1' } : entry));
   assert.notEqual(catalogueFingerprint(swapped, SUBREQUEST_BUDGET), fingerprint);
-  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'filtered-services' });
+  assert.deepEqual(servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, {}), { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', catalogue: fingerprint, reading: 'well-formed-answers' });
   assert.deepEqual(
     servicesCacheParams({ domain: 'usal.es', entityId: ENTITY_ID }, GETFTR_ENV),
-    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'filtered-services' },
+    { library: '34BUC_USAL', host: 'eu01.alma.exlibrisgroup.com', entityId: ENTITY_ID, catalogue: fingerprint, reading: 'well-formed-answers' },
   );
 });
 

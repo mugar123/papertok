@@ -1,14 +1,19 @@
-import type { User } from 'firebase/auth';
+import type { Auth, OAuthCredential, User, UserInfo } from 'firebase/auth';
 interface IdentityUser {
   uid: string;
-  providerData: Array<Pick<User['providerData'][number], 'providerId'>>;
+  providerData: Array<Pick<UserInfo, 'providerId'> & Partial<Pick<UserInfo, 'uid'>>>;
 }
-interface IdentityAuth { currentUser: IdentityUser | null; }
+interface IdentityAuth {
+  currentUser: IdentityUser | null;
+  emulatorConfig?: Auth['emulatorConfig'];
+}
 interface IdentityOperations {
   authentication?: IdentityAuth;
   providers?: Record<string, unknown>;
   popupSignIn?(authentication: IdentityAuth, provider: unknown): Promise<{ user: IdentityUser }>;
   popupLink?(user: IdentityUser, provider: unknown): Promise<{ user: IdentityUser }>;
+  popupReauthenticate?(user: IdentityUser, provider: unknown): Promise<unknown>;
+  credentialReauthenticate?(user: IdentityUser, credential: OAuthCredential): Promise<unknown>;
   additionalUserInfo?(result: { user: IdentityUser }): { isNewUser: boolean } | null;
   isDemo?: boolean;
   currentUser?: IdentityUser | null;
@@ -42,9 +47,11 @@ interface IdentityOperations {
 import {
   getAdditionalUserInfo,
   linkWithPopup,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, githubProvider, googleProvider, IS_DEMO } from './firebase.ts';
+import { auth, emulatorGoogleCredential, githubProvider, googleProvider, IS_DEMO } from './firebase.ts';
 
 /** Firebase provider ids, used as-is: they are what `providerData` reports. */
 export const SIGN_IN_PROVIDERS = Object.freeze({
@@ -107,6 +114,8 @@ function operations(overrides: IdentityOperations = {}): Required<Omit<IdentityO
     },
     popupSignIn: overrides.popupSignIn || signInWithPopup,
     popupLink: overrides.popupLink || linkWithPopup,
+    popupReauthenticate: overrides.popupReauthenticate || reauthenticateWithPopup,
+    credentialReauthenticate: overrides.credentialReauthenticate || reauthenticateWithCredential,
     additionalUserInfo: overrides.additionalUserInfo || getAdditionalUserInfo,
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
   };
@@ -203,4 +212,38 @@ export async function linkSignInProvider(providerId: string, overrides?: Identit
     }
     throw error;
   }
+}
+
+/**
+ * Asks the signed-in person to sign in again through a door the account
+ * already has. Firebase deletes a sign-in account only when the session's
+ * sign-in is recent, and a session kept open for days is not.
+ *
+ * Call it directly from the click, before any other `await`: browsers block a
+ * popup that a user gesture did not open. Choosing a different account in the
+ * popup fails with `auth/user-mismatch` and leaves the session as it was.
+ *
+ * Resolves with the uid that signed in again, read when the click started.
+ * Another tab can switch this tab's session while the window is open, so a
+ * caller that acts on the confirmed account uses this uid, not the session.
+ */
+export async function reauthenticateCurrentUser(overrides?: IdentityOperations) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const user = api.authentication?.currentUser;
+  if (!user) throw new Error('Authentication is required to confirm the sign-in.');
+
+  // The emulator signs in with an unsigned credential rather than a provider
+  // popup (firebase.ts), so it confirms the sign-in the same way.
+  if (api.authentication.emulatorConfig) {
+    const google = user.providerData.find(entry => entry.providerId === SIGN_IN_PROVIDERS.google);
+    if (!google?.uid) throw new Error('The emulator account has no Google identity to confirm.');
+    await api.credentialReauthenticate(user, emulatorGoogleCredential(google.uid));
+    return user.uid;
+  }
+  // Any door the account has proves the same uid, so the first one listed is used.
+  const providerId = providerIdsOf(user).find(id => api.providers[id]);
+  if (!providerId) throw new TypeError('The account has no sign-in provider to confirm.');
+  await api.popupReauthenticate(user, requireProvider(api, providerId));
+  return user.uid;
 }

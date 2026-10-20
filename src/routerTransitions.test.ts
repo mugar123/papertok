@@ -61,15 +61,15 @@ test('SOURCE: the router reads the path, not the fragment', async () => {
  * a word (audit 2026-09-23, issue 12). The redirect is its own route now, and
  * the catch-all is the not-found page.
  */
-test('SOURCE: the feed lives at /feed, / redirects there, and the catch-all is the not-found page', async () => {
+test('SOURCE: the feed lives at /feed, / redirects there or to the onboarding, and the catch-all is the not-found page', async () => {
   const code = stripComments(await read('./App.tsx'));
 
   assert.match(code, /path="\/feed"/, 'the feed route must be /feed');
   assert.doesNotMatch(code, /\n\s*path="\/"\n/, 'no page may be routed at "/"');
   assert.match(
     code,
-    /<Route path="\/" element=\{<Navigate to="\/feed" replace \/>\} \/>/,
-    'the bare domain must land on the feed',
+    /<Route path="\/" element=\{<Navigate to=\{authLoading \|\| user \? '\/feed' : '\/onboarding'\} replace \/>\} \/>/,
+    'the bare domain must land on the feed, or the onboarding without a session',
   );
   assert.match(
     code,

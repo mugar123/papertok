@@ -75,13 +75,13 @@ test('an unknown filter shows everything rather than nothing', () => {
   assert.equal(isAnnotationFilter('ai'), true);
 });
 
-test('marks and notes are counted apart, because they are not the same thing', () => {
+test('each filter is counted with the rule that filters it', () => {
   const counted = countAnnotations([
-    { kind: 'user' } as NonNullable<NonNullable<Parameters<typeof countAnnotations>[0]>[number]> & Record<string, unknown>,
-    { kind: 'user', note: 'mía' } as NonNullable<NonNullable<Parameters<typeof countAnnotations>[0]>[number]> & Record<string, unknown>,
-    { kind: 'ai', note: 'del modelo' } as NonNullable<NonNullable<Parameters<typeof countAnnotations>[0]>[number]> & Record<string, unknown>,
+    { kind: 'user' },
+    { kind: 'user' },
+    { kind: 'ai' },
   ]);
-  assert.deepEqual(counted, { notes: 2, marks: 1, total: 3 });
+  assert.deepEqual(counted, { all: 3, mine: 2, ai: 1 });
 });
 
 // Where "explain this" writes its answer: the card that says the model is

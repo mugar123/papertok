@@ -100,13 +100,12 @@ test('SOURCE: the settings screen is warmed at idle, so a deploy does not force 
  * The feed's re-rank locks the cards through the one the reader is on, so
  * the container has to say which one that is: on the restore after a reload
  * (before any scroll event, which the programmatic scrollTop only fires
- * asynchronously) and on every scroll. Only the For You feed reports to the
- * context — the Following and guest surfaces render lists it does not own, and
- * report to their own source if at all.
+ * asynchronously) and on every scroll. Only the For You feed reports — the
+ * Following and guest surfaces render lists the context does not own.
  */
 test('SOURCE: the container reports the visible paper to the feed context, on restore and on scroll', async () => {
   const code = stripComments(await read('./FeedContainer.tsx'));
-  assert.match(code, /const reportVisiblePaper = source \? \(source\.reportVisiblePaper \?\? null\) : feed\.reportVisiblePaper;/,
+  assert.match(code, /const reportVisiblePaper = source \? null : feed\.reportVisiblePaper;/,
     'a surface with its own source never reports into For You');
 
   const restore = bounded(code, 'const restoreAttemptedRef = useRef(false);', '}, [papers, reportVisiblePaper, scrollKey]);', 'the restore effect', 32);

@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import reportApi from './index.ts';
+import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
@@ -2774,10 +2775,18 @@ test('names a timed-out upstream instead of dressing it as a generic failure', a
 
 const REWRITE_ROUTE = 'https://papertok-report-api.example/ai/rewrite';
 
-const REWRITE_ENV = {
-  ...AUTHENTICATED_ENV,
-  GEMINI_API_KEY: 'gemini-test-key',
-};
+function rewriteEnvironment(overrides: WorkerEnv = {}): WorkerEnv {
+  const env: WorkerEnv = { ...AUTHENTICATED_ENV, GEMINI_API_KEY: 'gemini-test-key', ...overrides };
+  env.PAPER_REWRITE_SESSION = {
+    newUniqueId: (() => 'rewrite-session') as unknown as Env['PAPER_REWRITE_SESSION']['newUniqueId'],
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async request => new PaperRewriteSession({}, env).fetch(request as Request),
+    })) as TestNamespace['get'],
+  } as Env['PAPER_REWRITE_SESSION'];
+  return env;
+}
+
+const REWRITE_ENV = rewriteEnvironment();
 
 function rewriteRequest(method = 'POST', origin = 'https://mugar123.github.io') {
   return new Request(REWRITE_ROUTE, {
@@ -2879,16 +2888,45 @@ test('/ai/rewrite refuses an origin that is not on the list', async () => {
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
 
+test('the rewrite session still requires Firebase identity before provider work', async () => {
+  const request = rewriteRequest();
+  request.headers.delete('authorization');
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('Unauthenticated rewrites must not contact a provider');
+  }, () => reportApi.fetch(request, REWRITE_ENV));
+  assert.equal(response.status, 401);
+  assert.equal((await response.json<{ code: string }>()).code, 'AI_AUTH_REQUIRED');
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
+test('a missing rewrite session binding fails closed instead of running on edge CPU', async () => {
+  const response = await reportApi.fetch(rewriteRequest(), { ...REWRITE_ENV, PAPER_REWRITE_SESSION: undefined });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json<{ code: string }>()).code, 'AI_NOT_CONFIGURED');
+});
+
+test('an unavailable rewrite session returns a retryable error with CORS', async () => {
+  const response = await reportApi.fetch(rewriteRequest(), {
+    ...REWRITE_ENV,
+    PAPER_REWRITE_SESSION: {
+      newUniqueId: REWRITE_ENV.PAPER_REWRITE_SESSION!.newUniqueId,
+      get: () => { throw new Error('Session unavailable'); },
+    } as unknown as Env['PAPER_REWRITE_SESSION'],
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ code: string }>()).code, 'AI_UNAVAILABLE');
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
 test('relays a rewrite refusal with its own status, code and quota', async () => {
   const response = await withWorkerFetchMock(async () => {
     throw new Error('No upstream request should be made');
-  }, () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), {
-    ...REWRITE_ENV,
+  }, () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), rewriteEnvironment({
     REQUEST_QUOTA_LEDGER: {
       idFromName: ((): unknown => 'quota-id') as TestNamespace['idFromName'],
       get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response(JSON.stringify({ accepted: false, scope: 'user' })) })) as TestNamespace['get'],
     } as Env['REQUEST_QUOTA_LEDGER'],
-  })));
+  }))));
 
   // The quota block is what tells the reader when the uses come back; flattening
   // this to a bare 502 would lose both the reason and the reset time.

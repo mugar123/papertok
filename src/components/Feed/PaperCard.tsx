@@ -8,7 +8,6 @@ export interface PaperCardProps {
   isRead?: boolean;
   onLike?: (paper: Paper) => void;
   onNotInterested?: (paper: Paper) => void;
-  onGuestNotInterested?: (paperId: string) => void;
   onMarkAsRead?: (paper: Paper) => void;
   onUnmarkAsRead?: (paperId: string) => void;
   trackViewTime?: (paper: Paper, seconds: number) => void;
@@ -60,7 +59,9 @@ import {
   Heartbeat,
   Lightning,
   Lock,
-  LockOpen,
+  LockKey,
+  LockKeyOpen,
+  NotePencil,
   Package,
   Planet,
   Prohibit,
@@ -91,7 +92,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // Before the card's own stylesheet on purpose: PaperCard.css restates a few
 // of the drawer's box declarations for the two sheets and has to come later
 // in the cascade to win them.
-import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../ui/popover.tsx';
 import AbstractSheet from './AbstractSheet.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
@@ -140,10 +141,10 @@ const SLOT_MORPH_MS = 240;
  * React and can be read straight by `node --test`.
  */
 const STATUS_CHIP_ICONS = {
-  preprint: FileText,
-  open: LockOpen,
-  openCopy: LockOpen,
-  subscription: Lock,
+  preprint: NotePencil,
+  open: LockKeyOpen,
+  openCopy: LockKeyOpen,
+  subscription: LockKey,
 };
 import { buildFollowReasonLabel } from '../../utils/followingFeed.ts';
 import { isTechnicalClassification } from '../../utils/scientificClassification.ts';
@@ -367,10 +368,6 @@ const PaperCard = memo(function PaperCard({
   isRead = false, 
   onLike = () => {},
   onNotInterested = () => {},
-  // Deliberately without a default: its absence is what tells this card the
-  // surface has no list to drop a paper from, so a visitor is asked for the
-  // account instead. Only the guest feed supplies it.
-  onGuestNotInterested,
   onMarkAsRead = () => {},
   onUnmarkAsRead = () => {},
   trackViewTime = () => {},
@@ -1282,6 +1279,38 @@ const PaperCard = memo(function PaperCard({
     });
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
+  const topicsList = (
+    <ul className="pc-topics-pop-list">
+      {topicItems.map((item) => (
+        <li key={item.key}>
+          {item.topic ? (
+            <button
+              type="button"
+              className="pc-topics-pop-item"
+              lang={item.lang}
+              onClick={(event) => {
+                setTopicsOpen(false);
+                openTopic(event, item.topic!);
+              }}
+            >
+              <span className="pc-topics-pop-copy">
+                <span className="pc-topics-pop-name">{item.label}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+              </span>
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          ) : (
+            <span className="pc-topics-pop-item">
+              <span className="pc-topics-pop-copy">
+                <span className="pc-topics-pop-name">{item.label}</span>
+                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
+              </span>
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 
   /* The watermark for the paper's branch of science.
    *
@@ -1364,10 +1393,6 @@ const PaperCard = memo(function PaperCard({
   const handleNotInterested = (e: MouseEvent) => {
     e.stopPropagation();
     if (publicMode) {
-      if (onGuestNotInterested) {
-        onGuestNotInterested(paper?.id);
-        return;
-      }
       requireAuthentication('not_interested');
       return;
     }
@@ -1773,7 +1798,31 @@ const PaperCard = memo(function PaperCard({
               ) : (
                 <span key={item.key} className="pc-semantic-tag">{item.label}</span>
               )))}
-              {hiddenTopics > 0 && (
+              {hiddenTopics > 0 && (isPhone ? (
+                <Drawer open={topicsOpen} onOpenChange={setTopicsOpen}>
+                  <DrawerTrigger
+                    render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
+                  >
+                    {`+${hiddenTopics} more`}
+                  </DrawerTrigger>
+                  {/* On a phone the list is a sheet under the thumb; its clicks
+                      stay out of the card, whose double tap is a like. */}
+                  <DrawerContent
+                    className="pc-authors-modal-sheet pc-topics-sheet"
+                    viewportProps={{ onClick: (event) => event.stopPropagation() }}
+                    style={{ '--area-accent': areaAccentForPaper(paper) }}
+                  >
+                    <DrawerHandle />
+                    <div className="pc-authors-modal-header">
+                      <DrawerTitle render={<h3 />}>{'Topics'}</DrawerTitle>
+                      <DrawerClose render={<Button variant="ghost" size="icon-sm" aria-label={'Close topics'} />}>
+                        <X size={16} aria-hidden="true" />
+                      </DrawerClose>
+                    </div>
+                    {topicsList}
+                  </DrawerContent>
+                </Drawer>
+              ) : (
                 <Popover open={topicsOpen} onOpenChange={setTopicsOpen}>
                   <PopoverTrigger
                     render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
@@ -1782,39 +1831,10 @@ const PaperCard = memo(function PaperCard({
                   </PopoverTrigger>
                   <PopoverContent align="start" className="pc-topics-pop" style={{ '--area-accent': areaAccentForPaper(paper) }}>
                     <PopoverTitle className="pc-topics-pop-title">{'Topics'}</PopoverTitle>
-                    <ul className="pc-topics-pop-list">
-                      {topicItems.map((item) => (
-                        <li key={item.key}>
-                          {item.topic ? (
-                            <button
-                              type="button"
-                              className="pc-topics-pop-item"
-                              lang={item.lang}
-                              onClick={(event) => {
-                                setTopicsOpen(false);
-                                openTopic(event, item.topic!);
-                              }}
-                            >
-                              <span className="pc-topics-pop-copy">
-                                <span className="pc-topics-pop-name">{item.label}</span>
-                                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
-                              </span>
-                              <ArrowRight size={14} aria-hidden="true" />
-                            </button>
-                          ) : (
-                            <span className="pc-topics-pop-item">
-                              <span className="pc-topics-pop-copy">
-                                <span className="pc-topics-pop-name">{item.label}</span>
-                                <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
-                              </span>
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    {topicsList}
                   </PopoverContent>
                 </Popover>
-              )}
+              ))}
             </div>
           )}
           <div className="pc-chips">
@@ -1822,7 +1842,7 @@ const PaperCard = memo(function PaperCard({
               const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
               return (
                 <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
-                  <Glyph size={12} /> {reviewTag.label}
+                  <Glyph size={12} weight="bold" /> {reviewTag.label}
                 </span>
               );
             })()}
@@ -1844,7 +1864,7 @@ const PaperCard = memo(function PaperCard({
                       ease: EASE_OUT_EXPO,
                     }}
                   >
-                    <Glyph size={12} /> {accessTag.label}
+                    <Glyph size={12} weight="bold" /> {accessTag.label}
                   </motion.span>
                 );
               })()}

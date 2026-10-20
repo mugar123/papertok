@@ -2,7 +2,7 @@ import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type AccessOptions = { token?: string | null; method?: string; resolver?: () => Response | Promise<Response> };
+type AccessOptions = { token?: string | null; method?: string; resolver?: (target: URL) => Response | Promise<Response> };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
@@ -11,6 +11,7 @@ import {
   lookupInstitutionAccess,
   parseResolverAnswer,
   readAccessQuery,
+  upstreamParams,
 } from './institution-access.ts';
 import reportApi from './index.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -333,6 +334,71 @@ test('an answer that did not resolve the journal is read, but as unmatched', () 
   assert.equal(parseResolverAnswer(CTO_CELL)!.matched, true);
 });
 
+// Captured 2026-10-19 on na03 for Harvard (01HVD_INST), Nature 2020. The
+// library sends readers straight to one service (`single_service`) and its
+// answer carries no `full_text_indicator`; the services still carry Alma's
+// filter marks. Cut to three services; keys the Worker does not read left out.
+const HARVARD_NATURE_URL = 'https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&package_service_id=126971641670003941&institutionId=3941&customerId=3940';
+const CTO_SINGLE_SERVICE = `<uresolver_content xmlns="http://com/exlibris/urm/uresolver/xmlbeans/u" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <context_object>
+    <keys>
+      <key id="rft.jtitle">Nature.</key>
+      <key id="available_services">single_service</key>
+      <key id="rft.issn">0028-0836</key>
+      <key id="rft.mms_id">990001299870203941</key>
+      <key id="rft.date">2020</key>
+    </keys>
+  </context_object>
+  <context_services>
+    <context_service service_type="getFullTxt" context_service_id="126971641670003941">
+      <keys>
+        <key id="package_public_name">Nature</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 1869 volume: 1 issue: 1.&lt;br></key>
+      </keys>
+      <resolution_url>${HARVARD_NATURE_URL.replace(/&/g, '&amp;')}</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="126971641640003941">
+      <keys>
+        <key id="package_public_name">ProQuest Central</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 01/07/1988 volume: 331.&lt;br>Most recent 1 year(s) not available.&lt;br></key>
+      </keys>
+      <resolution_url>https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=126971641640003941&amp;institutionId=3941&amp;customerId=3940</resolution_url>
+    </context_service>
+    <context_service service_type="getFullTxt" context_service_id="126971641700003941">
+      <keys>
+        <key id="package_public_name">EBSCOhost Academic Search Premier</key>
+        <key id="Is_free">0</key>
+        <key id="Availability">Available from 06/05/1997 until 11/30/2015.&lt;br></key>
+        <key id="Filtered">true</key>
+        <key id="Filter reason">Date Filter</key>
+      </keys>
+      <resolution_url>https://hvd.alma.exlibrisgroup.com/view/action/uresolver.do?operation=resolveService&amp;package_service_id=126971641700003941&amp;institutionId=3941&amp;customerId=3940</resolution_url>
+    </context_service>
+  </context_services>
+</uresolver_content>`;
+
+// The same answer with only the filtered service left: nothing live.
+const CTO_SINGLE_SERVICE_FILTERED = CTO_SINGLE_SERVICE.replace(/<context_service service_type="getFullTxt" context_service_id="1269716416[47]0003941">[\s\S]*?<\/context_service>\n/g, '');
+
+test('an answer without an indicator is read from what it lists unfiltered', async () => {
+  const answer = parseResolverAnswer(CTO_SINGLE_SERVICE)!;
+  assert.equal(answer.fullText, true);
+  assert.equal(answer.matched, true);
+  assert.deepEqual(answer.services.map(service => service.name), ['Nature', 'ProQuest Central']);
+  const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'entitled', collection: 'Nature', url: HARVARD_NATURE_URL });
+});
+
+test('an answer without an indicator whose services are all filtered is a refusal', async () => {
+  assert.deepEqual(parseResolverAnswer(CTO_SINGLE_SERVICE_FILTERED), { fullText: false, matched: true, services: [], restricted: false });
+  const stub = upstreams({ resolver: () => xml(CTO_SINGLE_SERVICE_FILTERED) });
+  const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
+  assert.deepEqual(result, { status: 'not-entitled', collection: null, url: null });
+});
+
 test('reports the subscription service rather than the free archive for an entitled journal', async () => {
   const stub = upstreams();
   const result = await lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl });
@@ -394,6 +460,21 @@ test('a resolver answer that cannot be read is an outage, not an unknown to reme
   );
 });
 
+// A single-service answer cut off after its context object: the journal
+// resolved, the services never arrived. Read as it stands it would be a
+// refusal; it is not an answer.
+const CTO_TRUNCATED = '<uresolver_content><context_object><keys><key id="rft.mms_id">990001299870203941</key><key id="available_services">single_service</key></keys></context_object><context_services>';
+
+test('an answer cut off before its services is no answer: an outage, not a refusal', async () => {
+  assert.equal(parseResolverAnswer(CTO_TRUNCATED), null);
+  assert.equal(parseResolverAnswer(CTO_SINGLE_SERVICE.slice(0, -40)), null);
+  const stub = upstreams({ resolver: () => xml(CTO_TRUNCATED) });
+  await assert.rejects(
+    lookupInstitutionAccess({ doi: DOI, domain: 'usal.es' }, { fetchImpl: stub.fetchImpl }),
+    error => (error as Error & { code?: string; status?: number }).code === 'ACCESS_LOOKUP_UNAVAILABLE' && (error as Error & { code?: string; status?: number }).status === 502,
+  );
+});
+
 test('the cache key carries the institution ids only when GetFTR can receive them', async () => {
   const { upstreamParams } = await import('./institution-access.ts');
   const query = { doi: DOI, domain: 'usal.es', entityId: 'https://idp.usal.es/entity', rorId: 'https://ror.org/02f40zc51' };
@@ -432,6 +513,44 @@ test('the resolver is found by ROR id first, then by mail domain', async () => {
   // ROR registers a domain under one record, so the domain is the affiliation
   // the link flow verified, and a dependent institute reads through its university.
   assert.deepEqual(findResolver({ domain: 'usal.es', rorId: OTHER_ROR_ID }), usal);
+});
+
+// The University of Hawaiʻi gives one @hawaii.edu address to the students and
+// staff of all ten campuses, and the only resolver the census found for the
+// system is the Mānoa library's (01UHAWAII_MANOA, verified then withdrawn on
+// 2026-10-20). A hawaii.edu reader may be at Hilo or a community college, so
+// the system's domain and ROR id select nothing until the campus is known.
+const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
+
+test('the Hawaiʻi system\'s mail domain and ROR id select no resolver, so Mānoa\'s holdings are not the system\'s answer', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const { INSTITUTION_RESOLVERS } = await import('./institution-resolvers.ts');
+  assert.equal(findResolver({ domain: 'hawaii.edu' }), null);
+  assert.equal(findResolver({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }), null);
+  assert.equal(findResolver({ domain: 'hilo.hawaii.edu', rorId: HAWAII_SYSTEM_ROR }), null);
+  assert.ok(!INSTITUTION_RESOLVERS.some(row => row.institution === '01UHAWAII_MANOA' || row.domains.includes('hawaii.edu') || row.rorId === HAWAII_SYSTEM_ROR));
+  // Shipped, the row answered Nature 2020 with Mānoa's link; the stub only
+  // knows USAL's host, so any resolver call would surface as an unexpected fetch.
+  const stub = upstreams();
+  await rejectsWith(
+    lookupInstitutionAccess({ doi: DOI, domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }, { fetchImpl: stub.fetchImpl }),
+    'INSTITUTION_NOT_SUPPORTED',
+    404,
+  );
+  assert.equal(stub.calls.length, 0);
+});
+
+test('rows deployed from main keep their resolvers: UVic-UCC, PUC Chile and JKU Linz, each once', async () => {
+  const { findResolver } = await import('./institution-access.ts');
+  const { INSTITUTION_RESOLVERS } = await import('./institution-resolvers.ts');
+  const uvic = { host: 'csuc-uvic.alma.exlibrisgroup.com', institution: '34CSUC_UVIC' };
+  const puc = { host: 'puc.alma.exlibrisgroup.com', institution: '56PUC_INST' };
+  assert.deepEqual(findResolver({ domain: 'uvic-ucc.cat' }), uvic);
+  assert.deepEqual(findResolver({ domain: 'alumnes.uvic-ucc.cat', rorId: 'https://ror.org/006zjws59' }), uvic);
+  assert.deepEqual(findResolver({ domain: 'uc.cl' }), puc);
+  assert.deepEqual(findResolver({ domain: 'estudiante.uc.cl', rorId: 'https://ror.org/04teye511' }), puc);
+  assert.deepEqual(findResolver({ domain: 'jku.at' }), { host: 'obv-at-ubl.alma.exlibrisgroup.com', institution: '43ACC_UBL' });
+  assert.equal(INSTITUTION_RESOLVERS.filter(row => row.rorId === 'https://ror.org/052r2xn60').length, 1);
 });
 
 test('ignores date coverage when Crossref gives no year', async () => {
@@ -499,7 +618,7 @@ test('normalizes the query and refuses malformed parameters', () => {
     [{ doi: DOI }, 'INVALID_DOMAIN'],
     [{ doi: DOI, domain: 'localhost' }, 'INVALID_DOMAIN'],
     [{ doi: DOI, domain: 'a@usal.es' }, 'INVALID_DOMAIN'],
-    [{ doi: DOI, domain: 'usal.es', entityId: 'urn:mace:usal' }, 'INVALID_INSTITUTION_ID'],
+    [{ doi: DOI, domain: 'usal.es', entityId: 'urn:mace:' }, 'INVALID_INSTITUTION_ID'],
     [{ doi: DOI, domain: 'usal.es', entityId: `https://idp.usal.es/${'x'.repeat(300)}` }, 'INVALID_INSTITUTION_ID'],
     [{ doi: DOI, domain: 'usal.es', rorId: '02f40zc51' }, 'INVALID_INSTITUTION_ID'],
   ]) {
@@ -541,6 +660,26 @@ test('GetFTR entitled answers with its version-of-record link and skips Crossref
   assert.equal(call.init.headers!['X-API-KEY'], 'getftr-test-key');
   assert.match(call.init.headers!['X-REQUEST-ID'], /^[0-9a-f-]{36}$/);
   assert.deepEqual(JSON.parse(call.init.body as string), { org: { entityID: ENTITY_ID }, dois: [DOI] });
+});
+
+test('a SAML URN is preserved in GetFTR requests and its cache identity', async () => {
+  const entityId = 'urn:mace:incommon:usc.edu';
+  const institution = query({ doi: DOI, domain: 'usc.edu', entityId, rorId: 'https://ror.org/03taz7m60' });
+  const stub = upstreams({ getftr: () => jsonResponse({ entitlements: [{ doi: DOI, statusCode: 200, entitled: 'no' }] }) });
+  const answer = await lookupInstitutionAccess(institution, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  assert.equal(answer.status, 'not-entitled');
+  assert.deepEqual(JSON.parse(stub.getftrCalls()[0].init.body as string).org, { entityID: entityId, rorID: 'https://ror.org/03taz7m60' });
+  assert.equal(upstreamParams(institution, GETFTR_ENV).entityId, entityId);
+});
+
+test('an HTTP SAML identifier is preserved in GetFTR requests and its cache identity', async () => {
+  const entityId = 'http://CAF.AD.UMANITOBA.CA/adfs/services/trust';
+  const institution = query({ doi: DOI, domain: 'myumanitoba.ca', entityId, rorId: 'https://ror.org/02gfys938' });
+  const stub = upstreams({ getftr: () => jsonResponse({ entitlements: [{ doi: DOI, statusCode: 200, entitled: 'no' }] }) });
+  const answer = await lookupInstitutionAccess(institution, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
+  assert.equal(answer.status, 'not-entitled');
+  assert.deepEqual(JSON.parse(stub.getftrCalls()[0].init.body as string).org, { entityID: entityId, rorID: 'https://ror.org/02gfys938' });
+  assert.equal(upstreamParams(institution, GETFTR_ENV).entityId, entityId);
 });
 
 test('GetFTR not entitled is the answer, even for a library with a resolver', async () => {
@@ -616,7 +755,7 @@ async function requestAccess(search: string, { token = TOKEN, method = 'GET', re
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
     if (url.host === 'api.crossref.org') return jsonResponse({ message: CELL_WORK });
-    if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver();
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com') return resolver(url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -646,8 +785,60 @@ test('the route answers a signed-in reader and caches under the normalized DOI a
   assert.deepEqual(body, { status: 'entitled', collection: 'Elsevier ScienceDirect Journals Complete', url: ELSEVIER_URL });
   assert.equal(accessPuts.length, 1);
   const key = new URL(accessPuts[0].key);
-  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'filtered-services']]);
+  assert.deepEqual([...key.searchParams], [['doi', DOI], ['library', '34BUC_USAL'], ['host', USAL_HOST], ['citation', 'article'], ['reading', 'well-formed-answers']]);
   assert.match(accessPuts[0].response.headers.get('cache-control')!, /s-maxage=604800/);
+});
+
+test('the access route accepts USC\'s stored SAML URN and uses its Alma library', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'usc.edu', rorId: 'https://ror.org/03taz7m60', entityId: 'urn:mace:incommon:usc.edu' }).toString();
+  const articleUrl = 'https://libproxy.usc.edu/login?url=https://publisher.example/article';
+  const { response, body, accessPuts } = await requestAccess(search, {
+    resolver: target => {
+      assert.equal(target.host, 'na03.alma.exlibrisgroup.com');
+      assert.equal(target.pathname, '/view/uresolver/01USC_INST/openurl');
+      return xml(`<uresolver_content><context_object><keys><key id="full_text_indicator">true</key></keys></context_object>
+        <context_services><context_service service_type="getFullTxt"><keys><key id="package_public_name">USC subscription</key></keys>
+        <resolution_url>${articleUrl}</resolution_url></context_service></context_services></uresolver_content>`);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { status: 'entitled', collection: 'USC subscription', url: articleUrl });
+  assert.equal(accessPuts.length, 1);
+  assert.equal(new URL(accessPuts[0].key).searchParams.get('library'), '01USC_INST');
+  const anonymous = await requestAccess(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
+test('the access route accepts Manitoba\'s HTTP SAML identifier and uses its Alma library', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'umanitoba.ca', rorId: 'https://ror.org/02gfys938', entityId: 'http://CAF.AD.UMANITOBA.CA/adfs/services/trust' }).toString();
+  const articleUrl = 'https://libproxy.umanitoba.ca/login?url=https://publisher.example/article';
+  const { response, body, accessPuts } = await requestAccess(search, {
+    resolver: target => {
+      assert.equal(target.host, 'ca01.alma.exlibrisgroup.com');
+      assert.equal(target.pathname, '/view/uresolver/01UMB_INST/openurl');
+      return xml(`<uresolver_content><context_object><keys><key id="full_text_indicator">true</key></keys></context_object>
+        <context_services><context_service service_type="getFullTxt"><keys><key id="package_public_name">Manitoba subscription</key></keys>
+        <resolution_url>${articleUrl}</resolution_url></context_service></context_services></uresolver_content>`);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, { status: 'entitled', collection: 'Manitoba subscription', url: articleUrl });
+  assert.equal(accessPuts.length, 1);
+  assert.equal(new URL(accessPuts[0].key).searchParams.get('library'), '01UMB_INST');
+  const anonymous = await requestAccess(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
+test('the access route rejects malformed URNs and unsafe schemes without provider work or caching', async () => {
+  for (const entityId of ['urn:mace:', 'urn::usc.edu', 'urn:mace:incommon:usc edu', 'urn:mace:usc%ZZ', 'javascript:alert(1)', 'http://', 'http://bad host/idp', 'ftp://idp.example.edu', `urn:mace:${'x'.repeat(300)}`]) {
+    const { response, body, calls, accessPuts } = await requestAccess(new URLSearchParams({ doi: DOI, domain: 'usc.edu', entityId }).toString());
+    assert.equal(response.status, 400, entityId);
+    assert.deepEqual(body, { code: 'INVALID_INSTITUTION_ID' });
+    assert.ok(calls.every(host => host === 'identitytoolkit.googleapis.com'));
+    assert.equal(accessPuts.length, 0);
+  }
 });
 
 test('the route refuses a request without a session before reaching any provider', async () => {
@@ -671,4 +862,22 @@ test('the route maps validation, unsupported institutions and outages to codes i
   }
   const { response } = await requestAccess(`doi=${encodeURIComponent(DOI)}&domain=usal.es`, { method: 'POST' });
   assert.equal(response.status, 405);
+});
+
+
+test('accepting HTTP entity identifiers does not allow HTTP reading links', () => {
+  const answer = parseResolverAnswer(CTO_CELL.replaceAll('https://', 'http://'));
+  assert.ok(answer);
+  assert.ok(answer.services.length > 0);
+  assert.ok(answer.services.every(service => service.url === null));
+});
+
+test('the access route refuses the Hawaiʻi system instead of answering with Mānoa\'s subscriptions', async () => {
+  const search = new URLSearchParams({ doi: DOI, domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }).toString();
+  const { response, body, calls, accessPuts } = await requestAccess(search);
+  assert.equal(response.status, 404);
+  assert.deepEqual(body, { code: 'INSTITUTION_NOT_SUPPORTED' });
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(accessPuts.length, 0);
+  assert.ok(calls.every(host => !host.endsWith('.alma.exlibrisgroup.com')), `asked a resolver: ${calls.join(', ')}`);
 });
