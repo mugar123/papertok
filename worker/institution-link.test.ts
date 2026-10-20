@@ -350,6 +350,58 @@ test('a hand-checked student domain links to its university with ROR\'s name and
   }
 });
 
+// ROR's live records list the primary domains, not these official student
+// mail domains (2026-10-20). Linking must preserve the verified mail domain
+// while selecting the existing library by the university's ROR id.
+for (const entry of [
+  {
+    domain: 'mail.utoronto.ca',
+    primary: 'utoronto.ca',
+    rorId: 'https://ror.org/03dbr7087',
+    name: 'University of Toronto',
+    resolver: { host: 'ca01.alma.exlibrisgroup.com', institution: '01UTORONTO_INST' },
+  },
+  {
+    domain: 'student.unimelb.edu.au',
+    primary: 'unimelb.edu.au',
+    rorId: 'https://ror.org/01ej9dk98',
+    name: 'The University of Melbourne',
+    resolver: { host: 'ap02.alma.exlibrisgroup.com', institution: '61UMB_INST' },
+  },
+]) {
+  test(`${entry.domain} links a verified student to the university and its library`, async () => {
+    const record = {
+      id: entry.rorId,
+      domains: [entry.primary],
+      names: [{ value: entry.name, types: ['ror_display'] }],
+    };
+    const id = entry.rorId.split('/').pop()!;
+    const upstream = stubUpstreams({
+      users: { [SESSION_TOKEN]: { localId: UID, email: `alice@${entry.domain}`, emailVerified: true } },
+      ror: url => Response.json(url === `https://api.ror.org/v2/organizations/${id}` ? record : { items: [] }),
+      mdq: () => Response.json([]),
+    });
+    const admin = memoryAdmin();
+    try {
+      const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+      assert.equal(institution!.domain, entry.domain);
+      assert.equal(institution!.rorId, entry.rorId);
+      assert.equal(institution!.name, entry.name);
+      assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+      assert.deepEqual(findResolver(institution!), entry.resolver);
+      assert.deepEqual(rorQuestions(upstream.calls), [id]);
+
+      // The explicit mapping must not authorize arbitrary descendants or
+      // a domain that merely contains the student's domain.
+      for (const unverified of [`other.${entry.domain}`, `${entry.domain}.example`]) {
+        await rejectsWith(resolveInstitution(unverified, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+      }
+    } finally {
+      upstream.restore();
+    }
+  });
+}
+
 // ROR's record for Carnegie Mellon lists cmu.edu only; alumni.cmu.edu is
 // CMU's mail for alumni (checked 2026-10-19).
 const ROR_CMU = {

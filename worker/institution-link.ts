@@ -127,7 +127,9 @@ const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
   'estudiantat.upc.edu': { rorId: 'https://ror.org/03mb6wj31', source: 'https://serveistic.upc.edu/ca/g-suite-for-education/faq/soc-estudiant-tinc-correu-g-suite-o-correu-google', checked: '2026-10-19' },
   'estudiante.uam.es': { rorId: 'https://ror.org/01cby8j38', source: 'https://www.uam.es/uam/tecnologias-informacion/servicios/correo-electronico', checked: '2026-10-19' },
   'g.ucla.edu': { rorId: 'https://ror.org/046rm7j60', source: 'https://www.psych.ucla.edu/admin-units/information-technology/technical-training-and-how-tos/ucla-email-faq/', checked: '2026-10-19' },
+  'mail.utoronto.ca': { rorId: 'https://ror.org/03dbr7087', source: 'https://www.utsc.utoronto.ca/iits/student-email-and-calendar', checked: '2026-10-20' },
   'student.bham.ac.uk': { rorId: 'https://ror.org/03angcq70', source: 'https://www.birmingham.ac.uk/welcome/essential-tasks/your-next-steps', checked: '2026-10-19' },
+  'student.unimelb.edu.au': { rorId: 'https://ror.org/01ej9dk98', source: 'https://studentit.unimelb.edu.au/student-email', checked: '2026-10-20' },
   'terpmail.umd.edu': { rorId: 'https://ror.org/047s2c258', source: 'https://itsupport.umd.edu/kb_view.do?sysparm_article=KB0016507', checked: '2026-10-19' },
 };
 
