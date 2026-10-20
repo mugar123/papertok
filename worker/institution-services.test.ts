@@ -360,7 +360,7 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
     if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
-    if (url.host === 'eu01.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn')!);
+    if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com') return resolver(url.searchParams.get('rft.issn')!, url);
     throw new Error(`unexpected upstream ${url}`);
   };
   (globalThis as TestGlobals).caches = {
@@ -381,6 +381,35 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
     else (globalThis as TestGlobals).caches = originalCaches;
   }
 }
+
+test('the services route accepts USC\'s stored SAML URN and queries its Alma library', async () => {
+  const search = new URLSearchParams({ domain: 'usc.edu', rorId: 'https://ror.org/03taz7m60', entityId: 'urn:mace:incommon:usc.edu', offset: '0' }).toString();
+  const { response, body, servicePuts } = await requestServices(search, {
+    resolver: (issn, target) => {
+      assert.equal(target!.host, 'na03.alma.exlibrisgroup.com');
+      assert.equal(target!.pathname, '/view/uresolver/01USC_INST/openurl');
+      return xml(issn === ISSN_OF.sciencedirect ? CTO_ENTITLED : CTO_NONE);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.services.map(service => service.id), ['sciencedirect']);
+  assert.equal(body.partial, false);
+  assert.equal(servicePuts.length, 1);
+  assert.equal(new URL(servicePuts[0].key).searchParams.get('library'), '01USC_INST');
+  const anonymous = await requestServices(search, { token: null });
+  assert.equal(anonymous.response.status, 401);
+  assert.deepEqual(anonymous.calls, []);
+});
+
+test('the services route rejects malformed URNs and unsafe schemes without provider work or caching', async () => {
+  for (const entityId of ['urn:mace:', 'urn::usc.edu', 'urn:mace:incommon:usc edu', 'urn:mace:usc%ZZ', 'javascript:alert(1)', 'http://idp.usc.edu', `urn:mace:${'x'.repeat(300)}`]) {
+    const { response, body, calls, servicePuts } = await requestServices(new URLSearchParams({ domain: 'usc.edu', entityId }).toString());
+    assert.equal(response.status, 400, entityId);
+    assert.deepEqual(body, { code: 'INVALID_INSTITUTION_ID' });
+    assert.ok(calls.every(host => host === 'identitytoolkit.googleapis.com'));
+    assert.equal(servicePuts.length, 0);
+  }
+});
 
 test('the route caches a complete list for seven days under the library', async () => {
   const { response, body, servicePuts } = await requestServices('domain=USAL.es&entityId=https%3A%2F%2Fidp.usal.es%2Fentity');
