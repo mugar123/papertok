@@ -4,6 +4,7 @@ type InstitutionLinkProps = {
   onBusyChange?: (busy: boolean) => void; linkedNote?: string;
 } & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
+import { ArrowRight } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.tsx';
@@ -11,7 +12,6 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import InstitutionPill from './InstitutionPill.tsx';
 import InstitutionServices from './InstitutionServices.tsx';
-import GoogleMark from '../Public/GoogleMark.tsx';
 import { PreparingNote } from '../Public/ProviderSignIn.tsx';
 import usePopupReady from '../../hooks/usePopupReady.ts';
 import { institutionLinkReadiness, needsUniversityProof } from '../../services/institutionService.ts';
@@ -35,7 +35,7 @@ const COPY = {
  * onboarding's last step and from Settings. `idPrefix` keeps the field ids
  * unique when the two could share a page.
  *
- * Settings uses it as it is: the field and its own Google button. A caller
+ * Settings uses it as it is: the field with its own arrow inside. A caller
  * that draws the submit itself (the onboarding's primary, in the page's foot)
  * passes `showSubmit={false}` and a `formId` for its button's `form`, owns
  * the address through `email` / `onEmailChange` so it can tell whether one is
@@ -154,13 +154,14 @@ export default function InstitutionLink({
     // focus it had, and the error that may come back would land on nobody.
     <form id={formId} className="institution-link" onSubmit={handleSubmit} noValidate aria-busy={busy || undefined}>
       <Label htmlFor={inputId}>{COPY.email}</Label>
-      <div className="institution-link-row">
+      <div className="institution-link-field">
         <Input
           ref={inputRef}
           id={inputId}
           className="institution-link-input"
           type="email"
           inputMode="email"
+          enterKeyHint="go"
           autoComplete="email"
           spellCheck="false"
           placeholder={COPY.placeholder}
@@ -181,15 +182,16 @@ export default function InstitutionLink({
           // aria-disabled here replaces the one Base UI sets, so it covers both.
           <Button
             type="submit"
-            variant="outline"
+            size="icon-sm"
             className="institution-link-submit"
+            aria-label={busy ? COPY.submitting : COPY.submit}
+            title={COPY.submit}
             disabled={held}
             focusableWhenDisabled
             aria-disabled={busy || held || undefined}
             aria-describedby={held ? preparingId : undefined}
           >
-            {busy || held ? <span className="institution-link-spinner" aria-hidden="true" /> : <GoogleMark size={16} />}
-            {busy ? COPY.submitting : COPY.submit}
+            {busy || held ? <span className="institution-link-spinner" aria-hidden="true" /> : <ArrowRight size={16} weight="bold" aria-hidden="true" />}
           </Button>
         )}
       </div>

@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-test('SOURCE: the link form keeps its own Google button unless the caller draws the submit', async () => {
+test('SOURCE: the link form keeps its own submit unless the caller draws the submit', async () => {
   const code = stripComments(await read('./InstitutionLink.tsx'));
   // Settings passes neither, so it keeps the button and its own address.
   assert.match(code, /formId,\s*showSubmit = true,\s*email: controlledEmail,\s*onEmailChange,\s*onBusyChange,\s*linkedNote,/);
@@ -13,7 +13,7 @@ test('SOURCE: the link form keeps its own Google button unless the caller draws 
   assert.match(code, /<form id=\{formId\} className="institution-link" onSubmit=\{handleSubmit\}/);
   assert.match(
     code,
-    /\{showSubmit && \(\s*<Button\s+type="submit"\s+variant="outline"\s+className="institution-link-submit"[\s\S]*?COPY\.submit\}\s*<\/Button>\s*\)\}/,
+    /\{showSubmit && \(\s*<Button\s+type="submit"[\s\S]*?aria-label=\{busy \? COPY\.submitting : COPY\.submit\}[\s\S]*?<\/Button>\s*\)\}/,
   );
   // Uncontrolled and empty by default; controlled when the caller passes
   // `email`, and then every write goes through the caller.
@@ -52,7 +52,7 @@ test('SOURCE: the link form ignores a submit until its window can open inside th
   // Replaces Base UI's own aria-disabled, so it has to cover the wait as well.
   assert.match(submit, /aria-disabled=\{busy \|\| held \|\| undefined\}/);
   assert.match(submit, /aria-describedby=\{held \? preparingId : undefined\}/);
-  assert.match(code, /\{busy \|\| held \? <span className="institution-link-spinner" aria-hidden="true" \/> : <GoogleMark size=\{16\} \/>\}/);
-  // Shown under the field and its button, out of their wrapping row.
+  assert.match(code, /\{busy \|\| held \? <span className="institution-link-spinner" aria-hidden="true" \/> : <ArrowRight size=\{16\} weight="bold" aria-hidden="true" \/>\}/);
+  // Shown under the field, outside the box the arrow sits in.
   assert.match(code, /<\/div>\s*\{showSubmit && <PreparingNote id=\{preparingId\} preparing=\{preparing\} \/>\}\s*<p id=\{hintId\}/);
 });
