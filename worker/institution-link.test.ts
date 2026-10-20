@@ -474,6 +474,112 @@ test('a student domain ROR does not list links to its university once it is hand
   }
 });
 
+/**
+ * ROR's answer to `domains:ugent.be`, in its live order (2026-10-20): the
+ * Centre for X-ray Tomography, a facility, before the university, and a
+ * centre that lists a subdomain. The first two are listed under `domain`,
+ * because ugent.be itself is hand-checked and asked by id, so the search
+ * order is exercised under a domain outside the list.
+ */
+function rorGhentUnitFirst(domain: string) {
+  return {
+    number_of_results: 3,
+    items: [
+      {
+        id: 'https://ror.org/0027txx50',
+        types: ['facility'],
+        domains: [domain],
+        names: [{ value: 'Ghent University Centre for X-ray Tomography', types: ['label', 'ror_display'] }, { value: 'UGCT', types: ['acronym'] }],
+      },
+      {
+        id: 'https://ror.org/00cv9y106',
+        types: ['education', 'funder'],
+        domains: [domain],
+        names: [
+          { value: 'Ghent University', types: ['ror_display', 'label'] },
+          { value: 'UGent', types: ['alias'] },
+          { value: 'Universiteit Gent', types: ['label'] },
+        ],
+      },
+      {
+        id: 'https://ror.org/033xkh119',
+        types: ['facility'],
+        domains: [`ghentcdh.${domain}`],
+        names: [{ value: 'Ghent Centre for Digital Humanities', types: ['label', 'ror_display'] }],
+      },
+    ],
+  };
+}
+
+test('a domain ROR lists under a research unit before the university links to the university', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@ghent.example', emailVerified: true } },
+    ror: (url) => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:ghent.example' ? rorGhentUnitFirst('ghent.example') : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.domain, 'ghent.example');
+    assert.equal(institution!.rorId, 'https://ror.org/00cv9y106');
+    assert.equal(institution!.name, 'Ghent University');
+    assert.equal(institution!.acronym, null);
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(rorQuestions(upstream.calls), ['domains:ghent.example']);
+  } finally {
+    upstream.restore();
+  }
+});
+
+test('a hand-checked domain is still asked by id, whatever the search would answer', async () => {
+  const search = rorGhentUnitFirst('ugent.be');
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@ugent.be', emailVerified: true } },
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/00cv9y106' ? search.items[1] : search),
+    mdq: () => Response.json([]),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.rorId, 'https://ror.org/00cv9y106');
+    assert.equal(institution!.name, 'Ghent University');
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(rorQuestions(upstream.calls), ['00cv9y106']);
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR lists ccib.mgh.harvard.edu under one facility only (live answer to
+// domains:ccib.mgh.harvard.edu, 2026-10-20).
+const ROR_CCIB = {
+  number_of_results: 1,
+  items: [{
+    id: 'https://ror.org/01qt3xv71',
+    types: ['facility', 'funder'],
+    domains: ['ccib.mgh.harvard.edu'],
+    names: [
+      { value: 'CCIB', types: ['acronym'] },
+      { value: 'Center for Computational and Integrative Biology, Massachusetts General Hospital', types: ['label', 'ror_display'] },
+    ],
+  }],
+};
+
+test('a domain listed only under a record that is not a university still links to that record', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(new URL(url).searchParams.get('query.advanced') === 'domains:ccib.mgh.harvard.edu' ? ROR_CCIB : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  try {
+    const institution = await resolveInstitution('ccib.mgh.harvard.edu', { cache: null });
+    assert.equal(institution.rorId, 'https://ror.org/01qt3xv71');
+    assert.equal(institution.name, 'Center for Computational and Integrative Biology, Massachusetts General Hospital');
+    assert.equal(institution.acronym, 'CCIB');
+  } finally {
+    upstream.restore();
+  }
+});
+
 // ROR's record for Carnegie Mellon lists cmu.edu only; alumni.cmu.edu is
 // CMU's mail for alumni (checked 2026-10-19).
 const ROR_CMU = {
@@ -833,7 +939,7 @@ for (const entry of [
     const id = entry.rorId.split('/').pop()!;
     const store = new Map<string, Response>();
     if (entry.wrongId) {
-      store.set(`https://papertok.internal/institution/v3/${entry.domain}`, Response.json({
+      store.set(`https://papertok.internal/institution/v4/${entry.domain}`, Response.json({
         domain: entry.domain, rorId: entry.wrongId, name: 'Research unit', acronym: null, entityId: null,
       }));
     }
