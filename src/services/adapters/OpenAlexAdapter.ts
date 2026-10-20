@@ -69,7 +69,7 @@ export class OpenAlexAdapter {
     this.mailto = 'app@papertok.io';
   }
 
-  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [], typeahead = false, requireAbstract = false }: PaperSearchFilters = {}) {
+  buildSearchUrl(query: string|number|boolean, page = 1, { types, internalCategories = [], typeahead = false }: PaperSearchFilters = {}) {
     const perPage = 25;
 
     let searchField = 'default.search';
@@ -88,11 +88,7 @@ export class OpenAlexAdapter {
     const workTypes = types || (economicCategories
       ? [...OPENALEX_PUBLISHED_TYPES, 'preprint']
       : OPENALEX_PUBLISHED_TYPES);
-    // A label search ranks first works whose publisher withholds the abstract
-    // from OpenAlex: 7 to 19 of 25 on the first page (probed 2026-10-20), and
-    // with no arXiv copy nothing recovers one later. The filter drops 10-15%
-    // of the matches.
-    const typeFilter = `type:${workTypes.join('|')}${requireAbstract ? ',has_abstract:true' : ''}`;
+    const typeFilter = `type:${workTypes.join('|')}`;
 
     return `${this.baseUrl}?filter=${searchField}:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}&select=${OPENALEX_WORK_SEARCH_FIELDS.join(',')}`;
   }
@@ -109,7 +105,7 @@ export class OpenAlexAdapter {
         // Retrying each keystroke on an outage would multiply provider use.
         ...(filters.typeahead ? { retries: 0 } : {}),
         signal: filters.signal,
-        // The feed's main search: ahead of the entity lookups sharing the queue.
+        // The reader's paper search: ahead of the entity lookups sharing the queue.
         priority: filters.priority === true,
       });
       if (!response.ok) {

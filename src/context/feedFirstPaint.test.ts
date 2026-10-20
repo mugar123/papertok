@@ -162,10 +162,11 @@ test('SOURCE: the topic table is prewarmed when a topic follow is known', async 
  * Measured 2026-09-16: the optional candidates were created before the main
  * sources, so the feed's OpenAlex search entered the client's two-wide FIFO
  * queue behind every followed-entity lookup and left the browser 2.3 s late —
- * past its own first-paint budget. The main sources are issued first now, and
- * the feed's search takes the priority lane.
+ * past its own first-paint budget. The main sources are issued first now. The
+ * feed no longer searches OpenAlex (PAP-73); the order is kept for a main
+ * source that asks OpenAlex again.
  */
-test('SOURCE: the main sources are requested before the optional candidates, and the feed search has priority', async () => {
+test('SOURCE: the main sources are requested before the optional candidates', async () => {
   const code = stripComments(await read('./FeedContext.tsx'));
   const block = bounded(
     code,
@@ -184,9 +185,4 @@ test('SOURCE: the main sources are requested before the optional candidates, and
   assert.ok(graphAt > domainAt && graphAt < settleAt, 'the graph candidates are asked for after the main sources have been issued');
   assert.ok(personalAt > domainAt && personalAt < settleAt, 'the personal recommendations are asked for after the main sources have been issued');
   assert.ok(followedAt > domainAt && followedAt < settleAt, 'the followed candidates are asked for after the main sources have been issued');
-  assert.match(
-    block,
-    /\.search\(openAlexQuery, currentPage \+ 1, \{ internalCategories: openAlexCats, priority: true, requireAbstract: true \}\)/,
-    'the feed search takes the priority lane of the OpenAlex queue',
-  );
 });
