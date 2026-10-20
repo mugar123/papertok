@@ -1,50 +1,44 @@
-type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' | 'entityId' | 'verifiedAt', unknown>>;
-export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
-type UniversityUser = Pick<import('firebase/auth').User, 'email' | 'getIdToken'>;
-type PopupReadiness = import('./popupRedirectResolver.ts').PopupReadiness;
-type SignedInAccount = Partial<Pick<import('firebase/auth').User, 'uid' | 'email' | 'emailVerified'>> | null;
-interface InstitutionOperations {
-  isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
-  currentUser?: () => SignedInAccount;
-  secondaryAuth?(): object;
-  provider?(): { setCustomParameters(params: import('firebase/auth').CustomParameters): void };
-  popupSignIn?(instance: object, provider: unknown): Promise<{ user: UniversityUser }>;
-  additionalUserInfo?(result: { user: UniversityUser }): { isNewUser: boolean } | null;
-  deleteUser?(user: UniversityUser): Promise<void>;
-  signOut?(instance: object): Promise<void>;
-}
-
-/**
- * Linking a university to the account, through the Worker.
- *
- * The proof is a verified Google address in the university's domain. When the
- * signed-in account already carries one, the Worker can check it on the
- * session token and nothing else is needed. Otherwise the person signs into
- * Google with the university account on a second Auth instance — Firebase
- * will not attach two Google identities to one uid, and signing the main
- * instance into the other account would switch sessions under the app — and
- * that account's ID token travels to the Worker as the proof. The second
- * sign-in keeps no persistence and is released as soon as the Worker has
- * answered: an account Firebase had to create for it is deleted again, an
- * existing one is signed out.
- *
- * What comes back is the institution, never the address.
- */
 import { getApps, initializeApp } from 'firebase/app';
 import {
-  GoogleAuthProvider,
-  deleteUser,
-  getAdditionalUserInfo,
-  getAuth,
-  inMemoryPersistence,
-  initializeAuth,
-  signInWithPopup,
-  signOut,
+  connectAuthEmulator, deleteUser, getAdditionalUserInfo, getAuth,
+  inMemoryPersistence, initializeAuth, isSignInWithEmailLink,
+  sendSignInLinkToEmail, signInWithEmailLink, signOut,
 } from 'firebase/auth';
-import app, { auth, IS_DEMO, popupReadiness, popupRedirectResolver } from './firebase.ts';
-import { preparePopupRedirectResolver } from './popupRedirectResolver.ts';
+import app, { auth, IS_DEMO } from './firebase.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
+
+type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' | 'entityId' | 'verifiedAt', unknown>>;
+export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
+type SignedInAccount = Pick<import('firebase/auth').User, 'uid'> & Partial<Pick<import('firebase/auth').User, 'email' | 'emailVerified'>>;
+interface InstitutionOperations {
+  isDemo?: boolean;
+  request?: typeof authenticatedWorkerFetch;
+  apiBase?: string;
+  currentUser?: () => SignedInAccount | null;
+  secondaryAuth?: typeof secondaryAuth;
+  sendEmail?: typeof sendSignInLinkToEmail;
+  emailSignIn?: typeof signInWithEmailLink;
+  additionalUserInfo?: typeof getAdditionalUserInfo;
+  deleteUser?: typeof deleteUser;
+  signOut?: typeof signOut;
+  storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+  origin?: string;
+  now?: () => number;
+}
+
+const PENDING_KEY = 'papertok_institution_verification';
+const PROOF_LIFETIME_MS = 60 * 60 * 1000;
+type PendingVerification = { uid: string; email: string; nonce: string; createdAt: number };
+
+// Remove the one-time credential before routing, analytics or outbound links
+// can read the URL. It stays in this tab's memory until completion or reload.
+export const institutionVerificationLink = (() => {
+  if (!/^\/institution\/verify\/?$/.test(globalThis.location?.pathname ?? '')) return '';
+  const link = globalThis.location.href;
+  globalThis.history.replaceState(globalThis.history.state, '', '/institution/verify');
+  return link;
+})();
 
 export class InstitutionLinkError extends Error {
   declare code: string;
@@ -56,8 +50,6 @@ export class InstitutionLinkError extends Error {
     this.status = status;
   }
 }
-
-const SECONDARY_APP_NAME = 'institution-link';
 
 function cleanString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -87,42 +79,72 @@ export function institutionLabel(institution: Partial<LinkedInstitution> | null 
 }
 
 function secondaryAuth() {
-  const existing = getApps().find(candidate => candidate.name === SECONDARY_APP_NAME);
+  const existing = getApps().find(candidate => candidate.name === 'institution-link');
   if (existing) return getAuth(existing);
-  // Kept in memory from the start: changing persistence at the press would
-  // touch storage first and open Google's window after the tap.
-  return initializeAuth(initializeApp(app.options, SECONDARY_APP_NAME), {
+  const instance = initializeAuth(initializeApp(app.options, 'institution-link'), {
     persistence: inMemoryPersistence,
-    popupRedirectResolver,
   });
+  instance.languageCode = 'en';
+  if (import.meta.env?.MODE === 'emulators') {
+    connectAuthEmulator(instance, 'http://127.0.0.1:9099', { disableWarnings: true });
+  }
+  return instance;
 }
 
-let linkReadiness: PopupReadiness | undefined;
-/**
- * Whether the link's Google window would open inside the press. The second
- * instance needs its own popup load, so the form starts it when it shows
- * rather than at the press (popupRedirectResolver.ts).
- */
-export function institutionLinkReadiness() {
-  linkReadiness ??= IS_DEMO ? popupReadiness : preparePopupRedirectResolver(secondaryAuth());
-  return linkReadiness;
-}
-
-function operations(overrides: InstitutionOperations = {}): Required<Omit<InstitutionOperations, 'apiBase'>> & { apiBase: string | undefined } {
+function operations(overrides: InstitutionOperations = {}) {
   return {
-    isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
-    request: overrides.request || authenticatedWorkerFetch,
-    apiBase: overrides.apiBase === undefined
-      ? import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '')
-      : overrides.apiBase,
-    currentUser: overrides.currentUser || (() => auth.currentUser),
-    secondaryAuth: overrides.secondaryAuth || secondaryAuth,
-    provider: overrides.provider || (() => new GoogleAuthProvider()),
-    popupSignIn: overrides.popupSignIn || signInWithPopup,
-    additionalUserInfo: overrides.additionalUserInfo || getAdditionalUserInfo,
-    deleteUser: overrides.deleteUser || deleteUser,
-    signOut: overrides.signOut || signOut,
+    isDemo: IS_DEMO,
+    request: authenticatedWorkerFetch,
+    apiBase: import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, ''),
+    currentUser: () => auth.currentUser as SignedInAccount | null,
+    secondaryAuth,
+    sendEmail: sendSignInLinkToEmail,
+    emailSignIn: signInWithEmailLink,
+    additionalUserInfo: getAdditionalUserInfo,
+    deleteUser,
+    signOut,
+    origin: globalThis.location?.origin,
+    now: Date.now,
+    ...overrides,
   };
+}
+
+function storage(api: InstitutionOperations) {
+  return api.storage ?? globalThis.localStorage;
+}
+
+export function cancelInstitutionVerification(overrides: InstitutionOperations = {}) {
+  try { storage(overrides)?.removeItem(PENDING_KEY); } catch {
+    // Blocked browser storage also prevents an outstanding proof from being read.
+  }
+}
+
+export function pendingInstitutionVerification(overrides: InstitutionOperations = {}): PendingVerification | null {
+  const api = operations(overrides);
+  let saved: string | null | undefined;
+  try { saved = storage(api)?.getItem(PENDING_KEY); } catch { return null; }
+  if (!saved) return null;
+  let pending: PendingVerification;
+  try { pending = JSON.parse(saved); } catch { cancelInstitutionVerification(api); return null; }
+  if (!pending || pending.uid !== api.currentUser()?.uid || !institutionDomainOf(pending.email)
+    || typeof pending.nonce !== 'string' || !Number.isFinite(pending.createdAt)
+    || api.now() - pending.createdAt >= PROOF_LIFETIME_MS || pending.createdAt > api.now()) {
+    cancelInstitutionVerification(api);
+    return null;
+  }
+  return pending;
+}
+
+function requireAccount(api: ReturnType<typeof operations>) {
+  if (api.isDemo) throw new InstitutionLinkError('INSTITUTION_UNSUPPORTED_IN_DEMO', 400);
+  if (!api.apiBase) throw new InstitutionLinkError('INSTITUTION_LINK_NOT_CONFIGURED', 503);
+  const current = api.currentUser();
+  if (!current) throw new InstitutionLinkError('AUTH_REQUIRED', 401);
+  return current;
+}
+
+function assertAccount(api: ReturnType<typeof operations>, uid: string) {
+  if (api.currentUser()?.uid !== uid) throw new InstitutionLinkError('INSTITUTION_VERIFICATION_CANCELED', 400);
 }
 
 async function postJson(api: ReturnType<typeof operations>, path: string, body: Record<string, unknown>) {
@@ -151,82 +173,87 @@ async function postJson(api: ReturnType<typeof operations>, path: string, body: 
   return payload;
 }
 
-// The signed-in account's own verified address in that domain is the proof:
-// the Worker checks it on the session token.
-function accountProvesDomain(current: SignedInAccount, domain: string) {
-  return Boolean(domain && current?.emailVerified) && institutionDomainOf(current?.email) === domain;
-}
-
-/**
- * Whether linking `email` needs Google's window for the university account:
- * yes, unless the signed-in account's verified address is already in that
- * domain. The link form and the onboarding's primary wait for the window
- * (institutionLinkReadiness) only when it is needed. A malformed address
- * counts as needing it; linking refuses it before any window either way.
- */
 export function needsUniversityProof(email: string, overrides?: InstitutionOperations) {
-  return !accountProvesDomain(operations(overrides).currentUser(), institutionDomainOf(email));
+  const current = operations(overrides).currentUser();
+  const domain = institutionDomainOf(email);
+  return !(domain && current?.emailVerified && institutionDomainOf(current.email) === domain);
 }
 
-/**
- * Signs into Google with the university account on the second instance and
- * hands back its ID token with the release that undoes the sign-in. The hint
- * and `hd` steer Google's chooser to that domain; the domain is still checked
- * on the account that actually came back, because a chooser is a suggestion.
- */
-async function proveWithUniversityAccount(api: ReturnType<typeof operations>, email: string, domain: string) {
-  const secondary = api.secondaryAuth();
-  const provider = api.provider();
-  provider.setCustomParameters({ login_hint: email, hd: domain, prompt: 'select_account' });
-  const result = await api.popupSignIn(secondary, provider);
-  const holder = result.user;
-  const isNewUser = Boolean(api.additionalUserInfo(result)?.isNewUser);
-  const release = async () => {
-    try {
-      if (isNewUser) await api.deleteUser(holder);
-      else await api.signOut(secondary);
-    } catch {
-      // Best effort: a sign-in that could not be undone is not a failed link,
-      // and in-memory persistence means it ends with the tab regardless.
-    }
-  };
+export async function sendInstitutionVerification(email: string, overrides?: InstitutionOperations) {
+  const api = operations(overrides);
+  const current = requireAccount(api);
+  if (!institutionDomainOf(email)) throw new InstitutionLinkError('INSTITUTION_EMAIL_INVALID', 400);
+  const pending = { uid: current.uid, email: email.trim().toLowerCase(), nonce: crypto.randomUUID(), createdAt: api.now() };
+  const target = new URL('/institution/verify', api.origin);
+  target.searchParams.set('state', pending.nonce);
+  // Persist before sending: a storage failure must not send an unusable link.
+  try { storage(api).setItem(PENDING_KEY, JSON.stringify(pending)); } catch {
+    throw new InstitutionLinkError('INSTITUTION_STORAGE_UNAVAILABLE', 400);
+  }
   try {
-    if (institutionDomainOf(holder?.email) !== domain) {
-      throw new InstitutionLinkError('INSTITUTION_EMAIL_MISMATCH', 400);
+    await api.sendEmail(api.secondaryAuth(), pending.email, { url: target.href, handleCodeInApp: true });
+    assertAccount(api, current.uid);
+    if (pendingInstitutionVerification(api)?.nonce !== pending.nonce) {
+      throw new InstitutionLinkError('INSTITUTION_VERIFICATION_CANCELED', 400);
     }
-    return { idToken: await holder.getIdToken(), release };
   } catch (error) {
-    await release();
+    if (pendingInstitutionVerification(api)?.nonce === pending.nonce) cancelInstitutionVerification(api);
     throw error;
+  }
+}
+
+export async function completeInstitutionVerification(link: string, overrides?: InstitutionOperations) {
+  const api = operations(overrides);
+  const current = requireAccount(api);
+  const pending = pendingInstitutionVerification(api);
+  if (!pending || new URL(link, api.origin).searchParams.get('state') !== pending.nonce) {
+    throw new InstitutionLinkError('INSTITUTION_VERIFICATION_CANCELED', 400);
+  }
+  const secondary = api.secondaryAuth();
+  if (!isSignInWithEmailLink(secondary, link)) throw new InstitutionLinkError('INSTITUTION_TOKEN_INVALID', 400);
+  const result = await api.emailSignIn(secondary, pending.email, link);
+  const isNewUser = Boolean(api.additionalUserInfo(result)?.isNewUser);
+  try {
+    if (!result.user.emailVerified || result.user.email?.toLowerCase() !== pending.email) {
+      throw new InstitutionLinkError('INSTITUTION_EMAIL_NOT_VERIFIED', 403);
+    }
+    const institutionToken = await result.user.getIdToken();
+    assertAccount(api, current.uid);
+    if (pendingInstitutionVerification(api)?.nonce !== pending.nonce) {
+      throw new InstitutionLinkError('INSTITUTION_VERIFICATION_CANCELED', 400);
+    }
+    cancelInstitutionVerification(api);
+    const payload = await postJson(api, '/institution/link', { institutionToken });
+    assertAccount(api, current.uid);
+    return normalizeInstitution(payload.institution);
+  } finally {
+    try {
+      if (isNewUser) await api.deleteUser(result.user);
+    } catch {
+      // Cleanup must not turn a confirmed Worker write into a reported failure.
+    } finally {
+      // Also release in-memory credentials when deletion fails.
+      await api.signOut(secondary).catch(() => {});
+    }
   }
 }
 
 export async function linkInstitution(email: string, overrides?: InstitutionOperations) {
   const api = operations(overrides);
-  if (api.isDemo) throw new InstitutionLinkError('INSTITUTION_UNSUPPORTED_IN_DEMO', 400);
-  const domain = institutionDomainOf(email);
-  if (!domain) throw new InstitutionLinkError('INSTITUTION_EMAIL_INVALID', 400);
-  const current = api.currentUser();
-  if (!current) throw new InstitutionLinkError('AUTH_REQUIRED', 401);
-
-  if (accountProvesDomain(current, domain)) {
-    const payload = await postJson(api, '/institution/link', {});
-    return normalizeInstitution(payload.institution);
-  }
-
-  const { idToken, release } = await proveWithUniversityAccount(api, email, domain);
-  try {
-    const payload = await postJson(api, '/institution/link', { institutionToken: idToken });
-    return normalizeInstitution(payload.institution);
-  } finally {
-    await release();
-  }
+  const current = requireAccount(api);
+  if (!institutionDomainOf(email)) throw new InstitutionLinkError('INSTITUTION_EMAIL_INVALID', 400);
+  if (needsUniversityProof(email, api)) throw new InstitutionLinkError('INSTITUTION_EMAIL_NOT_VERIFIED', 403);
+  cancelInstitutionVerification(api);
+  const payload = await postJson(api, '/institution/link', {});
+  assertAccount(api, current.uid);
+  return normalizeInstitution(payload.institution);
 }
 
 export async function unlinkInstitution(overrides?: InstitutionOperations) {
   const api = operations(overrides);
-  if (api.isDemo) throw new InstitutionLinkError('INSTITUTION_UNSUPPORTED_IN_DEMO', 400);
-  if (!api.currentUser()) throw new InstitutionLinkError('AUTH_REQUIRED', 401);
+  const current = requireAccount(api);
+  cancelInstitutionVerification(api);
   await postJson(api, '/institution/unlink', {});
+  assertAccount(api, current.uid);
   return null;
 }

@@ -119,7 +119,7 @@ const SETTINGS_COPY = {
   detailedAnalyticsLabel: 'Detailed analytics',
   detailedAnalyticsHint: 'Links what you do to your account: the papers you open, how long you read, what you search, and recordings of your sessions with typed text hidden. Uses cookies.',
   institution: 'University',
-  institutionDescription: 'Verify where you study or work by signing in with your university\'s Google account.',
+  institutionDescription: 'Verify your university email to link your library.',
   institutionLinked: (name: string) => `Verified with ${name}.`,
   link: 'Link',
   manage: 'Manage',

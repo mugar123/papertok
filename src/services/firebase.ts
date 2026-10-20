@@ -48,7 +48,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 // Firebase's popup resolver, without its start-up load (popupRedirectResolver.ts).
-// The institution link's second Auth instance takes it too (institutionService.ts).
 export const popupRedirectResolver = deferPopupRedirectResolver(browserPopupRedirectResolver);
 // What `getAuth` sets up, with a popup resolver that loads its scripts after
 // Auth reports the session instead of before (popupRedirectResolver.ts).
