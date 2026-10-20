@@ -43,11 +43,13 @@ export const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
 // Two minutes is long enough to absorb the retry burst of a feed fan-out and
 // short enough that recovery is invisible.
 export const DEGRADED_CACHE_SECONDS = 120;
-const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 300;
+const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 3_000;
 // The budget OpenAlex bills against is *daily* ($1/day, ~10.000 calls measured on
-// `/health/openalex`), and until now the only ceiling was per minute: 300/min is
-// 432.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for the
-// digest cron -- which spends outside this ledger -- and the health probe.
+// `/health/openalex`), and until now the only ceiling was per minute: 3000/min is
+// 4.320.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for the
+// digest cron -- which spends outside this ledger -- and the health probe. Both
+// ceilings count list calls, $0.0001 each; a search is reserved as ten of them,
+// so the minute's 3000 is the 300 searches it allowed when every call was one.
 const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // What a cold answer costs OpenAlex, per route, worst case. Reserved in one go
 // before the work starts: a route that spends seven calls and reserves one is a
@@ -55,6 +57,11 @@ const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // than it can spend refuses other readers for calls nobody makes.
 export const OPENALEX_CALLS = Object.freeze({
   relay: 1,
+  // OpenAlex bills a search ten list calls: measured on 2026-10-20 against
+  // `x-ratelimit-remaining-usd`, `search=` and every `.search` filter cost
+  // $0.001, a list $0.0001, a single work nothing. Counted as one, the feed's
+  // searches could spend eight dollars under an eight-thousand-call ceiling.
+  search: 10,
   // One `works/doi:` lookup, then batches of twenty for references and the same
   // for citations. Each relation's two filters share its 40 candidates, so they
   // need at most three batches between them (21 + 19 is two plus one).

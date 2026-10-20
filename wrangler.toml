@@ -47,12 +47,15 @@ PROVIDER_USER_MINUTE_LIMIT = "60"
 PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
 # OpenAlex bills per call against a daily budget ($1/day on a free key), and the
 # guest feed reads it without a session, so the ceiling here is global rather
-# than per user. It is reserved only after an edge-cache miss.
-OPENALEX_GLOBAL_MINUTE_LIMIT = "300"
+# than per user. It is reserved only after an edge-cache miss. Counted in list
+# calls like the day: 3000 is the 300 searches a minute it allowed when every
+# call counted as one.
+OPENALEX_GLOBAL_MINUTE_LIMIT = "3000"
 # And a daily one, because the budget is daily and the per-minute ceiling bounds
-# nothing against it: 300/min is 432.000/day. Measured on /health/openalex the
+# nothing against it: 3000/min is 4.320.000/day. Measured on /health/openalex the
 # allowance is $1/day = 10.000 calls, so this leaves ~2.000 for the digest cron
-# (which spends outside this ledger) and the health probe.
+# (which spends outside this ledger) and the health probe. Both ceilings count
+# list calls ($0.0001); a search, billed $0.001, is reserved as ten.
 OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 # PubMed and Semantic Scholar limit by provider, not by caller, and the guest feed
 # reads both, so their ceiling is global like OpenAlex's. Each miss spends three
