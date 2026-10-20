@@ -119,9 +119,13 @@ test('SOURCE: a failed chunk load reloads the tab once a minute at most', async 
   // match inside the SAME handler, in that order.
   assert.match(
     body,
-    /if \(now - last < 60_000\) return\s*sessionStorage\.setItem\(PRELOAD_RELOAD_KEY, String\(now\)\)\s*\}[\s\S]*?event\.preventDefault\(\)\s*markAppForcedReload\(\)\s*window\.location\.reload\(\)/,
+    /if \(now - last < PRELOAD_RELOAD_WINDOW_MS\) return\s*sessionStorage\.setItem\(PRELOAD_RELOAD_KEY, String\(now\)\)\s*\}[\s\S]*?event\.preventDefault\(\)\s*markAppForcedReload\(\)\s*window\.location\.reload\(\)/,
     'a reload must be gated by the 60s threshold, follow the recorded attempt, and be marked as the app\'s own',
   );
+  // The window itself lives in utils/appReload.ts, which the analytics crash
+  // report reads too: a minute is the brake this test describes.
+  const { PRELOAD_RELOAD_WINDOW_MS } = await import('./appReload.ts');
+  assert.equal(PRELOAD_RELOAD_WINDOW_MS, 60_000);
   // ...and that the guarded pair is not ALSO reachable earlier, unconditionally:
   // tying the order proves a guarded path exists, not that it is the only one.
   const preventDefaultCalls = body.match(/event\.preventDefault\(\)/g) ?? [];
