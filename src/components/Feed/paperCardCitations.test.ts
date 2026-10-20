@@ -26,8 +26,8 @@ test('SOURCE: the citation gate is awaited before the feed paints', async () => 
   const gateAt = code.indexOf('awaitWithinGate(');
   assert.ok(gateAt > 0, 'FeedContext waits for the citation sources');
 
-  const paintAt = code.indexOf('setPapers(nextPapers)');
-  assert.ok(paintAt > 0, 'the first paint is still setPapers(nextPapers)');
+  const paintAt = code.indexOf('addPage(current)');
+  assert.ok(paintAt > 0, 'the first paint still adds the page to the list');
   assert.ok(gateAt < paintAt, 'a gate after the paint is not a gate');
 
   assert.match(code, /await awaitWithinGate\(/,
@@ -58,7 +58,7 @@ test('SOURCE: the re-entry the guard was widened for still exists', async () => 
 test('SOURCE: the request id is re-checked after the wait', async () => {
   const code = stripComments(await read('../../context/FeedContext.tsx'));
   const gateAt = code.indexOf('awaitWithinGate(');
-  const after = code.slice(gateAt, code.indexOf('setPapers(nextPapers)', gateAt));
+  const after = code.slice(gateAt, code.indexOf('addPage(current)', gateAt));
 
   assert.match(after, /requestId !== feedRequestId\.current \|\| feedSessionId\.current !== activeSessionId\) return;/,
     'awaiting anything reopens the door a newer load may have come through');
