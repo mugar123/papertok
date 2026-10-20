@@ -370,8 +370,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const [railOpen, setRailOpen] = useState(true);
   const [showAiMarks, setShowAiMarks] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
-  // Which face the annotation sheet shows once open. Touch never gets a third
-  // surface for the level/highlights controls — it gets a tab on this one.
   const [annotationFilter, setAnnotationFilter] = useState('all');
   /**
    * Under this width the paper wants the whole page, so the margin becomes a
@@ -595,8 +593,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses }));
   }, []);
 
+  const annotating = useMemo(() => {
+    try { return !window.matchMedia('(pointer: coarse)').matches; } catch { return true; }
+  }, []);
+
   const annotations = usePassageAnnotations({
-    uid,
+    uid: annotating ? uid : null,
     paper,
     paperId,
     level,
@@ -606,10 +608,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   });
 
   const { begin: beginAnnotation } = annotations;
-
-  const coarsePointer = useMemo(() => {
-    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
-  }, []);
 
   const railIsSheet = isNarrow;
 
@@ -630,14 +628,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    *
    * Everything the three outcomes could need is captured here, in one go, at
    * the moment the selection is decided (mouse-up, raised by the document
-   * listener below; `selectionchange` settling on touch): the quote, where it is
+   * listener below): the quote, where it is
    * anchored, the paragraph around it (the model cannot explain "that
    * quantity" without the sentence that named it), and the rectangle to hang
    * the menu off. Capturing it all up front is what lets the browser's own
    * selection be cleared immediately — the reader paints its own provisional
    * mark instead, so the highlight you are deciding about is one you can
-   * already see. On touch the browser's selection is kept instead, so its
-   * handles stay where the reader is dragging them.
+   * already see. Notes, highlights and explanations are for a mouse or
+   * trackpad only; touch screens read the paper without them.
    */
   const handleSelection = useCallback((sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement) => {
     if (!uid) return;
@@ -651,7 +649,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
     const rect = range.getBoundingClientRect();
-    if (!coarsePointer) selection.removeAllRanges();
+    selection.removeAllRanges();
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -666,7 +664,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         right: rect.right,
       },
     });
-  }, [beginAnnotation, coarsePointer, uid]);
+  }, [beginAnnotation, uid]);
 
   /**
    * The keyboard route into the same fork `handleSelection` opens from a
@@ -726,6 +724,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * paragraph and do nothing, as before.
    */
   useEffect(() => {
+    if (!annotating) return undefined;
     const paragraphAround = (node: Node | null) => {
       const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement;
       return element?.closest<HTMLElement>('.rd-p[data-section]') || null;
@@ -742,21 +741,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       if (text === null) return;
       handleSelection(paragraph.dataset.section!, paragraphIndex, text, paragraph);
     };
-    if (coarsePointer) {
-      let settle: ReturnType<typeof setTimeout> | undefined;
-      const handleSelectionChange = () => {
-        clearTimeout(settle);
-        settle = setTimeout(handleDocumentMouseUp, 450);
-      };
-      document.addEventListener('selectionchange', handleSelectionChange);
-      return () => {
-        clearTimeout(settle);
-        document.removeEventListener('selectionchange', handleSelectionChange);
-      };
-    }
     document.addEventListener('mouseup', handleDocumentMouseUp);
     return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
-  }, [coarsePointer, handleSelection, paragraphTextFor]);
+  }, [annotating, handleSelection, paragraphTextFor]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -805,15 +792,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         return { ...item, fresh: Boolean(stored?.fresh) };
       }));
     }
-    // The passage the menu is open on wears the pen already, provisionally —
-    // on the desktop route only. Painting this mark rewrites the paragraph's
-    // highlight runs, which rewrites the DOM text node a live selection Range
-    // points into, which collapses the selection. Desktop wants exactly that
-    // (the browser's own selection is already gone by the time this paints).
-    // Touch cannot afford it: the OS handles live on that same selection, and
-    // this repaint would silently drag them away mid-adjustment. On touch the
-    // OS's own highlight is the provisional mark — nothing to add here.
-    const waiting = coarsePointer ? null : annotations.pending;
+    // The passage the menu is open on wears the pen already, provisionally.
+    const waiting = annotations.pending;
     if (waiting) {
       const key = `${waiting.sectionId}:${waiting.paragraphIndex}`;
       index.set(key, [
@@ -822,7 +802,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       ]);
     }
     return index;
-  }, [annotations.annotations, annotations.pending, coarsePointer, level]);
+  }, [annotations.annotations, annotations.pending, level]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
@@ -996,6 +976,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   })}
                 </SelectContent>
               </Select>
+              {annotating && (
+              <>
               <div className="rd-panel-group">
                 <span className="rd-panel-label">{copy.annotations}</span>
                 <Toggle
@@ -1023,7 +1005,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   <Highlighter size={15} />
                 </Toggle>
               </div>
-              {originalUrl && <div className="rd-panel-divider" />}
+              </>
+              )}
+              {annotating && originalUrl && <div className="rd-panel-divider" />}
               {originalUrl && (
                 <div className="rd-panel-group">
                   <Button
@@ -1078,7 +1062,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 never read on its own: the keyboard route's instructions, for
                 the one audience that cannot see a hint that only paints on
                 focus. */}
-            <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
+            {annotating && <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>}
 
             {shownStatus === 'error' ? (
               <EmptyState
@@ -1126,7 +1110,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                          paragraph, which set the text a pixel over on every
                          switch and gave the colour nothing to fade out of; now
                          the switch is a colour, and the words never move. */
-                      const aiHighlights = (section.highlights || [])
+                      const aiHighlights = (annotating ? section.highlights || [] : [])
                         .filter(item => item.paragraphIndex === paragraphIndex)
                         .map(item => ({ ...item, source: 'ai', proposed: true }));
                       const stored = userHighlightIndex.get(`${section.id}:${paragraphIndex}`) || [];
@@ -1136,14 +1120,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           className="rd-p"
                           data-section={section.id}
                           data-paragraph={paragraphIndex}
-                          data-annotatable=""
-                          data-hint={copy.annotateParagraphBadge}
+                          data-annotatable={annotating ? '' : undefined}
+                          data-hint={annotating ? copy.annotateParagraphBadge : undefined}
                           style={{ '--i': Math.min(paragraphIndex, MAX_STAGGER_STEPS) }}
                           // Keyboard route into the same menu the mouse opens on
                           // mouse-up (WCAG 2.1.1) -- see `handleParagraphKeyDown`.
-                          tabIndex={0}
-                          aria-describedby={paragraphHintId}
-                          onKeyDown={(event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph)}
+                          tabIndex={annotating ? 0 : undefined}
+                          aria-describedby={annotating ? paragraphHintId : undefined}
+                          onKeyDown={annotating ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph) : undefined}
                         >
                           <HighlightedScientificText highlights={[...stored, ...aiHighlights]} pins={textPins}>
                             {paragraph}
@@ -1229,6 +1213,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
           </article>
 
+          {annotating && (
           <AnnotationRail
             surface={railIsSheet ? 'sheet' : 'rail'}
             hidden={railIsSheet ? !sheetOpen : !railOpen}
@@ -1246,6 +1231,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             labelFor={annotationLabel}
             copy={copy}
           />
+          )}
         </div>
 
         {/* Over the selection, not in a corner: what it acts on is the passage
@@ -1253,6 +1239,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             about it. A popover anchored to the selection's rectangle; it stays
             mounted and follows `pending` with `open`, so its leave can play
             over the passage it was about. */}
+        {annotating && (
         <SelectionMenu
             open={Boolean(annotations.pending)}
             anchor={annotations.pending?.anchor}
@@ -1269,6 +1256,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             onAsk={askAboutPassage}
             onClose={annotations.dismiss}
           />
+        )}
       </DialogContent>
     </Dialog>
   );
