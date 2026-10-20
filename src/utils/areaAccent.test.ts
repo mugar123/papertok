@@ -8,17 +8,60 @@ import {
   areaLabelForPaper,
   openAlexFilterForArea,
 } from './areaAccent.ts';
-import { CATEGORIES } from '../data/categoryTaxonomy.ts';
+import { CATEGORIES, getCategoryLabel } from '../data/categoryTaxonomy.ts';
 
 /* One resolution, used by the accent ink, the field label and the watermark
    alike. Computing any of them a second way is how a paper ends up inked as
    one field, labelled as another and stamped with the mark of a third. */
 
-test('an arXiv category resolves exactly, then by prefix', () => {
+test('an arXiv category resolves exactly, then by its archive', () => {
   assert.equal(areaKeyForCategory('cs.AI'), 'cs');
   assert.equal(areaKeyForCategory('quant-ph'), 'physics');
-  // Not listed explicitly, reached by prefix.
+  // Not listed explicitly, reached by its archive.
   assert.equal(areaKeyForCategory('cs.NE'), 'cs');
+});
+
+/* Every category in arXiv's taxonomy (arxiv.org/category_taxonomy, 155 as of
+   October 2026), under the area its archive belongs to. */
+const ARXIV_CATEGORIES_BY_AREA: Record<string, string[]> = {
+  cs: 'AI AR CC CE CG CL CR CV CY DB DC DL DM DS ET FL GL GR GT HC IR IT LG LO MA MM MS NA NE NI OH OS PF PL RO SC SD SE SI SY'.split(' ').map(id => `cs.${id}`),
+  econ: ['econ.EM', 'econ.GN', 'econ.TH'],
+  eess: ['eess.AS', 'eess.IV', 'eess.SP', 'eess.SY'],
+  math: 'AC AG AP AT CA CO CT CV DG DS FA GM GN GR GT HO IT KT LO MG MP NA NT OA OC PR QA RA RT SG SP ST'.split(' ').map(id => `math.${id}`),
+  physics: [
+    ...'CO EP GA HE IM SR'.split(' ').map(id => `astro-ph.${id}`),
+    ...'dis-nn mes-hall mtrl-sci other quant-gas soft stat-mech str-el supr-con'.split(' ').map(id => `cond-mat.${id}`),
+    'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'math-ph', 'nucl-ex', 'nucl-th', 'quant-ph',
+    ...'AO CD CG PS SI'.split(' ').map(id => `nlin.${id}`),
+    ...'acc-ph ao-ph app-ph atm-clus atom-ph bio-ph chem-ph class-ph comp-ph data-an ed-ph flu-dyn gen-ph geo-ph hist-ph ins-det med-ph optics plasm-ph pop-ph soc-ph space-ph'.split(' ').map(id => `physics.${id}`),
+  ],
+  bio: 'BM CB GN MN NC OT PE QM SC TO'.split(' ').map(id => `q-bio.${id}`),
+  'q-fin': 'CP EC GN MF PM PR RM ST TR'.split(' ').map(id => `q-fin.${id}`),
+  stat: 'AP CO ME ML OT TH'.split(' ').map(id => `stat.${id}`),
+};
+const ARXIV_CATEGORY_AREAS = Object.entries(ARXIV_CATEGORIES_BY_AREA)
+  .flatMap(([area, ids]) => ids.map(id => [id, area] as const));
+
+// Guessed from the first letters of the id, `math.AC` and `q-bio.NC` read as
+// physics (`math-ph`, `quant-ph`) and `nlin.CD` as no field at all.
+test('every arXiv category resolves to the area of its archive', () => {
+  assert.equal(ARXIV_CATEGORY_AREAS.length, 155);
+  assert.deepEqual(
+    Object.fromEntries(ARXIV_CATEGORY_AREAS.map(([id]) => [id, areaKeyForCategory(id)])),
+    Object.fromEntries(ARXIV_CATEGORY_AREAS),
+  );
+});
+
+// The chip named `math.AC` "Mathematics" while the ink and the kicker beside
+// it said Physics.
+test("an arXiv category's chip, kicker and ink name the same area", () => {
+  for (const [id, areaKey] of ARXIV_CATEGORY_AREAS) {
+    const area = CATEGORIES[areaKey];
+    const paper = { primaryCategory: id, categories: [id] };
+    assert.equal(getCategoryLabel(id), area.subcategories[id]?.label ?? area.label, id);
+    assert.equal(areaLabelForPaper(paper), area.label, id);
+    assert.equal(areaAccentForPaper(paper), area.gradient, id);
+  }
 });
 
 test('an exact hit outranks a prefix hit, whatever the declaration order', () => {
