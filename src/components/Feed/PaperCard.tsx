@@ -2302,6 +2302,7 @@ const PaperCard = memo(function PaperCard({
             onBack: () => setMenuView('actions'),
           } : null}
           actions={[
+            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
             {
               id: 'read',
               label: isReadActive ? 'Mark as unread' : 'Mark as read',
@@ -2309,7 +2310,6 @@ const PaperCard = memo(function PaperCard({
               Icon: isReadActive ? CheckCircle : Eye,
               onSelect: handleMarkAsRead,
             },
-            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
             { id: 'skip', label: 'Not interested', hint: 'See fewer papers like this', Icon: Prohibit, onSelect: handleNotInterested },
             { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
             { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },

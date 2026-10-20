@@ -156,6 +156,30 @@ ul.pc-menu-group {
   color: var(--text-secondary);
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+/* Each action in its own colour, as on the rail it opens from: the glyph on
+   a square of that colour's tint. */
+.pc-menu-item[data-action='read'] { --tone: var(--accent-success); }
+.pc-menu-item[data-action='about'] { --tone: var(--accent-sky); }
+.pc-menu-item[data-action='skip'] { --tone: var(--tint-red-fg); }
+.pc-menu-item:is([data-action='bibtex'], [data-action='ris']) { --tone: var(--accent-violet); }
+
+.pc-menu-item-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--tone, var(--text-secondary)) 12%, var(--bg-card));
+  color: var(--tone, var(--text-secondary));
+  transition: background-color 120ms ease-out;
+}
+
+.pc-menu-item:active {
+  background: color-mix(in srgb, var(--tone, var(--text-secondary)) 6%, var(--bg-card));
 }
 
 .pc-menu-item-label {
@@ -234,10 +258,25 @@ ul.pc-menu-group {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .pc-menu-item:hover,
   .pc-menu-link:hover,
   .pc-menu-net:hover {
     background: var(--bg-secondary);
+  }
+
+  .pc-menu-item:hover {
+    border-color: color-mix(in srgb, var(--tone, var(--text-secondary)) 30%, var(--border-subtle));
+    background: color-mix(in srgb, var(--tone, var(--text-secondary)) 6%, var(--bg-card));
+  }
+
+  .pc-menu-item:hover .pc-menu-item-icon {
+    background: color-mix(in srgb, var(--tone, var(--text-secondary)) 18%, var(--bg-card));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-menu-item,
+  .pc-menu-item-icon {
+    transition: none;
   }
 }
 

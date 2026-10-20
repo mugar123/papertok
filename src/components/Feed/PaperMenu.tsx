@@ -70,7 +70,9 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
         {actions.map(({ id, label, hint, Icon, onSelect }) => (
           <li key={id}>
             <button type="button" className="pc-menu-item" data-action={id} onClick={(event) => { onOpenChange(false); onSelect(event); }}>
-              <Icon size={20} aria-hidden="true" />
+              <span className="pc-menu-item-icon">
+                <Icon size={20} aria-hidden="true" />
+              </span>
               <span>
                 <span className="pc-menu-item-label">{label}</span>
                 <span className="pc-menu-item-hint">{hint}</span>
