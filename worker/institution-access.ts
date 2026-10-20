@@ -65,8 +65,11 @@ const RESOLVER_CITATION = 'article';
 // read one, so that results read an older way are not served on. Until
 // 2026-10-19 a service Alma had filtered out for the date counted as access;
 // then a single-service answer cut off before its services read as a
-// refusal; then a complete answer that was not well-formed XML was not read.
-export const RESOLVER_READING = 'complete-answers';
+// refusal; then a complete answer that was not well-formed XML was not read;
+// then a key left open, or one whose tag was written another way, was read as
+// absent, so a service Alma had filtered out for the date could count as
+// access again, cached for seven days.
+export const RESOLVER_READING = 'balanced-tags-cdata';
 
 export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
   const url = new URL(request.url);
@@ -208,6 +211,52 @@ function xmlKey(xml: string, id: string) {
   return match ? unescapeXml(match[1]) : null;
 }
 
+// A closing tag; an opening tag, with the rest of the element when it is
+// empty or holds only text (most keys, so most elements take one match); a
+// CDATA section; an XML declaration; or a `<` that starts none of them.
+// Tags match only as Alma writes them: each attribute after one space, its
+// value in double quotes with no `<`, `>` or `&`, and no space before `>`,
+// `/>` or a closing tag's `>`. A quote left open runs into the next `<` or
+// `>`, so the tag does not match.
+const MARKUP = /<(?:\/([A-Za-z_][\w.:-]*)|([A-Za-z_][\w.:-]*)((?: [\w.:-]+="[^"<>&]*")*)(\/|>[^<]*<\/\2)?|!\[CDATA\[[\s\S]*?\]\]|\?xml\s[^>]*\?)>|</g;
+
+/**
+ * Whether an answer's markup holds together the way `parseResolverAnswer`
+ * reads it, checked in one pass over its tags: every `<` starts a tag, a
+ * CDATA section or an XML declaration, every element closes inside the
+ * element it opened in, the root element, `uresolver_content`, closes at
+ * the end, a key holds no element, and no service opens inside another.
+ * The reader matches tags as Alma writes them, not every spelling XML
+ * allows: `<key id="…">`, `</key>`, `service_type="getFullTxt"`,
+ * `<resolution_url>` and `</context_service>`, reading a service up to the
+ * next `</context_service>`. So a tag written another way fails (a space
+ * before `>`, single quotes, a key with a value opened other than as
+ * `<key id="…">`, a link with an attribute), and so does a service closed
+ * in its own opening tag: read anyway, a `Filtered` key would count as
+ * absent, a full-text service would be skipped or lose its link, or a
+ * service would be read with the next one's keys. Every saved answer
+ * writes its tags this way. Text is not checked, so an unescaped `&` does
+ * not stop an answer from being read. No saved answer starts with an XML
+ * declaration, but one is well-formed XML, and refusing it would make
+ * every answer an outage if Alma began to send one.
+ */
+function markupHolds(text: string) {
+  const open: string[] = [];
+  for (const { 0: tag, 1: closing, 2: name, 3: attributes, 4: closed, index } of text.matchAll(MARKUP)) {
+    if (tag === '<') return false;
+    if (closing) {
+      if (open.pop() !== closing) return false;
+      if (!open.length) return closing === 'uresolver_content' && !text.slice(index + tag.length).trim();
+    } else if (name) {
+      if (open.at(-1) === 'key' || (name === 'context_service' && (closed === '/' || open.includes(name)))) return false;
+      const unmatched = name === 'key' ? !/^ id="[^"]*"$/.test(attributes) : name === 'resolution_url' && attributes !== '';
+      if (closed !== '/' && unmatched) return false;
+      if (!closed) open.push(name);
+    }
+  }
+  return false;
+}
+
 /**
  * The resolver's `svc_dat=CTO` answer. Null when it carries no context
  * object, which is not an answer about the journal at all.
@@ -225,28 +274,31 @@ function xmlKey(xml: string, id: string) {
  * library lacks it.
  */
 export function parseResolverAnswer(xml: unknown) {
-  const text = String(xml);
-  // An answer cut off by the resolver or the network parses as far as it
-  // goes: a single-service answer cut before its services would read as a
-  // refusal. Only a complete answer is read: its root element closes, and
-  // every service that opens also closes, so no service is read with
-  // another's keys. Validating the whole answer as XML took about a
-  // millisecond per answer in Node, and one services page reads up to 36
-  // answers within the 10 ms CPU limit of Workers Free; the expressions
-  // below read keys, not a document tree, so a complete answer is enough.
-  // Only one with a context object is an answer about the journal at all.
-  // A library set to send readers straight to one service answers with
-  // `available_services` = single_service and no indicator (Harvard,
-  // Helsinki, Amsterdam, 2026-10-19); its services still carry Alma's
-  // filter marks, so what is left unfiltered is the answer.
-  const opened = text.match(/<context_service\b/g)?.length ?? 0;
-  const closed = text.match(/<\/context_service>/g)?.length ?? 0;
-  if (!text.trimEnd().endsWith('</uresolver_content>') || opened !== closed || !/<context_object>/.test(text)) return null;
+  let text = String(xml);
+  // The expressions below read keys and services, not a document tree, so
+  // damaged markup misleads them: a single-service answer cut off before
+  // its services would read as a refusal, and a `Filtered` key that never
+  // closes would not be read, so a service Alma filtered out would count as
+  // access. Only an answer whose markup holds is read. Validating the whole
+  // answer as XML took about a millisecond per answer in Node, and one
+  // services page reads up to 36 answers within the 10 ms CPU limit of
+  // Workers Free; reading an answer with the tag check took about a sixth
+  // of that time. Only one with a context object is an answer about the
+  // journal at all. A library set to send readers straight to one service
+  // answers with `available_services` = single_service and no indicator
+  // (Harvard, Helsinki, Amsterdam, 2026-10-19); its services still carry
+  // Alma's filter marks, so what is left unfiltered is the answer.
+  if (!markupHolds(text)) return null;
+  // CDATA is text, including when it contains something that looks like a
+  // key or service. Escape it before the shared reader extracts any values.
+  text = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_section, value: string) =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+  if (!/<context_object>/.test(text)) return null;
   const indicator = xmlKey(text, 'full_text_indicator');
   const matched = xmlKey(text, 'rft.mms_id') !== null;
   const services = [];
   let restricted = false;
-  for (const [, attributes, body] of String(xml).matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
+  for (const [, attributes, body] of text.matchAll(/<context_service\b([^>]*)>([\s\S]*?)<\/context_service>/g)) {
     if (!/\bservice_type="getFullTxt"/.test(attributes)) continue;
     if (xmlKey(body, 'Filtered') === 'true') {
       if (!/date/i.test(xmlKey(body, 'Filter reason') || '')) restricted = true;
