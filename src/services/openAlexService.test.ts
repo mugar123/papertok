@@ -1,4 +1,4 @@
-import type { PaperAuthor } from '../models/Paper.ts';
+import type { Paper, PaperAuthor } from '../models/Paper.ts';
 import type { OpenAlexAuthor, OpenAlexWork } from './adapters/openAlexTypes.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,6 +8,7 @@ import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
+import { openAlexPeerReviewed } from '../utils/publicationStatus.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import {
   dribblingFetch,
@@ -675,7 +676,7 @@ test('a works page and an authors page persist as what the Explorer shows, not a
 test('SOURCE: the works and authors requests persist through persistentSlim under versioned keys', async () => {
   const { readFile } = await import('node:fs/promises');
   const code = await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8');
-  assert.match(code, /const worksCacheKey = `entity-works-v3:/);
+  assert.match(code, /const worksCacheKey = `entity-works-v4:/);
   assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
   assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
   assert.match(code, /persistentKey: authorsCacheKey,[\s\S]*?persistentSlim: slimAuthorsPage,/);
@@ -684,7 +685,8 @@ test('SOURCE: the works and authors requests persist through persistentSlim unde
 // The previous release built this page with `peerReviewed: true` on the FEDS
 // working paper and persisted it for six hours, and at any age as the answer
 // when OpenAlex fails. Read back, it put the working paper through
-// "Peer-reviewed only" without a request.
+// "Peer-reviewed only" without a request. A `v3` page answered the query from
+// before it named the working-paper series, so it numbers other works.
 test('an Explorer works page persisted before the review rule is fetched again', async () => {
   const previousStorage = openAlexClient.storage;
   const previousStore = openAlexClient.persistentStore;
@@ -693,10 +695,12 @@ test('an Explorer works page persisted before the review rule is fetched again',
   openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k: string) => memory.delete(k) } as NonNullable<typeof openAlexClient.storage> & Record<string, unknown>;
   openAlexClient.persistentStore = null;
   const filters = { peerReviewed: true };
-  writeOpenAlexPersistent(`entity-works-v2:author:A7000000001:cited_by_count:desc:1::${JSON.stringify(filters)}`, {
-    papers: [{ id: 'W4414816997', title: 'A FEDS paper', publicationStatus: 'published', peerReviewed: true, sources: { primary: 'openalex', enrichedBy: [] } }],
-    total: 1,
-  });
+  for (const version of ['v2', 'v3']) {
+    writeOpenAlexPersistent(`entity-works-${version}:author:A7000000001:cited_by_count:desc:1::${JSON.stringify(filters)}`, {
+      papers: [{ id: 'W4414816997', title: 'A FEDS paper', publicationStatus: 'published', peerReviewed: true, sources: { primary: 'openalex', enrichedBy: [] } }],
+      total: 1,
+    });
+  }
   const urls: string[] = [];
   openAlexClient.fetchImpl = async (url) => {
     urls.push(String(url));
@@ -711,6 +715,116 @@ test('an Explorer works page persisted before the review rule is fetched again',
     openAlexClient.fetchImpl = realFetch;
     openAlexClient.storage = previousStorage;
     openAlexClient.persistentStore = previousStore;
+  }
+});
+
+// What OpenAlex does with each clause of the works query, as keyless requests
+// showed on 2026-10-20: `|` is OR inside one filter, comma-separated filters
+// are ANDed, and so is each repeated negated `primary_location.source.id`,
+// which also keeps works with no source. Every work here is the author's.
+function openAlexFilterKeeps(filter: string, work: OpenAlexWork) {
+  return filter.split(',').every((clause) => {
+    const key = clause.slice(0, clause.indexOf(':'));
+    const value = clause.slice(clause.indexOf(':') + 1);
+    if (key === 'author.id') return true;
+    if (key === 'primary_location.is_published') return String(Boolean(work.primary_location?.is_published)) === value;
+    if (key === 'type') return value.split('|').includes(String(work.type));
+    if (key === 'primary_location.source.id' && value.startsWith('!')) {
+      return work.primary_location?.source?.id !== `https://openalex.org/${value.slice(1)}`;
+    }
+    throw new Error(`no stand-in for the clause ${clause}`);
+  });
+}
+
+// OpenAlex's works endpoint over one author's works, in the order the query
+// sorts them: the count and the pages are of the works the filter keeps.
+function stubAuthorWorks(works: OpenAlexWork[], pages: number[] = []) {
+  return async (url: string | URL | Request) => {
+    const params = new URL(String(url)).searchParams;
+    const page = Number(params.get('page'));
+    pages.push(page);
+    const kept = works.filter(work => openAlexFilterKeeps(params.get('filter')!, work));
+    return Response.json({ meta: { count: kept.length }, results: kept.slice((page - 1) * 30, page * 30) });
+  };
+}
+
+const venue = (id: string, display_name: string, type = 'journal') => ({
+  is_published: true,
+  source: { id: `https://openalex.org/${id}`, display_name, type },
+});
+
+// Synthetic works by one author, sources as OpenAlex files them.
+const authorWork = (n: number, source: ReturnType<typeof venue>): OpenAlexWork => ({
+  id: `https://openalex.org/W9${String(n).padStart(5, '0')}`,
+  title: `Labour market study ${n}`,
+  type: 'article',
+  authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+  primary_location: source,
+});
+const FEDS = venue('S4210212089', 'Finance and Economics Discussion Series');
+// A discussion-paper series filed as a journal and missing from the rule's
+// list: the rule cannot call its articles reviewed, and the query cannot name it.
+const UNLISTED_SERIES = venue('S10', 'IZA Discussion Papers');
+const JOURNAL = venue('S11', 'Journal of Labor Economics');
+
+const reviewedOnly = { category: '', peerReviewed: true, dateRange: '' };
+const explorerRows = (papers: Paper[]) => filterAndSortEntityPapers(PaperBuilder.deduplicate(papers), { filters: reviewedOnly });
+
+test('"Peer-reviewed only" asks OpenAlex to leave out reports and listed series, and no work the rule calls reviewed', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: string[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(String(url));
+    return Response.json({ meta: { count: 0 }, results: [] });
+  };
+  try {
+    await getWorksByEntity('author', 'A7000000002', 'cited_by_count:desc', 1, '', reviewedOnly, 'Ana Economist');
+    await getWorksByEntity('author', 'A7000000003', 'cited_by_count:desc', 1, '', { category: '', peerReviewed: false, dateRange: '' }, 'Ana Economist');
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+  const [reviewedFilter, everything] = urls
+    .filter(url => url.includes('/works?'))
+    .map(url => new URL(url).searchParams.get('filter')!);
+  assert.equal(everything, 'author.id:A7000000003');
+
+  const works: OpenAlexWork[] = [
+    FEDS_WORK,
+    NATURE_WORK,
+    { id: 'W-imf', type: 'article', primary_location: venue('S4210171147', 'IMF Working Papers') },
+    { id: 'W-nber', type: 'report', primary_location: venue('S2809516038', 'National Bureau of Economic Research', 'repository') },
+    { id: 'W-proceedings', type: 'conference-paper', primary_location: venue('S5', 'NeurIPS', 'conference') },
+    { id: 'W-review', type: 'review', primary_location: venue('S6', 'Annual Review of Economics') },
+    { id: 'W-published-preprint', type: 'preprint', primary_location: venue('S7', 'Journal of Finance') },
+    { id: 'W-unsourced', type: 'article', primary_location: { is_published: true, source: null }, locations: [venue('S8', 'Econometrica')] },
+    { id: 'W-chapter', type: 'book-chapter', primary_location: venue('S9', 'Lecture Notes in Economics', 'book series') },
+    { id: 'W-iza', type: 'article', primary_location: UNLISTED_SERIES },
+  ];
+  const reviewed = works.filter(work => openAlexPeerReviewed(work) === true);
+  assert.deepEqual(reviewed.map(work => work.id), [NATURE_WORK.id, 'W-proceedings', 'W-review', 'W-published-preprint', 'W-unsourced']);
+  for (const work of reviewed) assert.ok(openAlexFilterKeeps(reviewedFilter, work), `${work.id} is asked for`);
+  assert.deepEqual(
+    works.filter(work => !openAlexFilterKeeps(reviewedFilter, work)).map(work => work.id),
+    [FEDS_WORK.id, 'W-imf', 'W-nber', 'W-chapter'],
+  );
+});
+
+test('an author whose most cited works are FEDS papers gets reviewed rows on the first "Peer-reviewed only" page', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  const works = [
+    ...Array.from({ length: 30 }, (_, n) => authorWork(n, FEDS)),
+    ...Array.from({ length: 30 }, (_, n) => authorWork(30 + n, JOURNAL)),
+  ];
+  openAlexClient.fetchImpl = stubAuthorWorks(works);
+  try {
+    const { papers, total } = await getWorksByEntity('author', 'A7000000006', 'cited_by_count:desc', 1, '', reviewedOnly, 'Ana Economist');
+    const rows = explorerRows(papers);
+
+    assert.equal(total, 30);
+    assert.equal(rows.length, 30);
+    assert.ok(rows.every(paper => paper.journal === 'Journal of Labor Economics'));
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
   }
 });
 
