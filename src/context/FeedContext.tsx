@@ -1253,7 +1253,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             8,
             queryMode,
           );
-          const workingPapersProm = fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1);
 
           if (relatedCandidates.current?.length > 0) {
             graphCandidatesPromise = resolveWithin(
@@ -1276,6 +1275,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               [],
             );
           }
+          // Asked once the personal and followed lookups settle: they share the
+          // queue's two OpenAlex slots, and the page waits for them. Asked first, the
+          // series pushed three followed authors past their 3.5 s budget (2026-10-20).
+          // A topic follow enqueues only after an import, so source order is not enough.
+          const workingPapersProm = Promise.all([personalCandidatesPromise, followedCandidatesPromise])
+            .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
             [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],

@@ -409,3 +409,25 @@ test('a failed working-paper request leaves the page to the other sources', asyn
   assert.equal(state.error, null);
   assert.deepEqual(state.papers.map(paper => paper.id), searched.map(paper => paper.id));
 });
+
+// Both ask OpenAlex, whose queue has two slots for requests without priority,
+// and the page waits for the followed lookups but not for the series.
+test('the working-paper series are asked for once the followed lookups settle, not ahead of them', async () => {
+  const followed = deferred();
+  const asked: string[] = [];
+  const { state, env, run } = feed();
+  Object.assign(env, {
+    userPreferences: ['econ.GN'],
+    followedEntities: [{ type: 'author', canonicalId: 'A5026475124', displayName: 'Martina Magli' }],
+    fetchFollowedEntityCandidates: () => { asked.push('followed'); return followed.promise; },
+    fetchWorkingPapers: () => { asked.push('series'); return Promise.resolve([]); },
+    OPTIONAL_SOURCE_RENDER_BUDGET_MS: 1000,
+  });
+  const loading = run(true);
+  await tick();
+  assert.deepEqual(asked, ['followed'], 'no series request while a followed lookup runs');
+  followed.resolve([]);
+  await loading;
+  assert.deepEqual(asked, ['followed', 'series']);
+  assert.equal(state.error, null);
+});
