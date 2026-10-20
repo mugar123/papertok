@@ -5,6 +5,8 @@ import type { Paper } from '../models/Paper.ts';
 import {
   EXPLORER_ROW_CHUNK,
   GUEST_PREVIEW_LIMIT,
+  explorerListState,
+  explorerPageAllowance,
   guestGateTotal,
   guestPreviewRows,
   shouldShowGuestGate,
@@ -252,6 +254,28 @@ test('the list mounts eight rows at a time and never more than it has', () => {
   assert.equal(nextExplorerRowBudget(30, 30), 30);
   assert.equal(nextExplorerRowBudget(8, 5), 5);
   assert.equal(nextExplorerRowBudget(-1, 0), 0);
+});
+
+test('a page the filters emptied keeps the list looking while more pages remain, then waits for the reader', () => {
+  const emptiedPage = { rows: 0, hasMore: true, publicMode: false };
+
+  // More pages left: the list asks for the next one and is not the empty state.
+  assert.equal(explorerListState(emptiedPage), 'looking');
+  assert.equal(explorerPageAllowance(1, { byReader: false }), 0, 'the list asks, with nothing left after');
+
+  // No allowance left: it waits for "Keep looking", still not the empty state.
+  assert.equal(explorerPageAllowance(0, { byReader: false }), null);
+  assert.equal(explorerListState(emptiedPage), 'looking');
+  const restored = explorerPageAllowance(0, { byReader: true });
+  assert.ok(restored !== null && restored > 0, 'the reader\'s request goes ahead and restores the allowance');
+
+  // No more pages: the empty state.
+  assert.equal(explorerListState({ ...emptiedPage, hasMore: false }), 'empty');
+  // A visitor gets no next page: their empty first page is the empty state.
+  assert.equal(explorerListState({ ...emptiedPage, publicMode: true }), 'empty');
+  // A page with rows leaves the asking to the foot of the list.
+  assert.equal(explorerListState({ ...emptiedPage, rows: 3 }), 'rows');
+  assert.equal(explorerListState({ rows: 3, hasMore: false, publicMode: true }), 'rows');
 });
 
 

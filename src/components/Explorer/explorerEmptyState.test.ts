@@ -69,7 +69,8 @@ test('SOURCE: el vacío espera a que no quede ninguna página en vuelo', async (
   const jsx = strip(await read('./EntityExplorer.tsx'));
 
   for (const [tab, condicion] of [
-    ['publicaciones', /\{!isLoadingPapers && !isFetchingMore && filteredPapers\.length === 0 && \(/],
+    // And only once no page is left that this reader may load (`explorerListState`).
+    ['publicaciones', /\{!isLoadingPapers && !isFetchingMore && explorerListState\(\{ rows: filteredPapers\.length, hasMore, publicMode \}\) === 'empty' && \(/],
     ['autores', /\{!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors\.length === 0 && \(/],
   ] as const) {
     assert.match(jsx, condicion,

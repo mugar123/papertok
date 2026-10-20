@@ -63,6 +63,7 @@ import {
   EXPLORER_AUTO_PAGES,
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
+  explorerListState,
   explorerPageAllowance,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
@@ -1388,10 +1389,10 @@ export default function EntityExplorer({
           });
         }
         setHasMore(page * 30 < total);
-        // A page the filters emptied adds no row, so it leaves no foot of the
-        // list on screen to ask for the next page: the list asks itself, while
-        // its allowance lasts. A visitor gets no next page at all.
-        if (!publicMode && fetchedPapers.length === 0 && page * 30 < total) {
+        // `rows` counts what this page added, not the list: a page that adds
+        // none under earlier rows leaves the list's foot on screen, which
+        // would ask for the next page on the same allowance.
+        if (explorerListState({ rows: fetchedPapers.length, hasMore: page * 30 < total, publicMode }) === 'looking') {
           continuing = requestNextPapersPage(false);
         }
       } catch (err) {
@@ -2860,9 +2861,9 @@ export default function EntityExplorer({
                 más artículos…» y, debajo, «No hay publicaciones». Una
                 promesa y su desmentido en la misma pantalla. Vacío es una
                 afirmación sobre algo terminado: se espera a que lo esté. */}
-            {/* And only once there is no next page to try, or none this reader
-                may load: a page the filters emptied is not an empty list. */}
-            {!isLoadingPapers && !isFetchingMore && filteredPapers.length === 0 && (!hasMore || publicMode) && (
+            {/* And only once there is no next page this reader may load: a
+                page the filters emptied is not an empty list. */}
+            {!isLoadingPapers && !isFetchingMore && explorerListState({ rows: filteredPapers.length, hasMore, publicMode }) === 'empty' && (
               <ExplorerEmptyState
                 variant={pickEmptyVariant({
                   papersError,

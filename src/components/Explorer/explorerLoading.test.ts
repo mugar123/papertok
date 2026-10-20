@@ -267,6 +267,19 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   assert.match(css, /\.explorer-list-item \{[^}]*content-visibility: auto;\s*contain-intrinsic-size: auto 200px;[^}]*\}/);
 });
 
+// With no row there is no sentinel to ask for page 2, so the page's landing
+// asks (`explorerListState`). explorerEmptyState.test.ts checks that the
+// empty state waits for the same rule.
+test('a page the filters emptied asks for the next one', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+  assert.match(
+    jsx,
+    /setHasMore\(page \* 30 < total\);\s*if \(explorerListState\(\{ rows: fetchedPapers\.length, hasMore: page \* 30 < total, publicMode \}\) === 'looking'\) \{\s*continuing = requestNextPapersPage\(false\);\s*\}/,
+    'a page that adds no row asks for the next one on the list\'s own allowance',
+  );
+  assert.match(jsx, /setIsLoadingPapers\(false\);\s*setIsFetchingMore\(continuing\);/, 'the list stays loading while it asks');
+});
+
 /**
  * OpenAIRE's `total` counts every publication of the project, whether or not
  * it carries a DOI or an arXiv id; `getPapersByProject` already drops the ones
