@@ -488,6 +488,18 @@ country: institutions met, rows shipped, Alma libraries whose answer the Worker 
 libraries on another product, candidates still unverified, exclusions, unresolved), so a report
 quotes a table that can be regenerated after any run.
 
+Finding a code by hand, when the crawler could not (batch 5, 2026-10-20, 228 institutions by
+hand): the Alma staff login page `https://<slug>.alma.exlibrisgroup.com/mng/login` names the
+code in its stylesheet URLs (`institutionCode=…`), which turns any named host into a code;
+Primo VE's `/primaws/rest/pub/configuration/vid/<CODE>:<VIEW>` names the institution behind a
+view; the OBV (Austria) classic Primo publishes its whole member map at
+`/primo_library/libweb/webservices/rest/v1/configuration/<vid>` (`alma_base` entries), and hbz
+(NRW) libraries answer on `hbz-<x>.alma…` hosts that exist in DNS only for real members. A code
+that answers only with services filtered for an IP group (Houston, Toulouse) still verifies, and
+the Worker reads it as `unknown`. A shared Alma institution serving several universities
+(Toulouse's 33TOULOUSE_INST, Paris-Saclay's 33PUP_INST with per-member `openurl-<MEMBER>`
+profiles the Worker cannot ask yet) is excluded for the members, like the Royal Danish Library.
+
 Institutions come from OpenAlex (`type:education`, by works count; each request spends its
 free daily budget), their domains from ROR. Every host is asked at most once per second with
 an identifying user agent. `--debug` prints each request; `--only <ror>` restricts a run;
