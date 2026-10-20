@@ -669,13 +669,46 @@ test('a works page and an authors page persist as what the Explorer shows, not a
   assert.deepEqual(authors, { authors: [{ id: 'A1', display_name: 'Ada', works_count: 2, cited_by_count: 0, h_index: 5, institution: 'Uni', concepts: [1, 2, 3] }], total: 9 });
 });
 
-test('SOURCE: the works and authors requests persist through persistentSlim under v2 keys', async () => {
+test('SOURCE: the works and authors requests persist through persistentSlim under versioned keys', async () => {
   const { readFile } = await import('node:fs/promises');
   const code = await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8');
-  assert.match(code, /const worksCacheKey = `entity-works-v2:/);
+  assert.match(code, /const worksCacheKey = `entity-works-v3:/);
   assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
   assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
   assert.match(code, /persistentKey: authorsCacheKey,[\s\S]*?persistentSlim: slimAuthorsPage,/);
+});
+
+// The previous release built this page with `peerReviewed: true` on the FEDS
+// working paper and persisted it for six hours, and at any age as the answer
+// when OpenAlex fails. Read back, it put the working paper through
+// "Peer-reviewed only" without a request.
+test('an Explorer works page persisted before the review rule is fetched again', async () => {
+  const previousStorage = openAlexClient.storage;
+  const previousStore = openAlexClient.persistentStore;
+  const realFetch = openAlexClient.fetchImpl;
+  const memory = new Map<string, string>();
+  openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v), removeItem: (k: string) => memory.delete(k) } as NonNullable<typeof openAlexClient.storage> & Record<string, unknown>;
+  openAlexClient.persistentStore = null;
+  const filters = { peerReviewed: true };
+  writeOpenAlexPersistent(`entity-works-v2:author:A7000000001:cited_by_count:desc:1::${JSON.stringify(filters)}`, {
+    papers: [{ id: 'W4414816997', title: 'A FEDS paper', publicationStatus: 'published', peerReviewed: true, sources: { primary: 'openalex', enrichedBy: [] } }],
+    total: 1,
+  });
+  const urls: string[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(String(url));
+    return Response.json({ meta: { count: 1 }, results: [FEDS_WORK] });
+  };
+  try {
+    const { papers } = await getWorksByEntity('author', 'A7000000001', 'cited_by_count:desc', 1, '', filters, 'Ada Lovelace');
+
+    assert.equal(urls.filter(url => url.includes('/works?')).length, 1);
+    assert.deepEqual(filterAndSortEntityPapers(PaperBuilder.deduplicate(papers), { filters }), []);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.storage = previousStorage;
+    openAlexClient.persistentStore = previousStore;
+  }
 });
 
 test('the enrichment carries the authors with their OpenAlex ids', () => {

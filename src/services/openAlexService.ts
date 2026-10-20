@@ -1587,9 +1587,11 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
   if (searchQuery) {
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
-  // `v2`: the page is persisted as the papers it became, not as the raw
-  // response (openAlexClient.js says why); the old key's raw pages age out.
-  const worksCacheKey = `entity-works-v2:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
+  // The page is persisted as the papers it became, not as the raw response
+  // (openAlexClient.js says why). `v3`: `v2` papers were built before
+  // `openAlexPeerReviewed` and carry `peerReviewed: true` for working papers,
+  // reports and works with no venue; those pages age out.
+  const worksCacheKey = `entity-works-v3:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
   
   try {
     const data = await openAlexJson<ReturnType<typeof slimWorksPage>, OpenAlexPage<OpenAlexWork>>(url, {
