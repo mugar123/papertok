@@ -225,12 +225,47 @@ export class PaperBuilder {
       merged.huggingFaceUpvotes = enrichmentData.huggingFaceUpvotes;
     }
 
+    // A `false` and the working-paper tag describe the record that sent them,
+    // so the row takes them only while it keeps that record's identity: the
+    // base had no DOI, or both share a DOI, or the base's only DOI is arXiv's
+    // own and both share an arXiv id. A shared eprint never outranks a
+    // publisher's DOI on the base, whether the other record has a DOI or not.
+    // `deduplicate` also joins a journal article and its working paper on
+    // title and first author, or on an eprint both list: OpenAlex can file an
+    // arXiv eprint among a FEDS paper's locations while arXiv lists the
+    // journal's DOI for it. A row that keeps the article's DOI and journal is
+    // not the working paper.
+    // A base DOI from the working paper's own registrant keeps that identity
+    // too: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for the
+    // paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
+    // 2026-10-20, the prefix of each series in `WORKING_PAPER_SOURCE_IDS`
+    // held only its institution's own publications, and no academic
+    // publisher's journal. Other records get no such reading: Springer
+    // registers journal articles and chapters alike under 10.1007.
+    const baseDoi = normalizeDoi(existingPaper.doi);
+    const enrichmentDoi = normalizeDoi(enrichmentData.doi);
+    const baseArxivId = arxivIdKey(existingPaper.arxivId);
+    const sameRecord = !existingPaper.doi
+      || (baseDoi !== '' && baseDoi === enrichmentDoi)
+      || (enrichmentData.workingPaper === true && enrichmentDoi !== ''
+        && doiRegistrant(baseDoi) === doiRegistrant(enrichmentDoi))
+      || (!isPublisherDoi(baseDoi)
+        && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
+    // A working paper the row is not: its `false` and tag stay out (below),
+    // and so do its series name and institution.
+    const otherWorkingPaper = enrichmentData.workingPaper === true
+      && enrichmentData.peerReviewed === false && !sameRecord;
+
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)
     // A working paper that keeps its `false` takes neither the other record's
     // journal nor its publisher: like that record's DOI, they would put the
-    // journal version's venue on the unreviewed working paper.
-    if (!merged.journal && enrichmentData.journal && !keepsOwnFalse) merged.journal = enrichmentData.journal;
-    if (!merged.publisher && enrichmentData.publisher && !keepsOwnFalse) merged.publisher = enrichmentData.publisher;
+    // journal version's venue on the unreviewed working paper. Nor does a row
+    // that is not the working paper take that paper's series as its journal.
+    // A `false` from a record that is no working paper (a non-refereed NASA
+    // ADS one) still comes with the same work's venue.
+    const takesVenue = !keepsOwnFalse && !otherWorkingPaper;
+    if (!merged.journal && enrichmentData.journal && takesVenue) merged.journal = enrichmentData.journal;
+    if (!merged.publisher && enrichmentData.publisher && takesVenue) merged.publisher = enrichmentData.publisher;
     if (!merged.conference && enrichmentData.conference) merged.conference = enrichmentData.conference;
     if (!merged.pmid && enrichmentData.pmid) merged.pmid = enrichmentData.pmid;
     if (!merged.pmcid && enrichmentData.pmcid) merged.pmcid = enrichmentData.pmcid;
@@ -334,32 +369,6 @@ export class PaperBuilder {
       || (!hasExplicitPublicationStatus
         && enrichmentData.publicationType
         && !['preprint', 'repository'].includes(enrichmentData.publicationType));
-    // A `false` and the working-paper tag describe the record that sent them,
-    // so the row takes them only while it keeps that record's identity: the
-    // base had no DOI, or both share a DOI, or the base's only DOI is arXiv's
-    // own and both share an arXiv id. A shared eprint never outranks a
-    // publisher's DOI on the base, whether the other record has a DOI or not.
-    // `deduplicate` also joins a journal article and its working paper on
-    // title and first author, or on an eprint both list: OpenAlex can file an
-    // arXiv eprint among a FEDS paper's locations while arXiv lists the
-    // journal's DOI for it. A row that keeps the article's DOI and journal is
-    // not the working paper.
-    // A base DOI from the working paper's own registrant keeps that identity
-    // too: arXiv can list a FEDS revision, 10.17016/feds.2026.007r1, for the
-    // paper OpenAlex files as 10.17016/feds.2026.007. In Crossref on
-    // 2026-10-20, the prefix of each series in `WORKING_PAPER_SOURCE_IDS`
-    // held only its institution's own publications, and no academic
-    // publisher's journal. Other records get no such reading: Springer
-    // registers journal articles and chapters alike under 10.1007.
-    const baseDoi = normalizeDoi(existingPaper.doi);
-    const enrichmentDoi = normalizeDoi(enrichmentData.doi);
-    const baseArxivId = arxivIdKey(existingPaper.arxivId);
-    const sameRecord = !existingPaper.doi
-      || (baseDoi !== '' && baseDoi === enrichmentDoi)
-      || (enrichmentData.workingPaper === true && enrichmentDoi !== ''
-        && doiRegistrant(baseDoi) === doiRegistrant(enrichmentDoi))
-      || (!isPublisherDoi(baseDoi)
-        && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
     // A published record that says outright it was not reviewed wins from
     // either side, so an IMF working paper that another provider also lists as
     // published stays unreviewed whichever record arrives first. It does not

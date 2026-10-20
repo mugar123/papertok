@@ -529,6 +529,84 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
   assert.equal(springerArticle.peerReviewed, true);
 });
 
+test('an arXiv record beside a working paper it is not takes neither its series nor its answer', () => {
+  // Synthetic records through the real mappers. OpenAlex files the eprint
+  // among a working paper's locations, so `deduplicate` joins it with the
+  // arXiv record on the arXiv id; an arXiv card's enrichment can resolve to
+  // that work too. The arXiv record comes first, as in the feed.
+  const title = 'Bank capital and the transmission of monetary policy';
+  const arxivId = '2601.00007';
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const workingPaperWork = (doi: string | null, source: { id: string; display_name: string; type: string; host_organization_name?: string }, type: string): OpenAlexWork => {
+    const location = {
+      landing_page_url: doi ? `https://doi.org/${doi}` : 'https://www.nber.org/papers/w30000',
+      is_published: true,
+      source: { ...source, id: `https://openalex.org/${source.id}` },
+    };
+    return {
+      id: 'https://openalex.org/W600',
+      doi: doi ? `https://doi.org/${doi}` : null,
+      title,
+      type,
+      authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+      publication_year: 2026,
+      primary_location: location,
+      locations: [location, {
+        landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+        is_published: false,
+        source: { display_name: 'arXiv (Cornell University)', type: 'repository' },
+      }],
+    };
+  };
+  const feds = workingPaperWork('10.17016/FEDS.2026.007', {
+    id: 'S4210212089',
+    display_name: 'Finance and Economics Discussion Series',
+    type: 'journal',
+    host_organization_name: 'Board of Governors of the Federal Reserve System',
+  }, 'article');
+  // As `arxivService` maps an entry: a DOI or a journal reference makes it a
+  // published article.
+  const arxivRecord = (doi: string, journal = '') => PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    doi,
+    journal,
+    publicationType: 'article',
+    publicationStatus: 'published',
+  });
+  const flows = (arxiv: Paper, work: OpenAlexWork): Array<[string, Paper[]]> => [
+    ['search', PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(work)!])],
+    ['Explorer page', PaperBuilder.deduplicate([arxiv, slimWorksPage({ results: [work] }).papers[0]])],
+    ['Explorer across pages', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), slimWorksPage({ results: [work] }).papers[0]])],
+    ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(work)!.enrichment, 'openalex')]],
+  ];
+
+  // The journal version, which arXiv lists with the journal's DOI and its
+  // reference, keeps its own journal and takes no publisher from the series.
+  const reference = 'J. Int. Econ. 160 (2026) 103900';
+  for (const [flow, rows] of flows(arxivRecord(journalDoi, reference), feds)) {
+    assert.equal(rows.length, 1, flow);
+    assert.equal(rows[0].doi, journalDoi, flow);
+    assert.equal(rows[0].journal, reference, flow);
+    assert.equal(rows[0].publisher, undefined, flow);
+    assert.equal(rows[0].peerReviewed, true, flow);
+    assert.equal(reviewTagForPaper(rows[0]), null, flow);
+  }
+
+  // Without the reference the row still shows the journal's DOI, and the
+  // series is no more its journal than the Board is its publisher.
+  for (const [flow, rows] of flows(arxivRecord(journalDoi), feds)) {
+    assert.equal(rows.length, 1, flow);
+    assert.equal(rows[0].doi, journalDoi, flow);
+    assert.equal(rows[0].journal, undefined, flow);
+    assert.equal(rows[0].publisher, undefined, flow);
+    assert.equal(reviewTagForPaper(rows[0]), null, flow);
+  }
+});
+
 test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {
   const unknown = {
     id: 'openalex:W3',
