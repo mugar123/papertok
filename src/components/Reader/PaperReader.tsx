@@ -53,8 +53,6 @@ import { Toggle } from '../ui/toggle.tsx';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select.tsx';
 import AnnotationRail from './AnnotationRail.tsx';
-import { ChapterMargin } from './ChapterNav.tsx';
-import useChapterSpy from '../../hooks/useChapterSpy.ts';
 import { ListRowAuthors } from '../Lists/ListRow.tsx';
 import HighlightedScientificText from './HighlightedScientificText.tsx';
 import SelectionMenu from './SelectionMenu.tsx';
@@ -114,6 +112,7 @@ const COPY = {
     goToPassage: 'Go to the passage',
     removeAnnotation: 'Remove annotation',
     noteActions: 'Note actions',
+    noteLabel: (number: number) => `Note ${number}`,
     copyNote: 'Copy as Markdown',
     noteCopied: 'Copied as Markdown',
     noteCopyFailed: 'Could not copy the note',
@@ -619,29 +618,29 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
   useEffect(() => {
     if (!railIsSheet || !sheetOpen) return undefined;
-    const closeOnPaper = (event: PointerEvent) => {
+    const closeOnPaper = (event: MouseEvent) => {
       const target = event.target as Element | null;
-      if (target?.closest('.rd-scroll') && !target.closest('.rd-rail')) setSheetOpen(false);
+      if (!target?.closest('.rd-scroll') || target.closest('.rd-rail, .rd-pin')) return;
+      if (window.getSelection()?.isCollapsed === false) return;
+      setSheetOpen(false);
     };
-    document.addEventListener('pointerdown', closeOnPaper);
-    return () => document.removeEventListener('pointerdown', closeOnPaper);
+    document.addEventListener('click', closeOnPaper);
+    return () => document.removeEventListener('click', closeOnPaper);
   }, [railIsSheet, sheetOpen]);
 
   /**
    * A selection stops being a selection and becomes a decision.
    *
    * Everything the three outcomes could need is captured here, in one go, at
-   * the moment the selection is decided (mouse-up on the desktop route, raised
-   * by the document listener below; `selectionchange` settling on the touch
-   * route): the quote, where it is
+   * the moment the selection is decided (mouse-up, raised by the document
+   * listener below; `selectionchange` settling on touch): the quote, where it is
    * anchored, the paragraph around it (the model cannot explain "that
    * quantity" without the sentence that named it), and the rectangle to hang
    * the menu off. Capturing it all up front is what lets the browser's own
    * selection be cleared immediately — the reader paints its own provisional
    * mark instead, so the highlight you are deciding about is one you can
-   * already see. Fine pointers only: the touch route has no annotation
-   * actions (2026-08-29 — the mobile reader is level + download), so nothing
-   * wires this there.
+   * already see. On touch the browser's selection is kept instead, so its
+   * handles stay where the reader is dragging them.
    */
   const handleSelection = useCallback((sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement) => {
     if (!uid) return;
@@ -682,9 +681,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * toggle (F7 on Windows) this page cannot invoke, and does not exist on
    * macOS at all. So the keyboard's unit is the whole paragraph rather than
    * a phrase: WCAG does not require matching the mouse route's granularity,
-   * only that the function itself stays reachable (2.1.1). Wired only where
-   * `handleSelection` is -- the 'menu' route, fine pointers, desktop -- for
-   * the same reason its own comment gives.
+   * only that the function itself stays reachable (2.1.1).
    */
   const handleParagraphKeyDown = useCallback((event: KeyboardEvent<HTMLParagraphElement>, sectionId: string, paragraphIndex: number, paragraphText: string) => {
     if (event.key !== 'Enter' || !uid) return;
@@ -850,11 +847,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         number: index + 1,
         note: item.note!,
         kind: item.kind,
+        label: copy.noteLabel(index + 1),
         origin: item.kind === 'ai' ? copy.originAi : copy.originMine,
         where: annotationLabel(item),
       },
     ])),
-    [annotationLabel, copy.originAi, copy.originMine, orderedAnnotations],
+    [annotationLabel, copy, orderedAnnotations],
   );
   const pendingNoteNumber = useMemo(() => {
     const pending = annotations.pending;
@@ -932,17 +930,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const transformOrigin = originRect
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
-
-  const chapters = sections.map(section => ({
-    label: section.originalHeading?.trim() || kindLabels[section.kind as keyof typeof kindLabels] || kindLabels.other,
-    heading: section.heading,
-  }));
-  const activeChapter = useChapterSpy(scrollRef, sections.length);
-  const jumpToChapter = (index: number) => {
-    const chapter = scrollRef.current?.querySelectorAll<HTMLElement>('[data-chapter]')[index];
-    chapter?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
-    chapter?.querySelector<HTMLElement>('.rd-section-title')?.focus({ preventScroll: true });
-  };
 
   const { error: askError, clearError: clearAskError } = annotations;
   useEffect(() => {
@@ -1059,9 +1046,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
           className="rd-scroll"
           onScroll={() => annotations.dismiss()}
         >
-          {chapters.length > 1 && (
-            <ChapterMargin chapters={chapters} active={activeChapter} onJump={jumpToChapter} />
-          )}
           <article className="rd-doc" data-ai-marks={showAiMarks ? undefined : 'hidden'}>
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
@@ -1123,13 +1107,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   <section
                     key={section.id || sectionIndex}
                     className="rd-section"
-                    data-chapter=""
                     data-reveal={section.reveal ? '' : undefined}
                   >
                     <div className="rd-section-head">
-                      <span className="rd-section-kind">{chapters[sectionIndex].label}</span>
+                      <span className="rd-section-kind">
+                        {section.originalHeading?.trim() || kindLabels[section.kind as keyof typeof kindLabels] || kindLabels.other}
+                      </span>
                     </div>
-                    {section.heading && <h2 className="rd-section-title" tabIndex={-1}>{section.heading}</h2>}
+                    {section.heading && <h2 className="rd-section-title">{section.heading}</h2>}
                     {section.paragraphs.map((paragraph, paragraphIndex) => {
                       /* Built whether or not they are switched on. Dropping
                          them from the plan took the `<mark>` elements out of the

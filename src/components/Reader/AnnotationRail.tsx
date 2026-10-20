@@ -224,10 +224,8 @@ export default function AnnotationRail({
     }
     onToggle();
   };
-  // `hidden` covers the desktop rail sliding out of the margin; a collapsed
-  // mouse-narrow sheet still peeks by its header and stays reachable, so it
-  // is never `hidden`. (The fully-offscreen touch sheet this used to also
-  // cover no longer exists — the touch route mounts no rail at all.)
+  // `hidden` covers the rail sliding out of the margin and the sheet leaving
+  // the screen while the notes toggle is off.
   const inert = hidden;
 
   const listShape = annotations.length + (thinking ? 1 : 0);
@@ -307,10 +305,10 @@ export default function AnnotationRail({
     </motion.div>
   ));
 
-  /* The two cards that stand in for an answer — the model reading, and the
-     failure — wait in the slot the answer will be filed into (`answerAt`), so
-     the list moves to one place, once, and the answer writes itself in where
-     it is going to stay. Without a slot they sit at the top, as they did. */
+  /* The card that stands in for an answer while the model reads waits in the
+     slot the answer will be filed into (`answerAt`), so the list moves to one
+     place, once, and the answer writes itself in where it is going to stay.
+     Without a slot it sits at the top. */
   const waiting = [
     thinking && (
       <motion.div

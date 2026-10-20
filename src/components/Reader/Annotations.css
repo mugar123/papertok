@@ -624,10 +624,8 @@
 
 /* ── The margin, where there is no margin ──
    Under 1100px the document has the whole width and the rail becomes a sheet:
-   pinned to the bottom, peeking by its header so the count is readable,
-   pulled up when wanted. Fixed rather than in flow, so it never takes width
-   from the paper. Fine pointers only by construction: the touch route mounts
-   no rail at all (the mobile reader is level + download, 2026-08-29). */
+   pinned to the bottom, peeking by its grab bar, pulled up when wanted. Fixed
+   rather than in flow, so it never takes width from the paper. */
 .rd-rail[data-surface='sheet'] {
   position: fixed;
   left: 0;

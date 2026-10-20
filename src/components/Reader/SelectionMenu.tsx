@@ -31,8 +31,7 @@ import { Textarea } from '../ui/textarea.tsx';
  * from the primitive rather than through `PopoverContent` because only the
  * Positioner takes an `anchor`, and the ui wrapper does not forward one.
  *
- * Kept mounted while the reader is on the fine-pointer route, with `open`
- * following whether there is a pending selection: the popup has to keep
+ * Kept mounted while the reader is open, with `open` following whether there is a pending selection: the popup has to keep
  * pointing at the last rectangle for the length of its leave, after the
  * selection that produced it has already been dismissed.
  */
@@ -190,9 +189,9 @@ export default function SelectionMenu({
                       announces itself once it is gone is a trap — and where there is
                       no allowance there is no price to state. */}
                   {!unlimited && (
-                    typeof usesLeft === 'number' ? (
+                    typeof usesLeft === 'number' && usesLimit ? (
                       <small>
-                        <span aria-hidden="true">{usesLimit ? `${usesLeft}/${usesLimit}` : usesLeft}</span>
+                        <span aria-hidden="true">{`${usesLeft}/${usesLimit}`}</span>
                         <span className="visually-hidden">{copy.usesLeftLine(usesLeft, usesLimit)}</span>
                       </small>
                     ) : <small>{canAsk ? copy.oneUse : copy.noUsesLeftShort}</small>
