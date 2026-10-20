@@ -57,25 +57,7 @@ export class SemanticScholarAdapter {
 
       if (!data?.data) return { papers: [], total: 0 };
 
-      let mappedPapers = data.data.map(item => this.mapToStandard(item));
-
-      if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
-        mappedPapers = mappedPapers.map(p => {
-          const paperText = `${p.title} ${p.abstract || ''}`.toLowerCase();
-          let bestMatch = null;
-          for (const catId of filters.internalCategories!) {
-              const keywords = catId.split('.');
-              if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
-                  bestMatch = catId;
-                  break;
-              }
-          }
-          const selectedCat = bestMatch || filters.internalCategories![Math.floor(Math.random() * filters.internalCategories!.length)];
-          p.categories = [selectedCat, ...(p.categories || [])];
-          return p;
-        });
-      }
-      return { papers: mappedPapers, total: data.total || 0 };
+      return { papers: data.data.map(item => this.mapToStandard(item)), total: data.total || 0 };
     } catch (e) {
       console.error("Error fetching from Semantic Scholar:", e);
       return { papers: [], total: 0 };

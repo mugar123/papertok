@@ -274,11 +274,42 @@ test('category discovery returns working papers and preserves their preprint sta
     assert.deepEqual(result.papers.map(paper => paper.id), ['openalex:W1001', 'openalex:W1002']);
     assert.equal(result.papers[0].publicationType, 'preprint');
     assert.equal(result.papers[0].publicationStatus, 'preprint');
-    assert.equal(result.papers[0].primaryCategory, category);
+    assert.equal(result.papers[0].primaryCategory, undefined, 'the requested category is not stamped on the work');
     assert.equal(result.papers[0].arxivId, undefined);
     assert.equal(result.papers[1].publicationStatus, 'published');
   }
   assert.equal(requests, 2, 'each category search still makes one upstream request');
+});
+
+test('a work with no arXiv category keeps its own field instead of the requested one', async (t) => {
+  // The WIREs survey "Artificial intelligence" (W4233888153) used to come back
+  // from a feed request for hep-th as "High Energy Physics - Theory": the
+  // requested category was chosen by label words found in the abstract
+  // ("theory", "high" in "highlights") and the first one won the tie (PAP-60).
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({
+    meta: { count: 1 },
+    results: [{
+      id: 'https://openalex.org/W4233888153',
+      title: 'Artificial intelligence',
+      type: 'article',
+      abstract_inverted_index: {
+        Artificial: [0], intelligence: [1], theory: [2], and: [3], practice: [4], highlights: [5],
+      },
+      concepts: [{ id: 'https://openalex.org/C154945302', display_name: 'Artificial intelligence', level: 1, score: 0.72 }],
+      primary_topic: { id: 'https://openalex.org/T10883', display_name: 'Artificial Intelligence Applications', field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' } },
+    }],
+  }));
+
+  const result = await new OpenAlexAdapter().search('"High Energy Physics - Theory" OR "Artificial Intelligence"', 1, {
+    internalCategories: ['hep-th', 'cs.AI'],
+  });
+  const [paper] = result.papers;
+  assert.equal(paper.primaryCategory, undefined);
+  for (const list of [paper.categories, paper.allCategories]) {
+    assert.ok(!(list || []).some(category => ['hep-th', 'cs.AI'].includes(category)), `no requested category in ${JSON.stringify(list)}`);
+  }
+  assert.deepEqual(paper.categories, ['Artificial intelligence']);
+  assert.equal(paper.primaryTopic?.field?.display_name, 'Computer Science');
 });
 
 // PAP-31. OpenAlex writes a work's PubMed id as a URL in `ids.pmid`, and the
