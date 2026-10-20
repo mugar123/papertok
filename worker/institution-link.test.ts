@@ -402,6 +402,78 @@ for (const entry of [
   });
 }
 
+// ROR lists purdue.edu only under the Clifford B. Kinley Trust, and Purdue's
+// own record lists no domain (live answers to domains:purdue.edu and
+// GET /v2/organizations/02dqehb95, 2026-10-19).
+const ROR_KINLEY_TRUST = {
+  items: [{
+    id: 'https://ror.org/049s7vz13',
+    domains: ['purdue.edu'],
+    names: [{ value: 'Clifford B. Kinley Trust', types: ['label', 'ror_display'] }],
+  }],
+};
+const ROR_PURDUE = {
+  id: 'https://ror.org/02dqehb95',
+  domains: [],
+  names: [
+    { value: 'Purdue University West Lafayette', types: ['ror_display', 'label'] },
+    { value: 'Université de Purdue', types: ['label'] },
+  ],
+};
+
+test('a university domain ROR lists only under another record links to the university and selects its library', async () => {
+  const upstream = stubUpstreams({
+    users: { [SESSION_TOKEN]: { localId: UID, email: 'alice@purdue.edu', emailVerified: true } },
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/02dqehb95' ? ROR_PURDUE
+      : new URL(url).searchParams.get('query.advanced') === 'domains:purdue.edu' ? ROR_KINLEY_TRUST : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin, cache: null });
+    assert.equal(institution!.domain, 'purdue.edu');
+    assert.equal(institution!.rorId, 'https://ror.org/02dqehb95');
+    assert.equal(institution!.name, 'Purdue University West Lafayette');
+    assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+    assert.deepEqual(findResolver(institution!), { host: 'na03.alma.exlibrisgroup.com', institution: '01PURDUE_PUWL' });
+    // A reader stored under the trust before this list is still not answered
+    // with Purdue's library.
+    assert.equal(findResolver({ domain: 'purdue.edu', rorId: 'https://ror.org/049s7vz13' }), null);
+  } finally {
+    upstream.restore();
+  }
+});
+
+// ROR's record for the Universidad de La Laguna lists ull.es, while its
+// students write from ull.edu.es (live answer to
+// GET /v2/organizations/01r9z8p25, 2026-10-19).
+const ROR_ULL = {
+  id: 'https://ror.org/01r9z8p25',
+  domains: ['ull.es'],
+  names: [
+    { value: 'ULL', types: ['acronym'] },
+    { value: 'Universidad de La Laguna', types: ['ror_display', 'label'] },
+    { value: 'University of La Laguna', types: ['label'] },
+  ],
+};
+
+test('a student domain ROR does not list links to its university once it is hand-checked', async () => {
+  const upstream = stubUpstreams({
+    ror: (url) => Response.json(url === 'https://api.ror.org/v2/organizations/01r9z8p25' ? ROR_ULL : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  try {
+    const institution = await resolveInstitution('ull.edu.es', { cache: null });
+    assert.equal(institution.domain, 'ull.edu.es');
+    assert.equal(institution.rorId, 'https://ror.org/01r9z8p25');
+    assert.equal(institution.name, 'Universidad de La Laguna');
+    assert.equal(institution.acronym, 'ULL');
+    assert.deepEqual(findResolver(institution), { host: 'eu06.alma.exlibrisgroup.com', institution: '34ULL_INST' });
+  } finally {
+    upstream.restore();
+  }
+});
+
 // ROR's record for Carnegie Mellon lists cmu.edu only; alumni.cmu.edu is
 // CMU's mail for alumni (checked 2026-10-19).
 const ROR_CMU = {
