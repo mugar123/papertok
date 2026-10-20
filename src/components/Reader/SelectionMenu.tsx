@@ -13,6 +13,7 @@ import { CircleNotch, Highlighter, PencilLine, Sparkle } from '@phosphor-icons/r
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.ts';
 import { Popover } from '../ui/popover.tsx';
 import { Textarea } from '../ui/textarea.tsx';
+import UsesCount from './UsesCount.tsx';
 
 /**
  * What to do with the passage you just selected.
@@ -190,10 +191,7 @@ export default function SelectionMenu({
                       no allowance there is no price to state. */}
                   {!unlimited && (
                     typeof usesLeft === 'number' && usesLimit ? (
-                      <small>
-                        <span aria-hidden="true">{`${usesLeft}/${usesLimit}`}</span>
-                        <span className="visually-hidden">{copy.usesLeftLine(usesLeft, usesLimit)}</span>
-                      </small>
+                      <small><UsesCount left={usesLeft} limit={usesLimit} copy={copy} /></small>
                     ) : <small>{canAsk ? copy.oneUse : copy.noUsesLeftShort}</small>
                   )}
                 </button>

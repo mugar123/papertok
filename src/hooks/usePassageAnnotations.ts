@@ -27,12 +27,10 @@ import { annotatePassage, PaperAnnotationError } from '../services/paperAnnotati
  *
  * `pending` is the fork itself: the selection, captured whole (quote, anchor,
  * the paragraph around it, and where it sits on screen) at the moment the
- * selection is decided — mouse-up on a fine pointer, `selectionchange` settling
- * on a coarse one. Capturing it up front is what lets the desktop route clear
- * the browser's own selection immediately — the reader paints its own mark on
- * the passage instead, so the highlight you are about to make is the highlight
- * you can already see. Touch leaves the native selection alone; its own OS
- * handles and callout serve as that same provisional mark there.
+ * selection is decided on mouse-up. Capturing it up front is what lets the
+ * reader clear the browser's own selection immediately — it paints its own mark
+ * on the passage instead, so the highlight you are about to make is the
+ * highlight you can already see.
  */
 
 const IDLE = 'idle';

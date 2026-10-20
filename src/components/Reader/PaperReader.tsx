@@ -13,6 +13,7 @@ export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
+  ArrowClockwise,
   ArrowLeft,
   ArrowSquareOut,
   Flask,
@@ -21,7 +22,6 @@ import {
   PencilLine,
   Plant,
   Sparkle,
-  WarningCircle,
 } from '@phosphor-icons/react';
 import {
   canRewritePaper,
@@ -48,6 +48,8 @@ import { useAuth } from '../../context/AuthContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.ts';
 import { Button } from '../ui/button.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 import { Dialog, DialogContent } from '../ui/dialog.tsx';
 import { Toggle } from '../ui/toggle.tsx';
 import { toast } from 'sonner';
@@ -56,6 +58,7 @@ import AnnotationRail from './AnnotationRail.tsx';
 import { ListRowAuthors } from '../Lists/ListRow.tsx';
 import HighlightedScientificText from './HighlightedScientificText.tsx';
 import SelectionMenu from './SelectionMenu.tsx';
+import UsesCount from './UsesCount.tsx';
 import ThinkingDots from './ThinkingDots.tsx';
 import './PaperReader.css';
 import './Annotations.css';
@@ -85,7 +88,6 @@ const COPY = {
     retry: 'Try again',
     incomplete: 'The rewrite stopped before finishing. You can try again.',
     sections: 'sections',
-    errorKicker: 'Could not rewrite',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
     toggleAiMarks: 'Show AI highlights',
@@ -132,7 +134,7 @@ const ERROR_COPY = {
   en: {
     AI_REWRITE_NEEDS_FULL_TEXT: {
       title: 'There is no paper to read',
-      body: 'The rewrite needs the full text, and this one has only an abstract or a PDF that will not open. Sometimes it is the source being down: if you think it should be there, try again.',
+      body: 'The full text could not be loaded. It may be paywalled, or the source may be down.',
     },
     AI_AUTH_REQUIRED: {
       title: 'You need to sign in',
@@ -211,26 +213,21 @@ const ANNOTATION_ERROR_COPY = {
   },
 };
 
-/**
- * What the failure is, so the screen can say it in colour as well as in words:
- * `wait` is amber (come back and it will work), `broken` is red (this attempt
- * went wrong), `closed` is neutral (nothing here is going to change by trying).
- */
-const ERROR_TONES = {
-  AI_QUOTA_EXHAUSTED: 'wait',
-  AI_TIMEOUT: 'wait',
-  AI_BUSY: 'wait',
-  AI_CANCELLED: 'wait',
-  AI_UNAVAILABLE: 'broken',
-  AI_INVALID_RESPONSE: 'broken',
-  AI_EMPTY_RESPONSE: 'broken',
-  AI_AUTH_REQUIRED: 'closed',
-  AI_NOT_CONFIGURED: 'closed',
-  AI_INVALID_PAPER: 'closed',
-  AI_REWRITE_NEEDS_FULL_TEXT: 'closed',
-  AI_REQUEST_TOO_LARGE: 'closed',
-  AI_INVALID_REQUEST_UPSTREAM: 'closed',
-};
+const ERROR_POSES = {
+  AI_QUOTA_EXHAUSTED: 'thinking',
+  AI_TIMEOUT: 'thinking',
+  AI_BUSY: 'thinking',
+  AI_CANCELLED: 'thinking',
+  AI_UNAVAILABLE: 'upset',
+  AI_INVALID_RESPONSE: 'upset',
+  AI_EMPTY_RESPONSE: 'upset',
+  AI_AUTH_REQUIRED: 'lost',
+  AI_NOT_CONFIGURED: 'lost',
+  AI_INVALID_PAPER: 'lost',
+  AI_REWRITE_NEEDS_FULL_TEXT: 'lost',
+  AI_REQUEST_TOO_LARGE: 'lost',
+  AI_INVALID_REQUEST_UPSTREAM: 'lost',
+} as const;
 
 /**
  * Codes where pressing the button again cannot possibly help — the allowance is
@@ -373,8 +370,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const [railOpen, setRailOpen] = useState(true);
   const [showAiMarks, setShowAiMarks] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
-  // Which face the annotation sheet shows once open. Touch never gets a third
-  // surface for the level/highlights controls — it gets a tab on this one.
   const [annotationFilter, setAnnotationFilter] = useState('all');
   /**
    * Under this width the paper wants the whole page, so the margin becomes a
@@ -598,8 +593,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses }));
   }, []);
 
+  const annotating = useMemo(() => {
+    try { return !window.matchMedia('(pointer: coarse)').matches; } catch { return true; }
+  }, []);
+
   const annotations = usePassageAnnotations({
-    uid,
+    uid: annotating ? uid : null,
     paper,
     paperId,
     level,
@@ -609,10 +608,6 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   });
 
   const { begin: beginAnnotation } = annotations;
-
-  const coarsePointer = useMemo(() => {
-    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
-  }, []);
 
   const railIsSheet = isNarrow;
 
@@ -633,14 +628,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    *
    * Everything the three outcomes could need is captured here, in one go, at
    * the moment the selection is decided (mouse-up, raised by the document
-   * listener below; `selectionchange` settling on touch): the quote, where it is
+   * listener below): the quote, where it is
    * anchored, the paragraph around it (the model cannot explain "that
    * quantity" without the sentence that named it), and the rectangle to hang
    * the menu off. Capturing it all up front is what lets the browser's own
    * selection be cleared immediately — the reader paints its own provisional
    * mark instead, so the highlight you are deciding about is one you can
-   * already see. On touch the browser's selection is kept instead, so its
-   * handles stay where the reader is dragging them.
+   * already see. Notes, highlights and explanations are for a mouse or
+   * trackpad only; touch screens read the paper without them.
    */
   const handleSelection = useCallback((sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement) => {
     if (!uid) return;
@@ -654,7 +649,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
     const rect = range.getBoundingClientRect();
-    if (!coarsePointer) selection.removeAllRanges();
+    selection.removeAllRanges();
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -669,7 +664,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         right: rect.right,
       },
     });
-  }, [beginAnnotation, coarsePointer, uid]);
+  }, [beginAnnotation, uid]);
 
   /**
    * The keyboard route into the same fork `handleSelection` opens from a
@@ -729,6 +724,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * paragraph and do nothing, as before.
    */
   useEffect(() => {
+    if (!annotating) return undefined;
     const paragraphAround = (node: Node | null) => {
       const element = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement;
       return element?.closest<HTMLElement>('.rd-p[data-section]') || null;
@@ -745,21 +741,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       if (text === null) return;
       handleSelection(paragraph.dataset.section!, paragraphIndex, text, paragraph);
     };
-    if (coarsePointer) {
-      let settle: ReturnType<typeof setTimeout> | undefined;
-      const handleSelectionChange = () => {
-        clearTimeout(settle);
-        settle = setTimeout(handleDocumentMouseUp, 450);
-      };
-      document.addEventListener('selectionchange', handleSelectionChange);
-      return () => {
-        clearTimeout(settle);
-        document.removeEventListener('selectionchange', handleSelectionChange);
-      };
-    }
     document.addEventListener('mouseup', handleDocumentMouseUp);
     return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
-  }, [coarsePointer, handleSelection, paragraphTextFor]);
+  }, [annotating, handleSelection, paragraphTextFor]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -808,15 +792,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         return { ...item, fresh: Boolean(stored?.fresh) };
       }));
     }
-    // The passage the menu is open on wears the pen already, provisionally —
-    // on the desktop route only. Painting this mark rewrites the paragraph's
-    // highlight runs, which rewrites the DOM text node a live selection Range
-    // points into, which collapses the selection. Desktop wants exactly that
-    // (the browser's own selection is already gone by the time this paints).
-    // Touch cannot afford it: the OS handles live on that same selection, and
-    // this repaint would silently drag them away mid-adjustment. On touch the
-    // OS's own highlight is the provisional mark — nothing to add here.
-    const waiting = coarsePointer ? null : annotations.pending;
+    // The passage the menu is open on wears the pen already, provisionally.
+    const waiting = annotations.pending;
     if (waiting) {
       const key = `${waiting.sectionId}:${waiting.paragraphIndex}`;
       index.set(key, [
@@ -825,7 +802,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       ]);
     }
     return index;
-  }, [annotations.annotations, annotations.pending, coarsePointer, level]);
+  }, [annotations.annotations, annotations.pending, level]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
@@ -919,7 +896,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const isStreaming = shownStatus === 'streaming';
   const errorCopy = ERROR_COPY.en[(providerQuota ? 'AI_QUOTA_EXHAUSTED_PROVIDER' : shownError) as keyof typeof ERROR_COPY.en]
     || ERROR_COPY.en.AI_UNAVAILABLE;
-  const errorTone = providerQuota ? 'wait' : (ERROR_TONES[shownError as keyof typeof ERROR_TONES] || 'broken');
+  const stageLabel = copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing;
+  const errorPose = providerQuota ? 'thinking' : ERROR_POSES[shownError as keyof typeof ERROR_POSES] || 'upset';
   const canRetry = supportsRewrite && (providerQuota || !UNRETRYABLE_ERRORS.has(shownError!));
 
   /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
@@ -931,6 +909,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
 
+  const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
   const { error: askError, clearError: clearAskError } = annotations;
   useEffect(() => {
     if (!askError) return;
@@ -997,6 +976,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   })}
                 </SelectContent>
               </Select>
+              {annotating && (
+              <>
               <div className="rd-panel-group">
                 <span className="rd-panel-label">{copy.annotations}</span>
                 <Toggle
@@ -1024,7 +1005,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   <Highlighter size={15} />
                 </Toggle>
               </div>
-              {originalUrl && <div className="rd-panel-divider" />}
+              </>
+              )}
+              {annotating && originalUrl && <div className="rd-panel-divider" />}
               {originalUrl && (
                 <div className="rd-panel-group">
                   <Button
@@ -1050,14 +1033,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
-            {(paper?.authors?.length ?? 0) > 0 && paper && (
-              <div className="rd-doc-byline">
-                <ListRowAuthors paper={paper} />
-              </div>
-            )}
-            {(sections.length > 0 || paper?.year) && (
+            {(usesQuota || sections.length > 0 || paper?.year) && (
               <div className="rd-doc-tags">
+                {usesQuota && (
+                  <span className="rd-tag rd-tag--ai rd-uses">
+                    <Sparkle size={12} aria-hidden="true" />
+                    <UsesCount left={usesQuota.left} limit={usesQuota.limit} copy={copy} />
+                  </span>
+                )}
                 {sections.length > 0 && (
                   <InfoTag className="rd-tag rd-tag--ai" info={[copy.adaptation, meta?.model].filter(Boolean).join(' · ')}>
                     <Sparkle size={12} aria-hidden="true" />
@@ -1068,39 +1051,45 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
               </div>
             )}
+            <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
+            {(paper?.authors?.length ?? 0) > 0 && paper && (
+              <div className="rd-doc-byline">
+                <ListRowAuthors paper={paper} />
+              </div>
+            )}
 
             {/* Pointed at by every paragraph's `aria-describedby` below,
                 never read on its own: the keyboard route's instructions, for
                 the one audience that cannot see a hint that only paints on
                 focus. */}
-            <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
+            {annotating && <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>}
 
             {shownStatus === 'error' ? (
-              /* A failure is a block on the page, not a note left in the middle of
-                 an empty one: a rule down the side in the colour of what went
-                 wrong, the code set in mono because that is machine data, then the
-                 same two-line hierarchy the rest of the document uses. */
-              <div className="rd-error" role="alert" data-tone={errorTone}>
-                <span className="rd-error-kicker">
-                  <WarningCircle size={12} />
-                  {copy.errorKicker}
-                  {shownError && <code>{shownError}</code>}
-                </span>
-                <h2 className="rd-error-title">{errorCopy.title}</h2>
-                <p className="rd-error-body">{errorCopy.body}</p>
-                <div className="rd-error-actions">
-                  {canRetry && (
-                    <button type="button" className="rd-retry" onClick={() => load(level, { force: true })}>
-                      {copy.retry}
-                    </button>
-                  )}
-                  {originalUrl && (
-                    <a className="rd-original" href={originalUrl} target="_blank" rel="noopener noreferrer">
-                      {copy.original} <ArrowSquareOut size={13} />
-                    </a>
-                  )}
-                </div>
-              </div>
+              <EmptyState
+                role="alert"
+                className="rd-error-state"
+                art={<Petri pose={errorPose} />}
+                title={errorCopy.title}
+                actions={(canRetry || originalUrl) && (
+                  <>
+                    {canRetry && (
+                      <Button onClick={() => load(level, { force: true })}>
+                        <ArrowClockwise size={16} aria-hidden="true" />
+                        {copy.retry}
+                      </Button>
+                    )}
+                    {originalUrl && (
+                      <Button variant="outline" render={<a href={originalUrl} target="_blank" rel="noopener noreferrer" />}>
+                        {copy.original}
+                        <ArrowSquareOut size={16} aria-hidden="true" />
+                      </Button>
+                    )}
+                  </>
+                )}
+              >
+                {errorCopy.body}
+                {shownError && <code className="rd-error-code">{shownError}</code>}
+              </EmptyState>
             ) : (
               <>
                 {sections.map((section, sectionIndex) => (
@@ -1121,7 +1110,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                          paragraph, which set the text a pixel over on every
                          switch and gave the colour nothing to fade out of; now
                          the switch is a colour, and the words never move. */
-                      const aiHighlights = (section.highlights || [])
+                      const aiHighlights = (annotating ? section.highlights || [] : [])
                         .filter(item => item.paragraphIndex === paragraphIndex)
                         .map(item => ({ ...item, source: 'ai', proposed: true }));
                       const stored = userHighlightIndex.get(`${section.id}:${paragraphIndex}`) || [];
@@ -1131,14 +1120,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           className="rd-p"
                           data-section={section.id}
                           data-paragraph={paragraphIndex}
-                          data-annotatable=""
-                          data-hint={copy.annotateParagraphBadge}
+                          data-annotatable={annotating ? '' : undefined}
+                          data-hint={annotating ? copy.annotateParagraphBadge : undefined}
                           style={{ '--i': Math.min(paragraphIndex, MAX_STAGGER_STEPS) }}
                           // Keyboard route into the same menu the mouse opens on
                           // mouse-up (WCAG 2.1.1) -- see `handleParagraphKeyDown`.
-                          tabIndex={0}
-                          aria-describedby={paragraphHintId}
-                          onKeyDown={(event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph)}
+                          tabIndex={annotating ? 0 : undefined}
+                          aria-describedby={annotating ? paragraphHintId : undefined}
+                          onKeyDown={annotating ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph) : undefined}
                         >
                           <HighlightedScientificText highlights={[...stored, ...aiHighlights]} pins={textPins}>
                             {paragraph}
@@ -1164,13 +1153,25 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                       ? { opacity: 0, transition: { duration: 0.12 } }
                       : { opacity: 0, transform: 'translateY(-6px)', transition: { duration: 0.2, ease: EASE_OUT } }}
                   >
+                    {sections.length === 0 ? (
+                      <EmptyState
+                        role="status"
+                        aria-live="polite"
+                        as="p"
+                        art={<Petri pose="download" />}
+                        title={<span key={stage} className="rd-ghost-stage">{stageLabel}</span>}
+                      >
+                        {copy.writingHint}
+                      </EmptyState>
+                    ) : (
+                    <>
                     <p className="rd-ghost-head" role="status" aria-live="polite">
                       <ThinkingDots />
                       {/* Keyed by stage so the label is remounted, and its own
                           entrance animation replays, on every change of stage —
                           "downloading" does not jump into "reading". */}
-                      <span key={stage} className="rd-ghost-stage">{copy.stages[stage as keyof ReaderCopy['stages']] || copy.writing}</span>
-                      <small>{sections.length > 0 ? `${sections.length} ${copy.sections}` : copy.writingHint}</small>
+                      <span key={stage} className="rd-ghost-stage">{stageLabel}</span>
+                      <small>{`${sections.length} ${copy.sections}`}</small>
                     </p>
                     <AnimatePresence mode="wait">
                       <motion.div
@@ -1192,6 +1193,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                         </div>
                       </motion.div>
                     </AnimatePresence>
+                    </>
+                    )}
                   </motion.div>
                   )}
                 </AnimatePresence>
@@ -1199,9 +1202,10 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {shownStatus === 'incomplete' && (
                   <p className="rd-notice" role="alert">
                     {copy.incomplete}
-                    <button type="button" className="rd-retry" onClick={() => load(level, { force: true })}>
+                    <Button size="sm" onClick={() => load(level, { force: true })}>
+                      <ArrowClockwise size={14} aria-hidden="true" />
                       {copy.retry}
-                    </button>
+                    </Button>
                   </p>
                 )}
               </>
@@ -1209,6 +1213,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
           </article>
 
+          {annotating && (
           <AnnotationRail
             surface={railIsSheet ? 'sheet' : 'rail'}
             hidden={railIsSheet ? !sheetOpen : !railOpen}
@@ -1226,6 +1231,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             labelFor={annotationLabel}
             copy={copy}
           />
+          )}
         </div>
 
         {/* Over the selection, not in a corner: what it acts on is the passage
@@ -1233,6 +1239,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             about it. A popover anchored to the selection's rectangle; it stays
             mounted and follows `pending` with `open`, so its leave can play
             over the passage it was about. */}
+        {annotating && (
         <SelectionMenu
             open={Boolean(annotations.pending)}
             anchor={annotations.pending?.anchor}
@@ -1249,6 +1256,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             onAsk={askAboutPassage}
             onClose={annotations.dismiss}
           />
+        )}
       </DialogContent>
     </Dialog>
   );
