@@ -95,8 +95,8 @@ function ServiceGroup({ group }: { group: ReturnType<typeof groupInstitutionServ
         <div className="institution-service-details">
           <p className="institution-service-detail-note">{'These results cover sampled titles and years. Check access on the article you want to read.'}</p>
           <ul className="institution-service-titles">
-            {group.services.map(service => (
-              <li key={service.id}>
+            {group.services.map((service, index) => (
+              <li key={service.id} style={{ '--title-index': Math.min(index, 6) }}>
                 {service.url ? (
                   <a className="institution-service-title-link" href={service.url} target="_blank" rel="noreferrer">
                     <span>
@@ -142,6 +142,9 @@ export default function InstitutionServices({ institution }: { institution: Link
     const known = knownInstitutionServices({ domain, entityId, rorId });
     return known ? { subject, attempt: 0, value: known } : null;
   });
+  // A list that answers after a wait opens its own height instead of
+  // stretching the window in one frame; a known one is there from the start.
+  const [knownAtMount] = useState(answer !== null);
 
   useEffect(() => {
     let current = true;
@@ -203,13 +206,15 @@ export default function InstitutionServices({ institution }: { institution: Link
         <p className="institution-services-note">{COPY.coverage}</p>
       </div>
       {services.length > 0 && (
-        <ul className="institution-services-list">
-          {groups.map((group, index) => (
-            <li key={`${subject}:${group.id}`} style={{ '--service-delay': `${Math.min(index, 4) * 45}ms` }}>
-              <ServiceGroup group={group} />
-            </li>
-          ))}
-        </ul>
+        <div className={knownAtMount ? undefined : 'institution-link-reveal'}>
+          <ul className="institution-services-list">
+            {groups.map((group, index) => (
+              <li key={`${subject}:${group.id}`} style={{ '--service-delay': `${Math.min(index, 4) * 45}ms` }}>
+                <ServiceGroup group={group} />
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       <div className="institution-services-status">
         <p role="status" className={quiet ? 'sr-only' : 'institution-services-note'}>{status}</p>
