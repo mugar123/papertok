@@ -6,6 +6,8 @@ export interface UserHighlight {
   sectionId: string;
   paragraphIndex: number;
   quote: string;
+  endParagraphIndex?: number;
+  endQuote?: string;
   kind: 'ai' | 'user';
   note?: string;
   paperTitle: string;
@@ -90,7 +92,7 @@ export function buildHighlightsQuery(uid: string, paperId: string, overrides?: H
  * highlight of it would land as a second document. Leaving `user` out keeps
  * every existing id exactly where it is.
  */
-export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, kind }: HighlightInput) {
+export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, endParagraphIndex, endQuote, kind }: HighlightInput) {
   const fingerprint = [
     cleanText(paperId, 400),
     level,
@@ -98,7 +100,9 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     cleanText(sectionId, 40),
     paragraphIndex,
     normalizeHighlightQuote(quote),
-  ].concat(kind === 'ai' ? ['ai'] : []).join('|');
+  ]
+    .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex as number, normalizeHighlightQuote(endQuote)])
+    .concat(kind === 'ai' ? ['ai'] : []).join('|');
 
   // FNV-1a: short, stable, and enough to separate selections within one paper.
   let hash = 0x811c9dc5;
@@ -128,6 +132,14 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
   const sectionId = cleanText(input?.sectionId, 40);
   const paperId = cleanText(input?.paperId, 400);
   if (!sectionId || !paperId) return null;
+  // A passage that runs into later paragraphs of the same section keeps where
+  // it ends: the last paragraph and the words of it that were selected.
+  const endParagraphIndex = Number.parseInt(input?.endParagraphIndex as string, 10);
+  const endQuote = normalizeHighlightQuote(input?.endQuote);
+  const spans = Number.isInteger(endParagraphIndex)
+    && endParagraphIndex > paragraphIndex
+    && endParagraphIndex <= 100
+    && endQuote.length > 0;
 
   // Three things live in this collection now, and `kind` is what tells them
   // apart: a bare highlight, a highlight with your note on it, and an answer the
@@ -146,6 +158,7 @@ export function normalizeUserHighlight(input: HighlightInput | null | undefined)
     sectionId,
     paragraphIndex,
     quote: quote.slice(0, 400),
+    ...(spans ? { endParagraphIndex, endQuote: endQuote.slice(0, 400) } : {}),
     kind,
     ...(note ? { note } : {}),
     paperTitle: cleanText(input?.paperTitle, 1_000),
@@ -202,25 +215,48 @@ export async function removeUserHighlight(uid: string | null | undefined, highli
  * Groups stored highlights by section and paragraph so a paragraph can be
  * rendered with only the anchors that belong to it.
  */
-export function indexHighlightsByParagraph(highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'kind'>> = [], { level, language }: { level?: string; language?: string } = {}) {
+export function indexHighlightsByParagraph(
+  highlights: ReadonlyArray<Pick<UserHighlight, 'id' | 'quote' | 'level' | 'language' | 'sectionId' | 'paragraphIndex' | 'endParagraphIndex' | 'endQuote' | 'kind'>> = [],
+  { level, language, paragraphText }: { level?: string; language?: string; paragraphText?: (sectionId: string, paragraphIndex: number) => string | null } = {},
+) {
   const index = new Map<string, Array<Pick<UserHighlight, 'id' | 'quote'> & { kind: string; source: string; fresh?: boolean; pending?: boolean }>>();
   for (const highlight of highlights) {
     if (level && highlight.level !== level) continue;
     if (language && highlight.language !== language) continue;
-    const key = `${highlight.sectionId}:${highlight.paragraphIndex}`;
-    const bucket = index.get(key) || [];
     // The mark's colour and the annotation's origin are the same fact, read off
     // the same field: your pen is the saturated yellow, the model's is the ink
     // rule. `source` stays separate because the render plan uses it to tell a
     // stored mark from one the rewrite itself proposed.
     const kind = highlight.kind === 'ai' ? 'ai' : 'user';
-    bucket.push({
-      id: highlight.id,
-      quote: highlight.quote,
-      kind,
-      source: kind,
-    });
-    index.set(key, bucket);
+    for (const segment of passageSegments(highlight, paragraphText)) {
+      const key = `${highlight.sectionId}:${segment.paragraphIndex}`;
+      index.set(key, [...(index.get(key) || []), { id: highlight.id, quote: segment.quote, kind, source: kind }]);
+    }
   }
   return index;
+}
+
+/** A passage as one line of text: its start, and where it ends when it spans paragraphs. */
+export function passageQuote({ quote, endQuote }: Pick<UserHighlight, 'quote' | 'endQuote'>) {
+  return endQuote ? `${quote} … ${endQuote}` : quote;
+}
+
+/**
+ * The paragraphs a passage covers and the words of each: the selected end of
+ * the first, every paragraph in between whole, and the selected start of the
+ * last. A passage inside one paragraph is one segment.
+ */
+export function passageSegments(
+  passage: Pick<UserHighlight, 'sectionId' | 'paragraphIndex' | 'quote' | 'endParagraphIndex' | 'endQuote'>,
+  paragraphText?: (sectionId: string, paragraphIndex: number) => string | null,
+) {
+  const segments = [{ paragraphIndex: passage.paragraphIndex, quote: passage.quote }];
+  const end = passage.endParagraphIndex;
+  if (end === undefined || end <= passage.paragraphIndex || !passage.endQuote) return segments;
+  for (let index = passage.paragraphIndex + 1; index < end; index += 1) {
+    const text = paragraphText?.(passage.sectionId, index);
+    if (text) segments.push({ paragraphIndex: index, quote: text });
+  }
+  segments.push({ paragraphIndex: end, quote: passage.endQuote });
+  return segments;
 }

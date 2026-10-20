@@ -89,7 +89,7 @@ test('the mouse route is unchanged in shape: handleSelection keeps its signature
 
   assert.match(
     jsx,
-    /const handleSelection = useCallback(?:<[^;\n]+>)?\(\(sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement\) => \{/,
+    /const handleSelection = useCallback\(\(\s*sectionId: string,\s*paragraphIndex: number,\s*paragraphText: string,\s*paragraphNode: HTMLElement,\s*end\?: \{[^}]*\},\s*\) => \{/,
     'handleSelection changed shape; update this test alongside it',
   );
 });

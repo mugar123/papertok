@@ -396,7 +396,8 @@ service cloud.firestore {
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'paperId', 'level', 'language', 'sectionId', 'paragraphIndex',
-            'quote', 'kind', 'note', 'paperTitle', 'createdAt'
+            'quote', 'endParagraphIndex', 'endQuote', 'kind', 'note',
+            'paperTitle', 'createdAt'
           ])
           && validNonEmptyString(request.resource.data.paperId, 400)
           && validString(request.resource.data.quote, 400)
@@ -427,7 +428,15 @@ service cloud.firestore {
           && (!('note' in request.resource.data)
             || validString(request.resource.data.note, 2000))
           && (!('paperTitle' in request.resource.data)
-            || validString(request.resource.data.paperTitle, 1000));
+            || validString(request.resource.data.paperTitle, 1000))
+          // A passage across paragraphs ends later in the same section.
+          && (!('endParagraphIndex' in request.resource.data)
+            || (request.resource.data.endParagraphIndex is int
+              && request.resource.data.endParagraphIndex > request.resource.data.paragraphIndex
+              && request.resource.data.endParagraphIndex <= 100
+              && validNonEmptyString(request.resource.data.endQuote, 400)))
+          && (!('endQuote' in request.resource.data)
+            || 'endParagraphIndex' in request.resource.data);
       }
 
       match /{document=**} {

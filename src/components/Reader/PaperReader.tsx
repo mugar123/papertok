@@ -32,7 +32,7 @@ import {
   rewriteCacheKey,
   rewritePaper,
 } from '../../services/paperRewriteService.ts';
-import { indexHighlightsByParagraph } from '../../services/userHighlightService.ts';
+import { indexHighlightsByParagraph, passageSegments } from '../../services/userHighlightService.ts';
 import ScientificText from '../ScientificText.ts';
 import { usePassageAnnotations } from '../../hooks/usePassageAnnotations.ts';
 import {
@@ -637,7 +637,13 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * already see. Notes, highlights and explanations are for a mouse or
    * trackpad only; touch screens read the paper without them.
    */
-  const handleSelection = useCallback((sectionId: string, paragraphIndex: number, paragraphText: string, paragraphNode: HTMLElement) => {
+  const handleSelection = useCallback((
+    sectionId: string,
+    paragraphIndex: number,
+    paragraphText: string,
+    paragraphNode: HTMLElement,
+    end?: { paragraphIndex: number; text: string; node: HTMLElement; between: string[] },
+  ) => {
     if (!uid) return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
@@ -648,6 +654,8 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     const anchor = anchorFromSelection(range, paragraphNode, paragraphText)
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
+    const endAnchor = end ? anchorFromSelection(range, end.node, end.text) : null;
+    const spans = end && endAnchor ? { end, endAnchor } : null;
     const rect = range.getBoundingClientRect();
     selection.removeAllRanges();
     beginAnnotation({
@@ -656,7 +664,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       quote: anchor.quote,
       quoteStart: (anchor as { start?: number }).start,
       quoteEnd: (anchor as { end?: number }).end,
-      context: paragraphText,
+      ...(spans ? {
+        endParagraphIndex: spans.end.paragraphIndex,
+        endQuote: spans.endAnchor.quote,
+        text: [anchor.quote, ...spans.end.between, spans.endAnchor.quote].join('\n\n'),
+      } : {}),
+      context: spans ? [paragraphText, ...spans.end.between, spans.end.text].join('\n\n') : paragraphText,
       anchor: {
         left: rect.left,
         top: rect.top,
@@ -736,10 +749,22 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       const start = range.startContainer;
       const paragraph = paragraphAround(start) || paragraphAround(range.endContainer);
       if (!paragraph || !scrollRef.current?.contains(paragraph)) return;
+      const sectionId = paragraph.dataset.section!;
       const paragraphIndex = Number(paragraph.dataset.paragraph);
-      const text = paragraphTextFor(paragraph.dataset.section, paragraphIndex);
+      const text = paragraphTextFor(sectionId, paragraphIndex);
       if (text === null) return;
-      handleSelection(paragraph.dataset.section!, paragraphIndex, text, paragraph);
+      // A selection that runs into later paragraphs of the same section is one
+      // passage; one that crosses into another section stops where it started.
+      const last = paragraphAround(range.endContainer);
+      const lastIndex = Number(last?.dataset.paragraph);
+      const lastText = last && last.dataset.section === sectionId && lastIndex > paragraphIndex
+        ? paragraphTextFor(sectionId, lastIndex)
+        : null;
+      const between = [];
+      for (let index = paragraphIndex + 1; index < lastIndex; index += 1) between.push(paragraphTextFor(sectionId, index) ?? '');
+      handleSelection(sectionId, paragraphIndex, text, paragraph, last && lastText !== null
+        ? { paragraphIndex: lastIndex, text: lastText, node: last, between }
+        : undefined);
     };
     document.addEventListener('mouseup', handleDocumentMouseUp);
     return () => document.removeEventListener('mouseup', handleDocumentMouseUp);
@@ -783,6 +808,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     const index = indexHighlightsByParagraph(annotations.annotations, {
       level,
       language: 'en',
+      paragraphText: paragraphTextFor,
     });
     // One transient state gets folded in here rather than stored: the pen
     // stroke on a mark that has just been made.
@@ -795,14 +821,16 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     // The passage the menu is open on wears the pen already, provisionally.
     const waiting = annotations.pending;
     if (waiting) {
-      const key = `${waiting.sectionId}:${waiting.paragraphIndex}`;
-      index.set(key, [
-        ...(index.get(key) || []),
-        { id: 'pending', quote: waiting.quote, kind: 'user', source: 'user', pending: true },
-      ]);
+      for (const segment of passageSegments(waiting, paragraphTextFor)) {
+        const key = `${waiting.sectionId}:${segment.paragraphIndex}`;
+        index.set(key, [
+          ...(index.get(key) || []),
+          { id: 'pending', quote: segment.quote, kind: 'user', source: 'user', pending: true },
+        ]);
+      }
     }
     return index;
-  }, [annotations.annotations, annotations.pending, level]);
+  }, [annotations.annotations, annotations.pending, level, paragraphTextFor]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
@@ -811,10 +839,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
 
 
   /** Where the passage is, said in the reader's own vocabulary: "Método · §2". */
-  const annotationLabel = useCallback((annotation: Pick<PassageAnnotation, 'sectionId' | 'paragraphIndex'>) => {
+  const annotationLabel = useCallback((annotation: Pick<PassageAnnotation, 'sectionId' | 'paragraphIndex' | 'endParagraphIndex'>) => {
     const section = sections.find(item => String(item.id) === String(annotation.sectionId));
     const kind = kindLabels[section?.kind as keyof typeof kindLabels] || kindLabels.other;
-    return `${kind} · §${Number(annotation.paragraphIndex) + 1}`;
+    const first = Number(annotation.paragraphIndex) + 1;
+    const last = annotation.endParagraphIndex === undefined ? first : Number(annotation.endParagraphIndex) + 1;
+    return `${kind} · §${last > first ? `${first}–${last}` : first}`;
   }, [kindLabels, sections]);
 
   const notePins = useMemo(
@@ -836,10 +866,16 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     if (!pending) return undefined;
     return 1 + orderedAnnotations.filter(item => item.note && sortAnnotations([item, pending], sectionOrder)[0] === item).length;
   }, [annotations.pending, orderedAnnotations, sectionOrder]);
-  const textPins = useMemo(
-    () => (showAiMarks ? notePins : new Map([...notePins].filter(([, pin]) => pin.kind !== 'ai'))),
-    [notePins, showAiMarks],
-  );
+  const pinsByParagraph = useMemo(() => {
+    const byParagraph = new Map<string, typeof notePins>();
+    for (const annotation of orderedAnnotations) {
+      const pin = notePins.get(annotation.id);
+      if (!pin || (!showAiMarks && pin.kind === 'ai')) continue;
+      const key = `${annotation.sectionId}:${annotation.endParagraphIndex ?? annotation.paragraphIndex}`;
+      byParagraph.set(key, new Map([...(byParagraph.get(key) || []), [annotation.id, pin]]));
+    }
+    return byParagraph;
+  }, [notePins, orderedAnnotations, showAiMarks]);
 
   /**
    * The rail sends the reader back to a passage. `block: 'center'` is the whole
@@ -863,7 +899,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     const sweep = () => {
       if (controller.signal.aborted) return;
       controller.abort();
-      paragraph.querySelectorAll<HTMLElement>(`[data-highlight-id="${CSS.escape(String(annotation.id))}"]`).forEach(mark => {
+      scroller.querySelectorAll<HTMLElement>(`[data-highlight-id="${CSS.escape(String(annotation.id))}"]`).forEach(mark => {
         mark.removeAttribute('data-arrived');
         void mark.offsetWidth;
         mark.setAttribute('data-arrived', '');
@@ -1129,7 +1165,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                           aria-describedby={annotating ? paragraphHintId : undefined}
                           onKeyDown={annotating ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph) : undefined}
                         >
-                          <HighlightedScientificText highlights={[...stored, ...aiHighlights]} pins={textPins}>
+                          <HighlightedScientificText highlights={[...stored, ...aiHighlights]} pins={pinsByParagraph.get(`${section.id}:${paragraphIndex}`)}>
                             {paragraph}
                           </HighlightedScientificText>
                         </p>
