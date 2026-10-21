@@ -243,26 +243,25 @@ export const CATEGORIES: Record<string, CategoryArea> = {
   },
 };
 
-function getFallbackAreaKey(categoryId = '') {
-  if (categoryId.startsWith('q-fin')) return 'q-fin';
-  if (categoryId.startsWith('q-bio')) return 'bio';
+/*
+ * arXiv's archives, the part of a category id before the dot, and the area
+ * each belongs to. A category the areas above do not list takes the area of
+ * its archive, for its chip here and for its ink in `areaAccent.ts`. An alias
+ * takes the archive it is written under: `q-fin.EC` is Quantitative Finance,
+ * although arXiv also files it as `econ.GN`.
+ */
+const ARXIV_ARCHIVE_AREAS = new Map([
+  ['astro-ph', 'physics'], ['cond-mat', 'physics'], ['gr-qc', 'physics'],
+  ['hep-ex', 'physics'], ['hep-lat', 'physics'], ['hep-ph', 'physics'], ['hep-th', 'physics'],
+  ['math-ph', 'physics'], ['nlin', 'physics'], ['nucl-ex', 'physics'], ['nucl-th', 'physics'],
+  ['physics', 'physics'], ['quant-ph', 'physics'],
+  ['cs', 'cs'], ['econ', 'econ'], ['eess', 'eess'], ['math', 'math'],
+  ['q-bio', 'bio'], ['q-fin', 'q-fin'], ['stat', 'stat'],
+]);
 
-  const prefix = categoryId.split('.')[0].split('-')[0];
-  return ({
-    quant: 'physics',
-    cond: 'physics',
-    hep: 'physics',
-    astro: 'physics',
-    gr: 'physics',
-    math: 'math',
-    nucl: 'physics',
-    nlin: 'physics',
-    physics: 'physics',
-    cs: 'cs',
-    stat: 'stat',
-    econ: 'econ',
-    eess: 'eess',
-  } as Record<string, string>)[prefix] || null;
+/** The area of an arXiv category's archive, or null when it names no arXiv archive. */
+export function getArxivArchiveArea(categoryId = '') {
+  return ARXIV_ARCHIVE_AREAS.get(categoryId.split('.')[0]) ?? null;
 }
 
 /**
@@ -373,7 +372,7 @@ export function getCategoryLabel(arxivCategory: string) {
       return category.label || category.label;
     }
   }
-  const fallbackArea = CATEGORIES[getFallbackAreaKey(arxivCategory) as string];
+  const fallbackArea = CATEGORIES[getArxivArchiveArea(arxivCategory) as string];
   if (fallbackArea) {
     return fallbackArea.label || fallbackArea.label;
   }
