@@ -14,6 +14,12 @@ export interface PaperCardProps {
   trackSkip?: (paper: Paper) => void;
   onOpenPdf?: (paper: Paper) => void;
   onSaveToList?: (paper: Paper) => void;
+  /**
+   * Holding Save on a touch screen. Where a tap on Save already opens the list
+   * picker it does the same; the feed, whose tap quick-saves to Read later,
+   * passes the picker here.
+   */
+  onPickList?: (paper: Paper) => void;
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
@@ -159,6 +165,7 @@ import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTarge
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from '../../utils/motionCurves.ts';
+import { createLongPress } from './longPress.ts';
 
 /** An author's name in its grid cell: ellipsed when it does not fit, and only
     then does resting on it show the whole name. */
@@ -370,6 +377,7 @@ const PaperCard = memo(function PaperCard({
   trackSkip = () => {},
   onOpenPdf = () => {},
   onSaveToList = () => {},
+  onPickList = onSaveToList,
   getInteractionState = () => ({}),
   hideScrollHint = false,
   // The title's level: an h2 wherever the card is one of many, the page's h1
@@ -1280,6 +1288,7 @@ const PaperCard = memo(function PaperCard({
               type="button"
               className="pc-topics-pop-item"
               lang={item.lang}
+              data-kind={item.key === 'primary' ? 'field' : 'topic'}
               onClick={(event) => {
                 setMenuView('closed');
                 openTopic(event, item.topic!);
@@ -1292,7 +1301,7 @@ const PaperCard = memo(function PaperCard({
               <ArrowRight size={14} aria-hidden="true" />
             </button>
           ) : (
-            <span className="pc-topics-pop-item">
+            <span className="pc-topics-pop-item" data-kind={item.key === 'primary' ? 'field' : 'topic'}>
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
                 <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
@@ -1407,7 +1416,22 @@ const PaperCard = memo(function PaperCard({
     onNotInterested(paper);
   };
 
+  // Created once, so a re-render between the hold and its click keeps the
+  // hold; the ref hands it this render's paper and callbacks.
+  const pickListRef = useRef(() => {});
+  useEffect(() => {
+    pickListRef.current = () => {
+      if (publicMode) requireAuthentication('save');
+      else onPickList(paper);
+    };
+  }, [onPickList, paper, publicMode, requireAuthentication]);
+  const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
+  // A card that leaves mid-hold must not open the picker afterwards.
+  useEffect(() => saveHold.onPointerCancel, [saveHold]);
+
   const handleSave = (saving: boolean) => {
+    // The hold already opened the picker; the click that ends it is not a tap.
+    if (saveHold.consumeHold()) return;
     if (publicMode) {
       requireAuthentication('save');
       return;
@@ -2214,6 +2238,11 @@ const PaperCard = memo(function PaperCard({
           pressed={isSaved}
           onPressedChange={handleSave}
           onClick={swallowClick}
+          onPointerDown={saveHold.onPointerDown}
+          onPointerMove={saveHold.onPointerMove}
+          onPointerUp={saveHold.onPointerUp}
+          onPointerCancel={saveHold.onPointerCancel}
+          onContextMenu={saveHold.onContextMenu}
           title={'Save'}
         >
           <span className="pc-side-icon" ref={saveIconRef}>
@@ -2269,11 +2298,13 @@ const PaperCard = memo(function PaperCard({
           panel={menuView === 'about' ? {
             id: 'about',
             title: 'About this paper',
-            content: <div className="pc-about">{aboutSections}</div>,
+            content: aboutSections,
+            className: 'pc-about',
             style: { '--area-accent': areaAccentForPaper(paper) },
             onBack: () => setMenuView('actions'),
           } : null}
           actions={[
+            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
             {
               id: 'read',
               label: isReadActive ? 'Mark as unread' : 'Mark as read',
@@ -2281,7 +2312,6 @@ const PaperCard = memo(function PaperCard({
               Icon: isReadActive ? CheckCircle : Eye,
               onSelect: handleMarkAsRead,
             },
-            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
             { id: 'skip', label: 'Not interested', hint: 'See fewer papers like this', Icon: Prohibit, onSelect: handleNotInterested },
             { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
             { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },

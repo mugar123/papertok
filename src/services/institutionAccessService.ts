@@ -1,8 +1,8 @@
 import type { LinkedInstitution } from './institutionService.ts';
 type InstitutionInput = Partial<LinkedInstitution>;
-interface AccessOperations { request?: typeof authenticatedWorkerFetch; apiBase?: string; currentUid?: () => string | null | undefined }
+interface AccessOperations { request?: typeof authenticatedWorkerFetch; apiBase?: string }
 interface AccessPayload { code?: string; status?: string; url?: unknown; collection?: unknown }
-interface ServicesPayload { code?: string; services?: Array<Record<string, unknown>>; unchecked?: number; partial?: boolean; nextOffset?: unknown; catalogue?: unknown }
+interface ServicesPayload { code?: string; services?: Array<Record<string, unknown>>; unchecked?: number; partial?: boolean; remaining?: unknown }
 type InstitutionAccess = NonNullable<ReturnType<typeof normalizeInstitutionAccess>>;
 type ServicesAnswer = (NonNullable<ReturnType<typeof normalizeInstitutionServices>> & { unsupported?: false }) | (typeof UNSUPPORTED_SERVICES & { unchecked?: never });
 
@@ -16,11 +16,9 @@ type ServicesAnswer = (NonNullable<ReturnType<typeof normalizeInstitutionService
  * Worker's own: a definite answer for a week, `unknown` for six hours, and a
  * failure not at all, so an outage costs a retry rather than a wrong chip.
  *
- * The library's platform list (`GET /institution/services`) follows the same
- * tiers, kept per account and institution, since it also holds where a list
- * cut short goes on: no other account or institution picks that up.
+ * The library's platform list (`GET /institution/services`) is kept the same
+ * way, by institution, and in localStorage as well, so a reload opens on it.
  */
-import { auth } from './firebase.ts';
 import { authenticatedWorkerFetch, workerSourceUrl } from './workerApiClient.ts';
 import { normalizeDoi } from './unpaywallService.ts';
 import { safeExternalUrl } from '../utils/externalUrl.ts';
@@ -42,7 +40,6 @@ const unsupportedDomains = new Set<string>();
 function operations(overrides: AccessOperations = {}) {
   return {
     request: overrides.request || authenticatedWorkerFetch,
-    currentUid: overrides.currentUid || (() => auth.currentUser?.uid),
     apiBase: overrides.apiBase === undefined
       ? import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '')
       : overrides.apiBase,
@@ -113,27 +110,28 @@ export function findInstitutionAccess(rawDoi: unknown, institution: InstitutionI
   return pending;
 }
 
-const SERVICES_TTL = 7 * 24 * 60 * 60 * 1000;
-// A partial answer is the Worker's deadline cutting some probes short, or the
-// page and time limits below stopping the list: the missing platforms are
-// unasked, not absent, so the gap is worth filling soon.
+// The Worker answers from its store of verdicts, so a list is asked for again
+// within a day: a catalogue entry added reaches the reader by then.
+const SERVICES_TTL = 24 * 60 * 60 * 1000;
+// A partial answer is a probe the Worker's deadline cut short, or entries it
+// had not reached when the requests below ran out: the gap is worth filling soon.
 const PARTIAL_SERVICES_TTL = 60 * 60 * 1000;
 // Above the Worker's own 12 s probe deadline, for the same reason as above.
 const SERVICES_TIMEOUT_MS = 15000;
+// A library read for the first time takes the Worker a few requests, each
+// going on from what the last one stored; a slow one cannot go on forever.
+const SERVICES_REQUESTS = 10;
+const SERVICES_DEADLINE_MS = 45000;
+const STORAGE_PREFIX = 'papertok_institution_services:';
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const UNSUPPORTED_SERVICES = Object.freeze({ services: Object.freeze([]), partial: false, unsupported: true });
 
 type ServicesList = NonNullable<ReturnType<typeof normalizeInstitutionServices>>;
-/**
- * What a library's list shows (`answer`, until `expiresAt`), and the reading
- * of the catalogue the page or time limit stopped: what it found (`partial`
- * only when a page was), where the next run goes on and the Worker's
- * `catalogue` that position belongs to. While a newer reading is under way the
- * last list read to the end stays the answer (`finished`), so a refresh never
- * shows less than there was.
- */
-interface ServicesReading { found: ServicesList; next: number; catalogue: string }
-const serviceAnswers = new Map<string, { answer: ServicesList; expiresAt: number; finished: boolean; reading: ServicesReading | null }>();
+interface StoredServices { answer: ServicesList; expiresAt: number }
+// The list is the library's, so it is kept by institution and survives an
+// account change, like the per-paper answers above. localStorage keeps it
+// across reloads, so the dialog opens on the list instead of "Checking".
+const serviceAnswers = new Map<string, StoredServices>();
 const servicesInFlight = new Map<string, Promise<ServicesAnswer | null>>();
 
 function normalizeService(raw: Record<string, unknown> | null | undefined) {
@@ -169,99 +167,69 @@ function normalizeInstitutionServices(payload: ServicesPayload | null) {
   return { services, partial: payload.partial === true, unchecked };
 }
 
-async function lookUpServices(api: ReturnType<typeof operations>, institution: InstitutionInput & { domain: string }, key: string) {
-  const stored = serviceAnswers.get(key);
-  const finished = stored?.finished ? stored.answer : null;
-  // A reading the page or time limit stopped goes on where it stopped, with
-  // what it found. Starting over spent the same pages on the same first
-  // titles every time, from the edge cache or not, and never reached the rest.
-  let kept = stored?.reading ?? null;
-  let found: ServicesList = kept
-    ? { services: [...kept.found.services], partial: kept.found.partial, unchecked: kept.found.unchecked }
-    : { services: [], partial: false, unchecked: 0 };
-  let seen = new Set(found.services.map(service => service.id));
-  let offset = kept ? kept.next : 0;
-  let catalogue = kept ? kept.catalogue : null;
-  let received = false;
-  let resumable = true;
-  const startOver = () => {
-    kept = null;
-    found = { services: [], partial: false, unchecked: 0 };
-    seen = new Set();
-    offset = 0;
-    catalogue = null;
-    received = false;
-  };
-  const signal = AbortSignal.timeout(45000);
+function readStoredServices(key: string) {
+  const inMemory = serviceAnswers.get(key);
+  if (inMemory) return inMemory;
   try {
-    // A bad continuation cannot keep the browser probing indefinitely.
-    for (let page = 0; page < 10; page += 1) {
+    const stored = JSON.parse(globalThis.localStorage?.getItem(STORAGE_PREFIX + key) || 'null') as Partial<StoredServices> | null;
+    // Read like a Worker answer: what an older build stored, or what was
+    // edited in the browser, is held to the same shape.
+    const answer = normalizeInstitutionServices((stored?.answer as ServicesPayload | undefined) || null);
+    if (!answer || typeof stored!.expiresAt !== 'number') return undefined;
+    const entry = { answer, expiresAt: stored!.expiresAt };
+    serviceAnswers.set(key, entry);
+    return entry;
+  } catch {
+    // Blocked or malformed storage: the Worker is asked.
+    return undefined;
+  }
+}
+
+function writeStoredServices(key: string, entry: StoredServices) {
+  serviceAnswers.set(key, entry);
+  try { globalThis.localStorage?.setItem(STORAGE_PREFIX + key, JSON.stringify(entry)); } catch {
+    // Storage is optional; the answer is still in memory.
+  }
+}
+
+async function lookUpServices(api: ReturnType<typeof operations>, institution: InstitutionInput & { domain: string }, key: string) {
+  const signal = AbortSignal.timeout(SERVICES_DEADLINE_MS);
+  let answer: ServicesList | null = null;
+  try {
+    for (let request = 0; request < SERVICES_REQUESTS; request += 1) {
       const url = workerSourceUrl('/institution/services', {
         domain: institution.domain,
         entityId: cleanString(institution.entityId),
         rorId: cleanString(institution.rorId),
-        offset: String(offset),
       }, api.apiBase);
       if (!url) return null;
       signal.throwIfAborted();
       const response = await api.request(url, withEnforcedDeadline({ headers: { accept: 'application/json' }, signal }, SERVICES_TIMEOUT_MS));
       const payload = await response.json().catch(() => null) as ServicesPayload | null;
       if (!response.ok) {
-        if (!received && response.status === 404 && payload?.code === 'INSTITUTION_NOT_SUPPORTED') {
+        if (!answer && response.status === 404 && payload?.code === 'INSTITUTION_NOT_SUPPORTED') {
           unsupportedDomains.add(institution.domain);
-          serviceAnswers.delete(key);
           return UNSUPPORTED_SERVICES;
         }
-        // The Worker no longer has the title the reading stopped at.
-        if (kept && response.status === 400 && payload?.code === 'INVALID_SERVICES_OFFSET') {
-          startOver();
-          continue;
-        }
-        throw new Error('library page unavailable');
+        throw new Error('library list unavailable');
       }
-      const batch = normalizeInstitutionServices(payload);
-      if (!batch) throw new Error('invalid library page');
-      const next = payload?.nextOffset;
-      // Older Workers omit the continuation and still return their bounded list.
-      if (next != null && (typeof next !== 'number' || !Number.isSafeInteger(next) || next <= offset)) {
-        resumable = false;
-        throw new Error('invalid library continuation');
+      answer = normalizeInstitutionServices(payload);
+      if (!answer) throw new Error('invalid library list');
+      // Entries the Worker had not reached yet: the next request goes on from
+      // its store. An older Worker sends no count and its list is the answer.
+      const remaining = Number.isInteger(payload!.remaining) && (payload!.remaining as number) > 0;
+      if (!remaining) {
+        writeStoredServices(key, { answer, expiresAt: Date.now() + (answer.partial ? PARTIAL_SERVICES_TTL : SERVICES_TTL) });
+        return answer;
       }
-      // A page of another catalogue than the reading's (a new Worker): what
-      // the reading kept may sit at other positions in it.
-      const pageCatalogue = typeof payload?.catalogue === 'string' ? payload.catalogue : null;
-      if (offset > 0 && pageCatalogue !== catalogue) {
-        startOver();
-        continue;
-      }
-      catalogue = pageCatalogue;
-      received = true;
-      for (const service of batch.services) {
-        if (!seen.has(service.id)) found.services.push(service);
-        seen.add(service.id);
-      }
-      found.unchecked += batch.unchecked;
-      found.partial ||= batch.partial;
-      if (next == null) {
-        const ttl = found.partial ? PARTIAL_SERVICES_TTL : SERVICES_TTL;
-        serviceAnswers.set(key, { answer: found, expiresAt: Date.now() + ttl, finished: true, reading: null });
-        return found;
-      }
-      offset = next as number;
     }
   } catch {
-    // Keep what was found if a page fails, without claiming a complete list.
+    // Keep the last list if a later request fails, without claiming it complete.
   }
-  // Nothing new arrived: what was there stands, still expired, so the next ask is the retry.
-  if (!received) return finished || (kept ? { ...found, partial: true } : null);
-  const answer = finished || { ...found, partial: true };
-  serviceAnswers.set(key, {
-    answer,
-    expiresAt: Date.now() + PARTIAL_SERVICES_TTL,
-    finished: Boolean(finished),
-    reading: resumable && catalogue ? { found, next: offset, catalogue } : null,
-  });
-  return answer;
+  if (!answer) return null;
+  const partial = { ...answer, partial: true };
+  writeStoredServices(key, { answer: partial, expiresAt: Date.now() + PARTIAL_SERVICES_TTL });
+  return partial;
 }
 
 /**
@@ -275,8 +243,8 @@ function servicesDomain(institution: InstitutionInput | null | undefined) {
   return typeof institution?.domain === 'string' ? institution.domain.trim().toLowerCase() : '';
 }
 
-function servicesKey(institution: InstitutionInput, domain: string, uid: string | null | undefined) {
-  return [uid || '', domain, cleanString(institution.entityId) || '', cleanString(institution.rorId) || ''].join('|');
+function servicesKey(institution: InstitutionInput, domain: string) {
+  return [domain, cleanString(institution.entityId) || '', cleanString(institution.rorId) || ''].join('|');
 }
 
 /**
@@ -284,26 +252,23 @@ function servicesKey(institution: InstitutionInput, domain: string, uid: string 
  * when it would have to ask. A view that opens on the list paints it on its
  * first frame from here instead of growing a frame later.
  */
-export function knownInstitutionServices(institution: InstitutionInput | null | undefined, overrides?: AccessOperations): ServicesAnswer | undefined {
+export function knownInstitutionServices(institution: InstitutionInput | null | undefined): ServicesAnswer | undefined {
   const domain = servicesDomain(institution);
   if (!domain) return undefined;
   if (unsupportedDomains.has(domain)) return UNSUPPORTED_SERVICES;
-  const cached = serviceAnswers.get(servicesKey(institution!, domain, operations(overrides).currentUid()));
-  return cached && Date.now() < cached.expiresAt ? cached.answer : undefined;
+  const stored = readStoredServices(servicesKey(institution!, domain));
+  return stored && Date.now() < stored.expiresAt ? stored.answer : undefined;
 }
 
 export function findInstitutionServices(institution: InstitutionInput | null | undefined, overrides?: AccessOperations): Promise<ServicesAnswer | null> {
   const domain = servicesDomain(institution);
   if (!domain) return Promise.resolve(null);
-  const known = knownInstitutionServices(institution, overrides);
+  const known = knownInstitutionServices(institution);
   if (known) return Promise.resolve(known);
-  const api = operations(overrides);
-  // Taken when the lookup starts: an answer that lands after the account
-  // changed is kept for the account that asked.
-  const key = servicesKey(institution!, domain, api.currentUid());
+  const key = servicesKey(institution!, domain);
   if (servicesInFlight.has(key)) return servicesInFlight.get(key)!;
 
-  const pending = lookUpServices(api, { ...institution, domain }, key)
+  const pending = lookUpServices(operations(overrides), { ...institution, domain }, key)
     .finally(() => servicesInFlight.delete(key));
   servicesInFlight.set(key, pending);
   return pending;

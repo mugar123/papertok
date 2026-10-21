@@ -4,13 +4,14 @@ import type { ExternalToast } from 'sonner';
 import type { Shared } from './shareTargets.ts';
 
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
-export interface PaperMenuPanel { id: string; title: string; content: ReactNode; style?: CSSProperties; onBack: () => void }
+export interface PaperMenuPanel { id: string; title: string; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 
-import { cloneElement, useEffect, useRef } from 'react';
+import { cloneElement, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Copy, LinkSimple } from '@phosphor-icons/react';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
+import { cn } from '../../lib/utils.ts';
 import { paperShareData } from '../../utils/shareLink.ts';
 import { INSTAGRAM_NOTE, NETWORKS, copyLink } from './shareTargets.ts';
 import './SharePanel.css';
@@ -22,6 +23,11 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
   const isPhone = useIsPhone();
   const listRef = useRef<HTMLUListElement>(null);
   const leftPanel = useRef<string | null>(null);
+  // Whether the actions on screen were reached by the back arrow, so they
+  // come in from the side they went out by. A fresh open is the surface's own
+  // arrival and moves nothing inside it.
+  const [cameBack, setCameBack] = useState(false);
+  if (!open && cameBack) setCameBack(false);
   useEffect(() => {
     if (panel) {
       leftPanel.current = panel.id;
@@ -45,7 +51,9 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
         {actions.map(({ id, label, hint, Icon, onSelect }) => (
           <li key={id}>
             <button type="button" className="pc-menu-item" data-action={id} onClick={(event) => { onOpenChange(false); onSelect(event); }}>
-              <Icon size={20} aria-hidden="true" />
+              <span className="pc-menu-item-icon">
+                <Icon size={20} aria-hidden="true" />
+              </span>
               <span>
                 <span className="pc-menu-item-label">{label}</span>
                 <span className="pc-menu-item-hint">{hint}</span>
@@ -91,11 +99,12 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
   });
 
   const heading = panel?.title ?? 'Paper options';
+  const enter = panel ? 'forward' : cameBack ? 'back' : undefined;
   const body = (
-    <>
+    <div key={panel?.id ?? 'actions'} className="pc-menu-stage" data-enter={enter}>
       <div className="pc-menu-head">
         {panel && (
-          <button type="button" className="pc-menu-back" aria-label={'Back to paper options'} onClick={panel.onBack} autoFocus>
+          <button type="button" className="pc-menu-back" aria-label={'Back to paper options'} onClick={() => { setCameBack(true); panel.onBack(); }} autoFocus>
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
         )}
@@ -103,8 +112,10 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
           ? <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{heading}</DrawerTitle>
           : <DialogTitle className="pc-share-sheet-title">{heading}</DialogTitle>}
       </div>
-      {panel ? <div style={panel.style}>{panel.content}</div> : rows}
-    </>
+      <div className={cn('pc-menu-view', panel?.className)} style={panel?.style}>
+        {panel ? panel.content : rows}
+      </div>
+    </div>
   );
 
   return (

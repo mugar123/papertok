@@ -13,5 +13,6 @@ Disallow: /following
 Disallow: /search
 Disallow: /profile
 Disallow: /settings
+Disallow: /institution
 
 Sitemap: https://papertok.app/sitemap.xml

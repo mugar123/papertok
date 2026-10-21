@@ -4,6 +4,7 @@ import PetriBell from './PetriBell.tsx';
 import PetriBlankPage from './PetriBlankPage.tsx';
 import PetriCompass from './PetriCompass.tsx';
 import PetriDownload from './PetriDownload.tsx';
+import PetriFarewell from './PetriFarewell.tsx';
 import PetriFlask from './PetriFlask.tsx';
 import PetriKey from './PetriKey.tsx';
 import PetriLetGo from './PetriLetGo.tsx';
@@ -34,16 +35,17 @@ const POSES = {
   compass: PetriCompass,
   download: PetriDownload,
   letGo: PetriLetGo,
+  farewell: PetriFarewell,
   lost: PetriLost,
   search: PetriSearch,
 };
 
 /**
  * Petri, the mascot: `<Petri pose="flask" label="…" />`. The pose's own props
- * (`name`, `level`, `visibility`, `code`) pass through. With a `label` the drawing is
+ * (`name`, `level`, `visibility`, `code`, `initials`, `released`) pass through. With a `label` the drawing is
  * an image of that name; without one it is decoration.
  */
-export default function Petri({ pose, ...props }: ComponentProps<typeof PetriWelcome> & ComponentProps<typeof PetriReading> & ComponentProps<typeof PetriProfile> & ComponentProps<typeof PetriLost> & { pose: keyof typeof POSES }) {
+export default function Petri({ pose, ...props }: ComponentProps<typeof PetriWelcome> & ComponentProps<typeof PetriReading> & ComponentProps<typeof PetriProfile> & ComponentProps<typeof PetriLost> & ComponentProps<typeof PetriFarewell> & { pose: keyof typeof POSES }) {
   const Pose = POSES[pose];
   return <Pose {...props} />;
 }

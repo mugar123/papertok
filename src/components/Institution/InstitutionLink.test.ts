@@ -22,37 +22,10 @@ test('SOURCE: the link form keeps its own submit unless the caller draws the sub
   assert.match(code, /const setEmail = controlled \? onEmailChange : setOwnEmail;/);
   assert.equal((code.match(/setOwnEmail\(/g) || []).length, 0, 'nothing writes the own copy past the switch');
   assert.match(code, /const setBusy = \(next: boolean\) => \{ setOwnBusy\(next\); onBusyChange\?\.\(next\); \};/);
-  // The hint names no button: in the onboarding there is none beside it.
-  assert.match(code, /hint: 'When you continue, Google opens so you can sign in with that account\. PaperTok keeps the institution, not the address\.',/);
 });
 
 test('SOURCE: Settings opens the link as it always has, with its own button', async () => {
   const dialog = stripComments(await read('./InstitutionDialog.tsx'));
   assert.match(dialog, /<InstitutionLink idPrefix="settings-institution" \/>/);
   assert.doesNotMatch(dialog, /showSubmit|formId|onEmailChange|onBusyChange|linkedNote/);
-});
-
-/**
- * The link's Google window opens on a second Auth instance, which loads its
- * own popup scripts. A window opened after that load can land outside the
- * press, where Safari blocks it, so the form waits for that instance.
- */
-test('SOURCE: the link form ignores a submit until its window can open inside the press', async () => {
-  const code = stripComments(await read('./InstitutionLink.tsx'));
-  // Only while the form shows: a linked institution opens no window.
-  assert.match(code, /const preparing = !usePopupReady\(institution \? null : institutionLinkReadiness\(\)\);/);
-  // Only a press that opens the window waits: an address the signed-in
-  // account already proves links without one (institutionService.ts).
-  assert.match(code, /const held = preparing && needsUniversityProof\(email\);/);
-  // Enter in the field and the onboarding's primary submit the form too.
-  assert.match(code, /const handleSubmit = async \(event: FormEvent<HTMLFormElement>\) => \{\s*event\.preventDefault\(\);\s*if \(busy \|\| held\) return;/);
-  const submit = code.match(/<Button\s+type="submit"[\s\S]*?\n\s*>/)?.[0] ?? '';
-  // Base UI's disabled state, so it looks disabled too, and still focusable.
-  assert.match(submit, /\bdisabled=\{held\}\s+focusableWhenDisabled\s/);
-  // Replaces Base UI's own aria-disabled, so it has to cover the wait as well.
-  assert.match(submit, /aria-disabled=\{busy \|\| held \|\| undefined\}/);
-  assert.match(submit, /aria-describedby=\{held \? preparingId : undefined\}/);
-  assert.match(code, /\{busy \|\| held \? <span className="institution-link-spinner" aria-hidden="true" \/> : <ArrowRight size=\{16\} weight="bold" aria-hidden="true" \/>\}/);
-  // Shown under the field, outside the box the arrow sits in.
-  assert.match(code, /<\/div>\s*\{showSubmit && <PreparingNote id=\{preparingId\} preparing=\{preparing\} \/>\}\s*<p id=\{hintId\}/);
 });

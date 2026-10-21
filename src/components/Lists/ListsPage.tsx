@@ -145,9 +145,12 @@ const PRIVATE_LIST_IDS = new Set(['__favorites__', '__read__', '__read_later__']
 const FOLDER_BACK = 'M0 3 Q0 0 3 0 H30 Q33 0 34 3 L36 7 Q37 9 40 9 H97 Q100 9 100 12 V97 Q100 100 97 100 H3 Q0 100 0 97 Z';
 const FOLDER_POCKET = 'M0 3 Q0 0 3 0 H33 Q36 0 38 3 L42 10 Q44 13 47 13 H97 Q100 13 100 16 V97 Q100 100 97 100 H3 Q0 100 0 97 Z';
 
-type ListMenuAction = { id: string; label: string; Icon: Icon; disabled?: boolean; onSelect: () => void };
+type ListMenuAction = { id: string; label: string; hint: string; Icon: Icon; disabled?: boolean; onSelect: () => void };
 
-/** A list's overflow actions: a dropdown on desktop, a drawer of rows on a phone. */
+/**
+ * A list's overflow actions: a dropdown on desktop, and on a phone a drawer of
+ * the paper options' hinted rows, where a thumb has room to read what each does.
+ */
 function ListMenu({ title, trigger, actions }: { title: string; trigger: ReactElement; actions: ListMenuAction[] }) {
   const isPhone = useIsPhone();
   if (isPhone) {
@@ -155,11 +158,16 @@ function ListMenu({ title, trigger, actions }: { title: string; trigger: ReactEl
       <RailMenu
         title={title}
         trigger={trigger}
-        sheet={actions.map(({ id, label, Icon, disabled, onSelect }) => (
+        sheet={actions.map(({ id, label, hint, Icon, disabled, onSelect }) => (
           <li key={id}>
-            <DrawerClose className="pc-share-row" disabled={disabled} onClick={onSelect}>
-              <Icon size={20} aria-hidden="true" />
-              {label}
+            <DrawerClose className="pc-menu-item" data-action={id} disabled={disabled} onClick={onSelect}>
+              <span className="pc-menu-item-icon">
+                <Icon size={20} aria-hidden="true" />
+              </span>
+              <span>
+                <span className="pc-menu-item-label">{label}</span>
+                <span className="pc-menu-item-hint">{hint}</span>
+              </span>
             </DrawerClose>
           </li>
         ))}
@@ -1653,21 +1661,21 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             </Button>
                           )}
                           actions={[
-                            { id: 'bibtex', label: 'BibTeX (.bib)' },
-                            { id: 'ris', label: 'RIS (.ris)' },
-                          ].map(({ id, label }) => ({ id, label, Icon: DownloadSimple, onSelect: () => downloadCitationFile(exportPapers, id, `papertok-${list.name}`) }))}
+                            { id: 'bibtex', label: 'BibTeX (.bib)', hint: 'For LaTeX and BibTeX managers' },
+                            { id: 'ris', label: 'RIS (.ris)', hint: 'For Zotero, EndNote and Mendeley' },
+                          ].map(({ id, label, hint }) => ({ id, label, hint, Icon: DownloadSimple, onSelect: () => downloadCitationFile(exportPapers, id, `papertok-${list.name}`) }))}
                         />
                       )}
                       {isCustomList && (() => {
                         const listActions = [
                           ...(IS_DEMO ? [] : [list.publicShareId
-                            ? { id: 'share', label: 'Share', Icon: ShareNetwork, disabled: shareBusy, onSelect: () => handleShareList(list) }
-                            : { id: 'publish', label: 'Publish & share', Icon: GlobeHemisphereWest, disabled: shareBusy || pendingPaperIds.size > 0, onSelect: () => handlePublishList(list, publicPapers) }]),
-                          { id: 'edit', label: 'Edit list', Icon: PencilSimple, onSelect: () => setEditing(list) },
+                            ? { id: 'share', label: 'Share', hint: 'Send or copy the public link', Icon: ShareNetwork, disabled: shareBusy, onSelect: () => handleShareList(list) }
+                            : { id: 'publish', label: 'Publish & share', hint: 'Anyone with the link can read it', Icon: GlobeHemisphereWest, disabled: shareBusy || pendingPaperIds.size > 0, onSelect: () => handlePublishList(list, publicPapers) }]),
                           ...(!IS_DEMO && list.publicShareId && !shareBusy
-                            ? [{ id: 'unpublish', label: 'Stop sharing', Icon: LinkBreak, onSelect: () => handleUnpublishList(list) }]
+                            ? [{ id: 'unpublish', label: 'Stop sharing', hint: 'The public link stops working', Icon: LinkBreak, onSelect: () => handleUnpublishList(list) }]
                             : []),
-                          { id: 'delete', label: 'Delete list', Icon: Trash, onSelect: () => { setDeletingList(list); setDeleteOpen(true); } },
+                          { id: 'edit', label: 'Edit list', hint: 'Name, icon and colour', Icon: PencilSimple, onSelect: () => setEditing(list) },
+                          { id: 'delete', label: 'Delete list', hint: 'Its papers stay saved', Icon: Trash, onSelect: () => { setDeletingList(list); setDeleteOpen(true); } },
                         ];
                         const trigger = (
                           <Button variant="outline" size="icon" aria-label={'List actions'}>

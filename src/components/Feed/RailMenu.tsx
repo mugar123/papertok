@@ -28,7 +28,7 @@ export default function RailMenu({ title, trigger, menu, sheet, side = 'left', a
         <DrawerContent className="pc-share-sheet" viewportProps={{ onClick: stop }}>
           <DrawerHandle />
           <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{title}</DrawerTitle>
-          <ul className="pc-share-list">{sheet}</ul>
+          <ul className="pc-menu-group">{sheet}</ul>
         </DrawerContent>
       </Drawer>
     );

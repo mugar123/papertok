@@ -99,11 +99,16 @@ function DrawerTitle({ className, ...props }: StyledProps<typeof DrawerPrimitive
   );
 }
 
+function DrawerDescription(props: ComponentProps<typeof DrawerPrimitive.Description>) {
+  return <DrawerPrimitive.Description data-slot="drawer-description" {...props} />;
+}
+
 export {
   Drawer,
   DrawerBody,
   DrawerClose,
   DrawerContent,
+  DrawerDescription,
   DrawerHandle,
   DrawerOverlay,
   DrawerPortal,

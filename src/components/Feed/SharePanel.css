@@ -174,6 +174,51 @@
   margin: 0;
 }
 
+/* About this paper and the way back: the view that takes over the surface
+   composes in from the side it comes from, the heading first and then each
+   group in reading order, 45 ms apart, as a card's pieces arrive
+   (PaperCard.css, "The arrival"). Travel rides the expo; opacity runs on its
+   own short linear clock, because an expo fade is nearly whole in its first
+   frames and reads as a flash. `backwards` holds the start during each delay
+   and leaves nothing behind once a piece has landed. */
+.pc-menu-stage[data-enter] > .pc-menu-head,
+.pc-menu-stage[data-enter] > .pc-menu-view > * {
+  animation:
+    pcMenuTravel 320ms var(--ease-out-expo) calc(var(--step, 0) * 45ms) backwards,
+    pcMenuFade 180ms linear calc(var(--step, 0) * 45ms) backwards;
+}
+
+/* Coming in from the right, the pieces start past the surface's edge and
+   would give its scroller a sideways range for their first frames. Clipped
+   here, inside it, because clip on the scrolling surface itself computes to
+   hidden on that axis. */
+.pc-menu-stage[data-enter='forward'] {
+  --menu-from: 24px;
+  overflow-x: clip;
+}
+
+.pc-menu-stage[data-enter='back'] { --menu-from: -24px; }
+
+.pc-menu-view > :nth-child(1) { --step: 1; }
+.pc-menu-view > :nth-child(2) { --step: 2; }
+.pc-menu-view > :nth-child(3) { --step: 3; }
+.pc-menu-view > :nth-child(n + 4) { --step: 4; }
+
+@keyframes pcMenuTravel {
+  from { translate: var(--menu-from) 0; }
+}
+
+@keyframes pcMenuFade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-menu-stage[data-enter] > .pc-menu-head,
+  .pc-menu-stage[data-enter] > .pc-menu-view > * {
+    animation: pcMenuFade 180ms linear backwards;
+  }
+}
+
 .pc-menu-back {
   display: grid;
   place-items: center;
@@ -222,6 +267,46 @@ ul.pc-menu-group {
   color: var(--text-secondary);
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+/* Each action in its own colour, as on the rail it opens from: the glyph on
+   a square of that colour's tint. */
+.pc-menu-item[data-action='read'] { --tone: var(--accent-success); }
+.pc-menu-item[data-action='about'] { --tone: var(--accent-sky); }
+.pc-menu-item[data-action='skip'] { --tone: var(--tint-red-fg); }
+.pc-menu-item:is([data-action='bibtex'], [data-action='ris']) { --tone: var(--accent-violet); }
+.pc-menu-item[data-action='delete'] { --tone: var(--accent-danger); }
+
+.pc-menu-item-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--tone, var(--text-secondary)) 12%, var(--bg-card));
+  color: var(--tone, var(--text-secondary));
+  transition: background-color 120ms ease-out;
+}
+
+.pc-menu-item:active {
+  background: color-mix(in srgb, var(--tone, var(--text-secondary)) 6%, var(--bg-card));
+}
+
+.pc-menu-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* A list's delete is the one action that cannot be undone: it sits apart,
+   and its name takes the danger ink too. */
+li:has(> .pc-menu-item[data-action='delete']) {
+  margin-top: var(--space-3);
+}
+
+.pc-menu-item[data-action='delete'] .pc-menu-item-label {
+  color: var(--tone);
 }
 
 .pc-menu-item-label {
@@ -300,10 +385,25 @@ ul.pc-menu-group {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .pc-menu-item:hover,
   .pc-menu-link:hover,
   .pc-menu-net:hover {
     background: var(--bg-secondary);
+  }
+
+  .pc-menu-item:hover {
+    border-color: color-mix(in srgb, var(--tone, var(--text-secondary)) 30%, var(--border-subtle));
+    background: color-mix(in srgb, var(--tone, var(--text-secondary)) 6%, var(--bg-card));
+  }
+
+  .pc-menu-item:hover .pc-menu-item-icon {
+    background: color-mix(in srgb, var(--tone, var(--text-secondary)) 18%, var(--bg-card));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-menu-item,
+  .pc-menu-item-icon {
+    transition: none;
   }
 }
 

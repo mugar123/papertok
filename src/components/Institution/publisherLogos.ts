@@ -54,6 +54,8 @@ import muse from '../../assets/publishers/muse.png';
 import nature from '../../assets/publishers/nature.svg';
 import nejm from '../../assets/publishers/nejm.svg';
 import optica from '../../assets/publishers/optica.svg';
+import humankinetics from '../../assets/publishers/humankinetics.png';
+import bristol from '../../assets/publishers/bristol.ico';
 import oup from '../../assets/publishers/oup.svg';
 import physiology from '../../assets/publishers/physiology.png';
 import portland from '../../assets/publishers/portland.svg';
@@ -76,6 +78,8 @@ import worldscientific from '../../assets/publishers/worldscientific.png';
 // Keyed by the Worker catalogue's platform id. Each import is named after its
 // file, which `publisherLogos.test.ts` relies on to check the map from source.
 const LOGOS = {
+  humankinetics,
+  bristol,
   economist,
   financialtimes,
   wsj,
