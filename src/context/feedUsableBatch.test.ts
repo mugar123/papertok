@@ -557,6 +557,21 @@ test('a short pool the other device viewed whole still gives a feed', async t =>
   assert.equal(state.hasMore, true);
 });
 
+// After a browser reload the snapshot's cards are on screen again, but the
+// reader's viewed list names only the ones that reported a view: the card on
+// screen when the tab closed never ran its cleanup.
+test('a refresh after a reload does not offer the restored cards again', async t => {
+  const { state, env, run, restore, starts } = reloadOnPageOne(t);
+  env.loadPapersRef.current = run;
+  const restored = records('page-1').map(paper => ({ ...paper, abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } }));
+  restore({ papers: restored, page: 1, hasMore: true });
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(1).includes(id)), [], 'no restored card comes back');
+  assert.deepEqual(starts, [15, 90], 'the refresh skipped past the restored page');
+});
+
 // The start of the effect that runs when the signed-in account changes, up to
 // where a guest returns: it replaces the seen set and resets the aggregate.
 const accountSwitchStart = source.indexOf('    activeUserId.current = userId;\n    sessionSeenPapers.current');

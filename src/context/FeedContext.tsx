@@ -1869,6 +1869,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (restoredFeedKeyRef.current === key) return;
     restoredFeedKeyRef.current = key;
     feedCache.current[mode] = snapshot;
+    // The restore shows these cards in this session, as a load would: a refresh
+    // must not offer them again. Only a card's own report makes one "viewed".
+    snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
     setPapers(snapshot.papers);
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);
