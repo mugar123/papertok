@@ -9,6 +9,7 @@ import {
   INTERACTION_PROFILE_SCHEMA_VERSION,
   MAX_AFFINITY_JSON_BYTES,
   MAX_CURATED_JSON_BYTES,
+  MAX_VIEWED_IDS,
   buildProfileFromInteractionDocuments,
   createEmptyInteractionProfile,
   curatedIds,
@@ -21,6 +22,7 @@ import {
   recordInteractionEvent,
   seedLearnedAffinities,
   serializeInteractionProfile,
+  viewedIds,
 } from './interactionProfile.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -529,4 +531,154 @@ test('a heavily used profile keeps its learned maps inside the stored budget', (
   const stored = serializeInteractionProfile(profile);
   assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
   assert.ok(Object.keys(readProfileSignals(deserializeInteractionProfile(stored), NOW).conceptAffinities).length > 0);
+});
+
+// The ring of papers the reader really viewed: what lets a second device skip
+// them. A view and a skip both leave an interaction document, so both count; a
+// like of a paper never shown does not, and the ring is never a reason to hide
+// a paper for good.
+const viewEvent = (paperId: string, kind = 'viewTime') => ({ paperId, kind, category: 'cs.AI', viewTime: 4 });
+const ringId = (index: number, width = 24) => `10.1000/${String(index).padStart(width - 8, '0')}`;
+const CURATED_NAMES = ['liked', 'saved', 'read', 'notInterested', 'readLater'] as const;
+
+test('a viewed or skipped paper joins the viewed ring, newest first, and a like alone does not', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, viewEvent('read-for-4s'), NOW);
+  recordInteractionEvent(profile, viewEvent('flicked-past', 'skip'), NOW);
+  recordInteractionEvent(profile, { paperId: 'liked-from-search', kind: 'like', category: 'cs.AI' }, NOW);
+  recordInteractionEvent(profile, viewEvent('read-again'), NOW);
+  recordInteractionEvent(profile, viewEvent('read-for-4s'), NOW);
+
+  assert.deepEqual(viewedIds(profile), ['read-for-4s', 'read-again', 'flicked-past']);
+});
+
+test('the viewed ring keeps the last 500 papers, outside the known papers and the seen filter', () => {
+  const profile = createEmptyInteractionProfile();
+  const total = MAX_VIEWED_IDS + 100;
+  for (let index = 0; index < total; index += 1) recordInteractionEvent(profile, viewEvent(ringId(index)), NOW);
+
+  assert.equal(MAX_VIEWED_IDS, 500);
+  const ring = viewedIds(profile);
+  assert.equal(ring.length, 500);
+  assert.equal(ring[0], ringId(total - 1));
+  assert.equal(ring[499], ringId(100));
+  // A viewed paper may be skipped, never hidden for good: it is not known, and the
+  // ring's overflow does not go to the filter the way a curated overflow does.
+  assert.equal(isPaperKnown(profile, ringId(total - 1)), false);
+  assert.equal(isPaperKnown(profile, ringId(0)), false);
+  assert.equal(profile.counters.evicted, 0);
+  assert.equal(serializeInteractionProfile(profile).seenFilter, undefined);
+});
+
+test('a paper viewed on one device is in the aggregate another device loads, and is still not known there', () => {
+  const deviceA = createEmptyInteractionProfile();
+  recordInteractionEvent(deviceA, viewEvent('paper-a1'), NOW);
+  recordInteractionEvent(deviceA, viewEvent('paper-a2', 'skip'), NOW);
+  const stored = serializeInteractionProfile(deviceA);
+
+  const deviceB = deserializeInteractionProfile(stored)!;
+  assert.deepEqual(viewedIds(deviceB), ['paper-a2', 'paper-a1']);
+  assert.equal(isPaperKnown(deviceB, 'paper-a1'), false);
+  // B keeps adding on top of what A saw.
+  recordInteractionEvent(deviceB, viewEvent('paper-b1'), NOW);
+  assert.deepEqual(viewedIds(deserializeInteractionProfile(serializeInteractionProfile(deviceB))), ['paper-b1', 'paper-a2', 'paper-a1']);
+});
+
+test('an aggregate stored before the viewed ring existed loads with an empty ring', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'liked', kind: 'like', category: 'cs.AI' }, NOW);
+  const stored = serializeInteractionProfile(profile);
+
+  assert.equal('viewed' in JSON.parse(stored.curated), false);
+  const reloaded = deserializeInteractionProfile(stored)!;
+  assert.deepEqual(viewedIds(reloaded), []);
+  assert.deepEqual(curatedIds(reloaded, 'liked'), ['liked']);
+});
+
+test('another account\'s ring is not carried into a fresh profile', () => {
+  const accountA = createEmptyInteractionProfile();
+  recordInteractionEvent(accountA, viewEvent('private-to-a'), NOW);
+
+  assert.deepEqual(viewedIds(createEmptyInteractionProfile()), []);
+  assert.deepEqual(viewedIds(deserializeInteractionProfile(serializeInteractionProfile(createEmptyInteractionProfile()))), []);
+  assert.deepEqual(viewedIds(null), []);
+});
+
+test('a rebuild from the documents recovers the ring the incremental path built', () => {
+  const documents: InteractionDocument[] = ['newest', 'viewed-twice', 'liked-only', 'skipped', 'oldest-view']
+    .map((id, index) => {
+      const data: InteractionDocumentData = { paperCategory: 'cs.AI', timestamp: new Date(NOW - index * DAY_MS).toISOString() };
+      if (id === 'liked-only') data.liked = true;
+      else if (id === 'skipped') data.skip = 1;
+      else data.viewTime = 5;
+      return { id, data };
+    });
+
+  const rebuilt = buildProfileFromInteractionDocuments(documents, { now: NOW });
+  assert.deepEqual(viewedIds(rebuilt), ['newest', 'viewed-twice', 'skipped', 'oldest-view']);
+
+  const incremental = createEmptyInteractionProfile();
+  [...documents].reverse().forEach(({ id, data }) => {
+    if (data.viewTime) recordInteractionEvent(incremental, viewEvent(id), NOW);
+    if (data.skip) recordInteractionEvent(incremental, viewEvent(id, 'skip'), NOW);
+    if (data.liked) recordInteractionEvent(incremental, { paperId: id, kind: 'like', category: 'cs.AI' }, NOW);
+  });
+  assert.deepEqual(viewedIds(incremental), viewedIds(rebuilt));
+});
+
+test('a rebuild over 500 views keeps the newest 500', () => {
+  const documents = Array.from({ length: 700 }, (_, index) => ({
+    id: ringId(index),
+    data: { viewTime: 5, paperCategory: 'cs.AI', timestamp: new Date(NOW - index * 1000).toISOString() } as InteractionDocumentData,
+  }));
+  const ring = viewedIds(buildProfileFromInteractionDocuments(documents, { now: NOW }));
+  assert.equal(ring.length, 500);
+  assert.equal(ring[0], ringId(0));
+  assert.equal(ring[499], ringId(499));
+});
+
+// The ring is the first thing the curated budget gives up: a reader's likes,
+// saves and rejections are what the feed must never repeat, the ring only helps.
+test('over the curated budget the viewed ring is trimmed before any curated set', () => {
+  const profile = createEmptyInteractionProfile();
+  const kinds = { liked: 'like', saved: 'save', read: 'read' } as const;
+  Object.entries(kinds).forEach(([name, kind]) => {
+    for (let index = 0; index < CURATED_ID_CAPS[name as keyof typeof kinds]; index += 1) {
+      recordInteractionEvent(profile, { paperId: `${name}:${ringId(index)}`, kind, category: 'cs.AI' }, NOW);
+    }
+  });
+  const curatedBytes = () => JSON.stringify(Object.fromEntries(CURATED_NAMES.map(name => [name, curatedIds(profile, name)]))).length;
+  // Fill the room below the budget, leaving 8 kB: the 500 views need about 17 kB.
+  let index = 0;
+  while (curatedBytes() < MAX_CURATED_JSON_BYTES - 8000) {
+    recordInteractionEvent(profile, { paperId: `notInterested:${ringId(index)}`, kind: 'notInterested', category: 'cs.AI' }, NOW);
+    index += 1;
+  }
+  assert.ok(index > 0 && index < CURATED_ID_CAPS.notInterested, `the fixture needs ${index} rejections`);
+  const before = CURATED_NAMES.map(name => curatedIds(profile, name).length);
+  for (let view = 0; view < MAX_VIEWED_IDS; view += 1) recordInteractionEvent(profile, viewEvent(ringId(view)), NOW);
+
+  const curated = JSON.parse(serializeInteractionProfile(profile).curated);
+  assert.deepEqual(CURATED_NAMES.map(name => curated[name].length), before, 'no curated set lost an id to make room for the ring');
+  assert.ok(curated.viewed.length > 0 && curated.viewed.length < MAX_VIEWED_IDS, `the ring was trimmed to ${curated.viewed.length}`);
+  assert.deepEqual(curated.viewed, viewedIds(profile).slice(0, curated.viewed.length), 'the newest views are the ones kept');
+  assert.ok(JSON.stringify(curated).length <= MAX_CURATED_JSON_BYTES);
+  assert.equal(profile.counters.evicted, 0, 'nothing trimmed went to the seen filter');
+});
+
+test('a ring on top of curated sets already past the budget is dropped before they are cut, and is not known afterwards', () => {
+  const profile = createEmptyInteractionProfile();
+  const kinds = { liked: 'like', saved: 'save', read: 'read', notInterested: 'notInterested' } as const;
+  Object.entries(kinds).forEach(([name, kind]) => {
+    for (let index = 0; index < CURATED_ID_CAPS[name as keyof typeof kinds]; index += 1) {
+      recordInteractionEvent(profile, { paperId: `${name}:${ringId(index, 40)}`, kind, category: 'cs.AI' }, NOW);
+    }
+  });
+  for (let view = 0; view < 20; view += 1) recordInteractionEvent(profile, viewEvent(ringId(view)), NOW);
+
+  const stored = serializeInteractionProfile(profile);
+  const curated = JSON.parse(stored.curated);
+  assert.ok(stored.curated.length <= MAX_CURATED_JSON_BYTES);
+  assert.equal(curated.viewed, undefined, 'the ring went first');
+  assert.equal(isPaperKnown(deserializeInteractionProfile(stored), ringId(0)), false, 'the dropped ring is not in the filter');
 });

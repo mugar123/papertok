@@ -1,7 +1,7 @@
 import type { PropsWithChildren } from 'react';
 import type { Paper, PaperFollowMatch } from '../models/Paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
-import type { CuratedSetName, InteractionDocumentData, InteractionEvent, ProfileSignals } from '../utils/interactionProfile.ts';
+import type { CuratedSetName, InteractionDocumentData, InteractionEvent, InteractionProfile, ProfileSignals } from '../utils/interactionProfile.ts';
 import type { PersonalCandidate } from '../services/personalRecommendationsService.ts';
 import type { ProfileLoadResult } from '../utils/interactionProfileLoader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendationEngine.ts';
@@ -93,6 +93,7 @@ import {
   readProfileSignals,
   recordInteractionEvent,
   seedLearnedAffinities,
+  viewedIds,
 } from '../utils/interactionProfile.ts';
 import {
   hasInteractionProfile,
@@ -422,6 +423,26 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     (paperId: string) => isPaperKnown(interactionProfile.current, paperId),
     [],
   );
+
+  // A card counts as seen once it was on screen: the dwell and the skip the
+  // card reports call this. A card a load only brought in stays in
+  // sessionSeenPapers, which dies with the page, so the next load may show it.
+  // The list kept across loads is read back before it is written, so a second
+  // tab's views are not overwritten.
+  const markPaperViewed = useCallback((paperId: string) => {
+    sessionSeenPapers.current.add(paperId);
+    const userId = activeUserId.current;
+    const viewed = readSeenPaperIds(userId);
+    viewed.delete(paperId);
+    viewed.add(paperId);
+    saveSeenPaperIds(userId, viewed);
+  }, []);
+
+  // What this account viewed on any device, as its aggregate has it, is passed
+  // over on load like what this browser viewed.
+  const carryViewedPapers = useCallback((profile: InteractionProfile) => {
+    viewedIds(profile).forEach(paperId => sessionSeenPapers.current.add(paperId));
+  }, []);
 
   const { trackEvent } = useAnalyticsConsent();
   const engagementWindow = useRef(emptyEngagementWindow());
@@ -904,9 +925,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             calculateAndAttachScore(p);
             sessionSeenPapers.current.add(p.id); // Mark as seen to avoid duplicate fetches
           });
-          
-          saveSeenPaperIds(activeUserId.current, sessionSeenPapers.current);
-          
+
           // Insert them in the papers queue ahead of the user
           setPapers(current => {
             if (current.findIndex(p => p.id === paper.id) === -1) return current; // paper not found in current feed
@@ -954,7 +973,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     activeUserId.current = userId;
     sessionSeenPapers.current = readSeenPaperIds(userId);
-    removeLegacySeenPaperIds();
+    removeLegacySeenPaperIds(null, userId);
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
@@ -1030,6 +1049,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           );
         }
         interactionProfile.current = profile;
+        carryViewedPapers(profile);
         // A profile that genuinely came back — including a legitimately empty one
         // for a new account — is safe to write back.
         interactionProfileHydrated.current = true;
@@ -1200,7 +1220,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       feedRequestId.current += 1;
       activeUserId.current = null;
     };
-  }, [isKnownPaper, user?.uid]);
+  }, [carryViewedPapers, isKnownPaper, user?.uid]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
@@ -1776,9 +1796,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         logRankingBatch('fresh feed', filtered);
       }
 
-      // NOW we add the final papers we are going to show to sessionSeenPapers
+      // The papers this load shows are not offered again this session. They are
+      // not "viewed" until a card reports it (markPaperViewed), so the next load
+      // may show one the reader never reached.
       filtered.forEach(p => sessionSeenPapers.current.add(p.id));
-      saveSeenPaperIds(activeUserId.current, sessionSeenPapers.current);
 
       // The page joins the list as it is now, not `papers` as this load found
       // it: while the page loaded, late answers may have filled or removed
@@ -2282,6 +2303,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
     if (timeInSeconds < 1) return;
+    markPaperViewed(paper.id);
     
     // ─── BOREDOM RESET: user is engaging, not bored ───
     if (timeInSeconds >= 5) {
@@ -2326,7 +2348,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking view time:', err);
       }
     }
-  }, [scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
+  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
 
   const trackPdfOpened = useCallback(async (paper: Paper) => {
     const userId = user?.uid;
@@ -2367,6 +2389,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     boredomLevel.current = Math.min(20, boredomLevel.current + skippedPapers.length);
     const timestamp = new Date().toISOString();
     skippedPapers.forEach((paper) => {
+      markPaperViewed(paper.id);
       countEngagement(paper.id, { cards: 1, skips: 1 });
       recordProfileEvent({
         paperId: paper.id,
@@ -2400,7 +2423,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking skips:', err);
       }
     }
-  }, [scheduleReRank, recordProfileEvent, countEngagement, user?.uid]);
+  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid]);
 
   const trackSkip = useCallback((paper: Paper) => trackSkips([paper]), [trackSkips]);
 

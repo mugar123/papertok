@@ -1,9 +1,13 @@
 type ScopedStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 import type { OwnList } from './ownLists.ts';
+import { MAX_VIEWED_IDS } from './interactionProfile.ts';
 
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
-const SEEN_PAPERS_KEY_PREFIX = 'papertok_seenIds:';
+// Until the list held only viewed papers it held every paper a load showed, so
+// it names cards that never were on screen. That key is never read; it is swept.
+const LOADED_PAPERS_KEY_PREFIX = 'papertok_seenIds:';
+const SEEN_PAPERS_KEY_PREFIX = 'papertok_viewedIds:';
 const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
 const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 const OWN_LISTS_KEY_PREFIX = 'papertok_ownLists:';
@@ -47,7 +51,7 @@ export function readSeenPaperIds(userId: string | null | undefined, storage?: Sc
   }
 }
 
-export function saveSeenPaperIds(userId: string | null | undefined, paperIds: Iterable<string>, storage?: ScopedStorage | null, limit = 500) {
+export function saveSeenPaperIds(userId: string | null | undefined, paperIds: Iterable<string>, storage?: ScopedStorage | null, limit = MAX_VIEWED_IDS) {
   const key = getSeenPapersStorageKey(userId);
   const target = getStorage(storage);
   if (!key || !target) return;
@@ -249,12 +253,13 @@ function getFollowStatsStorageKey(userId: string | null | undefined) {
   return `${FOLLOW_STATS_KEY_PREFIX}${encodeURIComponent(userId)}`;
 }
 
-export function removeLegacySeenPaperIds(storage?: ScopedStorage | null) {
+export function removeLegacySeenPaperIds(storage?: ScopedStorage | null, userId?: string | null) {
   const target = getStorage(storage);
   if (!target) return;
 
   try {
     target.removeItem(LEGACY_SEEN_PAPERS_KEY);
+    if (userId) target.removeItem(`${LOADED_PAPERS_KEY_PREFIX}${encodeURIComponent(userId)}`);
   } catch {
     // Storage cleanup is best effort.
   }
@@ -267,6 +272,7 @@ export function clearUserScopedStorage(userId: string | undefined, storage?: (Sc
   const safeUserId = String(userId).replace(/[^a-zA-Z0-9._-]/g, '_');
   const exactKeys = new Set([
     getSeenPapersStorageKey(userId),
+    `${LOADED_PAPERS_KEY_PREFIX}${encodedUserId}`,
     getDriftCheckStorageKey(userId),
     getFollowStatsStorageKey(userId),
     getOwnListsStorageKey(userId),

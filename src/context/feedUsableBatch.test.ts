@@ -10,7 +10,8 @@ import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
-import { readProfileSignals } from '../utils/interactionProfile.ts';
+import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interactionProfile.ts';
+import { readSeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
@@ -436,6 +437,108 @@ test('a reload whose start page has unseen papers asks for no other page', async
   assert.equal(state.papers.length, 15);
   assert.deepEqual(starts, [15]);
   assert.deepEqual(state.continuations, []);
+});
+
+// What "seen" means once it follows the reader. A card counts only after it
+// was on screen (a view or a skip writes its interaction document); a card a
+// load merely brought in is remembered in memory, so this session does not
+// offer it twice, and is forgotten by the next load.
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+}
+const callbackIn = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+const paperRecord = (id: string): FeedRecord => ({ id, title: `${id} scientific research`, authors: [], primaryCategory: 'cs.AI' });
+const viewedEvent = (paperId: string, kind = 'viewTime') => ({ paperId, kind, category: 'cs.AI', viewTime: 4 });
+// The real callbacks over one browser's storage; `user` is the signed-in account
+// and `seen` the feed's in-memory set.
+function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage() } = {}) {
+  const scope = {
+    sessionSeenPapers: seen, activeUserId: ref(user), viewedIds,
+    readSeenPaperIds: (userId: string | null) => readSeenPaperIds(userId, storage),
+    saveSeenPaperIds: (userId: string | null, ids: Iterable<string>) => saveSeenPaperIds(userId, ids, storage),
+  };
+  const markPaperViewed = callbackIn(componentCallback('markPaperViewed', ''), scope) as (paperId: string) => void;
+  const carryViewedPapers = callbackIn(componentCallback('carryViewedPapers', ''), scope) as (profile: ReturnType<typeof createEmptyInteractionProfile>) => void;
+  const tracking = {
+    markPaperViewed, user: user ? { uid: user } : null, IS_DEMO: true,
+    boredomLevel: ref(0), profileSignals: ref(readProfileSignals(null)), temporalPreference: ref(0),
+    countEngagement: () => {}, recordProfileEvent: () => {}, scheduleReRank: () => {}, traverseAndExpandNetwork: () => {},
+    dedupeInteractionPapers: <T>(papers: T[]) => papers,
+  };
+  const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid'), tracking) as (paper: FeedRecord, seconds: number) => Promise<void>;
+  const trackSkips = callbackIn(componentCallback('trackSkips', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (papers: FeedRecord[]) => Promise<void>;
+  return { markPaperViewed, carryViewedPapers, trackViewTime, trackSkips, stored: (userId = user) => [...readSeenPaperIds(userId, storage)] };
+}
+
+test('a load remembers the papers it shows for this session, not in the reader\'s viewed list', async t => {
+  t.mock.method(console, 'log', () => {});
+  const { state, env, run } = feed();
+  const writes: unknown[][] = [];
+  env.saveSeenPaperIds = (...args: unknown[]) => { writes.push(args); };
+  await run(true);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(writes, [], 'no card nobody viewed is written to the list kept across loads');
+  assert.ok(state.papers.every(paper => env.sessionSeenPapers.current.has(paper.id)), 'but this session does not offer it twice');
+});
+
+test('a card the reader views or skips joins the list kept across loads, a loaded one does not', async () => {
+  const { markPaperViewed, trackViewTime, trackSkips, stored } = viewing({ seen: ref(new Set(['loaded-only'])) });
+  await trackViewTime(paperRecord('viewed'), 4);
+  await trackViewTime(paperRecord('glanced-under-1s'), 0.5);
+  await trackSkips([paperRecord('skip-1'), paperRecord('skip-2')]);
+  assert.deepEqual(stored(), ['viewed', 'skip-1', 'skip-2']);
+  // Viewing again moves the paper to the end instead of repeating it.
+  markPaperViewed('viewed');
+  assert.deepEqual(stored(), ['skip-1', 'skip-2', 'viewed']);
+});
+
+test('the viewed list is the signed-in account\'s own, and keeps the last 500', () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  for (let index = 0; index < 520; index += 1) accountA.markPaperViewed(`paper-${index}`);
+  const accountB = viewing({ user: 'account-b', storage });
+  accountB.markPaperViewed('b-paper');
+
+  assert.equal(accountA.stored().length, 500);
+  assert.equal(accountA.stored()[0], 'paper-20');
+  assert.deepEqual(accountB.stored(), ['b-paper']);
+  // A guest has no list to write to.
+  const guest = viewing({ user: null, storage });
+  guest.markPaperViewed('guest-paper');
+  assert.deepEqual(guest.stored(), []);
+});
+
+// Device A's reader went through every paper of page 1 and nothing else; the
+// browser of device B has nothing of its own, only the aggregate B reads.
+function deviceBReadingAGroup(papers: FeedRecord[]) {
+  const deviceA = createEmptyInteractionProfile();
+  papers.forEach(paper => recordInteractionEvent(deviceA, viewedEvent(paper.id)));
+  return deserializeInteractionProfile(serializeInteractionProfile(deviceA))!;
+}
+
+test('what the reader viewed on another device is not shown again here, even on the first screen', async t => {
+  const deviceB = deviceBReadingAGroup(records('page-1'));
+  const { state, env, run, starts } = reloadOnPageOne(t);
+  viewing({ seen: env.sessionSeenPapers }).carryViewedPapers(deviceB);
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(1).includes(id)), [], 'nothing A viewed comes back');
+  assert.deepEqual(starts, [15, 90], 'the reload skipped past A\'s page');
+});
+
+test('a short pool the other device viewed whole still gives a feed', async t => {
+  const pool = records('page-1', 6);
+  const deviceB = deviceBReadingAGroup(pool);
+  const { state, env, run } = reloadOnPageOne(t, { page: start => start === 15 ? pool : [] });
+  viewing({ seen: env.sessionSeenPapers }).carryViewedPapers(deviceB);
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.deepEqual(state.papers.map(paper => paper.id), pool.map(paper => paper.id), 'the feed is not empty: the viewed pool is shown again');
+  assert.equal(state.hasMore, true);
 });
 
 test('a short screen schedules its next page and preserves papers when it fills', async () => {

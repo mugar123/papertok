@@ -16,6 +16,9 @@ export interface InteractionProfile {
   // In memory only: what this session has engaged with, faded on every event.
   session: Map<string, number>;
   curated: Map<CuratedSetName, { order: string[]; members: Set<string> }>;
+  // The papers this account really viewed, newest first. Not a curated set: it
+  // is never known to the feed and never reaches the seen filter.
+  viewed: string[];
   seenFilter: BloomFilter | null;
   counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
   sourceDocCount: number; truncated: boolean;
@@ -155,6 +158,10 @@ export const CURATED_ID_CAPS = Object.freeze({
   readLater: 1000,
 });
 
+// The ring of viewed papers a second device skips on load. About 13 kB inside
+// `curated`, and the first thing the curated budget gives up.
+export const MAX_VIEWED_IDS = 500;
+
 export const MAX_CURATED_JSON_BYTES = 320000;
 export const MAX_AFFINITY_JSON_BYTES = 120000;
 export const MAX_TRACKED_CATEGORIES = 300;
@@ -192,6 +199,7 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     positives: [],
     session: new Map(),
     curated: new Map(CURATED_SETS.map(name => [name, { order: [], members: new Set() }])),
+    viewed: [],
     seenFilter: null,
     counters: { interactions: 0, evicted: 0 },
     // Papers already counted towards sourceDocCount in this session. In memory
@@ -498,6 +506,22 @@ function addCurated(profile: InteractionProfile, name: CuratedSetName, paperId: 
   }
 }
 
+// A view and a skip both mean the card was on screen. Unlike a curated set, the
+// oldest id simply falls off: the feed may show a paper again, it must only not
+// do so right after the reader saw it.
+function addViewed(profile: InteractionProfile, paperId: string) {
+  if (typeof paperId !== 'string' || !paperId) return;
+  const position = profile.viewed.indexOf(paperId);
+  if (position === 0) return;
+  if (position > 0) profile.viewed.splice(position, 1);
+  profile.viewed.unshift(paperId);
+  if (profile.viewed.length > MAX_VIEWED_IDS) profile.viewed.length = MAX_VIEWED_IDS;
+}
+
+export function viewedIds(profile: InteractionProfile | null | undefined) {
+  return profile ? [...profile.viewed] : [];
+}
+
 function removeCurated(profile: InteractionProfile, name: CuratedSetName, paperId: string) {
   const set = curatedSet(profile, name);
   if (!set || !set!.members.has(paperId)) return;
@@ -609,12 +633,14 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       impact = IMPACT_PDF_BOUNCE;
       break;
     case 'skip':
+      addViewed(profile, event.paperId);
       recordExposure(profile, category, false);
       impact = IMPACT_SKIP;
       break;
     case 'viewTime': {
       const seconds = Number(event.viewTime);
       if (!Number.isFinite(seconds) || seconds <= 0) return profile;
+      addViewed(profile, event.paperId);
       // Judged against the median as it stood before this view moved it.
       const median = profile.dwell.median;
       impact = viewTimeImpact(seconds, median);
@@ -705,11 +731,13 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     let strongRead = false;
     if (Number.isFinite(seconds) && seconds > 0) {
       const median = profile.dwell.median;
+      addViewed(profile, id);
       viewImpacts.set(id, viewTimeImpact(seconds, median));
       recordExposure(profile, category, seconds >= median);
       strongRead = seconds >= median * STRONG_READ_RATIO;
       observeDwell(profile.dwell, seconds);
     } else if (data.skip) {
+      addViewed(profile, id);
       recordExposure(profile, category, false);
     }
     if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, category);
@@ -790,8 +818,18 @@ function serializeAffinities(profile: InteractionProfile) {
   return serialized;
 }
 
-function trimCuratedToBudget(payload: Record<CuratedSetName, string[]>) {
+type CuratedPayload = Record<CuratedSetName, string[]> & { viewed?: string[] };
+
+function trimCuratedToBudget(payload: CuratedPayload) {
   let serialized = JSON.stringify(payload);
+  // The ring only spares a device one skip, so it goes before any set that
+  // keeps a paper out of the feed. What it drops is not sent to the filter.
+  while (serialized.length > MAX_CURATED_JSON_BYTES && payload.viewed) {
+    const kept = payload.viewed.slice(0, Math.floor(payload.viewed.length * 0.75));
+    if (kept.length > 0) payload.viewed = kept;
+    else delete payload.viewed;
+    serialized = JSON.stringify(payload);
+  }
   while (serialized.length > MAX_CURATED_JSON_BYTES) {
     const largest = CURATED_SETS
       .map(name => [name, payload[name].length] as const)
@@ -809,10 +847,11 @@ function trimCuratedToBudget(payload: Record<CuratedSetName, string[]>) {
  * @returns {object} the Firestore document body.
  */
 export function serializeInteractionProfile(profile: InteractionProfile): StoredInteractionProfile {
-  const curatedPayload = {} as Record<CuratedSetName, string[]>;
+  const curatedPayload = {} as CuratedPayload;
   CURATED_SETS.forEach((name) => {
     curatedPayload[name] = curatedIds(profile, name);
   });
+  if (profile.viewed.length > 0) curatedPayload.viewed = viewedIds(profile);
 
   const curatedJson = trimCuratedToBudget(curatedPayload);
   // Everything the budget trimmer dropped has to reach the Bloom filter too.
@@ -899,7 +938,7 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
       profile.dwell.median = clamp(median, DWELL_MEDIAN_MIN_SECONDS, DWELL_MEDIAN_MAX_SECONDS);
     }
 
-    const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName, unknown[]>>;
+    const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName | 'viewed', unknown[]>>;
     CURATED_SETS.forEach((name) => {
       const ids = Array.isArray(curated[name]) ? curated[name]! : [];
       const set = curatedSet(profile, name);
@@ -909,6 +948,11 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
         set!.order.push(paperId);
       });
     });
+
+    if (Array.isArray(curated.viewed)) {
+      profile.viewed = [...new Set(curated.viewed.filter((paperId): paperId is string => typeof paperId === 'string' && paperId.length > 0))]
+        .slice(0, MAX_VIEWED_IDS);
+    }
 
     if (Array.isArray(affinities.positives)) {
       profile.positives = affinities.positives
