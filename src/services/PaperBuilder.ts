@@ -76,7 +76,7 @@ export class PaperBuilder {
       huggingFaceUpvotes: data.huggingFaceUpvotes ?? undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
-      year: data.year || new Date().getFullYear(),
+      year: data.year || undefined,
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
@@ -268,6 +268,16 @@ export class PaperBuilder {
     if ((enrichmentData.topics?.length as number) > 0) merged.topics = enrichmentData.topics;
     if (enrichmentData.primaryTopic || enrichmentData.primary_topic) {
       merged.primaryTopic = enrichmentData.primaryTopic || enrichmentData.primary_topic;
+    }
+    // arXiv's categories are the paper's own classification, so they are taken
+    // whichever record arrived first. An OpenAlex base lists concept names as
+    // categories ("Mutual information" for 2605.02209, which arXiv files under
+    // cs.AI); they stay in `concepts`. A record without an arXiv primary, such
+    // as the abstract recovery, changes no category.
+    if (enrichmentData.sources?.primary === 'arxiv' && enrichmentData.primaryCategory) {
+      merged.primaryCategory = enrichmentData.primaryCategory;
+      merged.categories = enrichmentData.categories;
+      merged.allCategories = enrichmentData.allCategories || enrichmentData.categories;
     }
     if (enrichmentData.institutions?.length) {
       const institutions = [...(merged.institutions || []), ...enrichmentData.institutions];

@@ -48,7 +48,7 @@ export default function PaperOverlay({ open, onClose, onExitComplete, label, chi
           <DialogClose
             render={(
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
                 className="paper-overlay-back"
                 aria-label={'Back'}

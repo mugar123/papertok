@@ -24,6 +24,7 @@ import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitatio
 import { fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { openAlexClient } from '../services/openAlexClient.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
@@ -96,7 +97,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     recommendationWeights: ref({}), takeFeedPage, mergeFreshFeedPage,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
-    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
+    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()), pubmedCategoryQuery,
     awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract,
     recoverFeedAbstracts: (async () => []) as (papers: Paper[]) => Promise<Partial<Paper>[]>,
     mergeOpenAlexEnrichment, preserveFeedAbstracts, mergeFeedAbstracts, mergeEuropePmcEnrichment, mergeICiteEnrichment,
@@ -541,6 +542,45 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
     await run(true);
     assert.equal(state.error, null);
     assert.deepEqual(state.papers.map(paper => paper.primaryCategory), [category]);
+  });
+}
+
+// Every PubMed lane sends the query `pubmedCategoryQuery` builds, which leaves
+// out Methods in Molecular Biology and records dated after today.
+const BIOMEDICAL_LEAVES = [
+  { id: 'bio.mol', label: 'Molecular Biology', area: 'bio' },
+  // The nearby category exploration adds, and one outside the reader's areas for boredom.
+  { id: 'bio.gen', label: 'Genetics', area: 'bio' },
+  { id: 'med.onco', label: 'Oncology', area: 'med' },
+];
+const withoutDay = (query: string) => query.replace(/\d{4}\/\d{2}\/\d{2}\[dp\]/, 'today[dp]');
+for (const [name, page, boredom, asked] of [
+  ['the first page', 0, 0, [['bio.mol']]],
+  ['a later page with its exploration', 1, 0, [['bio.mol'], ['bio.gen']]],
+  ['a bored reader\'s later page', 1, 8, [['bio.mol'], ['bio.gen'], ['med.onco']]],
+] as const) {
+  test(`${name} asks PubMed with the feed's PubMed query for each lane`, async () => {
+    const queries: string[] = [];
+    const { state, env, run } = feed({ fast: [], page });
+    Object.assign(env, {
+      userPreferences: ['bio.mol'],
+      CATEGORIES,
+      getAllLeafCategories: () => BIOMEDICAL_LEAVES,
+      PubmedAdapter: class {
+        search(query: string) {
+          queries.push(query);
+          return Promise.resolve({ papers: records(`pubmed-${queries.length}`) });
+        }
+      },
+    });
+    env.boredomLevel.current = boredom;
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(
+      queries.map(withoutDay),
+      asked.map(categories => withoutDay(pubmedCategoryQuery(categories))),
+      'the chosen, nearby and random lanes, in that order',
+    );
   });
 }
 

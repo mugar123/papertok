@@ -11,6 +11,7 @@ import {
   nextExplorerRowBudget,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
+  countPapersByArea,
   getPaperCitationCount,
   hasKnownPaperCitationCount,
   pinSourcePaper,
@@ -301,4 +302,17 @@ test('el número que promete la puerta sale de la entidad, y solo si es creíble
   assert.equal(guestGateTotal({}, 2), null);
   assert.equal(guestGateTotal(null, 2), null);
   assert.equal(guestGateTotal({ works_count: '1234' as never }, 2), null, 'un total que no es un número no se enseña');
+});
+
+test('area counts agree with what each area filter keeps, cross-listed papers in both', () => {
+  const papers = [
+    { id: 'a', primaryCategory: 'astro-ph.CO', categories: ['astro-ph.CO'] },
+    { id: 'b', primaryCategory: 'cs.LG', categories: ['cs.LG', 'astro-ph.CO'] },
+    { id: 'c', primaryCategory: 'math.DG', categories: ['math.DG'] },
+  ] as Partial<Paper>[];
+  const counts: Record<string, number> = countPapersByArea(papers, ['physics', 'cs', 'math', 'bio']);
+  for (const key of ['physics', 'cs', 'math', 'bio']) {
+    assert.equal(counts[key], filterAndSortEntityPapers(papers, { filters: { category: key } }).length);
+  }
+  assert.deepEqual(counts, { physics: 2, cs: 1, math: 1, bio: 0 });
 });

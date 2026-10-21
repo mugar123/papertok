@@ -80,6 +80,14 @@ test('a stored copy keeps the branch the feed filed it under, every category, an
     'a copy with only a primary still gets its one-item list');
 });
 
+// `savedPapers` keeps `published` and no year. A paper the feed showed with no
+// date, such as a PubMed record printed next year, came back from Saved with
+// the current year on it.
+test('a stored copy with neither a year nor a date shows no year', () => {
+  assert.equal(paperLegacyAdapter({ id: 'pmid:42879010', title: 'T' }).year, undefined);
+  assert.equal(paperLegacyAdapter({ id: 'pmid:42879010', title: 'T', year: 2025 }).year, 2025);
+});
+
 test('a paper that already has the new shape passes through untouched', () => {
   const modern = { id: 'openalex:W1', sources: { primary: 'openalex', enrichedBy: [] }, title: 'T' };
   assert.equal(paperLegacyAdapter(modern), modern);

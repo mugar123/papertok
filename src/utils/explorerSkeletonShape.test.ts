@@ -73,7 +73,7 @@ test('the stats grid reserves the cells that usually land', () => {
 });
 
 test('the strip under the name differs by what the page puts there', () => {
-  assert.equal(explorerSkeletonShape('author').identity, 'topics');
+  assert.equal(explorerSkeletonShape('author').identity, 'none');
   assert.equal(explorerSkeletonShape('institution').identity, 'credentials');
   assert.equal(explorerSkeletonShape('project').identity, 'none');
 });

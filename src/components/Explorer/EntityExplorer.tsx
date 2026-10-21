@@ -1,6 +1,6 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
 import type { Transition } from 'framer-motion';
-import type { Paper, PaperAuthor } from '../../models/Paper.ts';
+import type { Paper } from '../../models/Paper.ts';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/openAlexTypes.ts';
 import type { Project } from '../../services/openAireService.ts';
 import type { RecentImpact } from '../../services/openAlexService.ts';
@@ -20,10 +20,9 @@ interface VisitRecord {
   authorsPage: number; hasMoreAuthors: boolean;
   wikiInfo: (WikiInfo & { _requestKey: string }) | null;
   settledWikiRequestKey: string; loadedWikiImageUrl: string;
-  isWikiDescriptionExpandable: boolean; wikiDescriptionExpandedHeight: number; isWikiDescriptionExpanded: boolean;
   recentImpact: RecentImpact | null;
 }
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -35,20 +34,15 @@ import {
   CaretDown,
   CaretRight,
   CircleNotch,
-  CloudSlash,
-  DownloadSimple,
-  Eye,
   FileText,
   Funnel,
   Globe,
   Lightbulb,
   MagnifyingGlass,
   MapPin,
-  Medal,
   SealCheck,
   ShareNetwork,
   SlidersHorizontal,
-  Tag,
   Users,
   X,
 } from '@phosphor-icons/react';
@@ -66,6 +60,7 @@ import {
   filterAndSortEntityPapers,
   getPaperCitationCount,
   guestGateTotal,
+  countPapersByArea,
   guestPreviewRows,
   hasKnownPaperCitationCount,
   nextExplorerRowBudget,
@@ -73,21 +68,24 @@ import {
   shouldShowGuestGate,
   sourceArxivIdFrom,
 } from '../../utils/entityExplorer.ts';
+import { toast } from 'sonner';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useHeightSettle } from '../../hooks/useHeightSettle.ts';
-import { useActiveTabRule } from '../../hooks/useActiveTabRule.ts';
 import { useIsPageArriving, useAfterPageArrival } from '../../hooks/usePageArrival.ts';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
 import { CATEGORIES } from '../../data/categories.ts';
-import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
+import { areaAccentForCategory as getAreaGradient } from '../../utils/areaAccent.ts';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.ts';
 import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.ts';
-import { Menu as MenuPrimitive } from '@base-ui/react/menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import { Button } from '../ui/button.tsx';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.tsx';
+import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
+import useIsPhone from '../../hooks/useIsPhone.ts';
+import useQuickSave from '../../hooks/useQuickSave.ts';
+import useClipTooltip from '../../hooks/useClipTooltip.ts';
 import { Switch } from '../ui/switch.tsx';
 import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.tsx';
@@ -97,15 +95,16 @@ import { useLanguage } from '../../context/LanguageContext.tsx';
 import PaperCard from '../Feed/PaperCard.tsx';
 import PaperOverlay from '../Feed/PaperOverlay.tsx';
 import PDFViewer from '../PDF/PDFViewer.tsx';
-import ScientificText from '../ScientificText.ts';
 import RecentImpactStat from './RecentImpactStat.tsx';
+import { ListRowAuthors, PaperListRow } from '../Lists/ListRow.tsx';
+import SharePanel from '../Feed/SharePanel.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 import { ExplorerEmptyState } from './ExplorerEmptyState.tsx';
 import ExplorerGuestGate from './ExplorerGuestGate.tsx';
 import { pickEmptyVariant } from './explorerEmptyVariant.ts';
-import { normalizeScientificMarkup } from '../../utils/latex.ts';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation.ts';
 import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.ts';
-import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
 import { settleWithin } from '../../utils/asyncTiming.ts';
 import { fetchTopicPapers } from '../../services/topicRetrievalService.ts';
 import { loadEntityWikiInfo } from '../../services/wikiService.ts';
@@ -169,6 +168,95 @@ const OrcidCardSkeleton = () => (
     </div>
   </div>
 );
+
+// One line in the side sheet; resting on a cut name shows it whole.
+function ParticipantName({ name }: { name: string }) {
+  const { ref, ...tooltip } = useClipTooltip();
+  return (
+    <Tooltip {...tooltip}>
+      <TooltipTrigger render={<span ref={ref} className="project-participant-name" />}>{name}</TooltipTrigger>
+      <TooltipContent>{name}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+// Up to the last ten years of an author's output, from OpenAlex's per-year
+// counts, ending this year. Inside the span OpenAlex reports, a missing year
+// is a year with none; before its earliest year nothing is known, so the
+// chart starts there instead of drawing zeros. This year is still running:
+// its bar is lighter.
+const ACTIVITY_YEARS = 10;
+function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count: number }> }) {
+  const [currentYear] = useState(() => new Date().getFullYear());
+  const byYear = new Map(counts.map(count => [count.year, count.works_count]));
+  const lastYear = currentYear;
+  const firstYear = Math.max(lastYear - ACTIVITY_YEARS + 1, Math.min(...counts.map(count => count.year)));
+  const years = Array.from({ length: lastYear - firstYear + 1 }, (_, i) => firstYear + i);
+  const values = years.map(year => byYear.get(year) ?? 0);
+  const max = Math.max(...values, 1);
+  const summary = years.map((year, i) => `${year}: ${values[i]}`).join(', ');
+  return (
+    <figure className="ehc-activity" style={{ '--years': years.length }} aria-label={`Papers per year, ${years[0]} to ${lastYear}. ${summary}`}>
+      <div className="ehc-activity-head" aria-hidden="true">
+        <span>{'Papers per year'}</span>
+        <span>{`${years[0]}–${lastYear}`}</span>
+      </div>
+      <div className="ehc-activity-bars" aria-hidden="true">
+        {values.map((value, i) => (
+          <span
+            key={years[i]}
+            className={years[i] === currentYear ? 'is-running' : undefined}
+            style={{ '--v': value / max, '--i': i }}
+            title={`${years[i]}: ${value} ${value === 1 ? 'paper' : 'papers'}`}
+          />
+        ))}
+      </div>
+      <div className="ehc-activity-years" aria-hidden="true">
+        {years.map(year => <span key={year}>{String(year).slice(2)}</span>)}
+      </div>
+    </figure>
+  );
+}
+
+// The side sheet stays near the height of the reading column beside it.
+const PARTICIPANTS_SHOWN = 3;
+
+// Where a project stands between its dates. With no published end there is
+// nothing to measure today against, so the line runs dashed from the start
+// and no point is placed for today.
+function ProjectTimeline({ startDate, endDate }: { startDate: string; endDate?: string }) {
+  const [now] = useState(Date.now);
+  const start = Date.parse(startDate);
+  const end = endDate ? Date.parse(endDate) : NaN;
+  if (!Number.isFinite(start)) return null;
+  const startYear = startDate.split('-')[0];
+  const endYear = endDate?.split('-')[0];
+  const hasEnd = Number.isFinite(end) && end > start;
+  const ended = hasEnd && now >= end;
+  const progress = hasEnd ? Math.min(1, Math.max(0, (now - start) / (end - start))) : 0;
+  return (
+    <div
+      className="ehc-timeline"
+      style={{ '--timeline-progress': progress }}
+      role="img"
+      aria-label={`Started ${startYear}; ${ended ? `ended ${endYear}` : hasEnd ? `ends ${endYear}` : 'no end date published'}`}
+    >
+      <span className="ehc-timeline-title" aria-hidden="true">{'Duration'}</span>
+      <div className="ehc-timeline-track" aria-hidden="true">
+        <span className="ehc-timeline-done" />
+        {!ended && <span className={`ehc-timeline-rest${hasEnd ? '' : ' is-open'}`} />}
+        <span className="ehc-timeline-dot" />
+        {hasEnd && !ended && <span className="ehc-timeline-dot ehc-timeline-dot--now" />}
+        {hasEnd && <span className={`ehc-timeline-dot ehc-timeline-dot--end${ended ? ' is-reached' : ''}`} />}
+      </div>
+      <div className="ehc-timeline-labels" aria-hidden="true">
+        <span>{`Start ${startYear}`}</span>
+        {hasEnd && !ended && progress > 0.2 && progress < 0.8 && <span className="ehc-timeline-now">{'Today'}</span>}
+        <span>{ended ? `Ended ${endYear}` : hasEnd ? `Ends ${endYear}` : 'No end date'}</span>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The project's summary box before the grant has answered. The live box is
@@ -248,6 +336,7 @@ export default function EntityExplorer({
   const appChromeClass = appChrome ? ' explorer--app' : '';
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
+  const isPhone = useIsPhone();
   // While the route transition is still moving this page, the settle stands
   // down: see the measurement in usePageArrival.js.
   const isPageArriving = useIsPageArriving();
@@ -256,6 +345,7 @@ export default function EntityExplorer({
   const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
+  const handleSaveToList = useQuickSave(onSaveToList);
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
@@ -331,16 +421,6 @@ export default function EntityExplorer({
 
   const [wikiInfo, setWikiInfo] = useState(() => resumed?.wikiInfo ?? null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState(() => resumed?.settledWikiRequestKey ?? '');
-  // Whether this entity's Wikipedia block has opened. Once it has, a re-lookup
-  // (the language changed, a localized name landed) keeps it mounted on its
-  // rows instead of folding it out and in — see `showWikiBlock`.
-  const [wikiBlockOpened, setWikiBlockOpened] = useState(false);
-  // The fold's removal is `AnimatePresence`'s own state update, which never
-  // reaches this component — so the ~155px the block was holding would drop in
-  // an unanimated reflow after its fade. Bumping this on `onExitComplete` gives
-  // the settle the commit it needs: it remembered the height WITH the block on
-  // the commit that started the exit, and animates from there to the short one.
-  const [wikiFoldExits, setWikiFoldExits] = useState(0);
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState(() => resumed?.loadedWikiImageUrl ?? '');
   const [orcidInfo, setOrcidInfo] = useState<Awaited<ReturnType<typeof getOrcidRecord>>>(null);
   // A known ORCID reserves its slot on the very first live frame. Waiting for
@@ -354,7 +434,6 @@ export default function EntityExplorer({
   // the skeleton rows — a project's first page can take close to 17s
   // (OpenAIRE's own budget, then arXiv enrichment and DOI lookups) — so the
   // reader gets a word for what is being waited on instead of a silent wait.
-  const [isPapersLoadSlow, setIsPapersLoadSlow] = useState(false);
   // How many rows of the list are mounted (utils/entityExplorer.js says why
   // it is not all of them at once).
   const [rowBudget, setRowBudget] = useState(EXPLORER_ROW_CHUNK);
@@ -385,13 +464,9 @@ export default function EntityExplorer({
   const [experienceToggled, setExperienceToggled] = useState(false);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
-  const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(() => Boolean(resumed?.isWikiDescriptionExpanded));
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
-  const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(() => resumed?.wikiDescriptionExpandedHeight ?? 0);
   const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
-  const [isWikiDescriptionExpandable, setIsWikiDescriptionExpandable] = useState(() => Boolean(resumed?.isWikiDescriptionExpandable));
   const [resolvingParticipant, setResolvingParticipant] = useState<string | undefined | null>(null);
-  const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [isResolvingAuthorInstitution, setIsResolvingAuthorInstitution] = useState(false);
   const [authorInstitutionNavigationError, setAuthorInstitutionNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(() => resumed?.recentImpact ?? null);
@@ -415,7 +490,6 @@ export default function EntityExplorer({
   const observerAuthorsRef = useRef<HTMLDivElement | null>(null);
   const viewedEntityRef = useRef('');
   const projectSummaryTextRef = useRef<HTMLParagraphElement | null>(null);
-  const wikiDescriptionTextRef = useRef<HTMLParagraphElement | null>(null);
   const localizedTopicEntity = useMemo(
     () => entity?._localTopic ? getLocalTopicEntity(entity.id || id) : null,
     [entity, id],
@@ -521,8 +595,14 @@ export default function EntityExplorer({
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
   const safeRorUrl = safeExternalUrl(entity?.ror);
   const safeProjectWebsiteUrl = safeExternalUrl(entity?.websiteUrl);
-  const safeWikiUrl = safeExternalUrl(visibleWikiInfo?.url);
   const safeHomepageUrl = safeExternalUrl(entity?.homepage_url);
+  // Projects and institutions split their hero: a reading column, and a sheet
+  // of actions, facts, relations and links beside it.
+  const isOpenAlexTopic = type === 'topic' && Boolean(entity) && !entity?._localTopic && !entity?._queryTopic;
+  const usesSheet = type === 'project' || type === 'institution' || isOpenAlexTopic;
+  const heroLinks = [
+    ...(safeHomepageUrl ? [{ label: 'Official website', href: safeHomepageUrl }] : []),
+  ];
   const canLoadWikiInfo = Boolean(
     entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
   );
@@ -538,39 +618,6 @@ export default function EntityExplorer({
     _localTopic: entityIsLocalTopic,
     ids: { wikidata: entityWikidataId, wikipedia: entityWikipediaUrl },
   }), [entityIsLocalTopic, entityIsQueryTopic, entityWikidataId, entityWikipediaUrl]);
-  const isWikiRequestPending = canLoadWikiInfo && settledWikiRequestKey !== wikiRequestKey;
-  const topicFallbackDescription = ['concept', 'topic'].includes(type)
-    ? localizedTopicEntity?.description
-      || (typeof entity?.description === 'string' ? entity.description : '')
-    : '';
-  // The local description — a category's tagline, an OpenAlex topic's own
-  // sentence — is what the block shows once Wikipedia has MISSED, not a first
-  // draft to show while it is being asked. Painted as prose with the request
-  // still in flight, the box took two heights in a row and the hero settled
-  // twice (measured from cold at 1280×900 with `explorer-hero-frames.mjs`: on
-  // T11090 the body went 109 → 170px when the OpenAlex description landed,
-  // held still for 450ms, then 170 → 243px when Wikipedia did; on hep-ph,
-  // born with the tagline at 58px, one 97px settle the moment the paragraph
-  // came). Held on the grey rows until the request settles, the box moves
-  // once, and by 9px (146 → 155): the rows are measured to the paragraph's
-  // own line box for exactly this.
-  const wikiDescription = isWikiRequestPending ? '' : (visibleWikiInfo?.extract || topicFallbackDescription);
-  // An item with no article in the reader's language falls back to English,
-  // and OpenAlex's own description is English too: either way the paragraph
-  // says so, so a screen reader in the Spanish UI does not read it as Spanish.
-  const wikiDescriptionLanguage = visibleWikiInfo?.extract
-    ? visibleWikiInfo.language
-    : (localizedTopicEntity?.description ? language : 'en');
-
-  // The block opens the first time its lookup settles WITH content — never on
-  // `homepage_url` alone while the prose is still out, which would settle the
-  // box twice — and stays open from then on through a re-lookup, holding its
-  // rows until the new paragraph replaces them in place. Closed only by a
-  // settled lookup that finds nothing. Adjusted during render, the documented
-  // way to derive state from a prop, so the settling commit is the opening one.
-  const wikiHasContent = Boolean(wikiDescription || entity?.homepage_url);
-  if (!isWikiRequestPending && wikiHasContent && !wikiBlockOpened) setWikiBlockOpened(true);
-  const showWikiBlock = wikiBlockOpened && (wikiHasContent || isWikiRequestPending);
   const hasLoadedWikiImage = Boolean(
     visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
   );
@@ -589,19 +636,12 @@ export default function EntityExplorer({
   // The tab strip's travelling rule (see the strip below for why). The row is
   // held in STATE, not a ref: the live strip does not exist while the entity
   // loads, and a ref would be read once as null and never again.
-  const [tabsRow, setTabsRow] = useState<HTMLDivElement | null>(null);
-  const tabRule = useActiveTabRule(tabsRow, activeTab, '.ee-tab.active');
 
   const heroBodyRef = useRef<HTMLDivElement | null>(null);
   useHeightSettle(
     heroBodyRef,
-    // Everything that changes this box's height and is worth a movement. The
-    // Wikipedia block's three are here on purpose: for two days they were
-    // deliberately left out so the fold could animate its own height, and the
-    // settle grew a latch, a re-sync and a hand-over to stay out of its way —
-    // measured 2026-09-09, that machinery was the bug. One owner: the block's
-    // contents fade in, and its SPACE is carried here like the ORCID card's.
-    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits],
+    // Everything that changes this box's height and is worth a movement.
+    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage],
     // A gentle ease-in-out rather than the hook's expo-out default. What
     // travels here is everything under the hero — the tab strip, the list —
     // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
@@ -626,14 +666,9 @@ export default function EntityExplorer({
       wikiInfo,
       settledWikiRequestKey,
       loadedWikiImageUrl,
-      // The "read more" toggle is a measurement taken a frame after mount;
-      // without these three the block came back 27px short for that frame.
-      isWikiDescriptionExpandable,
-      wikiDescriptionExpandedHeight,
-      isWikiDescriptionExpanded,
       recentImpact,
     });
-  }, [activeTab, authorsOpened, authorsPage, debouncedSearch, entityAuthors, hasMoreAuthors, isWikiDescriptionExpandable, isWikiDescriptionExpanded, loadedWikiImageUrl, recentImpact, settledWikiRequestKey, visitKey, wikiDescriptionExpandedHeight, wikiInfo]);
+  }, [activeTab, authorsOpened, authorsPage, debouncedSearch, entityAuthors, hasMoreAuthors, loadedWikiImageUrl, recentImpact, settledWikiRequestKey, visitKey, wikiInfo]);
 
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
@@ -667,6 +702,12 @@ export default function EntityExplorer({
       : type === 'project'
         ? { en: 'this project' }
         : { en: 'this person' };
+  const activeFilterCount = [filters?.category, filters?.peerReviewed, filters?.dateRange].filter(Boolean).length;
+  const activeFilterChips = [
+    filters.category && { key: 'category', label: CATEGORIES[filters.category as keyof typeof CATEGORIES]?.label || filters.category, clear: () => setFilters({ ...filters, category: '' }) },
+    filters.dateRange && { key: 'date', label: filters.dateRange === 'last_year' ? 'Last year' : 'Last 5 years', clear: () => setFilters({ ...filters, dateRange: '' }) },
+    filters.peerReviewed && { key: 'peer', label: 'Peer-reviewed', clear: () => setFilters({ ...filters, peerReviewed: false }) },
+  ].filter((chip): chip is { key: string; label: string; clear: () => void } => Boolean(chip));
   const guestSearchLabel = `Search ${guestSearchScope.en} · needs an account`;
 
   const measureExpandableDescriptions = useCallback(() => {
@@ -679,13 +720,12 @@ export default function EntityExplorer({
     };
 
     measure(projectSummaryTextRef.current, setProjectSummaryExpandedHeight, setIsProjectSummaryExpandable);
-    measure(wikiDescriptionTextRef.current, setWikiDescriptionExpandedHeight, setIsWikiDescriptionExpandable);
   }, []);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(measureExpandableDescriptions);
     return () => window.cancelAnimationFrame(frame);
-  }, [entity?.summary, measureExpandableDescriptions, wikiDescription]);
+  }, [entity?.summary, measureExpandableDescriptions]);
 
   // `resize` fires repeatedly on mobile — as the URL bar collapses while
   // scrolling, and again when the soft keyboard opens — and the unthrottled
@@ -802,7 +842,7 @@ export default function EntityExplorer({
       setPapers([]);
       setIsLoadingPapers(true);
       setSearchQuery('');
-      // A resumed visit keeps its authors, its Wikipedia block and its
+      // A resumed visit keeps its authors, its Wikipedia lookup and its
       // impact figure: they are what the reader left, and the fetches
       // below only upgrade them. Once, for the mount that resumed.
       const resuming = resumedEntityRef.current;
@@ -810,7 +850,6 @@ export default function EntityExplorer({
       if (!resuming) {
         setEntityAuthors([]);
         setWikiInfo(null);
-        setWikiBlockOpened(false);
       }
       setOrcidInfo(null);
       setIsLoadingOrcid(type === 'author' && Boolean((bornWith as ExplorerEntity | null)?.orcid || extractOrcid(id)));
@@ -818,12 +857,7 @@ export default function EntityExplorer({
       setExperienceToggled(false);
       setExpandedSummary(false);
       setIsProjectSummaryExpandable(false);
-      if (!resuming) {
-        setIsWikiDescriptionExpanded(false);
-        setIsWikiDescriptionExpandable(false);
-      }
       setResolvingParticipant(null);
-      setParticipantNavigationError('');
       if (!resuming) setRecentImpact(null);
       setIsLoadingRecentImpact(false);
       setRecentImpactError(null);
@@ -1130,7 +1164,6 @@ export default function EntityExplorer({
         setIsLoadingPapers(true);
         setPapersError(null);
         setRowBudget(EXPLORER_ROW_CHUNK);
-        setIsPapersLoadSlow(false);
       }
       else setIsFetchingMore(true);
       
@@ -1443,6 +1476,48 @@ export default function EntityExplorer({
       scoreQueryTopicPaper(right, entity) - scoreQueryTopicPaper(left, entity)
     ));
   }, [entity, papers, sortBy]);
+  // Per-area counts for the filter panel, over the papers loaded with no area
+  // chosen. Once an area is chosen the source returns that area alone, so the
+  // last whole-list counts stand until the area is cleared again.
+  const [areaCounts, setAreaCounts] = useState<Record<string, number> | null>(null);
+  const [countedPapers, setCountedPapers] = useState<typeof papers | null>(null);
+  if (!filters.category && !isLoadingPapers && countedPapers !== papers) {
+    setCountedPapers(papers);
+    setAreaCounts(countPapersByArea(papers, Object.keys(CATEGORIES)));
+  }
+  const facetAreas = Object.entries(CATEGORIES)
+    .map(([key, cat]) => ({ key, label: cat.label, accent: cat.gradient, count: areaCounts?.[key] ?? 0 }))
+    .filter(area => area.count > 0 || area.key === filters.category)
+    .sort((a, b) => b.count - a.count);
+
+  // The entity's own total while the list is unfiltered; once a search or a
+  // filter narrows it, what is loaded and matches, with a "+" while more pages
+  // remain. Nothing while the first page is still on its way.
+  const papersCountLabel = !searchQuery && activeFilterCount === 0 && typeof entity?.works_count === 'number'
+    ? entity.works_count.toLocaleString(locale)
+    : isLoadingPapers ? '' : `${filteredPapers.length.toLocaleString(locale)}${hasMore ? '+' : ''}`;
+
+  // A reload keeps the count it replaces until the new one lands, so the tab
+  // does not shrink to its bare label and grow back. Another entity starts clean.
+  const [heldCount, setHeldCount] = useState({ key: visitKey, label: papersCountLabel });
+  if (heldCount.key !== visitKey || (papersCountLabel && papersCountLabel !== heldCount.label)) {
+    setHeldCount({ key: visitKey, label: papersCountLabel });
+  }
+  const shownCountLabel = heldCount.key === visitKey ? heldCount.label : papersCountLabel;
+
+  // The selected tab's pill slides to the tab picked. It takes its first
+  // place without moving: the slide is switched on after that first paint.
+  const segRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const seg = segRef.current;
+    const pill = seg?.querySelector<HTMLElement>('.ee-seg-pill');
+    const active = seg?.querySelector<HTMLElement>('[data-pressed]');
+    if (!seg || !pill || !active) return;
+    pill.style.width = `${active.offsetWidth}px`;
+    pill.style.transform = `translateX(${active.offsetLeft}px)`;
+    if (!seg.hasAttribute('data-ready')) requestAnimationFrame(() => seg.setAttribute('data-ready', ''));
+  }, [activeTab, shownCountLabel, entity]);
+
   // The rows on screen now, and the ones still to come in idle chunks. The
   // "load more" sentinel waits for the whole page to be in, or it would sit
   // right under the first chunk and ask for the next page at once.
@@ -1477,14 +1552,6 @@ export default function EntityExplorer({
     const handle = schedule(() => setRowBudget((budget) => nextExplorerRowBudget(budget, filteredPapers.length)));
     return () => cancel(handle);
   }, [rowsSettled, rowBudget, filteredPapers.length]);
-  // The field colour and label of each row, once per list rather than once
-  // per row per render: `areaKeyForCategory` was 27 ms of a throttled page
-  // load, re-derived every time the page re-rendered around the rows.
-  const rowAreas = useMemo(() => visiblePapers.map((paper) => ({
-    accent: areaAccentForPaper(paper),
-    label: areaLabelForPaper(paper) || ('Paper'),
-  })), [visiblePapers]);
-
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -1503,46 +1570,6 @@ export default function EntityExplorer({
     return () => observer.disconnect();
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
 
-  // Armed only while a fresh page is loading (never for "load more", which has
-  // the sentinel's own spinner); a load that lands well under 4s clears this
-  // effect before the timeout ever fires, so the note never shows. The flag
-  // itself is reset to false where the next page-1 load starts, inside
-  // `loadPapers` — not here, so this body stays a pure subscription with no
-  // setState of its own (react-hooks/set-state-in-effect). `type`/`id` are
-  // dependencies too: without them, navigating from one slow-loading entity
-  // straight into another keeps `isLoadingPapers` continuously true, so this
-  // effect would never re-run and the new entity's four seconds would be
-  // measured on the previous one's clock.
-  useEffect(() => {
-    if (!(isLoadingPapers && !isFetchingMore)) return undefined;
-    const handle = setTimeout(() => setIsPapersLoadSlow(true), 4000);
-    return () => clearTimeout(handle);
-  }, [isLoadingPapers, isFetchingMore, type, id]);
-
-  const handleShare = async () => {
-    if (!publicEntityUrl) return;
-    if (navigator.share) {
-      trackEvent('share', { method: 'native', content_type: analyticsEntityType, surface: 'explorer' });
-      try {
-        await navigator.share({
-          title: entityDisplayName || 'PaperTok',
-          url: publicEntityUrl,
-        });
-      } catch (error) {
-        if ((error as Error | null)?.name !== 'AbortError') console.error(error);
-      }
-      return;
-    }
-
-    trackEvent('share', { method: 'clipboard', content_type: analyticsEntityType, surface: 'explorer' });
-    try {
-      await navigator.clipboard.writeText(publicEntityUrl);
-      alert('Link copied to clipboard');
-    } catch (error) {
-      console.error('Failed to copy entity link', error);
-    }
-  };
-
   const handleFollow = (event: MouseEvent) => {
     event.stopPropagation();
     if (!followEntity) return;
@@ -1553,6 +1580,50 @@ export default function EntityExplorer({
     }
     toggleFollow(followEntity).catch(console.error);
   };
+
+  const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
+    <div className="ehc-actions">
+      {followEntity && (
+        <FollowToggle
+          pressed={entityIsFollowing}
+          onClick={handleFollow}
+          disabled={entityFollowPending}
+          followLabel={'Follow'}
+          followingLabel={'Following'}
+          compact={isPhone}
+        />
+      )}
+      {publicEntityUrl && (
+        <SharePanel
+          title={entityDisplayName || 'PaperTok'}
+          url={publicEntityUrl}
+              side="bottom"
+          align="start"
+          links={usesSheet ? [] : heroLinks}
+          onShared={(method) => trackEvent('share', { method, content_type: analyticsEntityType, surface: 'explorer' })}
+          trigger={isPhone ? (
+            <Button variant="outline" size="icon-sm" className="ehc-share" aria-label="Share">
+              <ShareNetwork size={16} aria-hidden="true" />
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="ehc-share">
+              <ShareNetwork size={16} aria-hidden="true" />
+              {'Share'}
+            </Button>
+          )}
+        />
+      )}
+      {heroLinks.length > 0 && !usesSheet && !(isPhone && publicEntityUrl) && (
+        <div className="ehc-links">
+          {heroLinks.map(({ label, href }) => (
+            <a key={href} href={href} target="_blank" rel="noopener noreferrer" className="ehc-link">
+              {label} <ArrowSquareOut size={14} aria-hidden="true" />
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   const retryPapers = () => {
     setPapersError(null);
@@ -1573,7 +1644,6 @@ export default function EntityExplorer({
 
   const openParticipantInstitution = async (participant: ProjectParticipant) => {
     setResolvingParticipant(participant.name);
-    setParticipantNavigationError('');
     try {
       const institution = await findInstitution({
         name: participant.searchName || participant.name,
@@ -1582,11 +1652,11 @@ export default function EntityExplorer({
       if (institution) {
         navigateToEntity('institution', institution.id);
       } else {
-        setParticipantNavigationError(`We could not find an institution profile for ${participant.name}.`);
+        toast.error(`We could not find an institution profile for ${participant.name}.`);
       }
     } catch (error) {
       console.error('Failed to resolve project participant', error);
-      setParticipantNavigationError(`We could not open ${participant.name}. Try again.`);
+      toast.error(`We could not open ${participant.name}. Try again.`);
     } finally {
       setResolvingParticipant(null);
     }
@@ -1652,12 +1722,10 @@ export default function EntityExplorer({
         <div className="explorer-hero">
           <div className="explorer-hero-top">
             <div className="eht-left">
-              <Button variant="outline" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
+              <Button variant="ghost" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
                 <ArrowLeft size={20} />
               </Button>
-              <div className="ex-skel ex-skel-type" aria-hidden="true"></div>
             </div>
-            <div className="ex-skel ex-skel-action" aria-hidden="true"></div>
           </div>
 
           {/* The live hero's own nesting, copied rather than approximated:
@@ -1679,6 +1747,7 @@ export default function EntityExplorer({
                   {seedName
                     ? <h1 className="ehc-name" style={{ margin: 0 }}>{seedName}</h1>
                     : <div className="ex-skel ex-skel-name"></div>}
+                  <div className="ex-skel ex-skel-type"></div>
                   {/* The metadata line every type puts under the name: an
                       author's institution, an institution's city, a project's
                       funder. It lives inside `.ehc-info` on the live page, and
@@ -1686,29 +1755,12 @@ export default function EntityExplorer({
                       it down here was counting the same line twice. */}
                   <div className="ex-skel ex-skel-sub ex-skel-sub--medium"></div>
 
-                  {/* The strip under the name, which is where the two page
-                      shapes first part company: an author is identified by the
-                      subjects they work on, an institution by its credentials
-                      and the organisations inside it. */}
-                  {shape.identity === 'topics' && (
-                    <div className="ehc-tags ex-skel-strip">
-                      {[72, 88, 64, 56].map(width => (
-                        <span key={width} className="ex-skel ex-skel-chip" style={{ width }} />
-                      ))}
-                    </div>
-                  )}
+                  {/* The strip under the name: an institution's credentials. */}
                   {shape.identity === 'credentials' && (
-                    <>
-                      <div className="ehc-institution-identity ex-skel-strip">
-                        <span className="ex-skel ex-skel-chip" style={{ width: 104 }} />
-                        <span className="ex-skel ex-skel-chip" style={{ width: 72 }} />
-                      </div>
-                      <div className="ehc-ror-relations ex-skel-strip">
-                        {[186, 172, 158].map(width => (
-                          <span key={width} className="ex-skel ex-skel-relation" style={{ width }} />
-                        ))}
-                      </div>
-                    </>
+                    <div className="ehc-tag-row ex-skel-strip">
+                      <span className="ex-skel ex-skel-chip" style={{ width: 104 }} />
+                      <span className="ex-skel ex-skel-chip" style={{ width: 72 }} />
+                    </div>
                   )}
                   {shape.identity === 'none' && (
                     <div className="ex-skel ex-skel-sub ex-skel-sub--short"></div>
@@ -1755,19 +1807,12 @@ export default function EntityExplorer({
             {shape.aside === 'summary' && <ProjectSummarySkeleton />}
           </div>
 
-          {/* One tab or two, from the same helper the live strip answers with.
-              A page that will only ever show Papers no longer advertises an
-              Authors tab it is about to take away. */}
-          <div className="ee-tabs" aria-hidden="true">
-            {Array.from({ length: shape.tabs }, (_, i) => (
-              <div key={i} className="ex-skel ex-skel-tab"></div>
-            ))}
-          </div>
         </div>
 
         {/* The search toolbar is not part of the hero, and was missing too. */}
         <div className="explorer-toolbar-wrapper">
           <div className="explorer-toolbar">
+            <div className={`ex-skel ex-skel-seg${shape.tabs > 1 ? '' : ' ex-skel-seg--one'}`}></div>
             <div className="ex-skel ex-skel-search"></div>
           </div>
         </div>
@@ -1778,16 +1823,11 @@ export default function EntityExplorer({
         <div className="explorer-content" aria-hidden="true">
           <div className="explorer-grid">
             {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="explorer-list-item ex-skel-row">
-                <div className="ex-skel-row-head">
-                  <div className="ex-skel ex-skel-kicker"></div>
-                  <div className="ex-skel ex-skel-metrics"></div>
-                </div>
+              <div key={i} className="list-row ex-skel-row">
+                <div className="ex-skel ex-skel-kicker"></div>
                 <div className="ex-skel ex-skel-title"></div>
                 <div className="ex-skel ex-skel-title"></div>
-                <div className="ex-skel ex-skel-authors"></div>
-                <div className="ex-skel ex-skel-summary"></div>
-                <div className="ex-skel ex-skel-summary ex-skel-summary--short"></div>
+                <div className="ex-skel ex-skel-dots"></div>
               </div>
             ))}
           </div>
@@ -1799,12 +1839,8 @@ export default function EntityExplorer({
   if (!entity) {
     return (
       <div className={`explorer-error${appChromeClass}`}>
-        {/* A glyph that says which of the two it is, a sentence that says what
-            to do, and the way out as a labelled button under them — it used
-            to be a bare arrow above a lone heading, which read as a page that
-            had not finished rendering. */}
-        <div className={`explorer-error-icon${entityError ? ' explorer-error-icon--failed' : ''}`} aria-hidden="true">
-          {entityError ? <CloudSlash size={26} /> : <MagnifyingGlass size={26} />}
+        <div className="empty-state-art" aria-hidden="true">
+          <Petri pose={entityError ? 'upset' : 'lost'} />
         </div>
         <h1>{entityError
           ? ('The entity could not be loaded')
@@ -1832,11 +1868,17 @@ export default function EntityExplorer({
     );
   }
 
+  const authorNameWords = (entityDisplayName || '').split(/\s+/).filter(word => /^\p{L}/u.test(word));
+  const authorInitials = authorNameWords.length > 0
+    ? `${authorNameWords[0][0]}${authorNameWords.length > 1 ? authorNameWords[authorNameWords.length - 1][0] : ''}`.toUpperCase()
+    : '';
+
   const renderIcon = () => {
     if (type === 'institution') return <Buildings size={36} />;
     if (type === 'concept' || type === 'topic') return <Lightbulb size={36} />;
     if (type === 'source') return <FileText size={36} />;
     if (type === 'project') return <Briefcase size={36} />;
+    if (type === 'author' && authorInitials) return <span className="ehc-initials">{authorInitials}</span>;
     return <Users size={36} />;
   };
 
@@ -1851,63 +1893,403 @@ export default function EntityExplorer({
           : ('Topic');
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
+  const projectTimeline = type === 'project' && entity.startDate && (
+    <ProjectTimeline startDate={entity.startDate} endDate={entity.endDate} />
+  );
+
+  const sheetLinks = type === 'project' ? [
+    ...(entity.openaireId ? [{
+      href: `https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`,
+      rel: 'noreferrer',
+      Icon: Buildings,
+      title: 'OpenAIRE record',
+      note: 'Data, publications, and participants',
+    }] : []),
+    ...(safeProjectWebsiteUrl ? [{
+      href: safeProjectWebsiteUrl,
+      rel: 'noopener noreferrer',
+      Icon: Globe,
+      title: 'Official website',
+      note: 'The project’s own website',
+    }] : []),
+  ] : type === 'institution' ? [
+    ...(safeHomepageUrl ? [{
+      href: safeHomepageUrl,
+      rel: 'noopener noreferrer',
+      Icon: Globe,
+      title: 'Official website',
+      note: 'The institution’s own website',
+    }] : []),
+    ...(safeRorUrl ? [{
+      href: safeRorUrl,
+      rel: 'noopener noreferrer',
+      Icon: SealCheck,
+      title: 'ROR record',
+      note: 'Its entry in the Research Organization Registry',
+    }] : []),
+  ] : isOpenAlexTopic ? [
+    ...(safeExternalUrl(entity.ids?.wikipedia) ? [{
+      href: safeExternalUrl(entity.ids?.wikipedia)!,
+      rel: 'noopener noreferrer',
+      Icon: Globe,
+      title: 'Wikipedia',
+      note: 'The article OpenAlex links to this topic',
+    }] : []),
+    {
+      href: `https://openalex.org/${String(entity.id || id).split('/').pop()}`,
+      rel: 'noopener noreferrer',
+      Icon: Lightbulb,
+      title: 'OpenAlex record',
+      note: 'Works, keywords and related topics',
+    },
+  ] : [];
+  const sheetLinksSection = sheetLinks.length > 0 && (
+    <div className="project-links-menu">
+      <h4 className="project-section-title"><Globe size={14} /> {'Links'}</h4>
+      <ul className="project-links-list">
+        {sheetLinks.map(({ href, rel, Icon, title, note }) => (
+          <li key={title}>
+            <a className="project-links-option" href={href} target="_blank" rel={rel}>
+              <span className="project-links-option-icon"><Icon size={16} /></span>
+              <span>
+                <strong>{title}</strong>
+                <small>{note}</small>
+              </span>
+              <ArrowSquareOut size={14} aria-hidden="true" />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  const statsGrid = (
+    <div className="ehc-stats-grid">
+      {entity?.works_count != null && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">{entity.works_count.toLocaleString(locale)}</span>
+          <span className="ehc-stat-label">{'Publications'}</span>
+        </div>
+      )}
+      {entity?.cited_by_count != null && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">{entity.cited_by_count.toLocaleString(locale)}</span>
+          <span className="ehc-stat-label">{'Total citations'}</span>
+        </div>
+      )}
+      {(entity?.summary_stats?.h_index != null || entity?.h_index != null) && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">{entity?.summary_stats?.h_index ?? entity?.h_index}</span>
+          <span className="ehc-stat-label">{type === 'source' ? ('Type') : 'H-Index'}</span>
+        </div>
+      )}
+      {['institution', 'author'].includes(type) && (
+        <RecentImpactStat
+          impact={recentImpact}
+          isLoading={isLoadingRecentImpact}
+          error={recentImpactError}
+         
+        />
+      )}
+      {type === 'project' && entity._detailsPending && [1, 2].map((n) => (
+        <div key={`stat-reserved-${n}`} className="ehc-stat-box" aria-hidden="true">
+          <span className="ex-skel ex-skel-stat-value"></span>
+          <span className="ex-skel ex-skel-stat-label"></span>
+        </div>
+      ))}
+      {type === 'project' && (entity.budget as number) > 0 && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">
+            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return entity.budget!.toLocaleString(locale); } })()}
+          </span>
+          <span className="ehc-stat-label">{'Total budget'}</span>
+        </div>
+      )}
+      {type === 'project' && (entity.fundedAmount as number) > 0 && entity.fundedAmount! !== entity.budget! && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">
+            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return entity.fundedAmount!.toLocaleString(locale); } })()}
+          </span>
+          <span className="ehc-stat-label">{'Funding'}</span>
+        </div>
+      )}
+      {type === 'project' && (entity.participants?.length as number) > 0 && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">{entity.participants!.length}</span>
+          <span className="ehc-stat-label">{'Participants'}</span>
+        </div>
+      )}
+      {type === 'project' && (entity.measures?.citations as number) > 0 && (
+        <div className="ehc-stat-box">
+          <span className="ehc-stat-value">{entity.measures!.citations!.toLocaleString(locale)}</span>
+          <span className="ehc-stat-label">{'Citations'}</span>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderParticipant = (p: ProjectParticipant, i: number) => (
+    <button
+      key={`${p.name}-${p.country || i}`}
+      type="button"
+      className="project-participant-card"
+      onClick={() => openParticipantInstitution(p)}
+      disabled={resolvingParticipant === p.name}
+      aria-label={`${'Open institution profile for'} ${p.name}`}
+    >
+      <span className="project-participant-info">
+        <ParticipantName name={p.name || ''} />
+        {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
+      </span>
+      {resolvingParticipant === p.name
+        ? <CircleNotch size={15} className="ehc-spinner" aria-hidden="true" />
+        : <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />}
+    </button>
+  );
+  const projectParticipants = type === 'project' && (entity.participants?.length as number) > 0 && (isPhone ? (
+    <Drawer>
+      <DrawerTrigger render={<Button variant="ghost" className="project-participants-trigger" />}>
+        <Buildings size={16} aria-hidden="true" />
+        <span>{'Participating organizations'}</span>
+        <span className="project-participants-count">{entity.participants!.length}</span>
+        <CaretRight size={15} aria-hidden="true" />
+      </DrawerTrigger>
+      <DrawerContent className="pc-share-sheet">
+        <DrawerHandle />
+        <DrawerTitle render={<h3 />} className="pc-share-sheet-title">{'Participating organizations'}</DrawerTitle>
+        <ul className="pc-share-list project-participants-sheet">
+          {entity.participants!.map((p, i) => (
+            <li key={`${p.name}-${p.country || i}`}>
+              <button
+                type="button"
+                className="pc-share-row"
+                onClick={() => openParticipantInstitution(p)}
+                disabled={resolvingParticipant === p.name}
+                aria-label={`${'Open institution profile for'} ${p.name}`}
+              >
+                <span className="project-participant-info">
+                  <span className="project-participant-name">{p.name}</span>
+                  {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
+                </span>
+                {resolvingParticipant === p.name
+                  ? <CircleNotch size={15} className="ehc-spinner" aria-hidden="true" />
+                  : <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </DrawerContent>
+    </Drawer>
+  ) : (
+      <div className="project-participants">
+        <h4 className="project-section-title"><Buildings size={14} /> {'Participating organizations'}</h4>
+        <div id="project-participants-list" className="project-participants-grid">
+          {entity.participants!.slice(0, PARTICIPANTS_SHOWN).map(renderParticipant)}
+          <AnimatePresence initial={false}>
+            {participantsExpanded && (
+              <motion.div
+                key="more"
+                className="project-participants-more"
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, transition: EXPERIENCE_FOLD_OUT }}
+                transition={prefersReducedMotion
+                  ? { duration: 0 }
+                  : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}
+              >
+                {entity.participants!.slice(PARTICIPANTS_SHOWN).map((p, i) => renderParticipant(p, PARTICIPANTS_SHOWN + i))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+        {entity.participants!.length > PARTICIPANTS_SHOWN && (
+          <button
+            className="project-show-more"
+            onClick={() => setParticipantsExpanded(value => !value)}
+            aria-expanded={participantsExpanded}
+            aria-controls="project-participants-list"
+          >
+            {participantsExpanded
+              ? ('Show fewer organizations')
+              : `+${entity.participants!.length - PARTICIPANTS_SHOWN} ${'more organizations'}`}
+          </button>
+        )}
+      </div>
+  ));
+
+  const institutionRelations = type === 'institution' && (entity.relationships?.length as number) > 0 && (
+    <div className="project-participants">
+      <h4 className="project-section-title"><Buildings size={14} /> {'Related institutions'}</h4>
+      <div className="project-participants-grid">
+        {entity.relationships!.slice(0, 4).map((relationship) => {
+          const label = ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] || ROR_RELATION_LABELS[language].related;
+          return (
+            <button
+              key={`${relationship.type}-${relationship.rorId}`}
+              type="button"
+              className="project-participant-card"
+              onClick={() => navigateToEntity('institution', relationship.rorId)}
+              aria-label={`${label}: ${relationship.label}`}
+            >
+              <span className="project-participant-info">
+                <ParticipantName name={relationship.label || ''} />
+                <span className="project-participant-country">{label}</span>
+              </span>
+              <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const topicRelations = isOpenAlexTopic && (entity.siblings?.length as number) > 0 && (
+    <div className="project-participants">
+      <h4 className="project-section-title"><Lightbulb size={14} /> {'Related topics'}</h4>
+      <div className="project-participants-grid">
+        {entity.siblings!.slice(0, 3).map(sibling => (
+          <button
+            key={sibling.id}
+            type="button"
+            className="project-participant-card"
+            onClick={() => navigateToEntity('topic', String(sibling.id).split('/').pop()!)}
+            aria-label={`Open topic ${sibling.display_name}`}
+          >
+            <span className="project-participant-info">
+              <ParticipantName name={sibling.display_name} />
+            </span>
+            <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const entitySheet = usesSheet && (
+    <aside className="ehc-project-aside" aria-label={type === 'project' ? 'Project facts' : type === 'institution' ? 'Institution facts' : 'Topic facts'}>
+      <div className="ehc-project-sheet">
+        {statsGrid}
+        {projectParticipants}
+        {topicRelations}
+        {sheetLinksSection}
+      </div>
+    </aside>
+  );
+
   // The type rides on the live container, the way the skeleton already carries
   // it (`explorer-skeleton--${type}`). What a project fills in late — its stat
   // cells, its link menu — needs an entrance the other entity types must not
   // inherit, and there was no hook for that here.
+  const filterControls = (
+    <>
+    <div className="ee-filter-body">
+      <div className="ee-filter-section">
+        <h4>{'Area'}</h4>
+        <ToggleGroup
+          className="ee-facets"
+          aria-label={'Area'}
+          value={[filters.category || 'all']}
+          onValueChange={([next]) => {
+            if (next !== undefined) setFilters({ ...filters, category: next === 'all' ? '' : next });
+          }}
+        >
+          <ToggleGroupItem value="all" className="ee-facet">
+            <span className="ee-facet-dot" aria-hidden="true" />
+            {'All areas'}
+          </ToggleGroupItem>
+          {facetAreas.map(area => (
+            <ToggleGroupItem
+              key={area.key}
+              value={area.key}
+              className="ee-facet"
+              style={{ '--area-accent': area.accent }}
+            >
+              <span className="ee-facet-dot" aria-hidden="true" />
+              {area.label}
+              {areaCounts && <span className="ee-facet-count">{`${area.count.toLocaleString(locale)}${hasMore ? '+' : ''}`}</span>}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+      <div className="ee-filter-section">
+        <h4>{'Sort by'}</h4>
+        <ToggleGroup
+          variant="outline"
+          className="ee-filter-chips"
+          aria-label={'Sort by'}
+          value={[sortBy]}
+          onValueChange={([next]) => { if (next !== undefined) setSortBy(next); }}
+        >
+          <ToggleGroupItem value="cited_by_count:desc" className="ee-filter-chip">
+            {'Most cited'}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="publication_date:desc" className="ee-filter-chip">
+            {'Most recent'}
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+      <div className="ee-filter-section">
+        <h4>{'Published'}</h4>
+        <ToggleGroup
+          variant="outline"
+          className="ee-filter-chips"
+          aria-label={'Published'}
+          value={[filters.dateRange || 'any']}
+          onValueChange={([next]) => {
+            if (next !== undefined) setFilters({ ...filters, dateRange: next === 'any' ? '' : next });
+          }}
+        >
+          {['any', 'last_year', 'last_5_years'].map(val => (
+            <ToggleGroupItem key={val} value={val} className="ee-filter-chip">
+              {val === 'any'
+                ? ('Any time')
+                : val === 'last_year'
+                  ? ('Last year')
+                  : ('Last 5 years')}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+      <div className="ee-filter-section">
+        <Label className="ee-toggle-label">
+          <Switch
+            checked={filters.peerReviewed}
+            onCheckedChange={(checked) => setFilters({ ...filters, peerReviewed: checked })}
+          />
+          {'Peer-reviewed only'}
+        </Label>
+      </div>
+    </div>
+    <div className="ee-filter-footer">
+      <Button variant="outline" className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
+        {'Reset'}
+      </Button>
+      <Button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
+        {isLoadingPapers ? 'Show papers' : `Show ${filteredPapers.length.toLocaleString(locale)}${hasMore ? '+' : ''} papers`}
+      </Button>
+    </div>
+    </>
+  );
+
   return (
     <div className={`explorer-container explorer-container--${type || 'entity'}${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
       {/* Immersive Hero */}
       <div className="explorer-hero">
-        <AnimatePresence>
-          {hasLoadedWikiImage && (
-            <motion.div
-              key="bg-blur"
-              // One owner for this opacity, and it is this one.
-              //
-              // The stylesheet ran a `bgPulseFade` keyframe on the same element
-              // fading to 0.1, while this animated the same property to 1 — ten
-              // times stronger than the wash is meant to be. Two animations
-              // racing for one property is why the header looked wrong for a
-              // beat and then corrected itself: whichever won the first frames
-              // decided how much of the photograph you saw. The keyframe is
-              // gone; 0.1 is the intended weight and is now stated once.
-              // One event, one clock. This fades off the same `hasLoadedWikiImage`
-              // flip as the photograph in the visual slot, and that cross-fade
-              // takes 280ms — so a second of ease-in-out here left the wash
-              // still deepening 720ms after the picture it is made of had
-              // settled. It also had no `ease`, which in framer means the
-              // built-in `easeInOut`: the one unnamed curve in a hero of ~85
-              // hand-typed arrivals. It is a 10% wash; it does not need a
-              // second to arrive, it needs to arrive WITH its photograph.
-              // The URL rides a custom property because the picture is on
-              // the element's `::before`, on a box of its own — see the
-              // stylesheet for the measurement that put it there.
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.1 }}
-              exit={{ opacity: 0 }}
-              transition={prefersReducedMotion
-                ? { duration: 0 }
-                : { duration: 0.28, ease: EASE_OUT_EXPO }}
-              className="ehc-bg-blur"
-              style={{ '--ehc-wash-image': `url(${visibleWikiInfo!.thumbnail})` }}
-            ></motion.div>
-          )}
-        </AnimatePresence>
         
         <div className="explorer-hero-top">
           <div className="eht-left">
-            <Button variant="outline" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
+            <Button variant="ghost" size="icon" onClick={handleBack} aria-label={'Back'} title={'Back'}>
               <ArrowLeft size={20} />
             </Button>
-            <span className="ehc-type">{entityTypeLabel}</span>
           </div>
-          <Button variant="ghost" size="icon" onClick={handleShare} aria-label={'Share'} title={'Share'}>
-            <ShareNetwork size={18} />
-          </Button>
+          {/* Every page keeps its actions in the bar, across from the way
+              back, and leaves the header below to the entity itself. */}
+          {heroActions}
         </div>
         
         <div className="explorer-hero-content" ref={heroBodyRef}>
+          <div className={`ehc-layout${usesSheet ? ' ehc-layout--sheet' : ''}`}>
+          <div className="ehc-layout-main">
           <div className="ehc-header">
           <div className="ehc-main">
             {/* The tile and the photograph share one box and one clock.
@@ -1918,6 +2300,7 @@ export default function EntityExplorer({
                 On one duration the sum is exactly 1 at every instant — 1 − e(t)
                 and e(t) — whatever the curve. The scales still differ on
                 purpose: one shrinks away as the other grows in. */}
+            {type !== 'project' && (
             <div className="ehc-visual-slot">
               <motion.div
                 className="ehc-icon"
@@ -1948,6 +2331,7 @@ export default function EntityExplorer({
                 )}
               </AnimatePresence>
             </div>
+            )}
             <div className="ehc-info">
               <div className="ehc-title-row">
                 {/* The type label stands in for a name the entity does not
@@ -1972,35 +2356,27 @@ export default function EntityExplorer({
                 )}
               </div>
               {type === 'institution' && (
-                <>
-                  <p className="ehc-meta">
-                    {[entity.geo?.city, entity.geo?.country].filter(Boolean).join(', ')}
-                  </p>
+                <p className="ehc-meta">
+                  {[entity.geo?.city, entity.geo?.country].filter(Boolean).join(', ')}
+                </p>
+              )}
+              {type === 'project' && (entity.subjects?.length as number) > 0 ? (
+                <div className="ehc-tag-row">
+                  <span className="ehc-type">{entityTypeLabel}</span>
+                  {entity.subjects!.map((subject, i) => (
+                    <span key={i} className="ehc-type ehc-type--subject">{subject}</span>
+                  ))}
+                </div>
+              ) : type === 'institution' && ((entity.rorVerified && safeRorUrl) || entity.established) ? (
+                <div className="ehc-tag-row">
+                  <span className="ehc-type">{entityTypeLabel}</span>
                   {entity.rorVerified && safeRorUrl && (
-                    <div className="ehc-institution-identity">
-                      <a href={safeRorUrl} target="_blank" rel="noopener noreferrer" title={'View official ROR record'}>
-                        <SealCheck size={13} /> {'ROR verified'}
-                      </a>
-                      {entity.established && <span>{'Since'} {entity.established}</span>}
-                    </div>
+                    <span className="ehc-type ehc-type--verified"><SealCheck size={13} aria-hidden="true" /> {'ROR verified'}</span>
                   )}
-                  {(entity.relationships?.length as number) > 0 && (
-                    <div className="ehc-ror-relations" aria-label={'Institutional relationships verified by ROR'}>
-                      {entity.relationships!.slice(0, 4).map(relationship => (
-                        <button
-                          key={`${relationship.type}-${relationship.rorId}`}
-                          type="button"
-                          onClick={() => navigateToEntity('institution', relationship.rorId)}
-                          title={`${ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] || ROR_RELATION_LABELS[language].related}: ${relationship.label}`}
-                        >
-                          <span>{ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] || ROR_RELATION_LABELS[language].related}</span>
-                          <strong>{relationship.label}</strong>
-                          <CaretRight size={13} />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
+                  {entity.established && <span className="ehc-type ehc-type--subject">{`Since ${entity.established}`}</span>}
+                </div>
+              ) : type !== 'author' && (
+                <span className="ehc-type">{entityTypeLabel}</span>
               )}
               {type === 'author' && authorInstitutionDisplayName && (
                 <div className="ehc-author-institution-wrap">
@@ -2019,69 +2395,7 @@ export default function EntityExplorer({
                   )}
                 </div>
               )}
-              {type === 'project' && entity.funder && (
-                <p className="ehc-meta">
-                  {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
-                </p>
-              )}
-              {type === 'project' && (entity.openaireId || safeProjectWebsiteUrl) && (
-                <div className="project-links-menu">
-                  {/* A menu of links: Base UI's Menu gives it `role="menu"`, arrow
-                      keys, Escape and outside-press; the items are `LinkItem`s
-                      (`<a role="menuitem">`), which the ui dropdown does not wrap
-                      yet, so the part is taken from the primitive. `closeOnClick`
-                      because the links open a new tab and the menu has no reason
-                      to stay behind. */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger render={<button type="button" className="project-links-trigger" />}>
-                      <Globe size={15} />
-                      <span>{'View project'}</span>
-                      <CaretDown size={15} aria-hidden="true" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      className="project-links-dropdown"
-                      align="start"
-                      side="bottom"
-                      sideOffset={8}
-                      aria-label={'Project links'}
-                    >
-                      {entity.openaireId && (
-                        <MenuPrimitive.LinkItem
-                          className="project-links-option"
-                          href={`https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          closeOnClick
-                        >
-                          <span className="project-links-option-icon"><Buildings size={16} /></span>
-                          <span>
-                            <strong>{'OpenAIRE record'}</strong>
-                            <small>{'Data, publications, and participants'}</small>
-                          </span>
-                          <ArrowSquareOut size={14} />
-                        </MenuPrimitive.LinkItem>
-                      )}
-                      {safeProjectWebsiteUrl && (
-                        <MenuPrimitive.LinkItem
-                          className="project-links-option"
-                          href={safeProjectWebsiteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          closeOnClick
-                        >
-                          <span className="project-links-option-icon"><Globe size={16} /></span>
-                          <span>
-                            <strong>{'Official website'}</strong>
-                            <small>{'The project’s own website'}</small>
-                          </span>
-                          <ArrowSquareOut size={14} />
-                        </MenuPrimitive.LinkItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              )}
-              {topConcepts.length > 0 && (
+              {topConcepts.length > 0 && type !== 'author' && (
                 <div className="ehc-tags">
                   {topConcepts.map((c, i) => (
                     <span key={i} className="ehc-tag">
@@ -2093,93 +2407,29 @@ export default function EntityExplorer({
             </div>
           </div>
 
-          <div className="ehc-hero-aside">
-          {/* Stats Grid — compact, beside the follow action */}
-          <div className="ehc-stats-grid">
-            {entity?.works_count != null && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.works_count.toLocaleString(locale)}</span>
-                <span className="ehc-stat-label">{'Publications'}</span>
-              </div>
+          {!usesSheet && (
+            <div className="ehc-hero-aside">
+            {statsGrid}
+            {authorIdentityUnverified && (
+              <p className="ehc-identity-note">
+                {'Found by name: these results may mix people who share it.'}
+              </p>
             )}
-            {entity?.cited_by_count != null && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.cited_by_count.toLocaleString(locale)}</span>
-                <span className="ehc-stat-label">{'Total citations'}</span>
-              </div>
+            {type === 'author' && (entity.counts_by_year?.length as number) > 0 && (
+              <AuthorActivity counts={entity.counts_by_year!} />
             )}
-            {(entity?.summary_stats?.h_index != null || entity?.h_index != null) && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity?.summary_stats?.h_index ?? entity?.h_index}</span>
-                <span className="ehc-stat-label">{type === 'source' ? ('Type') : 'H-Index'}</span>
-              </div>
-            )}
-            {['institution', 'author'].includes(type) && (
-              <RecentImpactStat
-                impact={recentImpact}
-                isLoading={isLoadingRecentImpact}
-                error={recentImpactError}
-               
-              />
-            )}
-            {type === 'project' && entity._detailsPending && [1, 2].map((n) => (
-              <div key={`stat-reserved-${n}`} className="ehc-stat-box" aria-hidden="true">
-                <span className="ex-skel ex-skel-stat-value"></span>
-                <span className="ex-skel ex-skel-stat-label"></span>
-              </div>
-            ))}
-            {type === 'project' && (entity.budget as number) > 0 && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">
-                  {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return `${entity.budget!.toLocaleString(locale)} €`; } })()}
-                </span>
-                <span className="ehc-stat-label">{'Total budget'}</span>
-              </div>
-            )}
-            {type === 'project' && (entity.fundedAmount as number) > 0 && entity.fundedAmount! !== entity.budget! && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">
-                  {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return `${entity.fundedAmount!.toLocaleString(locale)} €`; } })()}
-                </span>
-                <span className="ehc-stat-label">{'Funding'}</span>
-              </div>
-            )}
-            {type === 'project' && entity.startDate && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.startDate.split('-')[0]} - {entity.endDate?.split('-')[0] || '...'}</span>
-                <span className="ehc-stat-label">{'Duration'}</span>
-              </div>
-            )}
-            {type === 'project' && (entity.participants?.length as number) > 0 && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.participants!.length}</span>
-                <span className="ehc-stat-label">{'Participants'}</span>
-              </div>
-            )}
-            {type === 'project' && (entity.measures?.citations as number) > 0 && (
-              <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.measures!.citations!.toLocaleString(locale)}</span>
-                <span className="ehc-stat-label">{'Citations'}</span>
-              </div>
-            )}
-          </div>
-          {authorIdentityUnverified ? (
-            <p className="ehc-identity-note">
-              {'Found by name: these results may mix people who share it.'}
-            </p>
-          ) : followEntity && (
-            // A pressed button, not a command: the Follow control from
-            // ui/follow-toggle.jsx.
-            <FollowToggle
-              pressed={entityIsFollowing}
-              onClick={handleFollow}
-              disabled={entityFollowPending}
-              followLabel={'Follow'}
-              followingLabel={'Following'}
-            />
+            </div>
           )}
           </div>
-          </div>
+
+          {projectTimeline}
+          {institutionRelations}
+          {isOpenAlexTopic && entity.description && (
+            <div className="ehc-topic-about">
+              <p className="ehc-topic-description">{entity.description}</p>
+              <span className="ehc-topic-source">{'Description from OpenAlex'}</span>
+            </div>
+          )}
 
           {/* Professional experience — a disclosure opened from the chevron by the name */}
           {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
@@ -2260,27 +2510,6 @@ export default function EntityExplorer({
             </AnimatePresence>
           )}
 
-          {/* Project metadata chips */}
-          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || (entity.measures?.downloads as number) > 0 || (entity.measures?.views as number) > 0) && (
-            <div className="project-meta-chips">
-              {entity.callIdentifier && (
-                <span className="project-chip"><BookOpen size={13} /> {entity.callIdentifier}</span>
-              )}
-              {entity.contractType && (
-                <span className="project-chip"><Medal size={13} /> {entity.contractType}</span>
-              )}
-              {entity.openAccess && (
-                <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
-              )}
-              {(entity.measures?.downloads as number) > 0 && (
-                <span className="project-chip"><DownloadSimple size={13} /> {entity.measures!.downloads!.toLocaleString(locale)} {'downloads'}</span>
-              )}
-              {(entity.measures?.views as number) > 0 && (
-                <span className="project-chip"><Eye size={13} /> {entity.measures!.views!.toLocaleString(locale)} {'views'}</span>
-              )}
-            </div>
-          )}
-
           {/* Project Summary - expandable */}
           {type === 'project' && entity._detailsPending && <ProjectSummarySkeleton />}
           {type === 'project' && entity?.summary && (
@@ -2313,189 +2542,11 @@ export default function EntityExplorer({
               )}
             </div>
           )}
+          </div>
+          {entitySheet}
+          </div>
 
-          {/* Project subjects */}
-          {type === 'project' && (entity.subjects?.length as number) > 0 && (
-            <div className="project-subjects">
-              <h4 className="project-section-title"><Tag size={14} /> {'Project topics'}</h4>
-              <div className="project-subjects-list">
-                {entity.subjects!.map((s, i) => (
-                  <span key={i} className="ehc-tag">{s}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Participating organizations */}
-          {type === 'project' && (entity.participants?.length as number) > 0 && (
-            <div className="project-participants">
-              <h4 className="project-section-title"><Buildings size={14} /> {'Participating organizations'}</h4>
-              <motion.div
-                id="project-participants-list"
-                layout={!prefersReducedMotion}
-                className="project-participants-grid"
-                transition={prefersReducedMotion ? { duration: 0 } : { layout: { duration: 0.28 } }}
-              >
-                <AnimatePresence initial={false}>
-                {entity.participants!.slice(0, participantsExpanded ? entity.participants!.length : 6).map((p, i) => (
-                  <motion.button
-                    key={`${p.name}-${p.country || i}`}
-                    type="button"
-                    className="project-participant-card"
-                    layout={!prefersReducedMotion}
-                    initial={i < 6 || prefersReducedMotion ? false : { opacity: 0, y: 8, scale: 0.985 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
-                    transition={prefersReducedMotion
-                      ? { duration: 0 }
-                      : { duration: 0.24, delay: i < 6 ? 0 : Math.min((i - 6) * 0.025, 0.18) }}
-                    onClick={() => openParticipantInstitution(p)}
-                    disabled={resolvingParticipant === p.name}
-                    aria-label={`${'Open institution profile for'} ${p.name}`}
-                  >
-                    <span className="project-participant-info">
-                      <span className="project-participant-name">{p.name}</span>
-                      {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
-                    </span>
-                    {resolvingParticipant === p.name
-                      ? <CircleNotch size={15} className="ehc-spinner" aria-hidden="true" />
-                      : <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />}
-                  </motion.button>
-                ))}
-                </AnimatePresence>
-              </motion.div>
-              {participantNavigationError && (
-                <p className="project-participant-error" role="alert">{participantNavigationError}</p>
-              )}
-              {entity.participants!.length > 6 && (
-                <button
-                  className="project-show-more"
-                  onClick={() => setParticipantsExpanded(value => !value)}
-                  aria-expanded={participantsExpanded}
-                  aria-controls="project-participants-list"
-                >
-                  {participantsExpanded
-                    ? ('Show fewer organizations')
-                    : `+${entity.participants!.length - 6} ${'more organizations'}`}
-                </button>
-              )}
-            </div>
-          )}
           
-          {/* Wikipedia or external info, and it ARRIVES rather than appears.
-              Between 2026-09-06 and 2026-09-08 this block was held open with
-              grey rows for the whole lookup so the paragraph could replace them
-              in place; that kept the list still, and it also meant the block
-              never had an entrance — it was simply already there.
-
-              It mounts when its lookup has SETTLED, with everything it is ever
-              going to have, and the hero's settle grows the box around it.
-              Gated on settled rather than on content: mounting early on
-              `homepage_url` alone — which the entity carries and the lookup does
-              not — would put the block on screen before the prose and settle it
-              a second time when the paragraph came. One mount, one settle.
-
-              The page skeleton no longer reserves this block either
-              (explorerSkeletonShape.js). Reserved space and an entrance
-              animation are two answers to the same question: with both, the
-              hero shrinks by the reservation when the live hero lands without
-              the block, then grows again when it unfolds — down, then up. */}
-          <AnimatePresence initial={false} onExitComplete={() => setWikiFoldExits((n) => n + 1)}>
-            {showWikiBlock && (
-              <motion.div
-                className="ehc-wiki-fold"
-                // Opacity only. The hero body's settle carries this block's
-                // SPACE (it is in the settle's deps), so the box grows under
-                // its clip and reveals the block from the top while everything
-                // below rides the same 360ms — the arrival the ORCID card and
-                // the experience panel already make. A second animator of the
-                // height here was measured, twice, as the defect: a `layout`
-                // projection scaled the paragraph while the body settled
-                // (scaleY 1.21 for 380ms), and a `height: 'auto'` fold with the
-                // settle latched behind it snapped the handover on every
-                // navigation (2026-09-09). The words fade in over 240ms so they
-                // are readable while the box is still opening; leaving is
-                // quick, and the settle closes the space after the fade
-                // (`onExitComplete` gives the settle the commit that
-                // `AnimatePresence`'s own removal does not).
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={prefersReducedMotion ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, transition: { duration: 0.15 } }}
-                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.24 }}
-              >
-                <div
-                  className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending ? 'is-loading' : ''}`}
-                  aria-busy={isWikiRequestPending}
-                >
-                {/* The shapes hand over to the prose in ONE React commit, and
-                    the fade is the paragraph's own CSS (`wikiProseIn`), not a
-                    presence wrapper.
-
-                    Measured with an `AnimatePresence mode="wait"` here, which
-                    is what this replaces: splitting the swap across two commits
-                    defeated the `layout` projection on the fold above. The
-                    block stopped animating its height at all — 168.4px to
-                    128.4px in a single frame, against a smooth 168.4 → 157.8
-                    before — and the list below flashed 40px up and back down on
-                    consecutive frames, four times the 10.5px it moved without
-                    it. A cross-fade is not worth a commit boundary here: the
-                    height animation IS the handover, and the words only need to
-                    arrive rather than appear. */}
-                {isWikiRequestPending ? (
-                  <div className="ehc-wiki-skeleton" role="status" aria-label={'Loading topic details'}>
-                    {/* A re-lookup, not the first one: the block is already
-                        open and holds its rows until the new paragraph
-                        replaces them in the same commit. Three lines because
-                        the collapsed paragraph is clamped to exactly three,
-                        then the show-more toggle, then the source links —
-                        146px where 155px arrives, and the settle carries
-                        those 9px. */}
-                    <span />
-                    <span />
-                    <span />
-                    <span className="ehc-wiki-skeleton-toggle" />
-                    <span className="ehc-wiki-skeleton-links" />
-                  </div>
-                ) : wikiDescription ? (
-                  <p
-                    key={visibleWikiInfo?.extract ? 'wiki' : 'fallback'}
-                    ref={wikiDescriptionTextRef}
-                    lang={wikiDescriptionLanguage !== language ? wikiDescriptionLanguage : undefined}
-                    className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
-                    style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}
-                  >
-                    {wikiDescription}
-                  </p>
-                ) : null}
-                {isWikiDescriptionExpandable && (
-                  <button
-                    type="button"
-                    className="ehc-wiki-toggle"
-                    onClick={() => setIsWikiDescriptionExpanded(!isWikiDescriptionExpanded)}
-                    aria-expanded={isWikiDescriptionExpanded}
-                  >
-                    <span>{isWikiDescriptionExpanded
-                      ? ('Show less')
-                      : ('Read more')}</span>
-                    <CaretDown size={15} aria-hidden="true" />
-                  </button>
-                )}
-                <div className="ehc-links">
-                  {safeWikiUrl && (
-                    <a href={safeWikiUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                      Wikipedia <ArrowSquareOut size={14} />
-                    </a>
-                  )}
-                  {safeHomepageUrl && (
-                    <a href={safeHomepageUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                      {'Official website'} <ArrowSquareOut size={14} />
-                    </a>
-                  )}
-                </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* ORCID Career Section */}
           {isLoadingOrcid && <OrcidCardSkeleton />}
@@ -2578,78 +2629,90 @@ export default function EntityExplorer({
           )}
         </div>
         
-        <div className="ee-tabs" ref={setTabsRow}>
-          {/* One rule that TRAVELS, rather than a border handed from one tab
-              to the next. Measured 2026-09-10 on an institution: the yellow
-              mark jumped 40 → 110.7px in a single frame, the only unanimated
-              thing left in the tab switch. Same mechanism, curve and duration
-              as the navbar's (`utils/navRule.js`, shared): a transform a CSS
-              transition animates on the compositor, so it keeps sliding while
-              the main thread mounts the other tab's list. */}
-          <span
-            className={`ee-tab-rule${tabRule.measured ? ' is-measured' : ''}`}
-            aria-hidden="true"
-            style={{ transform: tabRule.transform || undefined, opacity: tabRule.transform ? 1 : 0 }}
-          />
-          <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => openTab('papers')}>
-             {'Papers'}
-          </button>
-          {hasAuthorsTab(type, entity) && (
-             <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => openTab('authors')}>
-               {'Authors'}
-             </button>
-          )}
-        </div>
       </div>
 
       {/* Sticky Toolbar Wrapper */}
       <div className="explorer-toolbar-wrapper">
         <div className="explorer-toolbar">
+          {/* One choice of two, so a single-select ToggleGroup: Base UI marks
+              the pressed one and moves between them on the arrow keys. The
+              open list cannot be un-chosen, so an empty value is ignored. */}
+          <ToggleGroup
+            ref={segRef}
+            className="ee-seg"
+            aria-label={'List'}
+            value={[activeTab]}
+            onValueChange={([next]) => { if (next) openTab(next); }}
+          >
+            <span className="ee-seg-pill" aria-hidden="true" />
+            <ToggleGroupItem value="papers">
+              {'Papers'}
+              <span className="ee-list-count" aria-hidden={shownCountLabel ? undefined : true}>{shownCountLabel || '–'}</span>
+            </ToggleGroupItem>
+            {hasAuthorsTab(type, entity) && (
+              <ToggleGroupItem value="authors">{'Authors'}</ToggleGroupItem>
+            )}
+          </ToggleGroup>
           {/* A visitor sees the search — it is part of what an account opens —
               but searching two preview rows would answer "nothing matches" to
               almost everything. It used to be a read-only text field that
               swallowed typing in silence (audit 2026-09-23, issue 10): now it
               is what it does, a button shaped like the field that says it
               needs an account and opens the door with that reason. */}
-          {publicMode ? (
-            <button
-              type="button"
-              className="explorer-search-box explorer-search-gate"
-              onClick={() => requestAccount('explorer_search')}
-            >
-              <MagnifyingGlass size={16} className="es-icon" aria-hidden="true" />
-              <span className="explorer-search-gate-label">{guestSearchLabel}</span>
-            </button>
-          ) : (
-            <div className="explorer-search-box">
-              <MagnifyingGlass size={16} className="es-icon" />
-              <Input
-                type="text"
-                className="explorer-search-input"
-                placeholder={`Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`}
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                aria-label={`Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`}
-              />
-              {searchQuery && (
-                <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={'Clear search'} title={'Clear search'}>
-                  <X size={14} />
-                </Button>
-              )}
-            </div>
-          )}
-          {activeTab === 'papers' && (
-             <Button
-                variant={filters?.category || filters?.peerReviewed || filters?.dateRange ? 'default' : 'outline'}
-                size="icon"
-                onClick={publicMode ? () => requestAccount('explorer_search') : () => setShowFilters(true)}
-                aria-label={'Open filters'}
-                title={'Filters'}
+          <div className="explorer-search-box">
+            {publicMode ? (
+              <button
+                type="button"
+                className="explorer-search-gate"
+                onClick={() => requestAccount('explorer_search')}
               >
-                <Funnel size={16} />
-              </Button>
+                <MagnifyingGlass size={16} className="es-icon" aria-hidden="true" />
+                <span className="explorer-search-gate-label">{guestSearchLabel}</span>
+              </button>
+            ) : (
+              <>
+                <MagnifyingGlass size={16} className="es-icon" />
+                <Input
+                  type="text"
+                  className="explorer-search-input"
+                  placeholder={`Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`}
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  aria-label={`Search ${activeTab === 'papers' ? 'publications' : 'authors'} in this entity`}
+                />
+                {searchQuery && (
+                  <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={'Clear search'} title={'Clear search'}>
+                    <X size={14} />
+                  </Button>
+                )}
+              </>
+            )}
+            {activeTab === 'papers' && (
+              <>
+                <span className="explorer-search-rule" aria-hidden="true" />
+                <Button
+                  variant="ghost"
+                  className={`explorer-filter-trigger${activeFilterCount > 0 ? ' is-active' : ''}`}
+                  onClick={publicMode ? () => requestAccount('explorer_search') : () => setShowFilters(true)}
+                  title={'Open filters'}
+                >
+                  <Funnel size={16} aria-hidden="true" />
+                  <span className="explorer-filter-label">{activeFilterCount > 0 ? `Filters · ${activeFilterCount}` : 'Filters'}</span>
+                </Button>
+              </>
             )}
           </div>
+          </div>
+          {activeTab === 'papers' && activeFilterChips.length > 0 && (
+            <div className="ee-chips">
+              {activeFilterChips.map(chip => (
+                <Button key={chip.key} variant="outline" size="sm" className="ee-chip" onClick={chip.clear} aria-label={`Remove filter: ${chip.label}`}>
+                  {chip.label}
+                  <X size={12} aria-hidden="true" />
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
 
       <div className="explorer-content">
@@ -2659,84 +2722,31 @@ export default function EntityExplorer({
             
             <div className="explorer-grid">
               {(!isLoadingPapers || isFetchingMore) && visiblePapers.map((paper, idx) => (
-                <div 
-                  key={`${paper.id}-${idx}`} 
-                  className="explorer-list-item"
-                  onClick={() => setSelectedPaper(paper)}
-                  style={{ '--i': Math.min(idx, 8), '--area-accent': rowAreas[idx].accent }}
+                <PaperListRow
+                  key={`${paper.id}-${idx}`}
+                  paper={paper}
+                  onOpen={() => setSelectedPaper(paper)}
+                  aside={hasKnownPaperCitationCount(paper) && (
+                    `${getPaperCitationCount(paper).toLocaleString(locale)} ${getPaperCitationCount(paper) === 1 ? 'citation' : 'citations'}`
+                  )}
                 >
-                  <div className="eli-header">
-                    <span className="eli-cat">{rowAreas[idx].label}</span>
-                    <div className="eli-metrics">
-                      {hasKnownPaperCitationCount(paper) && (
-                        paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
-                          <a
-                            className="eli-citations eli-citations--link"
-                            href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(event) => event.stopPropagation()}
-                            aria-label={`${getPaperCitationCount(paper).toLocaleString(locale)} ${'citations on Scopus'}`}
-                          >
-                            <Medal size={13} />
-                            {getPaperCitationCount(paper).toLocaleString(locale)} {'citations on Scopus'}
-                          </a>
-                        ) : (
-                          <span className="eli-citations">
-                            <Medal size={13} />
-                            {getPaperCitationCount(paper).toLocaleString(locale)} {'citations'}
-                          </span>
-                        )
-                      )}
-                      <span className="eli-date">{paper.year}</span>
-                    </div>
-                  </div>
-                  {/* The row's click is a pointer shortcut; this button is the
-                      control, so the Scopus link above stays a link of its own. */}
-                  <h3 className="eli-title">
-                    <button
-                      type="button"
-                      className="eli-title-btn"
-                      onClick={(event) => { event.stopPropagation(); setSelectedPaper(paper); }}
-                      aria-label={`${'Open publication'}: ${normalizeScientificMarkup(paper.title) || ('Untitled')}`}
-                    >
-                      <ScientificText>{paper.title}</ScientificText>
-                    </button>
-                  </h3>
-                  <p className="eli-authors">{(paper.authors || []).map(a => (a as PaperAuthor).name || a).join(', ')}</p>
-                  <p className="eli-summary">
-                    {hasUsableAIAbstract(paper.abstract)
-                      ? <ScientificText>{paper.abstract}</ScientificText>
-                      : ('Abstract unavailable.')}
-                  </p>
-                </div>
+                  {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+                </PaperListRow>
               ))}
-              
+
               {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
                   <div
                     key={`skeleton-${n}`}
-                    className="explorer-list-item ex-skel-row"
+                    className="list-row ex-skel-row"
                     aria-hidden="true"
                   >
-                    <div className="ex-skel-row-head">
-                      <div className="ex-skel ex-skel-kicker"></div>
-                      <div className="ex-skel ex-skel-metrics"></div>
-                    </div>
+                    <div className="ex-skel ex-skel-kicker"></div>
                     <div className="ex-skel ex-skel-title"></div>
                     <div className="ex-skel ex-skel-title"></div>
-                    <div className="ex-skel ex-skel-authors"></div>
-                    <div className="ex-skel ex-skel-summary"></div>
-                    <div className="ex-skel ex-skel-summary ex-skel-summary--short"></div>
+                    <div className="ex-skel ex-skel-dots"></div>
                   </div>
                 ))}
 
-              {isLoadingPapers && !isFetchingMore && isPapersLoadSlow && (
-                <p className="explorer-loading-note" role="status">
-                  {type === 'project'
-                    ? ('Asking OpenAIRE for this project’s publications. It can take a few seconds.')
-                    : ('Still loading publications…')}
-                </p>
-              )}
 
               {/* Infinite Scroll Sentinel — once every row of this page is in.
                   The box always mounts, because it IS the observer's target and
@@ -2767,9 +2777,9 @@ export default function EntityExplorer({
                   takes its place. */}
               {!publicMode && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
                 <div ref={observerRef} className="ehc-sentinel">
-                  {isFetchingMore && <CircleNotch className="ehc-spinner" size={24} />}
+                  <Petri pose="flask" className={isFetchingMore ? 'petri-loader' : undefined} />
                   <span>{isFetchingMore
-                    ? ('Loading more articles...')
+                    ? ('Loading more articles…')
                     : ('Scroll for more')}</span>
                 </div>
               )}
@@ -2857,9 +2867,9 @@ export default function EntityExplorer({
             {/* Same reason as the publications sentinel above. */}
             {!publicMode && hasMoreAuthors && (entityAuthors.length > 0 || isFetchingMoreAuthors) && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
-                {isFetchingMoreAuthors && <CircleNotch className="ehc-spinner" size={24} />}
+                <Petri pose="flask" className={isFetchingMoreAuthors ? 'petri-loader' : undefined} />
                 <span>{isFetchingMoreAuthors
-                  ? ('Loading more authors...')
+                  ? ('Loading more authors…')
                   : ('Scroll for more')}</span>
               </div>
             )}
@@ -2869,10 +2879,16 @@ export default function EntityExplorer({
             )}
             {!isLoadingAuthors && !isFetchingMoreAuthors && entityAuthors.length === 0 && (
               authorsError ? (
-                <div className="explorer-empty">
-                  <p role="alert">{getUiErrorMessage(authorsError, 'AUTHORS_LOAD_FAILED')}</p>
-                  <Button variant="outline" size="sm" onClick={retryAuthors}>{'Try again'}</Button>
-                </div>
+                <EmptyState
+                  className="explorer-empty"
+                  role="alert"
+                  as="h3"
+                  art={<Petri pose="upset" />}
+                  title={'The authors could not be loaded'}
+                  actions={<Button variant="outline" size="sm" onClick={retryAuthors}>{'Try again'}</Button>}
+                >
+                  {getUiErrorMessage(authorsError, 'AUTHORS_LOAD_FAILED')}
+                </EmptyState>
               ) : (
                 <ExplorerEmptyState variant={debouncedSearch ? 'authors' : 'authors-none'} />
               )
@@ -2884,115 +2900,38 @@ export default function EntityExplorer({
       {/* Filter drawer — a Sheet: a positioned modal Dialog (focus trap,
           Escape, restore, `aria-modal`) that slides in from the right and
           waits for its own exit before unmounting. The title names it. */}
-      <Sheet open={showFilters} onOpenChange={setShowFilters}>
-        <SheetContent
-          side="right"
-          className="ee-filter-drawer"
-          overlayClassName="ee-filter-backdrop"
-          showClose={false}
-        >
-              <div className="ee-filter-header">
-                <SheetTitle render={<h3 />}><SlidersHorizontal size={18}/> {'Advanced filters'}</SheetTitle>
-                <SheetClose
-                  render={<Button variant="ghost" size="icon" />}
-                  aria-label={'Close filters'}
-                  title={'Close'}
-                >
-                  <X size={20}/>
-                </SheetClose>
-              </div>
-              <div className="ee-filter-body">
-                {/* Each row of chips is one choice, so each is a single-select
-                    ui ToggleGroup: Base UI writes `aria-pressed` on the chip
-                    that is on (the old `active` class said nothing to a screen
-                    reader) and moves between chips on the arrow keys. The
-                    group reports `[]` when the pressed chip is pressed again;
-                    "no choice" is not a state these have, so that is ignored.
-                    The open choices ("All", "Any date") are stored as '' and
-                    carried under a sentinel value here. */}
-                <div className="ee-filter-section">
-                  <h4>{'Sort by'}</h4>
-                  <ToggleGroup
-                    variant="outline"
-                    className="ee-filter-chips"
-                    aria-label={'Sort by'}
-                    value={[sortBy]}
-                    onValueChange={([next]) => { if (next !== undefined) setSortBy(next); }}
+      {isPhone ? (
+        <Drawer open={showFilters} onOpenChange={setShowFilters}>
+          <DrawerContent className="pc-share-sheet ee-filter-sheet">
+            <DrawerHandle />
+            <div className="ee-filter-header">
+              <DrawerTitle render={<h3 />}><SlidersHorizontal size={18}/> {'Filters'}</DrawerTitle>
+            </div>
+            {filterControls}
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Sheet open={showFilters} onOpenChange={setShowFilters}>
+          <SheetContent
+            side="right"
+            className="ee-filter-drawer"
+            overlayClassName="ee-filter-backdrop"
+            showClose={false}
+          >
+                <div className="ee-filter-header">
+                  <SheetTitle render={<h3 />}><SlidersHorizontal size={18}/> {'Filters'}</SheetTitle>
+                  <SheetClose
+                    render={<Button variant="ghost" size="icon" />}
+                    aria-label={'Close filters'}
+                    title={'Close'}
                   >
-                    <ToggleGroupItem value="cited_by_count:desc" className="ee-filter-chip">
-                      {'Most cited'}
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="publication_date:desc" className="ee-filter-chip">
-                      {'Most recent'}
-                    </ToggleGroupItem>
-                  </ToggleGroup>
+                    <X size={20}/>
+                  </SheetClose>
                 </div>
-                <div className="ee-filter-section">
-                  <h4>{'Category (Area)'}</h4>
-                  <ToggleGroup
-                    variant="outline"
-                    className="ee-filter-chips"
-                    aria-label={'Category (Area)'}
-                    value={[filters.category || 'all']}
-                    onValueChange={([next]) => {
-                      if (next !== undefined) setFilters({ ...filters, category: next === 'all' ? '' : next });
-                    }}
-                  >
-                    <ToggleGroupItem value="all" className="ee-filter-chip">
-                      {'All'}
-                    </ToggleGroupItem>
-                    {Object.entries(CATEGORIES).map(([key, cat]) => (
-                      <ToggleGroupItem key={key} value={key} className="ee-filter-chip">
-                        {cat.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </div>
-                <div className="ee-filter-section">
-                  <h4>{'Publication date'}</h4>
-                  <ToggleGroup
-                    variant="outline"
-                    className="ee-filter-chips"
-                    aria-label={'Publication date'}
-                    value={[filters.dateRange || 'any']}
-                    onValueChange={([next]) => {
-                      if (next !== undefined) setFilters({ ...filters, dateRange: next === 'any' ? '' : next });
-                    }}
-                  >
-                    {['any', 'last_year', 'last_5_years'].map(val => (
-                      <ToggleGroupItem key={val} value={val} className="ee-filter-chip">
-                        {val === 'any'
-                          ? ('Any date')
-                          : val === 'last_year'
-                            ? ('Last year')
-                            : ('Last 5 years')}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </div>
-                <div className="ee-filter-section">
-                  {/* An enclosing label: the Switch renders a span (`role="switch"`)
-                      with a hidden input, which is the pattern Base UI names for
-                      a wrapping label. */}
-                  <Label className="ee-toggle-label">
-                    <Switch
-                      checked={filters.peerReviewed}
-                      onCheckedChange={(checked) => setFilters({ ...filters, peerReviewed: checked })}
-                    />
-                    {'Peer-reviewed only'}
-                  </Label>
-                </div>
-              </div>
-              <div className="ee-filter-footer">
-                <Button variant="outline" className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
-                  {'Reset'}
-                </Button>
-                <Button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
-                  {'Apply filters'}
-                </Button>
-              </div>
-        </SheetContent>
-      </Sheet>
+                {filterControls}
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Paper Card Overlay — the shared takeover, so the explorer and search
           open a paper the same way. */}
@@ -3014,7 +2953,8 @@ export default function EntityExplorer({
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaperToView(paper)}
-            onSaveToList={onSaveToList}
+            onSaveToList={handleSaveToList}
+            onPickList={onSaveToList}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}

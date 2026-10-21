@@ -75,6 +75,13 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 binding = "NOTIFICATION_STORE"
 id = "45c1519982dd48f8a0ea08403c159ae1"
 
+# The library lists of /institution/services: one record per library with a
+# verdict per catalogue entry (worker/institution-services.ts). Global, unlike
+# the per-location edge cache, and read on every request for the list.
+[[kv_namespaces]]
+binding = "INSTITUTION_SERVICES_STORE"
+id = "a6b32a20ed4748139e828f1cbeff5b93"
+
 # A rewrite is identical for every reader, so it is cached globally in KV rather
 # than per edge. Until a dedicated namespace exists, ai-rewrite.js falls back to
 # NOTIFICATION_STORE under a "rewrite:" prefix. To separate them, run

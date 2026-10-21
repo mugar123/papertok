@@ -58,6 +58,15 @@ test('keeps a confirmed zero citation count distinct from missing metadata', () 
   assert.equal(enriched.citationCountKnown, true);
 });
 
+// A mapper leaves the year out when the provider's date is after today; the
+// builder, and `deduplicate` through it, used to write in the current year.
+test('a record without a year keeps no year', () => {
+  const record = { id: 'pmid:42879010', sources: { primary: 'pubmed', enrichedBy: [] }, title: 'Chapter' };
+  assert.equal(PaperBuilder.create(record).year, undefined);
+  assert.equal(PaperBuilder.deduplicate([record])[0].year, undefined);
+  assert.equal(PaperBuilder.create({ ...record, year: 2025 }).year, 2025);
+});
+
 test('does not treat an OpenAlex repository as a verified publication', () => {
   const paper = PaperBuilder.create({
     id: 'arxiv:2607.08264',
