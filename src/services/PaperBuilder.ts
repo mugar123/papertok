@@ -247,20 +247,25 @@ export class PaperBuilder {
     // `WORKING_PAPER_SOURCE_IDS` held only its institution's own
     // publications. `workingPaper` also marks every OpenAlex `report`, and
     // some report registrants issue journals too (the St. Louis Fed its Review
-    // under 10.20955). A record that names its journal, has merged another
-    // record or comes from another provider therefore keeps its own answer;
-    // an arXiv record listing the Review's DOI without a journal reference
-    // still reads as the report. Only a working paper gets this reading:
-    // Springer registers journal articles and chapters alike under 10.1007.
+    // under 10.20955). An arXiv record that names its journal, has no DOI of
+    // its own or has merged a record saying the paper was reviewed therefore
+    // keeps its own answer, as does a record from another provider; an arXiv
+    // record listing the Review's DOI without a journal reference still reads
+    // as the report. Only a working paper gets this reading: Springer
+    // registers journal articles and chapters alike under 10.1007.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
-    // `arxivService` reads any DOI as publication. Until another record merges
-    // in, an arXiv record without a journal reference has nothing else behind
-    // its `true`.
-    const arxivDoiOnly = existingPaper.sources?.primary === 'arxiv'
-      && existingPaper.sources.enrichedBy.length === 0
-      && !existingPaper.journal && isPublisherDoi(baseDoi);
+    // `arxivService` reads any DOI as publication, so an arXiv record without
+    // a journal reference has nothing else behind its `true`. A merged record
+    // that does not say the paper was reviewed leaves it so (OpenAlex's record
+    // of the eprint under arXiv's DOI), yet can give the row a DOI or a
+    // journal, "arXiv (Cornell University)" among them. So the record's own
+    // fields are read before its first merge, and `sources.arxivDoiOnly`
+    // carries the answer to the merges after it.
+    const arxivDoiOnly = existingPaper.sources.enrichedBy.length === 0
+      ? existingPaper.sources.primary === 'arxiv' && !existingPaper.journal && isPublisherDoi(baseDoi)
+      : existingPaper.sources.arxivDoiOnly === true;
     const sameRecord = !existingPaper.doi
       || (baseDoi !== '' && baseDoi === enrichmentDoi)
       || (arxivDoiOnly && enrichmentData.workingPaper === true && enrichmentDoi !== ''
@@ -401,10 +406,13 @@ export class PaperBuilder {
     // A merge that carried nothing but an abstract once overwrote an explicit
     // `peerReviewed: false` with `true`, and deriving an answer for a record
     // that had none turned OpenAlex's unknown into `true` the same way.
+    const enrichmentReview = shouldUpgradePublication
+      ? enrichmentData.peerReviewed
+        ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint')
+      : undefined;
     if (shouldUpgradePublication && (reviewOpen || reviewDenied)
       && (enrichmentData.peerReviewed !== false || sameRecord)) {
-      merged.peerReviewed = enrichmentData.peerReviewed
-        ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
+      merged.peerReviewed = enrichmentReview;
     }
     // A working paper the row is not still contradicts a `true` that rests on
     // a DOI alone. That DOI may be the journal version's, the paper's own SSRN
@@ -419,6 +427,13 @@ export class PaperBuilder {
     // Written only when it changes: a merge that adds nothing must return a
     // paper equal to the one it got (`paperFieldsEqual`), key for key.
     if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
+    // A merged record whose own answer is `true`, such as OpenAlex's record of
+    // the journal article, backs the row's; until one does, the `true` rests
+    // on the arXiv record's DOI alone.
+    const stillArxivDoiOnly = arxivDoiOnly && enrichmentReview !== true;
+    if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
+      merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
+    }
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {

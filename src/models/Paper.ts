@@ -9,6 +9,10 @@ export interface PaperAuthor {
 export interface PaperSources {
   primary: string;
   enrichedBy: string[];
+  // Written and read only by `PaperBuilder.merge`: the row began as an arXiv
+  // record whose `true` rested on a DOI alone, and no record merged since has
+  // said the paper was reviewed.
+  arxivDoiOnly?: true;
 }
 
 export interface PaperSubjectReference {

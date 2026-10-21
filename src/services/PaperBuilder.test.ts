@@ -499,9 +499,69 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     assert.deepEqual(peerReviewedOnly(rows), [], flow);
   }
 
+  // A third record can merge in between. OpenAlex also files the eprint as a
+  // preprint under arXiv's own DOI. That record says nothing about review, so
+  // the revision's DOI stays the arXiv record's only claim and the row is
+  // still the FEDS paper. OpenAlex's record of a journal article under the
+  // DOI arXiv lists does say the paper was reviewed, and the row stays so.
+  const arxivLocation = {
+    landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const preprintWork: OpenAlexWork = {
+    id: 'https://openalex.org/W501',
+    doi: `https://doi.org/10.48550/arXiv.${arxivId}`,
+    title,
+    type: 'preprint',
+    authorships: fedsWork.authorships,
+    publication_year: 2026,
+    primary_location: arxivLocation,
+    locations: [arxivLocation],
+  };
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const articleLocation = {
+    landing_page_url: `https://doi.org/${journalDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal', host_organization_name: 'Elsevier' },
+  };
+  const articleWork: OpenAlexWork = {
+    ...preprintWork,
+    id: 'https://openalex.org/W502',
+    doi: `https://doi.org/${journalDoi}`,
+    type: 'article',
+    primary_location: articleLocation,
+    locations: [articleLocation, arxivLocation],
+  };
+  const throughSecondRecord = (arxiv: Paper, second: OpenAlexWork): Array<[string, Paper[]]> => {
+    const explorer = (work: OpenAlexWork) => slimWorksPage({ results: [work] }).papers[0];
+    const enrichment = (work: OpenAlexWork) => mapOpenAlexEnrichmentWork(work)!.enrichment;
+    return [
+      ['search', PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(second)!, searchRecord()])],
+      ['Explorer page', PaperBuilder.deduplicate([arxiv, explorer(second), explorerRecord()])],
+      ['Explorer across pages', [arxiv, explorer(second), explorerRecord()]
+        .reduce<Paper[]>((rows, record) => PaperBuilder.deduplicate([...rows, record]), [])],
+      ['feed enrichment', [PaperBuilder.merge(PaperBuilder.merge(arxiv, enrichment(second), 'openalex'), enrichment(fedsWork), 'openalex')]],
+    ];
+  };
+  for (const [flow, rows] of throughSecondRecord(arxivRecord(`${fedsDoi}r1`), preprintWork)) {
+    const where = `OpenAlex preprint between, ${flow}`;
+    assert.equal(rows.length, 1, where);
+    assert.equal(rows[0].peerReviewed, false, where);
+    assert.equal(reviewTagForPaper(rows[0])?.label, 'Working paper', where);
+    assert.deepEqual(peerReviewedOnly(rows), [], where);
+  }
+  for (const [flow, rows] of throughSecondRecord(arxivRecord(journalDoi), articleWork)) {
+    const where = `OpenAlex article between, ${flow}`;
+    assert.equal(rows.length, 1, where);
+    assert.equal(rows[0].doi, journalDoi, where);
+    assert.equal(rows[0].peerReviewed, true, where);
+    assert.equal(reviewTagForPaper(rows[0]), null, where);
+    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
+  }
+
   // The same eprint published in a journal, which arXiv records with the
   // journal's DOI and reference, stays reviewed when it arrives first.
-  const journalDoi = '10.1016/j.jinteco.2026.103900';
   for (const [flow, rows] of flows(arxivRecord(journalDoi, 'J. Int. Econ. 160 (2026) 103900'), { workingPaperFirst: false })) {
     assert.equal(rows.length, 1, flow);
     assert.equal(rows[0].doi, journalDoi, flow);
