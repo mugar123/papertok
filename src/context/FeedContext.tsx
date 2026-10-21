@@ -428,10 +428,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // card reports call this. A card a load only brought in stays in
   // sessionSeenPapers, which dies with the page, so the next load may show it.
   // The list kept across loads is read back before it is written, so a second
-  // tab's views are not overwritten.
-  const markPaperViewed = useCallback((paperId: string) => {
-    sessionSeenPapers.current.add(paperId);
+  // tab's views are not overwritten. A card that reports after the account
+  // changed was viewed by the account that owned it, not by the new one.
+  const markPaperViewed = useCallback((paperId: string, viewerId: string | null | undefined) => {
     const userId = activeUserId.current;
+    if ((viewerId || null) !== userId) return;
+    sessionSeenPapers.current.add(paperId);
     const viewed = readSeenPaperIds(userId);
     viewed.delete(paperId);
     viewed.add(paperId);
@@ -2303,7 +2305,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const trackViewTime = useCallback(async (paper: Paper, timeInSeconds: number) => {
     const userId = user?.uid;
     if (timeInSeconds < 1) return;
-    markPaperViewed(paper.id);
+    markPaperViewed(paper.id, userId);
     
     // ─── BOREDOM RESET: user is engaging, not bored ───
     if (timeInSeconds >= 5) {
@@ -2389,7 +2391,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     boredomLevel.current = Math.min(20, boredomLevel.current + skippedPapers.length);
     const timestamp = new Date().toISOString();
     skippedPapers.forEach((paper) => {
-      markPaperViewed(paper.id);
+      markPaperViewed(paper.id, userId);
       countEngagement(paper.id, { cards: 1, skips: 1 });
       recordProfileEvent({
         paperId: paper.id,

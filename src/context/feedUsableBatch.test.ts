@@ -468,7 +468,7 @@ function viewing({ user = 'test-user' as string | null, seen = ref(new Set<strin
   };
   const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid'), tracking) as (paper: FeedRecord, seconds: number) => Promise<void>;
   const trackSkips = callbackIn(componentCallback('trackSkips', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (papers: FeedRecord[]) => Promise<void>;
-  return { markPaperViewed, carryViewedPapers, trackViewTime, trackSkips, stored: (userId = user) => [...readSeenPaperIds(userId, storage)] };
+  return { scope, markPaperViewed, carryViewedPapers, trackViewTime, trackSkips, stored: (userId = user) => [...readSeenPaperIds(userId, storage)] };
 }
 
 test('a load remembers the papers it shows for this session, not in the reader\'s viewed list', async t => {
@@ -489,24 +489,38 @@ test('a card the reader views or skips joins the list kept across loads, a loade
   await trackSkips([paperRecord('skip-1'), paperRecord('skip-2')]);
   assert.deepEqual(stored(), ['viewed', 'skip-1', 'skip-2']);
   // Viewing again moves the paper to the end instead of repeating it.
-  markPaperViewed('viewed');
+  markPaperViewed('viewed', 'test-user');
   assert.deepEqual(stored(), ['skip-1', 'skip-2', 'viewed']);
 });
 
 test('the viewed list is the signed-in account\'s own, and keeps the last 500', () => {
   const storage = memoryStorage();
   const accountA = viewing({ user: 'account-a', storage });
-  for (let index = 0; index < 520; index += 1) accountA.markPaperViewed(`paper-${index}`);
+  for (let index = 0; index < 520; index += 1) accountA.markPaperViewed(`paper-${index}`, 'account-a');
   const accountB = viewing({ user: 'account-b', storage });
-  accountB.markPaperViewed('b-paper');
+  accountB.markPaperViewed('b-paper', 'account-b');
 
   assert.equal(accountA.stored().length, 500);
   assert.equal(accountA.stored()[0], 'paper-20');
   assert.deepEqual(accountB.stored(), ['b-paper']);
   // A guest has no list to write to.
   const guest = viewing({ user: null, storage });
-  guest.markPaperViewed('guest-paper');
+  guest.markPaperViewed('guest-paper', undefined);
   assert.deepEqual(guest.stored(), []);
+});
+
+test('a card that reports after the account changed was not viewed by the new account', async () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  await accountA.trackViewTime(paperRecord('before'), 4);
+  // The feed switches to B while A's last card is still reporting.
+  accountA.scope.activeUserId.current = 'account-b';
+  await accountA.trackViewTime(paperRecord('late-card'), 4);
+  await accountA.trackSkips([paperRecord('late-skip')]);
+
+  assert.deepEqual(accountA.stored('account-a'), ['before']);
+  assert.deepEqual(accountA.stored('account-b'), []);
+  assert.equal(accountA.scope.sessionSeenPapers.current.has('late-card'), false);
 });
 
 // Device A's reader went through every paper of page 1 and nothing else; the
