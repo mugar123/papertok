@@ -1,3 +1,4 @@
+import { isServiceAccountConfigured, FirebaseServiceAccountError } from './firebase-service-account.ts';
 import type { WorkerEnv, WorkerGlobals } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
@@ -36,7 +37,6 @@ import {
   clearFieldsWrite,
   createFirestoreAdmin,
   FirestoreAdminError,
-  isServiceAccountConfigured,
   mergeWrite,
 } from './firestore-admin.ts';
 
@@ -121,6 +121,7 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * organisation is never answered with this university's library.
  */
 const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
+  'comunidadunir.net': { rorId: 'https://ror.org/029gnnp81', source: 'https://www.unir.net/eduroam/', checked: '2026-10-21' },
   'campus.lmu.de': { rorId: 'https://ror.org/05591te55', source: 'https://www.lmu.de/en/about-lmu/structure/central-university-administration/it-services-division/it-service-desk/central-it-services/e-mail-mailbox/', checked: '2026-10-20' },
   'lmu.de': { rorId: 'https://ror.org/05591te55', source: 'https://www.lmu.de/en/about-lmu/structure/central-university-administration/it-services-division/it-service-desk/central-it-services/e-mail-dienst-fuer-beschaeftigte/', checked: '2026-10-20' },
   'mytum.de': { rorId: 'https://ror.org/02kkvpp62', source: 'https://www.tum.de/ueber-die-tum/kontakt-und-anfahrt/logins', checked: '2026-10-20' },
@@ -336,7 +337,7 @@ export async function handleInstitutionLinkRequest(request: Request, env: Worker
     return { institution };
   } catch (error) {
     if (error instanceof InstitutionLinkError || error instanceof WorkerAuthError) throw error;
-    if (error instanceof FirestoreAdminError) {
+    if (error instanceof FirestoreAdminError || error instanceof FirebaseServiceAccountError) {
       // Unlinking has nothing to clear in a document that never existed: the
       // user document of an account that never onboarded, or the profile most
       // accounts never had. The precondition failure is that, not a fault.

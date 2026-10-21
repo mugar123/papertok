@@ -1,3 +1,4 @@
+import { isServiceAccountConfigured, FirebaseServiceAccountError } from './firebase-service-account.ts';
 import type { WorkerEnv } from './env.ts';
 import type { FirestoreAdmin } from './firestore-admin.ts';
 
@@ -74,7 +75,6 @@ import {
   createWrite,
   deleteWrite,
   FirestoreAdminError,
-  isServiceAccountConfigured,
   mergeWrite,
 } from './firestore-admin.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -796,7 +796,7 @@ export async function handlePublicListRequest(request: Request, env: WorkerEnv, 
   try {
     return await operation.run(admin, identity.uid, prepared, settings);
   } catch (error) {
-    if (error instanceof FirestoreAdminError) {
+    if (error instanceof FirestoreAdminError || error instanceof FirebaseServiceAccountError) {
       // A lost race on create is the only precondition this route can hit.
       throw new PublicListApiError(
         error.status === 409 ? 'PUBLISH_CONFLICT' : 'PUBLISH_FAILED',

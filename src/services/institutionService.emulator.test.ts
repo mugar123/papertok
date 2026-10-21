@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { initializeApp, deleteApp } from 'firebase/app';
 import {
   connectAuthEmulator, initializeAuth, inMemoryPersistence, signInAnonymously,
-  signInWithEmailLink, signOut,
+  sendSignInLinkToEmail, signInWithEmailLink, signOut,
 } from 'firebase/auth';
 import {
   sendInstitutionVerification, completeInstitutionVerification, cancelInstitutionVerification,
@@ -35,6 +35,12 @@ test('emulator: email proof preserves the primary UID, rejects reuse and invalid
     },
     request: async (url, init) => {
       const body = JSON.parse(init!.body as string);
+      if (new URL(url).pathname === '/institution/verification') {
+        await sendSignInLinkToEmail(secondary, body.email, {
+          url: `http://localhost:5173/institution/verify?state=${body.nonce}`, handleCodeInApp: true,
+        });
+        return Response.json({ sent: true });
+      }
       if (body.institutionToken) {
         const claims = JSON.parse(Buffer.from(body.institutionToken.split('.')[1], 'base64url').toString());
         assert.equal(claims.email_verified, true);

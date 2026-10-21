@@ -165,6 +165,18 @@
         earlier.
       </p>
 
+      <h2>University email verification</h2>
+      <p>
+        When you request a university link, PaperTok sends that email address to
+        <strong>Firebase Authentication</strong> to generate a one-time verification
+        link and to <strong>Brevo</strong> to deliver it. The pending request stays in
+        your browser for up to one hour. Cloudflare stores hashed account and recipient
+        identifiers for request limits and a delivery status; it does not store the
+        verification link or message body. Your linked institution records the university
+        and email domain, not the full address. Requesting verification does not subscribe
+        you to email updates.
+      </p>
+
       <h2>Email updates</h2>
       <p>
         If you turn them on, PaperTok emails you what is new from what you follow. For that

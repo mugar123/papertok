@@ -29,12 +29,19 @@ function scenario() {
       removeItem: key => { saved.delete(key); },
     },
     secondaryAuth: () => ({} as Auth),
-    sendEmail: async (_auth, email, settings) => { sent.push({ email, url: settings.url }); },
     emailSignIn: async () => ({ user: holder } as UserCredential),
     additionalUserInfo: () => ({ isNewUser: true, providerId: 'password', profile: null }),
     deleteUser: async () => { cleanup.push('delete'); },
     signOut: async () => { cleanup.push('signOut'); },
     request: async (url, init) => {
+      if (new URL(url).pathname === '/institution/verification') {
+        const body = JSON.parse(init!.body as string);
+        assert.deepEqual(Object.keys(body).sort(), ['email', 'nonce']);
+        assert.equal(init!.method, 'POST');
+        assert.ok(init!.signal);
+        sent.push({ email: body.email, url: `https://papertok.test/institution/verify?state=${body.nonce}` });
+        return Response.json({ sent: true });
+      }
       calls.push({ path: new URL(url).pathname, body: JSON.parse(init!.body as string) });
       return Response.json({ institution: INSTITUTION });
     },
@@ -151,8 +158,8 @@ test('invalid, expired and reused Firebase proofs do not reach the Worker', asyn
 test('unsupported institutions and Worker outages remain errors and release temporary credentials', async () => {
   for (const code of ['INSTITUTION_NOT_FOUND', 'INSTITUTION_LOOKUP_UNAVAILABLE']) {
     const s = scenario();
-    s.options.request = async () => Response.json({ code }, { status: 502 });
     await sendInstitutionVerification('alice@usal.es', s.options);
+    s.options.request = async () => Response.json({ code }, { status: 502 });
     await assert.rejects(completeInstitutionVerification(s.link(), s.options), { code });
     assert.deepEqual(s.cleanup, ['delete', 'signOut']);
   }
@@ -161,8 +168,8 @@ test('unsupported institutions and Worker outages remain errors and release temp
 test('email failures and invalid inputs do not leave an active request', async () => {
   const s = scenario();
   await assert.rejects(sendInstitutionVerification('alice', s.options), { code: 'INSTITUTION_EMAIL_INVALID' });
-  s.options.sendEmail = async () => { throw Object.assign(new Error(), { code: 'auth/operation-not-allowed' }); };
-  await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'auth/operation-not-allowed' });
+  s.options.request = async () => Response.json({ code: 'INSTITUTION_VERIFICATION_LIMIT' }, { status: 429 });
+  await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'INSTITUTION_VERIFICATION_LIMIT' });
   assert.equal(pendingInstitutionVerification(s.options), null);
   assert.equal(s.calls.length, 0);
 });
@@ -193,7 +200,10 @@ test('blocked browser storage prevents delivery and does not break account loadi
 
 test('switching accounts during delivery cannot leave a usable request', async () => {
   const s = scenario();
-  s.options.sendEmail = async () => { s.switchAccount({ uid: 'other', email: 'other@example.com', emailVerified: true }); };
+  s.options.request = async () => {
+    s.switchAccount({ uid: 'other', email: 'other@example.com', emailVerified: true });
+    return Response.json({ sent: true });
+  };
   await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'INSTITUTION_VERIFICATION_CANCELED' });
   assert.equal(pendingInstitutionVerification(s.options), null);
   assert.equal(s.calls.length, 0);
@@ -221,5 +231,22 @@ test('the callback credential is removed before routing and analytics can see it
       assert.equal(institutionVerificationLink.includes('private-test-proof'), true);
     `], { encoding: 'utf8' });
     assert.equal(child.status, 0, child.stderr);
+  }
+});
+
+
+test('uncertain delivery keeps the request usable if its email arrives', async () => {
+  for (const failure of ['network', 'provider']) {
+    const s = scenario();
+    const request = s.options.request!;
+    s.options.request = async (url, init) => {
+      await request(url, init);
+      if (failure === 'network') throw new TypeError('Network unavailable');
+      return Response.json({ code: 'INSTITUTION_VERIFICATION_UNCERTAIN' }, { status: 503 });
+    };
+    await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'INSTITUTION_VERIFICATION_UNCERTAIN' });
+    assert.ok(pendingInstitutionVerification(s.options));
+    s.options.request = request;
+    assert.deepEqual(await completeInstitutionVerification(s.link(), s.options), INSTITUTION);
   }
 });
