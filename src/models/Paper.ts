@@ -162,6 +162,10 @@ export interface Paper {
   provider?: string;
   citationMetadataResolved?: boolean;
   _followedEntityMatches?: Array<PaperFollowMatch | string>;
+  // The reader categories a source was asked for when it returned this card.
+  // Ranking credit only: it says why the card was fetched, not what the paper
+  // is, so it is never shown or stored as the paper's classification.
+  _fetchedFor?: string[];
   _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;
   _isPersonalCandidate?: boolean;
