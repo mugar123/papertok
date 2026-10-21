@@ -13,7 +13,10 @@ import './SharePanel.css';
  * outside press, Escape or (the drawer) a swipe down, and gives focus back to
  * the button.
  */
-export default function RailMenu({ title, trigger, menu, sheet }: { title: string; trigger: ComponentProps<typeof Menu.Trigger>['render']; menu?: ReactNode; sheet: ReactNode }) {
+export default function RailMenu({ title, trigger, menu, sheet, side = 'left', align = 'center' }: {
+  title: string; trigger: ComponentProps<typeof Menu.Trigger>['render']; menu?: ReactNode; sheet: ReactNode;
+  side?: ComponentProps<typeof Menu.Positioner>['side']; align?: ComponentProps<typeof Menu.Positioner>['align'];
+}) {
   // Either surface portals to the body, but React still bubbles its clicks
   // up to the card, whose double tap is a like.
   const stop = (event: SyntheticEvent) => event.stopPropagation();
@@ -34,7 +37,7 @@ export default function RailMenu({ title, trigger, menu, sheet }: { title: strin
     <Menu.Root>
       <Menu.Trigger render={trigger} />
       <Menu.Portal>
-        <Menu.Positioner className="pc-share-menu-positioner" side="left" align="center" sideOffset={12}>
+        <Menu.Positioner className="pc-share-menu-positioner" side={side} align={align} sideOffset={12}>
           <Menu.Popup className="pc-share-menu" aria-label={title} onClick={stop}>{menu}</Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

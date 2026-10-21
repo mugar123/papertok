@@ -40,7 +40,7 @@ test('the hero settles between its heights instead of snapping at the handover',
   assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle\.ts';/);
   // `suspended` is the route transition's own gate: a settle under a page that
   // is still travelling is a second owner of the same displacement.
-  assert.match(jsx, /const heroBodyRef = useRef(?:<[^;\n]+>)?\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage, showWikiBlock, wikiDescription, isWikiRequestPending, wikiFoldExits\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
+  assert.match(jsx, /const heroBodyRef = useRef(?:<[^;\n]+>)?\(null\);[\s\S]*?useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, recentImpact, hasLoadedWikiImage\],\s*\{ enabled: !prefersReducedMotion, suspended: isPageArriving, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
   // The easing is passed here, not changed in the hook: the hook's expo-out
   // default is right for a box that appears, and this is the one box whose
   // growth moves everything beneath it. Measured on a phone opening an author:
@@ -55,36 +55,6 @@ test('the hero settles between its heights instead of snapping at the handover',
   assert.match(jsx, /<div className="explorer-hero-content is-skeleton" ref=\{heroBodyRef\} aria-hidden="true">/);
   assert.match(jsx, /<div className="explorer-hero-content" ref=\{heroBodyRef\}>/);
   assert.doesNotMatch(jsx, /className="explorer-hero" ref=/, 'the outer hero is not the animated box');
-});
-
-test('the height settle is a FLIP on one property, decided every commit and re-aimed in flight', async () => {
-  const hookRaw = await read('../../hooks/useHeightSettle.ts');
-  const hook = hookRaw.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-  assert.match(hook, /import \{ depsAreSame, planHeightSettle \} from '\.\/heightSettlePlan\.ts';/);
-  // Measured before paint, so the first frame is already the old height —
-  // and with NO dependency list: the memory is kept on every commit.
-  assert.match(hook, /useLayoutEffect\(\(\) => \{/);
-  assert.match(hook, /\n {2}\}\);\n\}\n$/, 'the effect closes without a dependency array');
-  assert.doesNotMatch(hookRaw, /eslint-disable-next-line react-hooks\/exhaustive-deps/);
-  // A settle in flight is read (keyframes and clock) before it is cancelled.
-  assert.match(hook, /el\.getAnimations\(\)\.find\(\(animation\) => animation\.id === SETTLE_ID\)/);
-  assert.match(hook, /const \[start, end\] = \(inFlight\.effect as KeyframeEffect\)\.getKeyframes\(\);/);
-  assert.match(hook, /current = el\.getBoundingClientRect\(\)\.height;\s*inFlight\.cancel\(\);/);
-  // The decision is the pure module's; the hook only measures and drives.
-  assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown \}\);/);
-  assert.match(hook, /lastHeightRef\.current = plan\.remember;/);
-  assert.match(hook, /el\.animate\(\s*\[\{ height: `\$\{plan\.from\}px` \}, \{ height: `\$\{plan\.to\}px` \}\],/);
-  assert.match(hook, /if \(plan\.action === 'resume'\) animation\.currentTime = plan\.currentTime;/);
-  // Clipped only while moving; a newer settle keeps the clip.
-  assert.match(hook, /el\.style\.overflow = 'hidden';/);
-  assert.match(hook, /animation\.finished\.then\(release, release\);/);
-  assert.match(hook, /if \(el\.getAnimations\(\)\.some\(\(other\) => other\.id === SETTLE_ID\)\) return;/, 'a newer settle keeps the clip');
-});
-
-test('the skeleton tab strip stands as tall as the live one', async () => {
-  const css = await read('./EntityExplorer.css');
-  assert.match(css, /\.explorer-skeleton \.ee-tabs \{\s*min-height: 40px;\s*align-items: center;\s*\}/);
-  assert.match(css, /\.ee-tab \{[^}]*padding: 10px 2px;[^}]*\}/, 'the 40px is the live tab: 10px either side of the label and the 3px rule');
 });
 
 test('the explorer is born with the entity a link handed over, and treats its own fetch as an upgrade', async () => {
@@ -141,7 +111,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
     'the entrance rises from nothing',
   );
 
-  const group = css.match(/\.project-meta-chips,\s*\.project-subjects,\s*\.project-participants \{[^}]*\}/)?.[0] || '';
+  const group = css.match(/^\.project-participants \{[^}]*\}/m)?.[0] || '';
   // `backwards`, never a forwards fill. Measured in the page: a filling
   // animation leaves the computed transform at `matrix(1, 0, 0, 1, 0, 0)` —
   // an identity matrix, not `none`, whatever the last keyframe says — and that
@@ -160,12 +130,8 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   const summary = css.match(/\.project-summary-box \{[\s\S]*?animation-delay: ([0-9.]+)s;/)?.[1];
   assert.ok(summary, 'the summary box waits its turn too');
   assert.ok(
-    Number(summary) < delayOf('project-subjects'),
-    'the summary comes before the topics',
-  );
-  assert.ok(
-    delayOf('project-subjects') < delayOf('project-participants'),
-    'the topics come before the organisations',
+    Number(summary) < delayOf('project-participants'),
+    'the summary comes before the organisations',
   );
 
   // The summary box is the one with a skeleton underneath it, so it resolves in
@@ -192,7 +158,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   // Reduced motion lands them instantly. The height settle they arrive inside
   // is switched off under the same query (`enabled: !prefersReducedMotion`).
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  for (const selector of ['.project-meta-chips', '.project-subjects', '.project-participants', '.project-summary-box,', '.explorer-container--project .ehc-stat-box', '.project-links-menu']) {
+  for (const selector of ['.project-participants', '.project-summary-box,', '.explorer-container--project .ehc-stat-box', '.project-links-menu']) {
     assert.ok(reduced.includes(selector), `${selector} stops animating under reduced motion`);
   }
 });

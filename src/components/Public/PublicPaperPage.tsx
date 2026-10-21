@@ -6,6 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowClockwise, ArrowLeft, House } from '@phosphor-icons/react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useFeed } from '../../context/FeedContext.tsx';
+import useQuickSave from '../../hooks/useQuickSave.ts';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
 import { loadPaperByIdentity } from '../../services/paperLookup.ts';
 import {
@@ -74,6 +75,7 @@ export default function PublicPaperPage({
     trackSkip,
     trackPdfOpened,
   } = useFeed();
+  const handleSaveToList = useQuickSave(onSaveToList!);
   const [result, setResult] = useState<{ requestKey: string; paper: Partial<Paper> | null; status: string }>({ requestKey: '', paper: null, status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const requestIdRef = useRef(0);
@@ -328,7 +330,8 @@ export default function PublicPaperPage({
             getInteractionState={getInteractionState}
             onAuthRequired={onAuthRequired}
             onOpenPdf={handleOpenPdf}
-            onSaveToList={onSaveToList}
+            onSaveToList={handleSaveToList}
+            onPickList={onSaveToList}
             publicMode={!isAuthenticated}
             analyticsSurface="other"
             hideScrollHint

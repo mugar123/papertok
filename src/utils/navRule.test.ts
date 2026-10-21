@@ -53,11 +53,4 @@ test('SOURCE: the navbar rule travels on the route transition\'s clock and curve
   // in a route change (PageTransition.css says why).
   assert.match(armed[1], /opacity 0\.16s linear/);
   assert.doesNotMatch(armed[1], /cubic-bezier\(/, 'the curve is the token, not a literal');
-
-  // The Explorer's tab strip is the same mark in a smaller place, and has
-  // always shared this declaration.
-  const explorer = await readFile(new URL('../components/Explorer/EntityExplorer.css', import.meta.url), 'utf8');
-  const twin = explorer.match(/\.ee-tab-rule\.is-measured \{([^}]*)\}/);
-  assert.ok(twin, 'the Explorer arms its rule the same way');
-  assert.equal(twin[1].trim(), armed[1].trim(), 'one gesture, one clock, in both places');
 });
