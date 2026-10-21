@@ -82,3 +82,55 @@
     animation: none;
   }
 }
+
+/* The farewell pose's balloon and string are drawn outside the body, so
+   they rise with her on their own; then the balloon sways on its string,
+   hung from the knot. Let go (`.is-released`), the string goes slack and
+   the balloon drifts up and away, speeding as it rises. */
+.petri .petri-balloon,
+.petri .petri-balloon-string {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: petriRise 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 100ms backwards;
+}
+
+.petri .petri-balloon {
+  animation:
+    petriRise 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 100ms backwards,
+    petriBalloonSway 2.8s var(--ease-in-out) 600ms infinite alternate;
+}
+
+.petri.is-released .petri-balloon {
+  animation: petriBalloonAway 520ms cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+.petri .petri-balloon-string {
+  transition: opacity 160ms var(--ease-out);
+}
+
+.petri.is-released .petri-balloon-string {
+  opacity: 0;
+}
+
+@keyframes petriBalloonSway {
+  from { rotate: -4deg; translate: 0 1px; }
+  to { rotate: 4deg; translate: 0 -2px; }
+}
+
+@keyframes petriBalloonAway {
+  from { rotate: 0deg; translate: 0 0; opacity: 1; }
+  70% { opacity: 1; }
+  to { rotate: 12deg; translate: 22px -64px; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petri .petri-balloon,
+  .petri .petri-balloon-string {
+    animation: none;
+  }
+
+  .petri.is-released .petri-balloon {
+    animation: none;
+    opacity: 0;
+  }
+}
