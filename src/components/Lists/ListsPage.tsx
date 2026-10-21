@@ -1074,12 +1074,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     saveStoredLists(user.uid, lists);
   }, [user?.uid, lists]);
 
-  // Opening a list goes one level in, so it slides in from the right; going
-  // back to all lists slides in from the left. The view leaving fades first
-  // (`mode="wait"`), briefly, so the gap between the two never reads as a
-  // blank page. The page jumps to the top only once the old view is gone
-  // (`onExitComplete`), so the reader never sees it snap. Without motion, a
-  // fade.
   const listViewMotion = {
     variants: {
       enter: (direction: number) => ({ opacity: 0, transform: prefersReducedMotion ? 'translateX(0px)' : `translateX(${direction * 16}px)` }),

@@ -14,7 +14,6 @@ import './follow-toggle.css';
  * The labels come from the caller, which owns the language.
  */
 export function FollowToggle({ pressed, followLabel, followingLabel, compact = false, className, ...props }: StyledProps<typeof Toggle> & { followLabel: string; followingLabel: string; compact?: boolean }) {
-  // `compact`: an icon alone, for a tight bar; the label becomes its name.
   if (compact) {
     return (
       <Toggle

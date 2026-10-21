@@ -8,9 +8,6 @@ type ShareData = { text: string; url: string };
 
 const enc = encodeURIComponent;
 
-// Where a link can go: each network's own share link, built from the title
-// as plain text and the link. Instagram has none on the web, so it comes
-// last and copies the link, saying where to paste it.
 export const NETWORKS = [
   { id: 'x', name: 'X', Icon: XLogo, href: ({ text, url }: ShareData) => `https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}` },
   { id: 'reddit', name: 'Reddit', Icon: RedditLogo, href: ({ text, url }: ShareData) => `https://www.reddit.com/submit?url=${enc(url)}&title=${enc(text)}` },
