@@ -782,7 +782,43 @@
   overflow-wrap: anywhere;
 }
 
-.ehc-title-row .ehc-name { flex: 1 1 auto; }
+.ehc-name-line { display: flex; align-items: flex-start; gap: var(--space-2); flex: 1 1 auto; min-width: 0; }
+
+.ehc-orcid-stamp {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  margin-top: calc((1.12em - max(24px, 0.8em)) / 2);
+  border-radius: var(--radius-full);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  color: var(--tint-green-fg);
+  cursor: alias;
+}
+
+.ehc-orcid-stamp svg {
+  width: 0.8em;
+  height: 0.8em;
+  rotate: -12deg;
+  animation: ehcOrcidStamp 260ms var(--ease-out) 200ms backwards;
+}
+
+.ehc-orcid-stamp-text {
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  fill: currentColor;
+}
+
+.ehc-orcid-stamp:focus-visible {
+  outline: 2px solid var(--tint-green-fg);
+  outline-offset: 2px;
+}
+
+@keyframes ehcOrcidStamp {
+  from { opacity: 0; scale: 1.4; }
+}
+
 .ehc-title-row .follow-toggle { flex: 0 0 auto; }
 
 /* The follow control is the shared ui/follow-toggle (its own stylesheet). */
@@ -1597,11 +1633,6 @@
    this one would stay inline and ignore both. */
 .ex-skel-stat-detail { display: block; width: 96px; height: 8px; margin-top: 2px; }
 
-/* The ORCID career block, while it is being fetched. */
-.ex-skel-stack { flex: 1; }
-.ex-skel-orcid-id { width: 25%; }
-.ex-skel-orcid-action { width: 84px; height: 20px; margin-left: auto; }
-
 /* ── The parts only one kind of page has ──
    The skeleton is composed from the route, so these are worn by the live
    containers — `.ehc-tags` and `.ehc-tag-row` —
@@ -1639,9 +1670,9 @@
    every block pulsing in unison. It costs nothing — `animation-delay` on an
    infinite loop shifts the phase, it does not hold anything back — and it is
    what makes the three skeletons legible as three different pages before a
-   single word has loaded: the wave passes through a chip row and an ORCID card
-   on an author, through credentials, a relations strip and a paragraph on an
-   institution, and reaches the tabs almost immediately on a project.
+   single word has loaded: the wave passes through a chip row on an author,
+   through credentials, a relations strip and a paragraph on an institution,
+   and reaches the tabs almost immediately on a project.
 
    The delays sit on `::after`, which is where the animation is; on the block
    they would delay nothing. */
@@ -1655,7 +1686,6 @@
 .explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.18s; }
 .explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
 .explorer-skeleton .ex-skel-follow::after { animation-delay: 0.24s; }
-.explorer-skeleton .orcid-skeleton .ex-skel::after { animation-delay: 0.27s; }
 .explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
 .explorer-skeleton .ex-skel-search::after { animation-delay: 0.33s; }
 
@@ -2416,42 +2446,6 @@
   }
 }
 
-/* ─── ORCID skeleton ─── */
-/* The card's own box, rule for rule: same padding, same header height, same
-   hairline under it, same space beneath. Built this way the placeholder
-   measures 96px because the card measures 96px, rather than because someone
-   typed 96 — and the two cannot drift when the card is next adjusted. */
-.orcid-skeleton {
-  padding: var(--space-5) var(--space-5) 4px;
-  display: flex;
-  flex-direction: column;
-}
-
-.orcid-skeleton-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 52px;
-  padding: 0 0 var(--space-4) 0;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: var(--space-5);
-}
-
-/* Sized to the badge it stands in for, not to the author-list avatar the class
-   is shared with. */
-.orcid-skeleton .ex-skel-avatar {
-  width: 28px;
-  height: 28px;
-}
-
-.orcid-skeleton .ex-skel-sub {
-  height: 11px;
-  margin-bottom: 6px;
-}
-
-
-
-
 /* ─── ORCID career ─── */
 .orcid-career-section {
   display: flex;
@@ -2467,10 +2461,6 @@
   animation:
     authorContentFade 0.36s linear backwards,
     authorContentTravel 0.42s var(--ease-out-quad) backwards;
-}
-
-.orcid-career-section--animate > .orcid-career-header {
-  animation: authorContentFade 0.36s linear backwards;
 }
 
 /* The panel already fades as a whole. Its rows only travel, avoiding a second
@@ -2497,56 +2487,6 @@
 .orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.2s; }
 .orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.24s; }
 
-.orcid-career-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0 var(--space-4) 0;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: var(--space-5);
-}
-
-.orcid-badge {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.orcid-badge-icon {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background: var(--tint-green-bg);
-  border: 1px solid var(--tint-green-line);
-}
-
-.orcid-badge-icon img {
-  width: 16px;
-  height: 16px;
-}
-
-.orcid-badge-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.orcid-badge-label {
-  font-size: 0.82rem;
-  font-weight: var(--fw-semibold);
-  color: var(--tint-green-fg);
-}
-
-.orcid-badge-id {
-  font: 400 0.6875rem/1.3 var(--font-mono);
-  color: var(--text-tertiary);
-}
-
-.orcid-profile-link,
 .orcid-ext-link {
   display: inline-flex;
   align-items: center;
@@ -2564,7 +2504,6 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .orcid-profile-link:hover,
   .orcid-ext-link:hover {
     border-color: var(--tint-green-line);
     color: var(--tint-green-fg);
@@ -2746,7 +2685,7 @@
     gap: 10px;
   }
 
-  .ehc-title-row .ehc-name {
+  .ehc-name-line {
     flex: 1 1 180px;
   }
 
@@ -2900,7 +2839,7 @@
   .ex-skel::after,
   .ehc-stat-value.is-settled,
   .orcid-career-section--animate > *,
-  .orcid-career-section--animate > .orcid-career-header,
+  .ehc-orcid-stamp svg,
   .ehc-experience-panel .orcid-timeline-item,
   .explorer-container--author .ehc-header,
   .ehc-spinner,
