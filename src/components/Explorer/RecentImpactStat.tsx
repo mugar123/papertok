@@ -83,8 +83,6 @@ export default function RecentImpactStat({ impact, isLoading, error }: ImpactPro
           {isLoading ? '…' : impact?.available ? impact.score!.toFixed(1) : '—'}
           <span className="ehc-stat-scale">/ 10</span>
         </span>
-        {/* A missing score says why in a chip in the corner, apart from the
-            figures; a score keeps its level and period under the label. */}
         {unavailableChip && <span className="ehc-stat-detail ehc-stat-detail--chip">{detail}</span>}
       </span>
       <span className="ehc-stat-label">{'Recent impact'}</span>

@@ -2251,9 +2251,6 @@ export default function EntityExplorer({
         </ToggleGroup>
       </div>
       <div className="ee-filter-section">
-        {/* An enclosing label: the Switch renders a span (`role="switch"`)
-            with a hidden input, which is the pattern Base UI names for
-            a wrapping label. */}
         <Label className="ee-toggle-label">
           <Switch
             checked={filters.peerReviewed}
