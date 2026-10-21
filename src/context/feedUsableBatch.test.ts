@@ -83,8 +83,8 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     relatedCandidates: ref([]),
     personalCandidates: ref([]), fetchPersonalPapers: () => Promise.resolve([]), PERSONAL_CANDIDATES_PER_PAGE: 5,
     pickExplorationCategories,
-    FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5,
-    settleSourcesForFirstPaint: (promises: Iterable<unknown[]|PromiseLike<unknown[]>>, ms: number, ready: ((papers: unknown[]) => boolean)|undefined) => settleSourcesForFirstPaint(promises, ms, ready, { allTimeoutMs: 200 }),
+    FEED_SOURCE_RENDER_BUDGET_MS: 5, OPTIONAL_SOURCE_RENDER_BUDGET_MS: 5, OPENALEX_TOPIC_READY_LIMIT: 10,
+    settleSourcesForFirstPaint: (promises: Iterable<unknown[]|PromiseLike<unknown[]>>, ms: number, ready: ((papers: unknown[]) => boolean)|undefined, options: Parameters<typeof settleSourcesForFirstPaint>[3] = {}) => settleSourcesForFirstPaint(promises, ms, ready, { ...options, allTimeoutMs: 200 }),
     resolveWithin, fulfilledPaperLists, PaperBuilder, lateSourceCandidates, shouldAbortFeedLoad,
     classifyFeedPublications, isFeedPublication, applyKnownPublicationTypes, dropUnreachedPublications,
     visiblePaperIdRef: ref<string | null>(null),
@@ -698,6 +698,28 @@ test("a biology reader's page asks OpenAlex once for its leaves' topics and show
     await load(reader);
     assert.equal(urls.length, 0, `a reader of ${reader.join(' and ')} asks OpenAlex nothing`);
   }
+});
+
+// Plan G (PAP-73): the topic page often answers first, from the Worker's cache,
+// with 25 papers. Counted whole, it made the first page alone; another lane that
+// answers within the first-paint budget is on that page now.
+test('a topic page that answers first waits for another lane before the first paint', async () => {
+  const topics = records('topic', 25).map(paper => ({ ...paper, primaryCategory: undefined }));
+  const pubmed = records('pubmed', 5);
+  const { state, env, run } = feed({ fast: [] });
+  Object.assign(env, {
+    userPreferences: ['bio.mol'],
+    CATEGORIES,
+    getAllLeafCategories: () => [{ id: 'bio.mol', label: 'Molecular Biology', area: 'bio' }],
+    fetchOpenAlexTopicPapers: () => Promise.resolve(topics),
+    PubmedAdapter: class { search() { return wait(20).then(() => ({ papers: pubmed })); } },
+    FEED_SOURCE_RENDER_BUDGET_MS: 500,
+  });
+  await run(true);
+  assert.equal(state.error, null);
+  const shown = state.papers.map(paper => paper.id);
+  assert.equal(shown.length, 15);
+  assert.ok(pubmed.every(paper => shown.includes(paper.id)), `the PubMed answer is on the first page: ${shown.join(' ')}`);
 });
 
 // Trimmed OpenAlex W2020715063: no abstract in the record, linked to arXiv 1109.5103.

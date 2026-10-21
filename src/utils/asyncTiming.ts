@@ -50,8 +50,17 @@ export const DEFAULT_SOURCE_SETTLE_TIMEOUT_MS = 12_000;
  * now settles each source under its own, longer ceiling, so a first paint that
  * has nothing to show waits for the real answers, and the success path's late
  * pool receives them too.
+ *
+ * `readyLimits` caps how many of a source's papers `isReady` sees, so a source
+ * that answers a whole page first cannot make the first paint on its own; the
+ * limited source still returns every paper in `first` and `all`.
  */
-export function settleSourcesForFirstPaint<T>(promises: Iterable<PromiseLike<T[]> | T[]>, timeoutMs: number, isReady: ((papers: T[]) => boolean) | undefined, { allTimeoutMs = DEFAULT_SOURCE_SETTLE_TIMEOUT_MS } = {}) {
+export function settleSourcesForFirstPaint<T>(
+  promises: Iterable<PromiseLike<T[]> | T[]>,
+  timeoutMs: number,
+  isReady: ((papers: T[]) => boolean) | undefined,
+  { allTimeoutMs = DEFAULT_SOURCE_SETTLE_TIMEOUT_MS, readyLimits = new Map<PromiseLike<T[]> | T[], number>() } = {},
+) {
   const sources = [...promises];
   const tracked = sources.map((promise) => settleWithin(promise, timeoutMs));
   const results: Array<SettledWithin<T[]> | { status: 'pending' }> = Array.from({ length: tracked.length }, () => ({ status: 'pending' }));
@@ -60,7 +69,9 @@ export function settleSourcesForFirstPaint<T>(promises: Iterable<PromiseLike<T[]
   const first = new Promise<typeof results>((resolve) => {
     const maybeFinish = () => {
       if (resolved) return;
-      const papers = fulfilledPaperLists(results);
+      const papers = results.flatMap((result, index) => (
+        result.status === 'fulfilled' && Array.isArray(result.value) ? result.value.slice(0, readyLimits.get(sources[index])) : []
+      ));
       const done = results.every((result) => result.status !== 'pending');
       if (done || (typeof isReady === 'function' && isReady(papers))) {
         resolved = true;

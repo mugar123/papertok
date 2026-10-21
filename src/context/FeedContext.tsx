@@ -137,6 +137,12 @@ const PAGE_SIZE = 15;
 // 2.05 s); the only upstream ever seen above 4 s is OpenReview's cold 5.2 s,
 // which the previous 5 s budget lost anyway after waiting the full 5 s for it.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
+// How many papers of the OpenAlex topic page count toward the first paint. The
+// page holds 25 papers and often answers first, from the Worker's cache. Counted
+// whole, it supplied more than 10 of the first 15 cards in 57 % of modelled
+// molecular-biology loads and 68 % of neuroscience ones (plan G, PAP-73). Now
+// another lane that answers within the budget above joins it.
+const OPENALEX_TOPIC_READY_LIMIT = 10;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 // How long the main query may wait for the followed-topic category ids. The
 // topic module is prewarmed the moment a topic follow is known (see the
@@ -1376,6 +1382,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             [arxivProm, pubmedProm, openAlexTopicProm, domainProm, workingPapersProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
             (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
+            { readyLimits: new Map([[openAlexTopicProm, OPENALEX_TOPIC_READY_LIMIT]]) },
           );
           let sourceResults = await first;
           mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
