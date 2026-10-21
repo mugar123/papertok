@@ -446,7 +446,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the one in flight; the scroll position to hold when it lands is its own.
   const [returning, setReturning] = useState<{ id: string; height: number; landed: boolean } | null>(null);
   const returningRef = useRef<{ id: string; height: number; landed: boolean } | null>(null);
-  const returnTimerRef = useRef<number | null>(null);
   const returnLandingTopRef = useRef<number | null>(null);
   const readAdvanceTimerRef = useRef<number | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
@@ -525,8 +524,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     const current = returningRef.current;
     if (!current) return;
     returningRef.current = null;
-    clearTimeout(returnTimerRef.current!);
-    returnTimerRef.current = null;
     const container = feedRef.current;
     const index = papersRef.current.findIndex(item => item.id === current.id);
     if (container && index >= 0 && Math.round(container.scrollTop / current.height) === index) {
@@ -539,7 +536,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     returnLandingTopRef.current = null;
     if (top !== null && feedRef.current) feedRef.current.scrollTop = top;
   }, [returning]);
-  useEffect(() => () => clearTimeout(returnTimerRef.current!), []);
+  // `animationend` lands the paper; this clock is only for a travel that
+  // never runs. It starts with the commit that pins the card, not on the Undo
+  // press — mounting the card back takes frames of its own (about 300ms in
+  // dev) — and it is wide, because landing early is what shows: a clock
+  // started on the press landed the card 74px short of its place, a jump,
+  // and in a browser that transitions `.pc`'s transform out of an interrupted
+  // animation, a lurch to the right and back. Landing late shows nothing:
+  // the pinned card is already exactly where it lands.
+  useEffect(() => {
+    if (!returning || returning.landed) return undefined;
+    const timer = setTimeout(landReturn, SKIP_RETURN_MS + 600);
+    return () => clearTimeout(timer);
+  }, [landReturn, returning]);
 
   const handleReturnEnd = useCallback((event: AnimationEvent) => {
     // Named like the exit: the card's own animations bubble here too.
@@ -566,7 +575,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     landReturn();
     returningRef.current = { id: paper.id, height, landed: false };
     setReturning(returningRef.current);
-    returnTimerRef.current = setTimeout(landReturn, SKIP_RETURN_MS + 120);
     if (skipExitRef.current?.id === paper.id) {
       clearTimeout(skipExitTimerRef.current!);
       skipExitRef.current = null;
