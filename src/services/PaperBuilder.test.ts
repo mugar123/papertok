@@ -781,6 +781,17 @@ test('a row merged again keeps the answer its first merge gave it', () => {
       ...PaperBuilder.deduplicate([preprint()]),
       ...PaperBuilder.deduplicate([arxiv, workingPaper()]),
     ])],
+    // A name-only author's arXiv record, a topic row that merged OpenAlex's
+    // preprint record before the same arXiv record, then an institution's
+    // working paper.
+    ['arXiv record, a row that began as the preprint record, working paper', PaperBuilder.deduplicate([
+      arxiv, ...PaperBuilder.deduplicate([preprint(), arxiv]), workingPaper(),
+    ])],
+    // The arXiv record beside a row that took the working paper's answer
+    // through OpenAlex's preprint record.
+    ['arXiv record, a preprint row that merged the working paper', PaperBuilder.deduplicate([
+      arxiv, ...PaperBuilder.deduplicate([preprint(), ...PaperBuilder.deduplicate([arxiv, workingPaper()])]),
+    ])],
   ];
   const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
 

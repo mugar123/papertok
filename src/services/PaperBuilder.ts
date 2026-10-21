@@ -432,10 +432,11 @@ export class PaperBuilder {
     // either side stands: a record merged earlier, such as a working paper,
     // already read the DOI otherwise.
     const bothRestOnArxivDoi = arxivDoiOnly && restsOnArxivDoi(enrichmentData);
+    const rereads = !bothRestOnArxivDoi && Boolean(shouldUpgradePublication)
+      && (reviewOpen || reviewDenied) && (enrichmentData.peerReviewed !== false || sameRecord);
     if (bothRestOnArxivDoi) {
       if (merged.peerReviewed === true) merged.peerReviewed = enrichmentData.peerReviewed;
-    } else if (shouldUpgradePublication && (reviewOpen || reviewDenied)
-      && (enrichmentData.peerReviewed !== false || sameRecord)) {
+    } else if (rereads) {
       merged.peerReviewed = enrichmentReview;
     }
     // A working paper the row is not still contradicts a `true` that rests on
@@ -443,11 +444,15 @@ export class PaperBuilder {
     // entry or the working paper's when OpenAlex lists none, so the answer is
     // unknown rather than either record's.
     if (otherWorkingPaper && arxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
-    // The working-paper tag explains a `false`. It stays while the answer is
-    // `false`, and goes when a venue's `true` stands, as for the journal article
-    // whose working paper merged in.
+    // The working-paper tag explains a `false`. It comes with the `false` of
+    // the same record, and with one taken above from a row that rests on an
+    // arXiv DOI as this one does, though that row may show the DOI of
+    // OpenAlex's preprint record. It stays while the answer is `false`, and
+    // goes when a venue's `true` stands, as for the journal article whose
+    // working paper merged in.
     const workingPaper = merged.peerReviewed === false
-      && (merged.workingPaper === true || (sameRecord && enrichmentData.workingPaper === true));
+      && (merged.workingPaper === true
+        || ((sameRecord || bothRestOnArxivDoi) && enrichmentData.workingPaper === true));
     // Written only when it changes: a merge that adds nothing must return a
     // paper equal to the one it got (`paperFieldsEqual`), key for key.
     if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
@@ -455,8 +460,12 @@ export class PaperBuilder {
     // the journal article, backs the row's; until one does, the `true` rests
     // on the arXiv record's DOI alone. Every other provider's `published`
     // still counts (see `isOpenAlexRecord`), an untyped Semantic Scholar
-    // record's or CORE's included.
-    const stillArxivDoiOnly = arxivDoiOnly && (enrichmentReview !== true || bothRestOnArxivDoi);
+    // record's or CORE's included. A row that takes its answer from a record
+    // resting on an arXiv DOI rests on it too, whatever record it began as: a
+    // topic with an OpenAlex id lists OpenAlex's record of the eprint under
+    // arXiv's DOI before the arXiv record.
+    const stillArxivDoiOnly = (arxivDoiOnly && (enrichmentReview !== true || bothRestOnArxivDoi))
+      || (rereads && restsOnArxivDoi(enrichmentData));
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
       merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
     }
