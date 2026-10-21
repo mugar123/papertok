@@ -93,6 +93,7 @@ const COPY = {
     reusedNote: 'Written earlier and reused, so it spent no AI use. Writing it again spends one.',
     writeAgain: 'Write it again',
     writeAgainFailed: (reason: string) => `${reason}. The summary above was not replaced.`,
+    writeAgainIncomplete: 'The new rewrite stopped before finishing',
     sections: 'sections',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
@@ -196,6 +197,13 @@ const ERROR_COPY = {
     },
   },
 };
+
+/**
+ * Not a worker code. A rewrite written again that stops before the end replaces
+ * nothing, in the account or the worker's cache, so the reader puts back the
+ * summary it would have replaced and says why under it.
+ */
+const WRITE_AGAIN_INCOMPLETE = 'AI_WRITE_AGAIN_INCOMPLETE';
 
 /**
  * A failed annotation is not a failed rewrite.
@@ -445,8 +453,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const load = useCallback(async (targetLevel: string, {
     force = false,
     // The summary on screen when the reader asked to write it again. It is
-    // still the saved one until a new rewrite replaces it, so a request that
-    // fails before writing anything puts it back instead of an error page.
+    // still the saved one until a complete new rewrite replaces it, so a
+    // request that fails or stops before the end puts it back instead of an
+    // error page or a partial paper.
     rewriteOf = null as { sections: RewriteSection[]; meta: ClientRewriteMeta } | null,
   } = {}) => {
     const regenerate = Boolean(rewriteOf);
@@ -503,6 +512,13 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         onSection: (section) => setSections(current => [...current, { ...section, reveal: !replayed }]),
         onProgress: ({ stage: nextStage }) => setStage(nextStage),
       });
+      if (result.incomplete && rewriteOf) {
+        setSections(rewriteOf.sections);
+        setMeta(rewriteOf.meta);
+        setError({ code: WRITE_AGAIN_INCOMPLETE, quota: null });
+        setStatus('ready');
+        return;
+      }
       setStatus(result.incomplete ? 'incomplete' : 'ready');
     } catch (caught) {
       if (caught instanceof PaperRewriteError && caught.code === 'AI_CANCELLED') return;
@@ -1314,7 +1330,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {canWriteAgain && (
                   <div className="rd-reused">
                     {writeAgainFailed
-                      ? <p role="alert">{copy.writeAgainFailed(errorCopy.title)}</p>
+                      ? <p role="alert">{copy.writeAgainFailed(error?.code === WRITE_AGAIN_INCOMPLETE ? copy.writeAgainIncomplete : errorCopy.title)}</p>
                       : <p>{canSpendUse ? copy.reusedNote : copy.noUsesLeft}</p>}
                     <Button ref={writeAgainRef} variant="outline" size="sm" onClick={writeAgain} disabled={!writeAgainOpen} focusableWhenDisabled>
                       <ArrowClockwise size={14} aria-hidden="true" />
