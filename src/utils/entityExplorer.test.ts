@@ -5,12 +5,15 @@ import type { Paper } from '../models/Paper.ts';
 import {
   EXPLORER_ROW_CHUNK,
   GUEST_PREVIEW_LIMIT,
+  explorerListState,
+  explorerPageAllowance,
   guestGateTotal,
   guestPreviewRows,
   shouldShowGuestGate,
   nextExplorerRowBudget,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
+  countPapersByArea,
   getPaperCitationCount,
   hasKnownPaperCitationCount,
   pinSourcePaper,
@@ -254,6 +257,27 @@ test('the list mounts eight rows at a time and never more than it has', () => {
   assert.equal(nextExplorerRowBudget(-1, 0), 0);
 });
 
+test('a page the filters emptied keeps the list looking while more pages remain, then waits for the reader', () => {
+  const emptiedPage = { rows: 0, hasMore: true, publicMode: false };
+
+  // More pages left: the list asks for the next one and is not the empty state.
+  assert.equal(explorerListState(emptiedPage), 'looking');
+  assert.equal(explorerPageAllowance(1, { byReader: false }), 0, 'the list asks, with nothing left after');
+
+  // No allowance left: it waits for "Keep looking".
+  assert.equal(explorerPageAllowance(0, { byReader: false }), null);
+  const restored = explorerPageAllowance(0, { byReader: true });
+  assert.ok(restored !== null && restored > 0, 'the reader\'s request goes ahead and restores the allowance');
+
+  // No more pages: the empty state.
+  assert.equal(explorerListState({ ...emptiedPage, hasMore: false }), 'empty');
+  // A visitor gets no next page: their empty first page is the empty state.
+  assert.equal(explorerListState({ ...emptiedPage, publicMode: true }), 'empty');
+  // A page with rows leaves the asking to the foot of the list.
+  assert.equal(explorerListState({ ...emptiedPage, rows: 3 }), 'rows');
+  assert.equal(explorerListState({ rows: 3, hasMore: false, publicMode: true }), 'rows');
+});
+
 
 /**
  * La vista previa del invitado (2026-09-12).
@@ -301,4 +325,17 @@ test('el número que promete la puerta sale de la entidad, y solo si es creíble
   assert.equal(guestGateTotal({}, 2), null);
   assert.equal(guestGateTotal(null, 2), null);
   assert.equal(guestGateTotal({ works_count: '1234' as never }, 2), null, 'un total que no es un número no se enseña');
+});
+
+test('area counts agree with what each area filter keeps, cross-listed papers in both', () => {
+  const papers = [
+    { id: 'a', primaryCategory: 'astro-ph.CO', categories: ['astro-ph.CO'] },
+    { id: 'b', primaryCategory: 'cs.LG', categories: ['cs.LG', 'astro-ph.CO'] },
+    { id: 'c', primaryCategory: 'math.DG', categories: ['math.DG'] },
+  ] as Partial<Paper>[];
+  const counts: Record<string, number> = countPapersByArea(papers, ['physics', 'cs', 'math', 'bio']);
+  for (const key of ['physics', 'cs', 'math', 'bio']) {
+    assert.equal(counts[key], filterAndSortEntityPapers(papers, { filters: { category: key } }).length);
+  }
+  assert.deepEqual(counts, { physics: 2, cs: 1, math: 1, bio: 0 });
 });

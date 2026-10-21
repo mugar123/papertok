@@ -23,7 +23,8 @@ import { CollisionNote, PreparingNote, ProviderSpinner } from './ProviderSignIn.
 import Petri from '../Onboarding/Petri.tsx';
 import PetriStamp from '../Onboarding/PetriStamp.tsx';
 import { normalizeGuestAreas, normalizeGuestTopics, saveGuestInterests } from '../../utils/guestInterests.ts';
-import { DigestPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport } from './GuestWelcomePreferences.tsx';
+import { institutionDomainOf } from '../../utils/institutionDomain.ts';
+import { DigestPreview, LibraryPreview, WelcomeReadingChoice, WelcomeInboxChoice, WelcomeProjectSupport, WelcomeUniversityChoice } from './GuestWelcomePreferences.tsx';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from './WelcomeShell.tsx';
 import PrivacyPopover from './PrivacyPopover.tsx';
 import Stars from './Stars.tsx';
@@ -35,8 +36,8 @@ import './GuestWelcome.css';
 // with back and skip as bare icons either side of it and the progress dots
 // over it. The intro covers what PaperTok is, what you do in it (its three
 // gestures side by side, arriving one after another), and which areas to
-// build the first feed from. Reading, the optional email digest, and project
-// support follow in the same layout. The areas have to be answered; the first
+// build the first feed from. Reading, the optional email digest, the optional
+// university email and project support follow in the same layout. The areas have to be answered; the first
 // two screens can skip there. There is no feed without an account: the last
 // screen stores the answer and opens the sign-up, and the account onboarding
 // adopts it (OnboardingFlow). The bar offers Sign in on every screen too:
@@ -53,7 +54,7 @@ import './GuestWelcome.css';
 // motion refused, each illustration is drawn in its final state and no star
 // is drawn at all.
 
-const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'];
+const STEPS = ['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'university', 'support'];
 const STEP_PETRI: Partial<Record<string, ComponentProps<typeof Petri>['pose']>> = { how: 'welcome', topics: 'flask', reading: 'reading' };
 // Where the intro's skip lands: the question, not past it.
 const TOPICS_INDEX = STEPS.indexOf('topics');
@@ -112,6 +113,13 @@ const COPY = {
       title: 'A little science in your inbox?',
       lede: 'Once a week, the papers worth your time from the fields you follow, in one short email.',
       cta: 'Continue',
+    },
+    university: {
+      kicker: 'Your university',
+      title: 'Do you read through a university library?',
+      lede: 'Papers behind a paywall often open through your library.',
+      cta: 'Continue',
+      invalid: 'Enter a full university email, like name@university.edu.',
     },
     support: {
       kicker: 'Before you dive in',
@@ -301,6 +309,8 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const [readingLevel, setReadingLevel] = useState<ReadingLevel>('university');
   // Opt-in: off until the visitor turns it on.
   const [emailDigest, setEmailDigest] = useState(false);
+  const [institutionEmail, setInstitutionEmail] = useState('');
+  const [universityError, setUniversityError] = useState('');
   const [direction, setDirection] = useState(1);
   const hero = useRef<HTMLDivElement | null>(null);
 
@@ -321,7 +331,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   });
 
   const step = STEPS[stepIndex];
-  const stepCopy = copy[step as 'welcome' | 'how' | 'topics' | 'subtopics' | 'reading' | 'inbox' | 'support'] as { kicker: string; title: ReactNode; lede?: string; cta: string };
+  const stepCopy = copy[step as 'welcome' | 'how' | 'topics' | 'subtopics' | 'reading' | 'inbox' | 'university' | 'support'] as { kicker: string; title: ReactNode; lede?: string; cta: string };
   const isTopics = step === 'topics';
   const isSubtopics = step === 'subtopics';
   // The two question screens scroll under the foot and share a width.
@@ -366,11 +376,15 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const finish = () => {
     if (selected.size === 0) return;
     const areas = normalizeGuestAreas(Array.from(selected));
-    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest });
+    saveGuestInterests({ areas, topics: normalizeGuestTopics(Array.from(selectedTopics), areas), readingLevel, emailDigest, institutionEmail });
     onSignIn?.();
   };
 
   const primary = () => {
+    if (step === 'university' && institutionEmail.trim() && !institutionDomainOf(institutionEmail)) {
+      setUniversityError(copy.university.invalid);
+      return;
+    }
     if (step === 'support') finish();
     else goTo(stepIndex + 1);
   };
@@ -384,10 +398,11 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
   const copyBlock = (
     <>
       {step === 'inbox' && <DigestPreview still={still} stamp={<PetriStamp />} />}
+      {step === 'university' && <LibraryPreview still={still} stamp={<PetriStamp />} />}
       <WelcomeCopy
         kicker={petriPose
           ? <Petri pose={petriPose} level={readingLevel} label={stepCopy.kicker} className="gw-petri" />
-          : step === 'inbox' ? null : stepCopy.kicker}
+          : step === 'inbox' || step === 'university' ? null : stepCopy.kicker}
         title={stepCopy.title}
         lede={stepCopy.lede}
       />
@@ -507,6 +522,13 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
 
       {step === 'reading' && <WelcomeReadingChoice level={readingLevel} onChange={setReadingLevel} />}
       {step === 'inbox' && <WelcomeInboxChoice subscribed={emailDigest} onChange={setEmailDigest} />}
+      {step === 'university' && (
+        <WelcomeUniversityChoice
+          email={institutionEmail}
+          error={universityError}
+          onChange={(email) => { setInstitutionEmail(email); setUniversityError(''); }}
+        />
+      )}
       {step === 'support' && <WelcomeProjectSupport />}
 
       {isTopics && <AreaPicker selected={selected} onToggle={toggleArea} label={copy.topics.areasLabel} />}

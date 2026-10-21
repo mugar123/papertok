@@ -6,6 +6,8 @@ import { animate, cubicBezier, motion, useMotionValue, useMotionValueEvent, useR
 import { ArrowUpRight, BookOpen, Check, Cursor, FileText, Flask, Folder, GithubLogo, GraduationCap, LockSimple, LockSimpleOpen, Star } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.ts';
 import { Button } from '../ui/button.tsx';
+import { Input } from '../ui/input.tsx';
+import { Label } from '../ui/label.tsx';
 import { Switch } from '../ui/switch.tsx';
 
 const LEVELS: { id: ReadingLevel; title: string; icon: Icon; description: string }[] = [
@@ -111,6 +113,30 @@ export function WelcomeInboxChoice({ subscribed, onChange }: { subscribed: boole
   </div>;
 }
 
+// Asked before there is an account, so only the address is kept: the account
+// onboarding sends the verification once the account exists.
+export function WelcomeUniversityChoice({ email, error, onChange }: { email: string; error: string; onChange: (email: string) => void }) {
+  return <div className="gw-preferences gw-university">
+    <div className="gw-university-field">
+      <Label htmlFor="gw-university-email">University email</Label>
+      <Input
+        id="gw-university-email"
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        spellCheck="false"
+        placeholder="name@university.edu"
+        value={email}
+        onChange={event => onChange(event.target.value)}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? 'gw-university-note gw-university-error' : 'gw-university-note'}
+      />
+      <p id="gw-university-note" className="gw-preference-note">Optional. Once your account is ready, we email this address a verification link.</p>
+      <p id="gw-university-error" className="gw-university-error" role="alert">{error}</p>
+    </div>
+  </div>;
+}
+
 // The paper behind the paywall in the library demo: a real one, in a
 // subscription journal, so the lock on it is true. The field colour is the
 // taxonomy's, like every card in the app.
@@ -129,7 +155,6 @@ const CARD_SETTLE = 0.85;
 // Closed access chip, a library card slides in over its corner, and the chip
 // turns into "Via your library". Plays once and is still by two seconds
 // (WCAG 2.2.2); with motion refused it is drawn opened, the card in place.
-// Only the account onboarding's university screen (OnboardingFlow) draws it.
 
 export function LibraryPreview({ still, stamp }: { still: boolean; stamp?: ReactNode }) {
   const field = CATEGORIES[LIBRARY_PAPER.field];

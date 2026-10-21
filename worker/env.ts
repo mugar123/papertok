@@ -27,6 +27,9 @@ export type WorkerEnv = {
   | 'SCOPUS_PROXY_URL'
   | 'SCOPUS_PROXY_SECRET'
   | 'SCOPUS_VIEW'
+  | 'SENTRY_DSN'
+  | 'SENTRY_ENVIRONMENT'
+  | 'SENTRY_RELEASE'
   | 'SEMANTIC_SCHOLAR_API_KEY'
   | 'UNPAYWALL_EMAIL',
   string

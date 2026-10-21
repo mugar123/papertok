@@ -2,6 +2,7 @@ import type { WorkerEnv } from './env.ts';
 
 import { runEmailNotificationSchedule } from './email-notifications.ts';
 import { handleRequest, routeForLog } from './router.ts';
+import { captureWorkerResponseFailure } from './error-tracking.ts';
 
 // Unbound and unused. Kept only so that a later, separate change can delete the
 // class with a `deleted_classes` migration.
@@ -21,6 +22,7 @@ export default {
     try {
       const response = await handleRequest(request, env);
       status = response.status;
+      captureWorkerResponseFailure(status);
       return response;
     } finally {
       if (status === 429 || status >= 500) {

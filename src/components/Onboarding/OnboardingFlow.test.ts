@@ -3,28 +3,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-test('SOURCE: first-run onboarding opens on a greeting, asks for topics only without a guest answer, and the university comes last', async () => {
+test('SOURCE: first-run onboarding asks for topics and the university only without a guest answer, and saves a guest answer on arrival', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /onboardingComplete/);
   // The onboarding writes the account's preferences and nothing public: no
   // profile, handle or photo.
   assert.doesNotMatch(code, /userProfileService|createUserProfile|updateProfilePhoto|userHandle/);
-  // One screen per question, in this order. The pickers only without a
-  // guest answer; the greeting first, the university last.
+  // One screen per question, in this order, only without a guest answer.
   const list = code.match(/function onboardingSteps\(\{ asksTopics \}: \{ asksTopics: boolean \}\) \{[\s\S]*?\n\}/);
   assert.ok(list, 'the step list is gone or reshaped');
   assert.match(
     list[0],
-    /return \[\s*'welcome',\s*\.\.\.\(asksTopics \? \['topics', 'subtopics'\] : \[\]\),\s*'university',\s*\];/,
+    /return asksTopics \? \['topics', 'subtopics', 'university'\] : \['finish'\];/,
   );
   // The lists that come out of it, stated independently.
   const onboardingSteps = new Function(`${stripTypeScriptTypes(list[0])}; return onboardingSteps;`)();
-  assert.deepEqual(onboardingSteps({ asksTopics: true }), ['welcome', 'topics', 'subtopics', 'university']);
-  assert.deepEqual(onboardingSteps({ asksTopics: false }), ['welcome', 'university']);
+  assert.deepEqual(onboardingSteps({ asksTopics: true }), ['topics', 'subtopics', 'university']);
+  assert.deepEqual(onboardingSteps({ asksTopics: false }), ['finish']);
+  assert.doesNotMatch(code, /'welcome'|ScriptTitle|welcomeTitlePaths/, 'no greeting screen');
+  assert.match(code, /if \(step !== 'finish' \|\| arrivedOnboarded \|\| finishStarted\.current\) return;\s*finishStarted\.current = true;\s*finishOnArrival\(\);/, 'the finish screen saves once, on arrival');
   assert.match(code, /const asksTopics = !guestSeed;/, 'a guest answer never sees the pickers, not even through Back');
   assert.match(code, /const steps = onboardingSteps\(\{ asksTopics \}\);/);
-  assert.match(code, /const \[stepIndex, setStep\] = useState(?:<[^;\n]+>)?\(0\);/, 'every account starts on the greeting');
+  assert.match(code, /const \[stepIndex, setStep\] = useState(?:<[^;\n]+>)?\(0\);/);
   // The dots are the list the reader will see.
   assert.match(code, /dots=\{\{ count: steps\.length, index: stepIndex,/);
   // The last screen of either list is the one that finishes.
@@ -42,87 +43,6 @@ test('SOURCE: the onboarding is drawn in the welcome\'s shell, with the welcome\
   assert.match(code, /<SubtopicsPicker\b/);
   // No cards, heading or landmark of its own: the shell draws those.
   assert.doesNotMatch(code, /<Toggle\b|<h1\b|<main\b|area-card|subcat-chip|InterestsReceipt/);
-});
-
-test('SOURCE: the greeting writes its title glyph by glyph once, and draws it whole when motion is refused', async () => {
-  const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
-  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /kicker: \(firstName: string\) => \(firstName \? `Hello, \$\{firstName\}` : 'Hello'\)/);
-  assert.match(code, /title: 'Welcome to PaperTok',/);
-  // No step count: the dots under the screen show it.
-  assert.match(code, /lede: 'Your feed is ready to be yours\. A few short steps and you are in\.',/);
-  assert.doesNotMatch(code, /COUNT_WORDS|lede\(steps\.length/);
-  assert.match(code, /cta: 'Let’s go',/);
-  // The heading's name is the hidden text; the drawing is hidden from it.
-  assert.match(code, /<span className="sr-only">\{COPY\.welcome\.title\}<\/span>\s*<ScriptTitle still=\{still\} \/>/);
-  assert.match(code, /const still = Boolean\(useReducedMotion\(\)\);/);
-  const title = code.match(/function ScriptTitle\(\{ still \}: \{ still: boolean \}\) \{[\s\S]*?\n\}/);
-  assert.ok(title, 'ScriptTitle is gone or reshaped');
-  assert.match(title[0], /<span className="onboarding-script" aria-hidden="true">/);
-  assert.match(title[0], /<svg className="onboarding-script-svg" viewBox=\{WELCOME_TITLE\.viewBox\}/);
-  // No pen, nothing measured at runtime: the timing is baked.
-  assert.doesNotMatch(code, /PenNib|onboarding-script-pen|getTotalLength|useLayoutEffect/);
-  const css = await readFile(new URL('./OnboardingFlow.css', import.meta.url), 'utf8');
-  assert.doesNotMatch(css, /onboarding-script-pen/);
-  // Each glyph is ink under its own mask, one id per glyph; motion refused,
-  // there are no masks and the paths are simply filled.
-  assert.match(title[0], /\{!still && \(\s*<defs>/);
-  assert.match(title[0], /id=\{`welcome-title-mask-\$\{index\}`\}/);
-  assert.match(title[0], /fill=\{`url\(#welcome-title-ink-\$\{index\}\)`\}/);
-  assert.match(title[0], /<path\s+key=\{index\}\s+d=\{glyph\.d\}\s+fill="currentColor"\s+mask=\{still \? undefined : `url\(#welcome-title-mask-\$\{index\}\)`\}/);
-  assert.doesNotMatch(title[0], /stroke/);
-  assert.match(title[0], /initial=\{\{ attrX: left - width \}\}\s*animate=\{\{ attrX: left \}\}/);
-  assert.match(title[0], /className="onboarding-script-rule"\s*initial=\{still \? false : \{ scaleX: 0 \}\}/);
-});
-
-test('the greeting settles inside three seconds under the baked glyph data', async () => {
-  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
-    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  const constant = (name: string) => Number(code.match(new RegExp(`const ${name} = ([\\d.]+);`))![1]);
-  const { default: data } = await import('./welcomeTitlePaths.ts');
-  assert.equal(data.glyphs.length, 17);
-  assert.equal(data.slant, 22, 'the lean the sweeps were measured across travels with them');
-  assert.match(code, /const SLANT_DEGREES = WELCOME_TITLE\.slant;/, 'the component leans its bands the way the data was measured');
-  for (const glyph of data.glyphs) {
-    assert.ok(glyph.length > 0, `${glyph.char} has a baked length`);
-    assert.ok(glyph.box.length === 2 && glyph.box[0] < glyph.box[1], `${glyph.char} has a baked box`);
-    assert.ok(glyph.sweep.length === 2 && glyph.sweep[0] < glyph.sweep[1], `${glyph.char} has a baked sweep`);
-  }
-  // The schedule stated independently: durations share WRITE_SECONDS by ink
-  // (capitals weigh more), each glyph joins the last at JOIN_AT, words pause.
-  const weights = data.glyphs.map(glyph => glyph.length * (/[A-Z]/.test(glyph.char) ? constant('CAPITAL_WEIGHT') : 1));
-  const total = weights.reduce((sum, weight) => sum + weight, 0);
-  let start = constant('WRITE_START');
-  let end = 0;
-  data.glyphs.forEach((glyph, index) => {
-    const duration = (weights[index] / total) * constant('WRITE_SECONDS');
-    if (index > 0) start += (glyph.afterSpace ? constant('WORD_GAP') : 0);
-    end = Math.max(end, start + duration);
-    start += duration * constant('JOIN_AT');
-  });
-  const settled = end + constant('RULE_GAP') + constant('RULE_SECONDS');
-  assert.ok(settled <= 3, `the greeting settles at ${settled.toFixed(2)} s`);
-});
-
-test('SOURCE: the title is baked outlines from a checked-in generator, and no script face loads at runtime', async () => {
-  const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
-    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-  assert.match(code, /^import WELCOME_TITLE from '\.\/welcomeTitlePaths\.ts';$/m);
-  assert.doesNotMatch(code, /@fontsource\/pinyon-script/);
-  const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.scripts['build:welcome-title'], 'node scripts/build-welcome-title.ts');
-  assert.ok(pkg.devDependencies['@fontsource/pinyon-script'] && pkg.devDependencies['opentype.js']);
-  assert.ok(!pkg.dependencies['@fontsource/pinyon-script'], 'the face is a build input, not a runtime dependency');
-  await readFile(new URL('../../../scripts/build-welcome-title.ts', import.meta.url), 'utf8');
-  const { default: data } = await import('./welcomeTitlePaths.ts');
-  assert.equal(data.text, 'Welcome to PaperTok');
-  assert.match(code, /title: 'Welcome to PaperTok',/, 'the hidden text says what the drawing shows');
-  // One outline per visible character, in writing order.
-  assert.deepEqual(data.glyphs.map(glyph => glyph.char).join(''), 'WelcometoPaperTok');
-  assert.equal(data.viewBox.split(' ').length, 4);
-  const css = (await readFile(new URL('./OnboardingFlow.css', import.meta.url), 'utf8'))
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i, 'tokens only');
 });
 
 test('SOURCE: there is no sign-in page; a guest off a protected route gets the onboarding with the door open', async () => {
@@ -170,11 +90,11 @@ test('SOURCE: the onboarding is seeded from the guest answer', async () => {
   assert.doesNotMatch(code, /saveGuestInterests|clearGuestInterests/, 'the onboarding reads the answer; AuthContext owns its end');
 });
 
-test('SOURCE: the university screen asks for the address itself, in a field that starts empty', async () => {
+test('SOURCE: the university screen asks for the address itself, and a welcome address is verified once the account exists', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /const \[institutionEmail, setInstitutionEmail\] = useState(?:<[^;\n]+>)?\(''\);/);
-  assert.doesNotMatch(code, /guestAnswer\?\.institutionEmail/, 'the welcome no longer carries an address');
+  assert.match(code, /markActivation\(\);\s*if \(guestAnswer\?\.institutionEmail\) void verifyGuestUniversity\(guestAnswer\.institutionEmail\);/, 'sent after the profile is written, without holding the onboarding');
   assert.match(
     code,
     /\{step === 'university' && \([\s\S]*?<InstitutionLink\s+idPrefix="onboarding-institution"\s+formId=\{UNIVERSITY_FORM_ID\}\s+showSubmit=\{false\}\s+email=\{institutionEmail\}\s+onEmailChange=\{setInstitutionEmail\}\s+onBusyChange=\{setLinkBusy\}\s+linkedNote=\{COPY\.university\.linkedNote\}\s*\/>/,
@@ -267,8 +187,7 @@ test('SOURCE: the onboarding CSS draws on white ground, with no tint behind its 
   assert.doesNotMatch(css, /--area-accent/);
   assert.doesNotMatch(css, /--shadow-/, 'the props keep the welcome\'s own elevation');
   assert.doesNotMatch(css, /border-radius:\s*\d/, 'radius tokens only');
-  // The yellow is the greeting's rule, and nothing else here.
-  assert.equal((css.match(/--brand-yellow/g) || []).length, 1);
+  assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i, 'tokens only');
   const code = (await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.doesNotMatch(code, /--area-accent|onboarding-stage|onboarding-plate|PagePreview/);
@@ -281,7 +200,7 @@ test('SOURCE: the university screen keeps the welcome\'s layout, and its platfor
   assert.ok(block, 'the university screen is gone or reshaped');
   assert.match(block, /className="gw-preferences gw-university onboarding-university"/);
   assert.match(block, /onboarding-university">\s*<InstitutionLink/);
-  assert.match(code, /\{step === 'university' && <LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>\}\s*\{step === 'welcome' \? \(/);
+  assert.match(code, /\{step === 'university' && <LibraryPreview still=\{still\} stamp=\{<PetriStamp \/>\} \/>\}\s*<WelcomeCopy/);
   assert.match(block, /showSubmit=\{false\}/);
   const css = (await readFile(new URL('./OnboardingFlow.css', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '');

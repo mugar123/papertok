@@ -413,6 +413,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    */
   const [open, setOpen] = useState(true);
   const requestClose = useCallback(() => setOpen(false), []);
+  const readerOpenTracked = useRef(false);
+  useEffect(() => {
+    if (readerOpenTracked.current) return;
+    readerOpenTracked.current = true;
+    void trackEvent('reader_open', { surface: 'reader' });
+  }, [trackEvent]);
   /**
    * The one way out, published for the browser's Back button.
    *
@@ -438,6 +444,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const startedAt = performance.now();
 
     // A cached level swaps in without a loading state at all.
     const cached = !force && getCachedRewrite(paper, targetLevel, 'en');
@@ -446,6 +453,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       setMeta({ ...cached.meta, cached: true });
       setStatus('ready');
       setError(null);
+      void trackEvent('paper_rewrite_result', {
+        level: targetLevel, surface: 'reader', result: 'success', cached: true, duration_ms: performance.now() - startedAt,
+      });
       return;
     }
 
@@ -481,8 +491,17 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         onSection: (section) => setSections(current => [...current, { ...section, reveal: true }]),
         onProgress: ({ stage: nextStage }) => setStage(nextStage),
       });
+      void trackEvent('paper_rewrite_result', {
+        level: targetLevel, surface: 'reader', result: result.incomplete ? 'incomplete' : 'success',
+        cached: false, duration_ms: performance.now() - startedAt,
+      });
       setStatus(result.incomplete ? 'incomplete' : 'ready');
     } catch (caught) {
+      void trackEvent('paper_rewrite_result', {
+        level: targetLevel, surface: 'reader', result: controller.signal.aborted ? 'cancelled' : 'error',
+        cached: false, duration_ms: performance.now() - startedAt,
+        error_code: caught instanceof PaperRewriteError ? caught.code : 'AI_UNAVAILABLE',
+      });
       if (caught instanceof PaperRewriteError && caught.code === 'AI_CANCELLED') return;
       if (caught instanceof PaperRewriteError && caught.code === 'AI_QUOTA_EXHAUSTED') {
         trackEvent('ai_limit_reached', { feature: 'rewrite', scope: caught.quota?.scope });

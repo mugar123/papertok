@@ -5,6 +5,8 @@ import { Collapsible } from '@base-ui/react/collapsible';
 import { CaretDownIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import { groupInstitutionServices } from './institutionServiceGroups.ts';
 import { useEffect, useId, useRef, useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
+import { useHeightSettle } from '../../hooks/useHeightSettle.ts';
 import { findInstitutionServices, knownInstitutionServices } from '../../services/institutionAccessService.ts';
 import { Button } from '../ui/button.tsx';
 import { publisherLogoFor } from './publisherLogos.ts';
@@ -142,10 +144,6 @@ export default function InstitutionServices({ institution }: { institution: Link
     const known = knownInstitutionServices({ domain, entityId, rorId });
     return known ? { subject, attempt: 0, value: known } : null;
   });
-  // A list that answers after a wait opens its own height instead of
-  // stretching the window in one frame; a known one is there from the start.
-  const [knownAtMount] = useState(answer !== null);
-
   useEffect(() => {
     let current = true;
     // A retry follows only a failure, which neither cache keeps, so asking
@@ -167,28 +165,38 @@ export default function InstitutionServices({ institution }: { institution: Link
   // The status region stays in the tree in every state, so whatever it says
   // next is announced. A plain success repeats the heading's count, so it is
   // said to screen readers only.
+  // `state` keys the message, so each answer arrives as a piece of its own
+  // (Institution.css) inside the region that announces it.
   let status;
+  let state;
   let quiet = false;
-  if (loading) status = COPY.loading;
-  else if (failed) status = COPY.error;
-  else if (result!.unsupported) status = COPY.unsupported;
-  else if (result!.partial) status = COPY.partial;
+  if (loading) [status, state] = [COPY.loading, 'loading'];
+  else if (failed) [status, state] = [COPY.error, 'error'];
+  else if (result!.unsupported) [status, state] = [COPY.unsupported, 'unsupported'];
+  else if (result!.partial) [status, state] = [COPY.partial, 'partial'];
   else if (result!.unchecked > 0) {
     status = [services.length > 0 && COPY.found(groups.length), COPY.unchecked(result!.unchecked)].filter(Boolean).join(' ');
-  } else if (services.length === 0) status = COPY.empty;
+    state = 'unchecked';
+  } else if (services.length === 0) [status, state] = [COPY.empty, 'empty'];
   else {
-    status = COPY.found(groups.length);
+    [status, state] = [COPY.found(groups.length), 'found'];
     quiet = true;
   }
 
-  // Only a failure offers a retry: a partial answer is cached at the Worker's
-  // edge and in the browser too, so pressing again would replay it.
+  // Only a failure offers a retry: a partial answer is kept in the browser for
+  // an hour, so pressing again would replay it.
   const canRetry = Boolean(failed);
 
   // A retry that succeeds takes its own button away, and with it the focus
   // the press had. The heading takes it instead, so a keyboard user lands on
   // the list that answered rather than on the dialog's edge.
   const kickerRef = useRef<HTMLHeadingElement | null>(null);
+  // Each answer replaces what stood in the same place — the placeholder rows,
+  // a failure, the list — so the window settles from one height to the next
+  // instead of jumping by it.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+  useHeightSettle(bodyRef, [state], { enabled: !prefersReducedMotion });
   const focusAfterRetry = useRef(false);
   useEffect(() => {
     if (loading || !focusAfterRetry.current) return;
@@ -205,8 +213,8 @@ export default function InstitutionServices({ institution }: { institution: Link
       <div className="institution-services-status">
         <p className="institution-services-note">{COPY.coverage}</p>
       </div>
-      {services.length > 0 && (
-        <div className={knownAtMount ? undefined : 'institution-link-reveal'}>
+      <div ref={bodyRef} className="institution-services-body">
+        {services.length > 0 ? (
           <ul className="institution-services-list">
             {groups.map((group, index) => (
               <li key={`${subject}:${group.id}`} style={{ '--service-delay': `${Math.min(index, 4) * 45}ms` }}>
@@ -214,25 +222,41 @@ export default function InstitutionServices({ institution }: { institution: Link
               </li>
             ))}
           </ul>
-        </div>
-      )}
-      <div className="institution-services-status">
-        <p role="status" className={quiet ? 'sr-only' : 'institution-services-note'}>{status}</p>
-        {canRetry && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-disabled={loading || undefined}
-            onClick={() => {
-              if (loading) return;
-              focusAfterRetry.current = true;
-              setAttempt(value => value + 1);
-            }}
-          >
-            {COPY.retry}
-          </Button>
+        ) : loading && (
+          // Rows the shape of the answer while the library is asked; the
+          // status below says it in words.
+          <ul className="institution-services-list institution-services-pending" aria-hidden="true">
+            {[0, 1].map(index => (
+              <li key={index} style={{ '--service-delay': `${index * 45}ms` }}>
+                <span className="institution-service-placeholder">
+                  <span className="institution-placeholder-plate" />
+                  <span className="institution-placeholder-lines"><span /><span /></span>
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
+        <div className="institution-services-status">
+          <p role="status" className={quiet ? 'sr-only' : 'institution-services-note'}>
+            <span key={state} className="institution-services-message" data-state={state}>{status}</span>
+          </p>
+          {canRetry && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="institution-services-retry"
+              aria-disabled={loading || undefined}
+              onClick={() => {
+                if (loading) return;
+                focusAfterRetry.current = true;
+                setAttempt(value => value + 1);
+              }}
+            >
+              {COPY.retry}
+            </Button>
+          )}
+        </div>
       </div>
     </section>
   );

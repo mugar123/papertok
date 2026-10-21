@@ -41,13 +41,19 @@ function DialogClose(props: ComponentProps<typeof DialogPrimitive.Close>) {
 
 /* No `backdrop-blur` on the scrim: its own opacity is what the fade
    animates, and a blur under an animated opacity is re-resolved every frame
-   — the mobile-GPU cost this repo's other backdrops were cleared of. */
+   — the mobile-GPU cost this repo's other backdrops were cleared of.
+   `forceRender`, because Base UI leaves the scrim out of a dialog opened
+   from inside another one: the paper's options over the full-screen paper
+   then showed no dimming and no outside to click to close them. The scrim
+   shares the popups' layer, so a nested one lands over the dialog that
+   opened it, in the order they were opened. */
 function DialogOverlay({ className, ...props }: StyledProps<typeof DialogPrimitive.Backdrop>) {
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
+      forceRender
       className={cn(
-        'fixed inset-0 z-[12050] bg-[var(--scrim)]',
+        'fixed inset-0 z-[12051] bg-[var(--scrim)]',
         'data-open:[animation:fadeIn_150ms_ease]',
         'data-closed:[animation:fadeOut_150ms_ease_both]',
         className,

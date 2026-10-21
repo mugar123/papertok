@@ -1,9 +1,10 @@
 type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown };
+type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; institutionEmail?: unknown };
 
 import { INTEREST_AREAS } from '../data/categories.ts';
 import { normalizeReadingPreferences } from './userSettings.ts';
+import { institutionDomainOf } from './institutionDomain.ts';
 
 /**
  * What a visitor told us they care about, before they had an account.
@@ -128,7 +129,7 @@ export function guestSeedCategoriesForAreas(areas: readonly string[], perArea = 
 
 /**
  * `null` when the welcome has never been answered on this device. Otherwise
- * `{ areas, topics, dismissed, readingLevel?, emailDigest? }`: `dismissed`
+ * `{ areas, topics, dismissed, readingLevel?, emailDigest?, institutionEmail? }`: `dismissed`
  * marks an answer with no areas, which seeds nothing.
  */
 export function readGuestInterests(storage?: GuestStorage | null) {
@@ -146,7 +147,9 @@ export function readGuestInterests(storage?: GuestStorage | null) {
     // Present only as an explicit yes: email is opt-in, so anything else —
     // an old answer, a no, a malformed value — reads as no.
     const email = parsed.emailDigest === true ? { emailDigest: true } : {};
-    return { areas, topics, dismissed, ...reading, ...email };
+    const institution = institutionDomainOf(parsed.institutionEmail)
+      ? { institutionEmail: String(parsed.institutionEmail).trim().toLowerCase() } : {};
+    return { areas, topics, dismissed, ...reading, ...email, ...institution };
   } catch {
     return null;
   }
@@ -156,7 +159,8 @@ export function readGuestInterests(storage?: GuestStorage | null) {
  * Takes the areas alone or `{ areas, topics }` (the welcome). Returns the normalized list of areas that was actually stored;
  * `readGuestInterests` has the topics and optional reading level. The level
  * travels with this guest bridge until account onboarding saves it to the UID,
- * and so does an explicit yes to the email digest (`emailDigest: true`).
+ * and so does an explicit yes to the email digest (`emailDigest: true`) and a
+ * university address, which the account onboarding sends a verification to.
  */
 export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | undefined, storage?: GuestStorage | null) {
   const areas = Array.isArray(answer) ? answer : answer?.areas;
@@ -175,6 +179,8 @@ export function saveGuestInterests(answer: GuestAnswer | unknown[] | null | unde
         topics,
         ...((answer as GuestAnswer | null | undefined)?.readingLevel ? { readingLevel: normalizeReadingPreferences({ aiExplanationLevel: (answer as GuestAnswer).readingLevel }).aiExplanationLevel } : {}),
         ...((answer as GuestAnswer | null | undefined)?.emailDigest === true ? { emailDigest: true } : {}),
+        ...(institutionDomainOf((answer as GuestAnswer | null | undefined)?.institutionEmail)
+          ? { institutionEmail: String((answer as GuestAnswer).institutionEmail).trim().toLowerCase() } : {}),
         dismissedAt: null,
         updatedAt: Date.now(),
       }));

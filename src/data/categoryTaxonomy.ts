@@ -243,120 +243,25 @@ export const CATEGORIES: Record<string, CategoryArea> = {
   },
 };
 
-function getFallbackAreaKey(categoryId = '') {
-  if (categoryId.startsWith('q-fin')) return 'q-fin';
-  if (categoryId.startsWith('q-bio')) return 'bio';
-
-  const prefix = categoryId.split('.')[0].split('-')[0];
-  return ({
-    quant: 'physics',
-    cond: 'physics',
-    hep: 'physics',
-    astro: 'physics',
-    gr: 'physics',
-    math: 'math',
-    nucl: 'physics',
-    nlin: 'physics',
-    physics: 'physics',
-    cs: 'cs',
-    stat: 'stat',
-    econ: 'econ',
-    eess: 'eess',
-  } as Record<string, string>)[prefix] || null;
-}
-
-/**
- * The twelve field inks are keyed to arXiv's category codes, and most of the
- * corpus does not come from arXiv. OpenAlex hands back a topic's display name
- * — "Wastewater Treatment and Reuse", "Neuroscience and Music Perception" —
- * which matches no code, so every one of them fell through to the brand ink and
- * the field accent said the same thing about every paper on the page.
- *
- * This reads the name instead. It is a heuristic and it behaves like one: a
- * topic that matches nothing distinctive keeps the ink rather than being handed
- * a field it may not belong to, because a wrong field colour is worse than no
- * field colour. The keywords are deliberately not prefixes of unrelated common
- * words — "genom" and "genetic" rather than "gene", which would have coloured
- * every paper filed under "General" as biology.
+/*
+ * arXiv's archives, the part of a category id before the dot, and the area
+ * each belongs to. A category the areas above do not list takes the area of
+ * its archive, for its chip here and for its ink in `areaAccent.ts`. An alias
+ * takes the archive it is written under: `q-fin.EC` is Quantitative Finance,
+ * although arXiv also files it as `econ.GN`.
  */
-const AREA_TOPIC_KEYWORDS = {
-  bio: [
-    'transcriptom', 'genom', 'genetic', 'microbi', 'bacteri', 'protein', 'enzyme',
-    'cellular', 'cell', 'mitosis', 'microtubule', 'cytoskelet', 'ecolog', 'biodivers',
-    'evolutionary', 'plant', 'photosynth', 'biochem', 'metabolit', 'metabolom',
-    'organism', 'chromosom', 'molecular biolog',
-  ],
-  med: [
-    'immun', 'interferon', 'neuroscience', 'neurolog', 'cancer', 'tumour', 'tumor',
-    'oncolog', 'clinical', 'patient', 'diagnos', 'therapeut', 'therapy', 'disease',
-    'epidemiol', 'pharmac', 'vaccine', 'surger', 'cardiovascular', 'mri',
-    'physiolog', 'psychiatr', 'nutrition', 'exercise',
-  ],
-  physics: [
-    'physic', 'quantum', 'plasma', 'fusion', 'astronom', 'astrophys', 'cosmolog',
-    'galax', 'photon', 'optic', 'superconduct', 'relativity', 'gravitation',
-    'condensed matter', 'spectroscop', 'nuclear', 'thermodynam',
-  ],
-  cs: [
-    'comput', 'algorithm', 'software', 'machine learning', 'artificial intelligence',
-    'natural language', 'neural network', 'large language model', 'cryptograph',
-    'database', 'data management', 'human-computer', 'programming',
-  ],
-  math: [
-    'mathemat', 'algebra', 'geometr', 'topolog', 'number theory', 'combinator',
-    'differential equation', 'graph theory', 'manifold',
-  ],
-  stat: ['statistic', 'bayesian', 'regression', 'stochastic', 'probabilit'],
-  econ: [
-    'econom', 'labour market', 'labor market', 'monetary', 'inequalit',
-    'trade polic', 'financial',
-  ],
-  eess: [
-    'signal processing', 'image processing', 'telecommunicat', 'wireless', 'antenna',
-    'circuit', 'power system', 'electrical engineer', 'acoustic', 'speech', 'audio',
-    'systems and control', 'control system',
-  ],
-  mech: [
-    'fluid dynamic', 'aerodynam', 'mechanical engineer', 'manufactur', 'vibration',
-    'turbine', 'robot', 'combustion',
-  ],
-  civil: [
-    'wastewater', 'water supply', 'water treatment', 'structural engineer',
-    'construction', 'concrete', 'geotechn', 'hydraulic', 'seismic', 'urban planning',
-    'transportation',
-  ],
-  chemeng: [
-    'chemical engineer', 'catalys', 'polymer', 'electrochem', 'corrosion',
-    'distillation', 'membrane', 'nanoparticle',
-  ],
-};
+const ARXIV_ARCHIVE_AREAS = new Map([
+  ['astro-ph', 'physics'], ['cond-mat', 'physics'], ['gr-qc', 'physics'],
+  ['hep-ex', 'physics'], ['hep-lat', 'physics'], ['hep-ph', 'physics'], ['hep-th', 'physics'],
+  ['math-ph', 'physics'], ['nlin', 'physics'], ['nucl-ex', 'physics'], ['nucl-th', 'physics'],
+  ['physics', 'physics'], ['quant-ph', 'physics'],
+  ['cs', 'cs'], ['econ', 'econ'], ['eess', 'eess'], ['math', 'math'],
+  ['q-bio', 'bio'], ['q-fin', 'q-fin'], ['stat', 'stat'],
+]);
 
-/**
- * The area a topic's display name belongs to, or '' when nothing distinctive
- * matched.
- *
- * The longest matching keyword wins, so the colour follows the noun rather than
- * the modifier: "Cellular Mechanics" is biology, not mechanical engineering, and
- * "Mathematics, Computing and Information Studies" is mathematics rather than
- * computer science. Matches start on a word boundary, so "General" is not read
- * as a gene.
- */
-export function getAreaKeyFromTopicName(value: unknown) {
-  const text = String(value || '').toLowerCase().trim();
-  if (!text) return '';
-
-  let bestKey = '';
-  let bestLength = 0;
-  for (const [areaKey, keywords] of Object.entries(AREA_TOPIC_KEYWORDS)) {
-    for (const keyword of keywords) {
-      if (keyword.length <= bestLength) continue;
-      if (new RegExp(`\\b${keyword}`).test(text)) {
-        bestKey = areaKey;
-        bestLength = keyword.length;
-      }
-    }
-  }
-  return bestKey;
+/** The area of an arXiv category's archive, or null when it names no arXiv archive. */
+export function getArxivArchiveArea(categoryId = '') {
+  return ARXIV_ARCHIVE_AREAS.get(categoryId.split('.')[0]) ?? null;
 }
 
 /**
@@ -373,7 +278,7 @@ export function getCategoryLabel(arxivCategory: string) {
       return category.label || category.label;
     }
   }
-  const fallbackArea = CATEGORIES[getFallbackAreaKey(arxivCategory) as string];
+  const fallbackArea = CATEGORIES[getArxivArchiveArea(arxivCategory) as string];
   if (fallbackArea) {
     return fallbackArea.label || fallbackArea.label;
   }

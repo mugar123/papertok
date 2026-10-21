@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
@@ -1081,11 +1082,8 @@ function mapOpenAlexPaper(work: DigestOpenAlexWork, follow: Follow | null) {
     citationCount: work?.cited_by_count,
     openAccess: work?.open_access?.is_oa,
     landingPageUrl: work?.best_oa_location?.landing_page_url || work?.primary_location?.landing_page_url,
-    // The card's own resolution: the field, then what the topic is called.
-    area: areaKeyForPaper({
-      primaryTopic: work?.primary_topic,
-      categories: [work?.primary_topic?.display_name].filter(Boolean) as string[],
-    }),
+    // The card's own resolution: the subfield or field OpenAlex filed it under.
+    area: areaKeyForPaper({ primaryTopic: work?.primary_topic }),
     abstract: usableOpenAlexAbstract(work),
     _followedEntityMatches: follow ? [follow] : [],
   });
@@ -2930,6 +2928,7 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
     return persistScheduledDelivery(env, key.name, subscription, delivery);
   } catch (error) {
+    captureWorkerException(error, 'schedule');
     sourceReport ||= (error as EmailNotificationError)?.sourceReport;
     const code = cleanText((error as EmailNotificationError)?.code, 100) || 'EMAIL_SCHEDULE_PROCESSING_FAILED';
     console.warn('Scheduled email subscription failed', code);

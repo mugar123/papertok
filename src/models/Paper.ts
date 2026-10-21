@@ -1,3 +1,5 @@
+import { getArxivArchiveArea } from '../data/categoryTaxonomy.ts';
+
 export interface PaperAuthor {
   name: string;
   id?: string | null;
@@ -9,6 +11,17 @@ export interface PaperAuthor {
 export interface PaperSources {
   primary: string;
   enrichedBy: string[];
+  // Written and read only by `PaperBuilder.merge`: the row's answer comes
+  // from an arXiv record whose `true` rested on a DOI alone, the record the
+  // row began as or one it took its answer from, and no record merged since
+  // under the row's DOI (any record, when that DOI is arXiv's own) has said
+  // the paper was reviewed on more than such a DOI.
+  arxivDoiOnly?: true;
+  // Written and read only by `PaperBuilder.merge`: a published record the row
+  // is not, such as a working paper on the same eprint, said the paper was
+  // not reviewed. A `true` that rests on an arXiv DOI alone then reads
+  // unknown, whether it reached the row before that record or after it.
+  deniedElsewhere?: true;
 }
 
 export interface PaperSubjectReference {
@@ -151,6 +164,9 @@ export interface Paper {
   categories?: string[];
   allCategories?: string[];
   primaryCategory?: string;
+  // Carried by a stored copy: the rules its classification was written under
+  // (`CLASSIFICATION_VERSION`). A fetched paper has none.
+  classificationVersion?: number;
   institutions?: PaperInstitution[];
   projectIds?: string[];
   hasReferences?: boolean;
@@ -162,6 +178,10 @@ export interface Paper {
   provider?: string;
   citationMetadataResolved?: boolean;
   _followedEntityMatches?: Array<PaperFollowMatch | string>;
+  // The reader categories a source was asked for when it returned this card.
+  // Ranking credit only: it says why the card was fetched, not what the paper
+  // is, so it is never shown or stored as the paper's classification.
+  _fetchedFor?: string[];
   _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;
   _isPersonalCandidate?: boolean;
@@ -209,6 +229,103 @@ export function readArxivId(value: unknown): string {
 }
 
 /**
+ * The rules a stored copy's classification (`primaryCategory`, `categories`,
+ * `primaryTopic`) was written under. `readStoredClassification` trusts a copy
+ * written under these rules and reads any other copy by the rules for old
+ * copies. Raise it when the rules that classify a fetched paper change.
+ */
+const CLASSIFICATION_VERSION = 1;
+
+// The savedPapers rules cap the list at 20; OpenAlex can list more concept names.
+const STORED_CATEGORY_CAP = 20;
+const STORED_SUBJECT_TEXT_MAX = 300;
+const ARXIV_CATEGORY_PATTERN = /^[a-z-]+(?:\.[a-z-]+)?$/i;
+
+function storedSubjectText(value: unknown) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  return text.length <= STORED_SUBJECT_TEXT_MAX ? text : '';
+}
+
+function storedSubjectReference(reference: Partial<PaperSubjectReference> | null | undefined): PaperSubjectReference | undefined {
+  const id = storedSubjectText(reference?.id);
+  const name = storedSubjectText(reference?.display_name);
+  return id && name ? { id, display_name: name } : undefined;
+}
+
+/**
+ * OpenAlex's primary topic as a copy keeps it: the topic, its subfield, field
+ * and domain, by id and name. The score ranks; it does not classify.
+ */
+function storedPrimaryTopic(topic: PaperSubject | null | undefined): PaperSubject | undefined {
+  const id = storedSubjectText(topic?.id);
+  if (!id) return undefined;
+  const name = storedSubjectText(topic?.display_name);
+  const subfield = storedSubjectReference(topic?.subfield);
+  const field = storedSubjectReference(topic?.field);
+  const domain = storedSubjectReference(topic?.domain);
+  return {
+    id,
+    ...(name && { display_name: name }),
+    ...(subfield && { subfield }),
+    ...(field && { field }),
+    ...(domain && { domain }),
+  };
+}
+
+/**
+ * What a stored copy keeps of a paper's classification: the values
+ * `areaAccent.ts` reads its field from.
+ */
+export function storedClassification(paper: Partial<Paper>) {
+  const primaryTopic = storedPrimaryTopic(paper.primaryTopic);
+  const categories = (paper.categories || (paper.primaryCategory ? [paper.primaryCategory] : []))
+    .filter(category => typeof category === 'string' && category.trim() !== '')
+    .slice(0, STORED_CATEGORY_CAP);
+  return {
+    primaryCategory: paper.primaryCategory || '',
+    categories,
+    ...(primaryTopic && { primaryTopic }),
+    classificationVersion: CLASSIFICATION_VERSION,
+  };
+}
+
+const isArxivCategory = (value: string) => ARXIV_CATEGORY_PATTERN.test(value) && getArxivArchiveArea(value) !== null;
+
+/**
+ * The classification a stored copy can show, decided on the copy as it was
+ * stored, before anything fills in fields it lacks.
+ *
+ * Old copies dropped OpenAlex's topic and kept the category their card showed,
+ * which was often the category the feed had asked for: arXiv's cross-list in
+ * place of the primary (PAP-64), the reader's first choice on Hugging Face,
+ * Europe PMC, PubMed and the other specialist cards, a concept name on
+ * OpenAlex's (PAP-60). Only an old copy stored under a bare arXiv id with a
+ * list of arXiv categories is still evidence: the list is arXiv's own, primary
+ * first. Every other old copy has no field until the paper page asks a
+ * provider (`hydrateSeededPaper`).
+ */
+export function readStoredClassification(copy: Omit<StoredPaperInput, 'sources'>) {
+  // Only OpenAlex fills a topic, so it was never a requested category.
+  const primaryTopic = storedPrimaryTopic(copy.primaryTopic);
+  const categories = Array.isArray(copy.categories)
+    ? copy.categories.filter((category): category is string => typeof category === 'string' && category.trim() !== '')
+    : [];
+  if (copy.classificationVersion === CLASSIFICATION_VERSION) {
+    const primaryCategory = typeof copy.primaryCategory === 'string' ? copy.primaryCategory : '';
+    return { primaryCategory, categories, primaryTopic, classificationVersion: CLASSIFICATION_VERSION };
+  }
+  const id = String(copy.id ?? '').trim();
+  const arxivCopy = id !== '' && readArxivId(id) === id && categories.length > 0 && categories.every(isArxivCategory);
+  return {
+    primaryCategory: arxivCopy ? categories[0] : '',
+    categories: arxivCopy ? categories : [],
+    primaryTopic,
+    classificationVersion: CLASSIFICATION_VERSION,
+  };
+}
+
+/**
  * Adapts older localStorage/Firebase records. A sources object bypasses
  * normalization, so a partial stored record is not guaranteed to be a Paper.
  */
@@ -232,7 +349,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   const arxivId = readArxivId(legacyPaper.arxivId) || readArxivId(legacyPaper.id);
   const year = legacyPaper.published
     ? new Date(legacyPaper.published).getFullYear()
-    : (legacyPaper.year || new Date().getFullYear());
+    : (legacyPaper.year || undefined);
 
   const authors = Array.isArray(legacyPaper.authors)
     ? legacyPaper.authors.map(a => typeof a === 'string' ? { name: a } : a)
@@ -262,6 +379,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   // still drive the public key; only a copy with no id at all is keyed by them.
   const storedId = legacyPaper.id === undefined || legacyPaper.id === null ? '' : String(legacyPaper.id).trim();
   const canonicalId = storedId || doi || (arxivId ? `arxiv:${arxivId.split('/').pop()}` : String(Date.now()));
+  const classification = readStoredClassification(legacyPaper);
 
   return {
     id: canonicalId,
@@ -284,14 +402,16 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     landingPageUrl,
     citationCount: legacyPaper.citationCount || openAlexData.cited_by_count || 0,
     concepts: legacyPaper.concepts || openAlexData.concepts || [],
-    // The branch the feed filed the paper under, and every category it
-    // carried, survive the round trip: a stored copy keeps `categories` as a
-    // list, and it used to be dropped for the primary alone.
-    primaryCategory: legacyPaper.primaryCategory || undefined,
-    categories: legacyPaper.allCategories
-      || (Array.isArray(legacyPaper.categories) && legacyPaper.categories.length > 0
-        ? legacyPaper.categories
-        : [legacyPaper.primaryCategory].filter(Boolean) as string[]),
+    // The branch the feed filed the paper under, every category it carried
+    // and OpenAlex's topic survive the round trip, as far as the copy can
+    // show them. The list used to be dropped for the primary alone, and the
+    // topic dropped outright, which is how a Genetics paper came back Physics.
+    primaryCategory: classification.primaryCategory || undefined,
+    categories: classification.categories.length > 0
+      ? classification.categories
+      : [classification.primaryCategory].filter(Boolean),
+    primaryTopic: classification.primaryTopic ?? null,
+    classificationVersion: classification.classificationVersion,
     published: legacyPaper.published || undefined,
   };
 }
