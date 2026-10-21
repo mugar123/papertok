@@ -11,7 +11,7 @@ export interface PaperSources {
   enrichedBy: string[];
   // Written and read only by `PaperBuilder.merge`: the row began as an arXiv
   // record whose `true` rested on a DOI alone, and no record merged since has
-  // said the paper was reviewed.
+  // said the paper was reviewed on more than such a DOI.
   arxivDoiOnly?: true;
 }
 

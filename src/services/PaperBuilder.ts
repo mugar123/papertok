@@ -33,6 +33,18 @@ function doiRegistrant(normalizedDoi: string) {
   return normalizedDoi.split('/')[0];
 }
 
+// `arxivService` reads any DOI as publication, so an arXiv record without a
+// journal reference has nothing else behind its `true`. A merged record that
+// does not say the paper was reviewed leaves it so (OpenAlex's record of the
+// eprint under arXiv's DOI), yet can give the row a DOI or a journal, "arXiv
+// (Cornell University)" among them. So a record's own fields are read before
+// its first merge, and `sources.arxivDoiOnly` carries the answer after it.
+function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
+  return (record.sources?.enrichedBy?.length ?? 0) === 0
+    ? record.sources?.primary === 'arxiv' && !record.journal && isPublisherDoi(normalizeDoi(record.doi))
+    : record.sources?.arxivDoiOnly === true;
+}
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -248,24 +260,16 @@ export class PaperBuilder {
     // publications. `workingPaper` also marks every OpenAlex `report`, and
     // some report registrants issue journals too (the St. Louis Fed its Review
     // under 10.20955). An arXiv record that names its journal, has no DOI of
-    // its own or has merged a record saying the paper was reviewed therefore
-    // keeps its own answer, as does a record from another provider; an arXiv
-    // record listing the Review's DOI without a journal reference still reads
-    // as the report. Only a working paper gets this reading: Springer
-    // registers journal articles and chapters alike under 10.1007.
+    // its own or has merged a record saying, on more than an arXiv DOI, that
+    // the paper was reviewed therefore keeps its own answer, as does a record
+    // from another provider; an arXiv record listing the Review's DOI without
+    // a journal reference still reads as the report. Only a working paper
+    // gets this reading: Springer registers journal articles and chapters
+    // alike under 10.1007.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
-    // `arxivService` reads any DOI as publication, so an arXiv record without
-    // a journal reference has nothing else behind its `true`. A merged record
-    // that does not say the paper was reviewed leaves it so (OpenAlex's record
-    // of the eprint under arXiv's DOI), yet can give the row a DOI or a
-    // journal, "arXiv (Cornell University)" among them. So the record's own
-    // fields are read before its first merge, and `sources.arxivDoiOnly`
-    // carries the answer to the merges after it.
-    const arxivDoiOnly = existingPaper.sources.enrichedBy.length === 0
-      ? existingPaper.sources.primary === 'arxiv' && !existingPaper.journal && isPublisherDoi(baseDoi)
-      : existingPaper.sources.arxivDoiOnly === true;
+    const arxivDoiOnly = restsOnArxivDoi(existingPaper);
     const sameRecord = !existingPaper.doi
       || (baseDoi !== '' && baseDoi === enrichmentDoi)
       || (arxivDoiOnly && enrichmentData.workingPaper === true && enrichmentDoi !== ''
@@ -429,8 +433,12 @@ export class PaperBuilder {
     if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
     // A merged record whose own answer is `true`, such as OpenAlex's record of
     // the journal article, backs the row's; until one does, the `true` rests
-    // on the arXiv record's DOI alone.
-    const stillArxivDoiOnly = arxivDoiOnly && enrichmentReview !== true;
+    // on the arXiv record's DOI alone. A `true` that itself rests on an arXiv
+    // DOI backs nothing: a topic gets the same arXiv record from both its
+    // category listing and its query. Every other provider's `published`
+    // still counts (see `isOpenAlexRecord`), an untyped Semantic Scholar
+    // record's or CORE's included.
+    const stillArxivDoiOnly = arxivDoiOnly && (enrichmentReview !== true || restsOnArxivDoi(enrichmentData));
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
       merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
     }

@@ -482,6 +482,12 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     ['Explorer page, arXiv first', PaperBuilder.deduplicate([arxiv, explorerRecord()])],
     ['Explorer across pages, arXiv first', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), explorerRecord()])],
     ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(fedsWork)!.enrichment, 'openalex')]],
+    // A topic asks arXiv for its category listing and for its query
+    // (`fetchTopicPapers`), and two followed authors can both list the eprint,
+    // so the arXiv record can merge a copy of itself first.
+    ['topic, arXiv copy first', PaperBuilder.deduplicate([arxiv, arxiv, searchRecord()])],
+    ['Explorer page, arXiv copy first', PaperBuilder.deduplicate([arxiv, arxiv, explorerRecord()])],
+    ['feed enrichment after an arXiv copy', [PaperBuilder.merge(PaperBuilder.deduplicate([arxiv, arxiv])[0], mapOpenAlexEnrichmentWork(fedsWork)!.enrichment, 'openalex')]],
     ...(workingPaperFirst ? [
       ['search, working paper first', PaperBuilder.deduplicate([searchRecord(), arxiv])],
       ['Explorer page, working paper first', PaperBuilder.deduplicate([explorerRecord(), arxiv])],
@@ -569,6 +575,13 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     assert.equal(reviewTagForPaper(rows[0]), null, flow);
     assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], flow);
   }
+  // An arXiv record that names the journal backs a row whose `true` rested on
+  // the DOI alone, as OpenAlex's article does; a copy without it does not.
+  const [referenced] = PaperBuilder.deduplicate([
+    arxivRecord(journalDoi), arxivRecord(journalDoi, 'J. Int. Econ. 160 (2026) 103900'), searchRecord(),
+  ]);
+  assert.equal(referenced.peerReviewed, true);
+  assert.equal(reviewTagForPaper(referenced), null);
 
   // A shared registrant joins only a working paper's versions. A Springer
   // chapter, which the Crossref fallback maps as unreviewed, does not unreview
@@ -642,6 +655,7 @@ test('an arXiv record beside a working paper it is not takes neither its series 
     const explorerPage = PaperBuilder.deduplicate([arxiv, slimWorksPage({ results: [work] }).papers[0]]);
     return [
       ['search', PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(work)!])],
+      ['topic, arXiv copy first', PaperBuilder.deduplicate([arxiv, arxiv, new OpenAlexAdapter().mapToStandard(work)!])],
       ['Explorer page', explorerPage],
       ['Explorer across pages', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), slimWorksPage({ results: [work] }).papers[0]])],
       // Each further page deduplicates the rows already shown again.
