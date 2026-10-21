@@ -52,8 +52,6 @@ export default function SkeletonCard() {
           </div>
         </div>
       </div>
-      {/* The rail's own slots, holding a glyph-sized mark each: the real
-          rail is bare icons, not tiles. */}
       <div className="pc-side-actions sk-rail">
         {[0, 1, 2, 3, 4].map((i) => (
           <span key={i} className="pc-side-btn">
