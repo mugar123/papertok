@@ -21,7 +21,7 @@ import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
 import { mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
-import { fetchWorkingPapers } from '../services/domainSourceService.ts';
+import { fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { openAlexClient } from '../services/openAlexClient.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
@@ -79,6 +79,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     ARXIV_FEED_AREAS, fetchPapers: (() => Promise.resolve(fast)) as (categories: string[]) => Promise<FeedRecord[]>, PubmedAdapter: class {},
     // `slow` stands for any later main source; the loader pools them alike.
     fetchDomainPapers: () => Promise.resolve(slow), fetchWorkingPapers: (() => Promise.resolve([])) as typeof fetchWorkingPapers,
+    fetchOpenAlexTopicPapers: (() => Promise.resolve([])) as typeof fetchOpenAlexTopicPapers,
     relatedCandidates: ref([]),
     personalCandidates: ref([]), fetchPersonalPapers: () => Promise.resolve([]), PERSONAL_CANDIDATES_PER_PAGE: 5,
     pickExplorationCategories,
@@ -646,6 +647,58 @@ for (const [name, answered, shown, continuations] of [
     assert.deepEqual(searchedLabels(urls, leaves), []);
   });
 }
+
+// Plan A (PAP-73): the leaves arXiv does not serve ask OpenAlex for recent
+// works by the topic IDs measured for them, once per page. Readers of arXiv's
+// leaves, or of leaves whose topics were not measured, cost no request.
+test("a biology reader's page asks OpenAlex once for its leaves' topics and shows the answer; other readers do not ask", async t => {
+  // OpenAlex W7222916812 (trimmed), primary topic RNA Research and Splicing.
+  const splicing = {
+    id: 'https://openalex.org/W7222916812', doi: 'https://doi.org/10.1093/genetics/iyag290', type: 'article',
+    title: 'A Novel CCMS Model Reveals a Critical Intronic Sequence in the Snrpb Gene that is Required for Normal Development',
+    publication_date: '2026-10-20', publication_year: 2026, authorships: [], cited_by_count: 0,
+    abstract_inverted_index: { Pathogenic: [0], variants: [1], in: [2], SNRPB: [3], cause: [4], Cerebrocostomandibular: [5], Syndrome: [6] },
+    primary_location: { landing_page_url: 'https://doi.org/10.1093/genetics/iyag290', source: { id: 'https://openalex.org/S65932378', display_name: 'Genetics', type: 'journal' } },
+    primary_topic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing', subfield: { id: 'https://openalex.org/subfields/1312', display_name: 'Molecular Biology' } },
+  };
+  // Crossref, asked for the card's type.
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const dois = new URL(String(input)).searchParams.get('filter')!.split(',').map(value => value.slice(4));
+    return Response.json({ message: { 'total-results': dois.length, items: dois.map(DOI => ({ DOI, type: 'journal-article' })) } });
+  });
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: URL[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(new URL(String(input)));
+    return Response.json({ results: [splicing] });
+  };
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  const load = async (preferences: string[]) => {
+    urls.length = 0;
+    const { state, env, run } = feed();
+    Object.assign(env, {
+      userPreferences: preferences,
+      CATEGORIES,
+      getAllLeafCategories: () => preferences.map(id => ({ id, label: id, area: id.split('.')[0] })),
+      fetchOpenAlexTopicPapers,
+      PubmedAdapter: class { search() { return Promise.resolve({ papers: [] }); } },
+    });
+    await run(true);
+    assert.equal(state.error, null);
+    return state.papers.map(paper => paper.id);
+  };
+
+  assert.ok((await load(['bio.mol'])).includes('openalex:W7222916812'), 'the topic match is on the page');
+  assert.equal(urls.length, 1);
+  assert.match(urls[0].searchParams.get('filter')!, /(^|,)primary_topic\.id:T\d+/);
+  assert.equal(urls[0].searchParams.get('page'), '1');
+
+  for (const reader of [['cs.LG', 'cs.AI'], ['med.gen']]) {
+    await load(reader);
+    assert.equal(urls.length, 0, `a reader of ${reader.join(' and ')} asks OpenAlex nothing`);
+  }
+});
 
 // Trimmed OpenAlex W2020715063: no abstract in the record, linked to arXiv 1109.5103.
 const electron = { ...records('electron', 1)[0], id: 'W2020715063', title: 'Effective action for strongly correlated electron systems', arxivId: '1109.5103', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } };

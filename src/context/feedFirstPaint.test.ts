@@ -162,10 +162,10 @@ test('SOURCE: the topic table is prewarmed when a topic follow is known', async 
  * Measured 2026-09-16: the optional candidates were created before the main
  * sources, so the feed's OpenAlex search entered the client's two-wide FIFO
  * queue behind every followed-entity lookup and left the browser 2.3 s late —
- * past its own first-paint budget. arXiv, PubMed and the domain sources are
- * issued first now. PAP-73 removed that search. The working-paper series, the
- * one main source still asking OpenAlex, waits for the personal and followed
- * lookups on purpose; a test in feedUsableBatch.test.ts covers that order.
+ * past its own first-paint budget. arXiv, PubMed, the OpenAlex topic request
+ * that replaced that search (PAP-73) and the domain sources are issued first
+ * now. The working-paper series wait for the personal and followed lookups on
+ * purpose; a test in feedUsableBatch.test.ts covers that order.
  */
 test('SOURCE: the main sources are requested before the optional candidates', async () => {
   const code = stripComments(await read('./FeedContext.tsx'));
@@ -176,6 +176,7 @@ test('SOURCE: the main sources are requested before the optional candidates', as
     'the source fan-out',
     100,
   );
+  const topicsAt = block.indexOf('fetchOpenAlexTopicPapers(');
   const domainAt = block.indexOf('const domainProm = fetchDomainPapers(');
   const settleAt = block.indexOf('const { first, all } = settleSourcesForFirstPaint(');
   // The assignments that issue the requests, not the declarations above them.
@@ -183,6 +184,7 @@ test('SOURCE: the main sources are requested before the optional candidates', as
   const followedAt = block.indexOf('followedCandidatesPromise = resolveWithin(');
   const personalAt = block.indexOf('personalCandidatesPromise = resolveWithin(');
   assert.ok(domainAt >= 0 && settleAt > domainAt, 'the main sources are issued inside the block');
+  assert.ok(topicsAt >= 0 && topicsAt < domainAt, 'the OpenAlex topic request is issued with the main sources');
   assert.ok(graphAt > domainAt && graphAt < settleAt, 'the graph candidates are asked for after the main sources have been issued');
   assert.ok(personalAt > domainAt && personalAt < settleAt, 'the personal recommendations are asked for after the main sources have been issued');
   assert.ok(followedAt > domainAt && followedAt < settleAt, 'the followed candidates are asked for after the main sources have been issued');
