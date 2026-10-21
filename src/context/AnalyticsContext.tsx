@@ -13,6 +13,7 @@ import { pageview } from '@vercel/analytics';
 import { AnalyticsContext } from './contexts.ts';
 import { useLocation } from 'react-router-dom';
 import { useLanguage } from './LanguageContext.tsx';
+import { initializeErrorTracking } from '../services/errorTracking.ts';
 import {
   ANALYTICS_CONSENT,
   markActivation as markAnalyticsActivation,
@@ -41,6 +42,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (consent !== ANALYTICS_CONSENT.GRANTED) return;
+    void initializeErrorTracking();
     trackAcquisition({ language });
   }, [consent, language]);
 

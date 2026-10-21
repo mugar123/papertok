@@ -144,6 +144,31 @@ events (searches, follows, saves, rewrites and so on) in cookieless mode, throug
 `/ingest` rewrite in `vercel.json`, and only from the production site. What is sent, and
 what never is, lives in `src/services/analyticsService.ts`.
 
+Reader analytics distinguish `reader_open` (the internal reader becomes visible),
+`paper_open` (an attempt to open the original/PDF), and `paper_rewrite` (an attempted
+Worker request). `paper_rewrite_result` reports success, incomplete output,
+failure or cancellation, with the reading level, cache status, bounded duration
+and an allowlisted error code. Cached results do not count as Worker requests.
+`auth_prompt_view` records the sign-in dialog's reason; `auth_result` distinguishes
+successful, cancelled and failed Google/GitHub attempts without account details.
+
+Sentry receives frontend and Worker errors in separate `papertok-web` and
+`papertok-worker` projects. Frontend collection covers the React error boundary,
+uncaught JavaScript errors and unhandled promise rejections, on production hosts
+and behind the analytics opt-out. Worker collection covers uncaught request,
+scheduled-task and Durable Object failures, caught router and rewrite failures,
+and otherwise unreported 5xx responses. Expected 4xx responses are excluded.
+Backend operational reporting is independent of browser analytics consent.
+
+Reports keep standard error types, code locations, release identifiers and
+allowlisted operation/status tags. Messages, request data, account details,
+paper content and breadcrumbs are removed; transport IP inference is suppressed.
+Tracing, replay, logs and metrics are disabled. `app_error` remains a product
+counter in PostHog. Hidden frontend source maps upload during Vite builds and
+are deleted from the published assets. Set `SENTRY_AUTH_TOKEN` in the Vercel
+Production build environment; never use a `VITE_*` variable for this credential.
+The Worker deployment command uploads its maps separately (see `worker/README.md`).
+
 A **Cloudflare Worker** is used for server-side functionality such as caching scientific queries, protecting provider credentials and proxying APIs that should not be called directly from the browser. It also serves the AI features — plain-words rewriting and passage explanations — behind a server-enforced daily allowance that reserves usage before the model runs and refunds it on failure.
 
 This keeps the main application lightweight while allowing integrations that require server-side secrets.

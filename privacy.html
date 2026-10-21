@@ -198,6 +198,21 @@
         operating system. Nothing from your account is sent.
       </p>
       <p>
+        We also record whether the reader opens, whether a rewrite completes, its
+        duration and whether it came from a saved version, and whether a sign-in
+        attempt succeeds, fails or is cancelled.
+      </p>
+      <p>
+        <strong>Sentry</strong>, in the European Union, receives technical error
+        reports from the browser and our backend. Reports contain a standard error
+        type, application code locations, software version and limited operational
+        labels. We remove error messages, request data, paper content, notes,
+        search text and account details, and replace IP addresses with a fixed
+        value before sending. Session recording and performance tracing are disabled.
+        Turning analytics off stops new browser error reports. Backend error
+        reporting continues to help us operate and repair the service.
+      </p>
+      <p>
         PostHog's requests go to papertok.app itself, and Vercel relays them to PostHog.
         PostHog keeps the events for one year.
       </p>
@@ -230,6 +245,7 @@
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — analytics of what is done in the application, on servers in the European Union.</li>
+        <li><strong>Sentry</strong> — technical error monitoring, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
         <li><strong>Brevo</strong> — sending the emails.</li>
       </ul>

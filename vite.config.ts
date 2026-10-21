@@ -7,6 +7,7 @@ declare const self: { registration: { scope: string } }
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -194,6 +195,7 @@ export default defineConfig(({ command, mode }) => {
         // from index.html -- the plugin must not generate a second one.
         manifest: false,
         workbox: {
+          sourcemap: false,
           // The plugin only wires `skipWaiting`/`clientsClaim` on for us when
           // `injectRegister` is left at its default -- with it set to `false`
           // above, a new service worker would sit in the `waiting` state
@@ -307,8 +309,15 @@ export default defineConfig(({ command, mode }) => {
           ],
         },
       }),
+      sentryVitePlugin({
+        org: 'papertok',
+        project: 'papertok-web',
+        telemetry: false,
+        sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
+      }),
     ],
     build: {
+      sourcemap: 'hidden',
       rollupOptions: {
         // Two pages, one build: the app and the privacy policy (which stops
         // being a loose file in public/ so that it can share the app's tokens

@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
@@ -2912,6 +2913,7 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
     return persistScheduledDelivery(env, key.name, subscription, delivery);
   } catch (error) {
+    captureWorkerException(error, 'schedule');
     sourceReport ||= (error as EmailNotificationError)?.sourceReport;
     const code = cleanText((error as EmailNotificationError)?.code, 100) || 'EMAIL_SCHEDULE_PROCESSING_FAILED';
     console.warn('Scheduled email subscription failed', code);

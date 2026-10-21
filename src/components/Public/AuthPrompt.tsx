@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { authPromptCopy } from './authPromptCopy.ts';
+import { authPromptCopy, normalizeAuthReason } from './authPromptCopy.ts';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import SignInMethods from './SignInMethods.tsx';
 import { Button } from '../ui/button.tsx';
 import Petri from '../Onboarding/Petri.tsx';
@@ -21,6 +22,7 @@ import './AuthPrompt.css';
 // unmount. That is the one place `onClose` is called, so it reaches App once.
 export default function AuthPrompt({ onClose, reason = 'default' }: { onClose: () => void; reason?: unknown }) {
   const { user } = useAuth();
+  const { trackEvent } = useAnalyticsConsent();
   // What opened the door decides what it says (authPromptCopy.js).
   const copy = authPromptCopy(reason);
   const [open, setOpen] = useState(true);
@@ -30,6 +32,12 @@ export default function AuthPrompt({ onClose, reason = 'default' }: { onClose: (
   // to onboarding or the feed, so the modal steps out of the way. Derived, not
   // an effect: the session appearing is itself the close.
   const isOpen = open && !user;
+  const viewTracked = useRef(false);
+  useEffect(() => {
+    if (!isOpen || viewTracked.current) return;
+    viewTracked.current = true;
+    void trackEvent('auth_prompt_view', { surface: 'auth_prompt', reason: normalizeAuthReason(reason) });
+  }, [isOpen, reason, trackEvent]);
 
 
   return (

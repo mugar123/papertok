@@ -30,8 +30,15 @@ export function useProviderSignIn(surface: string) {
     trackEvent('select_content', { content_type: 'signup_cta', surface, method });
     try {
       const result = await (method === 'google' ? signInWithGoogle : signInWithGitHub)();
+      trackEvent('auth_result', { method, surface, result: 'success' });
       trackEvent(result?.isNewUser ? 'sign_up' : 'login', { method });
     } catch (signInError) {
+      const code = (signInError as { code?: string } | null)?.code || 'other';
+      trackEvent('auth_result', {
+        method, surface,
+        result: code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' ? 'cancelled' : 'error',
+        error_code: code,
+      });
       // One account per email address: this address already opens PaperTok
       // through some other door. Email enumeration protection means Firebase
       // will not name which, so the copy points at "the method you already use".

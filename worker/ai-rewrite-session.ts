@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { WorkerEnv } from './env.ts';
 import { AIExplanationError } from './ai-explanation.ts';
 import { handlePaperRewrite } from './ai-rewrite.ts';
@@ -21,6 +22,7 @@ export class PaperRewriteSession {
     try {
       return await handlePaperRewrite(request, this.env, headers);
     } catch (error) {
+      captureWorkerException(error, 'rewrite');
       const known = error instanceof AIExplanationError;
       return json(
         {

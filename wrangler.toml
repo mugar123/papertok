@@ -1,6 +1,8 @@
 name = "papertok-report-api"
-main = "worker/index.ts"
+main = "worker/instrumentation.ts"
 compatibility_date = "2026-07-16"
+compatibility_flags = ["nodejs_compat"]
+upload_source_maps = true
 
 # Declarar `[[routes]]` hace que wrangler apague workers.dev por defecto, y esa
 # es la URL que sigue llamando el bundle en produccion: sin esta linea, el

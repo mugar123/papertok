@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Paper } from '../src/models/Paper.ts';
 import type { AIProviderPayload } from './ai-explanation.ts';
@@ -1036,6 +1037,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         ...(sections.length === 0 && rawAll ? { rawHead: rawAll.slice(0, 400) } : {}),
       }));
     } catch (error) {
+      captureWorkerException(error, 'rewrite');
       // Whatever went wrong, nothing is going to consume the rest of this run:
       // cut the model off before doing anything else with the failure.
       modelDeadline.abort();
