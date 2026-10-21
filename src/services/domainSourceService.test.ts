@@ -14,7 +14,10 @@ import {
   mapOstiRecord,
   readBioRxivResponse,
   fetchWorkingPapers,
+  europePmcQuery,
 } from './domainSourceService.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { isFeedPublication } from './feedPublicationService.ts';
 import { openAlexClient } from './openAlexClient.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
@@ -103,6 +106,74 @@ test('maps Europe PMC search results including free full text and biomedical ter
   assert.equal(paper!.accessSource, 'europepmc');
   assert.equal(paper!.citationCount, 9);
   assert.equal(paper!.primaryCategory, 'bio.cell');
+});
+
+// An unfielded `"Molecular Biology"` also matches the journal name, and
+// 139 records in the 2026-10-20 audit were chapters of Methods in Molecular
+// Biology dated 2027. The labels are searched where a paper states its
+// subject, and nothing dated after today comes back.
+test('the Europe PMC request searches each label in title, abstract and keywords, up to today', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const query = europePmcQuery(['bio.gen', 'bio.mol']);
+
+  for (const label of ['Genetics', 'Molecular Biology']) {
+    assert.ok(query.includes(`TITLE_ABS:"${label}"`), `${label} in title and abstract: ${query}`);
+    assert.ok(query.includes(`KW:"${label}"`), `${label} in keywords: ${query}`);
+  }
+  const fields = [...query.matchAll(/(\w+:)?"[^"]*"/g)].map(([, field]) => field);
+  assert.deepEqual([...new Set(fields)].sort(), ['KW:', 'TITLE_ABS:'], `no label is searched in every field: ${query}`);
+  assert.match(query, /\bAND FIRST_PDATE:\[\S+ TO 2026-10-20\]$/);
+});
+
+// Captured from Europe PMC on 2026-10-20 (PMID 42879010), trimmed to the
+// fields the mapper reads.
+const PROTOCOL_CHAPTER = {
+  id: '42879010',
+  source: 'MED',
+  pmid: '42879010',
+  doi: '10.1007/978-1-0716-5587-0_5',
+  title: '(Immuno-)Histological Analysis of Ewing Sarcoma.',
+  authorString: 'Marcilla D, Machado I, Grünewald TGP, Civantos G, Llombart-Bosch A, de Álava E.',
+  journalInfo: {
+    yearOfPublication: 2027,
+    journal: { title: 'Methods in molecular biology (Clifton, N.J.)', essn: '1940-6029', issn: '1064-3745', nlmid: '9214969' },
+  },
+  pubTypeList: { pubType: ['Journal Article'] },
+  abstractText: 'The diagnosis of Ewing sarcoma requires integrating information from numerous techniques.',
+  dateOfCreation: '2026-10-15',
+  firstPublicationDate: '2027-01-01',
+};
+
+test('a Methods in Molecular Biology chapter from Europe PMC is typed as a book-series chapter, which the feed leaves out', () => {
+  const chapter = PaperBuilder.deduplicate([mapEuropePmcSearchResult(PROTOCOL_CHAPTER, ['bio.mol'])])[0];
+  assert.equal(chapter.publicationType, 'book-chapter');
+  assert.equal(isFeedPublication(chapter), false);
+
+  for (const journal of [{ issn: '1064-3745' }, { essn: '1940-6029' }, { nlmid: '9214969' }]) {
+    const paper = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, journalInfo: { journal } }, ['bio.mol']);
+    assert.equal(isFeedPublication(paper!), false, `identified by ${Object.keys(journal)[0]} alone`);
+  }
+
+  const article = mapEuropePmcSearchResult({
+    ...PROTOCOL_CHAPTER,
+    journalInfo: { journal: { title: 'Nature', issn: '0028-0836', essn: '1476-4687', nlmid: '0410462' } },
+  }, ['bio.mol']);
+  assert.equal(article!.publicationType, 'article');
+  assert.equal(isFeedPublication(article!), true);
+});
+
+test('a Europe PMC record dated after today shows no year and no date', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const scheduled = PaperBuilder.deduplicate([mapEuropePmcSearchResult(PROTOCOL_CHAPTER, ['bio.mol'])])[0];
+  assert.equal(scheduled.year, undefined, 'not 2027, and not the 2026 the record was created in');
+  assert.equal(scheduled.published, '');
+
+  const yearOnly = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, firstPublicationDate: undefined, dateOfCreation: undefined }, ['bio.mol']);
+  assert.equal(yearOnly!.year, undefined, 'a publication year of 2027 is after today too');
+
+  const current = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, firstPublicationDate: '2026-10-20' }, ['bio.mol']);
+  assert.equal(current!.year, 2026);
+  assert.equal(current!.published, '2026-10-20');
 });
 
 test('maps CORE, OSTI and NASA records to stable open paper records', () => {
