@@ -50,16 +50,21 @@ function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'd
     : record.sources?.arxivDoiOnly === true;
 }
 
-// The answer a record gives of itself, which `create` writes. Another
-// provider's record is read from its own type and status, and one without a
-// type reads as a preprint. A record that has merged another holds the answer
-// `merge` gave it, an unknown included: the Explorer deduplicates its rows
-// again with each page, and deriving one turned that unknown into `true`.
-function ownAnswer(record: Pick<Partial<Paper>, 'peerReviewed' | 'publicationStatus' | 'publicationType' | 'sources'>, sourceName?: string) {
-  const isPreprint = record.publicationStatus === 'preprint'
+// A record without a type reads as a preprint, for its status and its answer.
+function readsAsPreprint(record: Pick<Partial<Paper>, 'publicationStatus' | 'publicationType'>) {
+  return record.publicationStatus === 'preprint'
     || record.publicationType === 'preprint'
     || !record.publicationType;
-  return record.peerReviewed ?? (isOpenAlexRecord(record, sourceName) || hasMerged(record) ? undefined : !isPreprint);
+}
+
+// The answer a record gives of itself, which `create` writes. Another
+// provider's record is read from its own type and status. A record that has
+// merged another holds the answer `merge` gave it, an unknown included: the
+// Explorer deduplicates its rows again with each page, and deriving one
+// turned that unknown into `true`.
+function ownAnswer(record: Pick<Partial<Paper>, 'peerReviewed' | 'publicationStatus' | 'publicationType' | 'sources'>, sourceName?: string) {
+  return record.peerReviewed
+    ?? (isOpenAlexRecord(record, sourceName) || hasMerged(record) ? undefined : !readsAsPreprint(record));
 }
 
 // The DOI of a record that has merged no other and says of itself, on more
@@ -85,9 +90,6 @@ export class PaperBuilder {
    * @returns {Paper}
    */
   static create(data: Omit<Partial<Paper>, 'arxivId' | 'journal'> & { arxivId?: string | null; journal?: string | null }): Paper {
-    const isPreprint = data.publicationStatus === 'preprint'
-      || data.publicationType === 'preprint'
-      || !data.publicationType;
     // arXiv is the one source whose silence really does mean preprint. For
     // everyone else a missing type is a gap in the record, and writing
     // `preprint` into it turned every PubMed journal article into one.
@@ -131,7 +133,7 @@ export class PaperBuilder {
       year: data.year || undefined,
       publisher: data.publisher || undefined,
       publicationType,
-      publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
+      publicationStatus: data.publicationStatus || (readsAsPreprint(data) ? 'preprint' : 'published'),
       peerReviewed: ownAnswer(data),
       workingPaper: data.workingPaper || undefined,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
