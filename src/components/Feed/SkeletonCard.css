@@ -99,14 +99,12 @@
   margin-bottom: var(--space-4);
 }
 
-/* The Read pair, as one block at its width. */
 .sk-button {
   width: min(28.5rem, 100%);
   height: 40px;
   border-radius: var(--radius-md);
 }
 
-/* A mark the size of the rail's glyphs. */
 .sk-glyph {
   width: 24px;
   height: 24px;
