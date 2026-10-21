@@ -100,7 +100,10 @@ export class PaperBuilder {
       biomedicalTerms: data.biomedicalTerms || [],
       categories: data.categories || [],
       allCategories: data.allCategories || data.categories || [],
-      primaryCategory: data.primaryCategory || data.categories?.[0] || '',
+      // A provider's own category or nothing. `categories[0]` is a concept
+      // name on an OpenAlex record, and as the primary it went into the
+      // interactions and the profile as if it were a category (PAP-60).
+      primaryCategory: data.primaryCategory || '',
       institutions: data.institutions || [],
       projectIds: data.projectIds || [],
       hasReferences: Boolean(data.hasReferences),
@@ -112,6 +115,7 @@ export class PaperBuilder {
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',
       _followedEntityMatches: data._followedEntityMatches || [],
+      _fetchedFor: data._fetchedFor?.length ? [...new Set(data._fetchedFor)].sort() : undefined,
       provider: data.provider || undefined,
     };
   }

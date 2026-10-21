@@ -15,7 +15,9 @@ test('normalizes category and publication metadata used by ranking', () => {
     authors: [{ name: 'Ada Researcher' }],
   });
 
-  assert.equal(paper.primaryCategory, 'physics.optics');
+  // No primary is made up for a record that names none (PAP-60); the
+  // ranking reads its categories in order.
+  assert.equal(paper.primaryCategory, '');
   assert.deepEqual(paper.allCategories, ['physics.optics', 'quant-ph']);
   assert.equal(paper.published, '2026-07-01T00:00:00Z');
   assert.equal(paper.citationCount, 12);

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   areaKeyForCategory,
   areaKeyForOpenAlexField,
@@ -8,7 +9,10 @@ import {
   areaLabelForPaper,
   openAlexFilterForArea,
 } from './areaAccent.ts';
+import type { OpenAlexWork } from '../services/adapters/openAlexTypes.ts';
 import { CATEGORIES, getCategoryLabel } from '../data/categoryTaxonomy.ts';
+import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { PaperBuilder } from '../services/PaperBuilder.ts';
 
 /* One resolution, used by the accent ink, the field label and the watermark
    alike. Computing any of them a second way is how a paper ends up inked as
@@ -109,20 +113,28 @@ test('every area has an OpenAlex filter built from the tables that label its row
   assert.equal(openAlexFilterForArea('nonsense'), null);
 });
 
-/* The bug this file exists to keep fixed: Research's papers carry neither an
-   arXiv category nor an OpenAlex field — `categories[0]` is a topic's display
-   name — so every one of them used to resolve to nothing and get stamped with
-   the physics atom. */
-test("a paper known only by its topic's name still finds its branch", () => {
-  const cases = [
-    ['Wastewater Treatment and Reuse', 'civil'],
-    ['Protein Structure and Dynamics', 'bio'],
-    ['Interferon and Immune Responses', 'med'],
-    ['Natural Language Processing Techniques', 'cs'],
-    ['Plasma and Fusion Research', 'physics'],
-  ];
-  for (const [topic, area] of cases) {
-    assert.equal(areaKeyForPaper({ categories: [topic] }), area, topic);
+/* PAP-60. A name says what a topic is about, not which field filed it: read
+   for keywords, "Somatic cell nuclear transfer" made a Genetics paper
+   Physics, and a Chemistry paper took the field of whichever concept name
+   matched first. */
+test("a topic's or a concept's name alone is not a field", () => {
+  for (const name of ['Wastewater Treatment and Reuse', 'Protein Structure and Dynamics', 'Somatic cell nuclear transfer']) {
+    assert.equal(areaKeyForPaper({ categories: [name] }), null, name);
+    assert.equal(areaKeyForPaper({ primaryCategory: name, categories: [name] }), null, name);
+  }
+});
+
+// D3: OpenAlex fields this app has no area for (Chemistry, Social Sciences,
+// Psychology...) read as OpenAlex names them, with no field's ink.
+test('a field the app has no area for reads as OpenAlex names it, without an ink', () => {
+  const { sample } = JSON.parse(readFileSync(new URL('./openAlexWorks.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
+  const unmapped = sample.filter(work => ['16', '33'].includes(String(work.primary_topic?.field?.id).split('/').pop()!));
+  assert.equal(unmapped.length, 4);
+  for (const work of unmapped) {
+    const paper = PaperBuilder.deduplicate([new OpenAlexAdapter().mapToStandard(work)])[0];
+    assert.equal(areaKeyForPaper(paper), null, work.id);
+    assert.equal(areaLabelForPaper(paper), work.primary_topic?.field?.display_name, work.id);
+    assert.equal(areaAccentForPaper(paper), 'var(--gradient-brand)', work.id);
   }
 });
 
@@ -140,8 +152,8 @@ test('a branch that cannot be worked out resolves to nothing, not to physics', (
 });
 
 test('the ink and the label come from the same resolution', () => {
-  const paper = { categories: ['Wastewater Treatment and Reuse'] };
+  const paper = { primaryTopic: { id: 'https://openalex.org/T10889', subfield: { id: 'https://openalex.org/subfields/2212', display_name: 'Ocean Engineering' }, field: { id: 'https://openalex.org/fields/22', display_name: 'Engineering' } } };
   assert.equal(areaKeyForPaper(paper), 'civil');
   assert.equal(areaAccentForPaper(paper), 'var(--gradient-civil)');
-  assert.equal((areaLabelForPaper as (paper: Parameters<typeof areaLabelForPaper>[0], legacyOptions: { english: boolean }) => string)(paper, { english: true }), 'Civil & Environmental Engineering');
+  assert.equal(areaLabelForPaper(paper), 'Civil & Environmental Engineering');
 });

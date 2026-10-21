@@ -76,7 +76,6 @@ export function mapHuggingFacePaper(raw: HuggingFaceRecord, requestedCategories:
 
   const published = paper?.publishedAt || raw?.publishedAt || '';
   const keywords = [...new Set((paper?.ai_keywords || raw?.ai_keywords || []).map(cleanText).filter(Boolean))];
-  const primaryCategory = requestedCategories[0] || '';
   const researchResources = mapHuggingFaceResources({
     githubRepo: paper?.githubRepo || raw?.githubRepo,
     projectPage: paper?.projectPage || raw?.projectPage,
@@ -111,8 +110,9 @@ export function mapHuggingFacePaper(raw: HuggingFaceRecord, requestedCategories:
       display_name: keyword,
       level: 2,
     })),
-    categories: primaryCategory ? [primaryCategory] : [],
-    primaryCategory,
+    // Hugging Face lists no arXiv category; the searched one is only why the
+    // paper was fetched.
+    _fetchedFor: requestedCategories,
     researchResources,
     provider: 'huggingface',
   });
