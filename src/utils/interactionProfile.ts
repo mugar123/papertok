@@ -31,7 +31,8 @@ export interface ProfileSignals {
   conceptAffinities: Record<string, number>;
   authorAffinities: Record<string, number>;
   contentAffinities: Record<string, number>;
-  // Likes, saves and long reads still standing: what the content match needs three of.
+  // Likes, saves and long reads still standing: a content match needs
+  // MIN_CONTENT_POSITIVES of them (see contentProfile.ts).
   positiveCount: number;
   sessionAffinities: Record<string, number>;
   categoryExposure: Record<string, CategoryExposure>;

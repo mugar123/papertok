@@ -3,9 +3,14 @@ import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
 /**
  * What a paper says, as terms, and how closely it reads like what a reader
  * keeps. The interaction profile stores the reader's side (a decayed weight per
- * term, like its concepts); the ranking scores a candidate against it. A term is
- * a word or a pair of adjacent words of the title and abstract, so the match
- * exists the moment a card arrives, before OpenAlex has classified it.
+ * term, like its concepts), and contentSimilarity scores a candidate against
+ * it. A term is a word or a pair of adjacent words of the title and abstract,
+ * so the match exists the moment a card arrives, before OpenAlex has
+ * classified it.
+ *
+ * The feed's scorer does not read the match yet. Tokenizing the 80 new cards
+ * of a page took the page past its 10 ms budget, measured on a desktop, and
+ * a phone would be slower still.
  */
 
 // The interaction document keeps the first 500 characters of an abstract. A

@@ -1,4 +1,3 @@
-import type { Paper } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -441,30 +440,22 @@ test('trims the shuffle pool to a scored head instead of walking hundreds of ext
   assert.equal(shuffled.length, 12);
 });
 
-// Titles and abstracts written for these tests (synthetic, not captured from a
-// provider). Every card is filed under cs.LG, so what tells them apart is only
-// what they say.
-const rlCards = [
-  ['rl-1', 'Proximal policy optimization for continuous control', 'We study policy gradient reinforcement learning for continuous control tasks and show that clipped policy updates keep training stable.'],
-  ['rl-2', 'Offline reinforcement learning with conservative value estimates', 'Offline reinforcement learning learns a policy from a fixed dataset. Conservative value estimates keep the policy close to the data.'],
-  ['rl-3', 'Model-based reinforcement learning with learned world models', 'An agent learns a world model of its environment and plans with it, which makes reinforcement learning far more sample efficient.'],
-  ['rl-4', 'Exploration bonuses for sample-efficient reinforcement learning', 'Reinforcement learning agents explore with count-based bonuses. The policy reaches high reward in fewer environment steps.'],
-  ['rl-5', 'Reward shaping and policy gradients in sparse environments', 'We analyse policy gradient methods when the reward is sparse and propose a reward shaping scheme for reinforcement learning agents.'],
-  ['rl-6', 'Multi-agent reinforcement learning for traffic control', 'Agents learn a joint policy by reinforcement learning to control traffic signals, with a shared reward and decentralised execution.'],
-];
-const visionCards = [
-  ['cv-1', 'Masked autoencoders for image segmentation', 'We pretrain a vision transformer on images by masking patches, and segmentation of natural images improves.'],
-  ['cv-2', 'Object detection with transformers', 'A vision transformer detects objects in images without hand-designed anchors; detection accuracy matches convolutional baselines.'],
-  ['cv-3', 'Self-supervised visual representations from unlabeled images', 'Contrastive learning on unlabeled images yields visual representations that transfer to classification and detection of objects.'],
-  ['cv-4', 'Diffusion models for image synthesis and editing', 'A diffusion model generates images from noise and supports image editing guided by a text prompt.'],
-  ['cv-5', 'Depth estimation from a single image', 'A convolutional network predicts the depth of a scene from a single image and improves visual odometry.'],
-  ['cv-6', 'Video object segmentation with memory', 'We segment objects across video frames with a memory of earlier frames, improving temporal consistency of segmentation.'],
-];
-const makeCard = ([id, title, abstract]: string[]) => ({
-  id, title, abstract, primaryCategory: 'cs.LG', published: '2026-07-01T00:00:00Z', authors: ['A. Researcher'],
+
+// Cards written for these tests (synthetic, not captured from a provider).
+// Every card is filed under cs.LG; what tells the two groups apart is only the
+// OpenAlex topic each card carries itself, as an OpenAlex card does on arrival.
+const RL_TOPIC = { id: 'https://openalex.org/T900001', display_name: 'Reinforcement learning', score: 0.95 };
+const VISION_TOPIC = { id: 'https://openalex.org/T900002', display_name: 'Computer vision', score: 0.95 };
+const makeCard = (id: string, primaryTopic: typeof RL_TOPIC) => ({
+  id,
+  title: `Paper ${id}`,
+  abstract: `A synthetic abstract for paper ${id}, long enough to count as one.`,
+  primaryCategory: 'cs.LG',
+  published: '2026-07-01T00:00:00Z',
+  primaryTopic,
 });
-const rlPool = rlCards.map(makeCard);
-const visionPool = visionCards.map(makeCard);
+const rlPool = ['rl-1', 'rl-2', 'rl-3', 'rl-4', 'rl-5', 'rl-6'].map(id => makeCard(id, RL_TOPIC));
+const visionPool = ['cv-1', 'cv-2', 'cv-3', 'cv-4', 'cv-5', 'cv-6'].map(id => makeCard(id, VISION_TOPIC));
 
 /** What the feed does on a like: the interaction profile learns it, the ranking reads it back. */
 function readerWhoLiked(liked: ReturnType<typeof makeCard>[]) {
@@ -479,8 +470,6 @@ function readerWhoLiked(liked: ReturnType<typeof makeCard>[]) {
     categoryAffinities: signals.categoryAffinities,
     conceptAffinities: signals.conceptAffinities,
     authorAffinities: signals.authorAffinities,
-    contentAffinities: signals.contentAffinities,
-    positiveCount: signals.positiveCount,
     interactionCount: signals.interactionCount,
   };
 }
@@ -493,7 +482,6 @@ function topIds(pool: ReturnType<typeof makeCard>[], context: ReturnType<typeof 
     scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
   }).map(paper => paper.id).sort();
 }
-
 
 test('a concept or topic the card carries itself counts like one under openAlex, once', () => {
   const card = {
@@ -527,78 +515,10 @@ test('two readers who picked the same category and liked different papers get di
   assert.deepEqual(topIds(pool, likedVision, 3), ['cv-4', 'cv-5', 'cv-6']);
 });
 
-test('the shuffle itself puts cards that read like the reader\'s likes earlier', () => {
-  const pool = [...rlPool.slice(3), ...visionPool.slice(3)];
-  const meanRlPosition = (context: ReturnType<typeof readerWhoLiked>) => {
-    const random = seededRandom(5);
-    let total = 0;
-    const runs = 300;
-    for (let run = 0; run < runs; run += 1) {
-      const order = diversifiedWeightedShuffle(pool.map(card => ({ ...card })), {
-        random,
-        maxConsecutiveCategory: 99,
-        scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
-      }).map(paper => paper.id);
-      const positions = order.flatMap((id, position) => (id.startsWith('rl-') ? [position] : []));
-      total += positions.reduce((sum, position) => sum + position, 0) / positions.length;
-    }
-    return total / runs;
-  };
+test('a reader who has liked nothing yet ranks the cards as if they carried no topic', () => {
+  const pool = [...rlPool, ...visionPool];
+  const cold = readerWhoLiked([]);
+  const scoresOf = (cards: Array<Partial<ReturnType<typeof makeCard>>>) => cards.map(card => scorePaperForRecommendation(card, cold).total);
 
-  const forRlReader = meanRlPosition(readerWhoLiked(rlPool.slice(0, 3)));
-  const forVisionReader = meanRlPosition(readerWhoLiked(visionPool.slice(0, 3)));
-
-  // Three RL cards among six sit at 2.5 on average by chance (1.0 first, 4.0
-  // last). The draw stays a lottery weighted by the whole score, in which the
-  // category the reader chose weighs about 100, so the content moves the
-  // average by tenths of a place, not whole ones.
-  assert.ok(forRlReader < 2.5, `RL cards sit at ${forRlReader} for the RL reader`);
-  assert.ok(forRlReader + 0.1 < forVisionReader, `RL cards sit at ${forRlReader} and ${forVisionReader}`);
-});
-
-test('below three positives the content of the likes does not touch the order', () => {
-  const pool = [...rlPool.slice(2), ...visionPool.slice(2)];
-  const contentMatches = (context: ReturnType<typeof readerWhoLiked>) => {
-    const scored: Partial<Paper>[] = pool.map(card => ({ ...card }));
-    trimScoredCandidatePool(scored, {
-      cap: 1,
-      scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
-    });
-    return scored.map(card => card._debugScore!.contentMatch);
-  };
-
-  const twoLikes = readerWhoLiked(rlPool.slice(0, 2));
-  assert.equal(twoLikes.positiveCount, 2);
-  assert.deepEqual(contentMatches(twoLikes), pool.map(() => 0));
-
-  const threeLikes = contentMatches(readerWhoLiked(rlPool.slice(0, 3)));
-  const rlMatches = threeLikes.slice(0, 4) as number[];
-  const visionMatches = threeLikes.slice(4) as number[];
-  assert.ok(Math.min(...rlMatches) > 10, 'RL cards earn it once the third like is in');
-  assert.ok(Math.max(...visionMatches) < Math.min(...rlMatches) / 4, 'vision cards earn little or nothing');
-});
-
-test('a content match is outweighed by the category the reader chose, however well it fits', () => {
-  const readsRl = {
-    now: NOW,
-    userPreferences: ['cs.LG'],
-    // A fully learned profile: the preference has faded to its floor.
-    interactionCount: 5000,
-    positiveCount: 50,
-    contentAffinities: Object.fromEntries(
-      ['reinforcement', 'reinforcement learning', 'policy', 'reward', 'agent'].map(term => [term, 100]),
-    ),
-  };
-  const chosenCategory = { ...makeCard(visionCards[0]), primaryCategory: 'cs.LG' };
-  const perfectFit = { ...makeCard(rlCards[0]), id: 'fit', primaryCategory: 'cs.RO' };
-  const pool = [perfectFit, chosenCategory, ...rlPool.slice(1, 4).map(card => ({ ...card, primaryCategory: 'cs.RO' }))];
-
-  const candidates: Partial<Paper>[] = pool.map(card => ({ ...card }));
-  const [first] = trimScoredCandidatePool(candidates, {
-    cap: 1,
-    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...readsRl, recentPropsCount }),
-  });
-
-  assert.equal(first.id, chosenCategory.id);
-  assert.ok(first._debugScore!.contentMatch! <= 0);
+  assert.deepEqual(scoresOf(pool), scoresOf(pool.map(card => ({ ...card, primaryTopic: undefined }))));
 });
