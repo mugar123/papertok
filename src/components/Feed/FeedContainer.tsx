@@ -98,6 +98,10 @@ const REFRESH_HOVER_BAND_PX = 120;
 // feedRefresh.test.ts holds the two together: everything this number is used
 // for here is about waiting until the cover is actually down.
 const REFRESH_DIP_MS = 180;
+// The beat between "Mark as read" and the feed moving on: the menu leaves
+// first (the dialog's 150ms; the phone drawer is nine tenths down by then), so
+// the paper is seen bare for a moment before it goes.
+const READ_ADVANCE_DELAY_MS = 240;
 // How long the pull's landing pose is held (`landPull`). It only has to cover
 // the frame or two React takes to give the pill `is-visible` through
 // `isRefreshing`, plus the transition that takes it there; after that the
@@ -437,6 +441,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
   const skipExitRef = useRef<(NonNullable<ReturnType<typeof skipExitSlot>> & { commit: () => void }) | null>(null);
   const skipExitTimerRef = useRef<number | null>(null);
+  const readAdvanceTimerRef = useRef<number | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)!),
     isSaved: savedPaperIds.has(interactionIdFor(paper)!),
@@ -902,6 +907,49 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     }
   }, [interactionIdFor, language, markActivation, onSaveToList, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
 
+  // Marking a paper read means the reader is done with it, so the feed moves
+  // on to the next one. The paper itself stays where it was: scrolling back
+  // finds it, read. A paper the list does not hold (the related card inside a
+  // card) and the last snap item have no next one, and nothing moves.
+  // Undo takes the mark back and, if the reader is still on the paper the
+  // feed moved them to, returns them to the one they marked.
+  const handleMarkAsRead = useCallback((paper: Paper) => {
+    void markAsRead(paper);
+    // A visitor's mark is not kept (markAsRead needs an account), so there is
+    // nothing to confirm and no reason to move them on.
+    if (!user) return;
+    const container = feedRef.current;
+    const height = container?.clientHeight ?? 0;
+    const indexOfPaper = () => papersRef.current.findIndex(item => item.id === paper.id);
+    const index = indexOfPaper();
+    const canAdvance = !!container && index >= 0 && height > 0
+      && (index + 1) * height <= container.scrollHeight - height;
+    const isOnCard = (card: number) => !!container && Math.round(container.scrollTop / height) === card;
+    const scrollToCard = (card: number) => container?.scrollTo({
+      top: card * height,
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
+    clearTimeout(readAdvanceTimerRef.current!);
+    if (canAdvance) {
+      readAdvanceTimerRef.current = setTimeout(() => {
+        // The reader scrolled away during the beat: their scroll wins.
+        if (isOnCard(index)) scrollToCard(index + 1);
+      }, READ_ADVANCE_DELAY_MS);
+    }
+    toast('Marked as read', {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          clearTimeout(readAdvanceTimerRef.current!);
+          void unmarkAsRead(paper.id);
+          const at = indexOfPaper();
+          if (canAdvance && at >= 0 && isOnCard(at + 1)) scrollToCard(at);
+        },
+      },
+    });
+  }, [markAsRead, prefersReducedMotion, unmarkAsRead, user]);
+  useEffect(() => () => clearTimeout(readAdvanceTimerRef.current!), []);
+
   /**
    * El `setActiveIndex` de aquí va en transición, y conviene saber exactamente
    * cuánto compra eso: en este Mac, NADA. Medido sobre el bundle de producción
@@ -1198,7 +1246,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           ) : (
           <div
             key={paper.id}
-            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}`}
+            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
             style={skipExit?.id === paper.id ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` } : undefined}
             onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : undefined}
           >
@@ -1209,7 +1257,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               isRead={readPaperIds?.has(interactionIdFor(paper)!)}
               onLike={toggleLike}
               onNotInterested={handleNotInterested}
-              onMarkAsRead={markAsRead}
+              onMarkAsRead={handleMarkAsRead}
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}
               trackSkip={handleSkip}
