@@ -71,6 +71,15 @@ export default function SummaryHistory({ uid }: { uid: string }) {
 
   useEffect(() => () => moreRef.current?.abort(), []);
 
+  // A stalled read can also end in a refusal that patientRead no longer
+  // reports, so the stalled state keeps a way to ask again.
+  const retryFirstPage = () => {
+    // The button leaves with the note; the heading keeps focus in the section.
+    headingRef.current?.focus();
+    setStatus('loading');
+    setAttempt(value => value + 1);
+  };
+
   const loadMore = async () => {
     if (moreStatus === 'loading') return;
     // A retry replaces a page that is still being asked for.
@@ -130,25 +139,20 @@ export default function SummaryHistory({ uid }: { uid: string }) {
         <p>{COPY.description}</p>
       </div>
 
-      {(status === 'loading' || status === 'stalled') && (
-        <p className="settings-summaries-note" role="status">{status === 'stalled' ? COPY.stalled : COPY.loading}</p>
-      )}
-      {status === 'error' && (
+      {/* One status element from loading to stalled, so the change of text is
+          read out, and a new alert for a refusal. A stalled read is not an
+          alert, as on the Lists page. */}
+      {status !== 'ready' && (
         <div className="settings-summaries-note">
-          <p role="alert">{COPY.failed}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              // The button leaves with the error; the heading keeps focus in the section.
-              headingRef.current?.focus();
-              setStatus('loading');
-              setAttempt(value => value + 1);
-            }}
-          >
-            <ArrowClockwise size={15} aria-hidden="true" />
-            {COPY.retry}
-          </Button>
+          {status === 'error'
+            ? <p key="failed" role="alert">{COPY.failed}</p>
+            : <p key="status" role="status">{status === 'stalled' ? COPY.stalled : COPY.loading}</p>}
+          {status !== 'loading' && (
+            <Button variant="outline" size="sm" onClick={retryFirstPage}>
+              <ArrowClockwise size={15} aria-hidden="true" />
+              {COPY.retry}
+            </Button>
+          )}
         </div>
       )}
       {status === 'ready' && rows.length === 0 && <p className="settings-summaries-note">{COPY.empty}</p>}
