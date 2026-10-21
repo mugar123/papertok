@@ -57,3 +57,18 @@ test('`all` still has a ceiling of its own', async () => {
   const settled = await all;
   assert.equal(settled[0].status, 'timed_out');
 });
+
+// Plan G (PAP-73): a source answering a whole page first used to make the first
+// paint on its own. With a ready limit it counts only that many papers toward
+// `isReady`, so the paint waits for another source, and still gets every paper.
+test('a source counts toward the first paint only up to its ready limit', async () => {
+  const wholePage = Promise.resolve([{ id: 'topic-1' }, { id: 'topic-2' }, { id: 'topic-3' }]);
+  const later = new Promise<{ id: string }[]>((resolve) => setTimeout(() => resolve([{ id: 'pubmed-1' }]), 30));
+  const { first } = settleSourcesForFirstPaint(
+    [wholePage, later],
+    500,
+    (papers) => papers.length >= 3,
+    { readyLimits: new Map([[wholePage, 2]]) },
+  );
+  assert.deepEqual(fulfilledPaperLists(await first).map((paper) => paper.id), ['topic-1', 'topic-2', 'topic-3', 'pubmed-1']);
+});

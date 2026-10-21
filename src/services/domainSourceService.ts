@@ -56,6 +56,7 @@ import { OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAle
 import { assignRequestedCategories } from './arxivService.ts';
 import { openAlexJson } from './openAlexClient.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';
+import { openAlexTopicFilterForLeaves } from '../utils/areaAccent.ts';
 import { mapOpenReviewNote } from './openReviewService.ts';
 import { mapHuggingFacePaper } from './huggingFaceService.ts';
 import { authenticatedWorkerFetch, hasWorkerSession, sourceResponseError } from './workerApiClient.ts';
@@ -843,6 +844,60 @@ export async function fetchWorkingPapers(categories: readonly string[], page = 1
     );
   } catch (error) {
     console.warn('Working-paper series unavailable', error);
+    throw error;
+  }
+}
+
+// Each leaf with topics had 1,537 to 10,458 articles with an abstract in the
+// 90 days to 2026-10-21, so a longer window would not change the newest pages.
+const OPENALEX_TOPIC_WINDOW_DAYS = 90;
+const OPENALEX_TOPIC_PAGE_SIZE = 25;
+
+/**
+ * One page of the newest articles OpenAlex files under the topics of the
+ * reader's leaves (openAlexTopicFilterForLeaves), for leaves arXiv does not
+ * serve; a reader without such a leaf costs no request. Core sources only:
+ * that drops repository deposits, blogs and stubs, and put 74 % of results on
+ * the leaf's field against 65 % without it. No language filter: OpenAlex
+ * leaves `language` empty on 14-74 % of these works, mostly English ones.
+ *
+ * The cards keep OpenAlex's own topic, not the leaf that asked. A failure with
+ * no cached copy rejects, with no retry and no wider second request, so the
+ * feed counts a source that did not answer and fills the page from the others.
+ */
+export async function fetchOpenAlexTopicPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
+  const topicFilter = openAlexTopicFilterForLeaves(categories);
+  if (!topicFilter) return [];
+  const now = Date.now();
+  const day = (time: number) => new Date(time).toISOString().slice(0, 10);
+  const url = new URL('https://api.openalex.org/works');
+  url.searchParams.set('filter', [
+    topicFilter,
+    // UTC dates, so every reader on one day shares the Worker's cache entry,
+    // and none after today: a work dated ahead would sort first.
+    `from_publication_date:${day(now - OPENALEX_TOPIC_WINDOW_DAYS * DAY_MS)}`,
+    `to_publication_date:${day(now)}`,
+    'has_abstract:true',
+    'is_retracted:false',
+    'primary_location.source.is_core:true',
+  ].join(','));
+  url.searchParams.set('sort', 'publication_date:desc');
+  url.searchParams.set('page', String(Math.max(1, Number(page) || 1)));
+  url.searchParams.set('per-page', String(OPENALEX_TOPIC_PAGE_SIZE));
+  url.searchParams.set('select', OPENALEX_WORK_SEARCH_FIELDS.join(','));
+  try {
+    const data = await openAlexJson<{ results: OpenAlexWork[] }>(url, {
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      cacheTtlMs: 10 * 60 * 1000,
+      staleIfError: true,
+      retries: 0,
+      // A main source of the page: ahead of the entity lookups sharing the queue.
+      priority: true,
+    });
+    const adapter = new OpenAlexAdapter();
+    return data.results.map(work => adapter.mapToStandard(work)).filter(Boolean) as Paper[];
+  } catch (error) {
+    console.warn('OpenAlex topic works unavailable', error);
     throw error;
   }
 }
