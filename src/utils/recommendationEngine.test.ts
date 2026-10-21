@@ -529,6 +529,26 @@ test('the keyword ids a provider makes up for one card teach the reader no conce
   assert.equal(scorePaperForRecommendation(bioRxivCard('biorxiv:3'), reader).semantic, 0);
 });
 
+test('a card straight from OpenAlex teaches only the concepts it may show as subjects', () => {
+  // Shaped like formatOpenAlexWorkAsPaper, which keeps the work's concepts
+  // unfiltered: the database MEDLINE says where a work is indexed, and a
+  // concept scored 0.05 is barely about it.
+  const medline = { id: 'https://openalex.org/C2779473830', display_name: 'MEDLINE', level: 2, score: 0.45 };
+  const openAlexCard = (id: string) => ({
+    id, primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z',
+    concepts: [medline, { id: 'https://openalex.org/C900010', display_name: 'Biology', level: 0, score: 0.05 }],
+    primaryTopic: { id: 'https://openalex.org/T900004', display_name: 'Sleep and memory', score: 0.95 },
+  });
+  const sharesOnlyMedline = {
+    id: 'openalex:W4', primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z', concepts: [medline],
+  };
+
+  const reader = readerWhoLiked([openAlexCard('openalex:W1'), openAlexCard('openalex:W2'), openAlexCard('openalex:W3')]);
+
+  assert.deepEqual(Object.keys(reader.conceptAffinities), ['T900004']);
+  assert.equal(scorePaperForRecommendation(sharesOnlyMedline, reader).semantic, 0);
+});
+
 test('liking a paper stores what it is about and none of its words', () => {
   const card = {
     id: 'liked', primaryCategory: 'cs.LG', published: '2026-07-01T00:00:00Z', primaryTopic: RL_TOPIC,

@@ -2,6 +2,7 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/Pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
+import { usableOpenAlexConcepts } from './openAlexConcepts.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
@@ -271,11 +272,13 @@ export function paperAffinitySignals(paper: Partial<Paper>) {
   // other providers file their keywords there under ids made up for that one
   // record (`epmc:<pmid>:<index>`) or that restate the category
   // (`biorxiv:<collection>`), which would match no other card or count the
-  // category twice.
+  // category twice. A card mapped straight from an OpenAlex work keeps all of
+  // its concepts, so they pass the same subject rule the enrichment applies
+  // (no MEDLINE, nothing scored 0.3 or less).
   const toSignal = (concept: { id?: unknown; score?: number } | null | undefined) => ({ id: openAlexKey(concept?.id), score: concept?.score });
   const carried = [
     ...(paper?.openAlex?.concepts || []).map(toSignal).filter(concept => concept.id),
-    ...[...(paper?.concepts || []), ...(paper?.topics || []), ...(paper?.primaryTopic ? [paper.primaryTopic] : [])]
+    ...usableOpenAlexConcepts([...(paper?.concepts || []), ...(paper?.topics || []), ...(paper?.primaryTopic ? [paper.primaryTopic] : [])])
       .map(toSignal).filter(concept => /^[CT]\d+$/.test(concept.id)),
   ];
   const concepts = carried.filter((concept, index) => carried.findIndex(other => other.id === concept.id) === index);
