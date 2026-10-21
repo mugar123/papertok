@@ -325,6 +325,45 @@ const ROR_UC3M = {
   ],
 };
 
+test('a verified UNIR student email links to Universidad Internacional de La Rioja', async () => {
+  const record = {
+    id: 'https://ror.org/029gnnp81',
+    domains: ['unir.net'],
+    names: [
+      { value: 'Universidad Internacional de La Rioja', types: ['ror_display', 'label'] },
+      { value: 'UNIR', types: ['acronym'] },
+    ],
+  };
+  const upstream = stubUpstreams({
+    users: {
+      [SESSION_TOKEN]: SESSION_GMAIL,
+      [UNIVERSITY_TOKEN]: { localId: 'student-uid', email: 'alice@comunidadunir.net', emailVerified: true },
+    },
+    ror: url => Response.json(url === 'https://api.ror.org/v2/organizations/029gnnp81' ? record : { items: [] }),
+    mdq: () => Response.json([]),
+  });
+  const admin = memoryAdmin();
+  try {
+    const { institution } = await handleInstitutionLinkRequest(linkRequest({ institutionToken: UNIVERSITY_TOKEN }), SERVICE, {
+      admin, cache: null, now: () => Date.UTC(2026, 9, 21),
+    });
+    assert.deepEqual(institution, {
+      domain: 'comunidadunir.net',
+      rorId: 'https://ror.org/029gnnp81',
+      name: 'Universidad Internacional de La Rioja',
+      acronym: 'UNIR',
+      entityId: null,
+      verifiedAt: '2026-10-21T00:00:00.000Z',
+    });
+    assert.deepEqual(admin.documents, { [`users/${UID}`]: { institution } });
+    for (const domain of ['other.comunidadunir.net', 'comunidadunir.net.example']) {
+      await rejectsWith(resolveInstitution(domain, { cache: null }), 'INSTITUTION_NOT_FOUND', 404);
+    }
+  } finally {
+    upstream.restore();
+  }
+});
+
 test('a hand-checked student domain links to its university with ROR\'s name and acronym, and selects its library', async () => {
   const upstream = stubUpstreams({
     users: { [SESSION_TOKEN]: { localId: UID, email: '100123456@alumnos.uc3m.es', emailVerified: true } },

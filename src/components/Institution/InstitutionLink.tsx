@@ -89,6 +89,7 @@ export default function InstitutionLink({
         setFeedback({ tone: 'success', text: COPY.linkedNow });
       }
     } catch (error) {
+      setPending(pendingInstitutionVerification());
       setFeedback({ tone: 'error', text: getUiErrorMessage(error, 'INSTITUTION_LINK_FAILED') });
       pendingFocus.current = null;
     } finally {

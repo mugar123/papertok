@@ -1,6 +1,6 @@
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
-import type { Delivery, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
+import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
 
 type FollowInput = Partial<Record<keyof PaperFollowMatch | 'id' | 'display_name' | 'name' | 'label', unknown>> & {
   externalIds?: { ror?: unknown; orcid?: unknown };
@@ -1550,10 +1550,14 @@ function deliveryReservationSeed(subscription: Subscription, { test = false, now
   return `papertok:${window}:${uid}:${subscriptionGeneration(subscription)}`;
 }
 
-async function buildDeliveryReservationId(subscription: Subscription, options: DeliveryOptions = {}) {
+function buildDeliveryReservationId(subscription: Subscription, options: DeliveryOptions = {}) {
+  return hashDeliveryReservationId(deliveryReservationSeed(subscription, options));
+}
+
+async function hashDeliveryReservationId(seed: string) {
   const digest = new Uint8Array(await crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(deliveryReservationSeed(subscription, options)),
+    new TextEncoder().encode(seed),
   ));
   const bytes = digest.slice(0, 16);
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
@@ -1661,7 +1665,7 @@ async function reserveEmailDelivery(env: WorkerEnv, reservationId: string, now: 
   return result;
 }
 
-async function commitEmailDelivery(env: WorkerEnv, reservationId: string, delivery: Delivery, now: number) {
+async function commitEmailDelivery(env: WorkerEnv, reservationId: string, delivery: DeliveryInput, now: number) {
   return callEmailDeliveryLedger(env, {
     action: 'commit',
     reservationId,
@@ -2116,7 +2120,7 @@ async function fetchEmailProvider(input: RequestInfo | URL, init: RequestInit) {
   return fetchWithDeadline(input, init, EMAIL_PROVIDER_TIMEOUT_MS);
 }
 
-async function sendWithBrevo(subscription: Subscription, content: DeliveryDraft['content'], unsubscribeUrl: string, env: WorkerEnv, { test = false, idempotencyKey }: { test?: boolean; idempotencyKey?: string } = {}) {
+async function sendWithBrevo(subscription: Pick<Subscription, 'email' | 'displayName'>, content: DeliveryDraft['content'], unsubscribeUrl: string | null, env: WorkerEnv, { test = false, idempotencyKey, verification = false }: { test?: boolean; idempotencyKey?: string; verification?: boolean } = {}) {
   const sender = resolveBrevoSender(env);
   const response = await fetchEmailProvider(`${BREVO_API}/smtp/email`, {
     method: 'POST',
@@ -2139,10 +2143,12 @@ async function sendWithBrevo(subscription: Subscription, content: DeliveryDraft[
         idempotencyKey,
         // RFC 8058 one-click: Gmail and Yahoo score sender reputation on it, and
         // /notifications/unsubscribe already accepts a bodyless POST.
-        'List-Unsubscribe': `<${unsubscribeUrl}>`,
-        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        ...(unsubscribeUrl ? {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        } : {}),
       },
-      tags: [test ? 'papertok-test' : 'papertok-following-digest'],
+      tags: [verification ? 'papertok-institution-verification' : test ? 'papertok-test' : 'papertok-following-digest'],
     }),
   });
   const payload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
@@ -2154,7 +2160,7 @@ async function sendWithBrevo(subscription: Subscription, content: DeliveryDraft[
       return null;
     }
     const code = brevoSendErrorCode(response.status, payload);
-    console.error('Brevo rejected digest', response.status, code);
+    console.error('Brevo rejected email', response.status, code);
     const error = new EmailNotificationError(code, response.status === 429 ? 429 : 502);
     error.deliveryRejected = providerOutcomeDefinitelyRejected(response.status);
     throw error;
@@ -3141,3 +3147,92 @@ export const emailNotificationInternals = {
   scheduleHistoryPrefix: SCHEDULE_HISTORY_PREFIX,
   scheduleStatusKey: SCHEDULE_STATUS_KEY,
 };
+
+// The app's current light theme (src/styles/variables.css). EMAIL_PALETTE
+// still carries the digest's earlier grey and black, so this email names its own.
+const VERIFICATION_PALETTE = Object.freeze({
+  wash: '#ebeae5', // --bg-secondary
+  paper: '#fbf8f0', // --bg-primary
+  ink: '#1d2b53', // --text-primary, --accent-primary
+  secondary: '#46527a', // --text-secondary
+  tertiary: '#5a6488', // --text-tertiary
+  rule: '#d6ccb6', // --border-default
+});
+
+// Petri holding up her key (PetriKey), rasterised because mail clients do not
+// draw SVG. Decorative: the email reads the same with images blocked.
+const VERIFICATION_ART_URL = 'https://papertok.app/email/petri-key.png';
+
+/** The verification screens' empty state, set as an email: Petri, title, line and ink action. */
+function renderInstitutionVerificationEmail(email: string, link: string) {
+  const { wash, paper, ink, secondary, tertiary, rule } = VERIFICATION_PALETTE;
+  const { brand } = EMAIL_PALETTE;
+  const { serif, sans } = EMAIL_FONTS;
+  const href = escapeHtmlCharacters(link);
+  const address = escapeHtmlCharacters(email);
+  return `<!doctype html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light">
+<title>Verify your university email</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=Newsreader:opsz,wght@6..72,600&amp;family=IBM+Plex+Mono:wght@600&amp;display=swap" rel="stylesheet">
+<style>@media (max-width:620px){.pt-shell{padding:32px 20px 28px!important}.pt-title{font-size:24px!important}}</style>
+</head><body style="margin:0;padding:0;background:${wash};color:${ink};-webkit-text-size-adjust:100%">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all">Confirm ${address} to link your university to PaperTok. It works once, within one hour.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${wash}"><tr><td align="center" style="padding:28px 10px">
+<table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;background:${paper};border:1px solid ${ink};border-radius:3px"><tr><td class="pt-shell" align="center" style="padding:40px 40px 32px;text-align:center">
+<img src="${VERIFICATION_ART_URL}" width="128" height="128" alt="" style="display:block;margin:0 auto 16px;border:0">
+<h1 class="pt-title" style="margin:0 auto;max-width:28ch;font:600 28px/1.2 ${serif};letter-spacing:-0.01em;color:${ink}">Verify your university email</h1>
+<p style="margin:12px auto 0;max-width:38ch;font:400 15px/1.55 ${sans};color:${secondary}">Petri has the key. Confirm that <strong style="font-weight:600;color:${ink}">${address}</strong> is yours to link your university to PaperTok.</p>
+<table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:24px auto 0"><tr><td style="background:${ink};border-radius:3px"><a href="${href}" style="display:inline-block;padding:13px 22px;font:600 14px/1 ${sans};color:${paper};text-decoration:none">Verify and link university</a></td></tr></table>
+<p style="margin:16px auto 0;max-width:40ch;font:400 13px/1.55 ${sans};color:${tertiary}">Open it in the browser where you asked for it, signed in to the same account. It works once, within one hour.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;border-top:1px dashed ${rule}"><tr><td align="left" style="padding:18px 0 0;text-align:left;font:400 12px/1.6 ${sans};color:${tertiary}">
+If the button does not work, paste this link into the same browser:<br>
+<a href="${href}" style="color:${secondary};text-decoration:underline;word-break:break-all">${href}</a>
+<p style="margin:10px 0 0">If you did not ask to link a university, ignore this email. Do not share the link.</p>
+</td></tr></table>
+</td></tr></table>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px"><tr>
+<td valign="middle" style="padding-right:8px"><div aria-hidden="true" style="width:20px;height:20px;background:${brand};border-radius:3px;text-align:center;font:600 9px/20px ${EMAIL_FONTS.mono};color:${ink}">PT</div></td>
+<td valign="middle" style="${monoStyle({ color: tertiary })}">PaperTok</td>
+</tr></table>
+</td></tr></table>
+</body></html>`;
+}
+
+/** Verification credentials stay out of the resumable digest ledger. */
+export async function sendInstitutionVerificationEmail(
+  env: WorkerEnv, email: string, reservationSeed: string, createLink: () => Promise<string>,
+) {
+  if (!env.BREVO_API_KEY || !env.BREVO_FROM_EMAIL) {
+    throw new EmailNotificationError('INSTITUTION_VERIFICATION_UNAVAILABLE', 503);
+  }
+  const now = Date.now();
+  const reservationId = await hashDeliveryReservationId(reservationSeed);
+  const reservation = await reserveEmailDelivery(env, reservationId, now);
+  if (reservation.duplicate) {
+    if (reservation.status === 'committed') return;
+    throw new EmailNotificationError('INSTITUTION_VERIFICATION_UNCERTAIN', 503);
+  }
+  let sending = false;
+  try {
+    const link = await createLink();
+    const content = {
+      subject: 'Verify your university email for PaperTok',
+      text: `Verify your university email\n\nConfirm that ${email} is yours to link your university to PaperTok. Open this link in the browser where you asked for it, signed in to the same account:\n${link}\n\nIt works once, within one hour.\n\nIf you did not ask to link a university, ignore this email. Do not share the link.`,
+      html: renderInstitutionVerificationEmail(email, link),
+    };
+    sending = true;
+    await sendWithBrevo({ email, displayName: '' }, content, null, env, { idempotencyKey: reservationId, verification: true });
+    await commitEmailDelivery(env, reservationId, { kind: 'verification', sentAt: new Date(now).toISOString() }, now);
+  } catch (error) {
+    if (!sending || (error instanceof EmailNotificationError && error.deliveryRejected)) {
+      await releaseEmailDelivery(env, reservationId, now);
+      throw error;
+    }
+    // A timeout may follow acceptance. Keep its budget reserved and the browser
+    // request usable; resending automatically could deliver a second credential.
+    throw new EmailNotificationError('INSTITUTION_VERIFICATION_UNCERTAIN', 503);
+  }
+}

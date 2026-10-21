@@ -1,8 +1,8 @@
+import { FirebaseServiceAccountError, buildAssertion, getAccessToken, isServiceAccountConfigured, normalizePrivateKey, readServiceAccount, resetAccessTokenCache } from './firebase-service-account.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FirestoreAdminError,
-  buildAssertion,
   clearFieldsWrite,
   createFirestoreAdmin,
   createWrite,
@@ -10,12 +10,7 @@ import {
   deleteWrite,
   documentName,
   encodeFields,
-  getAccessToken,
-  isServiceAccountConfigured,
   mergeWrite,
-  normalizePrivateKey,
-  readServiceAccount,
-  resetAccessTokenCache,
 } from './firestore-admin.ts';
 
 // ---------------------------------------------------------------------------
@@ -62,7 +57,7 @@ test('a missing secret is a configuration error, not a crash at publish time', (
     const partial = { ...ENV, [missing]: '' };
     assert.equal(isServiceAccountConfigured(partial), false, `${missing} must be required`);
     assert.throws(() => readServiceAccount(partial), (error) => (
-      error instanceof FirestoreAdminError
+      error instanceof FirebaseServiceAccountError
         && error.code === 'SERVICE_ACCOUNT_NOT_CONFIGURED'
         && error.status === 503
     ));
@@ -72,7 +67,7 @@ test('a missing secret is a configuration error, not a crash at publish time', (
 test('a malformed key is refused rather than signing garbage', async () => {
   await assert.rejects(
     () => buildAssertion({ email: 'a@b.test', privateKey: '-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----' }, 0),
-    error => error instanceof FirestoreAdminError && error.code === 'SERVICE_ACCOUNT_KEY_INVALID',
+    error => error instanceof FirebaseServiceAccountError && error.code === 'SERVICE_ACCOUNT_KEY_INVALID',
   );
 });
 
@@ -142,7 +137,7 @@ test('a refused grant surfaces as SERVICE_TOKEN_REFUSED, not as a bad write', as
   );
   await assert.rejects(
     () => getAccessToken(ENV, { fetchImpl, now: () => 0 }),
-    error => error instanceof FirestoreAdminError
+    error => error instanceof FirebaseServiceAccountError
       && error.code === 'SERVICE_TOKEN_REFUSED'
       && error.status === 502,
   );
@@ -421,4 +416,19 @@ test('a 403 answers about permissions, not about the token, so nothing is re-min
   );
   assert.equal(calls.length, 1);
   assert.equal(mints(), 1, 'a 403 per request would mean an RS256 signature per request');
+});
+
+
+test('Firestore and Auth access tokens are cached separately by OAuth scope', async () => {
+  resetAccessTokenCache();
+  let requests = 0;
+  const fetchImpl = async () => Response.json({ access_token: `token-${++requests}`, expires_in: 3600 });
+  const now = () => 1_700_000_000_000;
+  const datastore = await getAccessToken(ENV, { fetchImpl, now });
+  const scope = 'https://www.googleapis.com/auth/cloud-platform';
+  const auth = await getAccessToken(ENV, { fetchImpl, now, scope });
+  assert.notEqual(datastore, auth);
+  assert.equal(await getAccessToken(ENV, { fetchImpl, now }), datastore);
+  assert.equal(await getAccessToken(ENV, { fetchImpl, now, scope }), auth);
+  assert.equal(requests, 2);
 });

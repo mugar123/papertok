@@ -1,3 +1,4 @@
+import { INSTITUTION_VERIFICATION_PATH, handleInstitutionVerificationRequest } from './institution-verification.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
@@ -23,7 +24,7 @@ import { ACCOUNT_DELETE_PATH, AccountDeletionError, handleAccountDeletionRequest
 import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest } from './institution-link.ts';
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.ts';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
-import { isServiceAccountConfigured } from './firestore-admin.ts';
+import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
@@ -238,12 +239,14 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       });
     }
   }
-  if (INSTITUTION_PATHS.has(url.pathname)) {
+  if (INSTITUTION_PATHS.has(url.pathname) || url.pathname === INSTITUTION_VERIFICATION_PATH) {
     if (!origin || !allowedOrigins(env).has(origin)) {
       return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
     }
     try {
-      const payload = await handleInstitutionLinkRequest(request, env);
+      const payload = url.pathname === INSTITUTION_VERIFICATION_PATH
+        ? await handleInstitutionVerificationRequest(request, env)
+        : await handleInstitutionLinkRequest(request, env);
       return json(payload, 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
     } catch (error) {
       const known = error instanceof InstitutionLinkError || error instanceof WorkerAuthError;

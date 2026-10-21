@@ -2,7 +2,7 @@ import { getApps, initializeApp } from 'firebase/app';
 import {
   connectAuthEmulator, deleteUser, getAdditionalUserInfo, getAuth,
   inMemoryPersistence, initializeAuth, isSignInWithEmailLink,
-  sendSignInLinkToEmail, signInWithEmailLink, signOut,
+  signInWithEmailLink, signOut,
 } from 'firebase/auth';
 import app, { auth, IS_DEMO } from './firebase.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
@@ -17,7 +17,6 @@ interface InstitutionOperations {
   apiBase?: string;
   currentUser?: () => SignedInAccount | null;
   secondaryAuth?: typeof secondaryAuth;
-  sendEmail?: typeof sendSignInLinkToEmail;
   emailSignIn?: typeof signInWithEmailLink;
   additionalUserInfo?: typeof getAdditionalUserInfo;
   deleteUser?: typeof deleteUser;
@@ -98,7 +97,6 @@ function operations(overrides: InstitutionOperations = {}) {
     apiBase: import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, ''),
     currentUser: () => auth.currentUser as SignedInAccount | null,
     secondaryAuth,
-    sendEmail: sendSignInLinkToEmail,
     emailSignIn: signInWithEmailLink,
     additionalUserInfo: getAdditionalUserInfo,
     deleteUser,
@@ -156,6 +154,7 @@ async function postJson(api: ReturnType<typeof operations>, path: string, body: 
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
+      ...(path === '/institution/verification' ? { signal: AbortSignal.timeout(30_000) } : {}),
     });
     payload = await response.json().catch(() => ({})) as { code?: string; institution?: InstitutionInput };
   } catch (error) {
@@ -184,20 +183,22 @@ export async function sendInstitutionVerification(email: string, overrides?: Ins
   const current = requireAccount(api);
   if (!institutionDomainOf(email)) throw new InstitutionLinkError('INSTITUTION_EMAIL_INVALID', 400);
   const pending = { uid: current.uid, email: email.trim().toLowerCase(), nonce: crypto.randomUUID(), createdAt: api.now() };
-  const target = new URL('/institution/verify', api.origin);
-  target.searchParams.set('state', pending.nonce);
   // Persist before sending: a storage failure must not send an unusable link.
   try { storage(api).setItem(PENDING_KEY, JSON.stringify(pending)); } catch {
     throw new InstitutionLinkError('INSTITUTION_STORAGE_UNAVAILABLE', 400);
   }
   try {
-    await api.sendEmail(api.secondaryAuth(), pending.email, { url: target.href, handleCodeInApp: true });
+    await postJson(api, '/institution/verification', { email: pending.email, nonce: pending.nonce });
     assertAccount(api, current.uid);
     if (pendingInstitutionVerification(api)?.nonce !== pending.nonce) {
       throw new InstitutionLinkError('INSTITUTION_VERIFICATION_CANCELED', 400);
     }
   } catch (error) {
-    if (pendingInstitutionVerification(api)?.nonce === pending.nonce) cancelInstitutionVerification(api);
+    const code = (error as { code?: string }).code;
+    const uncertain = code === 'INSTITUTION_VERIFICATION_UNCERTAIN' || code === 'INSTITUTION_LINK_UNREACHABLE'
+      || code === 'TimeoutError' || (error as { status?: number }).status === 0;
+    if (!uncertain && pendingInstitutionVerification(api)?.nonce === pending.nonce) cancelInstitutionVerification(api);
+    if (uncertain) throw new InstitutionLinkError('INSTITUTION_VERIFICATION_UNCERTAIN', 503);
     throw error;
   }
 }

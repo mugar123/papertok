@@ -128,7 +128,7 @@ function sanitizeDelivery(value: DeliveryInput = {}) {
       .filter(Boolean))].slice(-MAX_DELIVERY_PAPER_KEYS)
     : [];
   return {
-    kind: value.kind === 'test' ? 'test' : 'digest',
+    kind: value.kind === 'verification' ? 'verification' : value.kind === 'test' ? 'test' : 'digest',
     sentAt: boundedString(value.sentAt, 40),
     paperCount: positiveInteger(value.paperCount),
     paperKeys,
