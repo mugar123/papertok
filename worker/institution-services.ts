@@ -100,6 +100,18 @@ const SAGE_DISCOVERY = 'https://niepa.ac.in/download/Sage-Education%20Subject%20
 const OXFORD_LAW_DISCOVERY = 'https://scalsar.edu.in/assets/pdf/learning_resource_centre_SCALSAR.pdf';
 const OXFORD_HUMANITIES_DISCOVERY = 'https://sba.unipi.it/en/open-access-e-open-science-0/elenco-delle-pubblicazioni-oa/416';
 
+const CAMBRIDGE_DISCOVERY = 'https://www.uspceu.com/Portals/0/docs/Biblioteca/recursos/Cambridge-listado-por-materias.pdf';
+const CAMBRIDGE_HYDERABAD_DISCOVERY = 'https://igmlnet.uohyd.ac.in/Cambridge%20Journals/Cambridge%20Journals/Cambridge%20Journals%202022.htm';
+const EMERALD_DISCOVERY = Object.freeze([
+  'https://www.niser.ac.in/library/content/emerald-publishing-journals-through-onos',
+  'https://www.plus.ac.at/wp-content/uploads/2023/01/Liste-Emerald.pdf',
+]);
+const CANADIAN_SCIENCE_DISCOVERY = Object.freeze([
+  'https://library.wlu.ca/resources/databases/csp',
+  'https://www.openscience.no/en/csp',
+  'https://blog.cdnsciencepub.com/wp-content/uploads/2018/08/PricingCatalogue-2019.pdf',
+]);
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -272,6 +284,47 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
     platformId: 'oup', packageHint: 'Oxford', publisher: 'Oxford University Press',
     monogram: 'OUP', color: '#002147', year: 2021,
+  })),
+  // Agriculture, archaeology, applied management and environmental sciences
+  // remain thinly sampled. These archived-year probes share existing groups.
+  ...[
+    { name: 'The Journal of Agricultural Science', issn: '0021-8596', eissn: '1469-5146', url: 'https://www.cambridge.org/core/journals/journal-of-agricultural-science', discovery: CAMBRIDGE_DISCOVERY },
+    { name: 'Journal of Dairy Research', issn: '0022-0299', eissn: '1469-7629', url: 'https://www.cambridge.org/core/journals/journal-of-dairy-research', discovery: CAMBRIDGE_DISCOVERY },
+    { name: 'Antiquity', issn: '0003-598X', eissn: '1745-1744', url: 'https://www.cambridge.org/core/journals/antiquity', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+    { name: 'Latin American Antiquity', issn: '1045-6635', eissn: '2325-5080', url: 'https://www.cambridge.org/core/journals/latin-american-antiquity', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+    { name: 'Religious Studies', issn: '0034-4125', eissn: '1469-901X', url: 'https://www.cambridge.org/core/journals/religious-studies', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+    { name: 'Journal of Linguistics', issn: '0022-2267', eissn: '1469-7742', url: 'https://www.cambridge.org/core/journals/journal-of-linguistics', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'cambridge', packageHint: 'Cambridge', publisher: 'Cambridge University Press',
+    monogram: 'CUP', color: '#D62E2E', year: 2021,
+    sources: Object.freeze([discovery, journal.url]),
+  })),
+  ...[
+    { name: 'Agricultural Finance Review', issn: '0002-1466', eissn: '2041-6326', url: 'https://www.emeraldgrouppublishing.com/journal/afr' },
+    { name: 'British Food Journal', issn: '0007-070X', eissn: '1758-4108', url: 'https://www.emeraldgrouppublishing.com/journal/bfj' },
+    { name: 'Supply Chain Management: An International Journal', issn: '1359-8546', eissn: '1758-6852', url: 'https://www.emeraldgrouppublishing.com/journal/scm' },
+    { name: 'International Journal of Contemporary Hospitality Management', issn: '0959-6119', eissn: '1757-1049', url: 'https://www.emeraldgrouppublishing.com/journal/ijchm' },
+    { name: 'Disaster Prevention and Management: An International Journal', issn: '0965-3562', eissn: '1758-6100', url: 'https://www.emeraldgrouppublishing.com/journal/dpm' },
+    { name: 'Records Management Journal', issn: '0956-5698', eissn: '1758-7689', url: 'https://www.emeraldgrouppublishing.com/journal/rmj' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'emerald', packageHint: 'Emerald', publisher: 'Emerald Publishing',
+    monogram: 'E', color: '#006A4E', year: 2021,
+    sources: Object.freeze([...EMERALD_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'Canadian Journal of Forest Research', issn: '0045-5067', eissn: '1208-6037', url: 'https://cdnsciencepub.com/journal/cjfr' },
+    { name: 'Canadian Journal of Fisheries and Aquatic Sciences', issn: '0706-652X', eissn: '1205-7533', url: 'https://cdnsciencepub.com/journal/cjfas' },
+    { name: 'Canadian Journal of Earth Sciences', issn: '0008-4077', eissn: '1480-3313', url: 'https://cdnsciencepub.com/journal/cjes' },
+    { name: 'Canadian Geotechnical Journal', issn: '0008-3674', eissn: '1208-6010', url: 'https://cdnsciencepub.com/journal/cgj' },
+    { name: 'Botany', issn: '1916-2790', eissn: '1916-2804', url: 'https://cdnsciencepub.com/journal/cjb' },
+    { name: 'Canadian Journal of Zoology', issn: '0008-4301', eissn: '1480-3283', url: 'https://cdnsciencepub.com/journal/cjz' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'canscipub', packageHint: 'Canadian Science', publisher: 'Canadian Science Publishing',
+    monogram: 'CSP', color: '#00447C', year: 2021,
+    sources: Object.freeze([...CANADIAN_SCIENCE_DISCOVERY, journal.url]),
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
