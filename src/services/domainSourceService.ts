@@ -772,10 +772,8 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
 // articles in as reviewed journal papers without the Working paper tag. That
 // list also holds FEDS Notes, short notes rather than working papers, and the
 // Kansas City Fed series, which the checks behind this request did not cover.
-// The economics search cannot reach most of these series: OpenAlex types NBER,
-// CESifo, Banco de España and the New York and Philadelphia Fed series as
-// `report`, which that search leaves out, and it finds the IMF, FEDS and San
-// Francisco Fed articles only when a category label matches their text. World
+// OpenAlex types NBER, CESifo, Banco de España and the New York and
+// Philadelphia Fed series as `report`, hence `type:article|report` below. World
 // Bank Policy Research Working Papers are not listed: OpenAlex files the recent
 // ones under the bank's general eBooks source (S4306464317), and its two PRWP
 // sources hold nothing from this window.

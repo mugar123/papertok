@@ -59,7 +59,6 @@ import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorP
 import { getDeviceInfo } from '../utils/device.ts';
 import { CATEGORIES, getAllLeafCategories } from '../data/categories.ts';
 import { PubmedAdapter, pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
-import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
 import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService.ts';
 import { getPapersByProject } from '../services/openAireService.ts';
 import { getPaperRecommendations } from '../services/semanticScholarService.ts';
@@ -1294,11 +1293,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         // Optional recommendation signals run alongside the primary sources.
         // They enrich the mix when available without extending first paint.
-        // Declared here, ISSUED after the main sources below: the OpenAlex
-        // client queues two at a time in arrival order, and asking for the
-        // followed entities first put the feed's own search behind all of
-        // them (measured 2026-09-16: 2.3 s late on a cold entry, past the
-        // first-paint budget).
+        // Declared here, ISSUED after arXiv, PubMed and the domain sources
+        // below: the OpenAlex client queues two at a time in arrival order,
+        // and asking for the followed entities first put the feed's own search
+        // behind all of them (measured 2026-09-16: 2.3 s late on a cold entry,
+        // past the first-paint budget). PAP-73 removed that search. The
+        // working-paper series, the one main source still asking OpenAlex,
+        // waits for the personal and followed lookups on purpose.
         let graphCandidatesPromise = Promise.resolve<Paper[]>([]);
         let personalCandidatesPromise = Promise.resolve<Paper[]>([]);
         let followedCandidatesPromise = Promise.resolve<Paper[]>([]);
@@ -1330,20 +1331,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
              const pubmedAdapter = new PubmedAdapter();
              pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedCats), currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
-          
-          let openAlexProm = Promise.resolve<Paper[]>([]);
-          const openAlexCats = rankedPreferences.slice(0, 5);
-          if (openAlexCats.length > 0) {
-             const openAlexAdapter = new OpenAlexAdapter();
-             const openAlexQuery = openAlexCats.map(c => {
-                const cat = allCategories.find(x => x.id === c);
-                return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-             }).join(' OR ');
-             openAlexProm = openAlexAdapter
-               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
-               .then(res => res.papers);
-          }
-          
+
+          // No OpenAlex search for the category labels' text (PAP-73): of 442
+          // hand-labelled results, 9 were research articles in the reader's
+          // field (audit 2026-10-20).
           const domainProm = fetchDomainPapers(
             rankedPreferences.slice(0, 5),
             currentPage + 1,
@@ -1380,7 +1371,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
-            [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],
+            [arxivProm, pubmedProm, domainProm, workingPapersProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
             (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
           );
@@ -1485,21 +1476,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 const pubmedAdapter = new PubmedAdapter();
                 pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedNearby), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
-            
-            let openAlexProm = Promise.resolve<Paper[]>([]);
-            const openAlexNearby = nearbyCats.slice(0, 3);
-            if (openAlexNearby.length > 0) {
-                const openAlexAdapter = new OpenAlexAdapter();
-                const openAlexQuery = openAlexNearby.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
-                openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby, requireAbstract: true })
-                  .then(res => res.papers)
-                  .catch(() => []);
-            }
-            
+
             const domainProm = fetchDomainPapers(
               nearbyCats.slice(0, 3),
               Math.floor(randomStart / 25) + 1,
@@ -1507,12 +1484,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               queryMode,
             ).catch(() => []);
 
-            const [arx, pub, oa, domain] = await Promise.all(
-              [arxivProm, pubmedProm, openAlexProm, domainProm]
+            const [arx, pub, domain] = await Promise.all(
+              [arxivProm, pubmedProm, domainProm]
                 .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
             );
             // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, exploreCount * 2);
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...domain]).slice(0, exploreCount * 2);
           } catch (e) {
             console.error("Error fetching explore papers:", e);
           }
@@ -1555,21 +1532,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 const pubmedAdapter = new PubmedAdapter();
                 pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedRandom), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
-            
-            let openAlexProm = Promise.resolve<Paper[]>([]);
-            const openAlexRandom = randomCats;
-            if (openAlexRandom.length > 0) {
-                const openAlexAdapter = new OpenAlexAdapter();
-                const openAlexQuery = openAlexRandom.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
-                openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom, requireAbstract: true })
-                  .then(res => res.papers)
-                  .catch(() => []);
-            }
-            
+
             let randomPapers: Paper[] = [];
             try {
                 const domainProm = fetchDomainPapers(
@@ -1578,11 +1541,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                   2,
                   queryMode,
                 ).catch(() => []);
-                const [arx, pub, oa, domain] = await Promise.all(
-                  [arxivProm, pubmedProm, openAlexProm, domainProm]
+                const [arx, pub, domain] = await Promise.all(
+                  [arxivProm, pubmedProm, domainProm]
                     .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
                 );
-                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, 2);
+                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...domain]).slice(0, 2);
             } catch (e) {
                 console.error("Error fetching random bored papers:", e);
             }
