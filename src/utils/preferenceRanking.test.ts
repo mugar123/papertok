@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
 import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent, type InteractionEvent } from './interactionProfile.ts';
-import { preferencesForPage, rankPreferences } from './preferenceRanking.ts';
+import { rankPreferences } from './preferenceRanking.ts';
 
 const firstN = (area: string, n: number|undefined) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
 
@@ -56,20 +56,4 @@ test('one skip or one quick view leaves an interest where it was, today and a ye
   }
   // A long read still moves its interest up.
   assert.equal(rankPreferences(TEN, affinitiesAfter([{ paperId: 'b', kind: 'viewTime', category: 'cs.NE', viewTime: 13 }]))[0], 'cs.NE');
-});
-
-test('pages take turns over the ranked interests, each turn paging its own results', () => {
-  const ranked = rankPreferences(TEN, {});
-  const pages = [0, 1, 2, 3].map(page => preferencesForPage(ranked, page, 5));
-  assert.deepEqual(pages.map(slice => slice.ids), [ranked.slice(0, 5), ranked.slice(5), ranked.slice(0, 5), ranked.slice(5)]);
-  assert.deepEqual(pages.map(slice => slice.sourcePage), [0, 0, 1, 1]);
-
-  // Turns are as even as the size allows, so no interest has a page to itself.
-  const eleven = [...ranked, 'cs.RO'];
-  assert.deepEqual([0, 1, 2].map(page => preferencesForPage(eleven, page, 5).ids.length), [4, 4, 3]);
-  assert.deepEqual([0, 1, 2].flatMap(page => preferencesForPage(eleven, page, 5).ids), eleven);
-
-  // A reader with no more interests than a source takes asks for all of them on every page.
-  assert.deepEqual(preferencesForPage(ranked.slice(0, 3), 2, 5), { ids: ranked.slice(0, 3), sourcePage: 2 });
-  assert.deepEqual(preferencesForPage([], 1, 5), { ids: [], sourcePage: 1 });
 });

@@ -186,7 +186,7 @@ test('SOURCE: the main sources are requested before the optional candidates, and
   assert.ok(followedAt > domainAt && followedAt < settleAt, 'the followed candidates are asked for after the main sources have been issued');
   assert.match(
     block,
-    /\.search\(openAlexQuery, turn\.sourcePage \+ 1, \{ internalCategories: openAlexCats, priority: true, requireAbstract: true \}\)/,
+    /\.search\(openAlexQuery, currentPage \+ 1, \{ internalCategories: openAlexCats, priority: true, requireAbstract: true \}\)/,
     'the feed search takes the priority lane of the OpenAlex queue',
   );
 });

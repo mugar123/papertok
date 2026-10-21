@@ -121,7 +121,7 @@ import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
-import { preferencesForPage, rankPreferences } from '../utils/preferenceRanking.ts';
+import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
@@ -1276,9 +1276,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // profile the five slots below used to go to the first five of the
         // first area, whatever else the account had picked.
         const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
-        // This page's turn of the ranked interests (preferenceRanking.ts); arXiv
-        // and PubMed take their turn of the interests they serve below.
-        const turn = preferencesForPage(rankedPreferences, currentPage, 5);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
         // Relevance order is for a reader whose views lean to older papers. A
@@ -1312,15 +1309,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
              return null;
           };
 
-          const { ids: arxivCats, sourcePage: arxivPage } = preferencesForPage(rankedPreferences.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!)), currentPage, 5);
+          const arxivCats = rankedPreferences.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!)).slice(0, 5);
 
           let arxivProm = Promise.resolve<Paper[]>([]);
           if (arxivCats.length > 0) {
-              arxivProm = fetchPapers(arxivCats, arxivPage * PAGE_SIZE, PAGE_SIZE, queryMode);
+              arxivProm = fetchPapers(arxivCats, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode);
           }
 
           const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
-          const { ids: pubmedCats, sourcePage: pubmedPage } = preferencesForPage(rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)), currentPage, 3);
+          const pubmedCats = rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
 
           let pubmedProm = Promise.resolve<Paper[]>([]);
           if (pubmedCats.length > 0) {
@@ -1329,11 +1326,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, pubmedPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
+             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
           
           let openAlexProm = Promise.resolve<Paper[]>([]);
-          const openAlexCats = turn.ids;
+          const openAlexCats = rankedPreferences.slice(0, 5);
           if (openAlexCats.length > 0) {
              const openAlexAdapter = new OpenAlexAdapter();
              const openAlexQuery = openAlexCats.map(c => {
@@ -1341,13 +1338,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                 return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
              openAlexProm = openAlexAdapter
-               .search(openAlexQuery, turn.sourcePage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
+               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
                .then(res => res.papers);
           }
           
           const domainProm = fetchDomainPapers(
-            turn.ids,
-            turn.sourcePage + 1,
+            rankedPreferences.slice(0, 5),
+            currentPage + 1,
             8,
             queryMode,
           );
@@ -1378,7 +1375,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           // series pushed three followed authors past their 3.5 s budget (2026-10-20).
           // A topic follow enqueues only after an import, so source order is not enough.
           const workingPapersProm = Promise.all([personalCandidatesPromise, followedCandidatesPromise])
-            .then(() => fetchWorkingPapers(turn.ids, turn.sourcePage + 1));
+            .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
             [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],

@@ -3,10 +3,9 @@ import { getCategoryArea } from '../data/categories.ts';
 const AFFINITY_DEAD_BAND = 2;
 
 /**
- * The order the feed asks its sources in. Each source takes a few interests
- * at a time (five for arXiv and OpenAlex, three for PubMed) and pages take
- * turns over this list (preferencesForPage), so the order decides what the
- * first page is about.
+ * The order the feed asks its sources in — and, since each source only takes
+ * the first few (five for arXiv and OpenAlex, three for PubMed), the order
+ * that decides what a page is about.
  *
  * Affinity first, highest on top. Among equals — and on a new account every
  * preference is an equal, at zero — the tie is broken by interleaving areas:
@@ -41,24 +40,6 @@ export function rankPreferences(preferences: string[], affinities: Record<string
   return [...tiers.keys()]
     .sort((a, b) => b - a)
     .flatMap(value => interleaveByArea(tiers.get(value)!));
-}
-
-/**
- * The interests one page asks a source for, and which page of their own
- * results that is (0-based). A source takes `size` interests; with more than
- * that, the ranked list is cut in order into the fewest turns of at most
- * `size`, as even as possible, and pages take them in rotation. Ten interests
- * and five a query: page 0 asks for the first five, page 1 for the other five,
- * page 2 for the first five's second page. Every page used to ask for the
- * top `size`, so the interests below them were never asked for at all.
- */
-export function preferencesForPage(ranked: readonly string[], page: number, size: number) {
-  const turns = Math.max(1, Math.ceil(ranked.length / size));
-  const turn = page % turns;
-  return {
-    ids: ranked.slice(Math.ceil(turn * ranked.length / turns), Math.ceil((turn + 1) * ranked.length / turns)),
-    sourcePage: Math.floor(page / turns),
-  };
 }
 
 function interleaveByArea(ids: string[]) {
