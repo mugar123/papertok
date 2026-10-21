@@ -25,7 +25,7 @@ const feedContext = read('./FeedContext.tsx');
 const keepLateTopicsCode = callback(feedContext, 'keepLateTopics', 'withInteractionId, personalLibrary, user?.uid');
 const toggleReadLaterCode = callback(feedContext, 'toggleReadLater', 'withInteractionId, personalLibrary, recordProfileEvent, user?.uid');
 const markSavedCode = callback(feedContext, 'markSaved', 'withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid');
-const restoreSaveCode = callback(read('../components/Feed/FeedContainer.tsx'), 'restoreSave', 'interactionIdFor, language, user');
+const restoreSaveCode = callback(read('../hooks/useQuickSave.ts'), 'restoreSave', 'interactionIdFor, language, user');
 const compile = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
 const ref = <T,>(current: T) => ({ current });
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -117,7 +117,7 @@ function feed(answerWhen: (path: string, data: Fields) => boolean) {
     };
     const markSaved = compile(markSavedCode, scope);
     refs.keepLateTopicsRef.current = compile(keepLateTopicsCode, scope);
-    refs.saveState.current = { personalLibrary: state.personalLibrary, toggleReadLater: compile(toggleReadLaterCode, scope), markSaved };
+    refs.saveState.current = { savedPaperIds: refs.savedPaperIdsRef.current, personalLibrary: state.personalLibrary, toggleReadLater: compile(toggleReadLaterCode, scope), markSaved };
     refs.papersRef.current = state.papers;
     return { restoreSave: compile(restoreSaveCode, scope), markSaved, setDoc: store.setDoc, savedPaperDocRef: scope.savedPaperDocRef };
   }
