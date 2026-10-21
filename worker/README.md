@@ -342,9 +342,10 @@ holds the sections, model and source basis, and `users/{uid}/summaryHistory` hol
 row the Settings history pages through (paper key and id, level, title, PDF URL and the
 server time of the write). Reopening a paper reads that copy before calling
 `/ai/rewrite`, so it reserves no use. Writing it again sends `regenerate: true`, which
-skips the shared cache read, reserves a use like any generation and replaces the cache
-entry when the result is cacheable; the browser then replaces its own copy. Missing,
-false or non-boolean regenerate values use the ordinary cache path.
+skips the shared cache read and reserves a use like any generation. Only a complete
+result replaces the cache entry and the browser's own copy; a regenerate cut short
+leaves both as they were. Missing, false or non-boolean regenerate values use the
+ordinary cache path.
 
 `/ai/rewrite` forwards each POST to a new `PaperRewriteSession` Durable Object through
 the `PAPER_REWRITE_SESSION` binding. The existing handler verifies identity, validates

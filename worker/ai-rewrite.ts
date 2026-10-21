@@ -781,9 +781,9 @@ async function paperSourceFor(provider: string, env: WorkerEnv, pdfData: Uint8Ar
  * on: every throw below becomes an `error` line instead, refunding the day's use
  * through the same predicate the pre-commit path used.
  */
-function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders }: {
+function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate, quota, extraHeaders }: {
   env: WorkerEnv; paper: ExplanationContext; level: RewriteLevel; language: string;
-  meta: RewriteMeta; cacheKey: string; quota: Awaited<ReturnType<typeof reserveAIQuota>>;
+  meta: RewriteMeta; cacheKey: string; regenerate: boolean; quota: Awaited<ReturnType<typeof reserveAIQuota>>;
   extraHeaders: Record<string, string>;
 }) {
   const model = meta.model;
@@ -994,7 +994,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         // Where the reader's copy stops. Past the cap that is our cut rather than
         // the model's, whatever reason the model gave for its own.
         const stoppedBy = droppedSections > 0 ? 'SECTION_CAP' : finishReason;
-        cachedWrite = finish !== null;
+        // A regenerate skipped the cache read, so the entry it would overwrite may
+        // be complete. Only a complete result is worth replacing it with.
+        cachedWrite = regenerate ? finish === 'complete' : finish !== null;
         if (cachedWrite) {
           await writeCachedRewrite(env, cacheKey, {
             meta,
@@ -1035,7 +1037,8 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, ext
         upstreamStatus,
         refunded,
         // A rewrite that succeeded but was not stored is the truncation guard
-        // firing, and it is the only way to see it happening from the logs.
+        // firing (or a regenerate cut short), and it is the only way to see it
+        // happening from the logs.
         cached: cachedWrite,
         outcome: sections.length === 0
           ? (rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE')
@@ -1164,7 +1167,7 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
 
     // Returns immediately: the download and the model both run behind the 200,
     // under a heartbeat, and refund the reservation from inside the stream.
-    return streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders });
+    return streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate, quota, extraHeaders });
   } catch (error) {
     // Nothing between the reservation and the response is expected to throw, but
     // a use reserved for a rewrite that never started is still owed back.

@@ -1105,6 +1105,40 @@ test('regenerate writes a complete cached rewrite again and replaces it for late
   assert.equal(state.reserve, 2);
 });
 
+test('a regenerate cut short leaves the complete cached rewrite for later opens', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Whole introduction.')),
+      sseFrame(sectionLine('conclusion', 'Whole conclusion.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Cut-short introduction.')),
+      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+    ]),
+  }, env, { regenerate: true });
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.truncated, true);
+  assert.equal(state.reserve, 2);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.deepEqual(replay.filter(event => event.type === 'section').map(event => event.paragraphs), [
+    ['Whole introduction.'], ['Whole conclusion.'],
+  ]);
+  assert.equal(replay.at(-1)!.truncated, undefined);
+  assert.equal(state.reserve, 2);
+});
+
 test('only a boolean true regenerate bypasses a complete cached rewrite', async () => {
   const state = newLedgerState();
   const store = fakeRewriteStore();
