@@ -22,6 +22,11 @@ export interface PaperSources {
   // not reviewed. A `true` that rests on an arXiv DOI alone then reads
   // unknown, whether it reached the row before that record or after it.
   deniedElsewhere?: true;
+  // Written and read only by `PaperBuilder.merge`: the normalized DOI of a
+  // merged record that said of itself, on more than an arXiv DOI, that the
+  // paper was reviewed, whatever the row's own answer and the DOI it shows. A
+  // row under that DOI that merges this one reads it as that record's `true`.
+  reviewedDoi?: string;
 }
 
 export interface PaperSubjectReference {

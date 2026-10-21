@@ -1098,6 +1098,144 @@ test('a working paper\'s `false` left off a row keeps a later DOI-only arXiv `tr
   }
 });
 
+test('a journal record under the row\'s DOI keeps the row reviewed beside a working paper\'s `false`', () => {
+  // Synthetic records through the real mappers. OpenAlex files the eprint
+  // among the locations of the journal article, of the working paper and of
+  // the paper's SSRN entry, so `deduplicate` joins them on the arXiv id.
+  const title = 'Bank capital and the transmission of monetary policy';
+  const arxivId = '2601.00007';
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const fedsDoi = '10.17016/FEDS.2026.007';
+  const arxivLocation = {
+    landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const work = (id: string, doi: string, type: string, source: OpenAlexLocation['source'], isPublished = true): OpenAlexWork => {
+    const location = { landing_page_url: `https://doi.org/${doi}`, is_published: isPublished, source };
+    return {
+      id: `https://openalex.org/${id}`,
+      doi: `https://doi.org/${doi}`,
+      title,
+      type,
+      authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+      publication_year: 2026,
+      primary_location: location,
+      locations: [location, arxivLocation],
+    };
+  };
+  const article = work('W502', journalDoi, 'article', {
+    id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal', host_organization_name: 'Elsevier',
+  });
+  const ssrn = work('W513', '10.2139/ssrn.4400000', 'preprint', {
+    id: 'https://openalex.org/S4210172589', display_name: 'SSRN Electronic Journal', type: 'repository', host_organization_name: 'RELX Group',
+  }, false);
+  const nber = work('W508', '10.3386/w31999', 'report', {
+    id: 'https://openalex.org/S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository',
+  });
+  const feds = work('W500', fedsDoi, 'article', {
+    id: 'https://openalex.org/S4210212089',
+    display_name: 'Finance and Economics Discussion Series',
+    type: 'journal',
+    host_organization_name: 'Board of Governors of the Federal Reserve System',
+  });
+  const preprint: OpenAlexWork = {
+    ...article,
+    id: 'https://openalex.org/W501',
+    doi: `https://doi.org/10.48550/arXiv.${arxivId}`,
+    type: 'preprint',
+    primary_location: arxivLocation,
+    locations: [arxivLocation],
+  };
+  // As `arxivService` maps an entry with a DOI and no journal reference.
+  const arxivRecord = (doi: string) => PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    doi,
+    publicationType: 'article',
+    publicationStatus: 'published',
+  });
+  const semanticScholarArticle = () => new SemanticScholarAdapter().mapToStandard({
+    paperId: 'e'.repeat(40),
+    title,
+    authors: [{ name: 'Ana Economist', authorId: '1' }],
+    venue: 'Journal of International Economics',
+    year: 2026,
+    externalIds: { DOI: journalDoi, ArXiv: arxivId },
+  });
+  const search = (record: OpenAlexWork) => new OpenAlexAdapter().mapToStandard(record)!;
+  const explorer = (record: OpenAlexWork) => slimWorksPage({ results: [record] }).papers[0];
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
+
+  // The followed feed puts a name-only author's arXiv record before a topic
+  // row that joined the SSRN entry, the journal article and a working paper.
+  // The topic row shows the SSRN DOI, but its `true` is the article's. The
+  // merged row shows the journal's DOI, so the article confirms it. Under
+  // the FEDS revision's DOI the `true` is still another version's.
+  for (const [doi, answer] of [[journalDoi, true], [`${fedsDoi}r1`, undefined]] as Array<[string, true | undefined]>) {
+    for (const [label, workingPaper] of [['NBER', nber], ['FEDS', feds]] as const) {
+      for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+        const where = `${doi}, ${label}, followed, an arXiv author before a topic row that began as the SSRN entry (${mapper})`;
+        const rows = PaperBuilder.deduplicate([arxivRecord(doi), ...PaperBuilder.deduplicate([map(ssrn), map(article), map(workingPaper)])]);
+        assert.equal(rows.length, 1, where);
+        assert.equal(rows[0].doi, doi, where);
+        assert.equal(rows[0].peerReviewed, answer, where);
+        assert.equal(peerReviewedOnly(rows).length, answer ? 1 : 0, where);
+      }
+    }
+  }
+
+  // Search deduplicates the reader's cards before its own rows. A card from
+  // OpenAlex's record of the journal DOI without a source can come first,
+  // then a followed row: a topic row that began as the working paper and
+  // joined the journal article reads `false` under the working paper's DOI,
+  // and one that put an arXiv record listing the FEDS revision's DOI before
+  // a topic row with the article and the working paper reads unknown under
+  // the revision's DOI. The merged row shows the journal's DOI, which the
+  // article confirms.
+  const noSource = work('W507', journalDoi, 'article', null);
+  for (const [label, workingPaper] of [['NBER', nber], ['FEDS', feds]] as const) {
+    for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+      for (const [kind, followed, answer] of [
+        ['a topic row', PaperBuilder.deduplicate([map(workingPaper), map(article)]), false],
+        ['an arXiv record before a topic row', PaperBuilder.deduplicate([
+          arxivRecord(`${fedsDoi}r1`), ...PaperBuilder.deduplicate([map(article), map(workingPaper)]),
+        ]), undefined],
+      ] as Array<[string, Paper[], false | undefined]>) {
+        const where = `${label}, an OpenAlex card without a source before ${kind} (${mapper})`;
+        assert.equal(followed[0].peerReviewed, answer, where);
+        const rows = PaperBuilder.deduplicate([map(noSource), ...followed]);
+        assert.equal(rows.length, 1, where);
+        assert.equal(rows[0].doi, journalDoi, where);
+        assert.equal(rows[0].peerReviewed, true, where);
+        assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
+      }
+    }
+  }
+
+  // The row begins as the journal article. A row that joined OpenAlex's
+  // preprint record with Semantic Scholar's record of the article reads
+  // `false` and reopens the answer, and an arXiv record that lists only the
+  // FEDS revision's DOI then gives the `true` the article already gave.
+  for (const [flow, rows] of [
+    ['deduplicate', PaperBuilder.deduplicate([
+      search(article), ...PaperBuilder.deduplicate([search(preprint), semanticScholarArticle()]), arxivRecord(`${fedsDoi}r1`),
+    ])],
+    // The Explorer deduplicates each page with the rows already shown.
+    ['Explorer across pages', [[explorer(article)], [explorer(preprint), semanticScholarArticle()], [arxivRecord(`${fedsDoi}r1`)]]
+      .reduce<Paper[]>((rows, page) => PaperBuilder.deduplicate([...rows, ...PaperBuilder.deduplicate(page)]), [])],
+  ] as Array<[string, Paper[]]>) {
+    const where = `journal article first, ${flow}`;
+    assert.equal(rows.length, 1, where);
+    assert.equal(rows[0].doi, journalDoi, where);
+    assert.equal(rows[0].peerReviewed, true, where);
+    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
+  }
+});
+
 test('a report from a journal\'s registrant does not unreview the journal article', () => {
   // Synthetic records. OpenAlex types an unlisted series' paper `report`, and
   // the St. Louis Fed registers both its working papers and its Review under
