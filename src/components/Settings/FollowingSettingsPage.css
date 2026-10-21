@@ -325,14 +325,48 @@
   padding: var(--space-3) var(--space-3) 0;
 }
 
+/* Petri rises onto her dish as the question arrives, holding a balloon in
+   the colours of the follow's initials in the list. */
 .petri.following-unfollow-petri {
-  width: 6rem;
+  width: 7.5rem;
   height: auto;
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
 }
 
-.petri.following-unfollow-petri .onboarding-petri-body {
-  animation: none;
+.following-unfollow-petri.is-author {
+  --balloon-fill: var(--tint-green-bg);
+  --balloon-ink: var(--tint-green-fg);
+}
+
+.following-unfollow-petri.is-topic {
+  --balloon-fill: var(--bg-secondary);
+  --balloon-ink: var(--gradient-physics);
+}
+
+.following-unfollow-petri.is-institution {
+  --balloon-fill: rgba(6, 182, 212, 0.07);
+  --balloon-ink: var(--gradient-qfin);
+}
+
+.following-unfollow-petri.is-project {
+  --balloon-fill: rgba(245, 158, 11, 0.07);
+  --balloon-ink: var(--tint-amber-fg);
+}
+
+/* Closed by a button rather than a swipe, the question leaves the way
+   things leave: gathering speed, gone in 300 ms. The drawer's own curve
+   is an arrival that brakes, and on the way out it crawled the last 50 px
+   in plain sight for a quarter of a second (sampled per frame, 2026-10-21).
+   A swipe keeps the drawer's momentum. The Follows sheet underneath
+   comes back over the same 300 ms, settling as the question clears. */
+.following-unfollow-drawer[data-ending-style]:not([data-swipe-dismiss]) {
+  transition-duration: 300ms;
+  transition-timing-function: cubic-bezier(0.5, 0, 0.75, 0);
+}
+
+.settings-sheet.is-returning {
+  transition-duration: 300ms;
+  transition-timing-function: var(--ease-in-out);
 }
 
 .following-unfollow-title {

@@ -1,4 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
+import { storedClassification } from '../models/Paper.ts';
 
 /**
  * The document written to `users/{uid}/savedPapers/{paperId}`.
@@ -60,8 +61,18 @@ export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefin
     : [];
   if (authors.length > 0) payload.authors = authors;
 
-  const primaryCategory = text(paper?.primaryCategory, 300);
-  if (primaryCategory) payload.primaryCategory = primaryCategory;
+  // The same classification an interaction's copy keeps, so a saved paper
+  // reads as the field its card showed (PAP-60). Both writers merge into the
+  // stored document, so the category and its list are sent even when empty:
+  // left out, a document saved before PAP-60 kept the category the feed had
+  // asked for, and it was read as evidence under this classificationVersion.
+  // A stored topic stays when the card has none. Only OpenAlex fills it, for
+  // this same work, and removing it would take away a field the copy shows.
+  const classification = storedClassification(paper || {});
+  payload.primaryCategory = text(classification.primaryCategory, 300) ?? '';
+  payload.categories = classification.categories;
+  if (classification.primaryTopic) payload.primaryTopic = classification.primaryTopic;
+  payload.classificationVersion = classification.classificationVersion;
 
   const published = text(paper?.published, 300);
   if (published) payload.published = published;

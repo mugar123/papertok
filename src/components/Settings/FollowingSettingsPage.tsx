@@ -1,7 +1,8 @@
 import type { FollowEntity } from '../../utils/following.ts';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { toast } from 'sonner';
 import { EASE_OUT } from '../../utils/motionCurves.ts';
 import {
   ArrowLeft,
@@ -54,18 +55,34 @@ function getInitials(name: string) {
     .join('');
 }
 
+// How long Petri's balloon rises before the question leaves; it keeps
+// drifting off while the drawer goes (Petri.css, petriBalloonAway).
+const RELEASE_MS = 280;
+
 /**
  * What the page and the phone sheet share: the type on show, its follows in
- * order, and an unfollow that asks first.
+ * order, and an unfollow that asks first. Confirming lets go of Petri's
+ * balloon, closes the question, and unfollows once it has gone, so the row
+ * leaves in sight of the list it returns to; a toast offers Undo.
  */
 function useFollowedView() {
   const { language, locale } = useLanguage();
   const following = useFollowing();
-  const { followedByType, toggleFollow } = following;
+  const { followedByType } = following;
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [unfollowing, setUnfollowing] = useState<FollowEntity | null>(null);
   const [unfollowOpen, setUnfollowOpen] = useState(false);
+  const [released, setReleased] = useState(false);
+  const releaseTimer = useRef<number | undefined>(undefined);
+  const reduceMotion = useReducedMotion();
+  // Undo runs renders later, when this render's toggleFollow and isFollowing
+  // close over follows that no longer hold.
+  const latest = useRef(following);
+  useEffect(() => {
+    latest.current = following;
+  });
+  useEffect(() => () => clearTimeout(releaseTimer.current), []);
 
   const activeType = selectedType
     || FOLLOW_TABS.find(tab => followedByType[tab.type]?.length > 0)?.type
@@ -82,12 +99,22 @@ function useFollowedView() {
 
   const handleUnfollow = async (entity: FollowEntity) => {
     setActionError('');
+    const displayName = getFollowDisplayName(entity);
     try {
-      await toggleFollow(entity);
+      await latest.current.toggleFollow(entity);
     } catch {
-      const displayName = getFollowDisplayName(entity);
       setActionError(`Could not unfollow ${displayName}.`);
+      return;
     }
+    toast(`Unfollowed ${displayName}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          if (latest.current.isFollowing(entity)) return;
+          latest.current.toggleFollow(entity).catch(() => toast.error(`Could not follow ${displayName} again`));
+        },
+      },
+    });
   };
 
   const askUnfollow = (entity: FollowEntity) => {
@@ -95,8 +122,15 @@ function useFollowedView() {
     setUnfollowOpen(true);
   };
   const confirmUnfollow = () => {
-    setUnfollowOpen(false);
-    if (unfollowing) handleUnfollow(unfollowing);
+    if (released) return;
+    setReleased(true);
+    releaseTimer.current = window.setTimeout(() => setUnfollowOpen(false), reduceMotion ? 0 : RELEASE_MS);
+  };
+  const finishUnfollow = (isOpen: boolean) => {
+    if (isOpen) return;
+    if (released && unfollowing) handleUnfollow(unfollowing);
+    setReleased(false);
+    setUnfollowing(null);
   };
 
   return {
@@ -109,10 +143,11 @@ function useFollowedView() {
     actionError,
     askUnfollow,
     unfollowing,
-    setUnfollowing,
     unfollowOpen,
     setUnfollowOpen,
+    released,
     confirmUnfollow,
+    finishUnfollow,
   };
 }
 
@@ -141,7 +176,10 @@ function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () =
           className="following-settings-list"
           aria-label={activeTab.label[language]}
         >
-          <AnimatePresence initial={false} mode="popLayout">
+          {/* Two beats, never two rows in one place: a row leaves where it
+              stands and the list then closes up; one that comes back (Undo)
+              waits for the list to open its place. */}
+          <AnimatePresence initial={false}>
             {visibleEntities.map((entity) => {
               const pending = isFollowPending(entity);
               const displayName = getFollowDisplayName(entity);
@@ -150,8 +188,10 @@ function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () =
                   layout
                   key={entity.followKey || `${entity.type}:${entity.canonicalId}`}
                   className="following-settings-item"
-                  exit={{ opacity: 0, transform: 'translateX(18px)' }}
-                  transition={{ duration: 0.16, ease: EASE_OUT }}
+                  initial={{ opacity: 0, transform: 'translateX(32px)' }}
+                  animate={{ opacity: 1, transform: 'translateX(0px)', transition: { duration: 0.24, delay: 0.2, ease: EASE_OUT } }}
+                  exit={{ opacity: 0, transform: 'translateX(32px)' }}
+                  transition={{ duration: 0.24, ease: EASE_OUT }}
                 >
                   <Link to={getFollowedEntityPath(entity)} className="following-settings-link">
                     <span className={`following-settings-initials is-${entity.type}`} aria-hidden="true">
@@ -205,22 +245,30 @@ function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () =
  * which keeps its list and its scroll behind it.
  */
 function UnfollowConfirm({ view }: { view: FollowedView }) {
-  const { unfollowing, unfollowOpen, setUnfollowOpen, setUnfollowing, confirmUnfollow } = view;
+  const { unfollowing, unfollowOpen, setUnfollowOpen, released, confirmUnfollow, finishUnfollow } = view;
   const isPhone = useIsPhone();
   const unfollowName = unfollowing ? getFollowDisplayName(unfollowing) : '';
   const unfollowTitle = unfollowing ? `Unfollow "${unfollowName}"?` : 'Unfollow?';
   const unfollowDescription = `${unfollowing?.type === 'author' ? 'Their' : 'Its'} papers will stop shaping your recommendations. You can follow again at any time.`;
+  const petri = (
+    <Petri
+      pose="farewell"
+      className={`following-unfollow-petri is-${unfollowing?.type || 'author'}`}
+      initials={getInitials(unfollowName)}
+      released={released}
+    />
+  );
 
   return isPhone ? (
     <Drawer
       open={unfollowOpen}
       onOpenChange={setUnfollowOpen}
-      onOpenChangeComplete={(isOpen) => { if (!isOpen) setUnfollowing(null); }}
+      onOpenChangeComplete={finishUnfollow}
     >
-      <DrawerContent className="pc-share-sheet">
+      <DrawerContent className="pc-share-sheet following-unfollow-drawer">
         <DrawerHandle />
         <div className="following-unfollow-sheet">
-          <Petri pose="letGo" className="following-unfollow-petri" />
+          {petri}
           <DrawerTitle render={<h3 />} className="following-unfollow-title">{unfollowTitle}</DrawerTitle>
           <p className="following-unfollow-description">{unfollowDescription}</p>
           <div className="following-unfollow-actions">
@@ -234,10 +282,10 @@ function UnfollowConfirm({ view }: { view: FollowedView }) {
     <AlertDialog
       open={unfollowOpen}
       onOpenChange={setUnfollowOpen}
-      onOpenChangeComplete={(isOpen) => { if (!isOpen) setUnfollowing(null); }}
+      onOpenChangeComplete={finishUnfollow}
     >
       <AlertDialogContent className="following-unfollow-dialog">
-        <Petri pose="letGo" className="following-unfollow-petri" />
+        {petri}
         <AlertDialogTitle>{unfollowTitle}</AlertDialogTitle>
         <AlertDialogDescription>{unfollowDescription}</AlertDialogDescription>
         <div className="following-unfollow-actions">
@@ -318,12 +366,13 @@ export default function FollowingSettingsPage() {
 export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const view = useFollowedView();
-  const { language, followedByType, activeType, activeTab, setSelectedType } = view;
+  const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
+  const returning = !unfollowOpen && unfollowing !== null;
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
+      <DrawerContent className={`settings-sheet is-tall${returning ? ' is-returning' : ''}`} overlayClassName="settings-sheet-backdrop">
         <DrawerHandle />
         <div className="settings-sheet-head">
           <DrawerTitle render={<h2 />}>{'Follows'}</DrawerTitle>

@@ -31,10 +31,41 @@ test('a field we do not have is left out, never nulled', () => {
   for (const key of Object.keys(payload)) {
     assert.notEqual(payload[key as keyof typeof payload], null, `${key} is null, which the rules refuse`);
   }
-  for (const absent of ['authors', 'summary', 'doi', 'landingPageUrl', 'primaryCategory', 'published', 'arxivId']) {
+  for (const absent of ['authors', 'summary', 'doi', 'landingPageUrl', 'primaryTopic', 'published', 'arxivId']) {
     assert.equal(absent in payload, false, `${absent} must be absent, not null`);
   }
-  assert.deepEqual(Object.keys(payload).sort(), ['savedAt', 'title']);
+  // A save merges into the stored document, so the category and its list
+  // are sent even when empty: left out, an older document's would stay and
+  // be read under this payload's classificationVersion (PAP-60).
+  assert.equal(payload.primaryCategory, '');
+  assert.deepEqual(payload.categories, []);
+  assert.deepEqual(Object.keys(payload).sort(), ['categories', 'classificationVersion', 'primaryCategory', 'savedAt', 'title']);
+});
+
+/**
+ * PAP-60. This document kept only `primaryCategory`, which for an OpenAlex
+ * card is a concept name, so a saved paper came back with no field at all
+ * (159 of 200 sampled works). It keeps what the card's field was read from:
+ * arXiv's categories and OpenAlex's topic, as ids and names.
+ */
+test("the field's evidence is kept as ids and names, within the bounds the rules set", () => {
+  const topic = {
+    id: 'https://openalex.org/T13904',
+    display_name: 'Artificial Intelligence Applications',
+    score: 0.9341,
+    subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
+    field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
+    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+  };
+  const payload = buildSavedPaperPayload({ ...full, categories: ['astro-ph.EP', 'astro-ph.SR'], primaryTopic: topic }, SAVED_AT);
+  assert.deepEqual(payload.categories, ['astro-ph.EP', 'astro-ph.SR']);
+  assert.deepEqual(payload.primaryTopic, {
+    id: topic.id, display_name: topic.display_name, subfield: topic.subfield, field: topic.field, domain: topic.domain,
+  }, 'the score ranks; it does not classify');
+
+  // The rules cap the list at 20; OpenAlex can list more concept names.
+  const many = buildSavedPaperPayload({ ...full, categories: Array.from({ length: 30 }, (_, i) => `Concept ${i}`) }, SAVED_AT);
+  assert.equal(many.categories!.length, 20);
 });
 
 test('blank and whitespace count as absent, not as a value', () => {

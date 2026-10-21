@@ -201,6 +201,27 @@ test('a rejection lands on the paper\'s concepts and authors, and only lightly o
   assertClose(signals.sessionAffinities['C-benchmarks'], -10);
 });
 
+test('undoing a rejection gives back everything it took', () => {
+  const profile = createEmptyInteractionProfile();
+  const rejection = {
+    paperId: 'p',
+    category: 'cs.CL',
+    concepts: [{ id: 'C-benchmarks', score: 1 }],
+    authorIds: ['A1'],
+  };
+  recordInteractionEvent(profile, { ...rejection, kind: 'like' }, NOW);
+  recordInteractionEvent(profile, { ...rejection, kind: 'notInterested' }, NOW);
+  assert.deepEqual(positiveExamples(profile), [], 'a rejected paper is no example');
+
+  recordInteractionEvent(profile, { ...rejection, kind: 'undoNotInterested' }, NOW);
+  const signals = readProfileSignals(profile, NOW);
+  assert.deepEqual(curatedIds(profile, 'notInterested'), []);
+  assertClose(signals.categoryAffinities['cs.CL'], 5, 'only the like is left on the category');
+  assertClose(signals.conceptAffinities['C-benchmarks'], 5);
+  assertClose(signals.authorAffinities.A1, 5);
+  assert.deepEqual(positiveExamples(profile).map(example => example.id), ['p'], 'still liked, so an example again');
+});
+
 test('reproduces the affinities of the full subcollection scan', () => {
   const documents = makeDocuments(3000, { spanDays: 40 });
   const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });
@@ -423,6 +444,37 @@ test('a rebuild recovers the examples and the exposure from the documents', () =
     'cs.AI': { shown: 2, engaged: 1 },
     'cs.LG': { shown: 1, engaged: 0 },
   });
+});
+
+/*
+ * PAP-60. An old like kept the category the feed showed beside the paper's
+ * copy, and the feed showed the category it had been asked for. The copy says
+ * which of those values a rebuild can trust: the primary arXiv lists first for
+ * a paper stored under its arXiv id, nothing for a Europe PMC copy.
+ */
+test('a rebuild counts an old like under the category its stored copy can show', () => {
+  const documents = [
+    { id: '2605.02209', data: {
+      liked: true, paperCategory: 'cs.LG', timestamp: NOW - 1000,
+      paper: { id: '2605.02209', title: 'T', primaryCategory: 'cs.LG', categories: ['cs.AI', 'cs.LG'] },
+    } },
+    { id: 'pmid:42820985', data: {
+      liked: true, paperCategory: 'bio.gen', timestamp: NOW - 2000,
+      paper: { id: 'pmid:42820985', title: 'T', primaryCategory: 'bio.gen', categories: ['bio.gen'] },
+    } },
+  ];
+  const signals = readProfileSignals(buildProfileFromInteractionDocuments(documents, { now: NOW }), NOW);
+  assert.deepEqual(Object.keys(signals.categoryAffinities), ['cs.AI']);
+  assert.ok(signals.categoryAffinities['cs.AI'] > 0);
+});
+
+// OpenAlex cards carried a concept name where a category belongs, and the
+// profile learned it as one.
+test('a concept name the profile learned is not read back as a category', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'openalex:W2120490784', kind: 'like', category: 'Somatic cell nuclear transfer' }, NOW);
+  recordInteractionEvent(profile, { paperId: '2605.02209', kind: 'like', category: 'cs.AI' }, NOW);
+  assert.deepEqual(Object.keys(readProfileSignals(profile, NOW).categoryAffinities), ['cs.AI']);
 });
 
 test('exposure counts every card shown and the ones read past the median', () => {

@@ -52,3 +52,52 @@ test('SOURCE: a like stores the serialized paper beside the flag, the way a save
   assert.match(like, /liked: !isCurrentlyLiked,[\s\S]*?paper: isCurrentlyLiked \? undefined : serializeLibraryPaper\(paper\),/,
     'the like write carries the paper; an unlike only flips the flag');
 });
+
+/**
+ * PAP-60. The library reads a saved paper's interaction record before any
+ * savedPapers document, and a save left that record with the flag, a title
+ * and a category: the Saved list read its field from the category alone,
+ * which for an OpenAlex card was a concept name.
+ */
+test('SOURCE: a save stores the serialized paper beside the flag, the way a like does', async () => {
+  const code = stripComments(await read('./FeedContext.tsx'));
+  const start = code.indexOf('const markSaved = useCallback(');
+  const save = code.slice(start, code.indexOf('const unmarkSaved = useCallback(', start));
+  assert.ok(save.length > 0, 'expected to have found markSaved');
+  assert.match(save, /if \(paper\) interactionData\.paper = serializeLibraryPaper\(paper\);/);
+});
+
+test("SOURCE: the library decides a copy's field on the stored document, and a record without one has none", async () => {
+  const code = stripComments(await read('./FeedContext.tsx'));
+  const start = code.indexOf('const ensurePersonalLibrary = useCallback(');
+  const load = code.slice(start, code.indexOf('setPersonalLibrary(', start));
+  assert.ok(load.length > 0, 'expected to have found ensurePersonalLibrary');
+  assert.match(load, /\{ \.\.\.data\.paper, \.\.\.readStoredClassification\(\{ \.\.\.data\.paper, id \}\) \}/);
+  assert.doesNotMatch(load, /data\.paperCategory/, 'the category beside the flag is not a field the copy can show');
+});
+
+/**
+ * PAP-60, D6. Past the first page, OpenAlex answers after a card is shown and
+ * can give it its field. A paper liked, saved or read before that answer was
+ * stored without the topic; readingLibrary.test.ts shows the copies these
+ * writes leave. This checks that the late answer makes them, adding the topic
+ * and only the topic to a copy that has none.
+ */
+test('SOURCE: a late OpenAlex answer adds its topic to the copies of a paper already liked, saved or read', async () => {
+  const code = stripComments(await read('./FeedContext.tsx'));
+  const followStart = code.indexOf('const followShownPapers = useCallback(');
+  assert.notEqual(followStart, -1, 'expected to have found followShownPapers');
+  const follow = code.slice(followStart, code.indexOf('iCite?.then(', followStart));
+  assert.match(follow, /openAlex\?\.then\([\s\S]*keepLateTopicsRef\.current\(cardsGivenTopic\(/);
+
+  const keepStart = code.indexOf('const keepLateTopics = useCallback(');
+  assert.notEqual(keepStart, -1, 'expected to have found keepLateTopics');
+  const keep = code.slice(keepStart, code.indexOf('const keepLateTopicsRef', keepStart));
+  for (const marked of ['savedPaperIdsRef', 'likedPaperIdsRef', 'readPaperIdsRef', 'personalLibrary[paperId]']) {
+    assert.ok(keep.includes(marked), `a paper marked through ${marked} is written`);
+  }
+  assert.match(keep, /const interaction = await getDoc\(interactionDocRef\(userId, paperId\)\);/);
+  assert.match(keep, /if \(copy && !copy\.primaryTopic\) await updateDoc\(interaction\.ref, \{ 'paper\.primaryTopic': primaryTopic \}\);/);
+  assert.match(keep, /const savedPaper = await getDoc\(savedPaperDocRef\(userId, card\.id\)\);/);
+  assert.match(keep, /if \(savedPaper\.exists\(\) && !savedPaper\.data\(\)\.primaryTopic\) await updateDoc\(savedPaper\.ref, \{ primaryTopic \}\);/);
+});

@@ -210,6 +210,7 @@ ul.pc-menu-group {
 .pc-menu-item[data-action='about'] { --tone: var(--accent-sky); }
 .pc-menu-item[data-action='skip'] { --tone: var(--tint-red-fg); }
 .pc-menu-item:is([data-action='bibtex'], [data-action='ris']) { --tone: var(--accent-violet); }
+.pc-menu-item[data-action='delete'] { --tone: var(--accent-danger); }
 
 .pc-menu-item-icon {
   display: grid;
@@ -225,6 +226,21 @@ ul.pc-menu-group {
 
 .pc-menu-item:active {
   background: color-mix(in srgb, var(--tone, var(--text-secondary)) 6%, var(--bg-card));
+}
+
+.pc-menu-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* A list's delete is the one action that cannot be undone: it sits apart,
+   and its name takes the danger ink too. */
+li:has(> .pc-menu-item[data-action='delete']) {
+  margin-top: var(--space-3);
+}
+
+.pc-menu-item[data-action='delete'] .pc-menu-item-label {
+  color: var(--tone);
 }
 
 .pc-menu-item-label {
