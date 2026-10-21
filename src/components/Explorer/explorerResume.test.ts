@@ -17,7 +17,7 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, ''
  * finished. A visit memory seeds the next mount with what the last one had,
  * and the effects that would clear or refetch it stand down exactly once.
  */
-test('an entity page comes back as it was left: tab, authors, Wikipedia block and impact figure', async () => {
+test('an entity page comes back as it was left: tab, authors, Wikipedia lookup and impact figure', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
   assert.match(jsx, /const visitMemory = new Map(?:<[^;\n]+>)?\(\);/);
   assert.match(jsx, /const resumed = useMemo(?:<[^;\n]+>)?\(\(\) => visitMemory\.get\(visitKey\) \|\| null, \[visitKey\]\);/);
@@ -30,18 +30,14 @@ test('an entity page comes back as it was left: tab, authors, Wikipedia block an
     /useState(?:<[^;\n]+>)?\(\(\) => \(resumed && !resumed\.authorsSearch \? resumed\.entityAuthors : \[\]\)\)/,
   ]) assert.match(jsx, seed);
   // The load effect keeps the seeded pieces on the mount that resumed, and only then.
-  assert.match(jsx, /const resuming = resumedEntityRef\.current;\s*resumedEntityRef\.current = false;\s*if \(!resuming\) \{\s*setEntityAuthors\(\[\]\);\s*setWikiInfo\(null\);\s*setWikiBlockOpened\(false\);\s*\}/);
+  assert.match(jsx, /const resuming = resumedEntityRef\.current;\s*resumedEntityRef\.current = false;\s*if \(!resuming\) \{\s*setEntityAuthors\(\[\]\);\s*setWikiInfo\(null\);\s*\}/);
   assert.match(jsx, /if \(!resuming\) setRecentImpact\(null\);/);
   // The authors effect neither refetches nor shows its skeleton over a resumed list.
   assert.match(jsx, /if \(resumedAuthorsRef\.current\) \{\s*resumedAuthorsRef\.current = false;\s*return;\s*\}/);
   // The deferred tab reset is for an entity change, never for the mount.
   assert.match(jsx, /if \(resetForEntityRef\.current === visitKey\) return undefined;/);
   // And every seeded piece is written back as it changes.
-  assert.match(jsx, /rememberVisit\(visitKey, \{\s*activeTab,\s*authorsOpened,\s*authorsSearch: debouncedSearch,\s*entityAuthors,\s*authorsPage,\s*hasMoreAuthors,\s*wikiInfo,\s*settledWikiRequestKey,\s*loadedWikiImageUrl,\s*isWikiDescriptionExpandable,\s*wikiDescriptionExpandedHeight,\s*isWikiDescriptionExpanded,\s*recentImpact,\s*\}\);/);
-  // The read-more toggle is a measurement taken a frame after mount: seeded, or the block comes back 27px short for that frame.
-  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => Boolean\(resumed\?\.isWikiDescriptionExpandable\)\)/);
-  assert.match(jsx, /useState(?:<[^;\n]+>)?\(\(\) => resumed\?\.wikiDescriptionExpandedHeight \?\? 0\)/);
-  assert.match(jsx, /if \(!resuming\) \{\s*setIsWikiDescriptionExpanded\(false\);\s*setIsWikiDescriptionExpandable\(false\);\s*\}/);
+  assert.match(jsx, /rememberVisit\(visitKey, \{\s*activeTab,\s*authorsOpened,\s*authorsSearch: debouncedSearch,\s*entityAuthors,\s*authorsPage,\s*hasMoreAuthors,\s*wikiInfo,\s*settledWikiRequestKey,\s*loadedWikiImageUrl,\s*recentImpact,\s*\}\);/);
   assert.match(jsx, /if \(visitMemory\.size > VISIT_MEMORY_MAX\)/);
 });
 

@@ -20,6 +20,11 @@ function matchesCategory(paper: Partial<Paper>, areaId: string | undefined) {
     .some(category => areaKeyForCategory(category) === areaId);
 }
 
+/** How many of these papers each area's filter would keep, by area key. */
+export function countPapersByArea(papers: Partial<Paper>[], areaKeys: string[]) {
+  return Object.fromEntries(areaKeys.map(key => [key, papers.filter(paper => matchesCategory(paper, key)).length]));
+}
+
 export function getPaperCitationCount(paper: Partial<Paper> | null | undefined) {
   const candidates = [
     paper?.citationCount,

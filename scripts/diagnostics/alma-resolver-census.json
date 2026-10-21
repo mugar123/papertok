@@ -4065,20 +4065,28 @@
       "country": "DE",
       "worksCount": 329130,
       "homepage": "https://www.lmu.de",
-      "probedAt": "2026-10-20T10:07:32.320Z",
+      "probedAt": "2026-10-20T11:56:46.356Z",
       "domains": [
         "lmu.de"
       ],
       "links": [
         "https://www.lmu.de"
       ],
-      "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "compatibility-pending",
+      "evidence": "https://opac.ub.lmu.de/PrimoRecord/cdi_crossref_citationtrail_10_1038_nphys3554",
+      "code": "sfx_ubm",
+      "host": "sfx.bib-bvb.de",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://sfx.bib-bvb.de/sfx_ubm",
-      "product": "sfx"
+      "product": "sfx",
+      "resolverProduct": "sfx",
+      "route": "seed",
+      "services": 4,
+      "packages": [
+        "Gale Academic OneFile",
+        "Gale General OneFile"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/027m9bs27": {
       "rorId": "https://ror.org/027m9bs27",
@@ -4375,20 +4383,28 @@
       "country": "DE",
       "worksCount": 272205,
       "homepage": "https://www.tum.de",
-      "probedAt": "2026-10-20T10:07:32.320Z",
+      "probedAt": "2026-10-20T11:56:44.646Z",
       "domains": [
         "tum.de"
       ],
       "links": [
         "https://www.tum.de"
       ],
-      "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "compatibility-pending",
+      "evidence": "https://www.ub.tum.de/en/citavi",
+      "code": "sfx_tum",
+      "host": "sfx.bib-bvb.de",
+      "status": "verified",
       "source": "manual (Opus subagent, 2026-10-19)",
       "resolverUrl": "https://sfx.bib-bvb.de/sfx_tum",
-      "product": "sfx"
+      "product": "sfx",
+      "resolverProduct": "sfx",
+      "route": "seed",
+      "services": 2,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/04pp8hn57": {
       "rorId": "https://ror.org/04pp8hn57",
@@ -5449,20 +5465,28 @@
       "country": "DE",
       "worksCount": 164450,
       "homepage": "https://www.fau.de/",
-      "probedAt": "2026-10-20T10:07:34.892Z",
+      "probedAt": "2026-10-20T11:56:49.052Z",
       "domains": [
         "fau.de"
       ],
       "links": [
         "https://www.fau.de/"
       ],
-      "evidence": null,
-      "code": null,
-      "host": null,
-      "status": "compatibility-pending",
+      "evidence": "https://ub.fau.de/recherchieren/literatur-verwalten-und-zitieren/citavi/einstellungsdatei/",
+      "code": "sfx_uben",
+      "host": "sfx.bib-bvb.de",
+      "status": "verified",
       "source": "zotero",
       "resolverUrl": "https://sfx.bib-bvb.de/sfx_uben",
-      "product": "sfx"
+      "product": "sfx",
+      "resolverProduct": "sfx",
+      "route": "seed",
+      "services": 2,
+      "packages": [
+        "Nature",
+        "SpringerLink Journals - AutoHoldings"
+      ],
+      "journal": "0028-0836"
     },
     "https://ror.org/04vfs2w97": {
       "rorId": "https://ror.org/04vfs2w97",
@@ -23368,5 +23392,5 @@
       "status": "unresolved"
     }
   },
-  "generatedAt": "2026-10-20T10:28:40.787Z"
+  "generatedAt": "2026-10-20T11:59:12.397Z"
 }

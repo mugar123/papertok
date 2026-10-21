@@ -43,20 +43,29 @@ export const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
 // Two minutes is long enough to absorb the retry burst of a feed fan-out and
 // short enough that recovery is invisible.
 export const DEGRADED_CACHE_SECONDS = 120;
-const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 300;
+const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 3_000;
 // The budget OpenAlex bills against is *daily* ($1/day, ~10.000 calls measured on
-// `/health/openalex`), and until now the only ceiling was per minute: 300/min is
-// 432.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for the
-// digest cron -- which spends outside this ledger -- and the health probe.
+// `/health/openalex`), and until now the only ceiling was per minute: 3000/min is
+// 4.320.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for the
+// digest cron -- which spends outside this ledger -- and the health probe. Both
+// ceilings count list calls, $0.0001 each; a search is reserved as ten of them,
+// so the minute's 3000 is the 300 searches it allowed when every call was one.
 const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // What a cold answer costs OpenAlex, per route, worst case. Reserved in one go
-// before the work starts: a route that spends nine calls and reserves one is a
-// route the daily ceiling does not actually cover.
+// before the work starts: a route that spends seven calls and reserves one is a
+// route the daily ceiling does not actually cover, and one that reserves more
+// than it can spend refuses other readers for calls nobody makes.
 export const OPENALEX_CALLS = Object.freeze({
   relay: 1,
-  // One `works/doi:` lookup, then up to two batches of twenty for each of the two
-  // reference filters and the same again for citations.
-  citationGraph: 9,
+  // OpenAlex bills a search ten list calls: measured on 2026-10-20 against
+  // `x-ratelimit-remaining-usd`, `search=` and every `.search` filter cost
+  // $0.001, a list $0.0001, a single work nothing. Counted as one, the feed's
+  // searches could spend eight dollars under an eight-thousand-call ceiling.
+  search: 10,
+  // One `works/doi:` lookup, then batches of twenty for references and the same
+  // for citations. Each relation's two filters share its 40 candidates, so they
+  // need at most three batches between them (21 + 19 is two plus one).
+  citationGraph: 7,
 });
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
@@ -451,14 +460,14 @@ export function sourceCacheParams(context: { page: number; limit: number }, extr
 // upstream measured is OpenReview at 5.2 s cold, and letting it finish still
 // pays off because the answer lands in the edge cache for the next reader,
 // even though the reader who triggered it has moved on.
-export function fetchJsonUpstream<T = unknown>(url: RequestInfo | URL, headers: Record<string, string> = {}) {
+export function fetchJsonUpstream<T = unknown>(url: RequestInfo | URL, headers: Record<string, string> = {}, timeoutMs = SOURCE_UPSTREAM_TIMEOUT_MS) {
   return fetchJsonWithTimeout<T>(url, {
     headers: {
       accept: 'application/json',
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
       ...headers,
     },
-  }, SOURCE_UPSTREAM_TIMEOUT_MS);
+  }, timeoutMs);
 }
 
 export function numberOrNull(value: unknown) {
@@ -483,53 +492,36 @@ export function boundedText(value: unknown, maxLength: number) {
 // is global rather than per user, and it is reserved only after a cache miss so
 // repeated queries cost nothing.
 //
-// Minute first, day second, and the minute given back if the day says no. This
-// used to leave the minute unit to expire as the lesser of two leaks, chosen
-// before giving a unit back was a pattern here; now nothing is left spent for
-// a call that was never made. What was taken travels back to the caller, the
-// same shape as every other gate, so whoever owns the refund can name it.
+// Both ceilings travel in one ledger call. The day's object counts every call in
+// its global row and checks the current minute as the subject, in the same
+// transaction: one Durable Object request per miss instead of two, and no object
+// (with its own alarm and cleanup) created for every minute. What was taken
+// travels back to the caller, the same shape as every other gate, so whoever
+// owns the refund can name it.
 export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amount: number) {
   const now = new Date().toISOString();
-  const periods: Array<[string, number, string]> = [
-    [`openalex:${now.slice(0, 16)}`, boundedLimit(
-      env.OPENALEX_GLOBAL_MINUTE_LIMIT,
-      DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT,
-      100_000,
-    ), '60'],
-    // Not the true seconds until UTC midnight: a `retry-after` of several hours is
-    // a client that stops asking until someone reloads the tab, and the daily
-    // ceiling is an emergency brake, not a normal state.
-    [`openalex:day:${now.slice(0, 10)}`, boundedLimit(
-      env.OPENALEX_GLOBAL_DAILY_LIMIT,
-      DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT,
-      1_000_000,
-    ), '300'],
-  ];
-  const taken: QuotaRequest[] = [];
-  for (const [periodKey, limit, retryAfter] of periods) {
-    const ledgerRequest = {
-      periodKey,
-      subject: 'openalex:shared',
-      subjectLimit: limit,
-      globalLimit: limit,
-      amount,
-    };
-    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
-    if (!reservation.accepted) {
-      await releaseHeld(env, taken);
-      if (reservation.code) {
-        return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
-          ...corsHeaders(origin, env),
-          'cache-control': 'no-store',
-        }) };
-      }
-      return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
-        ...corsHeaders(origin, env),
-        'cache-control': 'no-store',
-        'retry-after': retryAfter,
-      }) };
-    }
-    taken.push(ledgerRequest);
+  const ledgerRequest = {
+    periodKey: `openalex:day:${now.slice(0, 10)}`,
+    subject: `openalex:minute:${now.slice(0, 16)}`,
+    subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+    globalLimit: boundedLimit(env.OPENALEX_GLOBAL_DAILY_LIMIT, DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT, 1_000_000),
+    amount,
+  };
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
+  if (reservation.accepted) return { reservations: [ledgerRequest] };
+  if (reservation.code) {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    }) };
   }
-  return { reservations: taken };
+  return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    // The day's refusal is not the true seconds until UTC midnight: a
+    // `retry-after` of several hours is a client that stops asking until someone
+    // reloads the tab, and the daily ceiling is an emergency brake, not a normal
+    // state.
+    'retry-after': reservation.scope === 'global' ? '300' : '60',
+  }) };
 }

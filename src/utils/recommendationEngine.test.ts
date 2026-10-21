@@ -20,6 +20,7 @@ test('selected user category dominates neutral papers', () => {
       allCategories: ['cs.AI'],
       published: '2026-07-05T00:00:00Z',
       authors: ['A. Researcher'],
+      abstract: 'We study how selected categories shape the order of a reading feed.',
     },
     {
       now: NOW,
@@ -41,6 +42,24 @@ test('the selected categories give way to learned behaviour as interactions accu
   assert.equal(preferenceAfter(0), 100);
   assert.equal(preferenceAfter(150), 50);
   assert.equal(preferenceAfter(5000), 30, 'never below a third of the original weight');
+});
+
+// A specialist source's card names no category of the taxonomy, only its own
+// terms. Fetched for one of the reader's categories, it ranks as theirs, as
+// it did when the mapper wrote that category onto the card.
+test('a card fetched for one of the reader\'s categories keeps the preference without carrying it', () => {
+  const paper = {
+    id: 'pmid:42820985',
+    primaryCategory: 'Nitrogen',
+    categories: ['Nitrogen', 'Quantitative Trait Loci', 'Oryza'],
+    _fetchedFor: ['bio.eco', 'bio.gen'],
+    published: '2026-07-01T00:00:00Z',
+  };
+  const preference = (userPreferences: string[]) => scorePaperForRecommendation(paper, { now: NOW, userPreferences }).preference;
+
+  assert.equal(preference(['bio.gen']), 100);
+  assert.equal(preference(['bio.eco', 'cs.AI']), 100);
+  assert.equal(preference(['bio.neuro']), 0, 'fetched for categories the reader did not choose');
 });
 
 test('semantic and citation signals contribute to score', () => {
@@ -90,6 +109,25 @@ test('category signals preserve personalization without OpenAlex enrichment', ()
   assert.equal(score.preference, 80);
   // The primary category in full, a secondary one at 0.35.
   assert.equal(score.affinity, 13.5);
+});
+
+// Plan A and F1 (PAP-73): OpenAlex files a work under its own topic, never under
+// a leaf of the taxonomy. A primary topic among a chosen leaf's measured topics
+// is evidence for that leaf, read when ranking and never stored.
+test("an OpenAlex card earns a chosen leaf's preference when that leaf lists its primary topic", () => {
+  const card = {
+    id: 'openalex:W7222916812',
+    categories: ['Biology', 'Genetics'],
+    primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' },
+  };
+  const preferenceFor = (userPreferences: string[], paper: typeof card = card) => (
+    scorePaperForRecommendation(paper, { now: NOW, userPreferences }).preference
+  );
+
+  assert.equal(preferenceFor(['cs.LG', 'bio.mol']), 100);
+  assert.equal(preferenceFor(['bio.eco', 'cs.LG']), 0, "another leaf's reader");
+  const satellite = { ...card, primaryTopic: { id: 'https://openalex.org/T12042', display_name: 'Satellite Communication Systems' } };
+  assert.equal(preferenceFor(['mech.aero'], satellite), 0, 'a topic no chosen leaf lists');
 });
 
 test('every score component is bounded by its designed maximum', () => {
@@ -235,12 +273,26 @@ test('the session lifts what the reader has just engaged with and sinks what the
 });
 
 test('a paper recommended for the reader\'s own examples is boosted', () => {
-  const plain = scorePaperForRecommendation({ id: 'plain', primaryCategory: 'cs.AI' }, { now: NOW });
-  const personal = scorePaperForRecommendation({ id: 'personal', primaryCategory: 'cs.AI', _isPersonalCandidate: true }, { now: NOW });
+  const abstract = 'A recommended paper with an abstract the card can show.';
+  const plain = scorePaperForRecommendation({ id: 'plain', primaryCategory: 'cs.AI', abstract }, { now: NOW });
+  const personal = scorePaperForRecommendation({ id: 'personal', primaryCategory: 'cs.AI', abstract, _isPersonalCandidate: true }, { now: NOW });
 
   assert.equal(plain.personalBoost, 0);
   assert.equal(personal.personalBoost, 20);
   assert.equal(personal.total - plain.total, 20);
+});
+
+test('a card without an abstract ranks below the same card with one', () => {
+  const paper = { primaryCategory: 'cs.AI', published: '2026-07-01T00:00:00Z' };
+  const context = { now: NOW, userPreferences: ['cs.AI'] };
+  const withAbstract = scorePaperForRecommendation({ ...paper, id: 'with', abstract: 'We measure what a feed card needs to be read.' }, context);
+  // The OpenAlex mapper's placeholder is what a missing abstract looks like in the feed.
+  const placeholder = scorePaperForRecommendation({ ...paper, id: 'placeholder', abstract: 'No abstract available.' }, context);
+  const empty = scorePaperForRecommendation({ ...paper, id: 'empty', abstract: '' }, context);
+
+  assert.ok(placeholder.total < withAbstract.total);
+  assert.equal(empty.total, placeholder.total);
+  assert.match(placeholder.explanation, /missingAbstract/);
 });
 
 test('a paper lends the profile its OpenAlex concepts and first ten OpenAlex authors', () => {

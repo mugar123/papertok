@@ -48,11 +48,7 @@ test('the authors tab blames the search only when there is one', async () => {
     /search|spelling/i,
     'no search is mentioned to a reader who never ran one',
   );
-  assert.match(
-    emptyState,
-    /variant === 'authors' \|\| variant === 'authors-none' \? Users/,
-    'both author variants keep the people icon',
-  );
+  assert.match(emptyState, /<EmptyState[\s\S]*art=\{<Petri pose=\{POSE\[variant\]\} \/>\}/, 'every variant is the shared empty state with Petri');
 });
 
 const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\{\/\*[\s\S]*?\*\/\}|\/\/.*$/gm, '');

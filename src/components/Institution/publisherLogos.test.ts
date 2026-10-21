@@ -22,7 +22,7 @@ test('every mapped logo is a bundled file named after its platform id', () => {
 // logo would be the one row drawn as a bare monogram.
 test('every platform in the Worker catalogue has a bundled logo', () => {
   const mapped = new Set(imports.map(([, name]) => name));
-  for (const { id } of SERVICE_CATALOGUE) assert.ok(mapped.has(id), `${id} has no logo`);
+  for (const { id, platformId } of SERVICE_CATALOGUE) assert.ok(mapped.has(platformId || id), `${id} has no logo`);
 });
 
 test('every bundled logo has a provenance row in the README', () => {

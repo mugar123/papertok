@@ -42,25 +42,29 @@
   line-height: 1.5;
 }
 
-/* Rides the title's line and never wraps alone: an orphaned count under a
-   heading reads as a stray element rather than as part of it. */
-.nudge-stars {
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border: 1px solid var(--tint-amber-line, var(--border-default));
-  border-radius: 999px;
-  color: var(--text-secondary);
-  vertical-align: baseline;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  vertical-align: middle;
+/* Two answers take a row of their own under the copy: beside it, the copy
+   would be squeezed to a column of single words. */
+.nudge-actions {
+  display: flex;
+  gap: 8px;
 }
 
+.nudge-actions:has(> :nth-child(2)) {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
 
+.nudge-status:not(:empty) {
+  display: block;
+  margin-top: 4px;
+  color: var(--tint-red-fg);
+}
+
+.nudge-copy a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 .nudge-dismiss {
   display: grid;
@@ -82,46 +86,6 @@
 
 }
 
-/* The one accent in the panel, and it is the thing being asked for: the star
-   in the count chip. These are seen once per device in a lifetime, the single
-   tier where delight is affordable.
-
-   A CSS animation rather than the panel's own engine — it is predetermined and
-   one-shot, and keyframes keep running while the feed loads. It starts as the
-   panel finishes travelling (320ms), so the two never move at once.
-
-   `backwards` and not `both`: the fill only has to hold the first keyframe
-   during the delay. With `both` the final matrix stays welded to the element
-   afterwards, which is how an icon ends up unable to move again. The resting
-   style IS the last keyframe. */
-.nudge-stars svg {
-  fill: var(--brand-yellow);
-  color: var(--brand-yellow);
-  animation: nudgeStarPop 420ms cubic-bezier(0.34, 1.4, 0.64, 1) 320ms backwards;
-}
-
-@keyframes nudgeStarPop {
-  from { transform: scale(0.5) rotate(-20deg); }
-  to { transform: none; }
-}
-
-/* The mark is ink, like every other mark in the app: the brand yellow sits
-   beside ink, never as the shape itself (styles/variables.css). */
-.nudge-icon--github {
-  color: var(--text-primary);
-}
-
-/* The answer to pressing the button: one nod, then the panel leaves. */
-.nudge-icon.is-thanked {
-  animation: nudgeThanks 220ms cubic-bezier(0.34, 1.4, 0.64, 1);
-}
-
-@keyframes nudgeThanks {
-  0% { transform: none; }
-  45% { transform: scale(1.12); }
-  100% { transform: none; }
-}
-
 @media (max-width: 560px) {
   .nudge {
     right: 12px;
@@ -136,14 +100,8 @@
   }
 }
 
-/* Fewer and gentler, not none: the panel still fades, and the accent — which
-   is pure decoration — goes. */
+/* Fewer and gentler, not none: the panel still fades. */
 @media (prefers-reduced-motion: reduce) {
-  .nudge-stars svg,
-  .nudge-icon.is-thanked {
-    animation: none;
-  }
-
   .nudge-dismiss {
     transition: none;
   }

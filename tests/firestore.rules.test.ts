@@ -20,6 +20,9 @@ import {
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.ts';
+import { paperLegacyAdapter, storedClassification } from '../src/models/Paper.ts';
+import { areaLabelForPaper } from '../src/utils/areaAccent.ts';
+import { serializeLibraryPaper } from '../src/utils/readingLibrary.ts';
 import { LIST_COLORS } from '../src/utils/listColors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/accountOnboarding.ts';
 import {
@@ -995,9 +998,24 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
     quote: 'a'.repeat(400),
     note: 'a'.repeat(2000),
     paperTitle: 'a'.repeat(1000),
-    paragraphIndex: 100,
+    paragraphIndex: 99,
+    endParagraphIndex: 100,
+    endQuote: 'a'.repeat(400),
     kind: 'caveat',
   })));
+});
+
+test('P19: a passage across paragraphs ends later in the same section, with its end quote', async () => {
+  await reset();
+  const alice = asAlice();
+  await assertSucceeds(setDoc(highlightRef(alice, 'span'), highlightBody({ endParagraphIndex: 4, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'back'), highlightBody({ endParagraphIndex: 3, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'far'), highlightBody({ endParagraphIndex: 101, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'float'), highlightBody({ endParagraphIndex: 4.5, endQuote: 'the end' })));
+  await assertFails(setDoc(highlightRef(alice, 'noquote'), highlightBody({ endParagraphIndex: 4 })));
+  await assertFails(setDoc(highlightRef(alice, 'empty'), highlightBody({ endParagraphIndex: 4, endQuote: '' })));
+  await assertFails(setDoc(highlightRef(alice, 'long'), highlightBody({ endParagraphIndex: 4, endQuote: 'a'.repeat(401) })));
+  await assertFails(setDoc(highlightRef(alice, 'orphan'), highlightBody({ endQuote: 'the end' })));
 });
 
 /* --- The payload the save modal actually sends ---------------------------- */
@@ -1059,4 +1077,171 @@ test('the shape the modal used to send is still refused, so the fix is load-bear
     landingPageUrl: null,
     savedAt: new Date().toISOString(),
   }));
+});
+
+/*
+ * PAP-60. A saved paper keeps the evidence its field was read from: arXiv's
+ * categories and OpenAlex's primary topic, by id and name, under a
+ * classification version. These check the rules against what
+ * buildSavedPaperPayload sends, at the largest size it can send.
+ */
+const STORED_TOPIC = {
+  id: 'https://openalex.org/T12929',
+  display_name: 'Animal Genetics and Reproduction',
+  subfield: { id: 'https://openalex.org/subfields/1311', display_name: 'Genetics' },
+  field: { id: 'https://openalex.org/fields/13', display_name: 'Biochemistry, Genetics and Molecular Biology' },
+  domain: { id: 'https://openalex.org/domains/1', display_name: 'Life Sciences' },
+};
+// W2120490784's primary topic as OpenAlex sends it; the copy drops the score.
+const CAT_EMBRYO_TOPIC = { ...STORED_TOPIC, score: 0.9492 };
+
+test('savedPapers accepts the classification evidence buildSavedPaperPayload sends', async () => {
+  await reset();
+  const db = asAlice();
+  const savedAt = new Date().toISOString();
+  const longest = (prefix: string) => `${prefix}${'x'.repeat(300 - prefix.length)}`;
+
+  const papers: [string, NonNullable<Parameters<typeof buildSavedPaperPayload>[0]> & { id: string }][] = [
+    ['an arXiv paper and its cross-lists', {
+      id: '2605.02209', title: 'Agents that plan', primaryCategory: 'cs.AI', categories: ['cs.AI', 'cs.LG', 'cs.CL'],
+      arxivId: '2605.02209',
+    }],
+    ['an OpenAlex work, its topic and more concept names than the cap', {
+      id: 'openalex:W2120490784',
+      title: 'In vitro developmental competence of domestic cat embryos after somatic cloning: a preliminary report',
+      primaryTopic: CAT_EMBRYO_TOPIC,
+      categories: Array.from({ length: 30 }, (_, index) => `Concept ${index}`),
+      doi: '10.1016/s0093-691x(02)01047-6',
+    }],
+    ['every field at its largest', {
+      id: 'openalex:W1',
+      title: 'T'.repeat(1000),
+      authors: ['A', 'B', 'C', 'D', 'E', 'F'],
+      primaryCategory: 'p'.repeat(300),
+      categories: Array.from({ length: 20 }, (_, index) => `c${index}`.repeat(10)),
+      primaryTopic: {
+        id: longest('https://openalex.org/T'),
+        display_name: longest('Topic '),
+        subfield: { id: longest('https://openalex.org/subfields/'), display_name: longest('Subfield ') },
+        field: { id: longest('https://openalex.org/fields/'), display_name: longest('Field ') },
+        domain: { id: longest('https://openalex.org/domains/'), display_name: longest('Domain ') },
+      },
+      published: '2026-08-01',
+      arxivId: '2608.20113',
+      summary: 'S'.repeat(600),
+      doi: `10.1/${'d'.repeat(295)}`,
+      landingPageUrl: `https://example.org/${'u'.repeat(1980)}`,
+    }],
+  ];
+
+  for (const [label, paper] of papers) {
+    const payload = buildSavedPaperPayload(paper, savedAt);
+    await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'savedPapers', paper.id), payload))
+      .catch((error: Error) => assert.fail(`${label} was refused: ${error.message}`));
+  }
+  const stored = (await getDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W2120490784'))).data();
+  assert.equal(stored?.primaryTopic.subfield.id, 'https://openalex.org/subfields/1311');
+  assert.equal(stored?.primaryTopic.field.id, 'https://openalex.org/fields/13');
+});
+
+test('savedPapers refuses classification evidence outside its bounds', async () => {
+  await reset();
+  const db = asAlice();
+  const valid = buildSavedPaperPayload({
+    id: 'openalex:W2120490784', title: 'Cat embryos', primaryTopic: CAT_EMBRYO_TOPIC, categories: ['Cytoplast'],
+  }, new Date().toISOString());
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W2120490784'), valid));
+
+  const refused: [string, Record<string, unknown>][] = [
+    ['21 categories', { categories: Array.from({ length: 21 }, (_, index) => `c${index}`) }],
+    ['categories as text', { categories: 'cs.AI' }],
+    ['a topic with its score', { primaryTopic: CAT_EMBRYO_TOPIC }],
+    ['a topic without an id', { primaryTopic: { ...STORED_TOPIC, id: '' } }],
+    ['a topic as text', { primaryTopic: 'Genetics' }],
+    ['a topic name over 300 characters', { primaryTopic: { ...STORED_TOPIC, display_name: 'x'.repeat(301) } }],
+    ['a field with an extra key', { primaryTopic: { ...STORED_TOPIC, field: { ...STORED_TOPIC.field, score: 1 } } }],
+    ['a field without a name', { primaryTopic: { ...STORED_TOPIC, field: { id: STORED_TOPIC.field.id } } }],
+    ['version zero', { classificationVersion: 0 }],
+    ['version as text', { classificationVersion: '1' }],
+    ['a fractional version', { classificationVersion: 1.5 }],
+  ];
+  for (const [label, change] of refused) {
+    await assertFails(setDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W2120490784'), { ...valid, ...change }))
+      .catch((error: Error) => assert.fail(`${label} was accepted: ${error.message}`));
+  }
+});
+
+test('another account cannot read or write the classification of a saved paper', async () => {
+  await reset();
+  const payload = buildSavedPaperPayload({
+    id: 'openalex:W2120490784', title: 'Cat embryos', primaryTopic: CAT_EMBRYO_TOPIC,
+  }, new Date().toISOString());
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'savedPapers', 'openalex:W2120490784'), payload);
+  });
+  for (const db of [asBob(), asGuest()]) {
+    await assertFails(getDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W2120490784')));
+    await assertFails(setDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W2120490784'), payload));
+    await assertFails(setDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W1'), payload));
+  }
+});
+
+/*
+ * Both writers of savedPapers merge into the stored document. One saved
+ * before PAP-60 kept only the category its card showed: the tester's AI
+ * survey was saved as hep-th. A new save of the same card has to be accepted
+ * as an update of that document and leave it reading Computer Science.
+ */
+test('a save over a savedPapers document from before PAP-60 replaces its category', async () => {
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'savedPapers', 'openalex:W4233888153');
+  await assertSucceeds(setDoc(ref, {
+    title: 'Artificial intelligence', primaryCategory: 'hep-th', savedAt: '2026-10-01T12:00:00.000Z',
+  }));
+
+  const card = {
+    id: 'openalex:W4233888153',
+    title: 'Artificial intelligence',
+    primaryTopic: {
+      id: 'https://openalex.org/T13904',
+      display_name: 'Artificial Intelligence Applications',
+      subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
+      field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
+      domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+    },
+  };
+  await assertSucceeds(setDoc(ref, buildSavedPaperPayload(card, new Date().toISOString()), { merge: true }));
+
+  const stored = (await getDoc(ref)).data()!;
+  assert.equal(stored.primaryCategory, '');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Computer Science');
+});
+
+/*
+ * PAP-60, D6. When OpenAlex gives a card its topic after the reader liked and
+ * saved it, the feed adds `primaryTopic`, and nothing else, to the
+ * interaction's copy and to the savedPapers document (keepLateTopics in
+ * FeedContext). Here the savedPapers document is one saved before PAP-60,
+ * with the category the feed asked for.
+ */
+test('a topic that arrives late is added to the copies of a liked and saved paper', async () => {
+  await reset();
+  const db = asAlice();
+  const id = 'pmid:1';
+  const title = 'In vitro developmental competence of domestic cat embryos after somatic cloning: a preliminary report';
+  const { primaryTopic } = storedClassification({ primaryTopic: CAT_EMBRYO_TOPIC });
+
+  const interaction = doc(db, 'users', ALICE, 'interactions', id);
+  await assertSucceeds(setDoc(interaction, { liked: true, saved: true, paper: serializeLibraryPaper({ id, title }) }));
+  await assertSucceeds(updateDoc(interaction, { 'paper.primaryTopic': primaryTopic }));
+
+  const saved = doc(db, 'users', ALICE, 'savedPapers', id);
+  await assertSucceeds(setDoc(saved, { title, primaryCategory: 'physics.bio-ph', savedAt: '2026-10-01T12:00:00.000Z' }));
+  await assertSucceeds(updateDoc(saved, { primaryTopic }));
+
+  const copy = (await getDoc(interaction)).data()!.paper;
+  assert.equal(copy.title, title, 'the rest of the copy is unchanged');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter(copy)), 'Biology');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id, ...(await getDoc(saved)).data() })), 'Biology');
 });

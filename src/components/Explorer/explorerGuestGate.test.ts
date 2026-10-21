@@ -63,7 +63,7 @@ test('el buscador del invitado es un botón que dice que necesita cuenta y abre 
   const gate = jsx.slice(jsx.indexOf('explorer-search-gate'), jsx.indexOf('explorer-search-gate') + 500);
   assert.match(
     jsx,
-    /\{publicMode \? \(\s*<button\s+type="button"\s+className="explorer-search-box explorer-search-gate"\s+onClick=\{\(\) => requestAccount\('explorer_search'\)\}\s*>/,
+    /\{publicMode \? \(\s*<button\s+type="button"\s+className="explorer-search-gate"\s+onClick=\{\(\) => requestAccount\('explorer_search'\)\}\s*>/,
     'el invitado ya no recibe un botón con la forma del buscador',
   );
   assert.match(gate, /\{guestSearchLabel\}/, 'el botón no dice qué hace');

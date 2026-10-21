@@ -10,6 +10,8 @@ export interface PaperSearchFilters {
   limit?: number;
   sort?: string;
   typeahead?: boolean;
+  /** Only records the provider holds an abstract for. */
+  requireAbstract?: boolean;
 }
 export interface PaperSearchResult {
   papers: Paper[];

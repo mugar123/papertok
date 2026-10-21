@@ -217,6 +217,7 @@ export class OpenAlexClient {
   declare apiBase: string;
   declare maxConcurrent: number;
   declare activeRequests: number;
+  declare activePriorityRequests: number;
   declare queue: QueuedRequest[];
   declare inFlight: Map<string, Promise<Response>>;
   declare responseCache: Map<string, { response: Response; savedAt: number }>;
@@ -238,6 +239,7 @@ export class OpenAlexClient {
     this.apiBase = options.apiBase ?? PAPER_API_BASE;
     this.maxConcurrent = options.maxConcurrent || 2;
     this.activeRequests = 0;
+    this.activePriorityRequests = 0;
     this.queue = [];
     this.inFlight = new Map();
     this.responseCache = new Map();
@@ -473,23 +475,27 @@ export class OpenAlexClient {
   // not enough when every slot is held by an optional lookup that is merely in
   // flight: measured 2026-09-16 with two followed-entity lookups active, the
   // feed's search still waited their whole 3.5 s budget for a slot. A request
-  // the screen is waiting on gets out at once; the extra slot only ever holds
-  // priority work, so the width the provider sees for everything else is
-  // unchanged.
+  // the screen is waiting on gets out at once. Other requests count only each
+  // other against the queue's width: counted with the feed's topic page, they
+  // had one slot while it was in flight, and the fourth followed-entity lookup
+  // ended past their shared 3.5 s budget (modelled 2026-10-21). The provider
+  // still sees at most one request more than the queue's width.
   hasRoomFor(item: Pick<QueuedRequest, 'priority'>) {
-    const width = item.priority ? this.maxConcurrent + 1 : this.maxConcurrent;
-    return this.activeRequests < width;
+    if (this.activeRequests >= this.maxConcurrent + 1) return false;
+    return item.priority || this.activeRequests - this.activePriorityRequests < this.maxConcurrent;
   }
 
   drainQueue() {
     while (this.queue.length > 0 && this.hasRoomFor(this.queue[0])) {
       const item = this.queue.shift()!;
       this.activeRequests += 1;
+      if (item.priority) this.activePriorityRequests += 1;
       Promise.resolve()
         .then(item.task)
         .then(item.resolve, item.reject)
         .finally(() => {
           this.activeRequests -= 1;
+          if (item.priority) this.activePriorityRequests -= 1;
           this.drainQueue();
         });
     }
@@ -536,7 +542,9 @@ export class OpenAlexClient {
           });
         }
 
-        if (response.status >= 500 && attempt < retries) {
+        // A 504 is the Worker reporting that OpenAlex stalled through its whole
+        // deadline after receiving the call: asking again bills it again.
+        if (response.status >= 500 && response.status !== 504 && attempt < retries) {
           await this.sleep(this.withJitter(350 * (2 ** attempt)));
           continue;
         }

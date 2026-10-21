@@ -316,8 +316,10 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
         abstract_inverted_index: invertedIndex(abstract),
       },
       {
-        // Chemistry (field 16) has no ink of its own; the topic's name does.
-        // And an editorial's inverted index is its body, not an abstract.
+        // Chemistry (field 16) has no area of its own, and the topic's name
+        // ("Polymer ...") does not stand in for one: it read as Chemical
+        // Engineering by keyword (PAP-60). And an editorial's inverted index
+        // is its body, not an abstract.
         id: 'https://openalex.org/WNAMED',
         type: 'editorial',
         display_name: 'Polymer membranes for water',
@@ -338,7 +340,7 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
     const byId = Object.fromEntries(papers.map(paper => [paper!.id, paper]));
     assert.equal(byId.WFIELD!.area, 'cs');
     assert.equal(byId.WFIELD!.abstract, abstract);
-    assert.equal(byId.WNAMED!.area, 'chemeng');
+    assert.equal(byId.WNAMED!.area, undefined);
     assert.equal('abstract' in byId.WNAMED!, false);
   } finally {
     restore();
@@ -1606,7 +1608,7 @@ test('rotates oversized follow sets so every follow can contribute to later dige
 });
 
 test('records subscriptions deferred by the cron processing budget', async () => {
-  const now = new Date('2026-08-09T07:00:00.000Z');
+  const now = new Date('2026-08-12T07:00:00.000Z');
   const kv = createMemoryKv(Object.fromEntries(Array.from({ length: 4 }, (_, index) => [
     `notification:subscription:deferred-${index}`,
     digestSubscription({ uid: `deferred-${index}`, enabled: false }),
@@ -1629,7 +1631,7 @@ test('records subscriptions deferred by the cron processing budget', async () =>
 });
 
 test('resumes a deferred subscription scan from its persisted cursor', async () => {
-  const now = new Date('2026-08-09T07:00:00.000Z');
+  const now = new Date('2026-08-12T07:00:00.000Z');
   const kv = createMemoryKv(Object.fromEntries(Array.from({ length: 6 }, (_, index) => [
     `notification:subscription:cursor-${index}`,
     digestSubscription({ uid: `cursor-${index}`, enabled: false }),
@@ -1651,6 +1653,74 @@ test('resumes a deferred subscription scan from its persisted cursor', async () 
     assert.equal(await kv.get(scheduleCursorKey), null);
   } finally {
     Date.now = originalDateNow;
+  }
+});
+
+test('a window from Thursday to Sunday records the run without reading any subscription', async () => {
+  const kv = createMemoryKv({
+    'notification:subscription:reader': digestSubscription({ uid: 'reader', enabled: true }),
+  });
+  const reads: string[] = [];
+  const { get, list } = kv;
+  kv.get = (async (key: string, type?: 'json') => {
+    reads.push(key);
+    return get(key, type!);
+  }) as typeof kv.get;
+  kv.list = (async (options) => {
+    reads.push(`list:${options?.prefix}`);
+    return list(options);
+  }) as typeof kv.list;
+
+  // 2026-08-06 is a Thursday.
+  const summary = await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-06T07:00:00.000Z'));
+
+  assert.deepEqual(reads, []);
+  assert.equal(summary.scanned, 0);
+  assert.equal(summary.disabled, undefined);
+  const stored = await kv.get<Awaited<ReturnType<typeof runEmailNotificationSchedule>>>(scheduleStatusKey, 'json');
+  assert.equal(stored!.scheduledAt, '2026-08-06T07:00:00.000Z');
+});
+
+test('a zero-follow subscription already marked invalid is not written again by later windows', async () => {
+  const subscriptionKey = 'notification:subscription:empty-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: {
+      uid: 'empty-reader',
+      email: 'reader@example.com',
+      enabled: true,
+      frequency: 'weekly',
+      maxPapers: 5,
+      follows: [],
+      previewItems: [],
+      unsubscribeToken: 'unsubscribe-token',
+    },
+  });
+  const env = {
+    NOTIFICATION_STORE: kv,
+    EMAIL_PROVIDER: 'brevo',
+    BREVO_API_KEY: 'xkeysib-test',
+    BREVO_FROM_EMAIL: 'papertok@example.com',
+    EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('No network call expected'); };
+  try {
+    await runEmailNotificationSchedule(env, Date.parse('2026-08-03T07:00:02Z'));
+    const writes: string[] = [];
+    const { put } = kv;
+    kv.put = (async (key: string, value: string) => {
+      writes.push(key);
+      return put(key, value);
+    }) as typeof kv.put;
+
+    const later = await runEmailNotificationSchedule(env, Date.parse('2026-08-03T07:20:02Z'));
+
+    assert.equal(later.invalid, 1);
+    assert.deepEqual(writes.filter(key => key.startsWith('notification:delivery-state:')), []);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored!.lastDelivery!.status, 'invalid');
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

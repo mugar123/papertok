@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import type { Transition } from 'framer-motion';
 interface NudgePanelProps {
-  icon: ReactNode; iconClassName?: string; title: ReactNode; body: string;
-  action: { label: string; href?: string; onClick: () => void };
-  dismissLabel: string; onDismiss: () => void;
+  icon: ReactNode; title: string; body: ReactNode;
+  action: { label: string; onClick: () => void };
+  // A second answer of equal weight, for a question with two (the consent ask).
+  secondaryAction?: { label: string; onClick: () => void };
+  dismissLabel?: string; onDismiss?: () => void;
 }
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
@@ -42,10 +44,10 @@ const LEAVE: Transition = {
 
 export default function NudgePanel({
   icon,
-  iconClassName = '',
   title,
   body,
   action,
+  secondaryAction,
   dismissLabel,
   onDismiss,
 }: NudgePanelProps) {
@@ -60,33 +62,28 @@ export default function NudgePanel({
       exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.98, transition: LEAVE }}
       transition={prefersReducedMotion ? { duration: 0 } : ARRIVAL}
     >
-      <span className={`nudge-icon ${iconClassName}`} aria-hidden="true">{icon}</span>
+      <span className="nudge-icon" aria-hidden="true">{icon}</span>
       <div className="nudge-copy">
         <h2 id="nudge-title">{title}</h2>
         <p>{body}</p>
       </div>
       <div className="nudge-actions">
-        {action.href ? (
-          <Button
-            size="sm"
-            onClick={action.onClick}
-            render={<a href={action.href} target="_blank" rel="noopener noreferrer" />}
-          >
-            {action.label}
-          </Button>
-        ) : (
-          <Button size="sm" onClick={action.onClick}>{action.label}</Button>
+        <Button size="sm" onClick={action.onClick}>{action.label}</Button>
+        {secondaryAction && (
+          <Button size="sm" variant="outline" onClick={secondaryAction.onClick}>{secondaryAction.label}</Button>
         )}
       </div>
-      <button
-        type="button"
-        className="nudge-dismiss"
-        onClick={onDismiss}
-        aria-label={dismissLabel}
-        title={dismissLabel}
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
+      {onDismiss && (
+        <button
+          type="button"
+          className="nudge-dismiss"
+          onClick={onDismiss}
+          aria-label={dismissLabel}
+          title={dismissLabel}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      )}
     </motion.aside>
   );
 }

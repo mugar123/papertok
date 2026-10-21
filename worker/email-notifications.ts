@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
@@ -1081,11 +1082,8 @@ function mapOpenAlexPaper(work: DigestOpenAlexWork, follow: Follow | null) {
     citationCount: work?.cited_by_count,
     openAccess: work?.open_access?.is_oa,
     landingPageUrl: work?.best_oa_location?.landing_page_url || work?.primary_location?.landing_page_url,
-    // The card's own resolution: the field, then what the topic is called.
-    area: areaKeyForPaper({
-      primaryTopic: work?.primary_topic,
-      categories: [work?.primary_topic?.display_name].filter(Boolean) as string[],
-    }),
+    // The card's own resolution: the subfield or field OpenAlex filed it under.
+    area: areaKeyForPaper({ primaryTopic: work?.primary_topic }),
     abstract: usableOpenAlexAbstract(work),
     _followedEntityMatches: follow ? [follow] : [],
   });
@@ -2765,6 +2763,13 @@ function shouldInspectPreviousDay(subscription: Subscription, now: Date) {
   return isSubscriptionCalendarDue(subscription, now) || [2, 3].includes(now.getUTCDay());
 }
 
+// The days on which `shouldInspectPreviousDay` can hold for anyone: Monday's
+// digest, Tuesday's source-failure retry, and the reconciliation of the day
+// before on Tuesday and Wednesday.
+function isDigestWorkDay(now: Date) {
+  return [1, 2, 3].includes(now.getUTCDay());
+}
+
 function allowsNewScheduledDelivery(now: Date) {
   return !(now.getUTCHours() === 13 && now.getUTCMinutes() >= 40);
 }
@@ -2856,7 +2861,12 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
   const checkedAt = now.toISOString();
   if (!(subscription.follows || []).length) {
     const code = 'EMAIL_SUBSCRIPTION_INVALID';
-    await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+    // Recorded once. Only a save can give the record follows, so writing the same
+    // outcome again in every window spent a KV write per window and changed
+    // nothing but its timestamp.
+    if (subscription.lastDelivery?.status !== 'invalid') {
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+    }
     return { invalid: true, failureCodes: { [code]: 1 } };
   }
   let sourceReport;
@@ -2912,6 +2922,7 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
     return persistScheduledDelivery(env, key.name, subscription, delivery);
   } catch (error) {
+    captureWorkerException(error, 'schedule');
     sourceReport ||= (error as EmailNotificationError)?.sourceReport;
     const code = cleanText((error as EmailNotificationError)?.code, 100) || 'EMAIL_SCHEDULE_PROCESSING_FAILED';
     console.warn('Scheduled email subscription failed', code);
@@ -2962,7 +2973,11 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
   if (ledgerMissing) {
     console.error('Email delivery ledger binding is missing; refusing to send without an atomic daily limit');
   }
-  if (!env.NOTIFICATION_STORE || !provider || ledgerMissing) {
+  // Thursday to Sunday every subscription would be read only to be skipped: a KV
+  // list per three subscribers, two reads each and a cursor write per page, in
+  // every window. The window still records that it ran, for `/health/email`.
+  const disabled = !env.NOTIFICATION_STORE || !provider || ledgerMissing;
+  if (!env.NOTIFICATION_STORE || disabled || !isDigestWorkDay(now)) {
     const summary: ScheduleSummary = {
       scheduledAt: now.toISOString(),
       completedAt: new Date().toISOString(),
@@ -2981,7 +2996,7 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
       failed: 0,
       sources: compactSourceReport(),
       failureCodes: ledgerMissing ? { EMAIL_DELIVERY_LEDGER_MISSING: 1 } : {},
-      disabled: true,
+      ...(disabled ? { disabled: true } : {}),
     };
     await recordScheduleOutcome(env, summary);
     return summary;

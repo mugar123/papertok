@@ -12,9 +12,9 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.
 test('SOURCE: the card shares its paper with the title as text, through its own panel', async () => {
   const card = stripComments(await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8'));
   assert.doesNotMatch(card, /navigator\.share\(/, 'the system share sheet no longer opens from the card');
-  assert.match(card, /<SharePanel\s+title=\{paper\.title\}\s+url=\{shareUrl\}\s+onShared=\{handleShared\}/);
-  const panel = stripComments(await readFile(new URL('./SharePanel.tsx', import.meta.url), 'utf8'));
-  assert.match(panel, /const \{ text = '' \} = paperShareData\(\{ title, url \}\);/);
+  assert.match(card, /<PaperMenu\s+title=\{paper\.title\}\s+url=\{shareUrl\}\s+onShared=\{handleShared\}/);
+  const panel = stripComments(await readFile(new URL('./PaperMenu.tsx', import.meta.url), 'utf8'));
+  assert.match(panel, /const \{ text = '' \} = url \? paperShareData\(\{ title, url \}\) : \{\};/);
 });
 
 test('every share the panel reports is a method the analytics allowlist keeps', async () => {

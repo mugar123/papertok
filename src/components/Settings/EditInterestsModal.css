@@ -113,6 +113,12 @@
   font-size: var(--fs-sm);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .eim-rail-tab:not([data-active]):hover {
+    background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  }
+}
+
 .eim-rail-label {
   flex: 1;
   min-width: 0;
@@ -255,158 +261,13 @@
   }
 }
 
-/* ── Phone: the editor is a bottom Drawer, the fields one switcher ── */
-.eim-sheet {
-  display: flex;
-  flex-direction: column;
-  height: min(88dvh, 720px);
-}
-
-.eim-sheet-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4) var(--space-3);
-}
-
-.eim-sheet-head > p {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.eim-switcher {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: 56px;
-  margin-top: var(--space-2);
-  padding: 0 var(--space-4) 0 var(--space-3);
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
-  transition: transform 150ms var(--ease-out);
-}
-
-.eim-switcher:active {
-  transform: scale(0.98);
-}
-
-.eim-switcher:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.eim-switcher-icon {
-  display: grid;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-}
-
-.eim-switcher-copy {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-
-.eim-switcher-copy small {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-}
-
-.eim-switcher-copy strong {
-  overflow: hidden;
-  font-size: 1.05rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1.2;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.eim-switcher > svg {
-  flex: none;
-  color: var(--text-secondary);
-}
-
-.eim-sheet-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--space-2) var(--space-4) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
+/* ── Phone: the editor is a settings sheet (SettingsSheet.css) ── */
 
 /* The switcher already names the field. */
-.eim-sheet-body .eim-area-title {
+.settings-sheet-body .eim-area-title {
   display: none;
 }
 
-.eim-sheet .eim-footer {
+.settings-sheet .eim-footer {
   padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
-}
-
-.eim-fields-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
-}
-
-.eim-fields-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  margin: 0;
-  padding: 0 var(--space-2) var(--space-4);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  list-style: none;
-}
-
-.eim-fields-list button {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: 56px;
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: none;
-  color: var(--text-primary);
-  text-align: left;
-  cursor: pointer;
-}
-
-.eim-fields-list button.is-active {
-  background: var(--bg-secondary);
-}
-
-.eim-fields-list button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.eim-fields-copy {
-  display: grid;
-  flex: 1;
-  gap: 2px;
-}
-
-.eim-fields-copy strong {
-  font-weight: var(--fw-semibold);
-}
-
-.eim-fields-copy small {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
 }

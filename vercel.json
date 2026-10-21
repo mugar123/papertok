@@ -23,6 +23,14 @@
       "destination": "https://papertok-168df.firebaseapp.com/__/auth/:path*"
     },
     {
+      "source": "/ingest/static/:path(.*)",
+      "destination": "https://eu-assets.i.posthog.com/static/:path"
+    },
+    {
+      "source": "/ingest/array/:path(.*)",
+      "destination": "https://eu-assets.i.posthog.com/array/:path"
+    },
+    {
       "source": "/ingest/:path(.*)",
       "destination": "https://eu.i.posthog.com/:path"
     },
@@ -38,7 +46,7 @@
       "destination": "https://api.papertok.app/share/:kind/:rest*"
     },
     {
-      "source": "/:path((?:login|onboarding|feed|lists|research|report|following|search|profile|settings|explorer|public)(?:/.*)?)",
+      "source": "/:path((?:institution|login|onboarding|feed|lists|research|report|following|search|profile|settings|explorer|public)(?:/.*)?)",
       "destination": "/index.html"
     }
   ],

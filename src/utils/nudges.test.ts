@@ -4,12 +4,8 @@ import assert from 'node:assert/strict';
 import {
   NUDGE_DISMISSED_KEY,
   NUDGE_DWELL_MS,
-  STAR_COUNT_TTL_MS,
-  STAR_FETCH_BUDGET_MS,
-  cacheStarCount,
   emailNudgeProblem,
   pickNudge,
-  readCachedStarCount,
   readDismissedNudges,
   rememberNudgeDismissal,
 } from './nudges.ts';
@@ -101,31 +97,6 @@ test('un servicio sano no tiene nada que avisar', () => {
   );
 });
 
-test('el número de estrellas se guarda un día y se olvida después', () => {
-  const storage = fakeStorage();
-  const now = 1_700_000_000_000;
-  assert.equal(readCachedStarCount(storage, now), null);
-  assert.equal(cacheStarCount(42, storage, now), true);
-  assert.equal(readCachedStarCount(storage, now), 42);
-  assert.equal(readCachedStarCount(storage, now + STAR_COUNT_TTL_MS - 1), 42);
-  assert.equal(readCachedStarCount(storage, now + STAR_COUNT_TTL_MS + 1), null, 'pasado el día, se vuelve a preguntar');
-  assert.equal(readCachedStarCount(storage, now - 1), null, 'un reloj que va hacia atrás no revive la cache');
-});
-
-test('lo que no es un recuento no se guarda ni se lee', () => {
-  const storage = fakeStorage();
-  const now = 1_700_000_000_000;
-  for (const bad of [-1, Number.NaN, Infinity, '12', null, undefined, 1.5]) {
-    assert.equal(cacheStarCount(bad!, storage, now), false, `${String(bad)} no es un recuento`);
-  }
-  assert.equal(readCachedStarCount(fakeStorage({ papertok_github_stars: 'no soy json' }), now), null);
-  assert.equal(readCachedStarCount(fakeStorage({ papertok_github_stars: '{"count":"muchas","at":1}' }), now), null);
-  assert.equal(readCachedStarCount(brokenStorage(), now), null);
-  assert.equal(cacheStarCount(3, brokenStorage(), now), false);
-});
-
 test('los tiempos son los acordados', () => {
   assert.equal(NUDGE_DWELL_MS, 60_000, 'un minuto leyendo antes de pedir nada');
-  assert.equal(STAR_FETCH_BUDGET_MS, 1500, 'pasado este plazo el panel sale sin número, nunca con un hueco');
-  assert.equal(STAR_COUNT_TTL_MS, 24 * 60 * 60 * 1000);
 });

@@ -1,18 +1,8 @@
 # Manual Diagnostics
 
-This directory contains one-off and historical probes for arXiv, OpenAlex, Elsevier, proxies,
-OpenAIRE, Crossref, and related providers.
-
-They are kept for debugging reference but are not part of `npm test` or ESLint. Many call live
-services and can consume API quota.
-
-**The public CORS proxies are dead, and the probes that use them can only fail.** Measured on
-2026-08-22: `corsproxy.io` answers `Server-side requests are not allowed on your plan`, and
-`api.allorigins.win` returns a 520. `test-fetch.js`, `testFetch.js`, `test-allorigins.mjs`,
-`test-arxiv.mjs`, `test-rss.js`, `test-rss-seq.js` and `test-long3.js` all probe one of those or
-`rss2json`, so a red result from them says nothing about the service they appear to be testing.
-They are left in place as the record of what the app used to route through, and why it stopped:
-arXiv and OpenAlex now reach the browser through the Worker's own routes instead.
+This directory contains manual probes: provider coverage checks, and browser measurements of
+the app's routes and motion. They are not part of `npm test` or ESLint. Many call live services
+and can consume API quota.
 
 Never put provider credentials in these scripts, URLs, logs, or public CORS proxies. Protected
 provider probes must go through the PaperTok Worker and read secrets from Cloudflare bindings.
@@ -20,7 +10,7 @@ provider probes must go through the PaperTok Worker and read secrets from Cloudf
 Run scripts from the repository root:
 
 ```bash
-node scripts/diagnostics/test-openalex.js
+node scripts/diagnostics/search-coverage-check.mjs
 ```
 
 When a diagnostic becomes a stable regression check, replace its live request with a fixture
@@ -468,13 +458,25 @@ library's data (eu03 answered for Pavia with no `rft.mms_id` and nothing listed 
 library with nothing listed for either journal is `answers-without-services`, not shipped. Codes found
 by hand on a library's own pages or in Zotero's public directory of OpenURL resolvers
 (zotero.org/openurl_resolvers) go in `alma-resolver-seeds.json` as
-`{ rorId, source, code?, host?, url?, product?, evidence?, exclude? }` and
+`{ rorId, source, code?, host?, url?, product?, resolverProduct?, proxy?, proxySource?, signsIn?, evidence?, exclude? }` and
 are verified the same way; `product` keeps what the directory lists (sfx, ebsco, 360link,
 worldcat, libkey) without assuming the library lacks Alma, and `exclude` keeps a library
 consortium out of the table. The census record, misses included, is `alma-resolver-census.json`:
 `verified` rows ship (an answer without `full_text_indicator`, the `single_service` form, counts since
 2026-10-19: the Worker reads it from what it lists unfiltered), `answers-without-services` rows resolve
 the journals and list nothing, `compatibility-pending` rows only have a resolver of another product.
+A seed with `resolverProduct: "sfx"` and the instance in `url` (`https://sfx.bib-bvb.de/sfx_tum`) is
+the one exception: the Worker reads that SFX instance itself (`parseSfxAnswer`), so the script skips
+discovery, sends the Worker's own request (`sfxRequestUrl`) for the probe journals and ships the row
+with `product: 'sfx'` when the answer lists a subscription for the journal asked about; otherwise
+the row stays `compatibility-pending`. Since 2026-10-20 that covers TUM, LMU and FAU only (PAP-56).
+Each seed records its evidence: TUM's library page and LMU's catalogue name their instance, while
+FAU's library names its SFX resolver without the address, and the instance's own configuration
+(contact address, loan service) names FAU. The other SFX libraries stay `compatibility-pending`.
+An SFX seed may also name the remote-access login its library documents (`proxy`, the EZproxy
+prefix ending in `qurl=`, with `proxySource`) and the hosts whose links start the library's
+sign-in themselves (`signsIn`); the table copies both onto the row, and `/access` and the
+services list send the row's links through that login. TUM's and LMU's are set; FAU documents none.
 
 ```bash
 node scripts/diagnostics/alma-resolver-census.mjs --countries US --limit 150

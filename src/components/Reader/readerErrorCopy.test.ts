@@ -44,15 +44,15 @@ test('every code the worker can emit has reader copy', async () => {
   }
 });
 
-test('each new code says in colour what kind of failure it is', async () => {
+test('each new code shows the Petri for its kind of failure', async () => {
   const source = stripComments(await read());
-  const tones = source.match(/const ERROR_TONES = \{([\s\S]*?)\n\};/);
-  assert.ok(tones, 'expected an ERROR_TONES table');
+  const poses = source.match(/const ERROR_POSES = \{([\s\S]*?)\n\} as const;/);
+  assert.ok(poses, 'expected an ERROR_POSES table');
 
   // Nothing the reader does changes a paper that is too big or a body the model
-  // refused: those are neutral, not red.
-  assert.match(tones[1], /AI_REQUEST_TOO_LARGE: 'closed'/);
-  assert.match(tones[1], /AI_INVALID_REQUEST_UPSTREAM: 'closed'/);
+  // refused: those are lost, not upset.
+  assert.match(poses[1], /AI_REQUEST_TOO_LARGE: 'lost'/);
+  assert.match(poses[1], /AI_INVALID_REQUEST_UPSTREAM: 'lost'/);
 });
 
 test('the retry button is hidden where pressing it cannot help', async () => {

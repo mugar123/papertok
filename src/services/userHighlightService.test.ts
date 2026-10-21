@@ -6,9 +6,14 @@ type MockLimit = QueryLimitConstraint & { kind: string; count: number };
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildHighlightId,
   buildHighlightsQuery,
+  indexHighlightsByParagraph,
   listUserHighlights,
   MAX_HIGHLIGHTS_PER_PAPER,
+  normalizeUserHighlight,
+  passageQuote,
+  passageSegments,
 } from './userHighlightService.ts';
 
 /**
@@ -97,4 +102,49 @@ test('a failed read degrades to no highlights instead of throwing', async (t) =>
   overrides.readDocuments = async () => { throw new Error('offline'); };
 
   assert.deepEqual(await listUserHighlights('uid-1', 'paper-7', overrides), []);
+});
+
+const SPAN = {
+  paperId: 'arxiv:2401.00001',
+  level: 'university',
+  language: 'en',
+  sectionId: 'intro',
+  paragraphIndex: 1,
+  quote: 'small errors pile up',
+  paperTitle: 'A paper',
+};
+
+test('a passage across paragraphs keeps where it ends', () => {
+  const stored = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' });
+  assert.equal(stored?.endParagraphIndex, 3);
+  assert.equal(stored?.endQuote, 'by the fifth turn');
+
+  const backwards = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 1, endQuote: 'by the fifth turn' });
+  assert.equal(backwards && 'endParagraphIndex' in backwards, false);
+  const noEndQuote = normalizeUserHighlight({ ...SPAN, endParagraphIndex: 3 });
+  assert.equal(noEndQuote && 'endParagraphIndex' in noEndQuote, false);
+});
+
+test('a passage inside one paragraph keeps the id it always had', () => {
+  assert.equal(buildHighlightId(SPAN), buildHighlightId({ ...SPAN, endParagraphIndex: undefined }));
+  assert.notEqual(buildHighlightId(SPAN), buildHighlightId({ ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' }));
+});
+
+test('a passage across paragraphs marks the end of the first, every middle one whole, and the start of the last', () => {
+  const texts: Record<number, string> = { 2: 'The middle paragraph, whole.' };
+  const passage = { ...SPAN, endParagraphIndex: 3, endQuote: 'by the fifth turn' };
+  assert.deepEqual(passageSegments(passage, (_, index) => texts[index] ?? null), [
+    { paragraphIndex: 1, quote: 'small errors pile up' },
+    { paragraphIndex: 2, quote: 'The middle paragraph, whole.' },
+    { paragraphIndex: 3, quote: 'by the fifth turn' },
+  ]);
+
+  const index = indexHighlightsByParagraph([{ ...passage, id: 'h1', kind: 'user' }], { paragraphText: (_, i) => texts[i] ?? null });
+  assert.deepEqual([...index.keys()], ['intro:1', 'intro:2', 'intro:3']);
+  assert.equal(index.get('intro:3')?.[0].id, 'h1');
+});
+
+test('the card and the copied note show where a passage ends', () => {
+  assert.equal(passageQuote({ quote: 'small errors pile up' }), 'small errors pile up');
+  assert.equal(passageQuote({ quote: 'small errors pile up', endQuote: 'by the fifth turn' }), 'small errors pile up … by the fifth turn');
 });

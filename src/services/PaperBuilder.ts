@@ -108,7 +108,7 @@ export class PaperBuilder {
       huggingFaceUpvotes: data.huggingFaceUpvotes ?? undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
-      year: data.year || new Date().getFullYear(),
+      year: data.year || undefined,
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
@@ -132,7 +132,10 @@ export class PaperBuilder {
       biomedicalTerms: data.biomedicalTerms || [],
       categories: data.categories || [],
       allCategories: data.allCategories || data.categories || [],
-      primaryCategory: data.primaryCategory || data.categories?.[0] || '',
+      // A provider's own category or nothing. `categories[0]` is a concept
+      // name on an OpenAlex record, and as the primary it went into the
+      // interactions and the profile as if it were a category (PAP-60).
+      primaryCategory: data.primaryCategory || '',
       institutions: data.institutions || [],
       projectIds: data.projectIds || [],
       hasReferences: Boolean(data.hasReferences),
@@ -144,6 +147,7 @@ export class PaperBuilder {
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',
       _followedEntityMatches: data._followedEntityMatches || [],
+      _fetchedFor: data._fetchedFor?.length ? [...new Set(data._fetchedFor)].sort() : undefined,
       provider: data.provider || undefined,
     };
   }
@@ -362,6 +366,16 @@ export class PaperBuilder {
     if ((enrichmentData.topics?.length as number) > 0) merged.topics = enrichmentData.topics;
     if (enrichmentData.primaryTopic || enrichmentData.primary_topic) {
       merged.primaryTopic = enrichmentData.primaryTopic || enrichmentData.primary_topic;
+    }
+    // arXiv's categories are the paper's own classification, so they are taken
+    // whichever record arrived first. An OpenAlex base lists concept names as
+    // categories ("Mutual information" for 2605.02209, which arXiv files under
+    // cs.AI); they stay in `concepts`. A record without an arXiv primary, such
+    // as the abstract recovery, changes no category.
+    if (enrichmentData.sources?.primary === 'arxiv' && enrichmentData.primaryCategory) {
+      merged.primaryCategory = enrichmentData.primaryCategory;
+      merged.categories = enrichmentData.categories;
+      merged.allCategories = enrichmentData.allCategories || enrichmentData.categories;
     }
     if (enrichmentData.institutions?.length) {
       const institutions = [...(merged.institutions || []), ...enrichmentData.institutions];

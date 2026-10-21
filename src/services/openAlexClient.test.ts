@@ -136,6 +136,25 @@ test('retries a short 429 using Retry-After', async () => {
   assert.deepEqual(delays, [1000]);
 });
 
+test('retries a 502 but not a 504 the Worker sends after OpenAlex stalled', async () => {
+  const callsFor = async (status: number) => {
+    let calls = 0;
+    const client = new OpenAlexClient({
+      random: () => 0.5,
+      sleep: async () => {},
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response('{}', { status });
+      },
+    });
+    await client.fetch('https://api.openalex.org/works/W1', { retries: 2 }).catch(() => null);
+    return calls;
+  };
+
+  assert.equal(await callsFor(502), 3);
+  assert.equal(await callsFor(504), 1);
+});
+
 test('deduplicates identical requests and caches their response', async () => {
   let calls = 0;
   const client = new OpenAlexClient({
@@ -309,6 +328,64 @@ test('a priority request does not wait for a slot the optional lookups are holdi
   }
   await Promise.all(requests);
   assert.deepEqual(started, ['/works/W1', '/works/W3', '/works/W2']);
+});
+
+test('a priority request in flight leaves both slots to the requests behind it', async () => {
+  const started: unknown[] = [];
+  const resolvers: (() => void)[] = [];
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  const client = new OpenAlexClient({
+    maxConcurrent: 2,
+    fetchImpl: (url) => new Promise(resolve => {
+      started.push(new URL(url as string | URL).pathname);
+      resolvers.push(() => resolve(new Response('{}', { status: 200 })));
+    }),
+  });
+
+  // The feed's topic page goes out before the followed-entity lookups the
+  // first paint waits for; they still get two slots, and the fourth waits.
+  const requests = [
+    client.json('https://api.openalex.org/works/W1', { priority: true }),
+    ...[2, 3, 4].map(id => client.json(`https://api.openalex.org/works/W${id}`)),
+  ];
+  await tick();
+  assert.deepEqual(started, ['/works/W1', '/works/W2', '/works/W3']);
+  while (resolvers.length > 0 || started.length < 4) {
+    resolvers.splice(0).forEach(resolve => resolve());
+    await tick();
+  }
+  await Promise.all(requests);
+});
+
+test('a lookup that ends beside a priority request hands its slot to the next lookup', async () => {
+  const started: string[] = [];
+  const resolvers = new Map<string, () => void>();
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  const client = new OpenAlexClient({
+    maxConcurrent: 2,
+    fetchImpl: (url) => new Promise(resolve => {
+      const path = new URL(url as string | URL).pathname;
+      started.push(path);
+      resolvers.set(path, () => resolve(new Response('{}', { status: 200 })));
+    }),
+  });
+
+  const requests = [
+    client.json('https://api.openalex.org/works/W1'),
+    client.json('https://api.openalex.org/works/W2'),
+  ];
+  await tick();
+  requests.push(
+    client.json('https://api.openalex.org/works/W3', { priority: true }),
+    client.json('https://api.openalex.org/works/W4'),
+  );
+  await tick();
+  assert.deepEqual(started, ['/works/W1', '/works/W2', '/works/W3']);
+  resolvers.get('/works/W1')!();
+  await tick();
+  assert.deepEqual(started, ['/works/W1', '/works/W2', '/works/W3', '/works/W4']);
+  resolvers.forEach(resolve => resolve());
+  await Promise.all(requests);
 });
 
 test('cancels an obsolete search request without retrying it', async () => {

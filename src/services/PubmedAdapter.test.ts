@@ -23,9 +23,32 @@ test('does not invent a random PubMed category for ambiguous papers', () => {
   assert.equal(category, null);
 });
 
-test('trusts the query category when PubMed was searched for one subcategory', () => {
-  const category = classifyPubmedCategory({ title: 'Sparse metadata record' }, ['bio.micro']);
-  assert.equal(category, 'bio.micro');
+// Searching one subcategory used to file every record under it, whatever the
+// record said; one subcategory needs the same evidence as several.
+test('files a record searched for one subcategory under it only on evidence', () => {
+  assert.equal(classifyPubmedCategory({ title: 'Sparse metadata record' }, ['bio.micro']), null);
+  assert.equal(classifyPubmedCategory({ title: 'Gut microbiome of aged mice' }, ['bio.micro']), 'bio.micro');
+});
+
+// Synthetic esummary records. Searched for one subcategory, every record used
+// to be filed under it; a record now needs the evidence several require.
+test('a PubMed search for one subcategory keeps only the records that name it', async () => {
+  const adapter = new PubmedAdapter({
+    apiBase: 'https://papertok-report-api.example',
+    fetchImpl: async () => Response.json({
+      esearchresult: { count: '2', idlist: ['31000011', '31000012'] },
+      result: {
+        31000011: { uid: '31000011', title: 'Histological analysis of Ewing sarcoma', pubtype: ['Journal Article'] },
+        31000012: { uid: '31000012', title: 'Molecular biology of the replication fork', pubtype: ['Journal Article'] },
+      },
+      efetch: '',
+    }),
+  });
+
+  const { papers } = await adapter.search('"Molecular Biology" one subcategory', 1, { internalCategories: ['bio.mol'] });
+
+  assert.deepEqual(papers.map(paper => [paper.id, paper.primaryCategory]), [['pmid:31000012', 'bio.mol']]);
+  assert.deepEqual(papers.map(paper => paper._fetchedFor), [['bio.mol']]);
 });
 
 test('a PMC copy makes a PubMed paper open, through the canonical openAccess field', () => {
@@ -122,6 +145,22 @@ test('reads PubMed through the Worker route instead of calling NCBI from the bro
   const toNcbi = escaped.filter(url => url.includes('eutils.ncbi.nlm.nih.gov'));
   assert.deepEqual(toNcbi, [], `PubMed was still called directly: ${toNcbi.join(', ')}`);
   assert.deepEqual(escaped, [], `PubMed search still issued extra browser fetches: ${escaped.join(', ')}`);
+});
+
+test('a feed search asks PubMed only for records with an abstract', async () => {
+  const queries: string[] = [];
+  const adapter = new PubmedAdapter({
+    apiBase: 'https://papertok-report-api.example',
+    fetchImpl: async url => {
+      queries.push(new URL(String(url)).searchParams.get('q')!);
+      return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), { headers: { 'content-type': 'application/json' } });
+    },
+  });
+
+  await adapter.search('"Oncology" OR "Cardiology"', 1, { requireAbstract: true });
+  await adapter.search('"Oncology" OR "Cardiology"', 1);
+
+  assert.deepEqual(queries, ['("Oncology" OR "Cardiology") AND hasabstract', '"Oncology" OR "Cardiology"']);
 });
 
 test('carries a deadline on the PubMed request', async () => {

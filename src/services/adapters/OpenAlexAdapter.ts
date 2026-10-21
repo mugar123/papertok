@@ -105,7 +105,7 @@ export class OpenAlexAdapter {
         // Retrying each keystroke on an outage would multiply provider use.
         ...(filters.typeahead ? { retries: 0 } : {}),
         signal: filters.signal,
-        // The feed's main search: ahead of the entity lookups sharing the queue.
+        // The reader's paper search: ahead of the entity lookups sharing the queue.
         priority: filters.priority === true,
       });
       if (!response.ok) {

@@ -50,7 +50,6 @@ test('on a short window the paper above the graph yields, the actions stay', asy
   const start = css.indexOf('@media (max-height: 760px) {\n  .pc-sheet[data-connections]');
   assert.ok(start >= 0, 'a short-window block keyed to the open connections');
   const block = css.slice(start, css.indexOf('\n}\n', start));
-  assert.match(block, /\.pc-sheet\[data-connections\] :is\(\.pc-topics, \.pc-project-badge-slot\) \{\s*display: none;/);
   assert.match(block, /\.pc-title \{\s*-webkit-line-clamp: 2;/);
   assert.doesNotMatch(block, /\.pc-action-bar \{[^}]*display: none/, 'the actions are never what yields');
   assert.doesNotMatch(block, /\.pc-(meta|authors|chips) \{[^}]*display: none/, 'the kicker, the authors and the status chips stay');

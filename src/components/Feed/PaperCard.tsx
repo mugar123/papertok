@@ -14,9 +14,14 @@ export interface PaperCardProps {
   trackSkip?: (paper: Paper) => void;
   onOpenPdf?: (paper: Paper) => void;
   onSaveToList?: (paper: Paper) => void;
+  /**
+   * Holding Save on a touch screen. Where a tap on Save already opens the list
+   * picker it does the same; the feed, whose tap quick-saves to Read later,
+   * passes the picker here.
+   */
+  onPickList?: (paper: Paper) => void;
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
-  showFollowReason?: boolean;
   titleAs?: 'h1' | 'h2';
   publicMode?: boolean;
   onAuthRequired?: (reason: string) => void;
@@ -26,7 +31,7 @@ export interface PaperCardProps {
   abstractLoading?: boolean;
 }
 
-import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useId, memo, lazy, Suspense } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect, useMemo, useEffect, useEffectEvent, useId, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories.ts';
 import {
@@ -35,7 +40,6 @@ import {
   ArrowSquareOut,
   BookmarkSimple,
   Brain,
-  Briefcase,
   Building,
   CaretDown,
   ChartBar,
@@ -58,6 +62,7 @@ import {
   Graph,
   Heart,
   Heartbeat,
+  Info,
   Lightning,
   Lock,
   LockKey,
@@ -66,7 +71,6 @@ import {
   Package,
   Planet,
   Prohibit,
-  ShareNetwork,
   Sigma,
   Intersect,
   Sparkle,
@@ -93,12 +97,10 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 // Before the card's own stylesheet on purpose: PaperCard.css restates a few
 // of the drawer's box declarations for the two sheets and has to come later
 // in the cascade to win them.
-import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
-import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../ui/popover.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import AbstractSheet from './AbstractSheet.tsx';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
-import SharePanel from './SharePanel.tsx';
-import MoreActions from './MoreActions.tsx';
+import PaperMenu from './PaperMenu.tsx';
 import { downloadCitationFile } from '../../utils/readingLibrary.ts';
 import './PaperCard.css';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
@@ -148,7 +150,6 @@ const STATUS_CHIP_ICONS = {
   openCopy: LockKeyOpen,
   subscription: LockKey,
 };
-import { buildFollowReasonLabel } from '../../utils/followingFeed.ts';
 import { isTechnicalClassification } from '../../utils/scientificClassification.ts';
 import { getRelatedPaperIdentity } from '../../utils/relatedPaperTransition.ts';
 import { hydrateCitationGraphPaper } from '../../services/citationGraphService.ts';
@@ -164,6 +165,7 @@ import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTarge
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from '../../utils/motionCurves.ts';
+import { createLongPress } from './longPress.ts';
 
 /** An author's name in its grid cell: ellipsed when it does not fit, and only
     then does resting on it show the whole name. */
@@ -211,7 +213,6 @@ const RESOURCE_KIND_CONFIG = {
   material: { label: { en: 'Material' }, Icon: Package },
   version: { label: { en: 'Version' }, Icon: ClockCounterClockwise },
 };
-const SUBJECTS_ON_CARD = 2;
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const SECONDARY_NETWORK_DELAY_MS = 900;
 const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
@@ -376,9 +377,9 @@ const PaperCard = memo(function PaperCard({
   trackSkip = () => {},
   onOpenPdf = () => {},
   onSaveToList = () => {},
+  onPickList = onSaveToList,
   getInteractionState = () => ({}),
   hideScrollHint = false,
-  showFollowReason = false,
   // The title's level: an h2 wherever the card is one of many, the page's h1
   // where it is the page (PublicPaperPage).
   titleAs = 'h2',
@@ -414,13 +415,11 @@ const PaperCard = memo(function PaperCard({
   // Read by the measurement below, which must not re-run when the panel opens:
   // a reading taken while it travels between its two heights is of the height
   // the animation is passing through, not the one it rests at.
-  const expandedRef = useRef(expanded);
-  expandedRef.current = expanded;
+  const isExpanded = useEffectEvent(() => expanded);
   const [showHeart, setShowHeart] = useState(false);
   const heartTimer = useRef<number | null>(null);
   useEffect(() => () => clearTimeout(heartTimer.current!), []);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
-  const [topicsOpen, setTopicsOpen] = useState(false);
   // On a desktop the dots unfold every author under them; a phone
   // keeps the sheet (a tap on the row).
   const [authorsExpanded, setAuthorsExpanded] = useState(false);
@@ -528,11 +527,15 @@ const PaperCard = memo(function PaperCard({
   // one mounted card a different paper, and the old paper's
   // clippings must not be painted against the new one. Adjusted during render
   // — React's documented way to reset state when a prop changes — because an
-  // effect only runs AFTER the frame that already showed them.
+  // effect only runs AFTER the frame that already showed them. The loaded set
+  // goes with them: a new paper means new URLs, and carrying the old set over
+  // would flash the next paper's frames in before their images.
+  const [loadedFigures, setLoadedFigures] = useState(() => new Set<string>());
   const [figuresPaperKey, setFiguresPaperKey] = useState(paperViewKey);
   if (figuresPaperKey !== paperViewKey) {
     setFiguresPaperKey(paperViewKey);
     setFigures(peekPaperFigures(paper)?.slice(0, 4) ?? []);
+    setLoadedFigures(new Set());
   }
 
   useEffect(() => {
@@ -590,6 +593,15 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
+    // Every stretch on screen is reported, skips included, so the time per
+    // paper averages over what was seen and not only over what was read.
+    const reportViewTime = (seconds: number) => {
+      if (seconds >= 1.0) trackViewTime(paper, seconds);
+      else if (seconds > 0.1) trackSkip(paper);
+      if (seconds > 0.1) {
+        trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+      }
+    };
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
@@ -599,7 +611,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            trackEvent('paper_view', { surface: analyticsSurface, position });
+            trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
           }
           if (!viewStartTime.current) viewStartTime.current = Date.now();
         } else {
@@ -608,11 +620,7 @@ const PaperCard = memo(function PaperCard({
             viewStartTime.current = null;
             
             // Paper just went out of view. Report time and trigger re-rank!
-            if (totalViewTime.current >= 1.0) {
-              trackViewTime(paper, totalViewTime.current);
-            } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-              trackSkip(paper);
-            }
+            reportViewTime(totalViewTime.current);
             
             // Reset to prevent double counting if they scroll back up
             totalViewTime.current = 0;
@@ -627,11 +635,7 @@ const PaperCard = memo(function PaperCard({
       observer.disconnect();
       if (viewStartTime.current) {
         totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
-        if (totalViewTime.current >= 1.0) {
-          trackViewTime(paper, totalViewTime.current);
-        } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-          trackSkip(paper);
-        }
+        reportViewTime(totalViewTime.current);
       }
     };
   }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
@@ -680,13 +684,8 @@ const PaperCard = memo(function PaperCard({
   // seen going — and comes back when the card does, and an element being given
   // an animation again is what restarts it. This is also what the rest of the
   // card already does: `pcArrive` is on the pieces unconditionally and plays
-  // every time they mount, rather than once per paper.
-  const [loadedFigures, setLoadedFigures] = useState(() => new Set<string>());
-
-  // A new paper means new URLs; carrying the old set over would flash the next
-  // paper's frames in before their images.
-  useEffect(() => { setLoadedFigures(new Set()); }, [paperViewKey]);
-
+  // every time they mount, rather than once per paper. The state itself is
+  // declared with `figures`, where a new paper resets both.
   const markFigureLoaded = useCallback((url: string) => {
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
@@ -974,7 +973,7 @@ const PaperCard = memo(function PaperCard({
    * moment takes the settled answer instead of one the transition passed
    * through, which is also what stops the button blinking out and back.
    *
-   * `expandedRef` rather than `expanded` keeps all of this out of the effect's
+   * `isExpanded()` rather than `expanded` keeps all of this out of the effect's
    * dependencies: an open panel clips nothing, and re-running on open would
    * throw away the verdict that earned the button its place.
    */
@@ -990,7 +989,7 @@ const PaperCard = memo(function PaperCard({
     let settleTimer: number | null = null;
     const read = () => {
       const node = abstractRef.current;
-      if (!alive || !node || expandedRef.current) return;
+      if (!alive || !node || isExpanded()) return;
       // While the slot holds a passing height the box is not the abstract's
       // own, and an answer read from it blinks the button: ask again later.
       if (slotRef.current?.classList.contains('pc-slot--morphing')) {
@@ -1266,8 +1265,6 @@ const PaperCard = memo(function PaperCard({
       return topic ? [{ key: tag.key, label: tag.label, topic, lang: tag.lang, external: tag.source === 'concept' && !topic.reliable }] : [];
     }),
   ], [categoryLabel, paperTopicTags, primaryTopic]);
-  const subjectItems = topicItems.filter((item) => item.key !== 'primary');
-  const hiddenTopics = Math.max(0, subjectItems.length - SUBJECTS_ON_CARD);
 
   const openTopic = useCallback((event: MouseEvent, topic: NonNullable<ReturnType<typeof resolvePaperTopic>>) => {
     event.stopPropagation();
@@ -1281,6 +1278,7 @@ const PaperCard = memo(function PaperCard({
     });
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
+  const [menuView, setMenuView] = useState<'closed' | 'actions' | 'about'>('closed');
   const topicsList = (
     <ul className="pc-topics-pop-list">
       {topicItems.map((item) => (
@@ -1290,8 +1288,9 @@ const PaperCard = memo(function PaperCard({
               type="button"
               className="pc-topics-pop-item"
               lang={item.lang}
+              data-kind={item.key === 'primary' ? 'field' : 'topic'}
               onClick={(event) => {
-                setTopicsOpen(false);
+                setMenuView('closed');
                 openTopic(event, item.topic!);
               }}
             >
@@ -1302,7 +1301,7 @@ const PaperCard = memo(function PaperCard({
               <ArrowRight size={14} aria-hidden="true" />
             </button>
           ) : (
-            <span className="pc-topics-pop-item">
+            <span className="pc-topics-pop-item" data-kind={item.key === 'primary' ? 'field' : 'topic'}>
               <span className="pc-topics-pop-copy">
                 <span className="pc-topics-pop-name">{item.label}</span>
                 <span className="pc-topics-pop-kind">{item.key === 'primary' ? 'Field' : 'Topic'}</span>
@@ -1354,7 +1353,22 @@ const PaperCard = memo(function PaperCard({
     lastTap.current = now;
   }, [isLiked, onLike, paper, publicMode, requireAuthentication]);
 
-  const handleLike = () => {
+  const likeIconRef = useRef<HTMLSpanElement | null>(null);
+  const saveIconRef = useRef<HTMLSpanElement | null>(null);
+  const pulse = (icon: HTMLSpanElement | null, on: boolean) => {
+    const svg = icon?.querySelector('svg');
+    if (!svg || prefersReducedMotion) return;
+    svg.getAnimations().forEach((running) => running.cancel());
+    svg.animate(
+      [
+        { transform: 'scale(1)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+        { transform: on ? 'scale(1.16)' : 'scale(0.9)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+        { transform: 'scale(1)' },
+      ],
+      { duration: 260 },
+    );
+  };
+  const handleLike = (liking: boolean) => {
     if (publicMode) {
       requireAuthentication('like');
       return;
@@ -1362,6 +1376,7 @@ const PaperCard = memo(function PaperCard({
     // The button is its own feedback (the icon fills); the big heart is the
     // double tap's, not a second celebration on every like (2026-10-15).
     onLike(paper);
+    pulse(likeIconRef.current, liking);
   };
 
   // The graph and the similar list are session-only in the Worker: a guest
@@ -1401,12 +1416,28 @@ const PaperCard = memo(function PaperCard({
     onNotInterested(paper);
   };
 
-  const handleSave = () => {
+  // Created once, so a re-render between the hold and its click keeps the
+  // hold; the ref hands it this render's paper and callbacks.
+  const pickListRef = useRef(() => {});
+  useEffect(() => {
+    pickListRef.current = () => {
+      if (publicMode) requireAuthentication('save');
+      else onPickList(paper);
+    };
+  }, [onPickList, paper, publicMode, requireAuthentication]);
+  const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
+  // A card that leaves mid-hold must not open the picker afterwards.
+  useEffect(() => saveHold.onPointerCancel, [saveHold]);
+
+  const handleSave = (saving: boolean) => {
+    // The hold already opened the picker; the click that ends it is not a tap.
+    if (saveHold.consumeHold()) return;
     if (publicMode) {
       requireAuthentication('save');
       return;
     }
     onSaveToList(paper);
+    pulse(saveIconRef.current, saving);
   };
 
   // Derived before the handlers that close over it (no-use-before-define).
@@ -1498,7 +1529,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    trackEvent('paper_open', { surface: analyticsSurface, destination, position });
+    trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
@@ -1555,7 +1586,7 @@ const PaperCard = memo(function PaperCard({
     || bestAvailableUrl
     || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
 
-  // Every way the link leaves the share panel (SharePanel): `clipboard`,
+  // Every way the link leaves the share panel (PaperMenu): `clipboard`,
   // `instagram` (which copies) or a network's id, reported in the analytics
   // `method` vocabulary, which has no network names.
   const handleShared = (method: string) => {
@@ -1638,6 +1669,142 @@ const PaperCard = memo(function PaperCard({
       )}
     </Button>
   );
+  const projectLabel = project
+    && ([project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder') || 'Project');
+  const openProject = (event: MouseEvent) => {
+    event.stopPropagation();
+    if (!project) return;
+    setMenuView('closed');
+    const paperId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
+    const projectRouteId = project.id || project.code;
+    // The name rides along on the public route too: without it the project
+    // hero has nothing to paint optimistically and a logged-out reader waits
+    // through the whole skeleton. The funder is not needed there: the
+    // identifier is the OpenAIRE id, which names one project.
+    const path = publicMode
+      ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
+      : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder!)}&arxivId=${paperId}`;
+    trackEvent('select_content', {
+      content_type: 'project',
+      surface: analyticsSurface,
+      position,
+    });
+    if (path) navigate(path);
+  };
+
+  const aboutSections = (
+    <>
+          <section className="pc-about-section">
+            <h3 className="pc-about-heading">{'Status'}</h3>
+            <div className="pc-chips">
+    {reviewTag && (() => {
+      const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
+      return (
+        <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
+          <Glyph size={12} weight="bold" /> {reviewTag.label}
+        </span>
+      );
+    })()}
+
+    <AnimatePresence mode="wait" initial={false}>
+      {accessTag && (() => {
+        const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
+        return (
+          <motion.span
+            key={accessTag.key}
+            className="pc-chip"
+            data-tone={accessTag.tone}
+            title={accessTag.hint}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+            animate={{ opacity: 1, transform: 'scale(1)' }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+            transition={{
+              duration: prefersReducedMotion ? 0.1 : 0.24,
+              ease: EASE_OUT_EXPO,
+            }}
+          >
+            <Glyph size={12} weight="bold" /> {accessTag.label}
+          </motion.span>
+        );
+      })()}
+    </AnimatePresence>
+            </div>
+          </section>
+          {topicItems.length > 0 && (
+            <section className="pc-about-section">
+              <h3 className="pc-about-heading">{'Topics'}</h3>
+              {topicsList}
+            </section>
+          )}
+          {project && (
+            <section className="pc-about-section">
+              <h3 className="pc-about-heading">{'Funding'}</h3>
+              <ul className="pc-topics-pop-list">
+                <li>
+                  <button
+                    type="button"
+                    className="pc-topics-pop-item"
+                    disabled={!(project.id || project.code)}
+                    onClick={openProject}
+                  >
+                    <span className="pc-topics-pop-copy">
+                      <span className="pc-topics-pop-name">{project.acronym}</span>
+                      <span className="pc-topics-pop-kind">{projectLabel}</span>
+                    </span>
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </button>
+                </li>
+              </ul>
+            </section>
+          )}
+          {(paper.doi || researchResources.length > 0) && (
+            <section className="pc-about-section">
+              <h3 className="pc-about-heading">{'Links'}</h3>
+              <div className="pc-chips">
+    {paper.doi && (
+      <a
+        className="pc-chip pc-chip--link"
+        href={safeDoiUrl(paper.doi)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title={'Open the DOI record'}
+      >
+        <ArrowSquareOut size={12} /> DOI
+      </a>
+    )}
+
+    <AnimatePresence initial={false}>
+      {researchResources.map((resource) => {
+        const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
+        const ResourceIcon = config.Icon;
+        const resourceLabel = config.label[language];
+        return (
+          <motion.a
+            key={resource.id || `${resource.kind}:${resource.url || resource.title}`}
+            className={`pc-chip pc-chip--link pc-linked-resource--${resource.kind}`}
+            href={safeExternalUrl(resource.url) || undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            title={resource.title}
+            aria-label={`${resourceLabel}: ${resource.title}`}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
+            animate={{ opacity: 1, transform: 'scale(1)' }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0.1 : 0.24, ease: EASE_OUT_EXPO }}
+          >
+            <ResourceIcon size={12} /> {resourceLabel}
+          </motion.a>
+        );
+      })}
+    </AnimatePresence>
+              </div>
+            </section>
+          )}
+    </>
+  );
+
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
@@ -1715,22 +1882,19 @@ const PaperCard = memo(function PaperCard({
         )}
 
         <div className="pc-body">
-        {showFollowReason && (() => {
-          const reason = buildFollowReasonLabel(
-            (paper._followedEntityMatches || []).filter(match => typeof match === 'object'),
-          );
-          if (!reason) return null;
-          // A plain element: its entrance is the first step of the card's
-          // own arrival (`pcArrive` in the stylesheet), so it lands with the
-          // kicker and the title instead of on a fade of its own that ran
-          // inside — and finished before — the sheet's.
-          return (
-            <div className="pc-follow-reason">
-              <UserCheck size={13} aria-hidden="true" />
-              <span>{reason}</span>
-            </div>
-          );
-        })()}
+        <div className="pc-lead" aria-hidden="true">
+          {figures[0] && (
+            <img
+              className={`pc-lead-figure${loadedFigures.has(figures[0].url) ? ' is-loaded' : ''}${figuresResumed ? ' is-resumed' : ''}`}
+              src={figures[0].url}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              ref={(node) => { if (node?.complete && node.naturalWidth > 0) markFigureLoaded(figures[0].url); }}
+              onLoad={() => markFigureLoaded(figures[0].url)}
+            />
+          )}
+        </div>
         <div className="pc-meta">
           {primaryTopic ? (
             <button
@@ -1744,23 +1908,30 @@ const PaperCard = memo(function PaperCard({
           ) : categoryLabel && (
             <span className="pc-masthead-field">{categoryLabel}</span>
           )}
-          {categoryLabel && <span className="pc-meta-dot">·</span>}
+          {/* Each item brings the dot in front of it. A paper can have no
+              year (a PubMed record printed next year), and a dot after the
+              field then stood beside an empty date. */}
           {hasFollowedAuthor && (
             <>
+              {categoryLabel && <span className="pc-meta-dot">·</span>}
               <span className="pc-followed-badge">
                 <UserCheck size={12} /> {'Followed author'}
               </span>
-              <span className="pc-meta-dot">·</span>
             </>
           )}
-          <span className="pc-date">{paper.year}</span>
+          {paper.year ? (
+            <>
+              {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
+              <span className="pc-date">{paper.year}</span>
+            </>
+          ) : null}
 
           {(paper.citationCountKnown || paper.citationCount! > 0) && (
             <>
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              <span className="pc-meta-dot pc-meta-dot--citations">·</span>
+              {(categoryLabel || hasFollowedAuthor || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
@@ -1780,229 +1951,6 @@ const PaperCard = memo(function PaperCard({
             </>
           )}
         </div>
-
-        {/* Under the masthead, over the title: the paper's subjects, then what
-            it is and whether it opens. */}
-        <div className="pc-filed">
-          {subjectItems.length > 0 && (
-            <div className="pc-topics" role="group" aria-label={'Paper topics'}>
-              {subjectItems.slice(0, SUBJECTS_ON_CARD).map((item) => (item.topic ? (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`pc-semantic-tag pc-topic-link ${item.external ? 'pc-topic-link--external' : ''}`}
-                  lang={item.lang}
-                  onClick={(event) => openTopic(event, item.topic!)}
-                  title={`${'Explore'} ${item.topic.label}`}
-                >
-                  {item.label}
-                </button>
-              ) : (
-                <span key={item.key} className="pc-semantic-tag">{item.label}</span>
-              )))}
-              {hiddenTopics > 0 && (isPhone ? (
-                <Drawer open={topicsOpen} onOpenChange={setTopicsOpen}>
-                  <DrawerTrigger
-                    render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
-                  >
-                    {`+${hiddenTopics} more`}
-                  </DrawerTrigger>
-                  {/* On a phone the list is a sheet under the thumb; its clicks
-                      stay out of the card, whose double tap is a like. */}
-                  <DrawerContent
-                    className="pc-authors-modal-sheet pc-topics-sheet"
-                    viewportProps={{ onClick: (event) => event.stopPropagation() }}
-                    style={{ '--area-accent': areaAccentForPaper(paper) }}
-                  >
-                    <DrawerHandle />
-                    <div className="pc-authors-modal-header">
-                      <DrawerTitle render={<h3 />}>{'Topics'}</DrawerTitle>
-                      <DrawerClose render={<Button variant="ghost" size="icon-sm" aria-label={'Close topics'} />}>
-                        <X size={16} aria-hidden="true" />
-                      </DrawerClose>
-                    </div>
-                    {topicsList}
-                  </DrawerContent>
-                </Drawer>
-              ) : (
-                <Popover open={topicsOpen} onOpenChange={setTopicsOpen}>
-                  <PopoverTrigger
-                    render={<button type="button" className="pc-semantic-tag pc-topics-more" onClick={(event) => event.stopPropagation()} />}
-                  >
-                    {`+${hiddenTopics} more`}
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="pc-topics-pop" style={{ '--area-accent': areaAccentForPaper(paper) }}>
-                    <PopoverTitle className="pc-topics-pop-title">{'Topics'}</PopoverTitle>
-                    {topicsList}
-                  </PopoverContent>
-                </Popover>
-              ))}
-            </div>
-          )}
-          <div className="pc-chips">
-            {reviewTag && (() => {
-              const Glyph = STATUS_CHIP_ICONS[reviewTag.key as keyof typeof STATUS_CHIP_ICONS];
-              return (
-                <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
-                  <Glyph size={12} weight="bold" /> {reviewTag.label}
-                </span>
-              );
-            })()}
-
-            <AnimatePresence mode="wait" initial={false}>
-              {accessTag && (() => {
-                const Glyph = STATUS_CHIP_ICONS[accessTag.key as keyof typeof STATUS_CHIP_ICONS];
-                return (
-                  <motion.span
-                    key={accessTag.key}
-                    className="pc-chip"
-                    data-tone={accessTag.tone}
-                    title={accessTag.hint}
-                    initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
-                    animate={{ opacity: 1, transform: 'scale(1)' }}
-                    exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
-                    transition={{
-                      duration: prefersReducedMotion ? 0.1 : 0.24,
-                      ease: EASE_OUT_EXPO,
-                    }}
-                  >
-                    <Glyph size={12} weight="bold" /> {accessTag.label}
-                  </motion.span>
-                );
-              })()}
-            </AnimatePresence>
-
-            {paper.doi && (
-              <a
-                className="pc-chip pc-chip--link"
-                href={safeDoiUrl(paper.doi)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                title={'Open the DOI record'}
-              >
-                <ArrowSquareOut size={12} /> DOI
-              </a>
-            )}
-
-            <AnimatePresence initial={false}>
-              {researchResources.map((resource) => {
-                const config = RESOURCE_KIND_CONFIG[resource.kind as keyof typeof RESOURCE_KIND_CONFIG] || RESOURCE_KIND_CONFIG.material;
-                const ResourceIcon = config.Icon;
-                const resourceLabel = config.label[language];
-                return (
-                  <motion.a
-                    key={resource.id || `${resource.kind}:${resource.url || resource.title}`}
-                    className={`pc-chip pc-chip--link pc-linked-resource--${resource.kind}`}
-                    href={safeExternalUrl(resource.url) || undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                    title={resource.title}
-                    aria-label={`${resourceLabel}: ${resource.title}`}
-                    initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'scale(0.92)' }}
-                    animate={{ opacity: 1, transform: 'scale(1)' }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: prefersReducedMotion ? 0.1 : 0.24, ease: EASE_OUT_EXPO }}
-                  >
-                    <ResourceIcon size={12} /> {resourceLabel}
-                  </motion.a>
-                );
-              })}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <AnimatePresence initial={false}>
-          {project && (
-            <motion.div
-              key="project-badge"
-              className="pc-project-badge-slot"
-              // The badge arrives async, so at mount time the space it needs
-              // does not exist yet and something below has to move: the
-              // title, on a card that is being read. Reserving the space in
-              // one layout pass made the title jolt down a full row in a
-              // single frame. So did, very nearly, the 200ms expo-out that
-              // replaced it: measured on the guest feed, that curve put
-              // 10, 9.6 and 7.9px of the 37px opening into its first three
-              // frames -- three quarters of the travel in 50ms -- with the
-              // badge already at half opacity on the first frame, over a
-              // title that had not yet moved. Nobody asked for this space,
-              // so it does not open on a click's curve: the measured
-              // `height: 0 -> auto` tween runs on `--ease-out-quad`, the
-              // curve the app moves pages with, over the arrival's own
-              // 320ms -- 3.6px per frame at most, 60% open at 120ms. It is
-              // a layout property, knowingly, once per card, on this slot's
-              // subtree. The pill itself waits those 120ms and then fades
-              // in over 200ms via the inner `.pc-project-badge-motion`,
-              // which animates only opacity and a full `transform` string
-              // -- no `y`/`scale` shorthands -- so it composites off the
-              // main thread and lands together with the space. No overflow
-              // clip on this slot on purpose: the global `:focus-visible`
-              // ring overhangs the pill by 4px and a hard clip would cut it.
-              initial={prefersReducedMotion
-                ? { opacity: 0 }
-                : { height: 0 }}
-              animate={prefersReducedMotion
-                ? { opacity: 1 }
-                : { height: 'auto' }}
-              exit={prefersReducedMotion
-                ? { opacity: 0 }
-                : { height: 0, opacity: 0 }}
-              transition={prefersReducedMotion
-                ? { duration: 0.12 }
-                : { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
-            >
-              <div className="pc-project-badge-slot-inner">
-                <motion.div
-                  className="pc-project-badge-motion"
-                  initial={prefersReducedMotion
-                    ? false
-                    : { opacity: 0, transform: 'translateY(6px)' }}
-                  animate={{ opacity: 1, transform: 'translateY(0px)' }}
-                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                  transition={prefersReducedMotion
-                    ? { duration: 0.12 }
-                    : { delay: 0.12, duration: 0.2, ease: EASE_OUT }}
-                >
-                  <button
-                    type="button"
-                    className="pc-project-badge"
-                    disabled={!(project.id || project.code)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const paperId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                      const projectRouteId = project.id || project.code;
-                      // The name rides along on the public route too: without
-                      // it the project hero has nothing to paint optimistically
-                      // and a logged-out reader waits through the whole
-                      // skeleton. The funder is not needed here — the
-                      // identifier is the OpenAIRE id, which names one project.
-                      const path = publicMode
-                        ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
-                        : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder!)}&arxivId=${paperId}`;
-                      trackEvent('select_content', {
-                        content_type: 'project',
-                        surface: analyticsSurface,
-                        position,
-                      });
-                      if (path) navigate(path);
-                    }}
-                    title={(project.id || project.code)
-                      ? ('Open research project')
-                      : undefined}
-                  >
-                    <Briefcase size={12} />
-                    <span>
-                      {[project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder')
-                        || ('Project')}: {project.acronym}
-                    </span>
-                  </button>
-                </motion.div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <TitleTag className="pc-title" lang="en">
           <ScientificText>{paper.title}</ScientificText>
@@ -2028,6 +1976,13 @@ const PaperCard = memo(function PaperCard({
               aria-controls={authorsListId}
               onClick={(e) => {
                 e.stopPropagation();
+                // Below 768px the list below is hidden (PaperCard.css) and the
+                // row opens the sheet; this button stops that click, so it
+                // opens the same sheet for a tap or a key press.
+                if (window.matchMedia('(max-width: 767px)').matches) {
+                  setShowAuthorsModal(true);
+                  return;
+                }
                 if (!authorsExpanded) pinSheet();
                 setAuthorsExpanded((open) => !open);
               }}
@@ -2076,22 +2031,6 @@ const PaperCard = memo(function PaperCard({
                   );
                 })}
               </ul>
-            </div>
-          )}
-          {hasRelated && !publicMode && (
-            <div className="pc-similar-row">
-              <Button
-                variant="similar"
-                size="sm"
-                aria-haspopup="dialog"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openSimilar(paper, event.currentTarget);
-                }}
-              >
-                <Intersect size={14} aria-hidden="true" />
-                {'Similar papers'}
-              </Button>
             </div>
           )}
         </div>
@@ -2295,7 +2234,7 @@ const PaperCard = memo(function PaperCard({
           onClick={swallowClick}
           title={'Like'}
         >
-          <span className="pc-side-icon">
+          <span className="pc-side-icon" ref={likeIconRef}>
             <Heart size={20} weight={isLiked ? 'fill' : 'regular'} aria-hidden="true" />
           </span>
           <span className="pc-side-label">{'Like'}</span>
@@ -2306,9 +2245,14 @@ const PaperCard = memo(function PaperCard({
           pressed={isSaved}
           onPressedChange={handleSave}
           onClick={swallowClick}
+          onPointerDown={saveHold.onPointerDown}
+          onPointerMove={saveHold.onPointerMove}
+          onPointerUp={saveHold.onPointerUp}
+          onPointerCancel={saveHold.onPointerCancel}
+          onContextMenu={saveHold.onContextMenu}
           title={'Save'}
         >
-          <span className="pc-side-icon">
+          <span className="pc-side-icon" ref={saveIconRef}>
             <BookmarkSimple size={20} weight={isSaved ? 'fill' : 'regular'} aria-hidden="true" />
           </span>
           <span className="pc-side-label">{'Save'}</span>
@@ -2332,47 +2276,57 @@ const PaperCard = memo(function PaperCard({
           </Toggle>
         )}
 
-        {shareUrl && (
-          <SharePanel
-            title={paper.title}
-            url={shareUrl}
-            onShared={handleShared}
-            trigger={(
-              <button
-                type="button"
-                className="pc-side-btn pc-side-btn--share"
-                onClick={(event) => event.stopPropagation()}
-                aria-label="Share"
-                title="Share"
-              >
-                <span className="pc-side-icon">
-                  <ShareNetwork size={20} aria-hidden="true" />
-                </span>
-              </button>
-            )}
-          />
+        {/* Similar papers open as a feed of their own, grown out of this
+            button (SimilarFeedLayer.tsx). */}
+        {hasRelated && !publicMode && (
+          <button
+            type="button"
+            className="pc-side-btn pc-side-btn--similar"
+            aria-haspopup="dialog"
+            title={'Similar papers'}
+            onClick={(event) => {
+              event.stopPropagation();
+              openSimilar(paper, event.currentTarget);
+            }}
+          >
+            <span className="pc-side-icon">
+              <Intersect size={20} aria-hidden="true" />
+            </span>
+            <span className="pc-side-label">{'Similar papers'}</span>
+          </button>
         )}
 
-        {/* The card's secondary actions, behind one more tile: the rail leads
-            with like, save, connections and share, and the rest opens the way
-            share does — a menu off the tile, or a drawer on a phone. */}
-        <MoreActions
-          items={[
+        <PaperMenu
+          title={paper.title}
+          url={shareUrl}
+          onShared={handleShared}
+          open={menuView !== 'closed'}
+          onOpenChange={(next) => setMenuView(next ? 'actions' : 'closed')}
+          panel={menuView === 'about' ? {
+            id: 'about',
+            title: 'About this paper',
+            content: aboutSections,
+            className: 'pc-about',
+            style: { '--area-accent': areaAccentForPaper(paper) },
+            onBack: () => setMenuView('actions'),
+          } : null}
+          actions={[
+            { id: 'about', label: 'About this paper', hint: 'Status, topics, funding and links', Icon: Info, onSelect: () => setMenuView('about') },
             {
               id: 'read',
               label: isReadActive ? 'Mark as unread' : 'Mark as read',
+              hint: isReadActive ? 'Take it out of your reading history' : 'Add it to your reading history',
               Icon: isReadActive ? CheckCircle : Eye,
               onSelect: handleMarkAsRead,
             },
-            { id: 'skip', label: 'Skip', Icon: Prohibit, onSelect: handleNotInterested },
-            { id: 'bibtex', label: 'Export BibTeX', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
-            { id: 'ris', label: 'Export RIS', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },
+            { id: 'skip', label: 'Not interested', hint: 'See fewer papers like this', Icon: Prohibit, onSelect: handleNotInterested },
+            { id: 'bibtex', label: 'Export BibTeX', hint: 'For LaTeX and BibTeX managers', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'bibtex', 'papertok-paper') },
+            { id: 'ris', label: 'Export RIS', hint: 'For Zotero, EndNote and Mendeley', Icon: DownloadSimple, onSelect: () => downloadCitationFile([paper], 'ris', 'papertok-paper') },
           ]}
           trigger={(
             <button
               type="button"
               className="pc-side-btn pc-side-btn--more"
-              onClick={swallowClick}
               aria-label="More actions"
               title="More actions"
             >

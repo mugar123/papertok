@@ -2,7 +2,7 @@ import type { WorkerEnv, WorkerGlobals } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
 
-interface RorRecord { id?: unknown; domains?: unknown[]; names?: Array<{ types?: unknown[]; value?: unknown }> }
+interface RorRecord { id?: unknown; types?: unknown[]; domains?: unknown[]; names?: Array<{ types?: unknown[]; value?: unknown }> }
 export interface ResolvedInstitution { domain: string; rorId: string; name: string; acronym: string | null; entityId: string | null }
 interface InstitutionLinkOptions {
   admin?: Pick<FirestoreAdmin, 'name'> & { commit(writes: FirestoreWrite[]): Promise<unknown> };
@@ -107,7 +107,9 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * row's domains. The entry also wins over a record that ROR lists the domain
  * under: ROR lists purdue.edu only under the Clifford B. Kinley Trust
  * (049s7vz13), a funder record, and arizona.edu, univ-lille.fr and slu.se
- * only under sub-units (checked 2026-10-19).
+ * only under sub-units (checked 2026-10-19). It lists lmu.de under LMU and
+ * under the Walther-Straub-Institut (02wbcav28), and only the order of its
+ * answer decided between them (checked 2026-10-20).
  *
  * `rorDomain` names the domain ROR is asked about instead, for a domain ROR
  * lists under another record: ROR lists neu.edu, the legacy domain of
@@ -119,6 +121,9 @@ type CheckedMailDomain = { source: string; checked: string } & ({ rorId: string 
  * organisation is never answered with this university's library.
  */
 const CHECKED_MAIL_DOMAINS: Record<string, CheckedMailDomain> = {
+  'campus.lmu.de': { rorId: 'https://ror.org/05591te55', source: 'https://www.lmu.de/en/about-lmu/structure/central-university-administration/it-services-division/it-service-desk/central-it-services/e-mail-mailbox/', checked: '2026-10-20' },
+  'lmu.de': { rorId: 'https://ror.org/05591te55', source: 'https://www.lmu.de/en/about-lmu/structure/central-university-administration/it-services-division/it-service-desk/central-it-services/e-mail-dienst-fuer-beschaeftigte/', checked: '2026-10-20' },
+  'mytum.de': { rorId: 'https://ror.org/02kkvpp62', source: 'https://www.tum.de/ueber-die-tum/kontakt-und-anfahrt/logins', checked: '2026-10-20' },
   'myumanitoba.ca': { rorId: 'https://ror.org/02gfys938', source: 'https://umanitoba.ca/information-services-technology/my-accounts-email/claim-umnetid', checked: '2026-10-20' },
   'rochester.edu': { rorId: 'https://ror.org/022kthw22', source: 'https://it.rochester.edu/rochedualiaspages/FAQ.aspx', checked: '2026-10-20' },
   'sms.ed.ac.uk': { rorId: 'https://ror.org/01nrxwf90', source: 'https://information-services.ed.ac.uk/computing/comms-and-collab/email/directories/student-directory', checked: '2026-10-20' },
@@ -175,7 +180,12 @@ async function askRor<T>(url: string, fetchImpl: typeof fetch, budget: AbortSign
  * the domain the federation may list the university under (`scope`). For a
  * domain that is not hand-checked, ROR's search is a text query, so the
  * answer is filtered again on the `domains` field: a record that merely
- * mentions the domain somewhere is not a match.
+ * mentions the domain somewhere is not a match. Among the records that list
+ * it, a university (`types` include `education`) is preferred: ROR lists a
+ * university's domain under its research units too, and returns them in no
+ * useful order (ugent.be: the Centre for X-ray Tomography before Ghent
+ * University, 2026-10-20). A domain listed under no university still links
+ * to the first record, as a hospital's or a laboratory's does.
  */
 async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
   const checked = CHECKED_MAIL_DOMAINS[domain];
@@ -189,8 +199,9 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortS
   } else {
     if (checked) scope = checked.rorDomain;
     const payload = await askRor<{ items?: RorRecord[] }>(`${ROR_API}?query.advanced=${encodeURIComponent(`domains:${scope}`)}`, fetchImpl, budget);
-    record = (Array.isArray(payload?.items) ? payload.items : []).find(item => Array.isArray(item?.domains)
+    const listed = (Array.isArray(payload?.items) ? payload.items : []).filter(item => Array.isArray(item?.domains)
       && item.domains.some(value => String(value).toLowerCase() === scope));
+    record = listed.find(item => Array.isArray(item.types) && item.types.includes('education')) ?? listed[0];
   }
   const name = record && (rorName(record, 'ror_display') || rorName(record, 'label'));
   if (!record || typeof record.id !== 'string' || !name) throw new InstitutionLinkError('INSTITUTION_NOT_FOUND', 404);
@@ -218,14 +229,15 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: A
   }
 }
 
-// The cache's third generation: the first could hold a record that does not
-// own its domain (neu.edu resolved to Shenyang until 2026-10-19), and the
-// second one linked through a parent domain (alumni.cmu.edu to CMU). A
-// hand-checked domain's key also names what its entry asks ROR, so the answer
-// cached before an entry was added, changed or removed is not served for
-// another week.
+// The cache's fourth generation: the first could hold a record that does not
+// own its domain (neu.edu resolved to Shenyang until 2026-10-19), the second
+// one linked through a parent domain (alumni.cmu.edu to CMU), and the third
+// the research unit ROR listed first for a university's domain (until
+// 2026-10-20). A hand-checked domain's key also names what its entry asks
+// ROR, so the answer cached before an entry was added, changed or removed is
+// not served for another week.
 function cacheRequest(domain: string) {
-  const url = new URL(`https://papertok.internal/institution/v3/${encodeURIComponent(domain)}`);
+  const url = new URL(`https://papertok.internal/institution/v4/${encodeURIComponent(domain)}`);
   const checked = CHECKED_MAIL_DOMAINS[domain];
   if (checked && 'rorId' in checked) url.searchParams.set('rorId', checked.rorId);
   else if (checked) url.searchParams.set('rorDomain', checked.rorDomain);

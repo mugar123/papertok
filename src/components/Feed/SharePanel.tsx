@@ -1,50 +1,25 @@
 import type { ComponentProps } from 'react';
 import type { ExternalToast } from 'sonner';
+import type { Shared } from './shareTargets.ts';
 
-type Shared = (method: string) => void;
-type ShareData = { text: string; url: string };
-
-import { Copy, InstagramLogo, LinkedinLogo, LinkSimple, RedditLogo, WhatsappLogo, XLogo } from '@phosphor-icons/react';
-import { toast } from 'sonner';
+import { ArrowSquareOut, Copy, LinkSimple } from '@phosphor-icons/react';
 import { Menu } from '@base-ui/react/menu';
 import { DrawerClose } from '../ui/drawer.tsx';
 import { paperShareData } from '../../utils/shareLink.ts';
 import RailMenu from './RailMenu.tsx';
-
-const enc = encodeURIComponent;
-
-// Where a paper can go: each network's own share link, built from the title
-// as plain text and the link. Instagram has none on the web, so it comes
-// last and copies the link, saying where to paste it.
-const NETWORKS = [
-  { id: 'x', name: 'X', Icon: XLogo, href: ({ text, url }: ShareData) => `https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}` },
-  { id: 'reddit', name: 'Reddit', Icon: RedditLogo, href: ({ text, url }: ShareData) => `https://www.reddit.com/submit?url=${enc(url)}&title=${enc(text)}` },
-  { id: 'linkedin', name: 'LinkedIn', Icon: LinkedinLogo, href: ({ url }: ShareData) => `https://www.linkedin.com/sharing/share-offsite/?url=${enc(url)}` },
-  { id: 'whatsapp', name: 'WhatsApp', Icon: WhatsappLogo, href: ({ text, url }: ShareData) => `https://wa.me/?text=${enc(`${text} ${url}`)}` },
-  { id: 'instagram', name: 'Instagram', Icon: InstagramLogo, href: null },
-];
-
-const INSTAGRAM_NOTE = 'Link copied. Paste it in your Instagram story or bio.';
-
-async function copyLink({ url, onShared, method, message, position }: { url: string; onShared?: Shared; method: string; message: string; position?: ExternalToast['position'] }) {
-  try {
-    await navigator.clipboard.writeText(url);
-  } catch (error) {
-    console.error('Could not copy paper link', error);
-    toast.error('Could not copy the link', { position });
-    return;
-  }
-  onShared?.(method);
-  toast.success(message, { position });
-}
+import { INSTAGRAM_NOTE, NETWORKS, copyLink } from './shareTargets.ts';
 
 /**
- * The paper card's share panel, opened by `trigger` (the rail's share
- * button), in the rail's own surface (RailMenu): the same plain list either
- * way, the way an OS share menu reads: the link first (the share most people
- * want), then each network by name, Instagram last since it can only copy.
+ * A share menu opened by `trigger`, in the rail's surface (RailMenu): a menu
+ * on desktop, a drawer on a phone, the same plain list either way: the link
+ * first, then each network by name, Instagram last since it can only copy.
+ * `links` are outside pages the drawer lists after the networks; on desktop
+ * the caller shows them beside the trigger.
  */
-export default function SharePanel({ title, url, onShared, trigger }: { title: string; url: string; onShared?: Shared; trigger: ComponentProps<typeof RailMenu>['trigger'] }) {
+export default function SharePanel({ title, url, onShared, trigger, heading = 'Share', side, align, links = [] }: {
+  title: string; url: string; onShared?: Shared; trigger: ComponentProps<typeof RailMenu>['trigger'];
+  heading?: string; links?: { label: string; href: string }[]; side?: ComponentProps<typeof RailMenu>['side']; align?: ComponentProps<typeof RailMenu>['align'];
+}) {
   const { text = '' } = paperShareData({ title, url });
   const shown = url.replace(/^https?:\/\//, '');
   // Either surface closes on a pick, so a copy confirms in a toast; on a phone
@@ -52,8 +27,10 @@ export default function SharePanel({ title, url, onShared, trigger }: { title: s
   const copy = (method: string, message: string, position?: ExternalToast['position']) => copyLink({ url, onShared, method, message, position });
   return (
     <RailMenu
-      title="Share paper"
+      title={heading}
       trigger={trigger}
+      side={side}
+      align={align}
       menu={(
         <>
           <Menu.Item className="pc-share-menu-item" onClick={() => copy('clipboard', 'Link copied')}>
@@ -109,6 +86,15 @@ export default function SharePanel({ title, url, onShared, trigger }: { title: s
                   <span className="pc-share-menu-note">copies link</span>
                 </DrawerClose>
               )}
+            </li>
+          ))}
+          {links.length > 0 && <li className="pc-share-list-separator" aria-hidden="true" />}
+          {links.map(({ label, href }) => (
+            <li key={href}>
+              <a className="pc-share-row" href={href} target="_blank" rel="noopener noreferrer">
+                <ArrowSquareOut size={20} aria-hidden="true" />
+                {label}
+              </a>
             </li>
           ))}
         </>

@@ -22,7 +22,9 @@ test('normalizes category and publication metadata used by ranking', () => {
     authors: [{ name: 'Ada Researcher' }],
   });
 
-  assert.equal(paper.primaryCategory, 'physics.optics');
+  // No primary is made up for a record that names none (PAP-60); the
+  // ranking reads its categories in order.
+  assert.equal(paper.primaryCategory, '');
   assert.deepEqual(paper.allCategories, ['physics.optics', 'quant-ph']);
   assert.equal(paper.published, '2026-07-01T00:00:00Z');
   assert.equal(paper.citationCount, 12);
@@ -63,6 +65,15 @@ test('keeps a confirmed zero citation count distinct from missing metadata', () 
 
   assert.equal(enriched.citationCount, 0);
   assert.equal(enriched.citationCountKnown, true);
+});
+
+// A mapper leaves the year out when the provider's date is after today; the
+// builder, and `deduplicate` through it, used to write in the current year.
+test('a record without a year keeps no year', () => {
+  const record = { id: 'pmid:42879010', sources: { primary: 'pubmed', enrichedBy: [] }, title: 'Chapter' };
+  assert.equal(PaperBuilder.create(record).year, undefined);
+  assert.equal(PaperBuilder.deduplicate([record])[0].year, undefined);
+  assert.equal(PaperBuilder.create({ ...record, year: 2025 }).year, 2025);
 });
 
 test('does not treat an OpenAlex repository as a verified publication', () => {

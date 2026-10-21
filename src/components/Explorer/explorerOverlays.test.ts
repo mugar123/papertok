@@ -31,20 +31,6 @@ test('the filter drawer is a ui Sheet from the right, named by its title, with n
   assert.doesNotMatch(drawer[1], /z-index/);
 });
 
-test('the project links are a DropdownMenu of link items, positioned by Base UI', async () => {
-  const jsx = await jsxFile;
-  const css = await cssFile;
-  assert.match(jsx, /<DropdownMenu>\s*<DropdownMenuTrigger render=\{<button type="button" className="project-links-trigger" \/>\}>/);
-  assert.match(jsx, /<DropdownMenuContent[\s\S]*?className="project-links-dropdown"[\s\S]*?aria-label=\{'Project links'\}/);
-  assert.match(jsx, /<MenuPrimitive\.LinkItem[\s\S]*?closeOnClick/);
-  assert.doesNotMatch(jsx, /addEventListener\('pointerdown'|isProjectLinksMenuOpen|aria-haspopup=/);
-  assert.match(css, /\.project-links-trigger\[data-popup-open\]/);
-  const popup = css.match(/\.project-links-dropdown \{([^}]*)\}/);
-  assert.ok(popup);
-  assert.doesNotMatch(popup[1], /position:\s*absolute/, 'the Positioner places the popup');
-  assert.match(css, /\.project-links-option\[data-highlighted\]/, 'keyboard and pointer land on the same look');
-});
-
 test('the drawer\'s sort, category and date rows are single-select ToggleGroups that announce their choice', async () => {
   const jsx = await jsxFile;
   const css = await cssFile;
@@ -66,9 +52,6 @@ test('follow is a Toggle, peer-review a Switch in a Label, search an Input', asy
   assert.match(jsx, /<Label className="ee-toggle-label">\s*(?:\{\/\*[\s\S]*?\*\/\}\s*)?<Switch\s+checked=\{filters\.peerReviewed\}/);
   assert.doesNotMatch(css, /\.ee-toggle-switch/);
   assert.match(jsx, /<Input\s+type="text"\s+className="explorer-search-input"/);
-  // El sello «Verificado» era el único tooltip de esta pantalla y se retiró
-  // el 12-09-2026, así que aquí ya no hay ninguno que fijar. Lo que sigue
-  // vigilándose es que nadie se invente uno a mano con atributos y CSS.
+  // Tooltips come from ui/tooltip, never from hand-made attributes and CSS.
   assert.doesNotMatch(jsx, /data-tooltip=/);
-  assert.doesNotMatch(jsx, /Tooltip/, 'sin tooltips: se fue con el sello');
 });

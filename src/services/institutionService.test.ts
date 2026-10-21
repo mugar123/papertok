@@ -1,63 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { deleteApp, initializeApp } from 'firebase/app';
-import { inMemoryPersistence, initializeAuth } from 'firebase/auth';
-import type { PopupRedirectResolver } from 'firebase/auth';
+import type { Auth, User, UserCredential } from 'firebase/auth';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
-import { deferPopupRedirectResolver } from './popupRedirectResolver.ts';
 import {
-  InstitutionLinkError,
-  institutionLabel,
-  institutionLinkReadiness,
-  linkInstitution,
-  needsUniversityProof,
-  normalizeInstitution,
-  unlinkInstitution,
+  institutionLabel, normalizeInstitution, needsUniversityProof,
+  linkInstitution, unlinkInstitution, sendInstitutionVerification,
+  completeInstitutionVerification, cancelInstitutionVerification, pendingInstitutionVerification,
 } from './institutionService.ts';
 
 const INSTITUTION = {
-  domain: 'usal.es',
-  rorId: 'https://ror.org/02f40zc51',
-  name: 'Universidad de Salamanca',
-  acronym: 'USAL',
-  entityId: 'https://idp.usal.es/entity',
-  verifiedAt: '2026-10-13T10:00:00.000Z',
+  domain: 'usal.es', rorId: 'https://ror.org/02f40zc51', name: 'Universidad de Salamanca',
+  acronym: 'USAL', entityId: 'https://idp.usal.es/entity', verifiedAt: '2026-10-20T12:00:00.000Z',
 };
 
-function workerAnswering(status: number, body: { institution?: { domain: string; rorId: string; name: string; acronym: string; entityId: string; verifiedAt: string; }|null; code?: string; }) {
-  const calls: { url: string | URL; body: unknown }[] = [];
-  return {
-    calls,
-    request: async (url: string | URL, init?: RequestInit) => {
-      calls.push({ url, body: JSON.parse(init!.body as string) });
-      return new Response(JSON.stringify(body), { status });
+function scenario() {
+  const saved = new Map<string, string>();
+  const calls: { path: string; body: unknown }[] = [];
+  const sent: { email: string; url: string }[] = [];
+  const cleanup: string[] = [];
+  let account: { uid: string; email: string; emailVerified: boolean } | null = { uid: 'primary', email: 'reader@example.com', emailVerified: true };
+  const holder = { email: 'alice@usal.es', emailVerified: true, getIdToken: async () => 'verified-secondary-token' } as User;
+  const options: NonNullable<Parameters<typeof sendInstitutionVerification>[1]> = {
+    isDemo: false, apiBase: 'https://worker.test', origin: 'https://papertok.test',
+    currentUser: () => account,
+    storage: {
+      getItem: key => saved.get(key) ?? null,
+      setItem: (key, value) => { saved.set(key, value); },
+      removeItem: key => { saved.delete(key); },
+    },
+    secondaryAuth: () => ({} as Auth),
+    sendEmail: async (_auth, email, settings) => { sent.push({ email, url: settings.url }); },
+    emailSignIn: async () => ({ user: holder } as UserCredential),
+    additionalUserInfo: () => ({ isNewUser: true, providerId: 'password', profile: null }),
+    deleteUser: async () => { cleanup.push('delete'); },
+    signOut: async () => { cleanup.push('signOut'); },
+    request: async (url, init) => {
+      calls.push({ path: new URL(url).pathname, body: JSON.parse(init!.body as string) });
+      return Response.json({ institution: INSTITUTION });
     },
   };
+  return { options, calls, sent, cleanup, holder, switchAccount: (next: typeof account) => { account = next; },
+    link: () => `${sent.at(-1)!.url}&apiKey=test&mode=signIn&oobCode=one-use-proof` };
 }
-
-/** A second Auth instance and a Google window, recorded rather than opened. */
-function popupStub({ email = 'alice@usal.es', isNewUser = true } = {}) {
-  const log: unknown[][] = [];
-  const holder = { email, getIdToken: async () => 'university-token' };
-  const secondary = { name: 'secondary' };
-  return {
-    log,
-    overrides: {
-      secondaryAuth: () => secondary,
-      provider: () => ({ setCustomParameters(params) { log.push(['params', params]); } }),
-      popupSignIn: async (instance: { name: string; }) => { log.push(['popup', instance === secondary]); return { user: holder }; },
-      additionalUserInfo: () => ({ isNewUser }),
-      deleteUser: async (user: { email: string; getIdToken: () => Promise<string>; }) => { log.push(['delete', user === holder]); },
-      signOut: async (instance: { name: string; }) => { log.push(['signOut', instance === secondary]); },
-    } as NonNullable<Parameters<typeof linkInstitution>[1]>,
-  };
-}
-
-const BASE = {
-  isDemo: false,
-  apiBase: 'https://worker.test',
-};
 
 test('institutionDomainOf reads one lowercased domain and refuses everything else', () => {
   assert.equal(institutionDomainOf(' Alice@USAL.es '), 'usal.es');
@@ -85,202 +69,157 @@ test('normalizeInstitution keeps the stored shape and drops anything without a d
   assert.equal(institutionLabel(null), '');
 });
 
-test('an account already on the university address links without a second sign-in', async () => {
-  const worker = workerAnswering(200, { institution: INSTITUTION });
-  const popup = popupStub();
-  const linked = await linkInstitution('Alice@USAL.es', {
-    ...BASE,
-    ...popup.overrides,
-    request: worker.request,
-    currentUser: () => ({ uid: 'alice', email: 'alice@usal.es', emailVerified: true }),
-  });
-  assert.deepEqual(linked, INSTITUTION);
-  assert.deepEqual(worker.calls, [{ url: 'https://worker.test/institution/link', body: {} }]);
-  assert.deepEqual(popup.log, [], 'no Google window was opened');
+
+test('a verified primary university address links directly; typed addresses never prove membership', async () => {
+  const s = scenario();
+  s.switchAccount({ uid: 'primary', email: 'alice@usal.es', emailVerified: true });
+  assert.equal(needsUniversityProof('Alice@USAL.es', s.options), false);
+  assert.deepEqual(await linkInstitution('Alice@USAL.es', s.options), INSTITUTION);
+  assert.deepEqual(s.calls, [{ path: '/institution/link', body: {} }]);
+  assert.equal(s.sent.length, 0);
+  s.switchAccount({ uid: 'primary', email: 'alice@usal.es', emailVerified: false });
+  await assert.rejects(linkInstitution('alice@usal.es', s.options), { code: 'INSTITUTION_EMAIL_NOT_VERIFIED' });
+  assert.equal(needsUniversityProof('alice@cs.usal.es', s.options), true);
 });
 
-test('a personal account proves the university through a second sign-in that is then released', async () => {
-  const worker = workerAnswering(200, { institution: INSTITUTION });
-  const popup = popupStub({ isNewUser: true });
-  const linked = await linkInstitution('alice@usal.es', {
-    ...BASE,
-    ...popup.overrides,
-    request: worker.request,
-    currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
-  });
-  assert.deepEqual(linked, INSTITUTION);
-  assert.deepEqual(worker.calls, [{ url: 'https://worker.test/institution/link', body: { institutionToken: 'university-token' } }]);
-  assert.deepEqual(popup.log, [
-    ['params', { login_hint: 'alice@usal.es', hd: 'usal.es', prompt: 'select_account' }],
-    ['popup', true],
-    // Firebase had to create an account for the proof: it is removed again.
-    ['delete', true],
-  ]);
+test('email delivery is not membership; completing the proof keeps the primary account and releases the secondary', async () => {
+  const s = scenario();
+  await sendInstitutionVerification('Alice@USAL.es', s.options);
+  assert.equal(s.calls.length, 0);
+  assert.equal(s.sent[0].email, 'alice@usal.es');
+  assert.equal(s.sent[0].url.includes('alice'), false, 'the email is never in the callback URL');
+  assert.deepEqual(await completeInstitutionVerification(s.link(), s.options), INSTITUTION);
+  assert.deepEqual(s.calls, [{ path: '/institution/link', body: { institutionToken: 'verified-secondary-token' } }]);
+  assert.equal(s.options.currentUser!()?.uid, 'primary');
+  assert.deepEqual(s.cleanup, ['delete', 'signOut']);
+  assert.equal(pendingInstitutionVerification(s.options), null);
+  await assert.rejects(completeInstitutionVerification(s.link(), s.options), { code: 'INSTITUTION_VERIFICATION_CANCELED' });
+  assert.equal(s.calls.length, 1);
 });
 
-// Safari can block a window opened after the tap, so nothing is awaited
-// between the press and the request for Google's window.
-test('the press asks for Google\'s window before it awaits anything', async () => {
-  const popup = popupStub();
-  const linking = linkInstitution('alice@usal.es', {
-    ...BASE,
-    ...popup.overrides,
-    request: workerAnswering(200, { institution: INSTITUTION }).request,
-    currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
-  });
-  assert.deepEqual(popup.log.at(-1), ['popup', true]);
-  await linking;
+test('existing secondary accounts are signed out, never deleted', async () => {
+  const s = scenario();
+  s.options.additionalUserInfo = () => ({ isNewUser: false, providerId: 'password', profile: null });
+  await sendInstitutionVerification('alice@usal.es', s.options);
+  await completeInstitutionVerification(s.link(), s.options);
+  assert.deepEqual(s.cleanup, ['signOut']);
 });
 
-// The link form and the onboarding's primary hold a press only while it would
-// open Google's window, so the answer has to be what linking then does.
-test('needsUniversityProof says whether linking that address opens Google\'s window', async () => {
-  const cases = [
-    { account: { email: 'alice@usal.es', emailVerified: true }, typed: 'Alice@USAL.es', opens: false },
-    { account: { email: 'alice@gmail.com', emailVerified: true }, typed: 'alice@usal.es', opens: true },
-    { account: { email: 'alice@usal.es', emailVerified: false }, typed: 'alice@usal.es', opens: true },
-    { account: { email: 'alice@usal.es', emailVerified: true }, typed: 'alice@cs.usal.es', opens: true },
-  ];
-  for (const { account, typed, opens } of cases) {
-    const currentUser = () => ({ uid: 'alice', ...account });
-    assert.equal(needsUniversityProof(typed, { currentUser }), opens, `${account.email} (verified: ${account.emailVerified}) typing ${typed}`);
-    const popup = popupStub({ email: typed.toLowerCase() });
-    await linkInstitution(typed, { ...BASE, ...popup.overrides, request: workerAnswering(200, { institution: INSTITUTION }).request, currentUser });
-    assert.equal(popup.log.some(([step]) => step === 'popup'), opens, `linking ${typed} as ${account.email}`);
+test('cancel, expiry, replacement and switching accounts reject the outstanding proof', async () => {
+  for (const action of ['cancel', 'expire', 'replace', 'switch', 'unlink']) {
+    const s = scenario();
+    await sendInstitutionVerification('alice@usal.es', s.options);
+    const link = s.link();
+    if (action === 'cancel') cancelInstitutionVerification(s.options);
+    if (action === 'expire') s.options.now = () => Date.now() + 61 * 60 * 1000;
+    if (action === 'replace') await sendInstitutionVerification('bob@tum.de', s.options);
+    if (action === 'switch') s.switchAccount({ uid: 'other', email: 'other@example.com', emailVerified: true });
+    if (action === 'unlink') await unlinkInstitution(s.options);
+    await assert.rejects(completeInstitutionVerification(link, s.options), { code: 'INSTITUTION_VERIFICATION_CANCELED' });
+    assert.equal(s.calls.some(call => call.path === '/institution/link'), false, action);
   }
-  // An account without an address proves no domain, not even an empty one.
-  assert.equal(needsUniversityProof('alice', { currentUser: () => ({ uid: 'alice', email: null, emailVerified: true }) }), true);
 });
 
-// The proof's sign-in must not outlive the tab. The second instance starts in
-// memory, rather than switching to it at the press. It takes the shared
-// resolver, whose scripts load when institutionLinkReadiness asks; Firebase's
-// own would load them while the instance starts, where nothing waits for them.
-// Firebase's Node build has no browser resolver, so this is read from source.
-test('SOURCE: the second instance starts in memory, with the shared deferred resolver', async () => {
-  const code = await readFile(new URL('./institutionService.ts', import.meta.url), 'utf8');
-  assert.match(code, /initializeAuth\(initializeApp\(app\.options, SECONDARY_APP_NAME\), \{\s*persistence: inMemoryPersistence,\s*popupRedirectResolver,\s*\}\);/);
-  assert.match(code, /^import app, \{[^}]*\bpopupRedirectResolver\b[^}]*\} from '\.\/firebase\.ts';$/m);
-  const firebase = await readFile(new URL('./firebase.ts', import.meta.url), 'utf8');
-  assert.match(firebase, /^export const popupRedirectResolver = deferPopupRedirectResolver\(browserPopupRedirectResolver\);$/m);
-});
-
-/**
- * The link's window opens on the second instance, which loads its own popup
- * scripts, so the form has to wait for that load and not the main instance's.
- * The instance is found by its app name; registering it first with a phone's
- * resolver whose load the test finishes lets the test hold that load.
- */
-test('the link waits for the second instance\'s own popup load', async (t) => {
-  let finish = () => {};
-  const load = new Promise<void>((resolve) => { finish = resolve; });
-  const loads: unknown[] = [];
-  class PhoneResolver {
-    _redirectPersistence = inMemoryPersistence;
-    get _shouldInitProactively() {
-      return true;
-    }
-    _initialize(instance: unknown) {
-      loads.push(instance);
-      return load;
-    }
-    async _completeRedirectFn() {
-      return null;
-    }
-    _overrideRedirectResult() {}
+test('switching or canceling during credential exchange cannot write to either account', async () => {
+  for (const change of ['switch', 'cancel']) {
+    const s = scenario();
+    s.holder.getIdToken = async () => {
+      if (change === 'switch') s.switchAccount({ uid: 'other', email: 'other@example.com', emailVerified: true });
+      else cancelInstitutionVerification(s.options);
+      return 'token';
+    };
+    await sendInstitutionVerification('alice@usal.es', s.options);
+    await assert.rejects(completeInstitutionVerification(s.link(), s.options), { code: 'INSTITUTION_VERIFICATION_CANCELED' });
+    assert.equal(s.calls.length, 0);
+    assert.deepEqual(s.cleanup, ['delete', 'signOut']);
   }
-  const app = initializeApp({ apiKey: 'test-key', authDomain: 'papertok.test', projectId: 'papertok-test' }, 'institution-link');
-  t.after(() => deleteApp(app));
-  const second = initializeAuth(app, {
-    persistence: inMemoryPersistence,
-    popupRedirectResolver: deferPopupRedirectResolver(PhoneResolver as unknown as PopupRedirectResolver),
-  });
-
-  const readiness = institutionLinkReadiness();
-  await second.authStateReady();
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(loads.length, 1);
-  assert.equal(loads[0], second, 'the second instance loads its own scripts');
-  assert.equal(readiness.ready, false, 'not ready while they load');
-
-  const ready = new Promise<void>(resolve => readiness.subscribe(resolve));
-  finish();
-  await ready;
-  assert.equal(readiness.ready, true);
 });
 
-test('an existing account used as proof is signed out of the second instance, not deleted', async () => {
-  const worker = workerAnswering(200, { institution: INSTITUTION });
-  const popup = popupStub({ isNewUser: false });
-  await linkInstitution('alice@usal.es', {
-    ...BASE,
-    ...popup.overrides,
-    request: worker.request,
-    currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
-  });
-  assert.deepEqual(popup.log.slice(-1), [['signOut', true]]);
+test('invalid, expired and reused Firebase proofs do not reach the Worker', async () => {
+  for (const code of ['auth/invalid-action-code', 'auth/expired-action-code']) {
+    const s = scenario();
+    s.options.emailSignIn = async () => { throw Object.assign(new Error(code), { code }); };
+    await sendInstitutionVerification('alice@usal.es', s.options);
+    await assert.rejects(completeInstitutionVerification(s.link(), s.options), { code });
+    assert.equal(s.calls.length, 0);
+  }
+  const s = scenario();
+  await sendInstitutionVerification('alice@usal.es', s.options);
+  await assert.rejects(completeInstitutionVerification(s.sent[0].url, s.options), { code: 'INSTITUTION_TOKEN_INVALID' });
 });
 
-test('the account Google returns must be in the typed domain', async () => {
-  const worker = workerAnswering(200, { institution: INSTITUTION });
-  const popup = popupStub({ email: 'alice@gmail.com', isNewUser: false });
-  await assert.rejects(
-    linkInstitution('alice@usal.es', {
-      ...BASE,
-      ...popup.overrides,
-      request: worker.request,
-      currentUser: () => ({ uid: 'alice', email: 'other@gmail.com', emailVerified: true }),
-    }),
-    (error) => error instanceof InstitutionLinkError && error.code === 'INSTITUTION_EMAIL_MISMATCH',
-  );
-  assert.equal(worker.calls.length, 0, 'nothing reached the Worker');
-  assert.deepEqual(popup.log.slice(-1), [['signOut', true]], 'the stray sign-in was released');
+test('unsupported institutions and Worker outages remain errors and release temporary credentials', async () => {
+  for (const code of ['INSTITUTION_NOT_FOUND', 'INSTITUTION_LOOKUP_UNAVAILABLE']) {
+    const s = scenario();
+    s.options.request = async () => Response.json({ code }, { status: 502 });
+    await sendInstitutionVerification('alice@usal.es', s.options);
+    await assert.rejects(completeInstitutionVerification(s.link(), s.options), { code });
+    assert.deepEqual(s.cleanup, ['delete', 'signOut']);
+  }
 });
 
-test('the second sign-in is released even when the Worker refuses', async () => {
-  const worker = workerAnswering(404, { code: 'INSTITUTION_NOT_FOUND' });
-  const popup = popupStub({ isNewUser: true });
-  await assert.rejects(
-    linkInstitution('alice@usal.es', {
-      ...BASE,
-      ...popup.overrides,
-      request: worker.request,
-      currentUser: () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true }),
-    }),
-    (error) => (error as InstitutionLinkError).code === 'INSTITUTION_NOT_FOUND' && (error as InstitutionLinkError).status === 404,
-  );
-  assert.deepEqual(popup.log.slice(-1), [['delete', true]]);
+test('email failures and invalid inputs do not leave an active request', async () => {
+  const s = scenario();
+  await assert.rejects(sendInstitutionVerification('alice', s.options), { code: 'INSTITUTION_EMAIL_INVALID' });
+  s.options.sendEmail = async () => { throw Object.assign(new Error(), { code: 'auth/operation-not-allowed' }); };
+  await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'auth/operation-not-allowed' });
+  assert.equal(pendingInstitutionVerification(s.options), null);
+  assert.equal(s.calls.length, 0);
 });
 
-test('refuses before any window opens: a bad address, no session, demo mode, no Worker', async () => {
-  const popup = popupStub();
-  const signedIn = () => ({ uid: 'alice', email: 'alice@gmail.com', emailVerified: true });
-  const code = async (promise: Promise<unknown>) => promise.then(() => null, (error: InstitutionLinkError) => error.code);
-  assert.equal(await code(linkInstitution('alice', { ...BASE, ...popup.overrides, currentUser: signedIn })), 'INSTITUTION_EMAIL_INVALID');
-  assert.equal(await code(linkInstitution('alice@usal.es', { ...BASE, ...popup.overrides, currentUser: () => null })), 'AUTH_REQUIRED');
-  assert.equal(await code(linkInstitution('alice@usal.es', { ...BASE, ...popup.overrides, isDemo: true, currentUser: signedIn })), 'INSTITUTION_UNSUPPORTED_IN_DEMO');
-  assert.equal(await code(linkInstitution('alice@usal.es', {
-    ...BASE,
-    ...popup.overrides,
-    apiBase: '',
-    currentUser: () => ({ uid: 'alice', email: 'alice@usal.es', emailVerified: true }),
-  })), 'INSTITUTION_LINK_NOT_CONFIGURED');
-  assert.deepEqual(popup.log, []);
+test('unverified or mismatched secondary addresses never reach the Worker', async () => {
+  for (const changes of [{ emailVerified: false }, { email: 'other@tum.de' }]) {
+    const s = scenario();
+    Object.assign(s.holder, changes);
+    await sendInstitutionVerification('alice@usal.es', s.options);
+    await assert.rejects(completeInstitutionVerification(s.link(), s.options), { code: 'INSTITUTION_EMAIL_NOT_VERIFIED' });
+    assert.equal(s.calls.length, 0);
+    assert.deepEqual(s.cleanup, ['delete', 'signOut']);
+  }
 });
 
-test('a Worker that cannot be reached, or a dead session, keep their own codes', async () => {
-  const signedIn = () => ({ uid: 'alice', email: 'alice@usal.es', emailVerified: true });
-  const unreachable = async () => { throw new TypeError('Failed to fetch'); };
-  const expired = async () => { const error = new Error('expired') as Error & { code: string }; error.code = 'WORKER_AUTH_REQUIRED'; throw error; };
-  await assert.rejects(linkInstitution('alice@usal.es', { ...BASE, request: unreachable, currentUser: signedIn }),
-    error => (error as InstitutionLinkError).code === 'INSTITUTION_LINK_UNREACHABLE' && (error as InstitutionLinkError).status === 0);
-  await assert.rejects(linkInstitution('alice@usal.es', { ...BASE, request: expired, currentUser: signedIn }),
-    error => (error as InstitutionLinkError).code === 'AUTH_REQUIRED' && (error as InstitutionLinkError).status === 401);
+test('blocked browser storage prevents delivery and does not break account loading', async () => {
+  const s = scenario();
+  s.options.storage = {
+    getItem: () => { throw new Error('blocked'); },
+    setItem: () => { throw new Error('blocked'); },
+    removeItem: () => { throw new Error('blocked'); },
+  };
+  assert.equal(pendingInstitutionVerification(s.options), null);
+  cancelInstitutionVerification(s.options);
+  await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'INSTITUTION_STORAGE_UNAVAILABLE' });
+  assert.equal(s.sent.length, 0);
 });
 
-test('unlinking posts to the Worker and resolves to null', async () => {
-  const worker = workerAnswering(200, { institution: null });
-  const result = await unlinkInstitution({ ...BASE, request: worker.request, currentUser: () => ({ uid: 'alice' }) });
-  assert.equal(result, null);
-  assert.deepEqual(worker.calls, [{ url: 'https://worker.test/institution/unlink', body: {} }]);
+test('switching accounts during delivery cannot leave a usable request', async () => {
+  const s = scenario();
+  s.options.sendEmail = async () => { s.switchAccount({ uid: 'other', email: 'other@example.com', emailVerified: true }); };
+  await assert.rejects(sendInstitutionVerification('alice@usal.es', s.options), { code: 'INSTITUTION_VERIFICATION_CANCELED' });
+  assert.equal(pendingInstitutionVerification(s.options), null);
+  assert.equal(s.calls.length, 0);
+});
+
+test('cleanup failure cannot hide a successful institution write', async () => {
+  const s = scenario();
+  s.options.deleteUser = async () => { throw new Error('offline'); };
+  await sendInstitutionVerification('alice@usal.es', s.options);
+  assert.deepEqual(await completeInstitutionVerification(s.link(), s.options), INSTITUTION);
+  assert.deepEqual(s.cleanup, ['signOut']);
+});
+
+test('the callback credential is removed before routing and analytics can see it', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const moduleUrl = new URL('./institutionService.ts', import.meta.url).href;
+  for (const path of ['/institution/verify', '/institution/verify/']) {
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+      import assert from 'node:assert/strict';
+      globalThis.location = { pathname: ${JSON.stringify(path)}, href: 'https://papertok.test${path}?oobCode=private-test-proof&state=test' };
+      let address;
+      globalThis.history = { state: null, replaceState(_state, _title, next) { address = next; } };
+      const { institutionVerificationLink } = await import(${JSON.stringify(moduleUrl)});
+      assert.equal(address, '/institution/verify');
+      assert.equal(institutionVerificationLink.includes('private-test-proof'), true);
+    `], { encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr);
+  }
 });

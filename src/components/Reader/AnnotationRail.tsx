@@ -15,6 +15,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Copy, DotsThree, Sparkle, Trash, User } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { annotationMarkdown } from '../../utils/annotationMarkdown.ts';
+import { passageQuote } from '../../services/userHighlightService.ts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu.tsx';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.ts';
 import { revealScrollDelta } from '../../utils/railReveal.ts';
@@ -268,7 +269,7 @@ export default function AnnotationRail({
           <DropdownMenuContent align="end" aria-label={copy.noteActions}>
             <DropdownMenuItem
               onClick={() => {
-                navigator.clipboard.writeText(annotationMarkdown(annotation))
+                navigator.clipboard.writeText(annotationMarkdown({ quote: passageQuote(annotation), note: annotation.note }))
                   .then(() => toast.success(copy.noteCopied))
                   .catch(() => toast.error(copy.noteCopyFailed));
               }}
@@ -289,7 +290,7 @@ export default function AnnotationRail({
           rewrite was in when it was marked, which is not always the page's —
           the margin keeps notes from both. */}
       <p className="rd-note-quote" lang={annotation.language}>
-        <ScientificText>{annotation.quote}</ScientificText>
+        <ScientificText>{passageQuote(annotation)}</ScientificText>
       </p>
       {annotation.note && (
         /* The model answers in the rewrite's language; your own note is in
