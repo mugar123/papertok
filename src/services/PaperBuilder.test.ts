@@ -6,6 +6,7 @@ import { PaperBuilder } from './PaperBuilder.ts';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { mapOpenAlexEnrichmentWork, slimWorksPage } from './openAlexService.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { PubmedAdapter } from './adapters/PubmedAdapter.ts';
 import { searchPapersAcrossSources } from './paperSearchService.ts';
 import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
@@ -1188,6 +1189,24 @@ test('a journal record under the row\'s DOI keeps the row reviewed beside a work
     }
   }
 
+  // The working paper can also come from another follow, before a topic row
+  // that began as an arXiv record listing the FEDS revision's DOI and joined
+  // the article. That row shows the revision's DOI, and both arXiv records'
+  // `true` rests on a DOI alone, but the article in it confirms the journal
+  // DOI the merged row shows.
+  for (const [label, workingPaper] of [['NBER', nber], ['FEDS', feds]] as const) {
+    for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+      const where = `${label}, followed, an arXiv author and the working paper before a topic row that began as an arXiv record (${mapper})`;
+      const rows = PaperBuilder.deduplicate([
+        arxivRecord(journalDoi), map(workingPaper), ...PaperBuilder.deduplicate([arxivRecord(`${fedsDoi}r1`), map(article)]),
+      ]);
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, journalDoi, where);
+      assert.equal(rows[0].peerReviewed, true, where);
+      assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
+    }
+  }
+
   // Search deduplicates the reader's cards before its own rows. A card from
   // OpenAlex's record of the journal DOI without a source can come first,
   // then a followed row: a topic row that began as the working paper and
@@ -1195,12 +1214,23 @@ test('a journal record under the row\'s DOI keeps the row reviewed beside a work
   // and one that put an arXiv record listing the FEDS revision's DOI before
   // a topic row with the article and the working paper reads unknown under
   // the revision's DOI. The merged row shows the journal's DOI, which the
-  // article confirms.
+  // article confirms. PubMed's record of the article gives no answer of its
+  // own; its publication type is a journal article's.
   const noSource = work('W507', journalDoi, 'article', null);
+  const pubmedArticle = () => new PubmedAdapter().mapToStandard({
+    uid: '40000001',
+    title,
+    authors: [{ name: 'Economist A' }],
+    articleids: [{ idtype: 'doi', value: journalDoi }],
+    source: 'J Int Econ',
+    pubdate: '2026 Jan',
+    pubtype: ['Journal Article'],
+  });
   for (const [label, workingPaper] of [['NBER', nber], ['FEDS', feds]] as const) {
     for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
       for (const [kind, followed, answer] of [
         ['a topic row', PaperBuilder.deduplicate([map(workingPaper), map(article)]), false],
+        ['a topic row with PubMed\'s record of the article', PaperBuilder.deduplicate([map(workingPaper), pubmedArticle()]), false],
         ['an arXiv record before a topic row', PaperBuilder.deduplicate([
           arxivRecord(`${fedsDoi}r1`), ...PaperBuilder.deduplicate([map(article), map(workingPaper)]),
         ]), undefined],
