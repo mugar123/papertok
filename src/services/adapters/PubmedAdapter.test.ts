@@ -111,3 +111,21 @@ test('a PubMed record dated after today shows no year and no date', async (t) =>
   assert.equal(thisMonth.published, '2026 Oct');
   assert.equal(today.year, 2026);
 });
+
+// Dates as esummary gave them on 2026-10-20: PMID 42900737 (PNAS) went online
+// that day in an issue printed on 27 October; PMID 42900849 (Biol Bull) went
+// online after its issue was printed. The third record is not online yet.
+test('a PubMed article online by today shows its online date when its issue is printed later', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const { papers } = await feedSearch('online dates', [
+    { uid: '42900737', title: 'Online before its issue', source: 'Proc Natl Acad Sci U S A', pubdate: '2026 Oct 27', epubdate: '2026 Oct 20', pubtype: ['Journal Article'] },
+    { uid: '42900849', title: 'Online after its issue', source: 'Biol Bull', pubdate: '2025 Oct', epubdate: '2026 Sep 24', pubtype: ['Journal Article'] },
+    { uid: '3', title: 'Not online yet', source: 'Neurology', pubdate: '2026 Dec', epubdate: '2026 Nov 2', pubtype: ['Journal Article'] },
+  ]);
+
+  assert.deepEqual(PaperBuilder.deduplicate(papers).map(paper => [paper.id, paper.year, paper.published]), [
+    ['pmid:42900737', 2026, '2026 Oct 20'],
+    ['pmid:42900849', 2025, '2025 Oct'],
+    ['pmid:3', undefined, ''],
+  ]);
+});

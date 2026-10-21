@@ -11,6 +11,7 @@ export interface PubmedSummary {
   essn?: string;
   nlmuniqueid?: string;
   pubdate?: string;
+  epubdate?: string;
   pubtype?: string | string[];
 }
 interface PubmedResponse {
@@ -318,9 +319,10 @@ export class PubmedAdapter {
     }
 
     const landingPageUrl = `https://pubmed.ncbi.nlm.nih.gov/${id}/`;
-    // esummary's date after today is the print date of an issue not out yet.
-    // Neither that year nor another date is shown in its place.
-    const published = isAfterToday(raw.pubdate) ? '' : raw.pubdate || '';
+    // `pubdate` is the print issue's date, which can be after today for an
+    // article already online; `epubdate` is the day it went online. A date
+    // after today is never shown, and a record with no other date shows none.
+    const published = [raw.pubdate, raw.epubdate].find(date => date && !isAfterToday(date)) || '';
     const chapter = isProtocolBookSeries({ issn: raw.issn, essn: raw.essn, nlmId: raw.nlmuniqueid });
 
     return {
