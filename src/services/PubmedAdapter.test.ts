@@ -30,9 +30,9 @@ test('files a record searched for one subcategory under it only on evidence', ()
   assert.equal(classifyPubmedCategory({ title: 'Gut microbiome of aged mice' }, ['bio.micro']), 'bio.micro');
 });
 
-// Synthetic esummary records. The lane keeps what PubMed returned for one
-// subcategory, but the category was written onto every record of it.
-test('a PubMed search for one subcategory files only the records that name it', async () => {
+// Synthetic esummary records. Searched for one subcategory, every record used
+// to be filed under it; a record now needs the evidence several require.
+test('a PubMed search for one subcategory keeps only the records that name it', async () => {
   const adapter = new PubmedAdapter({
     apiBase: 'https://papertok-report-api.example',
     fetchImpl: async () => Response.json({
@@ -47,11 +47,8 @@ test('a PubMed search for one subcategory files only the records that name it', 
 
   const { papers } = await adapter.search('"Molecular Biology" one subcategory', 1, { internalCategories: ['bio.mol'] });
 
-  assert.deepEqual(papers.map(paper => [paper.id, paper.primaryCategory]), [
-    ['pmid:31000011', undefined],
-    ['pmid:31000012', 'bio.mol'],
-  ]);
-  assert.deepEqual(papers.map(paper => paper._fetchedFor), [['bio.mol'], ['bio.mol']]);
+  assert.deepEqual(papers.map(paper => [paper.id, paper.primaryCategory]), [['pmid:31000012', 'bio.mol']]);
+  assert.deepEqual(papers.map(paper => paper._fetchedFor), [['bio.mol']]);
 });
 
 test('a PMC copy makes a PubMed paper open, through the canonical openAccess field', () => {
