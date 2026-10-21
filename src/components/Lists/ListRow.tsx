@@ -21,7 +21,6 @@ type ListRowProps = Omit<HTMLMotionProps<'div'>, 'title' | 'onClick'> & {
   title: ReactNode;
   titleLang?: string;
   onOpen: () => void;
-  /** Set at the far end of the meta line, such as a citation count. */
   aside?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
