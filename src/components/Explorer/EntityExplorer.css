@@ -503,7 +503,7 @@
 }
 
 @keyframes timelineDotIn {
-  from { opacity: 0; transform: scale(0.6); }
+  from { opacity: 0; transform: scale(0.85); }
 }
 
 @media (max-width: 480px) {
@@ -659,8 +659,8 @@
   border-radius: 2px 2px 0 0;
   background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 70%, transparent);
   transform-origin: bottom;
-  animation: activityGrow 0.42s var(--ease-out) backwards;
-  animation-delay: calc(var(--i) * 30ms);
+  animation: activityGrow 0.3s var(--ease-out) backwards;
+  animation-delay: calc(var(--i) * 20ms);
   transition: background-color var(--transition-fast);
 }
 
