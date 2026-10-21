@@ -489,12 +489,12 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .ehc-timeline-done {
-    animation: timelineDraw 0.4s cubic-bezier(0.23, 1, 0.32, 1) backwards;
+    animation: timelineDraw 0.4s var(--ease-out) backwards;
   }
 
   /* Today lands as the line reaches it, not before. */
   .ehc-timeline-dot--now {
-    animation: timelineDotIn 0.2s cubic-bezier(0.23, 1, 0.32, 1) 0.25s backwards;
+    animation: timelineDotIn 0.2s var(--ease-out) 0.25s backwards;
   }
 }
 

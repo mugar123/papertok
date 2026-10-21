@@ -221,9 +221,9 @@ function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count:
 // The side sheet stays near the height of the reading column beside it.
 const PARTICIPANTS_SHOWN = 3;
 
-// Where a project stands between its dates. With no published end the line
-// runs on dashed past today, at a fixed point, since there is nothing to
-// measure the distance against.
+// Where a project stands between its dates. With no published end there is
+// nothing to measure today against, so the line runs dashed from the start
+// and no point is placed for today.
 function ProjectTimeline({ startDate, endDate }: { startDate: string; endDate?: string }) {
   const [now] = useState(Date.now);
   const start = Date.parse(startDate);
@@ -233,7 +233,7 @@ function ProjectTimeline({ startDate, endDate }: { startDate: string; endDate?: 
   const endYear = endDate?.split('-')[0];
   const hasEnd = Number.isFinite(end) && end > start;
   const ended = hasEnd && now >= end;
-  const progress = hasEnd ? Math.min(1, Math.max(0, (now - start) / (end - start))) : 0.7;
+  const progress = hasEnd ? Math.min(1, Math.max(0, (now - start) / (end - start))) : 0;
   return (
     <div
       className="ehc-timeline"
@@ -246,12 +246,12 @@ function ProjectTimeline({ startDate, endDate }: { startDate: string; endDate?: 
         <span className="ehc-timeline-done" />
         {!ended && <span className={`ehc-timeline-rest${hasEnd ? '' : ' is-open'}`} />}
         <span className="ehc-timeline-dot" />
-        {!ended && <span className="ehc-timeline-dot ehc-timeline-dot--now" />}
+        {hasEnd && !ended && <span className="ehc-timeline-dot ehc-timeline-dot--now" />}
         {hasEnd && <span className={`ehc-timeline-dot ehc-timeline-dot--end${ended ? ' is-reached' : ''}`} />}
       </div>
       <div className="ehc-timeline-labels" aria-hidden="true">
         <span>{`Start ${startYear}`}</span>
-        {!ended && progress > 0.2 && progress < 0.8 && <span className="ehc-timeline-now">{'Today'}</span>}
+        {hasEnd && !ended && progress > 0.2 && progress < 0.8 && <span className="ehc-timeline-now">{'Today'}</span>}
         <span>{ended ? `Ended ${endYear}` : hasEnd ? `Ends ${endYear}` : 'No end date'}</span>
       </div>
     </div>
@@ -1896,8 +1896,6 @@ export default function EntityExplorer({
           : ('Topic');
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
-  const projectStartYear = entity.startDate?.split('-')[0];
-  const projectEndYear = entity.endDate?.split('-')[0];
   const projectTimeline = type === 'project' && entity.startDate && (
     <ProjectTimeline startDate={entity.startDate} endDate={entity.endDate} />
   );
@@ -2007,7 +2005,7 @@ export default function EntityExplorer({
       {type === 'project' && (entity.budget as number) > 0 && (
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">
-            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return `${entity.budget!.toLocaleString(locale)} €`; } })()}
+            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget!); } catch { return entity.budget!.toLocaleString(locale); } })()}
           </span>
           <span className="ehc-stat-label">{'Total budget'}</span>
         </div>
@@ -2015,15 +2013,9 @@ export default function EntityExplorer({
       {type === 'project' && (entity.fundedAmount as number) > 0 && entity.fundedAmount! !== entity.budget! && (
         <div className="ehc-stat-box">
           <span className="ehc-stat-value">
-            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return `${entity.fundedAmount!.toLocaleString(locale)} €`; } })()}
+            {(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount!); } catch { return entity.fundedAmount!.toLocaleString(locale); } })()}
           </span>
           <span className="ehc-stat-label">{'Funding'}</span>
-        </div>
-      )}
-      {type === 'project' && entity.startDate && (
-        <div className="ehc-stat-box">
-          <span className="ehc-stat-value">{entity.endDate ? `${projectStartYear} – ${projectEndYear}` : projectStartYear}</span>
-          <span className="ehc-stat-label">{entity.endDate ? 'Duration' : 'Started'}</span>
         </div>
       )}
       {type === 'project' && (entity.participants?.length as number) > 0 && (
@@ -2063,7 +2055,7 @@ export default function EntityExplorer({
   // them all in a drawer of thumb-sized rows.
   const projectParticipants = type === 'project' && (entity.participants?.length as number) > 0 && (isPhone ? (
     <Drawer>
-      <DrawerTrigger render={<button type="button" className="project-participants-trigger" />}>
+      <DrawerTrigger render={<Button variant="ghost" className="project-participants-trigger" />}>
         <Buildings size={16} aria-hidden="true" />
         <span>{'Participating organizations'}</span>
         <span className="project-participants-count">{entity.participants!.length}</span>
@@ -2722,15 +2714,15 @@ export default function EntityExplorer({
             {activeTab === 'papers' && (
               <>
                 <span className="explorer-search-rule" aria-hidden="true" />
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   className={`explorer-filter-trigger${activeFilterCount > 0 ? ' is-active' : ''}`}
                   onClick={publicMode ? () => requestAccount('explorer_search') : () => setShowFilters(true)}
                   title={'Open filters'}
                 >
                   <Funnel size={16} aria-hidden="true" />
                   <span className="explorer-filter-label">{activeFilterCount > 0 ? `Filters · ${activeFilterCount}` : 'Filters'}</span>
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -2738,10 +2730,10 @@ export default function EntityExplorer({
           {activeTab === 'papers' && activeFilterChips.length > 0 && (
             <div className="ee-chips">
               {activeFilterChips.map(chip => (
-                <button key={chip.key} type="button" className="ee-chip" onClick={chip.clear} aria-label={`Remove filter: ${chip.label}`}>
+                <Button key={chip.key} variant="outline" size="sm" className="ee-chip" onClick={chip.clear} aria-label={`Remove filter: ${chip.label}`}>
                   {chip.label}
                   <X size={12} aria-hidden="true" />
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -2759,7 +2751,7 @@ export default function EntityExplorer({
                   paper={paper}
                   onOpen={() => setSelectedPaper(paper)}
                   aside={hasKnownPaperCitationCount(paper) && (
-                    `${getPaperCitationCount(paper).toLocaleString(locale)} citations`
+                    `${getPaperCitationCount(paper).toLocaleString(locale)} ${getPaperCitationCount(paper) === 1 ? 'citation' : 'citations'}`
                   )}
                 >
                   {(paper.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
