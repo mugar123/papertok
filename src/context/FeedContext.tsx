@@ -26,8 +26,8 @@ export interface FeedContextValue {
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
   feedMode: string; setFeedMode: (mode: string) => void;
-  /** `seenFallback`: papers shown before, kept by a load that skipped their page. */
-  loadPapers: (reset?: boolean, mode?: string | null, randomizeStart?: boolean, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: Paper[] }) => Promise<void>;
+  /** `seenFallback`: a page of papers shown before, carried by a load that skipped past it. */
+  loadPapers: (reset?: boolean, mode?: string | null, randomizeStart?: boolean, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] } }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -1430,7 +1430,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // either: a dead arXiv must not blank a feed that graph, personal or
         // followed papers could populate on their own, or that the seen
         // papers carried from an earlier page can fill.
-        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, personalPapers, followedPapers, seenFallback)) {
+        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, personalPapers, followedPapers, seenFallback?.papers)) {
           throw new Error('No scientific provider returned usable papers.');
         }
 
@@ -1655,7 +1655,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // The first such page this load reached is shown again when no later
         // page has an unseen paper: the feed is never empty because
         // everything was seen.
-        const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? bypassSeen : undefined);
+        const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? { page: currentPage, papers: bypassSeen } : undefined);
         if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
           // A reload starts on one of the first RESET_START_PAGES pages and
           // the reader scrolls on from there, so after a few reloads all of
@@ -1683,7 +1683,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }
         if (shownBefore) {
           console.log('No later page has a paper the reader has not seen; showing seen papers again.');
-          filtered = shownBefore;
+          filtered = shownBefore.papers;
         }
       }
 
@@ -1795,8 +1795,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const existingIds = new Set(shown.map((p) => p.id));
         return [...shown, ...filtered.filter((p) => !existingIds.has(p.id))];
       };
-      const nextPage = currentPage + 1;
-      const nextHasMore = newPapers.length > 0;
+      // When an empty or failed page left this load showing the seen papers
+      // it carried, the feed goes on from the page after theirs: the pages
+      // this load skipped past may hold papers the reader has not seen.
+      const resumeAfter = newPapers.length === 0 ? seenFallback?.page : undefined;
+      const nextPage = (resumeAfter ?? currentPage) + 1;
+      const nextHasMore = newPapers.length > 0 || resumeAfter !== undefined;
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
 

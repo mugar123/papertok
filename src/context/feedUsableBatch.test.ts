@@ -379,9 +379,27 @@ for (const [name, page] of [
     await run(true, null, true);
     assert.equal(state.error, null);
     assert.equal(state.papers.length, 15, 'the feed is not empty');
+    assert.equal(state.hasMore, true, 'the reader can scroll on');
     assert.ok(starts.length <= 3, `at most two more pages are asked for: ${JSON.stringify(starts)}`);
   });
 }
+
+test('after a reload shows its seen start page because the later page was empty, scrolling goes on from the page after it', async t => {
+  // Page 1 was shown before, pages 2 to 4 were not, and nothing comes after page 4.
+  const { state, env, run, starts } = reloadOnPageOne(t, {
+    seen: pageIds(1),
+    page: start => start < 75 ? records(`page-${start / 15}`) : [],
+  });
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1));
+  assert.equal(state.hasMore, true);
+  // The reader reaches the end of the list.
+  await run(false);
+  assert.equal(state.error, null);
+  assert.deepEqual(starts, [15, 90, 30]);
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1, 2));
+});
 
 // The later page is rarely in the Worker's edge cache, so it is the one that
 // waits for a seat at arXiv and can be refused.
@@ -401,6 +419,7 @@ for (const status of [429, 502]) {
     await wait(20);
     assert.equal(state.error, null);
     assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1), 'the start page is shown again');
+    assert.equal(state.hasMore, true, 'the reader can scroll on');
     assert.deepEqual(starts, [15, 90], 'no request after the refused one');
   });
 }
