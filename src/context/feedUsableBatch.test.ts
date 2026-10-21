@@ -24,6 +24,7 @@ import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitatio
 import { fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { openAlexClient } from '../services/openAlexClient.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
@@ -96,7 +97,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     recommendationWeights: ref({}), takeFeedPage, mergeFreshFeedPage,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
-    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
+    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()), pubmedCategoryQuery,
     awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract,
     recoverFeedAbstracts: (async () => []) as (papers: Paper[]) => Promise<Partial<Paper>[]>,
     mergeOpenAlexEnrichment, preserveFeedAbstracts, mergeFeedAbstracts, mergeEuropePmcEnrichment, mergeICiteEnrichment,
@@ -540,6 +541,42 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
     await run(true);
     assert.equal(state.error, null);
     assert.deepEqual(state.papers.map(paper => paper.primaryCategory), [category]);
+  });
+}
+
+// "Molecular Biology" in every field also matched the journal Methods in
+// Molecular Biology, so every PubMed lane searches title and abstract only.
+const BIOMEDICAL_LEAVES = [
+  { id: 'bio.mol', label: 'Molecular Biology', area: 'bio' },
+  // The nearby category exploration adds, and one outside the reader's areas for boredom.
+  { id: 'bio.gen', label: 'Genetics', area: 'bio' },
+  { id: 'med.onco', label: 'Oncology', area: 'med' },
+];
+const searchedFields = (query: string) => [...query.matchAll(/"([^"]+)"(\[\w+\])?/g)].map(([, label, field]) => `${label}${field ?? ''}`);
+for (const [name, page, boredom, asked] of [
+  ['the first page', 0, 0, [['Molecular Biology[tiab]']]],
+  ['a later page with its exploration', 1, 0, [['Molecular Biology[tiab]'], ['Genetics[tiab]']]],
+  ['a bored reader\'s later page', 1, 8, [['Molecular Biology[tiab]'], ['Genetics[tiab]'], ['Oncology[tiab]']]],
+] as const) {
+  test(`${name} asks PubMed for each label in title and abstract, with a publication date bound`, async () => {
+    const queries: string[] = [];
+    const { state, env, run } = feed({ fast: [], page });
+    Object.assign(env, {
+      userPreferences: ['bio.mol'],
+      CATEGORIES,
+      getAllLeafCategories: () => BIOMEDICAL_LEAVES,
+      PubmedAdapter: class {
+        search(query: string) {
+          queries.push(query);
+          return Promise.resolve({ papers: records(`pubmed-${queries.length}`) });
+        }
+      },
+    });
+    env.boredomLevel.current = boredom;
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(queries.map(searchedFields), asked, 'the chosen, nearby and random lanes, in that order');
+    for (const query of queries) assert.match(query, /\bAND \S+:\d{4}\/\d{2}\/\d{2}\[dp\]$/);
   });
 }
 
