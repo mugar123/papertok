@@ -49,7 +49,7 @@ export interface FeedContextValue {
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
 import { IS_DEMO, db } from '../services/firebase.ts';
-import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { getDoc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
 import { useFollowing } from './FollowingContext.tsx';
@@ -80,8 +80,9 @@ import {
   saveProfileDriftCheckedAt,
   saveSeenPaperIds,
 } from '../utils/userScopedStorage.ts';
-import { readStoredClassification } from '../models/Paper.ts';
+import { readStoredClassification, storedClassification } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { savedPaperDocRef } from '../services/savedPaperStore.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.ts';
 import {
@@ -110,6 +111,7 @@ import {
 import { fetchDomainPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import {
   abstractsInFlight,
+  cardsGivenTopic,
   getOpenAlexEnrichmentId,
   mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
@@ -680,6 +682,54 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     feedScrolledAtRef.current = Date.now();
   }, []);
 
+  /**
+   * PAP-60, D6. Past the first page, OpenAlex answers after a card is shown,
+   * and a card from a source with no classification of its own takes its
+   * field from that answer's topic. A like, save, read or Read later before
+   * it stored the card without the topic, so the card showed a field and the
+   * copy, once reloaded, none. The topic is added to each stored copy that
+   * has none, and to the copies the library holds in memory. Nothing else in
+   * a copy changes: its categories and classificationVersion are the evidence
+   * it was stored with, and the interaction's timestamp dates the reader's
+   * action, not this write.
+   */
+  const keepLateTopics = useCallback((cards: Paper[]) => {
+    const userId = user?.uid;
+    if (!userId || IS_DEMO) return;
+    cards.forEach((card) => {
+      const { primaryTopic } = storedClassification(card);
+      const paperId = withInteractionId(card).id;
+      const saved = savedPaperIdsRef.current.has(paperId);
+      if (!primaryTopic || (!saved && !likedPaperIdsRef.current.has(paperId)
+        && !readPaperIdsRef.current.has(paperId) && !personalLibrary[paperId])) return;
+      setPersonalLibrary((current) => {
+        const entry = current[paperId];
+        return entry?.paper && !entry.paper.primaryTopic
+          ? { ...current, [paperId]: { ...entry, paper: { ...entry.paper, primaryTopic } } }
+          : current;
+      });
+      setLibraryPapers((current) => {
+        const copy = current[paperId];
+        return copy && !copy.primaryTopic ? { ...current, [paperId]: { ...copy, primaryTopic } } : current;
+      });
+      void (async () => {
+        // A record kept without a copy has no field to complete.
+        const interaction = await getDoc(interactionDocRef(userId, paperId));
+        const copy = interaction.data()?.paper;
+        if (copy && !copy.primaryTopic) await updateDoc(interaction.ref, { 'paper.primaryTopic': primaryTopic });
+        if (!saved) return;
+        // The save sheet names this document by the card's own id; a paper
+        // saved under another of its ids has none here.
+        const savedPaper = await getDoc(savedPaperDocRef(userId, card.id));
+        if (savedPaper.exists() && !savedPaper.data().primaryTopic) await updateDoc(savedPaper.ref, { primaryTopic });
+      })().catch(error => console.error('Error storing a late OpenAlex topic:', error));
+    });
+  }, [withInteractionId, personalLibrary, user?.uid]);
+  // followShownPapers keeps one identity across renders; it reaches the
+  // current marks through this.
+  const keepLateTopicsRef = useRef(keepLateTopics);
+  useEffect(() => { keepLateTopicsRef.current = keepLateTopics; }, [keepLateTopics]);
+
   // Requests that answer after cards are shown, from a fresh page or a
   // restored snapshot, change those cards in place, and the feed cache and
   // snapshot with them, while the account stays the same. Only the cards in
@@ -713,7 +763,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
-      update(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading));
+      const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
+      update(enrich);
+      // Out here, not in the update: React may run a state updater twice.
+      if (feedSessionId.current !== sessionId) return;
+      const shown = papersRef.current;
+      keepLateTopicsRef.current(cardsGivenTopic(shown, enrich(shown)));
     });
     iCite?.then((metrics) => {
       if (!metrics || Object.keys(metrics).length === 0) return;

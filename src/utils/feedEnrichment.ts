@@ -148,6 +148,16 @@ export function mergeOpenAlexEnrichment(papers: Paper[], enrichmentById: Record<
   });
 }
 
+/**
+ * The cards an enrichment pass gave their first OpenAlex topic, as they now
+ * read. `after` is `before` merged, card for card in the same order. A copy
+ * stored from one of these cards before the pass has no topic (PAP-60, D6).
+ */
+export function cardsGivenTopic(before: Paper[], after: Paper[]) {
+  return after.filter((paper, index) => paper.primaryTopic
+    && paper.id === before[index]?.id && !before[index].primaryTopic);
+}
+
 // Metadata can arrive after admission; the text the reader saw must stay stable.
 // Only a card in `loading`, which says its abstract is on the way, may receive one.
 export function preserveFeedAbstracts(current: Paper[], enriched: Paper[], loading: ReadonlySet<string> = new Set()) {

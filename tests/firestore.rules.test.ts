@@ -20,8 +20,9 @@ import {
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.ts';
-import { paperLegacyAdapter } from '../src/models/Paper.ts';
+import { paperLegacyAdapter, storedClassification } from '../src/models/Paper.ts';
 import { areaLabelForPaper } from '../src/utils/areaAccent.ts';
+import { serializeLibraryPaper } from '../src/utils/readingLibrary.ts';
 import { LIST_COLORS } from '../src/utils/listColors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/accountOnboarding.ts';
 import {
@@ -1215,4 +1216,32 @@ test('a save over a savedPapers document from before PAP-60 replaces its categor
   const stored = (await getDoc(ref)).data()!;
   assert.equal(stored.primaryCategory, '');
   assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Computer Science');
+});
+
+/*
+ * PAP-60, D6. When OpenAlex gives a card its topic after the reader liked and
+ * saved it, the feed adds `primaryTopic`, and nothing else, to the
+ * interaction's copy and to the savedPapers document (keepLateTopics in
+ * FeedContext). Here the savedPapers document is one saved before PAP-60,
+ * with the category the feed asked for.
+ */
+test('a topic that arrives late is added to the copies of a liked and saved paper', async () => {
+  await reset();
+  const db = asAlice();
+  const id = 'pmid:1';
+  const title = 'In vitro developmental competence of domestic cat embryos after somatic cloning: a preliminary report';
+  const { primaryTopic } = storedClassification({ primaryTopic: CAT_EMBRYO_TOPIC });
+
+  const interaction = doc(db, 'users', ALICE, 'interactions', id);
+  await assertSucceeds(setDoc(interaction, { liked: true, saved: true, paper: serializeLibraryPaper({ id, title }) }));
+  await assertSucceeds(updateDoc(interaction, { 'paper.primaryTopic': primaryTopic }));
+
+  const saved = doc(db, 'users', ALICE, 'savedPapers', id);
+  await assertSucceeds(setDoc(saved, { title, primaryCategory: 'physics.bio-ph', savedAt: '2026-10-01T12:00:00.000Z' }));
+  await assertSucceeds(updateDoc(saved, { primaryTopic }));
+
+  const copy = (await getDoc(interaction)).data()!.paper;
+  assert.equal(copy.title, title, 'the rest of the copy is unchanged');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter(copy)), 'Biology');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id, ...(await getDoc(saved)).data() })), 'Biology');
 });

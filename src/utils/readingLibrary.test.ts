@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { Paper } from '../models/Paper.ts';
 import type { OpenAlexWork } from '../services/adapters/openAlexTypes.ts';
-import { paperLegacyAdapter } from '../models/Paper.ts';
+import { paperLegacyAdapter, storedClassification } from '../models/Paper.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { mapEuropePmcSearchResult } from '../services/domainSourceService.ts';
+import { mapOpenAlexEnrichmentWork } from '../services/openAlexService.ts';
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from './areaAccent.ts';
+import { cardsGivenTopic, getOpenAlexEnrichmentId, mergeOpenAlexEnrichment } from './feedEnrichment.ts';
 import { papersToBibTeX, papersToRIS, serializeLibraryPaper } from './readingLibrary.ts';
 import { buildSavedPaperPayload } from './savedPaperPayload.ts';
 
@@ -100,6 +103,48 @@ test('a save over a copy stored before PAP-60 reads as the card does', () => {
     { saved: true, paper: throughFirestore(serializeLibraryPaper(paper)) },
   );
   assert.equal(areaLabelForPaper(paperLegacyAdapter(interaction.paper as Partial<Paper>)), 'Computer Science', 'interaction copy');
+});
+
+// PAP-60, D6. Past the first page, OpenAlex answers after a card is shown,
+// and a card from a source with no classification of its own, as Europe PMC
+// serves one, takes its field from that answer. A like or a save before it
+// stored the card without the topic: the card said Biology and the copies,
+// reloaded, said nothing.
+test('a paper liked and saved before OpenAlex answered keeps the field the answer gave its card', () => {
+  const work = namedWork('W2120490784');
+  // Europe PMC's record of the same paper. Only the DOI is real.
+  const shown = mapEuropePmcSearchResult({
+    id: '1', source: 'MED', pmid: '1', doi: work.doi!, title: work.title!, firstPublicationDate: '2002-11-01',
+  })!;
+  const enriched = mergeOpenAlexEnrichment([shown], { [getOpenAlexEnrichmentId(shown)]: mapOpenAlexEnrichmentWork(work)!.enrichment });
+  assert.equal(areaLabelForPaper(shown), null);
+  assert.equal(areaLabelForPaper(enriched[0]), 'Biology');
+
+  const liked = { liked: true, saved: true, paper: throughFirestore(serializeLibraryPaper(shown)) };
+  const saved = throughFirestore(buildSavedPaperPayload(shown, '2026-10-21T12:00:00.000Z'));
+  const [card, ...others] = cardsGivenTopic([shown], enriched);
+  assert.equal(card, enriched[0]);
+  assert.deepEqual(others, []);
+  assert.deepEqual(cardsGivenTopic(enriched, enriched), [], 'a card that already had its topic is not written again');
+
+  // What the feed writes for the card: the topic, as a copy keeps it, into
+  // each stored copy that has none, and nothing else.
+  const { primaryTopic } = storedClassification(card);
+  const likedAfter = mergeIntoStored(liked, { paper: { primaryTopic } });
+  const savedAfter = mergeIntoStored(saved, { primaryTopic });
+  assert.equal(areaLabelForPaper(paperLegacyAdapter(likedAfter.paper as Partial<Paper>)), 'Biology', 'interaction copy');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: shown.id, ...savedAfter })), 'Biology', 'savedPapers document');
+
+  // The save sheet still holds the card as it was first shown; saving it to
+  // another list must not take the field away again.
+  const savedAgain = mergeIntoStored(savedAfter, throughFirestore(buildSavedPaperPayload(shown, '2026-10-21T12:05:00.000Z')));
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: shown.id, ...savedAgain })), 'Biology', 'savedPapers document, saved again');
+
+  // A document saved before PAP-60 carries the category the feed asked for
+  // and no classificationVersion. The topic must not make that category
+  // evidence: the document keeps its version, so the stamp is still dropped.
+  const stamped = mergeIntoStored({ title: shown.title, primaryCategory: 'physics.bio-ph', savedAt: '2026-10-01T12:00:00.000Z' }, { primaryTopic });
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: shown.id, ...stamped })), 'Biology', 'savedPapers document from before PAP-60');
 });
 
 const paper = {

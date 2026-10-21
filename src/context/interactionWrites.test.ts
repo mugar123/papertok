@@ -75,3 +75,29 @@ test("SOURCE: the library decides a copy's field on the stored document, and a r
   assert.match(load, /\{ \.\.\.data\.paper, \.\.\.readStoredClassification\(\{ \.\.\.data\.paper, id \}\) \}/);
   assert.doesNotMatch(load, /data\.paperCategory/, 'the category beside the flag is not a field the copy can show');
 });
+
+/**
+ * PAP-60, D6. Past the first page, OpenAlex answers after a card is shown and
+ * can give it its field. A paper liked, saved or read before that answer was
+ * stored without the topic; readingLibrary.test.ts shows the copies these
+ * writes leave. This checks that the late answer makes them, adding the topic
+ * and only the topic to a copy that has none.
+ */
+test('SOURCE: a late OpenAlex answer adds its topic to the copies of a paper already liked, saved or read', async () => {
+  const code = stripComments(await read('./FeedContext.tsx'));
+  const followStart = code.indexOf('const followShownPapers = useCallback(');
+  assert.notEqual(followStart, -1, 'expected to have found followShownPapers');
+  const follow = code.slice(followStart, code.indexOf('iCite?.then(', followStart));
+  assert.match(follow, /openAlex\?\.then\([\s\S]*keepLateTopicsRef\.current\(cardsGivenTopic\(/);
+
+  const keepStart = code.indexOf('const keepLateTopics = useCallback(');
+  assert.notEqual(keepStart, -1, 'expected to have found keepLateTopics');
+  const keep = code.slice(keepStart, code.indexOf('const keepLateTopicsRef', keepStart));
+  for (const marked of ['savedPaperIdsRef', 'likedPaperIdsRef', 'readPaperIdsRef', 'personalLibrary[paperId]']) {
+    assert.ok(keep.includes(marked), `a paper marked through ${marked} is written`);
+  }
+  assert.match(keep, /const interaction = await getDoc\(interactionDocRef\(userId, paperId\)\);/);
+  assert.match(keep, /if \(copy && !copy\.primaryTopic\) await updateDoc\(interaction\.ref, \{ 'paper\.primaryTopic': primaryTopic \}\);/);
+  assert.match(keep, /const savedPaper = await getDoc\(savedPaperDocRef\(userId, card\.id\)\);/);
+  assert.match(keep, /if \(savedPaper\.exists\(\) && !savedPaper\.data\(\)\.primaryTopic\) await updateDoc\(savedPaper\.ref, \{ primaryTopic \}\);/);
+});
