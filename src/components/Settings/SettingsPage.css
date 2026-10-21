@@ -212,6 +212,34 @@
   cursor: not-allowed;
 }
 
+/* Plain-words summaries: the history's ruled rows (ListRow) in the page's
+   panel, with its loading, empty and failed states set as a quiet line. */
+.settings-summaries {
+  padding-block: var(--space-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* ListRow's hover is the panel's own sunken paper here. */
+  .settings-summaries .list-row:hover {
+    background: var(--bg-card);
+  }
+}
+
+.settings-summaries-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.settings-summaries-more {
+  margin-top: var(--space-3);
+}
+
 /* Tags sit on their own line under the row, in the text column only: they
    wrap before reaching the action's column instead of running under it. */
 .settings-row:has(.settings-row-tags) {

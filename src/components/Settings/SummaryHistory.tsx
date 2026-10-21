@@ -1,0 +1,211 @@
+import type { SummaryHistoryCursor, SummaryHistoryPage, SummaryHistoryRow } from '../../services/savedSummaryService.ts';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowClockwise, CircleNotch } from '@phosphor-icons/react';
+import { useLanguage } from '../../context/LanguageContext.tsx';
+import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
+import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
+import { listSummaryHistory, summaryHistoryPaper } from '../../services/savedSummaryService.ts';
+import { isReadTimeout } from '../../utils/boundedRead.ts';
+import { ListRow } from '../Lists/ListRow.tsx';
+import ScientificText from '../ScientificText.ts';
+import { Button } from '../ui/button.tsx';
+
+const PaperReader = lazy(() => import('../Reader/PaperReader.tsx'));
+
+const COPY = {
+  title: 'Plain-words summaries',
+  description: 'Papers you have read in plain words, newest first. Opening one shows the saved summary and spends no AI use.',
+  loading: 'Loading your summaries…',
+  empty: 'No summaries yet. A paper you read in plain words is listed here.',
+  stalled: 'Your summaries are taking unusually long. Still trying.',
+  failed: 'Your summaries could not be loaded.',
+  failedMore: 'More summaries could not be loaded.',
+  retry: 'Try again',
+  showMore: 'Show more',
+  loaded: (count: number) => `${count} more ${count === 1 ? 'summary' : 'summaries'} listed.`,
+  rowDetail: (level: string, date: string) => ` (${level} level${date ? `, ${date}` : ''})`,
+};
+
+const levelLabel = (level: string) => PAPER_REWRITE_LEVELS.find(option => option.id === level)?.label ?? level;
+
+/**
+ * The reader's own summaries, a page at a time: title, level and date only.
+ * The text is read when a row opens, by the reader itself, which finds the
+ * saved copy before it would ask the worker. Mounted with `key={uid}`, so
+ * another account starts from an empty list and a page still in flight for
+ * the previous one is aborted with it.
+ */
+export default function SummaryHistory({ uid }: { uid: string }) {
+  const { locale } = useLanguage();
+  const [rows, setRows] = useState<SummaryHistoryRow[]>([]);
+  const [cursor, setCursor] = useState<SummaryHistoryCursor>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'stalled' | 'ready' | 'error'>('loading');
+  const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [attempt, setAttempt] = useState(0);
+  const [announcement, setAnnouncement] = useState('');
+  const [openRow, setOpenRow] = useState<SummaryHistoryRow | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const focusRowRef = useRef<number | null>(null);
+  const moreRef = useRef<AbortController | null>(null);
+
+  // A first page that outlasts its read budget says so and keeps trying; the
+  // answer still fills the list when it arrives (as on the Lists page).
+  useEffect(() => {
+    const controller = new AbortController();
+    const show = (page: SummaryHistoryPage) => {
+      if (controller.signal.aborted) return;
+      setRows(page.rows);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+      setStatus('ready');
+    };
+    listSummaryHistory(uid, { signal: controller.signal, onLateResult: show }).then(show, (error) => {
+      if (controller.signal.aborted) return;
+      console.warn('Could not list the saved summaries', error);
+      setStatus(isReadTimeout(error) ? 'stalled' : 'error');
+    });
+    return () => controller.abort();
+  }, [uid, attempt]);
+
+  useEffect(() => () => moreRef.current?.abort(), []);
+
+  const loadMore = async () => {
+    if (moreStatus === 'loading') return;
+    // A retry replaces a page that is still being asked for.
+    moreRef.current?.abort();
+    const controller = new AbortController();
+    moreRef.current = controller;
+    setMoreStatus('loading');
+    const firstNew = rows.length;
+    const append = (page: SummaryHistoryPage) => {
+      if (controller.signal.aborted) return;
+      // A summary written again while the list was open moves to the top,
+      // and must not be listed twice.
+      setRows(current => [...current, ...page.rows.filter(row => !current.some(listed => listed.id === row.id))]);
+      setCursor(page.cursor);
+      setHasMore(page.hasMore);
+      setMoreStatus('idle');
+      setAnnouncement(COPY.loaded(page.rows.length));
+      focusRowRef.current = firstNew;
+    };
+    try {
+      append(await listSummaryHistory(uid, { cursor, signal: controller.signal, onLateResult: append }));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      console.warn('Could not list more saved summaries', error);
+      setMoreStatus('error');
+    }
+  };
+
+  // "Show more" leaves the page with the last page, so focus moves on to the
+  // first row it added (or the last row, if every new one was a duplicate).
+  useEffect(() => {
+    if (focusRowRef.current === null) return;
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>('.list-row-title-btn');
+    const target = buttons?.[Math.min(focusRowRef.current, buttons.length - 1)];
+    focusRowRef.current = null;
+    target?.focus();
+  }, [rows]);
+
+  // Back closes the reader rather than leaving Settings (useOverlayHistory.ts).
+  const readerCloseRef = useRef<(() => void) | null>(null);
+  const requestReaderClose = useCallback(() => {
+    if (readerCloseRef.current) readerCloseRef.current();
+    else setOpenRow(null);
+  }, []);
+  useOverlayHistory(Boolean(openRow), requestReaderClose, 'reader');
+  const readerPaper = useMemo(() => (openRow ? summaryHistoryPaper(openRow) : null), [openRow]);
+
+  const formatDate = useMemo(() => {
+    const format = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' });
+    return (date: Date | null) => (date ? format.format(date) : '');
+  }, [locale]);
+
+  return (
+    <section className="settings-section" aria-labelledby="settings-summaries-heading">
+      <div className="settings-section-heading">
+        <h2 ref={headingRef} id="settings-summaries-heading" tabIndex={-1}>{COPY.title}</h2>
+        <p>{COPY.description}</p>
+      </div>
+
+      {(status === 'loading' || status === 'stalled') && (
+        <p className="settings-summaries-note" role="status">{status === 'stalled' ? COPY.stalled : COPY.loading}</p>
+      )}
+      {status === 'error' && (
+        <div className="settings-summaries-note">
+          <p role="alert">{COPY.failed}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // The button leaves with the error; the heading keeps focus in the section.
+              headingRef.current?.focus();
+              setStatus('loading');
+              setAttempt(value => value + 1);
+            }}
+          >
+            <ArrowClockwise size={15} aria-hidden="true" />
+            {COPY.retry}
+          </Button>
+        </div>
+      )}
+      {status === 'ready' && rows.length === 0 && <p className="settings-summaries-note">{COPY.empty}</p>}
+
+      {rows.length > 0 && (
+        <div ref={listRef} className="settings-list settings-summaries" role="list" aria-labelledby="settings-summaries-heading">
+          {rows.map((row) => {
+            const level = levelLabel(row.level);
+            const date = formatDate(row.updatedAt);
+            return (
+              <ListRow
+                key={row.id}
+                role="listitem"
+                meta={[level, date]}
+                titleLang="en"
+                title={(
+                  <>
+                    <ScientificText>{row.title}</ScientificText>
+                    {/* Two levels of one paper share a title; the name says which is which. */}
+                    <span className="visually-hidden">{COPY.rowDetail(level, date)}</span>
+                  </>
+                )}
+                onOpen={() => setOpenRow(row)}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {moreStatus === 'error' && <p className="settings-summaries-note" role="alert">{COPY.failedMore}</p>}
+      {hasMore && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="settings-summaries-more"
+          onClick={loadMore}
+          aria-busy={moreStatus === 'loading'}
+        >
+          {moreStatus === 'loading'
+            ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
+            : moreStatus === 'error' && <ArrowClockwise size={15} aria-hidden="true" />}
+          {moreStatus === 'error' ? COPY.retry : COPY.showMore}
+        </Button>
+      )}
+      <p className="visually-hidden" role="status">{announcement}</p>
+
+      {openRow && readerPaper && (
+        // As in PaperCard: nothing to hold a place for while the chunk loads.
+        <Suspense fallback={null}>
+          <PaperReader
+            paper={readerPaper}
+            initialLevel={openRow.level}
+            closeRef={readerCloseRef}
+            onClose={() => setOpenRow(null)}
+          />
+        </Suspense>
+      )}
+    </section>
+  );
+}
