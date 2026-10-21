@@ -265,12 +265,12 @@ export class PaperBuilder {
     // publications. `workingPaper` also marks every OpenAlex `report`, and
     // some report registrants issue journals too (the St. Louis Fed its Review
     // under 10.20955). An arXiv record that names its journal, has no DOI of
-    // its own or has merged a record saying, on more than an arXiv DOI, that
-    // the paper was reviewed therefore keeps its own answer, as does a record
-    // from another provider; an arXiv record listing the Review's DOI without
-    // a journal reference still reads as the report. Only a working paper
-    // gets this reading: Springer registers journal articles and chapters
-    // alike under 10.1007.
+    // its own or has merged a record under that DOI saying, on more than an
+    // arXiv DOI, that the paper was reviewed therefore keeps its own answer,
+    // as does a record from another provider; an arXiv record listing the
+    // Review's DOI without a journal reference still reads as the report.
+    // Only a working paper gets this reading: Springer registers journal
+    // articles and chapters alike under 10.1007.
     const baseDoi = normalizeDoi(existingPaper.doi);
     const enrichmentDoi = normalizeDoi(enrichmentData.doi);
     const baseArxivId = arxivIdKey(existingPaper.arxivId);
@@ -432,7 +432,16 @@ export class PaperBuilder {
     // either side stands: a record merged earlier, such as a working paper,
     // already read the DOI otherwise.
     const bothRestOnArxivDoi = arxivDoiOnly && restsOnArxivDoi(enrichmentData);
-    const rereads = !bothRestOnArxivDoi && Boolean(shouldUpgradePublication)
+    // A `true` speaks for the DOI it came with. OpenAlex files the eprint
+    // among the locations of the journal version and of the FEDS paper alike,
+    // while arXiv lists the FEDS revision's DOI. Beside a row whose `true`
+    // rests on that DOI alone, the journal record's `true` is another
+    // version's: it neither ends the reading (below) nor answers for a row
+    // that reads unknown. A row showing arXiv's own DOI names the eprint
+    // rather than a version, so any record's `true` still counts for it.
+    const otherDoiTrue = arxivDoiOnly && enrichmentReview === true
+      && isPublisherDoi(baseDoi) && enrichmentDoi !== baseDoi;
+    const rereads = !bothRestOnArxivDoi && !otherDoiTrue && Boolean(shouldUpgradePublication)
       && (reviewOpen || reviewDenied) && (enrichmentData.peerReviewed !== false || sameRecord);
     if (bothRestOnArxivDoi) {
       if (merged.peerReviewed === true) merged.peerReviewed = enrichmentData.peerReviewed;
@@ -462,15 +471,16 @@ export class PaperBuilder {
     // Written only when it changes: a merge that adds nothing must return a
     // paper equal to the one it got (`paperFieldsEqual`), key for key.
     if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
-    // A merged record whose own answer is `true`, such as OpenAlex's record of
-    // the journal article, backs the row's; until one does, the `true` rests
-    // on the arXiv record's DOI alone. Every other provider's `published`
-    // still counts (see `isOpenAlexRecord`), an untyped Semantic Scholar
-    // record's or CORE's included. A row that takes its answer from a record
-    // resting on an arXiv DOI rests on it too, whatever record it began as: a
-    // topic with an OpenAlex id lists OpenAlex's record of the eprint under
-    // arXiv's DOI before the arXiv record.
-    const stillArxivDoiOnly = (arxivDoiOnly && (enrichmentReview !== true || bothRestOnArxivDoi))
+    // A merged record whose own answer is `true` under the row's DOI, such as
+    // OpenAlex's record of the journal article the arXiv record lists, backs
+    // the row's; until one does, the `true` rests on the arXiv record's DOI
+    // alone. Every other provider's `published` still counts (see
+    // `isOpenAlexRecord`), an untyped Semantic Scholar record's or CORE's
+    // included. A row that takes its answer from a record resting on an arXiv
+    // DOI rests on it too, whatever record it began as: a topic with an
+    // OpenAlex id lists OpenAlex's record of the eprint under arXiv's DOI
+    // before the arXiv record.
+    const stillArxivDoiOnly = (arxivDoiOnly && (enrichmentReview !== true || otherDoiTrue || bothRestOnArxivDoi))
       || (rereads && restsOnArxivDoi(enrichmentData));
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
       merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };

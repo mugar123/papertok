@@ -551,6 +551,9 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
       ['Explorer across pages', [arxiv, explorer(second), explorerRecord()]
         .reduce<Paper[]>((rows, record) => PaperBuilder.deduplicate([...rows, record]), [])],
       ['feed enrichment', [PaperBuilder.merge(PaperBuilder.merge(arxiv, enrichment(second), 'openalex'), enrichment(fedsWork), 'openalex')]],
+      ['followed, author arXiv record before a topic row', PaperBuilder.deduplicate([
+        arxiv, ...PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(second)!, searchRecord()]),
+      ])],
     ];
   };
   for (const [flow, rows] of throughSecondRecord(arxivRecord(`${fedsDoi}r1`), preprintWork)) {
@@ -559,6 +562,53 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     assert.equal(rows[0].peerReviewed, false, where);
     assert.equal(reviewTagForPaper(rows[0])?.label, 'Working paper', where);
     assert.deepEqual(peerReviewedOnly(rows), [], where);
+  }
+  // OpenAlex also files the eprint among the journal version's locations,
+  // under the journal's DOI. That record's `true` is about its own DOI, not
+  // the revision's that the row keeps, so the row is still the FEDS paper.
+  for (const [flow, rows] of throughSecondRecord(arxivRecord(`${fedsDoi}r1`), articleWork)) {
+    const where = `OpenAlex article under another DOI between, ${flow}`;
+    assert.equal(rows.length, 1, where);
+    assert.equal(rows[0].doi, `${fedsDoi}r1`, where);
+    assert.equal(rows[0].peerReviewed, false, where);
+    assert.equal(reviewTagForPaper(rows[0])?.label, 'Working paper', where);
+    assert.deepEqual(peerReviewedOnly(rows), [], where);
+  }
+  // Nor does another provider's record of the journal version: Crossref's
+  // joins on title and first author, Semantic Scholar's on the arXiv id.
+  const otherArticles: Array<[string, () => Paper]> = [
+    ['Crossref', () => mapCrossrefInstitutionWork({
+      DOI: journalDoi,
+      title: [title],
+      type: 'journal-article',
+      author: [{ given: 'Ana', family: 'Economist' }],
+      'container-title': ['Journal of International Economics'],
+      publisher: 'Elsevier',
+    })!],
+    ['Semantic Scholar', () => new SemanticScholarAdapter().mapToStandard({
+      paperId: 'e'.repeat(40),
+      title,
+      authors: [{ name: 'Ana Economist', authorId: '1' }],
+      venue: 'Journal of International Economics',
+      externalIds: { DOI: journalDoi, ArXiv: arxivId },
+    })],
+  ];
+  for (const [provider, article] of otherArticles) {
+    const arxiv = arxivRecord(`${fedsDoi}r1`);
+    const otherFlows: Array<[string, Paper[]]> = [
+      ['Explorer page', PaperBuilder.deduplicate([arxiv, article(), explorerRecord()])],
+      ['Explorer across pages', [arxiv, article(), explorerRecord()]
+        .reduce<Paper[]>((rows, record) => PaperBuilder.deduplicate([...rows, record]), [])],
+      ['followed', PaperBuilder.deduplicate([arxiv, ...PaperBuilder.deduplicate([arxiv, article(), searchRecord()])])],
+    ];
+    for (const [flow, rows] of otherFlows) {
+      const where = `${provider} article under another DOI between, ${flow}`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, `${fedsDoi}r1`, where);
+      assert.equal(rows[0].peerReviewed, false, where);
+      assert.equal(reviewTagForPaper(rows[0])?.label, 'Working paper', where);
+      assert.deepEqual(peerReviewedOnly(rows), [], where);
+    }
   }
   for (const [flow, rows] of throughSecondRecord(arxivRecord(journalDoi), articleWork)) {
     const where = `OpenAlex article between, ${flow}`;
@@ -713,6 +763,46 @@ test('an arXiv record beside a working paper it is not takes neither its series 
       assert.equal(reviewTagForPaper(rows[0]), null, where);
       assert.equal(rows[0].journal, undefined, where);
       assert.deepEqual(peerReviewedOnly(rows), [], where);
+    }
+  }
+
+  // OpenAlex's record of the journal version, which lists the eprint too,
+  // answers for an unknown row only under the DOI the row shows.
+  const articleLocation = {
+    landing_page_url: `https://doi.org/${journalDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal' },
+  };
+  const article: OpenAlexWork = {
+    ...feds,
+    id: 'https://openalex.org/W601',
+    doi: `https://doi.org/${journalDoi}`,
+    primary_location: articleLocation,
+    locations: [articleLocation, feds.locations![1]],
+  };
+  const search = (work: OpenAlexWork) => new OpenAlexAdapter().mapToStandard(work)!;
+  const explorer = (work: OpenAlexWork) => slimWorksPage({ results: [work] }).papers[0];
+  const enrichment = (work: OpenAlexWork) => mapOpenAlexEnrichmentWork(work)!.enrichment;
+  for (const [label, doi, work, answer] of [
+    ['journal DOI, FEDS', journalDoi, feds, true],
+    ['SSRN DOI, NBER', '10.2139/ssrn.4400000', workingPaperWork('10.3386/w31999', nberSource, 'report'), undefined],
+    ['NBER DOI, NBER without a DOI', '10.3386/w30000', workingPaperWork(null, nberSource, 'report'), undefined],
+  ] as Array<[string, string, OpenAlexWork, boolean | undefined]>) {
+    const arxiv = arxivRecord(doi);
+    const articleLast: Array<[string, Paper[]]> = [
+      ['search', PaperBuilder.deduplicate([arxiv, search(work), search(article)])],
+      ['Explorer page', PaperBuilder.deduplicate([arxiv, explorer(work), explorer(article)])],
+      ['Explorer across pages', [arxiv, explorer(work), explorer(article)]
+        .reduce<Paper[]>((rows, record) => PaperBuilder.deduplicate([...rows, record]), [])],
+      ['feed enrichment', [PaperBuilder.merge(PaperBuilder.merge(arxiv, enrichment(work), 'openalex'), enrichment(article), 'openalex')]],
+      ['followed, arXiv record before a topic row', PaperBuilder.deduplicate([arxiv, ...PaperBuilder.deduplicate([arxiv, search(work), search(article)])])],
+    ];
+    for (const [flow, rows] of articleLast) {
+      const where = `${label}, journal article last, ${flow}`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, doi, where);
+      assert.equal(rows[0].peerReviewed, answer, where);
+      assert.equal(peerReviewedOnly(rows).length, answer ? 1 : 0, where);
     }
   }
 });
