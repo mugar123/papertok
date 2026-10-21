@@ -39,7 +39,7 @@ function isArxivCategory(category: string) {
 }
 
 function categoryMatchScore(paper: Partial<Paper>, categoryId: string) {
-  if (paper.categories?.includes(categoryId) || paper.primaryCategory === categoryId) return Number.POSITIVE_INFINITY;
+  if (paper.categories?.includes(categoryId)) return Number.POSITIVE_INFINITY;
 
   const label = CATEGORY_DEFINITIONS.get(categoryId)?.label || categoryId.replace(/\./g, ' ');
   const terms = label.toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length >= 4);
@@ -51,6 +51,12 @@ export function assignRequestedCategories<T extends Partial<Paper>>(papers: T[],
   if (!Array.isArray(requestedCategories) || requestedCategories.length === 0) return papers;
 
   return papers.map(paper => {
+    // A primary category the record already carries is its provider's own
+    // classification, arXiv's for every `fetchPapers` result; the request only
+    // says why the paper was fetched. Every category of a cross-listed paper
+    // matches a `cat:` request exactly, and the first requested one used to win
+    // that tie: 2605.02209, cs.AI with a cs.LG cross-list, came out as cs.LG.
+    if (paper.primaryCategory) return paper;
     const selectedCategory = requestedCategories.reduce((best, categoryId) => {
       return categoryMatchScore(paper, categoryId) > categoryMatchScore(paper, best) ? categoryId : best;
     }, requestedCategories[0]);
