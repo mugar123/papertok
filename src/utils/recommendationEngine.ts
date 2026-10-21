@@ -2,7 +2,6 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/Pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
-import { paperTermCounts } from './contentProfile.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
@@ -265,7 +264,7 @@ function openAlexAuthorKey(author: PaperAuthor | string | null | undefined) {
  * interaction profile learns them and the ranking reads them back. Authors
  * without an OpenAlex id are left out: a name is not an identity.
  */
-function conceptAndAuthorSignals(paper: Partial<Paper>) {
+export function paperAffinitySignals(paper: Partial<Paper>) {
   // The concepts and topics of OpenAlex's own record, then those the card
   // carries itself (a card from OpenAlex has them before any enrichment), each
   // id once. Of the card's own, only OpenAlex concept and topic ids count:
@@ -284,14 +283,6 @@ function conceptAndAuthorSignals(paper: Partial<Paper>) {
     (paper?.authors || []).slice(0, MAX_LEARNED_AUTHORS_PER_PAPER).map(openAlexAuthorKey).filter(Boolean),
   )];
   return { concepts, authorIds };
-}
-
-/**
- * What an interaction with a paper teaches the profile: its concepts and
- * authors, and the terms of its title and abstract.
- */
-export function paperAffinitySignals(paper: Partial<Paper>) {
-  return { ...conceptAndAuthorSignals(paper), terms: [...paperTermCounts(paper).keys()] };
 }
 
 function conceptWeight(score: number | undefined) {
@@ -369,9 +360,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   // (100), so semanticConceptMultiplier IS the maximum semantic contribution.
   // Before this, the raw product reached hundreds of points per concept and
   // whether OpenAlex enrichment had arrived decided the ranking's character.
-  // Not paperAffinitySignals: the ranking reads no terms, and tokenizing every
-  // card of a page cost more than the scoring itself.
-  const { concepts, authorIds } = conceptAndAuthorSignals(paper);
+  const { concepts, authorIds } = paperAffinitySignals(paper);
   const semanticMatch = concepts.reduce((sum, concept) => {
     const affinityValue = conceptAffinities[concept.id] || 0;
     return sum + conceptWeight(concept.score) * (affinityValue / 100);

@@ -13,6 +13,7 @@ import {
   createEmptyInteractionProfile,
   readProfileSignals,
   recordInteractionEvent,
+  serializeInteractionProfile,
 } from './interactionProfile.ts';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
@@ -526,6 +527,22 @@ test('the keyword ids a provider makes up for one card teach the reader no conce
 
   assert.deepEqual(Object.keys(reader.conceptAffinities), ['T900003']);
   assert.equal(scorePaperForRecommendation(bioRxivCard('biorxiv:3'), reader).semantic, 0);
+});
+
+test('liking a paper stores what it is about and none of its words', () => {
+  const card = {
+    id: 'liked', primaryCategory: 'cs.LG', published: '2026-07-01T00:00:00Z', primaryTopic: RL_TOPIC,
+    title: 'Offline reinforcement learning', abstract: 'A policy is learned from a fixed dataset of transitions.',
+  };
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, {
+    paperId: card.id, kind: 'like', category: card.primaryCategory, timestamp: NOW, ...paperAffinitySignals(card),
+  }, NOW);
+
+  const { affinities } = serializeInteractionProfile(profile);
+
+  assert.match(affinities, /T900001/);
+  assert.doesNotMatch(affinities, /offline|reinforcement|policy|dataset|transition/i);
 });
 
 test('two readers who picked the same category and liked different papers get different papers first from the same pool', () => {

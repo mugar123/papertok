@@ -10,8 +10,6 @@ export interface InteractionProfile {
   categories: Map<string, { cohorts: Map<number, { weighted: number; raw: number }>; aged: number }>;
   concepts: Map<string, DecayedAffinity>;
   authors: Map<string, DecayedAffinity>;
-  // The words and word pairs of the papers the reader liked, saved or refused.
-  terms: Map<string, DecayedAffinity>;
   exposure: Map<string, CategoryExposure>;
   dwell: { median: number };
   positives: PositiveExample[];
@@ -24,16 +22,12 @@ export interface InteractionProfile {
 }
 export interface InteractionEvent {
   paperId: string; kind: string; category?: string; timestamp?: number | string; viewTime?: number; value?: boolean;
-  concepts?: WeightedConcept[]; authorIds?: string[]; terms?: string[];
+  concepts?: WeightedConcept[]; authorIds?: string[];
 }
 export interface ProfileSignals {
   categoryAffinities: Record<string, number>;
   conceptAffinities: Record<string, number>;
   authorAffinities: Record<string, number>;
-  contentAffinities: Record<string, number>;
-  // Likes, saves and long reads still standing: a content match needs
-  // MIN_CONTENT_POSITIVES of them (see contentProfile.ts).
-  positiveCount: number;
   sessionAffinities: Record<string, number>;
   categoryExposure: Record<string, CategoryExposure>;
   interactionCount: number;
@@ -69,14 +63,6 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * the exception: the documents store neither, so a rebuild starts them empty and
  * `seedLearnedAffinities` refills them from the liked and saved papers.
  *
- * The terms (`terms`: the words and word pairs of the papers the reader liked,
- * saved, opened or refused, see contentProfile.ts) are kept like the concepts,
- * a value and a time under the same 30-day decay, 400 at most. A rebuild learns
- * them from the title and abstract each document kept, which a like, a save
- * and a rejection do and a view or a skip does not. They joined the affinities
- * without a schema bump: a client that predates them ignores the key (and drops
- * it when it next writes the aggregate), and a bump would rebuild every account.
- *
  * ── How the category affinities survive being incremental ──
  * The old full scan weighted every interaction by `max(0.2, exp(-ageDays/30))`,
  * a factor that changes every second, so a plain running total cannot
@@ -97,7 +83,6 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  */
 import { readStoredClassification } from '../models/Paper.ts';
 import { areaKeyForCategory } from './areaAccent.ts';
-import { termCountsOf } from './contentProfile.ts';
 import {
   addSeenPaper,
   createSeenFilter,
@@ -127,15 +112,6 @@ const IMPACT_OPENED_PDF = 4;
 const IMPACT_SKIP = -1;
 const IMPACT_PDF_BOUNCE = -2;
 const IMPACT_NOT_INTERESTED = -10;
-// What each term of a paper is worth, by what the reader did with it. Liking
-// or saving it is the reader choosing it; a PDF opened or a read of twice
-// their median is half a like. A rejection counts against it in full, and a
-// quick skip only faintly, down to a floor: swiping past a card says little
-// about each word in it.
-const TERM_IMPACT_MEDIUM = 2.5;
-const TERM_IMPACT_SKIP = -0.25;
-const TERM_SKIP_FLOOR = -1.5;
-
 // A rejection is about this paper's topics and authors, which take the full
 // penalty. Its category keeps only a mild one: refusing one paper on LLM
 // benchmarks used to sink every cs.CL paper and its sibling categories for two
@@ -186,7 +162,6 @@ export const MAX_AFFINITY_JSON_BYTES = 120000;
 export const MAX_TRACKED_CATEGORIES = 300;
 const MAX_TRACKED_CONCEPTS = 400;
 const MAX_TRACKED_AUTHORS = 300;
-const MAX_TRACKED_TERMS = 400;
 // Below this a learned concept or author no longer moves a score.
 const NEGLIGIBLE_AFFINITY = 0.01;
 
@@ -214,7 +189,6 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     categories: new Map(),
     concepts: new Map(),
     authors: new Map(),
-    terms: new Map(),
     exposure: new Map(),
     dwell: { median: DEFAULT_DWELL_MEDIAN_SECONDS },
     positives: [],
@@ -336,25 +310,6 @@ function addDecayedImpact(map: Map<string, DecayedAffinity>, key: string, impact
   }
 }
 
-/**
- * Like addDecayedImpact for a push that must not take the value below `floor`:
- * what remains of the room is used, and a value already there gets nothing.
- */
-function addDecayedImpactDownTo(map: Map<string, DecayedAffinity>, key: string, impact: number, floor: number, timestampMs: number) {
-  const entry = map.get(key);
-  const current = entry ? decayedValueAt(entry, timestampMs) : 0;
-  addDecayedImpact(map, key, Math.min(0, Math.max(impact, floor - current)), timestampMs);
-}
-
-function learnTerms(profile: InteractionProfile, terms: unknown, impact: number, timestampMs: number, floor?: number) {
-  if (!Array.isArray(terms) || !impact) return;
-  terms.forEach((term) => {
-    if (typeof term !== 'string' || !term) return;
-    if (floor === undefined) addDecayedImpact(profile.terms, term, impact, timestampMs);
-    else addDecayedImpactDownTo(profile.terms, term, impact, floor, timestampMs);
-  });
-}
-
 function compactDecayed(map: Map<string, DecayedAffinity>, cap: number, now: number) {
   map.forEach((entry, key) => {
     if (Math.abs(decayedValueAt(entry, now)) < NEGLIGIBLE_AFFINITY) map.delete(key);
@@ -444,8 +399,6 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
     categoryAffinities: {},
     conceptAffinities: {},
     authorAffinities: {},
-    contentAffinities: {},
-    positiveCount: 0,
     sessionAffinities: {},
     categoryExposure: {},
     interactionCount: 0,
@@ -467,16 +420,12 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   profile.authors.forEach((entry, key) => {
     signals.authorAffinities[key] = clamp(decayedValueAt(entry, now), AFFINITY_MIN, AFFINITY_MAX);
   });
-  profile.terms.forEach((entry, key) => {
-    signals.contentAffinities[key] = clamp(decayedValueAt(entry, now), AFFINITY_MIN, AFFINITY_MAX);
-  });
   profile.session.forEach((value, key) => {
     signals.sessionAffinities[key] = value;
   });
   profile.exposure.forEach((entry, category) => {
     signals.categoryExposure[category] = { ...entry };
   });
-  signals.positiveCount = profile.positives.length;
   signals.interactionCount = profile.counters.interactions;
   signals.dwellMedianSeconds = profile.dwell.median;
   return signals;
@@ -623,34 +572,27 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
   // null for the kinds that say nothing about what the reader wants.
   let impact: number | null = null;
   let categoryImpact: number | null = null;
-  // What the paper's terms take from this event, and the floor a skip stops at.
-  let termImpact = 0;
-  let termFloor: number | undefined;
 
   switch (event.kind) {
     case 'like':
       addCurated(profile, 'liked', event.paperId);
       addPositive(profile, event.paperId, category);
       impact = IMPACT_LIKED;
-      termImpact = IMPACT_LIKED;
       break;
     case 'unlike':
       removeCurated(profile, 'liked', event.paperId);
       removeUnkeptPositive(profile, event.paperId);
       impact = -IMPACT_LIKED;
-      termImpact = -IMPACT_LIKED;
       break;
     case 'save':
       addCurated(profile, 'saved', event.paperId);
       addPositive(profile, event.paperId, category);
       impact = IMPACT_SAVED;
-      termImpact = IMPACT_SAVED;
       break;
     case 'unsave':
       removeCurated(profile, 'saved', event.paperId);
       removeUnkeptPositive(profile, event.paperId);
       impact = -IMPACT_SAVED;
-      termImpact = -IMPACT_SAVED;
       break;
     case 'read':
       addCurated(profile, 'read', event.paperId);
@@ -667,7 +609,6 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       removePositive(profile, event.paperId);
       impact = IMPACT_NOT_INTERESTED;
       categoryImpact = IMPACT_NOT_INTERESTED_CATEGORY;
-      termImpact = IMPACT_NOT_INTERESTED;
       break;
     // The rejection taken back: its impact is returned, and a paper that is
     // still liked or saved is an example again, as a rebuild from its
@@ -679,11 +620,9 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       }
       impact = -IMPACT_NOT_INTERESTED;
       categoryImpact = -IMPACT_NOT_INTERESTED_CATEGORY;
-      termImpact = -IMPACT_NOT_INTERESTED;
       break;
     case 'openedPdf':
       impact = IMPACT_OPENED_PDF;
-      termImpact = TERM_IMPACT_MEDIUM;
       break;
     case 'pdfBounce':
       impact = IMPACT_PDF_BOUNCE;
@@ -691,8 +630,6 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     case 'skip':
       recordExposure(profile, category, false);
       impact = IMPACT_SKIP;
-      termImpact = TERM_IMPACT_SKIP;
-      termFloor = TERM_SKIP_FLOOR;
       break;
     case 'viewTime': {
       const seconds = Number(event.viewTime);
@@ -703,7 +640,6 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       recordExposure(profile, category, seconds >= median);
       if (seconds >= median * STRONG_READ_RATIO && !curatedSet(profile, 'notInterested')!.members.has(event.paperId)) {
         addPositive(profile, event.paperId, category);
-        termImpact = TERM_IMPACT_MEDIUM;
       }
       observeDwell(profile.dwell, seconds);
       break;
@@ -727,7 +663,6 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       recordSessionImpact(profile, category, categoryImpact ?? impact, concepts, impact);
     }
   }
-  learnTerms(profile, event.terms, termImpact, timestampMs, termFloor);
 
   if (!alreadyAccountedFor) {
     profile.countedPapers.add(event.paperId);
@@ -740,7 +675,6 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
   compactCategories(profile, now);
   compactDecayed(profile.concepts, MAX_TRACKED_CONCEPTS, now);
   compactDecayed(profile.authors, MAX_TRACKED_AUTHORS, now);
-  compactDecayed(profile.terms, MAX_TRACKED_TERMS, now);
   return profile;
 }
 
@@ -769,15 +703,6 @@ function documentCategoryImpact(data: InteractionDocumentData, viewImpact: numbe
 function documentCategory(id: string, data: InteractionDocumentData) {
   if (data.paper && typeof data.paper === 'object') return readStoredClassification({ ...data.paper, id }).primaryCategory;
   return typeof data.paperCategory === 'string' ? data.paperCategory : '';
-}
-
-/**
- * The terms a document can teach: those of the title and abstract it kept, or
- * of its stored copy. A view or a skip document keeps no text and teaches none.
- */
-function documentTerms(data: InteractionDocumentData) {
-  const copy = data.paper && typeof data.paper === 'object' ? data.paper : null;
-  return [...termCountsOf(data.paperTitle ?? copy?.title, data.paperAbstract ?? copy?.abstract ?? copy?.summary).keys()];
 }
 
 /**
@@ -818,15 +743,6 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
       recordExposure(profile, category, false);
     }
     if (!data.notInterested && (data.liked || data.saved || strongRead)) addPositive(profile, id, category);
-
-    // The same weights an event gives, from the document's final state.
-    const learnedAt = toTimestampMs(data.timestamp) ?? now;
-    const strongReadImpact = !data.notInterested && strongRead ? TERM_IMPACT_MEDIUM : 0;
-    const impact = (data.liked ? IMPACT_LIKED : 0) + (data.saved ? IMPACT_SAVED : 0)
-      + (data.openedPdf ? TERM_IMPACT_MEDIUM : 0) + strongReadImpact
-      + (data.notInterested ? IMPACT_NOT_INTERESTED : 0);
-    if (impact) learnTerms(profile, documentTerms(data), impact, learnedAt);
-    else if (data.skip) learnTerms(profile, documentTerms(data), TERM_IMPACT_SKIP, learnedAt, TERM_SKIP_FLOOR);
   }
 
   documents.forEach(({ id, data }) => {
@@ -848,7 +764,6 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
   profile.counters.interactions = profile.sourceDocCount;
   profile.updatedAt = new Date(now).toISOString();
   compactCategories(profile, now);
-  compactDecayed(profile.terms, MAX_TRACKED_TERMS, now);
   return profile;
 }
 
@@ -889,20 +804,17 @@ function serializeAffinities(profile: InteractionProfile) {
     categories,
     concepts: serializeDecayed(profile.concepts),
     authors: serializeDecayed(profile.authors),
-    terms: serializeDecayed(profile.terms),
     exposure,
     dwell: Number(profile.dwell.median.toPrecision(6)),
     positives: profile.positives.map(example => [example.id, example.category]),
   };
   let serialized = JSON.stringify(payload);
-  // Concepts, authors and terms are the part that can grow with use; the
-  // weakest go first. The categories are left to the check below, as they
-  // always were.
+  // Concepts and authors are the part that can grow with use; the weakest go
+  // first. The categories are left to the check below, as they always were.
   while (serialized.length > MAX_AFFINITY_JSON_BYTES
-    && Object.keys(payload.concepts).length + Object.keys(payload.authors).length + Object.keys(payload.terms).length > 0) {
+    && Object.keys(payload.concepts).length + Object.keys(payload.authors).length > 0) {
     payload.concepts = weakestHalfRemoved(payload.concepts);
     payload.authors = weakestHalfRemoved(payload.authors);
-    payload.terms = weakestHalfRemoved(payload.terms);
     serialized = JSON.stringify(payload);
   }
   return serialized;
@@ -981,7 +893,7 @@ function deserializeDecayed(serialized: unknown, map: Map<string, DecayedAffinit
 
 interface SerializedAffinities {
   categories?: Record<string, { c?: Record<string, unknown>; a?: number }>;
-  concepts?: unknown; authors?: unknown; terms?: unknown; exposure?: Record<string, unknown>;
+  concepts?: unknown; authors?: unknown; exposure?: Record<string, unknown>;
   dwell?: unknown; positives?: unknown;
 }
 
@@ -1006,7 +918,6 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
     });
     deserializeDecayed(affinities.concepts, profile.concepts);
     deserializeDecayed(affinities.authors, profile.authors);
-    deserializeDecayed(affinities.terms, profile.terms);
     Object.entries(affinities.exposure || {}).forEach(([category, pair]) => {
       if (!Array.isArray(pair)) return;
       const shown = Math.max(0, Math.floor(Number(pair[0]) || 0));

@@ -106,9 +106,3 @@ The aggregate carries `schemaVersion`. When the format changes, bump
 `INTERACTION_PROFILE_SCHEMA_VERSION` in `src/utils/interactionProfile.ts`. Every
 client then treats its stored aggregate as unreadable and rebuilds it once, so
 running this script after a bump is again optional.
-
-A key added to the affinities that older clients ignore does not need a bump, as
-`terms` (the words of the papers a reader liked, saved or refused) did not. A
-client that predates it drops the key when it next writes the aggregate, and
-the terms are learned again from the reader's next interactions; a rebuild
-recovers them from the title and abstract each interaction document kept.
