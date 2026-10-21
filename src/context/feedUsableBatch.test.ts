@@ -383,6 +383,28 @@ for (const [name, page] of [
   });
 }
 
+// The later page is rarely in the Worker's edge cache, so it is the one that
+// waits for a seat at arXiv and can be refused.
+for (const status of [429, 502]) {
+  test(`a reload whose start page was all shown before shows those papers when arXiv answers the later page with ${status}`, async t => {
+    const { state, env, run, starts } = reloadOnPageOne(t, { seen: pageIds(0, 1, 2, 3, 4) });
+    env.loadPapersRef.current = run;
+    env.fetchPapers = (_categories: string[], start = 0) => {
+      starts.push(start);
+      return start === 15
+        ? Promise.resolve(records('page-1'))
+        : Promise.reject(Object.assign(new Error(`arXiv API error: ${status}`), { status }));
+    };
+    // Every timer the loader sets fires at once, so a retry would already have run.
+    Object.assign(env, { setTimeout: (callback: () => void) => setTimeout(callback, 0) });
+    await run(true, null, true);
+    await wait(20);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1), 'the start page is shown again');
+    assert.deepEqual(starts, [15, 90], 'no request after the refused one');
+  });
+}
+
 test('a reload whose start page has unseen papers asks for no other page', async t => {
   // A source returns a wider pool than a page: 20 papers, 5 shown before.
   const { state, run, starts } = reloadOnPageOne(t, {

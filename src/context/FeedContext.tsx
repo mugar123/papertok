@@ -1428,8 +1428,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         // Only give up when the OPTIONAL candidates cannot bootstrap the feed
         // either: a dead arXiv must not blank a feed that graph, personal or
-        // followed papers could populate on their own.
-        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, personalPapers, followedPapers)) {
+        // followed papers could populate on their own, or that the seen
+        // papers carried from an earlier page can fill.
+        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, personalPapers, followedPapers, seenFallback)) {
           throw new Error('No scientific provider returned usable papers.');
         }
 
