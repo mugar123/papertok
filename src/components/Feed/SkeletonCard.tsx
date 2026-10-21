@@ -18,9 +18,6 @@ export default function SkeletonCard() {
     <div className="pc sk" aria-hidden="true">
       <div className="pc-sheet">
         <div className="pc-body">
-          {/* The phone's lead: the figure's place above the paper (hidden on
-              wider screens, as the card's own is), so the title waits where
-              the real one will land. */}
           <div className="pc-lead">
             <span className="sk-block sk-figure" />
           </div>
