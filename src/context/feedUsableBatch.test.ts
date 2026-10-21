@@ -11,7 +11,7 @@ import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interactionProfile.ts';
-import { clearUserScopedStorage, readSeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
+import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
@@ -594,31 +594,46 @@ test('a refresh after a reload does not offer the restored cards again', async t
 
 // The start of the effect that runs when the signed-in account changes, up to
 // where a guest returns: it replaces the seen set and resets the aggregate.
-const accountSwitchStart = source.indexOf('    activeUserId.current = userId;\n    sessionSeenPapers.current');
+const accountSwitchStart = source.indexOf('    removeLegacySeenPaperIds(null, userId);\n    activeUserId.current = userId;\n    sessionSeenPapers.current');
 const accountSwitch = stripTypeScriptTypes(source.slice(accountSwitchStart, source.indexOf('\n    if (!userId) {', accountSwitchStart)));
+function switchAccount(viewer: ReturnType<typeof viewing>, storage: ReturnType<typeof memoryStorage>, interactionProfile: { current: ReturnType<typeof createEmptyInteractionProfile> }, userId: string) {
+  const noop = () => {};
+  const scope = {
+    ...viewer.scope, interactionProfile, createEmptyInteractionProfile, readProfileSignals, emptyEngagementWindow: () => null,
+    removeLegacySeenPaperIds: (_storage: null, id: string) => removeLegacySeenPaperIds(storage, id), loadedProfileUserId: ref<string | null>(viewer.scope.activeUserId.current),
+    setLikedPaperIds: noop, setNotInterestedIds: noop, setSavedPaperIds: noop, setReadPaperIds: noop, setPersonalLibrary: noop,
+    profileSignals: ref(null), relatedCandidates: ref([]), personalCandidates: ref([]), engagementWindow: ref(null),
+    interactionProfileHydrated: ref(true), personalLibraryStatus: ref(null),
+  };
+  assert.ok(accountSwitchStart >= 0, 'the account-change effect must exist');
+  new Function(...Object.keys(scope), 'userId', accountSwitch)(...Object.values(scope), userId);
+}
 
-test('switching accounts forgets what the previous account viewed, in memory, and keeps each account\'s list apart', () => {
+test("switching accounts forgets what the previous account viewed, in memory, and keeps each account's list apart", () => {
   const storage = memoryStorage();
   const accountA = viewing({ user: 'account-a', storage });
   accountA.markPaperViewed('a-viewed-here', 'account-a');
   const aggregateA = deviceBReadingAGroup([paperRecord('a-viewed-elsewhere')]);
   accountA.carryViewedPapers(aggregateA);
   const interactionProfile = ref(aggregateA);
-  const noop = () => {};
-  const scope = {
-    ...accountA.scope, interactionProfile, createEmptyInteractionProfile, readProfileSignals, emptyEngagementWindow: () => null,
-    removeLegacySeenPaperIds: noop, loadedProfileUserId: ref<string | null>('account-a'),
-    setLikedPaperIds: noop, setNotInterestedIds: noop, setSavedPaperIds: noop, setReadPaperIds: noop, setPersonalLibrary: noop,
-    profileSignals: ref(null), relatedCandidates: ref([]), personalCandidates: ref([]), engagementWindow: ref(null),
-    interactionProfileHydrated: ref(true), personalLibraryStatus: ref(null),
-  };
-  assert.ok(accountSwitchStart >= 0, 'the account-change effect must exist');
-  new Function(...Object.keys(scope), 'userId', accountSwitch)(...Object.values(scope), 'account-b');
+  switchAccount(accountA, storage, interactionProfile, 'account-b');
 
   assert.deepEqual([...accountA.scope.sessionSeenPapers.current], [], 'B does not skip what A viewed');
-  assert.deepEqual(viewedIds(interactionProfile.current), [], 'B\'s aggregate does not carry A\'s ring');
+  assert.deepEqual(viewedIds(interactionProfile.current), [], "B's aggregate does not carry A's ring");
   assert.deepEqual(accountA.stored('account-a'), ['a-viewed-here'], 'A finds its list when it signs back in');
   assert.deepEqual(accountA.stored('account-b'), []);
+});
+
+// The list this browser kept before the release named every paper a load
+// showed, including every paper the reader viewed.
+test("an account's first load after the release skips what this browser had kept for it", () => {
+  const storage = memoryStorage();
+  storage.setItem('papertok_seenIds:account-b', JSON.stringify(['b-viewed-before-release']));
+  const guest = viewing({ user: null, storage });
+  switchAccount(guest, storage, ref(createEmptyInteractionProfile()), 'account-b');
+
+  assert.deepEqual([...guest.scope.sessionSeenPapers.current], ['b-viewed-before-release']);
+  assert.deepEqual(guest.stored('account-b'), ['b-viewed-before-release']);
 });
 
 test('a short screen schedules its next page and preserves papers when it fills', async () => {

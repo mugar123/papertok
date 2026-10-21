@@ -264,18 +264,37 @@ test('the hidden-comments key is namespaced by uid, and refuses to exist without
 });
 
 // Until the list kept only papers the reader viewed it held every paper a load
-// showed, so it names cards that were never on screen. Read back, it would hide
-// them from the next load for as long as it takes 500 views to push them out.
-test('the list written when it held every loaded paper is not read back, and is swept', () => {
+// showed, so it names cards that were never on screen. It also names every
+// paper the reader viewed before, so the account's first viewed list starts
+// from it once; a viewed list that already exists is not replaced.
+test('the list written when it held every loaded paper starts the viewed list once, and is swept', () => {
+  const storage = createStorage();
+  storage.setItem('papertok_seenIds:user-a', JSON.stringify(['viewed-before-release', 'loaded-never-viewed']));
+  storage.setItem('papertok_seenIds:user-b', JSON.stringify(['b-loaded']));
+
+  assert.deepEqual([...readSeenPaperIds('user-a', storage)], [], 'the old list is not read as it is');
+  removeLegacySeenPaperIds(storage, 'user-a');
+
+  assert.deepEqual([...readSeenPaperIds('user-a', storage)], ['viewed-before-release', 'loaded-never-viewed'], 'nothing seen before the release is shown again');
+  assert.equal(storage.getItem('papertok_seenIds:user-a'), null);
+  assert.equal(storage.getItem('papertok_seenIds:user-b'), JSON.stringify(['b-loaded']), 'another account is left alone');
+});
+
+test('an existing viewed list is kept when an old list is swept', () => {
   const storage = createStorage();
   storage.setItem('papertok_seenIds:user-a', JSON.stringify(['loaded-never-viewed']));
-  storage.setItem('papertok_seenIds:user-b', JSON.stringify(['b-loaded']));
   saveSeenPaperIds('user-a', new Set(['viewed']), storage);
-
-  assert.deepEqual([...readSeenPaperIds('user-a', storage)], ['viewed']);
   removeLegacySeenPaperIds(storage, 'user-a');
 
   assert.equal(storage.getItem('papertok_seenIds:user-a'), null);
-  assert.equal(storage.getItem('papertok_seenIds:user-b'), JSON.stringify(['b-loaded']), 'another account is left alone');
-  assert.deepEqual([...readSeenPaperIds('user-a', storage)], ['viewed'], 'the current list is not swept');
+  assert.deepEqual([...readSeenPaperIds('user-a', storage)], ['viewed'], 'the current list is not replaced or swept');
+});
+
+test('a corrupt old list is swept and starts nothing', () => {
+  const storage = createStorage();
+  storage.setItem('papertok_seenIds:user-a', '{not json');
+  removeLegacySeenPaperIds(storage, 'user-a');
+
+  assert.equal(storage.getItem('papertok_seenIds:user-a'), null);
+  assert.deepEqual([...readSeenPaperIds('user-a', storage)], []);
 });

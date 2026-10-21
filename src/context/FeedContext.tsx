@@ -977,9 +977,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid || null;
     const sessionId = ++feedSessionId.current;
 
+    // Before the list is read: on an account's first load it starts from the
+    // list this browser kept before.
+    removeLegacySeenPaperIds(null, userId);
     activeUserId.current = userId;
     sessionSeenPapers.current = readSeenPaperIds(userId);
-    removeLegacySeenPaperIds(null, userId);
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a

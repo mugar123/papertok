@@ -5,7 +5,8 @@ import { MAX_VIEWED_IDS } from './interactionProfile.ts';
 
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 // Until the list held only viewed papers it held every paper a load showed, so
-// it names cards that never were on screen. That key is never read; it is swept.
+// it names cards that never were on screen. It is read once, to start the new
+// list, and swept.
 const LOADED_PAPERS_KEY_PREFIX = 'papertok_seenIds:';
 const SEEN_PAPERS_KEY_PREFIX = 'papertok_viewedIds:';
 const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
@@ -259,7 +260,17 @@ export function removeLegacySeenPaperIds(storage?: ScopedStorage | null, userId?
 
   try {
     target.removeItem(LEGACY_SEEN_PAPERS_KEY);
-    if (userId) target.removeItem(`${LOADED_PAPERS_KEY_PREFIX}${encodeURIComponent(userId)}`);
+    const viewedKey = getSeenPapersStorageKey(userId);
+    if (!viewedKey) return;
+    const loadedKey = `${LOADED_PAPERS_KEY_PREFIX}${encodeURIComponent(userId!)}`;
+    const loaded = target.getItem(loadedKey);
+    target.removeItem(loadedKey);
+    // The loaded list includes every paper the reader viewed before the list
+    // kept only viewed ones. Starting from nothing would show those again; its
+    // cards nobody viewed stay hidden only until views push them out.
+    if (loaded === null || target.getItem(viewedKey) !== null) return;
+    const ids: unknown = JSON.parse(loaded);
+    if (Array.isArray(ids)) saveSeenPaperIds(userId, ids.filter((id): id is string => typeof id === 'string' && id.length > 0), target);
   } catch {
     // Storage cleanup is best effort.
   }
