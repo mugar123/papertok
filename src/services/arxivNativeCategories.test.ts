@@ -126,7 +126,7 @@ test('a record that brings no arXiv classification leaves the categories alone',
   const recovered = PaperBuilder.merge(openAlexRecord, { abstract: 'A recovered abstract long enough to be usable.' }, 'arxiv');
   assert.deepEqual(classification(recovered), before);
 
-  // A Hugging Face record carries the category its request asked for.
+  // Whatever category another source's record names, it is not arXiv's.
   const huggingFace = PaperBuilder.merge(openAlexRecord, {
     arxivId: '2605.02209',
     sources: { primary: 'huggingface', enrichedBy: [] },

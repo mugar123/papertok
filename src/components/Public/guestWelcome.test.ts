@@ -21,7 +21,7 @@ const starsPromise = read('./Stars.tsx').then(stripComments);
  */
 test('the welcome retains its intro and topics before personalization and optional support', async () => {
   const [jsx, shell] = await Promise.all([jsxPromise, shellPromise]);
-  assert.match(jsx, /const STEPS = \['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'support'\];/);
+  assert.match(jsx, /const STEPS = \['welcome', 'how', 'topics', 'subtopics', 'reading', 'inbox', 'university', 'support'\];/);
   assert.match(jsx, /return \(\s*<WelcomeShell\b/, 'the welcome is drawn in the shared page');
   assert.match(shell, /<main className=\{`gw\$\{/, 'the welcome brings its own <main>');
   assert.doesNotMatch(jsx + shell, /ui\/dialog|<Dialog/, 'a first visit is not a dialog over the feed');
@@ -42,7 +42,7 @@ test('the welcome retains its intro and topics before personalization and option
  */
 test('the specific topics are their own screen, in the area cards, and never block the feed', async () => {
   const [jsx, shell] = await Promise.all([jsxPromise, shellPromise]);
-  assert.match(jsx, /const primary = \(\) => \{\s*if \(step === 'support'\) finish\(\);\s*else goTo\(stepIndex \+ 1\);/);
+  assert.match(jsx, /const primary = \(\) => \{[\s\S]*?if \(step === 'support'\) finish\(\);\s*else goTo\(stepIndex \+ 1\);/);
   assert.match(jsx, /\{isSubtopics && \(\s*<SubtopicsPicker\b/, 'the topics screen draws the shared picker');
   const subtopics = shell.slice(shell.indexOf('export function SubtopicsPicker'));
   assert.match(subtopics, /className="gw-areas"/, 'the same grid as the areas');
@@ -221,7 +221,7 @@ test('the welcome ends in a sign-up, and an existing account can sign in from an
   assert.match(support, /cta: 'Create your account'/);
   // There is no guest feed: the last action stores the answer for the account
   // onboarding, and only then opens the sign-up.
-  assert.match(jsx, /saveGuestInterests\(\{ areas, topics: normalizeGuestTopics\(Array\.from\(selectedTopics\), areas\), readingLevel, emailDigest \}\);\s*onSignIn\?\.\(\);/);
+  assert.match(jsx, /saveGuestInterests\(\{ areas, topics: normalizeGuestTopics\(Array\.from\(selectedTopics\), areas\), readingLevel, emailDigest, institutionEmail \}\);\s*onSignIn\?\.\(\);/);
   assert.doesNotMatch(jsx, /\bonComplete\b/, 'nothing is handed to a feed');
   // Someone onboarded on another device must not answer the welcome again to
   // reach their account: the landing's account button opens the providers, and

@@ -51,7 +51,7 @@ export interface FeedContextValue {
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
 import { IS_DEMO, db } from '../services/firebase.ts';
-import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { getDoc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
 import { auth } from '../services/firebase.ts';
@@ -82,7 +82,9 @@ import {
   saveProfileDriftCheckedAt,
   saveSeenPaperIds,
 } from '../utils/userScopedStorage.ts';
+import { readStoredClassification, storedClassification } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { savedPaperDocRef } from '../services/savedPaperStore.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.ts';
 import {
@@ -109,9 +111,10 @@ import {
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
 } from '../services/interactionProfileStore.ts';
-import { fetchDomainPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
+import { fetchDomainPapers, fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import {
   abstractsInFlight,
+  cardsGivenTopic,
   getOpenAlexEnrichmentId,
   mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
@@ -143,6 +146,12 @@ const RESET_START_PAGES = 5;
 // 2.05 s); the only upstream ever seen above 4 s is OpenReview's cold 5.2 s,
 // which the previous 5 s budget lost anyway after waiting the full 5 s for it.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
+// How many papers of the OpenAlex topic page count toward the first paint. The
+// page holds 25 papers and often answers first, from the Worker's cache. Counted
+// whole, it supplied more than 10 of the first 15 cards in 57 % of modelled
+// molecular-biology loads and 68 % of neuroscience ones (plan G, PAP-73). Now
+// another lane that answers within the budget above joins it.
+const OPENALEX_TOPIC_READY_LIMIT = 10;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 // How long the main query may wait for the followed-topic category ids. The
 // topic module is prewarmed the moment a topic follow is known (see the
@@ -620,13 +629,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
        */
       const papers: Record<string, Partial<Paper>> = {};
       records.forEach(({ id, data }) => {
-        const paper = data.paper || serializeLibraryPaper({
-          id,
-          title: data.paperTitle || '',
-          authors: data.paperAuthors || [],
-          primaryCategory: data.paperCategory || '',
-          published: (data.timestamp || '') as string,
-        });
+        // A copy's field is decided here, on the document as it was stored,
+        // because every screen below reads these copies as they are. A record
+        // without a copy kept only the category its card showed, which was
+        // often the one the feed asked for, so it has no field (PAP-60).
+        const paper = data.paper
+          ? { ...data.paper, ...readStoredClassification({ ...data.paper, id }) }
+          : serializeLibraryPaper({
+            id,
+            title: data.paperTitle || '',
+            authors: data.paperAuthors || [],
+            published: (data.timestamp || '') as string,
+          });
         // Only a real title: standing the id in for one used to paint
         // `openalex:W…` on Liked. An empty title stays empty so a later
         // fetch can fill it.
@@ -705,6 +719,54 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     feedScrolledAtRef.current = Date.now();
   }, []);
 
+  /**
+   * PAP-60, D6. Past the first page, OpenAlex answers after a card is shown,
+   * and a card from a source with no classification of its own takes its
+   * field from that answer's topic. A like, save, read or Read later before
+   * it stored the card without the topic, so the card showed a field and the
+   * copy, once reloaded, none. The topic is added to each stored copy that
+   * has none, and to the copies the library holds in memory. Nothing else in
+   * a copy changes: its categories and classificationVersion are the evidence
+   * it was stored with, and the interaction's timestamp dates the reader's
+   * action, not this write.
+   */
+  const keepLateTopics = useCallback((cards: Paper[]) => {
+    const userId = user?.uid;
+    if (!userId || IS_DEMO) return;
+    cards.forEach((card) => {
+      const { primaryTopic } = storedClassification(card);
+      const paperId = withInteractionId(card).id;
+      const saved = savedPaperIdsRef.current.has(paperId);
+      if (!primaryTopic || (!saved && !likedPaperIdsRef.current.has(paperId)
+        && !readPaperIdsRef.current.has(paperId) && !personalLibrary[paperId])) return;
+      setPersonalLibrary((current) => {
+        const entry = current[paperId];
+        return entry?.paper && !entry.paper.primaryTopic
+          ? { ...current, [paperId]: { ...entry, paper: { ...entry.paper, primaryTopic } } }
+          : current;
+      });
+      setLibraryPapers((current) => {
+        const copy = current[paperId];
+        return copy && !copy.primaryTopic ? { ...current, [paperId]: { ...copy, primaryTopic } } : current;
+      });
+      void (async () => {
+        // A record kept without a copy has no field to complete.
+        const interaction = await getDoc(interactionDocRef(userId, paperId));
+        const copy = interaction.data()?.paper;
+        if (copy && !copy.primaryTopic) await updateDoc(interaction.ref, { 'paper.primaryTopic': primaryTopic });
+        if (!saved) return;
+        // The save sheet names this document by the card's own id; a paper
+        // saved under another of its ids has none here.
+        const savedPaper = await getDoc(savedPaperDocRef(userId, card.id));
+        if (savedPaper.exists() && !savedPaper.data().primaryTopic) await updateDoc(savedPaper.ref, { primaryTopic });
+      })().catch(error => console.error('Error storing a late OpenAlex topic:', error));
+    });
+  }, [withInteractionId, personalLibrary, user?.uid]);
+  // followShownPapers keeps one identity across renders; it reaches the
+  // current marks through this.
+  const keepLateTopicsRef = useRef(keepLateTopics);
+  useEffect(() => { keepLateTopicsRef.current = keepLateTopics; }, [keepLateTopics]);
+
   // Requests that answer after cards are shown, from a fresh page or a
   // restored snapshot, change those cards in place, and the feed cache and
   // snapshot with them, while the account stays the same. Only the cards in
@@ -738,7 +800,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
-      update(current => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading));
+      const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
+      update(enrich);
+      // Out here, not in the update: React may run a state updater twice.
+      if (feedSessionId.current !== sessionId) return;
+      const shown = papersRef.current;
+      keepLateTopicsRef.current(cardsGivenTopic(shown, enrich(shown)));
     });
     iCite?.then((metrics) => {
       if (!metrics || Object.keys(metrics).length === 0) return;
@@ -1320,13 +1387,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         // Optional recommendation signals run alongside the primary sources.
         // They enrich the mix when available without extending first paint.
-        // Declared here, ISSUED after arXiv, PubMed and the domain sources
-        // below: the OpenAlex client queues two at a time in arrival order,
-        // and asking for the followed entities first put the feed's own search
-        // behind all of them (measured 2026-09-16: 2.3 s late on a cold entry,
-        // past the first-paint budget). PAP-73 removed that search. The
-        // working-paper series, the one main source still asking OpenAlex,
-        // waits for the personal and followed lookups on purpose.
+        // Declared here, ISSUED after arXiv, PubMed, the OpenAlex topics and
+        // the domain sources below: the OpenAlex client queues two at a time in
+        // arrival order, and asking for the followed entities first put the
+        // feed's former OpenAlex search behind all of them (measured 2026-09-16:
+        // 2.3 s late on a cold entry, past the first-paint budget). The topic
+        // request replaced that search (PAP-73). The working-paper series wait
+        // for the personal and followed lookups on purpose.
         let graphCandidatesPromise = Promise.resolve<Paper[]>([]);
         let personalCandidatesPromise = Promise.resolve<Paper[]>([]);
         let followedCandidatesPromise = Promise.resolve<Paper[]>([]);
@@ -1359,9 +1426,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
              pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedCats), currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
 
-          // No OpenAlex search for the category labels' text (PAP-73): of 442
-          // hand-labelled results, 9 were research articles in the reader's
-          // field (audit 2026-10-20).
+          // OpenAlex by topic ID, for the leaves arXiv does not serve (PAP-73).
+          // Not by the category labels' text: of 442 hand-labelled results of
+          // that search, 9 were research articles in the reader's field.
+          const openAlexTopicProm = fetchOpenAlexTopicPapers(rankedPreferences.slice(0, 5), currentPage + 1);
+
           const domainProm = fetchDomainPapers(
             rankedPreferences.slice(0, 5),
             currentPage + 1,
@@ -1398,9 +1467,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
-            [arxivProm, pubmedProm, domainProm, workingPapersProm],
+            [arxivProm, pubmedProm, openAlexTopicProm, domainProm, workingPapersProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
             (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
+            { readyLimits: new Map([[openAlexTopicProm, OPENALEX_TOPIC_READY_LIMIT]]) },
           );
           let sourceResults = await first;
           mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
@@ -2504,11 +2574,22 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (paper?.authors?.length) interactionData.paperAuthors = paper.authors.slice(0, 3);
         if (paper?.primaryCategory) interactionData.paperCategory = paper.primaryCategory;
         if (paper?.summary) interactionData.paperAbstract = paper.summary.substring(0, 500);
+        // The same copy a like keeps. The library reads this record before any
+        // savedPapers document, and without a copy a saved paper had no field
+        // to show (PAP-60).
+        if (paper) interactionData.paper = serializeLibraryPaper(paper);
 
         await setDoc(ref, interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
       }
+      // PAP-60, D6. The Save button and the save sheet write the savedPapers
+      // document, and the button writes Read later, before this mark. A late
+      // OpenAlex answer in that time found the paper unmarked and left its
+      // copies without the topic the feed's card now carries.
+      const written = typeof paperOrIdInput === 'object' ? paperOrIdInput : paper;
+      const shown = written && papersRef.current.find(card => card.id === written.id);
+      if (written && shown) keepLateTopicsRef.current(cardsGivenTopic([written], [shown]));
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
 

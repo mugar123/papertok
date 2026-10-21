@@ -54,8 +54,11 @@ import { getPapersByProject, getProjectDetails } from '../../services/openAireSe
 import { PaperBuilder } from '../../services/PaperBuilder.ts';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService.ts';
 import {
+  EXPLORER_AUTO_PAGES,
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
+  explorerListState,
+  explorerPageAllowance,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
@@ -78,6 +81,7 @@ import { areaAccentForCategory as getAreaGradient } from '../../utils/areaAccent
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.ts';
 import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
+import OrcidStamp from './OrcidStamp.tsx';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
@@ -144,30 +148,6 @@ const EXPERIENCE_FOLD_OUT: Transition = {
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
 };
 
-
-/**
- * The ORCID card before it has a name in it.
- *
- * Written once and used twice — by the page's own skeleton while the entity is
- * resolving, and by the ORCID fetch that follows it — because the two run back
- * to back on an author page and any difference between them is a step the
- * reader watches happen. It reserves the card's header and nothing else: that
- * is the part every verified profile has, and the three body lines this used
- * to show were promising a biography most authors do not have, reserving 148px
- * against the 96px that arrives.
- */
-const OrcidCardSkeleton = () => (
-  <div className="orcid-skeleton" aria-hidden="true">
-    <div className="orcid-skeleton-header">
-      <div className="ex-skel ex-skel-avatar" />
-      <div className="ex-skel-stack">
-        <div className="ex-skel ex-skel-sub ex-skel-sub--short" />
-        <div className="ex-skel ex-skel-sub ex-skel-orcid-id" />
-      </div>
-      <div className="ex-skel ex-skel-orcid-action" />
-    </div>
-  </div>
-);
 
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
@@ -440,6 +420,26 @@ export default function EntityExplorer({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const observerRef = useRef<HTMLDivElement | null>(null);
   const papersRequestRef = useRef<{ key: string; cancelled: boolean } | null>(null);
+  // The pages the list may still ask for on its own (`explorerPageAllowance`),
+  // and whether the foot of the list has been off screen since the last page
+  // landed: if it has, the next time it shows the reader scrolled to it.
+  const papersAutoPagesRef = useRef(EXPLORER_AUTO_PAGES);
+  const papersFootHiddenRef = useRef(false);
+  // Once the allowance runs out the foot is a "Keep looking" button, until the
+  // list starts over.
+  const [papersAwaitReader, setPapersAwaitReader] = useState(false);
+  const requestNextPapersPage = useCallback((byReader: boolean) => {
+    const left = explorerPageAllowance(papersAutoPagesRef.current, { byReader });
+    if (left === null) {
+      setPapersAwaitReader(true);
+      return false;
+    }
+    papersAutoPagesRef.current = left;
+    papersFootHiddenRef.current = false;
+    setIsFetchingMore(true);
+    setPage(p => p + 1);
+    return true;
+  }, []);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
   // Whether the Authors tab has been opened on this entity. The list is
@@ -1164,9 +1164,14 @@ export default function EntityExplorer({
         setIsLoadingPapers(true);
         setPapersError(null);
         setRowBudget(EXPLORER_ROW_CHUNK);
+        // A new list is the reader's request.
+        papersAutoPagesRef.current = EXPLORER_AUTO_PAGES;
+        papersFootHiddenRef.current = false;
+        setPapersAwaitReader(false);
       }
       else setIsFetchingMore(true);
-      
+      let continuing = false;
+
       try {
         let arxivIds: string[] = [];
         let dois: string[] = [];
@@ -1395,6 +1400,12 @@ export default function EntityExplorer({
           });
         }
         setHasMore(page * 30 < total);
+        // `rows` counts what this page added, not the list: a page that adds
+        // none under earlier rows leaves the list's foot on screen, which
+        // would ask for the next page on the same allowance.
+        if (explorerListState({ rows: fetchedPapers.length, hasMore: page * 30 < total, publicMode }) === 'looking') {
+          continuing = requestNextPapersPage(false);
+        }
       } catch (err) {
         console.error("Failed to load papers for entity", err);
         if (request.cancelled) return;
@@ -1404,12 +1415,12 @@ export default function EntityExplorer({
       }
       if (request.cancelled) return;
       setIsLoadingPapers(false);
-      setIsFetchingMore(false);
+      setIsFetchingMore(continuing);
     }
     loadPapers();
     // No cleanup: a request is superseded by key, above, and cancelled on
     // unmount, below — not by the next render of the same request.
-  }, [afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey]);
+  }, [afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey, publicMode, requestNextPapersPage]);
 
   useEffect(() => () => {
     if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
@@ -1541,6 +1552,20 @@ export default function EntityExplorer({
     isLoading: isLoadingAuthors,
   });
   const rowsSettled = rowBudget >= filteredPapers.length;
+  // What the foot of the list says once it waits for "Keep looking", and what
+  // each press found. Nothing before that: the pages the list asks for on its
+  // own have the sentinel's spinner. A failed page under rows is said here
+  // too, because the error strip is inserted with its text already in it and
+  // a screen reader may not announce it. With no rows the error state is an
+  // alert and says it.
+  let papersMoreStatus: string | null = null;
+  if (papersAwaitReader) {
+    if (isFetchingMore) papersMoreStatus = 'Checking more publications…';
+    else if (hasMore && filteredPapers.length === 0) papersMoreStatus = 'No matches yet. More publications remain to check.';
+    else if (hasMore) papersMoreStatus = `${filteredPapers.length.toLocaleString(locale)} listed so far. More publications remain to check.`;
+    else if (!papersError) papersMoreStatus = 'No more publications to check.';
+    else if (filteredPapers.length > 0) papersMoreStatus = 'More publications could not be checked.';
+  }
   useEffect(() => {
     if (rowsSettled) return undefined;
     const schedule = typeof window.requestIdleCallback === 'function'
@@ -1555,12 +1580,19 @@ export default function EntityExplorer({
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          if (activeTab === 'papers' && hasMore && !isLoadingPapers && !isFetchingMore) {
-            setPage(p => p + 1);
-          } else if (activeTab === 'authors' && hasMoreAuthors && !isLoadingAuthors && !isFetchingMoreAuthors) {
-            setAuthorsPage(p => p + 1);
+        if (activeTab === 'papers') {
+          // A new observer reports the foot where it already is, so a page
+          // that left it on screen asks again at once: that request is the
+          // list's own, and the reader's only once the foot had gone. Only
+          // while no page loads: the skeleton of a new list pushes the old
+          // foot off screen without the reader moving.
+          if (!entries[0].isIntersecting) {
+            if (!isLoadingPapers && !isFetchingMore) papersFootHiddenRef.current = true;
+          } else if (hasMore && !isLoadingPapers && !isFetchingMore) {
+            requestNextPapersPage(papersFootHiddenRef.current);
           }
+        } else if (entries[0].isIntersecting && activeTab === 'authors' && hasMoreAuthors && !isLoadingAuthors && !isFetchingMoreAuthors) {
+          setAuthorsPage(p => p + 1);
         }
       },
       { threshold: 0.1 }
@@ -1568,7 +1600,7 @@ export default function EntityExplorer({
     if (activeTab === 'papers' && observerRef.current) observer.observe(observerRef.current);
     if (activeTab === 'authors' && observerAuthorsRef.current) observer.observe(observerAuthorsRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
+  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled, papersAwaitReader, requestNextPapersPage]);
 
   const handleFollow = (event: MouseEvent) => {
     event.stopPropagation();
@@ -1705,7 +1737,7 @@ export default function EntityExplorer({
        all reserved between the stats and the tab strip. On an author that was
        a second tab the page would never render and a 177px drop when the real
        header arrived; on an institution, 242px. */
-    const shape = explorerSkeletonShape(type, { hasOrcid: Boolean(extractOrcid(id)) });
+    const shape = explorerSkeletonShape(type);
     return (
       <div
         className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}${appChromeClass}`}
@@ -1803,7 +1835,6 @@ export default function EntityExplorer({
                 the live ones are: hung off `.explorer-hero` instead it missed
                 the container's 16px gap and measured against the wrong
                 parent. */}
-            {shape.aside === 'orcid' && <OrcidCardSkeleton />}
             {shape.aside === 'summary' && <ProjectSummarySkeleton />}
           </div>
 
@@ -2339,7 +2370,10 @@ export default function EntityExplorer({
                     `?name=`. It stands in HERE, not in `entity.display_name`,
                     which is the follow identity; and being read on every
                     render it follows a language toggle without a remount. */}
-                <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
+                <div className="ehc-name-line">
+                  <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
+                  {type === 'author' && orcidInfo && !isLoadingOrcid && <OrcidStamp orcid={orcidInfo.orcid} />}
+                </div>
                 {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
                   <button
                     type="button"
@@ -2549,26 +2583,8 @@ export default function EntityExplorer({
           
 
           {/* ORCID Career Section */}
-          {isLoadingOrcid && <OrcidCardSkeleton />}
-          {orcidInfo && !isLoadingOrcid && (
+          {orcidInfo && !isLoadingOrcid && (orcidInfo.biography || orcidInfo.researcherUrls?.length > 0 || orcidInfo.educations?.length > 0) && (
             <div className="orcid-career-section orcid-career-section--animate">
-
-              {/* Header: Badge + link */}
-              <div className="orcid-career-header">
-                <div className="orcid-badge">
-                  <div className="orcid-badge-icon">
-                    <img src="https://info.orcid.org/wp-content/uploads/2019/11/orcid_16x16.png" alt="ORCID" />
-                  </div>
-                  <div className="orcid-badge-text">
-                    <span className="orcid-badge-label">{'Verified ORCID profile'}</span>
-                    <span className="orcid-badge-id">{orcidInfo.orcid}</span>
-                  </div>
-                </div>
-                <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="orcid-profile-link">
-                  {'View profile'} <ArrowSquareOut size={12} />
-                </a>
-              </div>
-
               {/* Biography */}
               {orcidInfo.biography && (
                 <div className="orcid-biography">
@@ -2775,12 +2791,38 @@ export default function EntityExplorer({
                   leaving it on the page would make the two-row preview a coat
                   of paint over a list that kept loading itself. The wall below
                   takes its place. */}
-              {!publicMode && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
+              {!publicMode && !papersAwaitReader && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
                 <div ref={observerRef} className="ehc-sentinel">
                   <Petri pose="flask" className={isFetchingMore ? 'petri-loader' : undefined} />
                   <span>{isFetchingMore
                     ? ('Loading more articles…')
                     : ('Scroll for more')}</span>
+                </div>
+              )}
+
+              {/* The list stopped asking for pages on its own
+                  (`explorerPageAllowance`). The status is mounted before it
+                  has anything to say, so its first words are spoken. The
+                  button stays mounted and focusable while a page loads, after
+                  the last one and after a failed one, so a keyboard reader
+                  keeps their place. A failure under rows is said by the
+                  status, with no rows by the error state; the error strip or
+                  the error state offers Try again. */}
+              {!publicMode && (
+                <p className="explorer-list-more-status" role="status">{papersMoreStatus}</p>
+              )}
+              {!publicMode && papersAwaitReader && (
+                <div className="explorer-list-more">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isFetchingMore || !hasMore}
+                    focusableWhenDisabled
+                    onClick={() => requestNextPapersPage(true)}
+                  >
+                    {isFetchingMore && <CircleNotch className="ehc-spinner" size={16} aria-hidden="true" />}
+                    Keep looking
+                  </Button>
                 </div>
               )}
 
@@ -2801,7 +2843,9 @@ export default function EntityExplorer({
                 más artículos…» y, debajo, «No hay publicaciones». Una
                 promesa y su desmentido en la misma pantalla. Vacío es una
                 afirmación sobre algo terminado: se espera a que lo esté. */}
-            {!isLoadingPapers && !isFetchingMore && filteredPapers.length === 0 && (
+            {/* And only once there is no next page this reader may load: a
+                page the filters emptied is not an empty list. */}
+            {!isLoadingPapers && !isFetchingMore && explorerListState({ rows: filteredPapers.length, hasMore, publicMode }) === 'empty' && (
               <ExplorerEmptyState
                 variant={pickEmptyVariant({
                   papersError,

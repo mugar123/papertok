@@ -70,16 +70,6 @@ function linksByRelation(raw: ScopusEntry) {
   }, {});
 }
 
-function selectRequestedCategory(raw: ScopusEntry, requestedCategories: string[]) {
-  if (!requestedCategories?.length) return '';
-  if (requestedCategories.length === 1) return requestedCategories[0];
-  const text = `${raw?.['dc:title'] || ''} ${raw?.['dc:description'] || ''}`.toLowerCase();
-  return requestedCategories.find(category => {
-    const tokens = category.split(/[.-]/).filter(token => token.length > 3);
-    return tokens.some(token => text.includes(token.toLowerCase()));
-  }) || requestedCategories[0];
-}
-
 export class ScopusAdapter {
   declare name: string;
   constructor() {
@@ -146,7 +136,6 @@ export class ScopusAdapter {
     const rawCitationCount = Number(raw['citedby-count']);
     const hasAttributedCitations = Number.isFinite(rawCitationCount) && Boolean(citedByUrl);
     const openAccess = String(raw.openaccess || '') === '1' || String(raw.openaccessFlag || '').toLowerCase() === 'true';
-    const selectedCategory = selectRequestedCategory(raw, requestedCategories);
 
     // Every other source mapper hands the builder its data; doing the same here
     // normalizes the citation field, applies the shared defaults, and leaves the
@@ -172,9 +161,9 @@ export class ScopusAdapter {
       landingPageUrl: links.scopus || (doi ? `https://doi.org/${doi}` : safeUrl(raw['prism:url'])),
       citationCount: hasAttributedCitations ? rawCitationCount : 0,
       citationCountKnown: hasAttributedCitations,
-      categories: selectedCategory ? [selectedCategory] : [],
-      allCategories: selectedCategory ? [selectedCategory] : [],
-      primaryCategory: selectedCategory,
+      // The search view names no subject area, so the card has no category;
+      // the request is only why it was fetched.
+      _fetchedFor: requestedCategories,
       provider: this.name,
     });
   }

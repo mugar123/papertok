@@ -448,6 +448,37 @@ test('a rebuild recovers the examples and the exposure from the documents', () =
   });
 });
 
+/*
+ * PAP-60. An old like kept the category the feed showed beside the paper's
+ * copy, and the feed showed the category it had been asked for. The copy says
+ * which of those values a rebuild can trust: the primary arXiv lists first for
+ * a paper stored under its arXiv id, nothing for a Europe PMC copy.
+ */
+test('a rebuild counts an old like under the category its stored copy can show', () => {
+  const documents = [
+    { id: '2605.02209', data: {
+      liked: true, paperCategory: 'cs.LG', timestamp: NOW - 1000,
+      paper: { id: '2605.02209', title: 'T', primaryCategory: 'cs.LG', categories: ['cs.AI', 'cs.LG'] },
+    } },
+    { id: 'pmid:42820985', data: {
+      liked: true, paperCategory: 'bio.gen', timestamp: NOW - 2000,
+      paper: { id: 'pmid:42820985', title: 'T', primaryCategory: 'bio.gen', categories: ['bio.gen'] },
+    } },
+  ];
+  const signals = readProfileSignals(buildProfileFromInteractionDocuments(documents, { now: NOW }), NOW);
+  assert.deepEqual(Object.keys(signals.categoryAffinities), ['cs.AI']);
+  assert.ok(signals.categoryAffinities['cs.AI'] > 0);
+});
+
+// OpenAlex cards carried a concept name where a category belongs, and the
+// profile learned it as one.
+test('a concept name the profile learned is not read back as a category', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'openalex:W2120490784', kind: 'like', category: 'Somatic cell nuclear transfer' }, NOW);
+  recordInteractionEvent(profile, { paperId: '2605.02209', kind: 'like', category: 'cs.AI' }, NOW);
+  assert.deepEqual(Object.keys(readProfileSignals(profile, NOW).categoryAffinities), ['cs.AI']);
+});
+
 test('exposure counts every card shown and the ones read past the median', () => {
   const profile = createEmptyInteractionProfile();
   recordInteractionEvent(profile, { paperId: 'a', kind: 'skip', category: 'math.NT' }, NOW);

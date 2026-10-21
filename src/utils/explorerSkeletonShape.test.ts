@@ -43,7 +43,6 @@ test('each type reserves the block it actually carries', () => {
   // 113px 400ms after the page has already landed, while an unreserved one that
   // does come grows the hero from the bottom under the settle's clip.
   assert.equal(explorerSkeletonShape('author').aside, 'none');
-  assert.equal(explorerSkeletonShape('author', { hasOrcid: true }).aside, 'orcid');
   // The Wikipedia block is reserved by NOBODY, and that is the point.
   // Reserved space and an entrance animation are two answers to the same
   // question. Between 2026-09-06 and 2026-09-08 the block was reserved here

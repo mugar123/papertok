@@ -143,6 +143,9 @@
         address. This browser temporarily stores that address and the pending request,
         scoped to your PaperTok account. The request expires after one hour and is cleared
         on its next use. Cancellation, account changes and completion also clear it.
+        An address given on the welcome, before you have an account, waits in this browser
+        with your other welcome answers. It is sent once your account is created and
+        cleared then, or when you log out first.
         Your profile stores the verified institution,
         not the secondary address. A temporary Firebase proof account is deleted after
         verification where possible; an existing account is preserved.
@@ -246,6 +249,21 @@
         write to the address below.
       </p>
       <p>
+        We also record whether the reader opens, whether a rewrite completes, its
+        duration and whether it came from a saved version, and whether a sign-in
+        attempt succeeds, fails or is cancelled.
+      </p>
+      <p>
+        <strong>Sentry</strong>, in the European Union, receives technical error
+        reports from the browser and our backend. Reports contain a standard error
+        type, application code locations, software version and limited operational
+        labels. We remove error messages, request data, paper content, notes,
+        search text and account details, and replace IP addresses with a fixed
+        value before sending. Session recording and performance tracing in Sentry are disabled.
+        Turning analytics off stops new browser error reports. Backend error
+        reporting continues to help us operate and repair the service.
+      </p>
+      <p>
         PostHog's requests go to papertok.app itself, and Vercel relays them to PostHog.
         PostHog keeps events for one year, and session recordings for at most as long.
       </p>
@@ -278,6 +296,7 @@
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — analytics of what is done in the application and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
+        <li><strong>Sentry</strong> — technical error monitoring, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
         <li><strong>Brevo</strong> — sending the emails.</li>
       </ul>
