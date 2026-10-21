@@ -650,6 +650,39 @@ test('an app error leaves with its kind and nothing from the error, and not at a
   assert.equal(sanitizeAnalyticsCapture(capture, ANALYTICS_CONSENT.DENIED), null);
 });
 
+test('reader results keep outcomes, cache status and duration without paper or error content', () => {
+  assert.deepEqual(sanitizeProductEventParams('paper_rewrite_result', {
+    level: 'university', surface: 'reader', result: 'error', cached: false,
+    duration_ms: 32_456.7, error_code: 'AI_TIMEOUT',
+    title: 'Private paper', paper_id: 'W123', message: 'Private provider response',
+  }), {
+    level: 'university', surface: 'reader', result: 'error', cached: false,
+    duration_ms: 32_457, error_code: 'AI_TIMEOUT',
+  });
+  assert.deepEqual(sanitizeProductEventParams('paper_rewrite_result', {
+    result: 'incomplete', duration_ms: Infinity, error_code: 'Private error text',
+  }), { result: 'incomplete', error_code: 'other' });
+  assert.deepEqual(sanitizeProductEventParams('reader_open', { surface: 'reader', title: 'Private' }), { surface: 'reader' });
+});
+
+test('authentication outcomes retain GitHub and known failures without identity details', () => {
+  assert.deepEqual(sanitizeProductEventParams('auth_result', {
+    method: 'github', surface: 'auth_prompt', result: 'cancelled',
+    error_code: 'auth/popup-closed-by-user', email: 'private@example.com', uid: 'private',
+  }), {
+    method: 'github', surface: 'auth_prompt', result: 'cancelled', error_code: 'auth/popup-closed-by-user',
+  });
+  assert.deepEqual(sanitizeProductEventParams('auth_result', {
+    result: 'error', error_code: 'private@example.com',
+  }), { result: 'error', error_code: 'other' });
+  assert.deepEqual(sanitizeProductEventParams('auth_prompt_view', {
+    reason: 'related', surface: 'auth_prompt', paper_id: 'W123',
+  }), { reason: 'related', surface: 'auth_prompt' });
+  assert.deepEqual(sanitizeProductEventParams('select_content', {
+    content_type: 'signup_cta', method: 'github', surface: 'auth_prompt',
+  }), { content_type: 'signup_cta', surface: 'auth_prompt', method: 'github' });
+});
+
 // Each import with its own query is a separate copy of the module, which is
 // what the error boundary gets on a new page load.
 const crashReporterOfPage = async (page: string): Promise<typeof import('./analyticsService.ts').trackAppCrash> =>

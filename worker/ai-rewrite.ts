@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Paper } from '../src/models/Paper.ts';
 import type { AIProviderPayload } from './ai-explanation.ts';
@@ -1051,6 +1052,7 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
       // heartbeat runs from the download on, so a ping can fail before the model
       // is asked; a download or provider failure after it keeps its own code.
       const error = abortedBy && (thrown as Error)?.name === 'AbortError' ? abortedBy : thrown;
+      captureWorkerException(error, 'rewrite');
       // Whatever went wrong, nothing is going to consume the rest of this run:
       // cut the model off before doing anything else with the failure.
       modelDeadline.abort();

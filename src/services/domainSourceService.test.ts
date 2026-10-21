@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
+import type { Paper } from '../models/Paper.ts';
 import {
   getDomainSourcePlan,
   getEligibleDomainSources,
@@ -14,11 +17,21 @@ import {
   mapOstiRecord,
   readBioRxivResponse,
   fetchWorkingPapers,
+  fetchOpenAlexTopicPapers,
+  europePmcQuery,
 } from './domainSourceService.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { isFeedPublication } from './feedPublicationService.ts';
 import { openAlexClient } from './openAlexClient.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
+import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
+import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper, leavesForOpenAlexTopic } from '../utils/areaAccent.ts';
+import { paperLegacyAdapter } from '../models/Paper.ts';
+import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { buildSavedPaperPayload } from '../utils/savedPaperPayload.ts';
+import { getCategoryArea } from '../data/categoryTaxonomy.ts';
 
 // The Worker answers a bioRxiv outage with an empty collection marked
 // `_papertok.degraded` (cached briefly). Read as papers it would be "bioRxiv has
@@ -60,7 +73,7 @@ test('routes high-energy physics to the INSPIRE fallback while keeping all physi
   assert.deepEqual(plan.huggingFace, ['cs.AI']);
 });
 
-test('maps a bioRxiv preprint without losing its selected PaperTok category', () => {
+test('maps a bioRxiv preprint under the subject bioRxiv files it in', () => {
   const paper = mapBioRxivPaper({
     doi: '10.1101/2026.01.01.123456',
     version: '2',
@@ -102,19 +115,237 @@ test('maps Europe PMC search results including free full text and biomedical ter
   assert.equal(paper!.openAccess, true);
   assert.equal(paper!.accessSource, 'europepmc');
   assert.equal(paper!.citationCount, 9);
-  assert.equal(paper!.primaryCategory, 'bio.cell');
+  // An author keyword, not Europe PMC filing the paper under Cell Biology; the
+  // request is only why it was fetched.
+  assert.deepEqual(paper!.categories, ['Cell Biology']);
+  assert.deepEqual(paper!._fetchedFor, ['bio.cell']);
+});
+
+// An unfielded `"Molecular Biology"` also matches the journal name, and
+// 139 records in the 2026-10-20 audit were chapters of Methods in Molecular
+// Biology dated 2027. The labels are searched where a paper states its
+// subject, and nothing dated after today comes back.
+test('the Europe PMC request searches each label in title, abstract and keywords, up to today', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const query = europePmcQuery(['bio.gen', 'bio.mol']);
+
+  for (const label of ['Genetics', 'Molecular Biology']) {
+    assert.ok(query.includes(`TITLE_ABS:"${label}"`), `${label} in title and abstract: ${query}`);
+    assert.ok(query.includes(`KW:"${label}"`), `${label} in keywords: ${query}`);
+  }
+  const fields = [...query.matchAll(/(\w+:)?"[^"]*"/g)].map(([, field]) => field);
+  assert.deepEqual([...new Set(fields)].sort(), ['KW:', 'TITLE_ABS:'], `no label is searched in every field: ${query}`);
+  assert.match(query, /\bAND FIRST_PDATE:\[\S+ TO 2026-10-20\]$/);
+});
+
+// Captured from Europe PMC on 2026-10-20 (PMID 42879010), trimmed to the
+// fields the mapper reads.
+const PROTOCOL_CHAPTER = {
+  id: '42879010',
+  source: 'MED',
+  pmid: '42879010',
+  doi: '10.1007/978-1-0716-5587-0_5',
+  title: '(Immuno-)Histological Analysis of Ewing Sarcoma.',
+  authorString: 'Marcilla D, Machado I, Grünewald TGP, Civantos G, Llombart-Bosch A, de Álava E.',
+  journalInfo: {
+    yearOfPublication: 2027,
+    journal: { title: 'Methods in molecular biology (Clifton, N.J.)', essn: '1940-6029', issn: '1064-3745', nlmid: '9214969' },
+  },
+  pubTypeList: { pubType: ['Journal Article'] },
+  abstractText: 'The diagnosis of Ewing sarcoma requires integrating information from numerous techniques.',
+  dateOfCreation: '2026-10-15',
+  firstPublicationDate: '2027-01-01',
+};
+
+test('a Methods in Molecular Biology chapter from Europe PMC is typed as a book-series chapter, which the feed leaves out', () => {
+  const chapter = PaperBuilder.deduplicate([mapEuropePmcSearchResult(PROTOCOL_CHAPTER, ['bio.mol'])])[0];
+  assert.equal(chapter.publicationType, 'book-chapter');
+  assert.equal(isFeedPublication(chapter), false);
+
+  for (const journal of [{ issn: '1064-3745' }, { essn: '1940-6029' }, { nlmid: '9214969' }]) {
+    const paper = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, journalInfo: { journal } }, ['bio.mol']);
+    assert.equal(isFeedPublication(paper!), false, `identified by ${Object.keys(journal)[0]} alone`);
+  }
+
+  const article = mapEuropePmcSearchResult({
+    ...PROTOCOL_CHAPTER,
+    journalInfo: { journal: { title: 'Nature', issn: '0028-0836', essn: '1476-4687', nlmid: '0410462' } },
+  }, ['bio.mol']);
+  assert.equal(article!.publicationType, 'article');
+  assert.equal(isFeedPublication(article!), true);
+});
+
+test('a Europe PMC record dated after today shows no year and no date', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const scheduled = PaperBuilder.deduplicate([mapEuropePmcSearchResult(PROTOCOL_CHAPTER, ['bio.mol'])])[0];
+  assert.equal(scheduled.year, undefined, 'not 2027, and not the 2026 the record was created in');
+  assert.equal(scheduled.published, '');
+
+  const yearOnly = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, firstPublicationDate: undefined, dateOfCreation: undefined }, ['bio.mol']);
+  assert.equal(yearOnly!.year, undefined, 'a publication year of 2027 is after today too');
+
+  const current = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, firstPublicationDate: '2026-10-20' }, ['bio.mol']);
+  assert.equal(current!.year, 2026);
+  assert.equal(current!.published, '2026-10-20');
 });
 
 test('maps CORE, OSTI and NASA records to stable open paper records', () => {
   const core = mapCoreWork({ id: 1, title: 'Mechanical result', authors: [{ name: 'A' }], downloadUrl: 'https://core.ac.uk/download/1.pdf', yearPublished: 2025 }, ['mech.mfg']);
   const osti = mapOstiRecord({ osti_id: '2', title: 'Battery result', description: 'Energy storage', publication_date: '2026-01-01', links: [{ rel: 'fulltext', href: 'https://www.osti.gov/servlets/purl/2' }] }, ['chemeng.energy']);
   const nasa = mapNasaRecord({ id: 3, title: 'Aerodynamic result', abstract: 'Flight', publications: [{ publicationDate: '2024-01-01' }], downloads: [{ links: { pdf: '/api/citations/3/downloads/paper.pdf' } }] }, ['mech.aero']);
-  assert.equal(core!.primaryCategory, 'mech.mfg');
+  // None of the three records names a subject, so none has a category.
+  assert.deepEqual([core, osti, nasa].map(paper => paper!.primaryCategory), ['', '', '']);
   assert.equal(core!.openAccess, true);
-  assert.equal(osti!.primaryCategory, 'chemeng.energy');
   assert.equal(osti!.openAccess, true);
-  assert.equal(nasa!.primaryCategory, 'mech.aero');
   assert.equal(nasa!.pdfUrl, 'https://ntrs.nasa.gov/api/citations/3/downloads/paper.pdf');
+});
+
+// Two Europe PMC core searches saved by the 2026-10-20 classification audit
+// (PAP-60), each beside the categories whose labels it searched. Trimmed to
+// the fields the mapper reads, leaving out abstracts and authors.
+const europePmcSearches = (JSON.parse(readFileSync(new URL('./europePmcRequestOrder.fixture.json', import.meta.url), 'utf8')) as {
+  requests: Array<{ query: string; categories: string[]; results: Array<Parameters<typeof mapEuropePmcSearchResult>[0]> }>;
+}).requests;
+
+const orders = (categories: string[]): string[][] => (categories.length <= 1
+  ? [categories]
+  : categories.flatMap((category, index) => orders(categories.filter((_, other) => other !== index))
+    .map(rest => [category, ...rest])));
+
+const classification = (paper: Partial<Paper> | null) => ({
+  primaryCategory: paper?.primaryCategory,
+  categories: paper?.categories,
+  allCategories: paper?.allCategories,
+});
+
+// The mapper filed a record under the first requested category its terms did
+// not rule out, so 37 of these 50 changed field with nothing but the order of
+// the request. PMID 42820985, a rice QTL study, was Genetics or Ecology.
+test('a Europe PMC record is classified the same whichever order the requested categories came in', () => {
+  assert.equal(europePmcSearches.flatMap(search => search.results).length, 50);
+  const changed: string[] = [];
+  for (const { categories, results } of europePmcSearches) {
+    for (const raw of results) {
+      const [first, ...others] = orders(categories).map(order => classification(mapEuropePmcSearchResult(raw, order)));
+      if (others.some(other => !isDeepStrictEqual(other, first))) changed.push(raw.pmid || raw.id!);
+    }
+  }
+  assert.deepEqual(changed, []);
+});
+
+test('a Europe PMC record carries the requested categories only as the reason it was fetched', () => {
+  for (const { categories, results } of europePmcSearches) {
+    for (const raw of results) {
+      const paper = mapEuropePmcSearchResult(raw, categories)!;
+      const classified = [paper.primaryCategory, ...paper.categories!, ...paper.allCategories!];
+      assert.deepEqual(categories.filter(category => classified.includes(category)), [], `PMID ${raw.pmid}`);
+      assert.deepEqual(new Set(paper._fetchedFor), new Set(categories), `PMID ${raw.pmid}`);
+    }
+  }
+});
+
+// Whichever of the requested categories the reader picked, the card ranks
+// as theirs; the stamp gave that only to the first one.
+test('a Europe PMC card ranks as a requested category without carrying it', () => {
+  const { categories, results } = europePmcSearches[0];
+  const rice = results.find(raw => raw.pmid === '42820985')!;
+  const paper = mapEuropePmcSearchResult(rice, categories)!;
+  const preference = (userPreferences: string[]) => scorePaperForRecommendation(paper, { userPreferences }).preference;
+  assert.deepEqual(categories, ['bio.gen', 'bio.eco']);
+  assert.equal(preference(['bio.gen']), 100);
+  assert.equal(preference(['bio.eco']), 100);
+  assert.equal(preference(['bio.neuro']), 0, 'a category the source was not asked for earns nothing');
+});
+
+// A Europe PMC record names no category of the taxonomy, so its card has no
+// field until OpenAlex supplies one. Before the stored copies kept their
+// evidence (PAP-60), the card read Biology from a guess over all its terms,
+// while a savedPapers document kept only the first term ("Nitrogen" for
+// PMID 42820985) and read nothing: saving changed the field of 27 of these 50.
+test('saving or liking a Europe PMC card leaves its field as the feed showed it', () => {
+  const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+  const field = (paper: Partial<Paper>) => [areaKeyForPaper(paper), areaLabelForPaper(paper), areaAccentForPaper(paper)];
+  const changed: string[] = [];
+  for (const { categories, results } of europePmcSearches) {
+    for (const raw of results) {
+      const card = mapEuropePmcSearchResult(raw, categories)!;
+      const copies: Array<[string, Partial<Paper>]> = [
+        ['interaction copy', paperLegacyAdapter(throughFirestore(serializeLibraryPaper(card)))],
+        ['savedPapers document', paperLegacyAdapter({ id: card.id, ...throughFirestore(buildSavedPaperPayload(card, '2026-10-20T12:00:00.000Z')) })],
+        // An interaction saved without a copy, read as the feed reads it.
+        ['fields-only record', paperLegacyAdapter(serializeLibraryPaper({ id: card.id, title: card.title, authors: card.authors, published: card.published }))],
+      ];
+      for (const [copy, stored] of copies) {
+        if (!isDeepStrictEqual(field(stored), field(card))) changed.push(`PMID ${raw.pmid}, ${copy}`);
+      }
+    }
+  }
+  assert.deepEqual(changed, []);
+
+  const { categories, results } = europePmcSearches[0];
+  const rice = mapEuropePmcSearchResult(results.find(raw => raw.pmid === '42820985')!, categories)!;
+  assert.equal(areaLabelForPaper(rice), null, 'nothing in the record names its field');
+});
+
+// Synthetic records shaped like each provider's payload. A category the
+// provider states, read through the taxonomy, files the paper; nothing else
+// does, and no request changes that.
+test('the specialist mappers classify a record by what its provider says, whatever was requested', () => {
+  const cases: Array<{ source: string; requested: string[]; expected: string | null; map: (requested: string[]) => Paper | null }> = [
+    {
+      source: 'bioRxiv',
+      requested: ['bio.gen', 'bio.eco'],
+      expected: 'bio.neuro',
+      map: requested => mapBioRxivPaper({ doi: '10.1101/2026.01.01.000001', title: 'Cortical circuits in mice', category: 'neuroscience', date: '2026-01-01' }, requested),
+    },
+    {
+      source: 'ADS',
+      requested: ['hep-th', 'astro-ph.CO'],
+      expected: 'astro-ph.GA',
+      map: requested => mapAdsPaper({ bibcode: '2026ApJ...1A', title: ['A galaxy survey'], arxiv_class: ['astro-ph.GA'], keyword: ['galaxies: evolution'], year: 2026, abstract: 'Galaxies.', author: ['Researcher, Ada'] }, requested),
+    },
+    {
+      source: 'INSPIRE',
+      requested: ['hep-th', 'gr-qc', 'hep-ph'],
+      expected: 'hep-ph',
+      map: requested => mapInspirePaper({ metadata: { control_number: 1, titles: [{ title: 'Dark matter at colliders' }], primary_arxiv_category: ['hep-ph'], inspire_categories: [{ term: 'Phenomenology-HEP' }] } }, requested),
+    },
+    {
+      source: 'Europe PMC',
+      requested: ['bio.gen', 'bio.eco'],
+      expected: null,
+      map: requested => mapEuropePmcSearchResult({ pmid: '1', title: 'A record without terms' }, requested),
+    },
+    {
+      source: 'CORE',
+      requested: ['civil.struct', 'mech.fluid'],
+      expected: null,
+      map: requested => mapCoreWork({ id: 9, title: 'Concrete fatigue under cyclic loading' }, requested),
+    },
+    {
+      source: 'OSTI',
+      requested: ['chemeng.energy', 'eess.power'],
+      expected: null,
+      map: requested => mapOstiRecord({ osti_id: 1, title: 'Grid batteries', subjects: ['25 ENERGY STORAGE'] }, requested),
+    },
+    {
+      source: 'NASA',
+      requested: ['mech.aero', 'mech.fluid'],
+      expected: null,
+      map: requested => mapNasaRecord({ id: 1, title: 'Wing flutter', subjectCategories: ['Fluid Mechanics And Thermodynamics'] }, requested),
+    },
+  ];
+  for (const { source, requested, expected, map } of cases) {
+    const requests = [...orders(requested), [requested[0]], []];
+    const [first, ...others] = requests.map(request => classification(map(request)));
+    if (expected) {
+      assert.equal(first.primaryCategory, expected, source);
+    } else {
+      const classified = [first.primaryCategory, ...first.categories!, ...first.allCategories!];
+      assert.deepEqual(requested.filter(category => classified.includes(category)), [], source);
+    }
+    others.forEach((other, index) => assert.deepEqual(other, first, `${source} asked for ${requests[index + 1].join(', ') || 'nothing'}`));
+  }
 });
 
 test('maps NASA ADS records with citations, references and physics concepts', () => {
@@ -349,8 +580,17 @@ const seriesWork = (id: string, doi: string, type: string, source: { id: string;
 });
 const FRBSF = { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' };
 const CESIFO = { id: 'S7407053623', display_name: 'CESifo' };
+const NBER = { id: 'S2809516038', display_name: 'National Bureau of Economic Research' };
+// OpenAlex's primary topic for this NBER paper, as saved on 2026-10-19.
+const TYLENOL_TOPIC = {
+  id: 'https://openalex.org/T11633',
+  display_name: 'Prenatal Substance Exposure Effects',
+  subfield: { id: 'https://openalex.org/subfields/2735', display_name: 'Pediatrics, Perinatology and Child Health' },
+  field: { id: 'https://openalex.org/fields/27', display_name: 'Medicine' },
+  domain: { id: 'https://openalex.org/domains/4', display_name: 'Health Sciences' },
+};
 
-test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed General Economics cards', async () => {
+test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed Economics cards', async () => {
   const realFetch = openAlexClient.fetchImpl;
   const realBase = openAlexClient.apiBase;
   const urls: URL[] = [];
@@ -362,6 +602,7 @@ test('an economics reader asks the Worker relay for one page of the working-pape
       seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'These findings help inform debates surrounding how unauthorized immigration impacts labor and housing markets and public finances in the U.S.'),
       seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
       seriesWork('W7144132107', '10.65864/cesifo/tqjga1w74a', 'article', CESIFO, null),
+      { ...seriesWork('W7220380262', '10.3386/w35873', 'report', NBER, null), primary_topic: TYLENOL_TOPIC },
     ] });
   };
   try {
@@ -381,21 +622,28 @@ test('an economics reader asks the Worker relay for one page of the working-pape
     assert.equal(url.searchParams.get('page'), '3');
     assert.ok(Number(url.searchParams.get('per-page')) <= 6, 'no more of a page than OSTI or NASA may take');
 
-    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7144132107']);
+    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7144132107', 'openalex:W7220380262']);
     for (const paper of papers) {
       assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper, not a reviewed article`);
       assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
       assert.equal(paper.landingPageUrl, `https://doi.org/${paper.doi}`);
-      // Not the reader's q-fin.ST: the request did not depend on it, and
-      // "public finances" on immigration does not make a finance paper.
-      assert.equal(paper.primaryCategory, 'econ.GN');
+      // The series make every card economics, the NBER paper OpenAlex files
+      // under Medicine included. Neither the reader's q-fin.ST nor General
+      // Economics: the series do not say which branch, and "public finances"
+      // on immigration does not make a finance paper.
+      assert.equal(areaLabelForPaper(paper), 'Economics', paper.id);
+      const subcategories = [paper.primaryCategory, ...paper.categories!].filter(category => getCategoryArea(category!));
+      assert.deepEqual(subcategories, [], `${paper.id} names no subcategory`);
     }
     assert.match(papers[0].abstract, /unauthorized immigration/);
     assert.equal(hasUsableAIAbstract(papers[1].abstract), false, 'a missing abstract stays missing');
 
-    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST']]) {
+    // The request is the same whichever category asked, so a card ranks as
+    // none of them, nor as the General Economics it used to be filed under.
+    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST'], ['econ.GN']]) {
       for (const paper of await fetchWorkingPapers(reader, 3)) {
-        assert.equal(paper.primaryCategory, 'econ.GN', `${paper.id} for a reader of ${reader.join(' and ')}`);
+        assert.equal(areaLabelForPaper(paper), 'Economics', `${paper.id} for a reader of ${reader.join(' and ')}`);
+        assert.equal(scorePaperForRecommendation(paper, { userPreferences: reader }).preference, 0, `${paper.id} for a reader of ${reader.join(' and ')}`);
       }
     }
   } finally {
@@ -427,4 +675,88 @@ test("every series the economics request names is on the review rule's list, so 
     const card = adapter.mapToStandard(seriesWork('W1', '10.1/w1', 'article', { id, display_name: 'A series' }, null));
     assert.equal(reviewStatusForPaper(card), 'workingPaper', `${id} is on the review rule's list`);
   }
+});
+
+// OpenAlex W7222916812 as returned on 2026-10-21 (trimmed): a Genetics article
+// whose primary topic, RNA Research and Splicing, is one of bio.mol's.
+const splicingWork = {
+  ...seriesWork('W7222916812', '10.1093/genetics/iyag290', 'article', { id: 'S65932378', display_name: 'Genetics' },
+    'Pathogenic variants in SNRPB, a common core spliceosomal factor, cause Cerebrocostomandibular Syndrome (CCMS).'),
+  title: 'A Novel CCMS Model Reveals a Critical Intronic Sequence in the Snrpb Gene that is Required for Normal Development',
+  publication_date: '2026-10-20',
+  primary_topic: {
+    id: 'https://openalex.org/T10604',
+    display_name: 'RNA Research and Splicing',
+    subfield: { id: 'https://openalex.org/subfields/1312', display_name: 'Molecular Biology' },
+    field: { id: 'https://openalex.org/fields/13', display_name: 'Biochemistry, Genetics and Molecular Biology' },
+    domain: { id: 'https://openalex.org/domains/1', display_name: 'Life Sciences' },
+  },
+};
+
+// Plan A (PAP-73): the leaves arXiv does not serve ask OpenAlex for works by
+// the topic IDs measured for them on 2026-10-21, not for the text of their
+// labels, which found 9 research articles in the reader's field in 442.
+test("a biology reader asks OpenAlex for recent articles under its leaves' topics by ID, with no search text", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: URL[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(new URL(String(input)));
+    return Response.json({ results: [splicingWork] });
+  };
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
+  const topicsOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('primary_topic.id:'))!
+    .slice('primary_topic.id:'.length).split('|');
+
+  assert.deepEqual(await fetchOpenAlexTopicPapers(['cs.LG', 'q-bio.GN', 'med.gen'], 1), []);
+  assert.equal(urls.length, 0, 'arXiv leaves and leaves without measured topics cost no request');
+
+  const papers = await fetchOpenAlexTopicPapers(['cs.LG', 'bio.mol', 'med.gen'], 2);
+  assert.equal(urls.length, 1, 'one request for the page');
+  const [url] = urls;
+  assert.equal(url.searchParams.has('search'), false);
+  assert.ok(filtersOf(url).every(filter => !filter.includes('search')), 'no text search in the filter');
+  assert.ok(topicsOf(url).length > 0 && topicsOf(url).every(id => leavesForOpenAlexTopic(id).join() === 'bio.mol'),
+    "only bio.mol's topics, none for cs.LG or med.gen");
+  const filters = filtersOf(url);
+  const date = (name: string) => filters.find(filter => filter.startsWith(`${name}:`))!.split(':')[1];
+  assert.equal(date('to_publication_date'), '2026-10-21', 'nothing dated after today (UTC)');
+  const windowDays = (Date.parse(date('to_publication_date')) - Date.parse(date('from_publication_date'))) / 86_400_000;
+  assert.ok(windowDays > 0 && windowDays <= 366, `a bounded recent window, got ${windowDays} days`);
+  for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
+    assert.ok(filters.includes(filter), `filters on ${filter}`);
+  }
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(url.searchParams.get('page'), '2');
+
+  // OpenAlex's own classification, not the leaf that asked.
+  assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7222916812']);
+  assert.equal(papers[0].primaryTopic?.id, 'https://openalex.org/T10604');
+  assert.equal(papers[0].primaryCategory, undefined);
+  assert.ok(!papers[0].categories?.includes('bio.mol'), 'the card is not filed under the requested leaf');
+
+  // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
+  await fetchOpenAlexTopicPapers(['mech.aero'], 1);
+  await fetchOpenAlexTopicPapers(['civil.struct'], 1);
+  assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
+  assert.ok(filtersOf(urls[2]).includes('type:article'));
+
+  // Eight measured leaves hold more topics than one filter takes.
+  const eight = ['bio.gen', 'bio.mol', 'bio.cell', 'bio.biochem', 'bio.comp', 'bio.neuro', 'med.neuro', 'med.psych'];
+  await fetchOpenAlexTopicPapers(eight, 1);
+  const topics = topicsOf(urls[3]);
+  assert.ok(topics.length <= 50, `at most 50 topic IDs, got ${topics.length}`);
+  assert.deepEqual(topics.slice(0, eight.length).map(id => leavesForOpenAlexTopic(id).join()), eight,
+    'every leaf is represented, in preference order');
+});
+
+test('a failed topic request rejects, so the feed counts a source that did not answer', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const realFetch = openAlexClient.fetchImpl;
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async () => new Response('{}', { status: 503 });
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  await assert.rejects(fetchOpenAlexTopicPapers(['bio.mol'], 1));
 });

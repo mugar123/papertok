@@ -75,7 +75,6 @@ export const INTEREST_AREAS = Object.fromEntries(
 
 export {
   getAllLeafCategories,
-  getAreaKeyFromTopicName,
   getCategoryArea,
   getCategoryLabel,
   getCategorySimilarity,

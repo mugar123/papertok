@@ -30,7 +30,7 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
   assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   assert.match(
     code,
-    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, randomizeStart = false, pageOverride\?: number, \{ keepThroughVisible = false \} = \{\}\) => \{/,
+    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, randomizeStart = false, pageOverride\?: number, \{ keepThroughVisible = false, seenFallback \}: Parameters<FeedContextValue\['loadPapers'\]>\[4\] = \{\}\) => \{/,
     'the option is an explicit parameter, not a ref the effect has to set',
   );
   const resetBranch = bounded(code, 'const addPage = (shown: Paper[]) => {', 'const nextHasMore =', 'the reset branch of loadPapers', 20);

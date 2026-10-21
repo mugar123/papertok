@@ -1,5 +1,6 @@
-import { Briefcase, FileText, MagnifyingGlass, Users } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 
 // Copy for every non-error variant, as [title, body, action label] per
 // language. 'error' is handled separately below because its body is a
@@ -24,34 +25,47 @@ const COPY = {
   },
 };
 
+const POSE = {
+  filtered: 'search',
+  'project-unindexed': 'flask',
+  none: 'blankPage',
+  authors: 'search',
+  'authors-none': 'blankPage',
+} as const;
+
 export function ExplorerEmptyState({ variant, onClearFilters, onRetry, errorMessage, openAireUrl }: { variant: keyof typeof COPY | 'error'; onClearFilters?: () => void; onRetry?: () => void; errorMessage?: string; openAireUrl?: string | null }) {
   const lang = 'en';
 
   if (variant === 'error') {
     return (
-      <div className="explorer-empty" role="alert">
-        <span className="explorer-empty-icon"><FileText size={22} /></span>
-        <h3 className="explorer-empty-title">{'The publications could not be loaded'}</h3>
-        <p className="explorer-empty-body">{errorMessage}</p>
-        <Button variant="outline" size="sm" onClick={onRetry}>{'Try again'}</Button>
-      </div>
+      <EmptyState
+        className="explorer-empty"
+        role="alert"
+        as="h3"
+        art={<Petri pose="upset" />}
+        title={'The publications could not be loaded'}
+        actions={<Button variant="outline" size="sm" onClick={onRetry}>{'Try again'}</Button>}
+      >
+        {errorMessage}
+      </EmptyState>
     );
   }
 
-  const Icon = variant === 'filtered' ? MagnifyingGlass : variant === 'project-unindexed' ? Briefcase : variant === 'authors' || variant === 'authors-none' ? Users : FileText;
   const [title, body, action] = COPY[variant][lang];
 
   return (
-    <div className="explorer-empty">
-      <span className="explorer-empty-icon"><Icon size={22} /></span>
-      <h3 className="explorer-empty-title">{title}</h3>
-      <p className="explorer-empty-body">{body}</p>
-      {variant === 'filtered' && (
+    <EmptyState
+      className="explorer-empty"
+      as="h3"
+      art={<Petri pose={POSE[variant]} />}
+      title={title}
+      actions={variant === 'filtered' ? (
         <Button variant="outline" size="sm" onClick={onClearFilters}>{action}</Button>
-      )}
-      {variant === 'project-unindexed' && openAireUrl && (
+      ) : variant === 'project-unindexed' && openAireUrl ? (
         <a className="explorer-empty-link" href={openAireUrl} target="_blank" rel="noopener noreferrer">{action}</a>
-      )}
-    </div>
+      ) : null}
+    >
+      {body}
+    </EmptyState>
   );
 }

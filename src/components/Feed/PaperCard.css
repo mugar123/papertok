@@ -799,6 +799,7 @@ button.pc-topics-pop-item:focus-visible {
   border: 1px solid color-mix(in srgb, var(--area-accent, #888) 24%, var(--bg-card));
   position: relative;
   z-index: calc(3 - var(--i, 0));
+  text-box: trim-both cap alphabetic;
 }
 
 /* The same 7px tuck under the one before, for every avatar after the first.
@@ -3188,6 +3189,7 @@ button.pc-topics-pop-item:focus-visible {
   flex: none;
   width: 20px;
   height: 20px;
+  margin-left: 2px;
   font-size: 0.5625rem;
 }
 

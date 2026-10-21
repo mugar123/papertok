@@ -1908,23 +1908,30 @@ const PaperCard = memo(function PaperCard({
           ) : categoryLabel && (
             <span className="pc-masthead-field">{categoryLabel}</span>
           )}
-          {categoryLabel && <span className="pc-meta-dot">·</span>}
+          {/* Each item brings the dot in front of it. A paper can have no
+              year (a PubMed record printed next year), and a dot after the
+              field then stood beside an empty date. */}
           {hasFollowedAuthor && (
             <>
+              {categoryLabel && <span className="pc-meta-dot">·</span>}
               <span className="pc-followed-badge">
                 <UserCheck size={12} /> {'Followed author'}
               </span>
-              <span className="pc-meta-dot">·</span>
             </>
           )}
-          <span className="pc-date">{paper.year}</span>
+          {paper.year ? (
+            <>
+              {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
+              <span className="pc-date">{paper.year}</span>
+            </>
+          ) : null}
 
           {(paper.citationCountKnown || paper.citationCount! > 0) && (
             <>
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              <span className="pc-meta-dot pc-meta-dot--citations">·</span>
+              {(categoryLabel || hasFollowedAuthor || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"

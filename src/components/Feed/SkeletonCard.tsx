@@ -18,14 +18,18 @@ export default function SkeletonCard() {
     <div className="pc sk" aria-hidden="true">
       <div className="pc-sheet">
         <div className="pc-body">
+          <div className="pc-lead">
+            <span className="sk-block sk-figure" />
+          </div>
           <div className="pc-meta sk-meta">
             <span className="sk-block" style={{ width: '7.5rem' }} />
             <span className="sk-block" style={{ width: '2.5rem' }} />
             <span className="sk-block" style={{ width: '5rem' }} />
           </div>
           <div className="sk-title">
-            <span className="sk-block" style={{ width: '94%' }} />
-            <span className="sk-block" style={{ width: '58%' }} />
+            <span className="sk-block" style={{ width: '96%' }} />
+            <span className="sk-block" style={{ width: '88%' }} />
+            <span className="sk-block" style={{ width: '46%' }} />
           </div>
           <div className="pc-authors">
             <div className="pc-author-avatars sk-authors">
@@ -41,13 +45,16 @@ export default function SkeletonCard() {
             <span className="sk-block sk-toggle" />
           </div>
           <div className="pc-action-bar">
-            <span className="sk-block sk-button sk-button--read" />
-            <span className="sk-block sk-button sk-button--plain" />
+            <span className="sk-block sk-button" />
           </div>
         </div>
       </div>
       <div className="pc-side-actions sk-rail">
-        {[0, 1, 2, 3, 4].map((i) => <span key={i} className="sk-block sk-tile" />)}
+        {[0, 1, 2, 3, 4].map((i) => (
+          <span key={i} className="pc-side-btn">
+            <span className="pc-side-icon"><span className="sk-block sk-glyph" /></span>
+          </span>
+        ))}
       </div>
     </div>
   );

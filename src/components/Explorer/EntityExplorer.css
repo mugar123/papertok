@@ -126,24 +126,6 @@
 
 /* Neutral for "not found" — nothing failed, the record is just not there —
    and the red wash only when a request did fail. */
-.explorer-error-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--space-1);
-  border: 1px solid var(--tint-neutral-line);
-  border-radius: var(--radius-2xl);
-  background: var(--tint-neutral-bg);
-  color: var(--tint-neutral-fg);
-}
-
-.explorer-error-icon--failed {
-  border-color: var(--tint-red-line);
-  background: var(--tint-red-bg);
-  color: var(--tint-red-fg);
-}
-
 .explorer-error-actions {
   display: flex;
   flex-wrap: wrap;
@@ -158,89 +140,9 @@
   flex-shrink: 0;
   padding: var(--space-5) var(--space-5) var(--space-6);
   padding-top: max(var(--space-5), env(safe-area-inset-top));
-  border-bottom: 1px solid var(--border-default);
   background: var(--bg-primary);
   overflow: hidden;
   z-index: 1;
-}
-
-/* A faint wash of the entity's own imagery, kept light so the page stays a
-   white sheet rather than a photo header.
-
-   Two boxes, and that is the whole fix. The element used to carry the image
-   itself, `top: -20%; bottom: 0`, so its box was 120% of the hero's height —
-   and the hero is growing exactly when the wash mounts: the thumbnail
-   finishes loading in the same stretch in which the Wikipedia block unfolds
-   (320ms) and, from cold, the navbar band opens (240ms). Measured 2026-09-09
-   on Harvard from cold, production, signed in: 21 distinct heights from 374
-   to 576px (+54%) while the whole 280ms fade ran. `cover` rescaled the
-   photograph on every one of them, and a 48px blur over a 1536px-wide layer
-   — the most expensive paint in the codebase, which the 768px media query
-   below already switches off on phones — was rasterised 21 times in a row.
-
-   The element is only the mask now: it sits on the hero's own box so the
-   gradient still closes at the hero's bottom edge. The image is on a
-   pseudo-element with a FIXED box, and fixed is the whole point — a
-   percentage is what made it move. -96px is the -20% the old box started at
-   on a hero at its resting 481px.
-
-   `mask-repeat: no-repeat` because the tile IS this element's box, and the
-   picture now reaches past it: at a resting 481px hero the image ends 143px
-   below the mask's bottom edge, in the next tile down, where the gradient
-   restarts at solid — a band of unmasked photograph that only
-   `.explorer-hero { overflow: hidden }` is hiding. That clip exists for the
-   settle's reveal, and nothing else should be leaning on it.
-
-   720px is neither that box's height (that was 577) nor the hero's. It puts
-   the picture's bottom edge at 624px, and the tallest hero measured — an
-   institution with the Wikipedia paragraph expanded — is 721. It does not
-   need to reach: the mask above is linear from solid at 30% to nothing at
-   100%, so at 624 of 721 it is already down to 19% of an opacity that is
-   itself 0.1. The picture ends at under 2% of its own weight — where nothing
-   can see it end — and every pixel added below it would be blurred at 48px
-   and then thrown away by the mask. 30% for the mask's solid stop, not 40%:
-   the gradient used to run over the taller box, so its solid part reached
-   ~28% of the hero.
-
-   What this does NOT claim is that the picture sits where it used to. The box
-   is 120% of the hero's width, 1536px, so `cover` is width-driven for any
-   picture narrower than this box's own 2.1:1 — which is every portrait and
-   4:3 lead Wikipedia serves — and then the rendered image is the same size in
-   both boxes and only the crop moves: the old box centred it at -96.2 +
-   577.2/2 = 192.4 below the hero's top, this one at -96 + 720/2 = 264. The
-   resting slice is ~71px further down the photograph than it was. The claim
-   is that it stops moving WHILE the hero grows, not that it is unchanged. */
-.ehc-bg-blur {
-  position: absolute;
-  inset: 0;
-  opacity: 0.1;
-  z-index: -1;
-  pointer-events: none;
-  mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, black 30%, transparent 100%);
-  mask-repeat: no-repeat;
-  -webkit-mask-repeat: no-repeat;
-  /* No animation here. It used to fade this in over 3s while the component
-     faded the same property in over 1s to a different target, and a property
-     with two animators has no defined look for as long as both are running. The
-     component owns it now; 0.1 above is the resting weight, and the reason the
-     photograph reads as a wash rather than as a picture. */
-}
-
-/* The picture, on a box that does not know how tall the hero is. The URL comes
-   in on a custom property from the component (a pseudo-element cannot read an
-   inline `background-image`). */
-.ehc-bg-blur::before {
-  content: '';
-  position: absolute;
-  top: -96px;
-  left: -10%;
-  right: -10%;
-  height: 720px;
-  background-image: var(--ehc-wash-image);
-  background-size: cover;
-  background-position: center;
-  filter: blur(48px) saturate(1.1);
 }
 
 .explorer-hero-top {
@@ -256,12 +158,58 @@
   gap: var(--space-3);
 }
 
-/* The entity type: a mono kicker carrying the field colour. */
+/* The entity type: a tag under the name, in the field colour. */
 .ehc-type {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--area-accent, var(--accent-primary)) 28%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 8%, transparent);
+  font: 600 0.75rem/1.2 var(--font-mono);
   color: var(--area-accent, var(--accent-primary));
+}
+
+/* A project has no picture to show, so its header goes without the tile. */
+.explorer-skeleton--project .ehc-visual-slot {
+  display: none;
+}
+
+/* An OpenAlex topic: what OpenAlex says it covers, under the name. */
+.ehc-topic-about {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ehc-topic-description {
+  margin: 0;
+  font: 400 1.0625rem/1.6 var(--font-serif);
+  color: var(--text-secondary);
+}
+
+.ehc-topic-source {
+  font: 500 0.6875rem/1.3 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+/* A project's topics sit beside its type, in the same tag. */
+.ehc-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ehc-type--subject {
+  color: var(--text-secondary);
+}
+
+.ehc-type--verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: var(--tint-blue-line);
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-fg);
 }
 
 .explorer-hero-content {
@@ -284,6 +232,282 @@
   flex-shrink: 0;
 }
 
+.ehc-layout,
+.ehc-layout-main {
+  display: contents;
+}
+
+.ehc-layout--sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-4) 40px;
+  align-items: start;
+}
+
+.ehc-layout--sheet .ehc-layout-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ehc-layout--sheet .ehc-info {
+  gap: 6px;
+}
+
+.ehc-layout--sheet .ehc-layout-main > * {
+  flex-shrink: 0;
+}
+
+.ehc-project-sheet {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.ehc-project-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ehc-project-sheet .ehc-stats-grid,
+.ehc-project-sheet .ehc-stats-grid:has(.ehc-stat-box--impact) {
+  width: 100%;
+  max-width: none;
+  border: 0;
+}
+
+.ehc-project-sheet .ehc-stat-box {
+  gap: 6px;
+  padding: 14px 16px;
+  border-color: var(--border-subtle);
+  background: none;
+}
+
+.ehc-project-sheet .ehc-stat-box:nth-child(even),
+.ehc-project-sheet .ehc-stat-box:last-child:nth-child(odd) {
+  border-right: 0;
+}
+
+.ehc-project-sheet .ehc-stat-box:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.ehc-project-sheet .project-participants {
+  padding: 14px 16px 4px;
+}
+
+.ehc-project-sheet .project-participants-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.ehc-project-sheet .project-participant-card {
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 8px;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+}
+
+.ehc-project-sheet .project-participant-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ehc-project-sheet .project-participants-grid > .project-participant-card:first-child {
+  border-top: 0;
+}
+
+.project-participants-more {
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ehc-project-sheet .project-participant-card:hover {
+    border-top-color: transparent;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+}
+
+.ehc-project-sheet .project-links-menu {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ehc-project-sheet .project-links-option {
+  width: calc(100% + 18px);
+  margin: 0 -9px;
+}
+
+.ehc-project-sheet > :last-child:not(.project-links-menu) {
+  padding-bottom: 14px;
+}
+
+.project-participants-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: var(--fw-medium) var(--fs-sm)/1.3 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-participants-trigger > svg:first-child {
+  color: var(--text-tertiary);
+}
+
+.project-participants-count {
+  margin-left: auto;
+  font: 500 0.75rem/1 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.project-participants-trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.project-participants-sheet .pc-share-row {
+  justify-content: space-between;
+  min-height: 56px;
+  text-align: left;
+}
+
+.project-participants-sheet .project-participant-name {
+  white-space: normal;
+}
+
+.ehc-timeline {
+  padding: 16px 18px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.ehc-timeline-title {
+  font: 600 0.75rem/1.3 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.ehc-timeline-track {
+  position: relative;
+  height: 12px;
+  margin: 14px 6px 8px;
+}
+
+.ehc-timeline-done,
+.ehc-timeline-rest {
+  position: absolute;
+  top: 5px;
+  height: 2px;
+}
+
+.ehc-timeline-done {
+  left: 0;
+  width: 100%;
+  background: var(--border-ink);
+  transform: scaleX(var(--timeline-progress));
+  transform-origin: left;
+}
+
+.ehc-timeline-rest {
+  left: calc(var(--timeline-progress) * 100%);
+  right: 0;
+  background: var(--border-default);
+}
+
+.ehc-timeline-rest.is-open {
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 6px, transparent 6px 12px);
+}
+
+.ehc-timeline-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border: 2px solid var(--border-ink);
+  border-radius: 50%;
+  background: var(--bg-card);
+}
+
+.ehc-timeline-dot--now {
+  left: calc(var(--timeline-progress) * 100%);
+  background: var(--border-ink);
+}
+
+.ehc-timeline-dot--end {
+  left: 100%;
+  border-color: var(--border-strong);
+}
+
+.ehc-timeline-dot--end.is-reached {
+  border-color: var(--border-ink);
+  background: var(--border-ink);
+}
+
+.ehc-timeline-labels {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  font: 500 0.6875rem/1.4 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.ehc-timeline-now {
+  position: absolute;
+  left: calc(6px + var(--timeline-progress) * (100% - 12px));
+  transform: translateX(-50%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ehc-timeline-done {
+    animation: timelineDraw 0.4s var(--ease-out) backwards;
+  }
+
+  /* Today lands as the line reaches it, not before. */
+  .ehc-timeline-dot--now {
+    animation: timelineDotIn 0.2s var(--ease-out) 0.25s backwards;
+  }
+}
+
+@keyframes timelineDraw {
+  from { transform: scaleX(0); }
+}
+
+@keyframes timelineDotIn {
+  from { opacity: 0; transform: scale(0.85); }
+}
+
+@media (max-width: 480px) {
+  .ehc-timeline-now {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .ehc-layout--sheet {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* The skeleton is the page's first paint, and the page transition already
    brings it in; a second fade on top of that (0.35 → 1 over 420 ms while the
    page itself went 0 → 1 over 300 ms) was content arriving after its frame.
@@ -301,6 +525,160 @@
 
 .explorer-container--author .ehc-header {
   animation: authorContentFade 0.24s linear backwards;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-4) 40px;
+  align-items: start;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-main {
+  grid-column: 1 / -1;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-hero-aside {
+  display: contents;
+}
+
+.explorer-skeleton--author .ex-skel-type {
+  display: none;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-visual-slot {
+  width: 56px;
+  height: 56px;
+  flex-basis: 56px;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) :is(.ehc-icon, .ehc-wiki-image) {
+  border-radius: 50%;
+}
+
+.ehc-initials {
+  font: 600 1.25rem/1 var(--font-serif);
+  letter-spacing: 0.02em;
+  text-box: trim-both cap alphabetic;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stats-grid,
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stats-grid:has(.ehc-stat-box--impact) {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: stretch;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  width: 100%;
+  max-width: none;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stat-box {
+  gap: 6px;
+  padding: 14px 16px;
+  border-color: var(--border-subtle);
+  background: none;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stat-box:nth-child(even) {
+  border-right: 0;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stat-box:nth-last-child(-n + 2):nth-child(odd),
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stat-box:nth-last-child(-n + 2):nth-child(odd) ~ .ehc-stat-box,
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stat-box:last-child {
+  border-bottom: 0;
+}
+
+:is(.explorer-container--author, .explorer-skeleton--author) .ehc-stat-box:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+
+.explorer-container--author .ehc-identity-note {
+  grid-column: 1;
+}
+
+.ehc-activity {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 16px 16px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.ehc-activity-head {
+  display: flex;
+  justify-content: space-between;
+  font: 500 0.6875rem/1.3 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.ehc-activity-bars,
+.ehc-activity-years {
+  display: grid;
+  grid-template-columns: repeat(var(--years, 10), minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ehc-activity-bars {
+  flex: 1;
+  align-items: end;
+  min-height: 96px;
+  margin: 12px 0 6px;
+}
+
+.ehc-activity-bars span {
+  height: calc(var(--v) * 100%);
+  min-height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 70%, transparent);
+  transform-origin: bottom;
+  animation: activityGrow 0.3s var(--ease-out) backwards;
+  animation-delay: calc(var(--i) * 20ms);
+  transition: background-color var(--transition-fast);
+}
+
+.ehc-activity-bars span.is-running {
+  background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 35%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ehc-activity-bars span:hover {
+    background: var(--area-accent, var(--accent-primary));
+  }
+}
+
+@keyframes activityGrow {
+  from { transform: scaleY(0.05); }
+}
+
+.ehc-activity-years {
+  font: 500 0.625rem/1 var(--font-mono);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  :is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :is(.explorer-container--author, .explorer-skeleton--author) .ehc-stats-grid,
+  :is(.explorer-container--author, .explorer-skeleton--author) .ehc-stats-grid:has(.ehc-stat-box--impact),
+  .ehc-activity {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
 
 /* The header pairs the identity (icon + name) on the left with a right-hand
@@ -355,7 +733,7 @@
   flex-shrink: 0;
   border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--area-accent, var(--accent-primary)) 24%, var(--bg-card));
-  background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 8%, var(--bg-card));
+  background: transparent;
   color: var(--area-accent, var(--accent-primary));
 }
 
@@ -365,13 +743,12 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   flex-shrink: 0;
-  border: 1px solid var(--border-strong);
 }
 
 .ehc-wiki-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .ehc-info {
@@ -380,16 +757,6 @@
   gap: var(--space-2);
   flex: 1;
   min-width: 0;
-  /* A short field rule above the name. */
-  padding-top: 2px;
-}
-
-.ehc-info::before {
-  content: '';
-  width: 34px;
-  height: 3px;
-  margin-bottom: 2px;
-  background: var(--area-accent, var(--accent-primary));
 }
 
 .ehc-title-row {
@@ -415,7 +782,43 @@
   overflow-wrap: anywhere;
 }
 
-.ehc-title-row .ehc-name { flex: 1 1 auto; }
+.ehc-name-line { display: flex; align-items: flex-start; gap: var(--space-2); flex: 1 1 auto; min-width: 0; }
+
+.ehc-orcid-stamp {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  margin-top: calc((1.12em - max(24px, 0.8em)) / 2);
+  border-radius: var(--radius-full);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  color: var(--tint-green-fg);
+  cursor: alias;
+}
+
+.ehc-orcid-stamp svg {
+  width: 0.8em;
+  height: 0.8em;
+  rotate: -12deg;
+  animation: ehcOrcidStamp 260ms var(--ease-out) 200ms backwards;
+}
+
+.ehc-orcid-stamp-text {
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: 0.18em;
+  fill: currentColor;
+}
+
+.ehc-orcid-stamp:focus-visible {
+  outline: 2px solid var(--tint-green-fg);
+  outline-offset: 2px;
+}
+
+@keyframes ehcOrcidStamp {
+  from { opacity: 0; scale: 1.4; }
+}
+
 .ehc-title-row .follow-toggle { flex: 0 0 auto; }
 
 /* The follow control is the shared ui/follow-toggle (its own stylesheet). */
@@ -529,7 +932,7 @@
 
 .ehc-meta {
   margin: 0;
-  font: 500 0.75rem/1.5 var(--font-mono);
+  font: 500 0.75rem/1.3 var(--font-mono);
   letter-spacing: 0.02em;
   color: var(--text-secondary);
 }
@@ -583,99 +986,6 @@
   color: var(--tint-red-fg);
   font-size: var(--fs-xs);
 }
-
-.ehc-institution-identity {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.ehc-institution-identity a,
-.ehc-institution-identity span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 26px;
-  padding: 4px 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font: 500 0.625rem/1.4 var(--font-mono);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  text-decoration: none;
-}
-
-.ehc-institution-identity a:first-child {
-  border-color: var(--tint-blue-line);
-  color: var(--tint-blue-fg);
-  background: var(--tint-blue-bg);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .ehc-institution-identity a:hover {
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-  }
-}
-
-.ehc-ror-relations {
-  display: flex;
-  gap: 6px;
-  max-width: min(720px, 100%);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.ehc-ror-relations::-webkit-scrollbar { display: none; }
-
-.ehc-ror-relations button {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  max-width: 250px;
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .ehc-ror-relations button:hover {
-    border-color: var(--border-ink);
-    color: var(--text-primary);
-  }
-}
-
-.ehc-ror-relations button:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.ehc-ror-relations button span {
-  color: var(--text-tertiary);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-}
-
-.ehc-ror-relations button strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.7rem;
-  font-weight: var(--fw-semibold);
-}
-
-.ehc-ror-relations button > svg { color: var(--text-tertiary); }
 
 /* Tags / Concepts */
 .ehc-tags {
@@ -768,9 +1078,7 @@
 }
 
 .ehc-stat-label {
-  font: 600 0.625rem/1 var(--font-mono);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: 500 0.6875rem/1.2 var(--font-mono);
   color: var(--text-tertiary);
 }
 
@@ -821,60 +1129,34 @@
   min-height: 1.625rem;
 }
 
-/* Wikipedia excerpt — a standfirst carrying the field rule down its edge. */
-.ehc-wiki {
-  position: relative;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--area-accent, var(--accent-primary));
+.ehc-stat-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.ehc-stat-detail--chip {
+  min-height: 0;
+  margin: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
-  font-family: var(--font-serif);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  overflow: hidden;
+  background: var(--bg-secondary);
+  white-space: nowrap;
 }
 
-.ehc-wiki p {
-  margin: 0 0 8px 0;
-  max-height: 4.8em;
-  overflow: hidden;
-  transition: max-height 0.28s var(--ease-out-expo);
-  /* The words arrive rather than appear. On mount only — the paragraph is not
-     remounted by expanding it, only reclassed — and deliberately an animation
-     on the element itself rather than a presence wrapper around the swap: the
-     wrapper cost a React commit boundary, and that defeated the `layout`
-     projection `.ehc-wiki-fold` carried at the time (the block stopped
-     animating its height and the list flashed 40px). Past tense: that fold
-     animates opacity only now and the hero's settle owns its space, so what
-     stands here is the record of why the wrapper was rejected, not a
-     projection still there to defeat. The reduced-motion block below names
-     `.ehc-wiki p`, so this is switched off there with everything else. */
-  animation: wikiProseIn 0.26s var(--ease-out-expo) both;
+/* With the whole row to itself the impact cell has room for its chip in the
+   corner; a half-width cell keeps it on the score's line, wrapping under it. */
+.ehc-project-sheet .ehc-stat-box--impact:last-child:nth-child(odd) {
+  position: relative;
 }
 
-/* From 0.35, like `slideUpFade`, `staggerFadeUp` and `statSettle`, and for
-   their reason: the paragraph takes the place of five grey bars measured to
-   its own line box, so it resolves where they were instead of arriving from
-   nothing. Written from 0 first, which is the one case in the hero where that
-   reads worst — the bars are removed in the same commit, so the block would be
-   genuinely blank for the first frames rather than grey turning into type. */
-@keyframes wikiProseIn {
-  from { opacity: 0.35; }
-  to { opacity: 1; }
-}
-
-.ehc-wiki p.expanded {
-  max-height: var(--wiki-description-expanded-height, 72rem);
-}
-
-/* No `min-height` and no centring any more. Both existed to prop up shapes that
-   were too small for the text they stood in for; now the shapes carry the
-   height themselves, so the reservation follows the paragraph's own metrics
-   instead of a number that had to be re-guessed every time they changed. */
-.ehc-wiki.is-loading {
-  display: block;
+.ehc-project-sheet .ehc-stat-box--impact:last-child:nth-child(odd) .ehc-stat-detail--chip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
 
 /* The rows are the paragraph's own line box, not a spacing guess.
@@ -922,43 +1204,38 @@
   animation: exSkelSweep 1.5s linear infinite;
 }
 
-.ehc-wiki-toggle {
-  display: inline-flex;
+/* The actions (Follow, Share), then, past a rule, where the entity is
+   described elsewhere. */
+.ehc-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin: -1px 0 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--area-accent, var(--accent-primary));
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.ehc-wiki-toggle svg {
-  transition: transform 0.24s var(--ease-out-expo);
-}
-
-.ehc-wiki.is-expanded .ehc-wiki-toggle svg {
-  transform: rotate(180deg);
-}
-
-.ehc-wiki-toggle:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+  gap: var(--space-2);
 }
 
 .ehc-links {
   display: flex;
-  gap: var(--space-3);
   align-items: center;
-  font-family: var(--font-body);
+  gap: var(--space-4);
+  margin-left: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border-default);
+}
+
+/* Too narrow for both groups on one line: the links take their own, and a
+   rule at the start of a line would separate nothing. */
+@media (max-width: 380px) {
+  .ehc-links {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 
 .ehc-link {
-  display: flex;
+  display: inline-flex;
+  min-height: 32px;
   align-items: center;
   gap: 4px;
   color: var(--text-secondary);
@@ -983,7 +1260,6 @@
   z-index: 100;
   /* Opaque, not frosted: the list scrolls under it (design.md, no blur). */
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .explorer-toolbar {
@@ -993,35 +1269,185 @@
   gap: var(--space-3);
 }
 
+.ee-seg {
+  position: relative;
+  display: flex;
+  flex: none;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.ee-seg button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font: var(--fw-medium) var(--fs-sm)/1 var(--font-body);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.ee-seg button[data-pressed] {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.ee-seg-pill {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+.ee-seg[data-ready] .ee-seg-pill {
+  transition: transform 250ms var(--ease-in-out), width 250ms var(--ease-in-out);
+}
+
+
+@media (hover: hover) and (pointer: fine) {
+  .ee-seg button:not([data-pressed]):hover {
+    color: var(--text-primary);
+  }
+}
+
+.ee-seg button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ee-list-count {
+  min-width: 4ch;
+  font: 500 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.ee-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 var(--space-5) var(--space-3);
+}
+
+.ee-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: var(--fw-medium) 0.8125rem/1 var(--font-body);
+  cursor: pointer;
+}
+
+.ee-chip svg {
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ee-chip:hover {
+    border-color: var(--border-strong);
+  }
+}
+
+.ee-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.ex-skel-seg { flex: none; width: 168px; height: 42px; border-radius: var(--radius-lg); }
+.ex-skel-seg--one { width: 104px; }
+
 .explorer-search-box {
   flex: 1;
   display: flex;
   align-items: center;
   min-width: 0;
   height: 42px;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-1) 0 var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  transition: border-color var(--transition-fast);
 }
 
 .explorer-search-box:focus-within {
-  border-color: var(--border-strong);
-  background: var(--bg-primary);
+  border-color: var(--border-ink);
 }
 
-/* A guest's search: the same box, as a button that says it needs an account. */
+.explorer-search-rule {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-2);
+  background: var(--border-default);
+}
+
+.explorer-filter-trigger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: var(--fw-medium) var(--fs-sm)/1 var(--font-body);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.explorer-filter-trigger.is-active {
+  color: var(--text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .explorer-filter-trigger:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+.explorer-filter-trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* A guest's search: the field's place in the box, as a button that says it
+   needs an account. */
 .explorer-search-gate {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
   font: inherit;
   text-align: left;
   /* Real text, not a placeholder: secondary ink for 4.5:1 on the box. */
   color: var(--text-secondary);
   cursor: pointer;
-}
-
-.explorer-search-gate:hover {
-  border-color: var(--border-strong);
 }
 
 .explorer-search-gate:focus-visible {
@@ -1040,7 +1466,7 @@
 
 .es-icon {
   color: var(--text-tertiary);
-  margin-right: 10px;
+  margin-right: var(--space-2);
   flex-shrink: 0;
 }
 
@@ -1063,11 +1489,24 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
+  box-shadow: none;
   appearance: none;
 }
 
 .explorer-search-box input::placeholder {
   color: var(--text-tertiary);
+}
+
+.explorer-search-box input:focus-visible {
+  border-color: transparent;
+  box-shadow: none !important;
+}
+
+/* iOS zooms the page into a focused field set under 16px. */
+@media (pointer: coarse) {
+  .explorer-search-box input {
+    font-size: 1rem;
+  }
 }
 
 /* ─── Papers list ─── */
@@ -1096,61 +1535,14 @@
   flex-direction: column;
   gap: 0;
   margin: 0;
-  border-top: 1px solid var(--border-default);
 }
 
-/* 776px is what the prose actually measured inside the old 820px row, so the
-   line length nobody complained about is exactly preserved; what changes is
-   that the rule, the field label and the metrics now reach the full width. */
-.eli-title,
-.eli-authors,
-.eli-summary {
-  max-width: var(--explorer-measure);
-}
-
-/* Ruled rows rather than floating cards; the field reads as a rule down the
-   inner edge and the paper title is set in the serif. */
-.explorer-list-item {
-  position: relative;
-  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-card);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  /* `both`, not `forwards`, and no `opacity: 0` underneath it. Each row waits
-     out its share of the stagger before its animation starts, and with only a
-     forwards fill that wait was spent at the base opacity — which was zero, so
-     the rows blinked in from nothing one after another. `backwards` hands them
-     the first keyframe during the delay instead, so a row that has not started
-     yet is already sitting at 0.35 where its skeleton shape was. */
-  animation: staggerFadeUp 0.42s var(--ease-out-expo) both;
-  animation-delay: calc(var(--i, 0) * 0.035s);
-  /* Rows below the fold are neither laid out nor painted until they are
-     near it: a works page is thirty rows and thirteen thousand pixels, and
-     laying all of it out was most of the native cost of the page answering
-     (profiled with the CPU at a quarter speed). The intrinsic size is a
-     row's usual height, so the scroll extent is right before a row is. A
-     row's entrance plays when it first comes near the screen, which is
-     where it is first seen anyway. */
+.explorer-grid > .list-row:not(.ex-skel-row) {
   content-visibility: auto;
-  contain-intrinsic-size: auto 200px;
+  contain-intrinsic-size: auto 100px;
 }
 
-.explorer-list-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: var(--space-5);
-  width: 3px;
-  height: 28px;
-  background: var(--area-accent, var(--accent-primary));
-}
 
-@media (hover: hover) and (pointer: fine) {
-  .explorer-list-item:hover {
-    background: var(--bg-secondary);
-  }
-}
 
 .ee-author-card:focus-visible,
 .project-summary-box:focus-visible,
@@ -1205,76 +1597,27 @@
   to { transform: translateX(105%); }
 }
 
-/* A row of the index before it has any words in it. It carries no box of its
-   own on purpose — it is worn alongside `.explorer-list-item`, so the padding
-   and the rule are literally the live row's rather than a copy that drifts the
-   first time someone adjusts one and not the other. All this class does is
-   phase the shimmer, and hold the row still.
-
-   Still, because `.explorer-list-item` brings an entrance with it — 6px of
-   rise from part-way visible — and the shapes were inheriting it: four of
-   them rising together on top of the page transition at first paint, and the
-   live page's own five rising again the frame the hero landed. The rise is
-   for words replacing a shape, not for the shape. */
-.explorer-list-item.ex-skel-row {
-  animation: none;
+/* A row of the list before it has any words in it, on the live row's own
+   line boxes (ListRow.css): the meta line, the title, the author dots. */
+.list-row.ex-skel-row {
+  display: grid;
+  gap: 0;
+  cursor: default;
 }
 
-/* The shimmer walks down the list rather than flashing all at once: a fraction
-   of a cycle between rows is enough to read as a direction. */
 .ex-skel-row:nth-child(2) .ex-skel::after { animation-delay: 0.12s; }
 .ex-skel-row:nth-child(3) .ex-skel::after { animation-delay: 0.24s; }
 .ex-skel-row:nth-child(4) .ex-skel::after { animation-delay: 0.36s; }
 .ex-skel-row:nth-child(5) .ex-skel::after { animation-delay: 0.48s; }
 
-.ex-skel-row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: 15px;
-  margin-bottom: 10px;
+.ex-skel-kicker { width: 120px; height: 10px; margin: 3.4px 0 9.4px; }
+.ex-skel-title { height: 18px; margin: 2px 0; max-width: var(--explorer-measure); }
+.ex-skel-title + .ex-skel-title { width: 58%; }
+.ex-skel-dots { width: 64px; height: 24px; margin-top: 8px; border-radius: var(--radius-full); }
+
+@media (min-width: 641px) {
+  .ex-skel-title + .ex-skel-title { display: none; }
 }
-
-/* Mono-cased field label on the left, citations and year on the right — the
-   two ends the real header row occupies. */
-.ex-skel-kicker { width: 108px; height: 10px; }
-.ex-skel-metrics { width: 96px; height: 10px; }
-
-/* The rows are the live row's own line boxes, not a spacing guess — the same
-   method `.ehc-wiki-skeleton` uses for the paragraph. Measured on a phone
-   (390px), the shortest row that ever lands: `.eli-header` 15 + 10 below,
-   `.eli-title` two lines of 24.6 + 8, `.eli-authors` 21 + 8, `.eli-summary`
-   two lines of 23.25 — 158px of content, 199 with the row's padding. The
-   shape this replaces reserved 138: two 19px title bars 9px apart, a 12px
-   authors bar, and nothing at all for the summary, which the live row always
-   carries (there is a fallback string). So every row grew ~61px the frame the
-   words landed, ~305px over the five, and rows two to five each resolved that
-   far below the shape they replaced. Longer titles still grow a row; the
-   common one no longer does.
-
-   Two lines of serif title, the second one short, the way a title wraps: a
-   19px bar sits in each 24.6px line, and the title's own 8px follows. */
-.ex-skel-title { height: 19px; margin-bottom: 11px; max-width: var(--explorer-measure); }
-/* Adjacent-sibling, not `:last-of-type`: the last div in the row was never a
-   title (the authors bar was, and now the summary's), so that selector never
-   matched and the short second line never drew. */
-.ex-skel-title + .ex-skel-title { width: 58%; margin-bottom: 8px; }
-
-/* A grid, so the bars' margins do not collapse into each other. As blocks,
-   the authors bar's 13px below and the summary's 5px above became 13, and the
-   two summary bars' 6 + 5 became 6 — ten pixels short of the row measured
-   above (187 where 197 was reserved). Grid items keep every margin. The
-   accent stripe is `position: absolute`, so it is not a grid item. */
-.explorer-list-item.ex-skel-row { display: grid; }
-
-/* One line of authors at `--fs-sm`: 21px of line, then the 8px the live one
-   keeps below it. */
-.ex-skel-authors { height: 12px; width: 42%; margin: 4px 0 13px; }
-
-/* Two lines of summary, 23.25px each; the second one short. */
-.ex-skel-summary { height: 12px; margin: 5px 0 6px; max-width: var(--explorer-measure); }
-.ex-skel-summary--short { width: 70%; }
 
 /* The stat cells keep their own box and rules — flattening each one into a
    single shimmer block merged the four into one grey slab, which is not what
@@ -1290,14 +1633,9 @@
    this one would stay inline and ignore both. */
 .ex-skel-stat-detail { display: block; width: 96px; height: 8px; margin-top: 2px; }
 
-/* The ORCID career block, while it is being fetched. */
-.ex-skel-stack { flex: 1; }
-.ex-skel-orcid-id { width: 25%; }
-.ex-skel-orcid-action { width: 84px; height: 20px; margin-left: auto; }
-
 /* ── The parts only one kind of page has ──
    The skeleton is composed from the route, so these are worn by the live
-   containers — `.ehc-tags`, `.ehc-institution-identity`, `.ehc-ror-relations` —
+   containers — `.ehc-tags` and `.ehc-tag-row` —
    rather than by copies of them. The gaps, the wrapping and the horizontal
    scroll are therefore literally the ones the real strip uses, and cannot drift
    from it the first time someone adjusts one and not the other. */
@@ -1313,13 +1651,6 @@
    line box, since both are small inline labels in a wrapping row. */
 .ex-skel-chip {
   height: 25px;
-  flex: 0 0 auto;
-}
-
-/* A related-organisation card, which is taller: two lines of text behind a
-   chevron. `min-height` on the live button, matched here exactly. */
-.ex-skel-relation {
-  height: 30px;
   flex: 0 0 auto;
 }
 
@@ -1339,9 +1670,9 @@
    every block pulsing in unison. It costs nothing — `animation-delay` on an
    infinite loop shifts the phase, it does not hold anything back — and it is
    what makes the three skeletons legible as three different pages before a
-   single word has loaded: the wave passes through a chip row and an ORCID card
-   on an author, through credentials, a relations strip and a paragraph on an
-   institution, and reaches the tabs almost immediately on a project.
+   single word has loaded: the wave passes through a chip row on an author,
+   through credentials, a relations strip and a paragraph on an institution,
+   and reaches the tabs almost immediately on a project.
 
    The delays sit on `::after`, which is where the animation is; on the block
    they would delay nothing. */
@@ -1355,7 +1686,6 @@
 .explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.18s; }
 .explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
 .explorer-skeleton .ex-skel-follow::after { animation-delay: 0.24s; }
-.explorer-skeleton .orcid-skeleton .ex-skel::after { animation-delay: 0.27s; }
 .explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
 .explorer-skeleton .ex-skel-search::after { animation-delay: 0.33s; }
 
@@ -1382,19 +1712,10 @@
 /* The chrome that always arrives, at the heights it arrives at, so the list
    below does not move when it does. */
 .ex-skel-tab { width: 58px; height: 15px; }
-/* The strip stands as tall as the live one — 40px, a tab's 10px of padding
-   either side of its label plus the 3px rule — with the shapes in its middle.
-   Measured on the handover (390×844): it used to be 16px tall, and the
-   toolbar and the list under it jumped 24px the frame the real tabs arrived. */
-.explorer-skeleton .ee-tabs {
-  min-height: 40px;
-  align-items: center;
-}
 .ex-skel-search { width: 100%; height: 38px; border-radius: var(--radius-md); }
 
 /* Header shapes, so the hero does not jump either. */
-.ex-skel-type { width: 80px; height: 14px; }
-.ex-skel-action { width: 40px; height: 40px; border-radius: var(--radius-md); }
+.ex-skel-type { width: 64px; height: 21px; }
 .ex-skel-name { width: 240px; max-width: 80%; height: 26px; margin-bottom: var(--space-3); }
 .ex-skel-sub { height: 12px; margin-bottom: 8px; }
 .ex-skel-sub--medium { width: 70%; }
@@ -1406,140 +1727,11 @@
 
 
 
-.eli-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: 10px;
-}
 
-/* The paper's field: mono, tinted by the field it belongs to. */
-.eli-cat {
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--area-accent, var(--text-secondary));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.eli-date {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-  font: 400 0.6875rem/1.4 var(--font-mono);
-}
-
-.eli-metrics {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.eli-citations {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-secondary);
-  font: 600 0.6875rem/1.4 var(--font-mono);
-}
-
-.eli-citations--link {
-  text-decoration: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .eli-citations--link:hover {
-    color: var(--text-primary);
-    text-decoration: underline;
-  }
-}
-
-.eli-title {
-  margin: 0 0 8px 0;
-  font-family: var(--font-serif);
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.28;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-  transition: color var(--transition-fast);
-}
-
-.eli-title-btn {
-  font: inherit;
-  letter-spacing: inherit;
-  color: inherit;
-  padding: 0;
-  text-align: left;
-}
-
-/* The peer-review check keeps a meaning colour of its own. */
-.eli-authors {
-  margin: 0 0 8px 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.eli-summary {
-  margin: 0;
-  font-family: var(--font-serif);
-  color: var(--text-secondary);
-  font-size: 0.9375rem;
-  line-height: 1.55;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
 .explorer-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  max-width: 440px;
-  margin: 56px auto 0;
-  padding: 0 var(--space-5);
-  text-align: center;
-  color: var(--text-secondary);
+  margin-top: var(--space-6);
   animation: slideUpFade 0.42s var(--ease-out-expo) both;
-}
-
-.explorer-empty-icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  margin-bottom: var(--space-1);
-}
-
-.explorer-empty-title {
-  margin: 0;
-  color: var(--text-primary);
-  /* Same voice as a row title (`.eli-title`): this block reads as one more
-     row of the list, not a system dialog dropped on top of it. */
-  font-family: var(--font-serif);
-  font-size: 1.2rem;
-  font-weight: 600;
-  line-height: 1.28;
-  letter-spacing: -0.01em;
-}
-
-.explorer-empty-body {
-  margin: 0;
-  font-size: var(--fs-sm);
-  line-height: 1.55;
 }
 
 .explorer-empty-link {
@@ -1619,73 +1811,6 @@
 }
 
 
-/* ─── Tabs ─── */
-.ee-tabs {
-  display: flex;
-  gap: var(--space-5);
-  margin-top: var(--space-4);
-  border-bottom: 1px solid var(--border-default);
-  padding: 0 var(--space-5);
-  /* The travelling rule is absolute against this. */
-  position: relative;
-}
-
-/* The mark the active tab carries, as one element that MOVES between them.
-   Same shape and clock as the navbar's rule (Navbar.css), and for the same
-   reason: a transform transitions on the compositor, so it keeps sliding
-   while the main thread is busy mounting the other tab's list. The base
-   width keeps the horizontal scale near 1, so a 3px bar's ends are not
-   visibly stretched. */
-.ee-tab-rule {
-  position: absolute;
-  left: 0;
-  bottom: -1px;
-  width: 80px;
-  height: 3px;
-  background: var(--brand-yellow);
-  transform-origin: 0 50%;
-  will-change: transform;
-  pointer-events: none;
-}
-
-/* Armed only once the rule has been placed: the first measurement lands it
-   under the current tab without a slide from the strip's left edge.
-   The navbar's clock and curve, as it has always been: see Navbar.css for why
-   they changed together on 2026-09-12. */
-.ee-tab-rule.is-measured {
-  transition: transform 240ms var(--ease-out-cubic), opacity 0.16s linear;
-}
-
-.ee-tab {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  padding: 10px 2px;
-  margin-bottom: -1px;
-  cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast), transform 0.16s ease-out;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .ee-tab:hover {
-    color: var(--text-primary);
-  }
-}
-
-/* The active surface takes the weight; the yellow thread is the travelling
-   rule above, not a border this tab paints for itself. */
-.ee-tab.active {
-  color: var(--text-primary);
-  font-weight: var(--fw-semibold);
-}
-
-.ee-tab:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 /* ─── Filter drawer ───
    A ui Sheet (Base UI Dialog pinned to the right edge). The primitive brings
    the slide and the fade, the stacking order and the focus trap; these rules
@@ -1718,11 +1843,28 @@
 }
 
 .ee-filter-header {
-  padding: var(--space-5);
+  padding: var(--space-3) var(--space-3) 0 var(--space-5);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--border-default);
+}
+
+.ee-filter-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 88dvh;
+}
+
+.ee-filter-sheet .ee-filter-header {
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.ee-filter-sheet .ee-filter-body {
+  padding: var(--space-4) var(--space-3);
+}
+
+.ee-filter-sheet .ee-filter-footer {
+  padding: var(--space-4) var(--space-3) 0;
 }
 
 /* The title is the dialog's name (SheetTitle), set in the UI voice: it is a
@@ -1815,6 +1957,68 @@
   outline-offset: 2px;
 }
 
+.ee-facets {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.ee-facet {
+  justify-content: flex-start;
+  gap: 10px;
+  height: auto;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.ee-facet-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--area-accent, var(--text-tertiary));
+}
+
+.ee-facet-count {
+  margin-left: auto;
+  font: 500 0.75rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ee-facet:hover {
+    background: var(--bg-secondary);
+  }
+}
+
+.ee-facet[data-pressed] {
+  border-color: var(--border-ink);
+  background: var(--bg-secondary);
+  font-weight: var(--fw-semibold);
+  box-shadow: none;
+}
+
+.ee-facet:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 /* Peer-review toggle — the ui Switch inside an enclosing ui Label; the
    switch draws itself, this is only the row it sits in. */
 .ee-toggle-label {
@@ -1838,7 +2042,6 @@
   flex-direction: column;
   gap: 0;
   margin: 0;
-  border-top: 1px solid var(--border-default);
 }
 
 .ee-author-card {
@@ -1915,6 +2118,39 @@
   font-size: var(--fs-sm);
 }
 
+/* The sentinel's place and voice, for a list that waits for "Keep looking".
+   The status is always mounted and takes no room while it is empty. */
+.explorer-list-more-status {
+  margin: 0;
+  padding: 40px var(--space-5) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.explorer-list-more-status:empty {
+  padding: 0;
+}
+
+.explorer-list-more {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-5) 40px;
+}
+
+/* The feed's loader, a size down. */
+.ehc-sentinel .petri {
+  width: 4.5rem;
+  height: 4.4rem;
+  margin: 0;
+}
+
+/* She stands at the foot of the list from the start; only the flask moves,
+   and only while a page is loading. */
+.ehc-sentinel .petri .onboarding-petri-body {
+  animation: none;
+}
+
 .ehc-spinner {
   animation: spin 1s linear infinite;
 }
@@ -1924,99 +2160,16 @@
   to { transform: rotate(360deg); }
 }
 
-.explorer-loading-note {
-  padding: var(--space-4) var(--space-5) 0 var(--space-6);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  animation: slideUpFade 0.42s var(--ease-out-expo) both;
-}
-
 /* ─── Project detail ─── */
-.project-meta-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.project-links-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.project-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-default);
-  font: 500 0.6875rem/1.4 var(--font-mono);
-  letter-spacing: 0.02em;
-}
-
-.project-chip--oa {
-  background: var(--tint-green-bg);
-  color: var(--tint-green-fg);
-  border-color: var(--tint-green-line);
-}
-
-.project-links-menu {
-  align-self: flex-start;
-  position: relative;
-}
-
-.project-links-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 11px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
-}
-
-/* `data-popup-open` is what Base UI writes on the menu's trigger. */
-.project-links-trigger[data-popup-open],
-.project-links-trigger:focus-visible {
-  border-color: var(--border-ink);
-  background: var(--bg-secondary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .project-links-trigger:hover {
-    border-color: var(--border-ink);
-    background: var(--bg-secondary);
-  }
-}
-
-.project-links-trigger:focus-visible,
 .project-links-option:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-}
-
-.project-links-trigger > svg:last-child {
-  color: var(--text-tertiary);
-  transition: transform var(--transition-fast);
-}
-
-.project-links-trigger[data-popup-open] > svg:last-child {
-  transform: rotate(180deg);
-}
-
-/* The menu popup. Base UI portals it under <body> and positions it from the
-   trigger, so it carries no position of its own; the primitive's fade-and-
-   scale entrance grows from `--transform-origin`. */
-.project-links-dropdown {
-  width: min(280px, calc(100vw - 48px));
-  padding: 6px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-lg);
 }
 
 .project-links-option {
@@ -2030,12 +2183,6 @@
   color: var(--text-primary);
   text-decoration: none;
   transition: background var(--transition-fast);
-}
-
-/* `data-highlighted` is the menu's roving highlight (arrow keys as well as
-   the pointer), so hover and keyboard land on the same look. */
-.project-links-option[data-highlighted] {
-  background: var(--bg-secondary);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2120,13 +2267,10 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-.project-meta-chips,
-.project-subjects,
 .project-participants {
   animation: projectBlockIn 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 
-.project-subjects { animation-delay: 0.12s; }
 .project-participants { animation-delay: 0.18s; }
 
 /* The rest of what the details fill in: the stat cells and the link menu beside
@@ -2158,30 +2302,19 @@
      blinks empty between the shimmer leaving and the words landing. */
   animation: staggerFadeUp 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
   animation-delay: 0.06s;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--area-accent, var(--accent-primary));
   border-radius: var(--radius-sm);
-  padding: var(--space-4) var(--space-4) 10px;
   cursor: default;
-  transition: background var(--transition-fast);
 }
 
 .project-summary-box.is-expandable { cursor: pointer; }
 
-@media (hover: hover) and (pointer: fine) {
-  .project-summary-box.is-expandable:hover {
-    background: var(--bg-secondary);
-  }
-}
-
 .project-summary-box p {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: 0.9375rem;
-  line-height: 1.6;
+  font-size: 1rem;
+  line-height: 1.65;
   color: var(--text-secondary);
-  max-height: 4.8em;
+  max-height: 4.95em;
   overflow: hidden;
   transition: max-height 0.28s var(--ease-out-expo);
 }
@@ -2199,9 +2332,7 @@
   background: none;
   border: none;
   color: var(--area-accent, var(--accent-primary));
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: 600 0.75rem/1.3 var(--font-mono);
   cursor: pointer;
 }
 
@@ -2218,16 +2349,8 @@
   align-items: center;
   gap: 6px;
   margin: 0 0 10px 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: 600 0.75rem/1.3 var(--font-mono);
   color: var(--text-secondary);
-}
-
-.project-subjects-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 .project-participants-grid {
@@ -2305,22 +2428,15 @@
   color: var(--text-tertiary);
 }
 
-.project-participant-error {
-  margin: 8px 0 0;
-  color: var(--tint-red-fg);
-  font-size: var(--fs-xs);
-}
-
 .project-show-more {
   display: block;
+  min-height: 32px;
   margin-top: 8px;
   padding: 6px 0;
   background: none;
   border: none;
   color: var(--area-accent, var(--accent-primary));
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
+  font: 600 0.75rem/1.3 var(--font-mono);
   cursor: pointer;
 }
 
@@ -2329,42 +2445,6 @@
     text-decoration: underline;
   }
 }
-
-/* ─── ORCID skeleton ─── */
-/* The card's own box, rule for rule: same padding, same header height, same
-   hairline under it, same space beneath. Built this way the placeholder
-   measures 96px because the card measures 96px, rather than because someone
-   typed 96 — and the two cannot drift when the card is next adjusted. */
-.orcid-skeleton {
-  padding: var(--space-5) var(--space-5) 4px;
-  display: flex;
-  flex-direction: column;
-}
-
-.orcid-skeleton-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 52px;
-  padding: 0 0 var(--space-4) 0;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: var(--space-5);
-}
-
-/* Sized to the badge it stands in for, not to the author-list avatar the class
-   is shared with. */
-.orcid-skeleton .ex-skel-avatar {
-  width: 28px;
-  height: 28px;
-}
-
-.orcid-skeleton .ex-skel-sub {
-  height: 11px;
-  margin-bottom: 6px;
-}
-
-
-
 
 /* ─── ORCID career ─── */
 .orcid-career-section {
@@ -2381,10 +2461,6 @@
   animation:
     authorContentFade 0.36s linear backwards,
     authorContentTravel 0.42s var(--ease-out-quad) backwards;
-}
-
-.orcid-career-section--animate > .orcid-career-header {
-  animation: authorContentFade 0.36s linear backwards;
 }
 
 /* The panel already fades as a whole. Its rows only travel, avoiding a second
@@ -2411,56 +2487,6 @@
 .orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.2s; }
 .orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.24s; }
 
-.orcid-career-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0 var(--space-4) 0;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: var(--space-5);
-}
-
-.orcid-badge {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.orcid-badge-icon {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background: var(--tint-green-bg);
-  border: 1px solid var(--tint-green-line);
-}
-
-.orcid-badge-icon img {
-  width: 16px;
-  height: 16px;
-}
-
-.orcid-badge-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.orcid-badge-label {
-  font-size: 0.82rem;
-  font-weight: var(--fw-semibold);
-  color: var(--tint-green-fg);
-}
-
-.orcid-badge-id {
-  font: 400 0.6875rem/1.3 var(--font-mono);
-  color: var(--text-tertiary);
-}
-
-.orcid-profile-link,
 .orcid-ext-link {
   display: inline-flex;
   align-items: center;
@@ -2478,7 +2504,6 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .orcid-profile-link:hover,
   .orcid-ext-link:hover {
     border-color: var(--tint-green-line);
     color: var(--tint-green-fg);
@@ -2660,7 +2685,7 @@
     gap: 10px;
   }
 
-  .ehc-title-row .ehc-name {
+  .ehc-name-line {
     flex: 1 1 180px;
   }
 
@@ -2683,8 +2708,6 @@
 
   .ehc-visual-slot { flex-basis: 60px; }
 
-  .ehc-ror-relations { max-width: calc(100vw - 108px); }
-
   .explorer-toolbar {
     padding: 10px var(--space-4);
     flex-wrap: wrap;
@@ -2692,41 +2715,33 @@
 
   .explorer-search-box {
     min-width: 0;
-    flex: 1 1 200px;
+    flex: 1 1 0;
+  }
+
+  .explorer-filter-trigger {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .explorer-filter-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .explorer-content,
   .explorer-list {
     padding: var(--space-4);
   }
-
-  /* `filter: blur(48px)` over a `background-size: cover` image is the most
-     expensive paint in the codebase, and it is only ever a faint wash under
-     the mask-image gradient below it — the hero keeps its own flat
-     `background`, the accent kicker, the field rule and the tinted icon
-     tile, so nothing here was relying on the wash for its identity. */
-  .ehc-bg-blur {
-    display: none;
-  }
 }
 
 @media (max-width: 480px) {
   .ehc-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .project-links-menu {
-    align-self: stretch;
-  }
-
-  .project-links-trigger {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  /* As wide as the trigger it hangs from; the positioner publishes that. */
-  .project-links-dropdown {
-    width: var(--anchor-width);
   }
 
   .project-participants-grid {
@@ -2769,15 +2784,11 @@
    two lines of type for a tap, which is the cost `PageTransition.jsx` argues
    at length about for a page. */
 .ehc-name-toggle:active:not(:disabled),
-.ehc-wiki-toggle:active:not(:disabled),
-.ehc-ror-relations button:active:not(:disabled),
-.project-links-trigger:active:not(:disabled),
 .project-summary-toggle:active:not(:disabled),
 .project-show-more:active:not(:disabled),
 .ee-filter-chip:active:not(:disabled),
 .ee-filter-reset:active:not(:disabled),
-.ee-filter-apply:active:not(:disabled),
-.ee-tab:active:not(:disabled) {
+.ee-filter-apply:active:not(:disabled) {
   transform: scale(0.97);
 }
 
@@ -2786,8 +2797,6 @@
    naming only `transform` would silently drop their colour fades. That trap is
    documented in `Layout/ThemeToggle.css`. Only the controls that declare no
    transition at all get one of their own, below. */
-.ehc-wiki-toggle,
-.ehc-ror-relations button,
 .project-summary-toggle,
 .project-show-more,
 .ee-filter-reset,
@@ -2797,7 +2806,7 @@
 
 /* The rows: the same value their own hover uses (`:888`, `:1511`, `:1825`),
    out from behind the pointer gate so a thumb gets it too. */
-.explorer-list-item:active,
+.explorer-grid > .list-row:not(.ex-skel-row):active,
 .ee-author-card:active,
 .project-participant-card:active:not(:disabled) {
   background: var(--bg-secondary);
@@ -2815,17 +2824,13 @@
   .explorer-hero-content,
   /* The error screen's entrance (`slideUpFade`) goes with the rest. */
   .explorer-error,
-  .ehc-wiki p,
   .ehc-wiki-skeleton span::after,
-  .ehc-wiki-toggle svg,
   .project-summary-box,
   .project-summary-box p,
   .project-summary-toggle svg,
   /* The four blocks the project details fill in: they land instantly instead
      of rising. Nothing is lost — the height settle they arrive inside is
      switched off under this query too. */
-  .project-meta-chips,
-  .project-subjects,
   .project-participants,
   .explorer-container--project .ehc-stat-box,
   .project-links-menu,
@@ -2834,24 +2839,25 @@
   .ex-skel::after,
   .ehc-stat-value.is-settled,
   .orcid-career-section--animate > *,
-  .orcid-career-section--animate > .orcid-career-header,
+  .ehc-orcid-stamp svg,
   .ehc-experience-panel .orcid-timeline-item,
   .explorer-container--author .ehc-header,
   .ehc-spinner,
-  .explorer-loading-note,
-  .explorer-empty,
-  .ehc-bg-blur {
+  .explorer-empty {
     animation: none;
     transition: none;
   }
 
-  /* Reduced motion means less movement, not less feedback. `.ee-tab` and
-     `.explorer-list-item` used to sit in the list above, and `transition: none`
-     there took their colour and background fades with the movement — the tab
-     strip stopped saying which tab was active gently, and a row stopped
-     acknowledging a pointer at all. Nothing about a colour moves. So they keep
-     their transitions and lose only the travel. */
-  .explorer-list-item,
+  .ee-seg[data-ready] .ee-seg-pill {
+    transition: none;
+  }
+
+  .ehc-activity-bars span {
+    animation: none;
+  }
+
+  /* Reduced motion means less movement, not less feedback: these keep their
+     colour transitions and lose only the travel. */
   .ee-author-card.staggerFadeUp,
   .orcid-career-section--animate > * {
     animation: none;
@@ -2863,15 +2869,11 @@
      The rows' `:active` background is untouched — it is the whole point of
      keeping feedback here. */
   .ehc-name-toggle:active:not(:disabled),
-  .ehc-wiki-toggle:active:not(:disabled),
-  .ehc-ror-relations button:active:not(:disabled),
-  .project-links-trigger:active:not(:disabled),
   .project-summary-toggle:active:not(:disabled),
   .project-show-more:active:not(:disabled),
   .ee-filter-chip:active:not(:disabled),
   .ee-filter-reset:active:not(:disabled),
-  .ee-filter-apply:active:not(:disabled),
-  .ee-tab:active:not(:disabled) {
+  .ee-filter-apply:active:not(:disabled) {
     transform: none;
   }
 }

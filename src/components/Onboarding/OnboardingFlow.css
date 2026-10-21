@@ -5,8 +5,8 @@
    (WelcomeShell, GuestWelcomePreferences and GuestWelcome.css), and so is
    the idiom: white ground, one prop drawn in hairlines, one plain control
    in a 400px column under it. What is left here is the onboarding's own:
-   Petri's profile pose, the greeting's written title, the university field,
-   and the library's platforms arriving. Tokens only, so the dark theme needs
+   Petri's profile pose, the university field, and the library's platforms
+   arriving. Tokens only, so the dark theme needs
    nothing from this file.
    ============================================ */
 
@@ -41,38 +41,6 @@
 
 .onboarding-petri[data-private] .onboarding-petri-mouth {
   scale: 1 0.05;
-}
-
-/* ── The greeting: the title written out ── */
-.onboarding-script {
-  display: block;
-  width: min(100%, 44rem);
-  margin-inline: auto;
-}
-
-.onboarding-script-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-
-/* The brand thread under the greeting, drawn once the words are written. */
-.onboarding-script-rule {
-  display: block;
-  height: 3px;
-  margin-top: var(--space-2);
-  background: var(--brand-yellow);
-  transform-origin: left center;
-}
-
-/* The university screen opens on the library prop, wider than the pickers. */
-.gw-step--university > .gw-library-preview {
-  margin: 0 0 var(--space-6);
-}
-
-.gw-step--university {
-  width: min(640px, 100%);
 }
 
 /* ── University: the library demo over the link form ──

@@ -4,27 +4,30 @@ import type { OwnList } from '../utils/ownLists.ts';
 import { arrayRemove, arrayUnion, collection, doc, getDocs, limit, query, serverTimestamp, where, writeBatch } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { queuePublicListSync } from './publicListSync.ts';
+import { patientRead } from '../utils/boundedRead.ts';
+import { queryIsAuthoritative } from '../utils/cacheAuthority.ts';
 import { OWN_LISTS_PAGE_SIZE, readOwnLists, withPaperMembership } from '../utils/ownLists.ts';
 import { ownListsCache, reviseOwnLists } from '../utils/profileSessionCaches.ts';
 import { publicListSyncKey } from '../utils/publicListFreshness.ts';
 import { saveStoredLists } from '../utils/userScopedStorage.ts';
 
 /**
- * The reader's lists that hold this paper, or null when the answer could not
- * be read with authority (an empty answer from the local cache, say). Always
- * asked of Firestore: the session's cached lists are one page of them, and a
- * list past that page would keep the paper while the card said it was gone.
+ * The reader's lists that hold this paper, or null when a full page may have
+ * stopped short of them. Always asked of Firestore: the session's cached lists
+ * are one page of them, and a list past that page would keep the paper while
+ * the card said it was gone. Read through `patientRead`: a bare `getDocs` on a
+ * listen stream that died under an open tab never settled, and the unsave
+ * waiting on it left Save pressed. It also waits past an empty answer served
+ * from the local cache.
  */
 export async function readListsHoldingPaper(uid: string, paperId: string): Promise<OwnList[] | null> {
-  const snapshot = await getDocs(query(
+  const snapshot = await patientRead(() => getDocs(query(
     collection(db, 'users', uid, 'lists'),
     where('paperIds', 'array-contains', paperId),
     limit(OWN_LISTS_PAGE_SIZE),
-  ));
-  // A full page may have stopped short of lists that also hold the paper.
+  )), { label: 'lists holding paper', isAnswer: queryIsAuthoritative });
   if (snapshot.size >= OWN_LISTS_PAGE_SIZE) return null;
-  const read = readOwnLists(snapshot, paperId);
-  return read.authoritative ? read.lists : null;
+  return readOwnLists(snapshot, paperId).lists;
 }
 
 /**

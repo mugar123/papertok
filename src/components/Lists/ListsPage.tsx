@@ -224,11 +224,12 @@ function paperFromMetadataDoc(source: MetadataRequest['source'], paperId: string
     ? { id: paperId, ...data }
     : data.paper
       ? { id: paperId, ...data.paper }
+      // Without a copy, the record kept only the category its card showed,
+      // which the adapter cannot trust (PAP-60).
       : {
           id: paperId,
           title: data.paperTitle || '',
           authors: data.paperAuthors || [],
-          primaryCategory: data.paperCategory || '',
           published: data.timestamp,
           arxivId: paperId,
         });
@@ -1074,8 +1075,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     saveStoredLists(user.uid, lists);
   }, [user?.uid, lists]);
 
+  const listViewMotion = {
+    variants: {
+      enter: (direction: number) => ({ opacity: 0, transform: prefersReducedMotion ? 'translateX(0px)' : `translateX(${direction * 16}px)` }),
+      center: { opacity: 1, transform: 'translateX(0px)', transition: { duration: 0.24, ease: EASE_OUT } },
+      exit: (direction: number) => ({ opacity: 0, transform: prefersReducedMotion ? 'translateX(0px)' : `translateX(${direction * -8}px)`, transition: { duration: 0.08, ease: EASE_OUT } }),
+    },
+    initial: 'enter',
+    animate: 'center',
+    exit: 'exit',
+  };
+
   const enterList = (list: OwnList) => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
     openList(list);
   };
 
@@ -1561,8 +1572,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         </div>
       )}
 
+      <AnimatePresence
+        initial={false}
+        mode="wait"
+        custom={expandedList || pendingOpen ? 1 : -1}
+        onExitComplete={() => window.scrollTo({ top: 0, behavior: 'instant' })}
+      >
       {expandedList ? (
-        <div className="lists-expanded">
+        <motion.div key="list" className="lists-expanded" {...listViewMotion}>
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
             const backButton = (
@@ -1894,9 +1911,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               </>
             );
           })()}
-        </div>
+        </motion.div>
       ) : pendingOpen ? (
-        <div
+        <motion.div
+          key="list"
+          {...listViewMotion}
           className="lists-opening"
           aria-busy="true"
           aria-label={'Opening list...'}
@@ -1910,9 +1929,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
             </div>
           ))}
-        </div>
+        </motion.div>
       ) : (
-        <div>
+        <motion.div key="index" {...listViewMotion}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -2021,8 +2040,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               </div>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* The card for a saved paper that has no public paper page — see
           `openPaperCard`. Same takeover the search and the explorer use,

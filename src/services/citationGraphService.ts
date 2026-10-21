@@ -138,8 +138,7 @@ export function mapCitationGraphPayload(payload: GraphPayload | null) {
 }
 
 export function citationGraphExportPapers(graph: CitationGraph): Partial<Paper>[] {
-  return [...graph.references, ...graph.citations]
-    .map(paper => (paper.published ? paper : { ...paper, year: undefined }));
+  return [...graph.references, ...graph.citations];
 }
 
 async function requestCitationGraph(doi: string, safeLimit: number, cacheKey: string, dependencies: GraphDependencies) {
