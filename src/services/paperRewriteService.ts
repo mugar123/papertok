@@ -9,6 +9,10 @@ type RewriteEvent = ({ type: 'meta' } & ClientRewriteMeta) | ({ type: 'section' 
   | { type: 'ping'; stage?: string } | { type: 'done'; sectionCount?: number; truncated?: boolean };
 interface RewriteOptions {
   language?: string;
+  /**
+   * Retry a rewrite that failed: skips the copies kept in memory and in the
+   * account, and lets the worker replace a cached one that stopped early.
+   */
   force?: boolean;
   /** Write the paper again although a copy exists, replacing the saved one. */
   regenerate?: boolean;
@@ -269,14 +273,14 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
 
   if (reuse && uid) {
     onProgress?.({ stage: 'saved' });
-    let saved = null;
-    try {
-      saved = await getSavedSummary(uid, paper, level, { signal });
-    } catch (error) {
-      // Unknown is not absent, but the worker can still answer: its shared
-      // cache usually holds this rewrite, and a miss there is a normal request.
+    const saved = await getSavedSummary(uid, paper, level, { signal }).catch((error: unknown) => {
+      if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
+      // Unknown is not absent. Asking the worker now could spend a use and
+      // write a different copy over the saved one, for a reader who only
+      // opened it, so the reader is offered this lookup again instead.
       console.warn('Could not read the saved summary', error);
-    }
+      throw new PaperRewriteError('AI_SAVED_SUMMARY_READ_FAILED');
+    });
     if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
     if (saved) {
       const meta = { level, language: rewriteLanguage, model: saved.model, sourceBasis: saved.sourceBasis };

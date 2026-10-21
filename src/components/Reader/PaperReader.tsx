@@ -195,6 +195,10 @@ const ERROR_COPY = {
       title: 'The paper could not be rewritten',
       body: 'Something broke between the reader and the model. Retrying usually does it.',
     },
+    AI_SAVED_SUMMARY_READ_FAILED: {
+      title: 'Could not check for a saved summary',
+      body: 'No AI use was spent. Trying again checks once more, and writes a new summary only if none is saved.',
+    },
   },
 };
 
@@ -232,6 +236,7 @@ const ERROR_POSES = {
   AI_TIMEOUT: 'thinking',
   AI_BUSY: 'thinking',
   AI_CANCELLED: 'thinking',
+  AI_SAVED_SUMMARY_READ_FAILED: 'thinking',
   AI_UNAVAILABLE: 'upset',
   AI_INVALID_RESPONSE: 'upset',
   AI_EMPTY_RESPONSE: 'upset',
@@ -563,7 +568,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       // Most failures hand the use back, and the worker does it after the count
       // on the `meta` line was already sent. Re-reading is the only way the chip
       // can show the refund rather than a use the reader never actually spent.
-      fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
+      // Without a request, as when the saved summary could not be read, there
+      // is nothing to refund.
+      if (requested) fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
     }
   }, [paper, trackEvent, uid]);
 
@@ -1061,6 +1068,19 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   useEffect(() => {
     if (writeAgainFailed && document.activeElement === titleRef.current) writeAgainRef.current?.focus();
   }, [writeAgainFailed]);
+  // The error state's retry follows the same path: focus waits on the title
+  // while the paper loads again, and comes back to the button if it fails again.
+  const retryRef = useRef<HTMLButtonElement | null>(null);
+  const retry = () => {
+    titleRef.current?.focus();
+    // A saved summary that could not be read is looked up again. A forced
+    // retry skips that lookup and could write a new copy over the saved one.
+    load(level, { force: shownError !== 'AI_SAVED_SUMMARY_READ_FAILED' });
+  };
+  const retryOffered = shownStatus === 'error' && canRetry;
+  useEffect(() => {
+    if (retryOffered && document.activeElement === titleRef.current) retryRef.current?.focus();
+  }, [retryOffered]);
   const { error: askError, clearError: clearAskError } = annotations;
   useEffect(() => {
     if (!askError) return;
@@ -1224,7 +1244,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 actions={(canRetry || originalUrl) && (
                   <>
                     {canRetry && (
-                      <Button onClick={() => load(level, { force: true })}>
+                      <Button ref={retryRef} onClick={retry}>
                         <ArrowClockwise size={16} aria-hidden="true" />
                         {copy.retry}
                       </Button>
