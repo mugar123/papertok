@@ -108,6 +108,21 @@ export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | unde
   return locations.some(isVenue) ? true : undefined;
 }
 
+/**
+ * The part of `openAlexPeerReviewed` an OpenAlex works filter can express,
+ * for a list that keeps only reviewed work: the types the rule can call
+ * reviewed, and no listed series as the primary source. Every work it leaves
+ * out is one the rule would not call reviewed; the rule still judges the rest
+ * (the venue's type, a series named like a working paper). Checked with
+ * keyless requests on 2026-10-20: OpenAlex has no `posted-content` type
+ * (`group_by=type`), it ANDs each repeated negated source, and a negated
+ * source keeps works that have no primary source.
+ */
+export const OPENALEX_PEER_REVIEWED_FILTER = [
+  `type:${[...OPENALEX_REVIEWED_TYPES, 'preprint'].join('|')}`,
+  ...[...WORKING_PAPER_SOURCE_IDS].map(id => `primary_location.source.id:!${id}`),
+].join(',');
+
 // Semantic Scholar's `Review` is a kind of article: PMID 30617335, a review
 // in Nature Medicine, carried the chip.
 export function semanticScholarIsPreprint(publicationTypes: unknown) {

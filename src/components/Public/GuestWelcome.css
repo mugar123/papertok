@@ -1181,18 +1181,18 @@
 .gw-inbox { margin-top: var(--space-2); }
 /* Pulled up to sit close under the lede. */
 .gw-digest-preview { display: grid; place-items: center; margin-top: -32px; pointer-events: none; }
-.gw-env { position: relative; width: 260px; height: 410px; perspective: 900px; zoom: 0.85; }
+.gw-env { position: relative; width: 260px; height: 360px; perspective: 900px; zoom: 0.85; }
 
 .gw-step--inbox > .gw-digest-preview { margin: 0 0 var(--space-6); }
 
-.gw-env > .onboarding-petri-stamp { top: 268px; right: 6px; z-index: 5; }
+.gw-env > .onboarding-petri-stamp { top: 218px; right: 6px; z-index: 5; }
 .gw-env-back,.gw-env-flap,.gw-env-pocket { position: absolute; left: 10px; right: 10px; bottom: 0; height: 150px; }
 .gw-env-back { z-index: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--text-primary) 7%, var(--bg-elevated)); }
 .gw-env-flap { z-index: 1; clip-path: polygon(0 0, 100% 0, 50% 62%); transform: rotateX(180deg); transform-origin: 50% 0; backface-visibility: visible; background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-elevated)); }
 .gw-env-back svg,.gw-env-flap svg,.gw-env-pocket svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .gw-env-flap path,.gw-env-pocket path { vector-effect: non-scaling-stroke; }
 .gw-env-slot { position: absolute; inset: 0; z-index: 2; overflow: hidden; }
-.gw-env-letter { position: absolute; left: 50%; bottom: 8px; display: flex; flex-direction: column; gap: 6px; width: 224px; height: 350px; margin-left: -112px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }
+.gw-env-letter { position: absolute; left: 50%; bottom: 8px; display: flex; flex-direction: column; gap: 6px; width: 224px; height: 300px; margin-left: -112px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }
 .gw-env-letter--behind { gap: 7px; background: color-mix(in srgb, var(--area-accent) 5%, var(--bg-card)); }
 .gw-env-venue { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; }
 .gw-env-letter strong { font: 500 0.95rem/1.25 var(--font-serif); color: var(--text-primary); text-wrap: balance; }
@@ -1209,11 +1209,19 @@
 .gw-digest-optin-text { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
 .gw-digest-optin-text strong { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .gw-digest-optin-text span { font-size: var(--fs-xs); line-height: 1.6; color: var(--text-secondary); }
-/* The university (the account onboarding's screen): the library demo over
-   the link form. Stage 300 × 250: the paper card sits top-left and the library card
+/* The university: the library demo over the address field (here) or the
+   link form (the account onboarding's). Stage 300 × 250: the paper card sits top-left and the library card
    lands over its bottom-right corner — the skeleton lines, never the chip,
    which is the point of the picture. */
 .gw-university { margin-top: var(--space-2); }
+.gw-step--university { width: min(640px, 100%); }
+.gw-step--university > .gw-library-preview { margin: 0 0 var(--space-6); }
+.gw-university-field { display: flex; flex-direction: column; gap: var(--space-2); width: min(400px, 100%); margin: var(--space-4) auto 0; text-align: left; }
+.gw-university-field label { font: var(--mono-label); letter-spacing: var(--mono-track); text-transform: uppercase; color: var(--text-secondary); }
+.gw-university-field input { min-height: 44px; }
+.gw-university-field .gw-preference-note { margin-top: var(--space-1); }
+.gw-university-error { margin: 0; font-size: var(--fs-sm); color: var(--accent-danger); }
+.gw-university-error:empty { display: none; }
 .gw-library-preview { display: grid; place-items: center; margin-top: var(--space-2); pointer-events: none; }
 .gw-library { position: relative; width: 300px; height: 250px; zoom: 0.9; }
 .gw-library-paper { position: absolute; top: 10px; left: 18px; display: flex; flex-direction: column; gap: 6px; width: 214px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }

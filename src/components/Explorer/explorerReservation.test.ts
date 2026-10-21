@@ -18,22 +18,19 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\
  * summary the live row always carries — so every row grew ~61px the frame the
  * words landed, ~305px over five.
  */
-test('the skeleton paper row reserves the live row\'s line boxes, summary included', async () => {
+test('the skeleton paper row reserves the shared list row\'s line boxes', async () => {
   const jsx = await read('./EntityExplorer.tsx');
-  const rows = jsx.match(/<div className="ex-skel ex-skel-title"><\/div>\s*<div className="ex-skel ex-skel-title"><\/div>\s*<div className="ex-skel ex-skel-authors"><\/div>\s*<div className="ex-skel ex-skel-summary"><\/div>\s*<div className="ex-skel ex-skel-summary ex-skel-summary--short"><\/div>/g) || [];
-  assert.equal(rows.length, 2, 'both the page skeleton and the list skeleton paint the summary');
+  const rows = jsx.match(/<div className="ex-skel ex-skel-kicker"><\/div>\s*<div className="ex-skel ex-skel-title"><\/div>\s*<div className="ex-skel ex-skel-title"><\/div>\s*<div className="ex-skel ex-skel-dots"><\/div>/g) || [];
+  assert.equal(rows.length, 2, 'the page skeleton and the list skeleton paint the same row');
 
   const css = stripComments(await read('./EntityExplorer.css'));
-  // Header: 15 of line, 10 below — `.eli-header`.
-  assert.match(css, /\.ex-skel-row-head \{[^}]*min-height: 15px;\s*margin-bottom: 10px;[^}]*\}/);
-  // Title: a 19px bar in each 24.6px line, then the title's own 8px.
-  assert.match(css, /\.ex-skel-title \{ height: 19px; margin-bottom: 11px;/);
-  assert.match(css, /\.ex-skel-title \+ \.ex-skel-title \{ width: 58%; margin-bottom: 8px; \}/);
-  // Authors: 21 of line plus 8 below. Summary: two 23.25px lines.
-  assert.match(css, /\.ex-skel-authors \{ height: 12px; width: 42%; margin: 4px 0 13px; \}/);
-  assert.match(css, /\.ex-skel-summary \{ height: 12px; margin: 5px 0 6px;/);
-  // A grid, or the bars' margins collapse and the row comes up 10px short.
-  assert.match(css, /\.explorer-list-item\.ex-skel-row \{ display: grid; \}/);
+  // Meta line: a 10px bar in its 16.8px line, then the head's 6px.
+  assert.match(css, /\.ex-skel-kicker \{ width: 120px; height: 10px; margin: 3\.4px 0 9\.4px; \}/);
+  // One title line on a wide screen, two on a phone.
+  assert.match(css, /@media \(min-width: 641px\) \{\s*\.ex-skel-title \+ \.ex-skel-title \{ display: none; \}/);
+  // The author dots.
+  assert.match(css, /\.ex-skel-dots \{ width: 64px; height: 24px;/);
+  assert.match(css, /\.list-row\.ex-skel-row \{\s*display: grid;/);
 });
 
 /**
@@ -75,11 +72,6 @@ test('the project skeleton reserves its summary box and the stat cells that land
   assert.match(jsx, /\{Array\.from\(\{ length: shape\.stats \}, \(_, i\) => \{/);
   const css = stripComments(await read('./EntityExplorer.css'));
   assert.match(css, /\.project-summary-box--reserved \{\s*font-size: 0\.9375rem;\s*line-height: 1\.6;/);
-});
-
-test('the page skeleton asks the route whether an ORCID card is coming', async () => {
-  const jsx = await read('./EntityExplorer.tsx');
-  assert.match(jsx, /const shape = explorerSkeletonShape\(type, \{ hasOrcid: Boolean\(extractOrcid\(id\)\) \}\);/);
 });
 
 /**

@@ -89,8 +89,7 @@ Missing metadata stays optional. A zero citation count with
 The legacy adapter can return a partial stored record without normalizing it.
 
 Tailwind's `@source` includes `.ts` and `.tsx`. Vite keeps its existing chunk
-strategy and required-backend guards. Regenerate the welcome-title outlines
-with `npm run build:welcome-title`; do not edit `welcomeTitlePaths.ts` by hand.
+strategy and required-backend guards.
 
 Remaining JavaScript has a separate execution or ownership boundary:
 `public/sw-html-warm.js` is copied directly into the service worker;

@@ -1,3 +1,4 @@
+import { captureWorkerException } from './error-tracking.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
@@ -153,7 +154,7 @@ const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/resources/figures': handlePaperFigures,
 };
 
-export async function handleRequest(request: Request, env: WorkerEnv) {
+export async function handleRequest(request: Request, env: WorkerEnv): Promise<Response> {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (request.method === 'OPTIONS') {
@@ -213,6 +214,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         'cache-control': 'private, no-store',
       });
     } catch (error) {
+      captureWorkerException(error);
       const knownError = error instanceof EmailNotificationError;
       return json({ code: knownError ? error.code : 'EMAIL_UNAVAILABLE' }, knownError ? error.status : 502, {
         ...corsHeaders(origin, env),
@@ -231,6 +233,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         'cache-control': 'private, no-store',
       });
     } catch (error) {
+      captureWorkerException(error);
       const known = error instanceof AccountDeletionError || error instanceof WorkerAuthError;
       return json({ code: known ? error.code : 'ACCOUNT_DELETION_FAILED' }, known ? error.status : 502, {
         ...corsHeaders(origin, env),
@@ -246,6 +249,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       const payload = await handleInstitutionLinkRequest(request, env);
       return json(payload, 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
     } catch (error) {
+      captureWorkerException(error);
       const known = error instanceof InstitutionLinkError || error instanceof WorkerAuthError;
       if (!known) console.error('Institution link failed', error);
       return json({ code: known ? error.code : 'INSTITUTION_LINK_FAILED' }, known ? error.status : 502, {
@@ -263,6 +267,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       await verifyFirebaseIdentity(request, env);
       return await handleInstitutionAccess(request, env);
     } catch (error) {
+      captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;
       if (!known) console.error('Institution access failed', error);
       return json({ code: known ? error.code : 'ACCESS_LOOKUP_UNAVAILABLE' }, known ? error.status : 502, {
@@ -278,6 +283,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       await verifyFirebaseIdentity(request, env);
       return await handleInstitutionServices(request, env);
     } catch (error) {
+      captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;
       if (!known) console.error('Institution services failed', error);
       return json({ code: known ? error.code : 'ACCESS_LOOKUP_UNAVAILABLE' }, known ? error.status : 502, {
@@ -299,6 +305,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         'cache-control': 'private, no-store',
       });
     } catch (error) {
+      captureWorkerException(error);
       const known = error instanceof PublicListApiError || error instanceof WorkerAuthError;
       return json({ code: known ? error.code : 'PUBLISH_FAILED' }, known ? error.status : 502, {
         ...corsHeaders(origin, env),
@@ -320,6 +327,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         'cache-control': 'private, no-store',
       });
     } catch (error) {
+      captureWorkerException(error);
       const knownError = error instanceof AIExplanationError;
       return json(
         {
@@ -341,6 +349,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
       // directly so the Free Worker does not execute per model fragment.
       return await sessions.get(sessions.newUniqueId()).fetch(request);
     } catch (error) {
+      captureWorkerException(error);
       const knownError = error instanceof AIExplanationError;
       return json(
         {
@@ -360,11 +369,13 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       identity = await verifyFirebaseIdentity(request, env);
     } catch (error) {
+      captureWorkerException(error);
       return providerAuthFailure(error, origin, env);
     }
     try {
       return await handlePersonalRecommendations(request, env, identity);
     } catch (error) {
+      captureWorkerException(error);
       console.error('Personal recommendations failed', error);
       return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
     }
@@ -406,6 +417,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       return await handleOpenAlex(request, env);
     } catch (error) {
+      captureWorkerException(error);
       // This was the one route that returned its handler bare. A connection
       // reset or a transient DNS failure rose uncaught, and an uncaught throw
       // carries no `access-control-allow-origin`: the browser sees an opaque
@@ -447,6 +459,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
         'cache-control': 'private, no-store',
       });
     } catch (error) {
+      captureWorkerException(error);
       const knownError = error instanceof AIExplanationError;
       return json(
         { code: knownError ? error.code : 'AI_UNAVAILABLE' },
@@ -463,12 +476,14 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
   try {
     protectedIdentity = await authenticateProtectedProviderRequest(request, env, url.pathname);
   } catch (error) {
+    captureWorkerException(error);
     return providerAuthFailure(error, origin, env);
   }
   if (url.pathname === '/related') {
     try {
       return await handleRelated(request, env, protectedIdentity);
     } catch (error) {
+      captureWorkerException(error);
       console.error('Related papers failed', error);
       return upstreamFailureResponse('/related', error as ProviderError, origin, env, 'Related papers unavailable');
     }
@@ -477,6 +492,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       return await handleCitationGraph(request, env, protectedIdentity);
     } catch (error) {
+      captureWorkerException(error);
       console.error('Citation graph failed', error);
       return json({ error: 'Citation graph unavailable' }, 502, corsHeaders(origin, env));
     }
@@ -485,6 +501,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       return await handleOpenAccess(request, env);
     } catch (error) {
+      captureWorkerException(error);
       return upstreamFailureResponse('/oa', error as ProviderError, origin, env, 'Open-access lookup unavailable');
     }
   }
@@ -492,6 +509,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       return await handlePdfProxy(request, env);
     } catch (error) {
+      captureWorkerException(error);
       console.error('PDF relay failed', error);
       return json({ code: 'PDF_UNAVAILABLE' }, 502, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
     }
@@ -500,6 +518,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       return await handleArxiv(request, env);
     } catch (error) {
+      captureWorkerException(error);
       console.error('arXiv route failed', error);
       return upstreamFailureResponse('/arxiv', error as ProviderError, origin, env, 'arXiv unavailable');
     }
@@ -508,6 +527,7 @@ export async function handleRequest(request: Request, env: WorkerEnv) {
     try {
       return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env, protectedIdentity);
     } catch (error) {
+      captureWorkerException(error);
       console.error(`Specialist source failed: ${url.pathname}`, error);
       const label = url.pathname === '/sources/scopus' ? 'Scopus unavailable' : 'Specialist source unavailable';
       return upstreamFailureResponse(url.pathname, error as ProviderError, origin, env, label);

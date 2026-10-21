@@ -20,6 +20,11 @@ function matchesCategory(paper: Partial<Paper>, areaId: string | undefined) {
     .some(category => areaKeyForCategory(category) === areaId);
 }
 
+/** How many of these papers each area's filter would keep, by area key. */
+export function countPapersByArea(papers: Partial<Paper>[], areaKeys: string[]) {
+  return Object.fromEntries(areaKeys.map(key => [key, papers.filter(paper => matchesCategory(paper, key)).length]));
+}
+
 export function getPaperCitationCount(paper: Partial<Paper> | null | undefined) {
   const candidates = [
     paper?.citationCount,
@@ -203,6 +208,39 @@ export const EXPLORER_ROW_CHUNK = 8;
 /** The next row budget: `chunk` more rows, never past what the list has. */
 export function nextExplorerRowBudget(budget: number, total: number, chunk = EXPLORER_ROW_CHUNK) {
   return Math.min(Math.max(0, total), Math.max(0, budget) + chunk);
+}
+
+/**
+ * How many pages the Explorer's list asks for on its own after the reader's
+ * last request: after a page its filters emptied, which leaves no foot of the
+ * list on screen to ask for the next one, or when that foot is still on
+ * screen once a page lands. A reader's request (a new list, scrolling to the
+ * foot, or "Keep looking") therefore costs at most this many pages more.
+ */
+export const EXPLORER_AUTO_PAGES = 2;
+
+/**
+ * Whether the list may ask for its next page now: the allowance left after
+ * asking, or null when it has to wait for the reader. A reader's request
+ * always goes ahead and restores the allowance; the list's own spend it.
+ */
+export function explorerPageAllowance(autoPagesLeft: number, { byReader }: { byReader: boolean }) {
+  if (byReader) return EXPLORER_AUTO_PAGES;
+  return autoPagesLeft > 0 ? autoPagesLeft - 1 : null;
+}
+
+/**
+ * What the Explorer's papers list is once a page has landed with `rows` rows.
+ * `rows`: the foot of the list asks for the next page when it comes into
+ * view. `looking`: the filters emptied the page and OpenAlex has more, so
+ * there is no foot on screen to ask; the list asks for the next page itself,
+ * within `explorerPageAllowance`, and then waits for "Keep looking". It is
+ * not the empty state. `empty`: no page is left that this reader may load.
+ * A visitor gets no second page, so their first page is the whole list.
+ */
+export function explorerListState({ rows, hasMore, publicMode }: { rows: number; hasMore: boolean; publicMode: boolean }) {
+  if (rows > 0) return 'rows';
+  return hasMore && !publicMode ? 'looking' : 'empty';
 }
 
 /**

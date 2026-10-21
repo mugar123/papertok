@@ -134,6 +134,13 @@ const GEOGRAPHY_DISCOVERY = 'https://chs.nihon-u.ac.jp/library/ej-link/';
 const CALCUTTA_DISCOVERY = 'https://www.culibrary.ac.in/e-journals-list-2024.html';
 const INFORMS_DISCOVERY = 'https://library.iisc.ac.in/journals-informs';
 
+const KYOTO_EDINBURGH_DISCOVERY = 'https://kias.asafas.kyoto-u.ac.jp/nakba2008/holy_land_studies.pdf';
+const AVINUTY_HUMANITIES_DISCOVERY = 'https://avinuty.ac.in/sites/avinuty.ac.in/files/31-10-2023/WOS%20Arts%20%26%20Humanities%20Journal%20Listing.pdf';
+const FLORIDA_ARCHAEOLOGY_DISCOVERY = 'https://guides.uflib.ufl.edu/anthropology/archaeology';
+const BRILL_CSIC_DISCOVERY = 'https://bibliotecas.csic.es/es/portales-de-e-revistas-titulos-disponibles-brill';
+const EDINBURGH_LINGUISTICS_METADATA = 'https://edinburghuniversitypress.com/pub/media/wysiwyg/images/Catalogues/Linguistics_Catalogue.pdf';
+const TAYLOR_ARCHAEOLOGY_METADATA = 'https://librarianresources.taylorandfrancis.com/wp-content/uploads/2017/09/Anthropology-Archaeology-Heritage-2019-Title-List-1.pdf';
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -454,6 +461,39 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     url: `https://pubsonline.informs.org/journal/${code}`,
     monogram: 'INF', color: '#00447C', year: 2021,
     sources: Object.freeze([discovery, `https://pubsonline.informs.org/page/${code}/prices-and-ordering`]),
+  })),
+  ...[
+    { name: 'Corpora', issn: '1749-5032', eissn: '1755-1676', url: 'https://www.euppublishing.com/journal/cor', discovery: KYOTO_EDINBURGH_DISCOVERY, metadata: EDINBURGH_LINGUISTICS_METADATA },
+    { name: 'Word Structure', issn: '1750-1245', eissn: '1755-2036', url: 'https://www.euppublishing.com/journal/word', discovery: KYOTO_EDINBURGH_DISCOVERY, metadata: EDINBURGH_LINGUISTICS_METADATA },
+    { name: 'Translation and Literature', issn: '0968-1361', eissn: '1750-0214', url: 'https://www.euppublishing.com/journal/tal', discovery: 'https://www.bib.uab.cat/human/acreditacions/planes/publiques/revistes/revistesidcas.php?area=eti&idrev=348&menuidioma=cas', metadata: 'https://edinburghuniversitypress.com/pub/media/wysiwyg/images/Catalogues/Classics_Catalogue.pdf' },
+    { name: 'Journal of Scottish Historical Studies', issn: '1748-538X', eissn: '1755-1749', url: 'https://www.euppublishing.com/journal/jshs', discovery: 'https://open.lib.umn.edu/europeanstudieslibrarians/chapter/11-uk-and-irish-studies/', metadata: 'https://edinburghuniversitypress.com/pub/media/wysiwyg/images/Catalogues/Scottish_Studies_Catalogue.pdf' },
+  ].map(({ discovery, metadata, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'edinburghup', packageHint: 'Edinburgh', publisher: 'Edinburgh University Press',
+    monogram: 'EUP', color: '#1D1D1B', year: 2021,
+    sources: Object.freeze([discovery, metadata, journal.url]),
+  })),
+  ...[
+    { name: 'Numen', issn: '0029-5973', eissn: '1568-5276', url: 'https://brill.com/view/journals/nu/nu-overview.xml' },
+    { name: 'Vigiliae Christianae', issn: '0042-6032', eissn: '1570-0720', url: 'https://brill.com/view/journals/vc/vc-overview.xml' },
+    { name: 'Dead Sea Discoveries', issn: '0929-0761', eissn: '1568-5179', url: 'https://brill.com/view/journals/dsd/dsd-overview.xml' },
+    { name: 'Arabica', issn: '0570-5398', eissn: '1570-0585', url: 'https://brill.com/view/journals/arab/arab-overview.xml' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'brill', packageHint: 'Brill', publisher: 'De Gruyter Brill',
+    monogram: 'B', color: '#0C3B5D', year: 2021,
+    sources: Object.freeze([BRILL_CSIC_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'World Archaeology', issn: '0043-8243', eissn: '1470-1375', url: 'https://www.tandfonline.com/journals/rwar20', discovery: FLORIDA_ARCHAEOLOGY_DISCOVERY },
+    { name: 'Journal of Field Archaeology', issn: '0093-4690', eissn: '2042-4582', url: 'https://www.tandfonline.com/journals/yjfa20', discovery: FLORIDA_ARCHAEOLOGY_DISCOVERY },
+    { name: 'Medieval Archaeology', issn: '0076-6097', eissn: '1745-817X', url: 'https://www.tandfonline.com/journals/ymed20', discovery: AVINUTY_HUMANITIES_DISCOVERY },
+    { name: 'Public Archaeology', issn: '1465-5187', eissn: '1753-5530', url: 'https://www.tandfonline.com/journals/ypua20', discovery: AVINUTY_HUMANITIES_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'tandf', packageHint: 'Taylor', publisher: 'Taylor & Francis',
+    monogram: 'T&F', color: '#0A5485', year: 2021,
+    sources: Object.freeze([discovery, TAYLOR_ARCHAEOLOGY_METADATA, journal.url]),
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 

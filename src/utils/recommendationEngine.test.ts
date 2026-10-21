@@ -117,6 +117,25 @@ test('category signals preserve personalization without OpenAlex enrichment', ()
   assert.equal(score.affinity, 13.5);
 });
 
+// Plan A and F1 (PAP-73): OpenAlex files a work under its own topic, never under
+// a leaf of the taxonomy. A primary topic among a chosen leaf's measured topics
+// is evidence for that leaf, read when ranking and never stored.
+test("an OpenAlex card earns a chosen leaf's preference when that leaf lists its primary topic", () => {
+  const card = {
+    id: 'openalex:W7222916812',
+    categories: ['Biology', 'Genetics'],
+    primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' },
+  };
+  const preferenceFor = (userPreferences: string[], paper: typeof card = card) => (
+    scorePaperForRecommendation(paper, { now: NOW, userPreferences }).preference
+  );
+
+  assert.equal(preferenceFor(['cs.LG', 'bio.mol']), 100);
+  assert.equal(preferenceFor(['bio.eco', 'cs.LG']), 0, "another leaf's reader");
+  const satellite = { ...card, primaryTopic: { id: 'https://openalex.org/T12042', display_name: 'Satellite Communication Systems' } };
+  assert.equal(preferenceFor(['mech.aero'], satellite), 0, 'a topic no chosen leaf lists');
+});
+
 test('every score component is bounded by its designed maximum', () => {
   const extremeConcepts = Array.from({ length: 8 }, (_, index) => ({ id: `concept-${index}`, score: 1 }));
   const extremeAffinities = Object.fromEntries(extremeConcepts.map(concept => [concept.id, 100]));

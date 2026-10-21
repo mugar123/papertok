@@ -636,9 +636,7 @@ export default function RelatedPapersSheet({ paper, inline = false, onClose, onP
                 '--chip-y': `${layout.centerY}px`,
               }}
             >
-              {isWalking
-                ? `${'Centre'} · ${center.year}`
-                : `${'This paper'} · ${center.year}`}
+              {[isWalking ? 'Centre' : 'This paper', center.year].filter(Boolean).join(' · ')}
             </span>
 
             {graphStatus === 'ready' && layout.nodes.map(renderNode)}

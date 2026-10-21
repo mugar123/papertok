@@ -65,6 +65,7 @@ export default function RecentImpactStat({ impact, isLoading, error }: ImpactPro
         : `${localizedLevel} · ${impact.period?.label || ''}`
       : unavailable.detail;
 
+  const unavailableChip = !isLoading && !impact?.available;
   return (
     <div
       className={`ehc-stat-box ehc-stat-box--impact${impact?.stale ? ' ehc-stat-box--stale' : ''}`}
@@ -77,12 +78,15 @@ export default function RecentImpactStat({ impact, isLoading, error }: ImpactPro
           resolves in place from part-way visible (EntityExplorer.css) instead
           of the ellipsis being swapped for a number between two frames. Never
           at mount, where the hero's own crossfade is already running. */}
-      <span className={`ehc-stat-value${!isLoading && (impact || error) ? ' is-settled' : ''}`}>
-        {isLoading ? '…' : impact?.available ? impact.score!.toFixed(1) : '—'}
-        <span className="ehc-stat-scale">/ 10</span>
+      <span className="ehc-stat-top">
+        <span className={`ehc-stat-value${!isLoading && (impact || error) ? ' is-settled' : ''}`}>
+          {isLoading ? '…' : impact?.available ? impact.score!.toFixed(1) : '—'}
+          <span className="ehc-stat-scale">/ 10</span>
+        </span>
+        {unavailableChip && <span className="ehc-stat-detail ehc-stat-detail--chip">{detail}</span>}
       </span>
       <span className="ehc-stat-label">{'Recent impact'}</span>
-      <span className="ehc-stat-detail">{detail}</span>
+      {!unavailableChip && <span className="ehc-stat-detail">{detail}</span>}
     </div>
   );
 }
