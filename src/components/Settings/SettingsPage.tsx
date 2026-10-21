@@ -39,6 +39,7 @@ import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
 import InstitutionPill from '../Institution/InstitutionPill.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import EditInterestsModal from './EditInterestsModal.tsx';
+import { FollowingSheet } from './FollowingSettingsPage.tsx';
 import DeleteAccountDialog from './DeleteAccountDialog.tsx';
 import EmailNotificationModal from '../Following/EmailNotificationModal.tsx';
 import { Button } from '../ui/button.tsx';
@@ -405,6 +406,8 @@ function DiscoveryPage() {
   const { userPreferences } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
+  const [isFollowingOpen, setIsFollowingOpen] = useState(false);
+  const isPhone = useIsPhone();
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;
 
   const selectedAreas = useMemo(() => {
@@ -431,7 +434,7 @@ function DiscoveryPage() {
                   : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
               </p>
             </div>
-            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => navigate('/settings/following')} />
+            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
           </div>
 
           <div className="settings-row">
@@ -455,6 +458,9 @@ function DiscoveryPage() {
         </div>
       </section>
       <EditInterestsModal isOpen={isInterestsOpen} onClose={() => setIsInterestsOpen(false)} />
+      {/* On a phone the follows open in a sheet, like the interests above;
+          wider than that they have their own page. */}
+      {isPhone && <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />}
     </>
   );
 }

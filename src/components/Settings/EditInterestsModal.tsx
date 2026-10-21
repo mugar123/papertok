@@ -10,6 +10,7 @@ import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.t
 import { Button } from '../ui/button.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import { Toggle } from '../ui/toggle.tsx';
+import './SettingsSheet.css';
 import './EditInterestsModal.css';
 
 /**
@@ -30,6 +31,9 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   const [isSaving, setIsSaving] = useState(false);
   const [activeArea, setActiveArea] = useState(() => Object.keys(INTEREST_AREAS)[0]);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  // Whether the sheet has changed page since it opened: the page it opens on
+  // arrives with the sheet, every later one slides in (SettingsSheet.css).
+  const [moved, setMoved] = useState(false);
   const switcherRef = useRef<HTMLButtonElement | null>(null);
   const backRef = useRef<HTMLButtonElement | null>(null);
   const pickedField = useRef(false);
@@ -45,6 +49,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
         ));
         setActiveArea(firstFollowed || Object.keys(INTEREST_AREAS)[0]);
         setFieldsOpen(false);
+        setMoved(false);
       }, 0);
       return () => clearTimeout(timeoutId);
     }
@@ -172,17 +177,17 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     const area = INTEREST_AREAS[activeArea];
     return (
       <Drawer open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}>
-        <DrawerContent className="eim-sheet">
+        <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
           <DrawerHandle />
           {fieldsOpen ? (
-            <>
-              <div className="eim-fields-head">
+            <div key="fields" className="settings-sheet-view" data-direction="forward">
+              <div className="settings-sheet-choices-head">
                 <Button ref={backRef} variant="ghost" size="icon-sm" aria-label={'Back to topics'} onClick={leaveFields}>
                   <CaretLeft size={18} aria-hidden="true" />
                 </Button>
                 <DrawerTitle render={<h2 />}>{'Research fields'}</DrawerTitle>
               </div>
-              <ul className="eim-fields-list" data-base-ui-swipe-ignore="">
+              <ul className="settings-sheet-choices" data-base-ui-swipe-ignore="">
                 {Object.entries(INTEREST_AREAS).map(([areaKey, entry]) => {
                   const picked = counted(areaKey);
                   const isActive = areaKey === activeArea;
@@ -195,7 +200,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
                         onClick={() => { setActiveArea(areaKey); leaveFields(); }}
                       >
                         <entry.icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" style={picked ? { color: entry.gradient } : undefined} />
-                        <span className="eim-fields-copy">
+                        <span className="settings-sheet-choice-copy">
                           <strong>{entry.label}</strong>
                           <small>
                             {picked
@@ -209,32 +214,32 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
                   );
                 })}
               </ul>
-            </>
+            </div>
           ) : (
-            <>
-              <div className="eim-sheet-head">
+            <div key="topics" className="settings-sheet-view" data-direction={moved ? 'back' : undefined}>
+              <div className="settings-sheet-head">
                 <DrawerTitle render={<h2 />}>{'Configure your algorithm'}</DrawerTitle>
                 <p>{'Select the research areas you want to see in your feed'}</p>
                 <button
                   ref={switcherRef}
                   type="button"
-                  className="eim-switcher"
+                  className="settings-sheet-switcher"
                   aria-expanded={false}
-                  onClick={() => setFieldsOpen(true)}
+                  onClick={() => { setFieldsOpen(true); setMoved(true); }}
                 >
-                  <span className="eim-switcher-icon"><area.icon size={18} weight="fill" aria-hidden="true" /></span>
-                  <span className="eim-switcher-copy">
+                  <span className="settings-sheet-switcher-icon"><area.icon size={18} weight="fill" aria-hidden="true" /></span>
+                  <span className="settings-sheet-switcher-copy">
                     <small>{'Field'}</small>
                     <strong>{area.label}</strong>
                   </span>
                   <CaretDown size={16} aria-hidden="true" />
                 </button>
               </div>
-              <div className="eim-area eim-sheet-body" data-base-ui-swipe-ignore="">
+              <div className="eim-area settings-sheet-body" data-base-ui-swipe-ignore="">
                 {fieldTopics(activeArea)}
               </div>
               {footer}
-            </>
+            </div>
           )}
         </DrawerContent>
       </Drawer>
