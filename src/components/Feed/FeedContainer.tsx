@@ -58,7 +58,7 @@ import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
-import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
+import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.ts';
 import './FeedContainer.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
@@ -441,9 +441,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
   const skipExitRef = useRef<(NonNullable<ReturnType<typeof skipExitSlot>> & { commit: () => void }) | null>(null);
   const skipExitTimerRef = useRef<number | null>(null);
-  // The paper an Undo is bringing back, while it travels in.
-  const [returningId, setReturningId] = useState<string | null>(null);
-  const returnSlotRef = useRef<{ id: string; index: number } | null>(null);
+  // The paper an Undo brought back: pinned over the slot it returns to while
+  // it travels in (`landed` false), at rest in flow afterwards. The ref holds
+  // the one in flight; the scroll position to hold when it lands is its own.
+  const [returning, setReturning] = useState<{ id: string; height: number; landed: boolean } | null>(null);
+  const returningRef = useRef<{ id: string; height: number; landed: boolean } | null>(null);
+  const returnTimerRef = useRef<number | null>(null);
+  const returnLandingTopRef = useRef<number | null>(null);
   const readAdvanceTimerRef = useRef<number | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)!),
@@ -506,10 +510,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     skipExitTimerRef.current = setTimeout(flushSkipExit, SKIP_EXIT_MS + 120);
   }, [flushSkipExit]);
 
-  const handleReturnEnd = useCallback((event: AnimationEvent) => {
-    if (event.animationName === 'feedSkipReturnFade') setReturningId(null);
-  }, []);
-
   const handleSkipExitEnd = useCallback((event: AnimationEvent) => {
     // The card is full of animations of its own and they all bubble to here,
     // so the exit has to name itself. Both halves of it start with this.
@@ -517,11 +517,56 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     flushSkipExit();
   }, [flushSkipExit]);
 
-  // Undo brings the paper back the way it left, from the right, at the card
-  // the reader is on. An exit still running when Undo arrives has not reached
+  // The paper joins the flow where it was pinned. If the reader is on that
+  // slot, the scroller would stay snapped to the card the paper covered,
+  // which is about to move one slot down, and carry the reader with it; the
+  // slot is held instead, in the commit that lands the paper, before paint.
+  const landReturn = useCallback(() => {
+    const current = returningRef.current;
+    if (!current) return;
+    returningRef.current = null;
+    clearTimeout(returnTimerRef.current!);
+    returnTimerRef.current = null;
+    const container = feedRef.current;
+    const index = papersRef.current.findIndex(item => item.id === current.id);
+    if (container && index >= 0 && Math.round(container.scrollTop / current.height) === index) {
+      returnLandingTopRef.current = index * current.height;
+    }
+    setReturning({ ...current, landed: true });
+  }, []);
+  useLayoutEffect(() => {
+    const top = returnLandingTopRef.current;
+    returnLandingTopRef.current = null;
+    if (top !== null && feedRef.current) feedRef.current.scrollTop = top;
+  }, [returning]);
+  useEffect(() => () => clearTimeout(returnTimerRef.current!), []);
+
+  const handleReturnEnd = useCallback((event: AnimationEvent) => {
+    // Named like the exit: the card's own animations bubble here too.
+    if (String(event.animationName).startsWith('feedSkipReturn')) landReturn();
+  }, [landReturn]);
+
+  // Undo brings the paper back the way the exit took it, reversed: out of
+  // flow, pinned over the card the reader is on, and in from the right. The
+  // card is opaque, so it covers that card as it travels; only when it lands
+  // does it join the flow, and the card it covered moves one slot down
+  // unseen. Put back in flow at once, the paper pushed that card away in one
+  // frame and slid in over an empty background (measured 2026-10-21).
+  // An exit still running when Undo arrives has not reached
   // markNotInterested yet: dropping it is the whole undo.
   const handleUndoNotInterested = useCallback((paper: Paper) => {
-    setReturningId(paper.id);
+    const container = feedRef.current;
+    const height = container?.clientHeight ?? 0;
+    // The toast outlives the page: with the feed gone (or not yet measured)
+    // there is nothing to animate, and the mark is still taken back.
+    if (!container || height <= 0) {
+      void undoNotInterested(paper, null);
+      return;
+    }
+    landReturn();
+    returningRef.current = { id: paper.id, height, landed: false };
+    setReturning(returningRef.current);
+    returnTimerRef.current = setTimeout(landReturn, SKIP_RETURN_MS + 120);
     if (skipExitRef.current?.id === paper.id) {
       clearTimeout(skipExitTimerRef.current!);
       skipExitRef.current = null;
@@ -529,25 +574,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       setSkipExit(null);
       return;
     }
-    const container = feedRef.current;
-    const height = container?.clientHeight ?? 0;
-    const atIndex = !source && container && height > 0 ? Math.round(container.scrollTop / height) : null;
-    if (atIndex !== null) returnSlotRef.current = { id: paper.id, index: atIndex };
-    void undoNotInterested(paper, atIndex);
-  }, [source, undoNotInterested]);
-
-  // The paper is put back in front of the card the reader is on, and the
-  // scroller stays snapped to that card, which now sits one slot down: the
-  // view followed it and the return played off-screen (measured, scrollTop
-  // 0 → one card). Holding the slot in the commit that brings the paper back,
-  // before paint, keeps the reader where they were.
-  useLayoutEffect(() => {
-    const slot = returnSlotRef.current;
-    returnSlotRef.current = null;
-    const container = feedRef.current;
-    if (!slot || !container || papers[slot.index]?.id !== slot.id) return;
-    container.scrollTop = slot.index * container.clientHeight;
-  }, [papers]);
+    void undoNotInterested(paper, source ? null : Math.round(container.scrollTop / height));
+  }, [landReturn, source, undoNotInterested]);
 
   const handleNotInterested = useCallback((paper: Paper) => {
     beginSkipExit(paper?.id, () => markNotInterested(paper));
@@ -1288,9 +1316,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           ) : (
           <div
             key={paper.id}
-            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${returningId === paper.id ? ' feed-snap-item--returning' : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
-            style={skipExit?.id === paper.id ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` } : undefined}
-            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : returningId === paper.id ? handleReturnEnd : undefined}
+            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${returning?.id === paper.id ? ` feed-snap-item--returned${returning.landed ? '' : ' feed-snap-item--returning'}` : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
+            style={skipExit?.id === paper.id
+              ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` }
+              : returning?.id === paper.id && !returning.landed ? { top: `${index * returning.height}px`, height: `${returning.height}px` } : undefined}
+            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : returning?.id === paper.id && !returning.landed ? handleReturnEnd : undefined}
           >
             <PaperCard
               paper={paper}

@@ -107,7 +107,10 @@
    thing you are reading and starts being the thing that is going, and ends
    with the travel. Earlier than that it erased the card mid-screen; later and
    two cards stay legible on top of each other. */
-.feed-snap-item--leaving {
+/* The paper an Undo brings back is pinned the same way, over the card the
+   reader is on (see below). */
+.feed-snap-item--leaving,
+.feed-snap-item--returning {
   position: absolute;
   left: 0;
   right: 0;
@@ -145,25 +148,21 @@
   }
 }
 
-/* Undo on "Not interested": the paper comes back the way it left, in from
-   the right, and lands in the slot the reader is on. An arrival, so it brakes
-   where the reader is looking — on the cubic, which still spends most of its
-   frames visibly moving where the expo would read as a cut. The slot clips
-   it, as it clips the exit.
+/* Undo on "Not interested": the exit reversed. The paper is pinned out of
+   flow over the card the reader is on and comes in from the right; `.pc` is
+   opaque, so it covers that card as it travels, and no fade is needed — the
+   first cut faded in from 0 over a slot the reinsertion had already emptied,
+   and read as a glitch. It lands in flow when the travel ends (landReturn).
+   An arrival, so it brakes where the reader is looking: on the cubic, which
+   still spends most of its frames visibly moving where the expo reads as a
+   cut. The slot clips it, as it clips the exit. 320ms is SKIP_RETURN_MS.
 
    `cardSlideUp` stays in the list so that dropping `--returning` afterwards
-   does not add it back and replay the card's entrance. The fade is written
-   over the travel's full 320ms, done at 56% (180ms), so that one
-   `animationend`, the fade's, closes the return with and without movement. */
-.feed-snap-item--returning {
-  overflow: hidden;
-}
-
+   does not add it back and replay the card's entrance. */
 .feed-snap-item--returning > .pc {
   animation:
     cardSlideUp 0.36s var(--ease-out-expo) backwards,
-    feedSkipReturn 320ms var(--ease-out-cubic) backwards,
-    feedSkipReturnFade 320ms linear backwards;
+    feedSkipReturn 320ms var(--ease-out-cubic) backwards;
 }
 
 @keyframes feedSkipReturn {
@@ -171,13 +170,21 @@
 }
 
 @keyframes feedSkipReturnFade {
-  0% { opacity: 0; }
-  56% { opacity: 1; }
+  from { opacity: 0; }
 }
 
+/* It left whole, so it comes back whole: the pieces do not replay the
+   card's arrival on top of the travel, as they do not on a feed reached by
+   the back arrow (PaperCard.css). `--returned` outlives the travel because
+   putting the animation back once it lands would start it then. */
+.feed-snap-item--returned :is(.pc-sheet, .pc-meta, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
+  animation: none;
+}
+
+/* Without movement it fades in over the card it covers, and lands. */
 @media (prefers-reduced-motion: reduce) {
   .feed-snap-item--returning > .pc {
-    animation: feedSkipReturnFade 320ms linear backwards;
+    animation: feedSkipReturnFade 200ms linear backwards;
   }
 }
 

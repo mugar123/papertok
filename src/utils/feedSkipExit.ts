@@ -36,6 +36,13 @@ import type { Paper } from '../models/Paper.ts';
 export const SKIP_EXIT_MS = 300;
 
 /**
+ * How long a paper brought back by Undo takes to travel in over the card the
+ * reader is on. Its own value because it is an arrival, on the cubic in
+ * FeedContainer.css, and the landing waits for it.
+ */
+export const SKIP_RETURN_MS = 320;
+
+/**
  * The slot to pin the leaving card in, or `null` when there is nothing to
  * animate — an id the list does not have, or a container that has not been
  * measured yet. A null is not a failure: the caller removes the card at once,
