@@ -145,6 +145,42 @@
   }
 }
 
+/* Undo on "Not interested": the paper comes back the way it left, in from
+   the right, and lands in the slot the reader is on. An arrival, so it brakes
+   where the reader is looking — on the cubic, which still spends most of its
+   frames visibly moving where the expo would read as a cut. The slot clips
+   it, as it clips the exit.
+
+   `cardSlideUp` stays in the list so that dropping `--returning` afterwards
+   does not add it back and replay the card's entrance. The fade is written
+   over the travel's full 320ms, done at 56% (180ms), so that one
+   `animationend`, the fade's, closes the return with and without movement. */
+.feed-snap-item--returning {
+  overflow: hidden;
+}
+
+.feed-snap-item--returning > .pc {
+  animation:
+    cardSlideUp 0.36s var(--ease-out-expo) backwards,
+    feedSkipReturn 320ms var(--ease-out-cubic) backwards,
+    feedSkipReturnFade 320ms linear backwards;
+}
+
+@keyframes feedSkipReturn {
+  from { transform: translateX(105%) scale(0.96); }
+}
+
+@keyframes feedSkipReturnFade {
+  0% { opacity: 0; }
+  56% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-snap-item--returning > .pc {
+    animation: feedSkipReturnFade 320ms linear backwards;
+  }
+}
+
 /* A read paper is filed away as it leaves. "Mark as read" moves the feed on
    to the next paper (handleMarkAsRead), and the paper going up and out gives
    ground: it settles back towards its own bottom edge, the one that stays
@@ -164,8 +200,9 @@
    refresh owns `.pc`'s transform and the refresh dip its `translate`. */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    /* Not on a read paper dismissed with "Not interested": its exit wins. */
-    .feed-snap-item--read:not(.feed-snap-item--leaving) > .pc {
+    /* Not while a read paper leaves on "Not interested" or comes back on its
+       Undo: those motions win. */
+    .feed-snap-item--read:not(.feed-snap-item--leaving, .feed-snap-item--returning) > .pc {
       transform-origin: 50% 100%;
       animation:
         cardSlideUp 0.36s var(--ease-out-expo) backwards,
