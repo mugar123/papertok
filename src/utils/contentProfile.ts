@@ -66,24 +66,35 @@ function addTerms(counts: Map<string, number>, text: string, weight: number) {
 export function termCountsOf(title: unknown, abstract: unknown) {
   const counts = new Map<string, number>();
   if (typeof title === 'string') addTerms(counts, title, TITLE_WEIGHT);
-  if (typeof abstract === 'string' && hasUsableAIAbstract(abstract)) {
-    addTerms(counts, abstract.slice(0, CONTENT_TEXT_CHARS), 1);
-  }
+  const stored = storedAbstract(abstract);
+  if (stored) addTerms(counts, stored, 1);
   // Array.prototype.sort is stable: the terms met first keep their place on a tie.
   return new Map([...counts].sort((a, b) => b[1] - a[1]).slice(0, MAX_TERMS_PER_PAPER));
 }
 
-interface TextCarrier { title?: unknown; abstract?: unknown; summary?: unknown }
-const termCache = new WeakMap<object, { title: unknown; abstract: unknown; counts: Map<string, number> }>();
+// The part of an abstract the terms come from, or '' for a placeholder. Every
+// placeholder is shorter than the stored part, so checking that part alone
+// spares normalizing a long abstract.
+function storedAbstract(abstract: unknown) {
+  if (typeof abstract !== 'string') return '';
+  const stored = abstract.slice(0, CONTENT_TEXT_CHARS);
+  return hasUsableAIAbstract(stored) ? stored : '';
+}
 
-/** A card's terms. Computed once per card: a re-rank scores the same cards again. */
+interface TextCarrier { title?: unknown; abstract?: unknown; summary?: unknown }
+const termCache = new WeakMap<object, { title: unknown; abstract: unknown; summary: unknown; counts: Map<string, number> }>();
+
+/**
+ * A card's terms. Computed once per card and its text: a re-rank scores the
+ * same cards again, and a page scores each card against the whole pool.
+ */
 export function paperTermCounts(paper: TextCarrier) {
-  // The feed's builder fills `summary` from the abstract; a stored copy has either.
-  const abstract = [paper.abstract, paper.summary].find(text => typeof text === 'string' && hasUsableAIAbstract(text));
+  const { title, abstract, summary } = paper;
   const cached = termCache.get(paper);
-  if (cached && cached.title === paper.title && cached.abstract === abstract) return cached.counts;
-  const counts = termCountsOf(paper.title, abstract);
-  termCache.set(paper, { title: paper.title, abstract, counts });
+  if (cached && cached.title === title && cached.abstract === abstract && cached.summary === summary) return cached.counts;
+  // The feed's builder fills `summary` from the abstract; a stored copy has either.
+  const counts = termCountsOf(title, storedAbstract(abstract) || summary);
+  termCache.set(paper, { title, abstract, summary, counts });
   return counts;
 }
 
