@@ -48,6 +48,10 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // a smaller event — it is no event at all, with nothing at the call site to
   // say so. Both of these shipped instrumented and silent.
   'paper_rewrite',
+  'reader_open',
+  'paper_rewrite_result',
+  'auth_prompt_view',
+  'auth_result',
   'paper_highlight',
   // Annotating a passage and taking the reading away are the two ends of what
   // the reader is for: one says the rewrite was worth marking up, the other
@@ -147,7 +151,12 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   destination: new Set(['publisher', 'pdf', 'doi', 'arxiv', 'other']),
   entity_type: new Set(['author', 'institution', 'project', 'topic']),
   language: new Set(['en', 'es']),
-  method: new Set(['google', 'email', 'link', 'native', 'clipboard', 'other']),
+  method: new Set(['google', 'github', 'email', 'link', 'native', 'clipboard', 'other']),
+  rewrite_result: new Set(['success', 'incomplete', 'error', 'cancelled']),
+  rewrite_error: new Set(['AI_REWRITE_NEEDS_FULL_TEXT', 'AI_AUTH_REQUIRED', 'AI_QUOTA_EXHAUSTED', 'AI_NOT_CONFIGURED', 'AI_TIMEOUT', 'AI_BUSY', 'AI_INVALID_PAPER', 'AI_INVALID_RESPONSE', 'AI_EMPTY_RESPONSE', 'AI_CANCELLED', 'AI_REQUEST_TOO_LARGE', 'AI_INVALID_REQUEST_UPSTREAM', 'AI_UNAVAILABLE', 'other']),
+  auth_result: new Set(['success', 'error', 'cancelled']),
+  auth_error: new Set(['auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/popup-blocked', 'auth/network-request-failed', 'AUTH_EMAIL_ALREADY_USED', 'other']),
+  auth_reason: new Set(['default', 'related', 'explorer_search']),
   newsletter_action: new Set(['subscribe', 'unsubscribe']),
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
   annotation_origin: new Set(['user', 'ai']),
@@ -187,8 +196,12 @@ const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> 
   activation: {},
   newsletter_change: { action: 'newsletter_action' },
   day_7_return: {},
-  select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber' },
+  select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber', method: 'method' },
   paper_rewrite: { level: 'rewrite_level', surface: 'surface', ...PAPER_DETAIL },
+  reader_open: { surface: 'surface' },
+  paper_rewrite_result: { level: 'rewrite_level', surface: 'surface', result: 'rewrite_result', cached: 'boolean', duration_ms: 'duration', error_code: 'rewrite_error' },
+  auth_prompt_view: { reason: 'auth_reason', surface: 'surface' },
+  auth_result: { method: 'method', surface: 'surface', result: 'auth_result', error_code: 'auth_error' },
   paper_highlight: { level: 'rewrite_level', surface: 'surface', ...PAPER_DETAIL },
   // `origin` is what separates a note the reader wrote from an answer they
   // asked for — the second costs one of the day's AI uses and the first is free,
@@ -359,6 +372,10 @@ export function sanitizeProductEventParams(eventName: string | number, params: R
     if (type === 'boolean' && typeof value === 'boolean') safeParams[key] = value;
     if (type === 'boundedNumber' && Number.isFinite(value)) {
       safeParams[key] = Math.min(1000, Math.max(0, Math.round(value as number)));
+    }
+    if (type === 'duration' && Number.isFinite(value)) safeParams[key] = Math.min(3_600_000, Math.max(0, Math.round(value as number)));
+    if ((type === 'rewrite_error' || type === 'auth_error') && typeof value === 'string') {
+      safeParams[key] = CATEGORIES[type].has(value) ? value : 'other';
     }
     if (type === 'seconds' && Number.isFinite(value)) {
       safeParams[key] = Math.min(MAX_TRACKED_SECONDS, Math.max(0, Math.round(value as number)));
