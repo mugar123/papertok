@@ -32,6 +32,7 @@ export interface FeedContextValue {
   reportVisiblePaper: (id: string | null) => void;
   toggleLike: (paper: Paper) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
+  undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
   markSaved: (paper: Paper | string) => Promise<void>;
   unmarkSaved: (paper: Paper | string) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
@@ -2261,6 +2262,42 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
 
+  // Takes a "Not interested" back. With `atIndex`, the paper returns to this
+  // list there, at the card the reader is on, so it comes back where they let
+  // it go. Following renders a list of its own filtered by `notInterestedIds`
+  // and passes none: the set alone brings it back there.
+  const undoNotInterested = useCallback(async (paperInput: Paper, atIndex: number | null = null) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
+    const newNotInterested = new Set(notInterestedIdsRef.current);
+    newNotInterested.delete(paper.id);
+    setNotInterestedIds(newNotInterested);
+    if (atIndex !== null) {
+      setPapers((prev) => {
+        if (prev.some((p) => p.id === paperInput.id)) return prev;
+        const at = Math.min(Math.max(atIndex, 0), prev.length);
+        return [...prev.slice(0, at), paperInput, ...prev.slice(at)];
+      });
+      // As in markNotInterested: the swap fires no scroll event.
+      visiblePaperIdRef.current = paperInput.id;
+    }
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: 'undoNotInterested',
+      category: paper.primaryCategory,
+    }, paper);
+
+    if (IS_DEMO) {
+      demoSet('notInterestedIds', Array.from(newNotInterested));
+    } else if (userId) {
+      try {
+        await updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() });
+      } catch (err) {
+        console.error('Error undoing not interested:', err);
+      }
+    }
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
+
   const markAsRead = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
@@ -2751,7 +2788,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     reportVisiblePaper,
-    toggleLike, markNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
+    toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
@@ -2764,7 +2801,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     reportVisiblePaper,
-    toggleLike, markNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
+    toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce,
   ]);
