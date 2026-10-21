@@ -47,6 +47,12 @@ export default function InstitutionLink({
   const setBusy = (next: boolean) => { setOwnBusy(next); onBusyChange?.(next); };
   const [pending, setPending] = useState(() => pendingInstitutionVerification());
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  // A request already pending when the form opens is part of it: Cancel and
+  // its message arrive with the other pieces. Only a request or a message that
+  // appears afterwards opens its own height, so the window does not grow again
+  // once it has arrived.
+  const [openedPending] = useState(pending);
+  const pendingFromOpening = pending !== null && pending === openedPending;
   // The pill is pinned only when the link lands while this form is on screen,
   // not each time the window opens on an account that was already linked.
   const [wasLinked, setWasLinked] = useState(Boolean(institution));
@@ -124,7 +130,7 @@ export default function InstitutionLink({
       role={feedback?.tone === 'error' ? 'alert' : 'status'}
       aria-live="polite"
     >
-      {feedbackText && <span key={feedbackText} className="institution-link-reveal"><span>{feedbackText}</span></span>}
+      {feedbackText && <span key={feedbackText} className={pendingFromOpening && !feedback ? undefined : 'institution-link-reveal'}><span>{feedbackText}</span></span>}
     </p>
   );
 
@@ -183,7 +189,7 @@ export default function InstitutionLink({
         )}
       </div>
       {pending && (
-        <div className="institution-link-reveal">
+        <div className={pendingFromOpening ? undefined : 'institution-link-reveal'}>
           <div>
             <Button type="button" variant="outline" className="w-full" onClick={() => {
               cancelInstitutionVerification();

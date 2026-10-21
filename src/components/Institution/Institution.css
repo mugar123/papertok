@@ -126,10 +126,10 @@
 
   .institution-dialog[data-open] > h2 { animation-delay: 70ms; }
   .institution-dialog[data-open] > p { animation-delay: 115ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(1)) { animation-delay: 160ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(2)) { animation-delay: 205ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(3)) { animation-delay: 250ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(n + 4)) { animation-delay: 295ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(1):not(.institution-link-reveal)) { animation-delay: 160ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(2):not(.institution-link-reveal)) { animation-delay: 205ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(3):not(.institution-link-reveal)) { animation-delay: 250ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(n + 4):not(.institution-link-reveal)) { animation-delay: 295ms; }
 }
 
 /* `translate` keeps the -50% that centres the window across. */
