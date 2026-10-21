@@ -22,7 +22,7 @@ const clientSource = stripTypeScriptTypes(readFileSync(new URL('./paperRewriteSe
   .replace(/^import .*;\n/gm, '')
   .replace(/\bexport /g, '')
   .replaceAll('import.meta.env.VITE_PAPER_API_BASE_URL', "'https://api.papertok.app'");
-type SavedCopy = { sections: object[]; model: string; sourceBasis: string };
+type SavedCopy = { sections: object[]; model: string; sourceBasis: string; promptVersion: string };
 function streamingClient(events: object[], breakConnection = false, { saved = null as SavedCopy | null } = {}) {
   let requests = 0;
   const bodies: Record<string, unknown>[] = [];
@@ -100,6 +100,7 @@ const savedCopy = {
   sections: [{ id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['Saved section.'], highlights: [] }],
   model: 'deepseek-v4-flash',
   sourceBasis: 'full_text',
+  promptVersion: 'paper-rewrite-v3',
 };
 
 test('a summary saved in the account opens without asking the worker or spending a use', async () => {
@@ -126,7 +127,7 @@ test('a summary saved in the account opens without asking the worker or spending
 
 test('a finished rewrite is saved for the account that asked for it', async () => {
   const client = streamingClient([
-    { type: 'meta', level: 'university', language: 'en', model: 'deepseek-v4-flash', sourceBasis: 'full_text', remainingUses: 9 },
+    { type: 'meta', level: 'university', language: 'en', model: 'deepseek-v4-flash', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3', remainingUses: 9 },
     sectionEvent,
     { type: 'done', sectionCount: 1 },
   ]);
@@ -141,6 +142,7 @@ test('a finished rewrite is saved for the account that asked for it', async () =
     sections: [{ id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['First section.'], highlights: [] }],
     model: 'deepseek-v4-flash',
     sourceBasis: 'full_text',
+    promptVersion: 'paper-rewrite-v3',
   });
 });
 

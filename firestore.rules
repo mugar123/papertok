@@ -456,12 +456,13 @@ service cloud.firestore {
         allow create, update: if ownsUserTree(userId)
           && summaryId.size() <= 620
           && summaryId.matches('^[A-Za-z0-9_-]+[.](beginner|university|researcher)$')
-          && request.resource.data.keys().hasOnly(['sections', 'model', 'sourceBasis'])
+          && request.resource.data.keys().hasOnly(['sections', 'model', 'sourceBasis', 'promptVersion'])
           && request.resource.data.sections is list
           && request.resource.data.sections.size() > 0
           && request.resource.data.sections.size() <= 24
           && validString(request.resource.data.model, 100)
-          && validString(request.resource.data.sourceBasis, 40);
+          && validString(request.resource.data.sourceBasis, 40)
+          && validString(request.resource.data.promptVersion, 40);
       }
 
       // One row per saved summary, which is all the history ever pages

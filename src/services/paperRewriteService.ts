@@ -399,6 +399,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
           sections,
           model: result.meta.model || '',
           sourceBasis: result.meta.sourceBasis || '',
+          promptVersion: result.meta.promptVersion || '',
         }, getRewritablePdfUrl(paper));
       }
     }

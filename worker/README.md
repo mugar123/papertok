@@ -324,7 +324,9 @@ With `AI_PROVIDER = "gemini"`, `/ai/rewrite` streams from `AI_REWRITE_MODEL` (or
 Rewrite prompt v3 allocates the word budget across the whole document, including
 discussion and conclusion. University requests up to 24,000 output tokens; its
 previous 16,000-token ceiling cut JWST off before those final sections. The prompt
-version is part of the cache key, so older rewrites are regenerated on the next open.
+version is part of the shared cache key, so older shared rewrites are regenerated on
+the next open. A summary saved in a reader's account is reopened whatever the prompt
+version, until that reader chooses Write it again; it records the version that wrote it.
 
 The reader considers a rewrite complete only after a `done` event whose `sectionCount`
 matches the received sections, with no error and no `truncated` flag. EOF alone is not
@@ -338,14 +340,14 @@ normal opens. Missing, false or non-boolean retry values use the ordinary cache 
 
 A signed-in reader's complete rewrites are also kept in their own Firestore tree,
 written by the browser under owner-only rules: `users/{uid}/summaries/{paperKey}.{level}`
-holds the sections, model and source basis, and `users/{uid}/summaryHistory` holds the
-row the Settings history pages through (paper key and id, level, title, PDF URL and the
-server time of the write). Reopening a paper reads that copy before calling
-`/ai/rewrite`, so it reserves no use. Writing it again sends `regenerate: true`, which
-skips the shared cache read and reserves a use like any generation. Only a complete
-result replaces the cache entry and the browser's own copy; a regenerate cut short
-leaves both as they were. Missing, false or non-boolean regenerate values use the
-ordinary cache path.
+holds the sections, model, source basis and prompt version, and
+`users/{uid}/summaryHistory` holds the row the Settings history pages through (paper
+key and id, level, title, PDF URL and the server time of the write). Reopening a paper
+reads that copy before calling `/ai/rewrite`, so it reserves no use. Writing it again
+sends `regenerate: true`, which skips the shared cache read and reserves a use like any
+generation. Only a complete result replaces the cache entry and the browser's own copy;
+a regenerate cut short leaves both as they were. Missing, false or non-boolean
+regenerate values use the ordinary cache path.
 
 `/ai/rewrite` forwards each POST to a new `PaperRewriteSession` Durable Object through
 the `PAPER_REWRITE_SESSION` binding. The existing handler verifies identity, validates

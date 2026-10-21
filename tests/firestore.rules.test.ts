@@ -1100,7 +1100,7 @@ const SUMMARY_PAPER = { id: '2401.00001v1', arxivId: '2401.00001v1', title: 'A p
 type RulesDb = ReturnType<typeof asAlice>;
 
 function summaryWrite(paper: typeof SUMMARY_PAPER = SUMMARY_PAPER, level = 'university', sections: object[] = [SUMMARY_SECTION]) {
-  const write = buildSummaryWrite(paper, level, { sections: sections as never, model: 'deepseek-v4-flash', sourceBasis: 'full_text' }, SUMMARY_PDF);
+  const write = buildSummaryWrite(paper, level, { sections: sections as never, model: 'deepseek-v4-flash', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' }, SUMMARY_PDF);
   assert.ok(write, 'the client has to be able to build the write under test');
   return write;
 }
@@ -1194,7 +1194,7 @@ test('PAP-59: a history page has to carry the ceiling the client asks for', asyn
   await assertSucceeds(historyPage(db));
 });
 
-test('PAP-59: a summary holds its sections, model and source basis, and nothing else', async () => {
+test('PAP-59: a summary holds its sections, model, source basis and prompt version, and nothing else', async () => {
   await reset();
   const db = asAlice();
   const write = summaryWrite();
@@ -1208,9 +1208,13 @@ test('PAP-59: a summary holds its sections, model and source basis, and nothing 
   await assertFails(saveSummaryBatch(db, { summary: { sections: Array.from({ length: 25 }, (_, index) => ({ ...SUMMARY_SECTION, id: `s${index}` })) } }));
   await assertFails(saveSummaryBatch(db, { summary: { model: 'm'.repeat(101) } }));
   await assertFails(saveSummaryBatch(db, { summary: { sourceBasis: 'f'.repeat(41) } }));
-  // An unknown basis is stored as unknown, and the longest rewrite the client
-  // keeps is a clean allow.
+  await assertFails(saveSummaryBatch(db, { summary: { promptVersion: undefined } }));
+  await assertFails(saveSummaryBatch(db, { summary: { promptVersion: 3 } }));
+  await assertFails(saveSummaryBatch(db, { summary: { promptVersion: 'v'.repeat(41) } }));
+  // An unknown basis or prompt version is stored as unknown, and the longest
+  // rewrite the client keeps is a clean allow.
   await assertSucceeds(saveSummaryBatch(db, { summary: { sourceBasis: '' } }));
+  await assertSucceeds(saveSummaryBatch(db, { summary: { promptVersion: '' } }));
   const longest = summaryWrite(SUMMARY_PAPER, 'researcher', Array.from({ length: 24 }, (_, index) => ({ ...SUMMARY_SECTION, id: `s${index}` })));
   await assertSucceeds(saveSummaryBatch(db, { write: longest }));
   // The id has to be a paper key and a level, like every id the client builds.

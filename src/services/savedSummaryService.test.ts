@@ -35,10 +35,10 @@ test('one summary per paper and level, under the canonical paper key', () => {
 });
 
 test('a finished rewrite becomes the text and a history row that can reopen it', () => {
-  const write = buildSummaryWrite(PAPER, 'researcher', { sections: [SECTION], model: 'deepseek-v4-flash', sourceBasis: 'full_text' }, PDF);
+  const write = buildSummaryWrite(PAPER, 'researcher', { sections: [SECTION], model: 'deepseek-v4-flash', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' }, PDF);
   assert.deepEqual(write, {
     id: `${getPaperKey(PAPER)}.researcher`,
-    summary: { sections: [SECTION], model: 'deepseek-v4-flash', sourceBasis: 'full_text' },
+    summary: { sections: [SECTION], model: 'deepseek-v4-flash', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' },
     history: {
       paperKey: getPaperKey(PAPER),
       paperId: '2401.00001v1',
@@ -50,12 +50,17 @@ test('a finished rewrite becomes the text and a history row that can reopen it',
 });
 
 test('an unknown source basis stays unknown rather than being called full text', () => {
-  const write = buildSummaryWrite(PAPER, 'university', { sections: [SECTION], model: '', sourceBasis: undefined as unknown as string }, PDF);
+  const write = buildSummaryWrite(PAPER, 'university', { sections: [SECTION], model: '', sourceBasis: undefined as unknown as string, promptVersion: '' }, PDF);
   assert.equal(write!.summary.sourceBasis, '');
 });
 
+test('an unknown prompt version stays unknown rather than being called the current one', () => {
+  const write = buildSummaryWrite(PAPER, 'university', { sections: [SECTION], model: 'm', sourceBasis: 'full_text', promptVersion: undefined as unknown as string }, PDF);
+  assert.equal(write!.summary.promptVersion, '');
+});
+
 test('nothing is kept without a title, a PDF or a whole set of sections', () => {
-  const summary = { sections: [SECTION], model: 'm', sourceBasis: 'full_text' };
+  const summary = { sections: [SECTION], model: 'm', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' };
   assert.equal(buildSummaryWrite({ ...PAPER, title: '' }, 'university', summary, PDF), null);
   assert.equal(buildSummaryWrite(PAPER, 'university', summary, ''), null);
   assert.equal(buildSummaryWrite(PAPER, 'university', { ...summary, sections: [] }, PDF), null);
@@ -77,7 +82,7 @@ function fakeHistory(rowCount: number) {
   const calls: { segments: string[][]; orders: unknown[][]; afters: unknown[]; caps: number[] } = { segments: [], orders: [], afters: [], caps: [] };
   const docs = Array.from({ length: rowCount }, (_, index) => {
     const paper = { arxivId: `2401.${String(index).padStart(5, '0')}`, id: `2401.${String(index).padStart(5, '0')}`, title: `Paper ${index}` };
-    const write = buildSummaryWrite(paper, 'university', { sections: [SECTION], model: 'm', sourceBasis: 'full_text' }, PDF)!;
+    const write = buildSummaryWrite(paper, 'university', { sections: [SECTION], model: 'm', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' }, PDF)!;
     return {
       id: write.id,
       data: () => ({ ...write.history, updatedAt: { toDate: () => new Date(Date.UTC(2026, 9, 20, 12, 0, 0) - index * 60_000) } }),
@@ -123,7 +128,7 @@ test('a page offers more only when the extra row came back', async () => {
 });
 
 test('a history row that does not match its own id is not listed', () => {
-  const write = buildSummaryWrite(PAPER, 'university', { sections: [SECTION], model: 'm', sourceBasis: 'full_text' }, PDF)!;
+  const write = buildSummaryWrite(PAPER, 'university', { sections: [SECTION], model: 'm', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' }, PDF)!;
   assert.ok(toSummaryHistoryRow(write.id, write.history));
   assert.equal(toSummaryHistoryRow(write.id, { ...write.history, level: 'beginner' }), null);
   assert.equal(toSummaryHistoryRow(write.id, { ...write.history, title: '' }), null);
@@ -138,7 +143,7 @@ for (const paper of [
 ]) {
   test(`${paper.label} paper reopens from history with the same summary and PDF`, () => {
     const pdfUrl = getRewritablePdfUrl(paper);
-    const write = buildSummaryWrite(paper, 'beginner', { sections: [SECTION], model: 'm', sourceBasis: 'full_text' }, pdfUrl)!;
+    const write = buildSummaryWrite(paper, 'beginner', { sections: [SECTION], model: 'm', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' }, pdfUrl)!;
     const reopened = summaryHistoryPaper(toSummaryHistoryRow(write.id, write.history)!);
     assert.equal(summaryId(reopened, 'beginner'), write.id);
     assert.equal(reopened.id, paper.id);

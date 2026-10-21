@@ -13,7 +13,12 @@ type HistoryOperations = Partial<{
   cap: typeof limit;
   readDocuments: (target: ReturnType<typeof query>) => Promise<Pick<QuerySnapshot, 'docs'> & Partial<Pick<QuerySnapshot, 'empty' | 'size' | 'metadata'>>>;
 }>;
-export interface SavedSummary { sections: RewriteSection[]; model: string; sourceBasis: string }
+/**
+ * `promptVersion` is the worker's REWRITE_PROMPT_VERSION for the text. A saved
+ * copy is reopened whatever prompt is current, so this is what would let a
+ * later prompt tell the copies an older one wrote apart.
+ */
+export interface SavedSummary { sections: RewriteSection[]; model: string; sourceBasis: string; promptVersion: string }
 export interface SummaryHistoryPage { rows: SummaryHistoryRow[]; cursor: SummaryHistoryCursor; hasMore: boolean }
 export interface SummaryHistoryRow {
   id: string;
@@ -91,6 +96,7 @@ export function buildSummaryWrite(paper: SummaryPaper, level: string, summary: S
       sections: sections as RewriteSection[],
       model: cleanText(summary.model, 100),
       sourceBasis: cleanText(summary.sourceBasis, 40),
+      promptVersion: cleanText(summary.promptVersion, 40),
     },
     history: { paperKey: id.slice(0, id.lastIndexOf('.')), paperId, level, title, pdfUrl: url },
   };
@@ -119,6 +125,7 @@ export async function getSavedSummary(uid: string | null | undefined, paper: Sum
     sections: sections as RewriteSection[],
     model: cleanText(data.model, 100),
     sourceBasis: cleanText(data.sourceBasis, 40),
+    promptVersion: cleanText(data.promptVersion, 40),
   };
 }
 
