@@ -326,7 +326,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
     { id: 'nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', collection: null, ownPlatform: true },
   ]);
   assert.equal(result.partial, false);
-  assert.equal(result.unchecked, 79); // Eight press titles and 71 journals need a resolver.
+  assert.equal(result.unchecked, 94); // Eight press titles and 86 journals need a resolver.
   const bodies = stub.calls.map(call => JSON.parse(call.init.body as string));
   assert.equal(bodies.length, GETFTR_BATCHES);
   assert.ok(bodies.length < SUBREQUEST_BUDGET);
@@ -363,7 +363,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
   });
   const result = await lookupInstitutionServices({ domain: 'nowhere.example', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
-  assert.equal(result.unchecked, 83); // Four undecided DOIs plus 79 titles without DOIs.
+  assert.equal(result.unchecked, 98); // Four undecided DOIs plus 94 titles without DOIs.
   assert.equal(result.partial, false);
 });
 
@@ -384,7 +384,7 @@ test('GetFTR verdicts are final for DOIs; publications without DOIs still use th
   });
   const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
-  assert.equal(result.unchecked, 43); // Only 36 of the 79 DOI-less titles fit the unpaged request budget.
+  assert.equal(result.unchecked, 58); // Only 36 of the 94 DOI-less titles fit the unpaged request budget.
   assert.equal(stub.calls.length, 40);
   assert.deepEqual(stub.calls.filter(call => call.url.host === 'eu01.alma.exlibrisgroup.com').map(call => call.url.searchParams.get('rft.issn')), SERVICE_CATALOGUE.filter(entry => !entry.doi).slice(0, 36).map(entry => entry.issn));
 });
@@ -1048,7 +1048,38 @@ test('agriculture, management and environmental journals retain paid access inde
     assert.equal(result.partial, false);
     assert.equal(result.unchecked, 0);
     assert.equal(result.nextOffset, null);
-    assert.equal(stub.calls.length, 18);
+    assert.equal(stub.calls.length, 33);
+    assert.ok(stub.calls.every(({ url }) => url.searchParams.get('rft.date') === '2021'));
+    for (const service of result.services) {
+      assert.match(service.url, domain === 'tum.de' ? /^https:\/\/tum-eaccess\.de\/login\?qurl=/ : /^https:\/\/buc-usal\.alma\.exlibrisgroup\.com\//);
+    }
+  }
+});
+
+
+test('humanities journals retain their own access route without granting their publisher collection', async () => {
+  const packages: Record<string, string> = {
+    '0011-3204': 'University of Chicago Press Journals',
+    '0730-7829': 'EBSCOhost Academic Search Ultimate',
+    '0161-0775': 'Duke University Press Journals',
+  };
+  for (const domain of ['usal.es', 'tum.de']) {
+    const stub = upstreams({
+      resolver: issn => xml(packages[issn] ? ctoWith(packages[issn]) : CTO_FREE_ONLY),
+      sfx: issn => xml(packages[issn] ? sfxWith(issn, ['SUBSCRIBED', packages[issn]])
+        : sfxWith(issn, ['FREE', 'Free E-Journals'])),
+    });
+    const result = await lookupInstitutionServices({ domain }, { fetchImpl: stub.fetchImpl, offset: 145 });
+    assert.deepEqual(result.services.map(({ id, name, platformId, ownPlatform }) => ({ id, name, platformId, ownPlatform })), [
+      { id: 'journal-0011-3204', name: 'Current Anthropology', platformId: 'chicago', ownPlatform: true },
+      { id: 'journal-0730-7829', name: 'Music Perception', platformId: 'ucpress', ownPlatform: false },
+      { id: 'journal-0161-0775', name: 'Theater', platformId: 'dukeupress', ownPlatform: true },
+    ]);
+    assert.equal(result.services[1].collection, 'EBSCOhost Academic Search Ultimate');
+    assert.equal(result.partial, false);
+    assert.equal(result.unchecked, 0);
+    assert.equal(result.nextOffset, null);
+    assert.equal(stub.calls.length, 15);
     assert.ok(stub.calls.every(({ url }) => url.searchParams.get('rft.date') === '2021'));
     for (const service of result.services) {
       assert.match(service.url, domain === 'tum.de' ? /^https:\/\/tum-eaccess\.de\/login\?qurl=/ : /^https:\/\/buc-usal\.alma\.exlibrisgroup\.com\//);

@@ -112,6 +112,16 @@ const CANADIAN_SCIENCE_DISCOVERY = Object.freeze([
   'https://blog.cdnsciencepub.com/wp-content/uploads/2018/08/PricingCatalogue-2019.pdf',
 ]);
 
+const DELHI_HUMANITIES_DISCOVERY = 'https://shivaji.du.ac.in/files/studentcorner/A-Z%20LIST.pdf';
+const CHICAGO_HUMANITIES_DISCOVERY = Object.freeze([
+  DELHI_HUMANITIES_DISCOVERY,
+  'https://www.journals.uchicago.edu/pb-assets/docs/division/Univ-of-Chicago-Press-Jrnls-2026content-coverage-1754941306380.pdf',
+]);
+const DUKE_HUMANITIES_DISCOVERY = Object.freeze([
+  'https://www.culibrary.ac.in/e-journals-list-2024.html',
+  'https://dukeupress.edu/information-for/librarians/account-administration/title-list',
+]);
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -325,6 +335,40 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     platformId: 'canscipub', packageHint: 'Canadian Science', publisher: 'Canadian Science Publishing',
     monogram: 'CSP', color: '#00447C', year: 2021,
     sources: Object.freeze([...CANADIAN_SCIENCE_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'Current Anthropology', issn: '0011-3204', eissn: '1537-5382', url: 'https://www.journals.uchicago.edu/toc/ca/current' },
+    { name: 'Ethics', issn: '0014-1704', eissn: '1539-297X', url: 'https://www.journals.uchicago.edu/toc/et/current' },
+    { name: 'Signs: Journal of Women in Culture and Society', issn: '0097-9740', eissn: '1545-6943', url: 'https://www.journals.uchicago.edu/toc/signs/current' },
+    { name: 'Critical Inquiry', issn: '0093-1896', eissn: '1539-7858', url: 'https://www.journals.uchicago.edu/toc/ci/current' },
+    { name: 'American Journal of Sociology', issn: '0002-9602', eissn: '1537-5390', url: 'https://www.journals.uchicago.edu/toc/ajs/current' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'chicago', packageHint: 'University of Chicago', publisher: 'University of Chicago Press',
+    monogram: 'UCP', color: '#800000', year: 2021, sources: CHICAGO_HUMANITIES_DISCOVERY,
+  })),
+  ...[
+    { name: 'Music Perception', issn: '0730-7829', eissn: '1533-8312', url: 'https://online.ucpress.edu/mp', discovery: 'https://libraryguides.helsinki.fi/musicology/articles-journals' },
+    { name: 'Journal of Musicology', issn: '0277-9269', eissn: '1533-8347', url: 'https://online.ucpress.edu/jm', discovery: DELHI_HUMANITIES_DISCOVERY },
+    { name: '19th-Century Music', issn: '0148-2076', eissn: '1533-8606', url: 'https://online.ucpress.edu/ncm', discovery: DELHI_HUMANITIES_DISCOVERY },
+    { name: 'Journal of the Society of Architectural Historians', issn: '0037-9808', eissn: '2150-5926', url: 'https://online.ucpress.edu/jsah', discovery: DELHI_HUMANITIES_DISCOVERY },
+    { name: 'Gastronomica', issn: '1529-3262', eissn: '1533-8622', url: 'https://online.ucpress.edu/gastronomica', discovery: DELHI_HUMANITIES_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'ucpress', packageHint: 'University of California', publisher: 'University of California Press',
+    monogram: 'UCP', color: '#1B3D6D', year: 2021,
+    sources: Object.freeze([discovery, journal.url]),
+  })),
+  ...[
+    { name: 'Ethnohistory', issn: '0014-1801', eissn: '1527-5477', url: 'https://read.dukeupress.edu/ethnohistory' },
+    { name: 'Public Culture', issn: '0899-2363', eissn: '1527-8018', url: 'https://read.dukeupress.edu/public-culture' },
+    { name: 'GLQ: A Journal of Lesbian and Gay Studies', issn: '1064-2684', eissn: '1527-9375', url: 'https://read.dukeupress.edu/glq' },
+    { name: "Journal of Middle East Women's Studies", issn: '1552-5864', eissn: '1558-9579', url: 'https://read.dukeupress.edu/jmews' },
+    { name: 'Theater', issn: '0161-0775', eissn: '1527-196X', url: 'https://read.dukeupress.edu/theater' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'dukeupress', packageHint: 'Duke University Press', publisher: 'Duke University Press',
+    monogram: 'DUP', color: '#00539B', year: 2021, sources: DUKE_HUMANITIES_DISCOVERY,
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
