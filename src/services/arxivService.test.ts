@@ -5,12 +5,14 @@ import { stripTypeScriptTypes } from 'node:module';
 import {
   ARXIV_ROUTE_TIMEOUT_MS,
   arxivUnreachableError,
-  assignRequestedCategories,
   buildAuthorQuery,
   buildSearchQuery,
   clearCache,
   fetchPapers,
+  noteLabelSearchCategories,
 } from './arxivService.ts';
+import type { Paper } from '../models/Paper.ts';
+import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 
 test('an ID lookup requests every result in an abstract-recovery batch instead of the default ten', async () => {
   const source = await readFile(new URL('./arxivService.ts', import.meta.url), 'utf8');
@@ -56,7 +58,7 @@ test('fails without reaching for a third-party proxy when no arXiv route exists'
 });
 
 test('keeps an exact arXiv subcategory selected by the user', () => {
-  const [paper] = assignRequestedCategories([{
+  const [paper] = noteLabelSearchCategories([{
     id: 'paper-1',
     title: 'Optical trapping',
     abstract: 'A physics experiment.',
@@ -72,7 +74,7 @@ test('keeps an exact arXiv subcategory selected by the user', () => {
 // mech.* categories are not arXiv's, so they are fetched with `all:"label"`
 // searches. The record has the parser's shape: every parsed entry carries a primary.
 test('a paper found by a label search keeps arXiv\'s own primary category', () => {
-  const [paper] = assignRequestedCategories([{
+  const [paper] = noteLabelSearchCategories([{
     id: 'paper-2',
     title: 'Robotics for autonomous vehicles',
     abstract: 'A dynamics method for robotic control.',
@@ -83,6 +85,38 @@ test('a paper found by a label search keeps arXiv\'s own primary category', () =
 
   assert.equal(paper.primaryCategory, 'cs.RO');
   assert.deepEqual(paper.allCategories, ['cs.RO']);
+});
+
+// arXiv files a "Fluid Mechanics" match under its own categories, so nothing on
+// the paper names the mech.fluid the reader chose. Before PAP-64 the request was
+// written onto it as its primary, which is how it earned the reader's preference.
+test('a paper found by a label search ranks for the reader category that found it', () => {
+  const now = Date.parse('2026-10-20T00:00:00Z');
+  const preference = (paper: Partial<Paper>, userPreferences: string[]) => (
+    scorePaperForRecommendation(paper, { now, userPreferences }).preference
+  );
+  const [found, crossListed] = noteLabelSearchCategories([{
+    id: '2610.01234',
+    title: 'Wall-bounded turbulence at high Reynolds number',
+    primaryCategory: 'physics.flu-dyn',
+    categories: ['physics.flu-dyn'],
+    allCategories: ['physics.flu-dyn'],
+    published: '2026-10-01T00:00:00Z',
+  }, {
+    id: '2610.05678',
+    title: 'Agents that learn to plan',
+    primaryCategory: 'cs.AI',
+    categories: ['cs.AI', 'cs.LG'],
+    allCategories: ['cs.AI', 'cs.LG'],
+    published: '2026-10-01T00:00:00Z',
+  }], ['mech.fluid', 'cs.LG']);
+
+  assert.equal(found.primaryCategory, 'physics.flu-dyn');
+  assert.deepEqual(found.allCategories, ['physics.flu-dyn']);
+  assert.equal(preference(found, ['mech.fluid']), 100);
+  assert.equal(preference(found, ['cs.LG']), 0, 'a label match is not a cs.LG paper');
+  // The cs.LG clause found this one, and arXiv's cross-list already ranks it.
+  assert.equal(preference(crossListed, ['mech.fluid', 'cs.LG']), 80);
 });
 
 // A quote inside the phrase used to close arXiv's quoted term early, which is

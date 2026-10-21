@@ -6,7 +6,7 @@ import type { Paper } from '../models/Paper.ts';
 import type { OpenAlexWork } from './adapters/openAlexTypes.ts';
 import { getCategoryLabel } from '../data/categoryTaxonomy.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
-import { assignRequestedCategories } from './arxivService.ts';
+import { noteLabelSearchCategories } from './arxivService.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 
 interface ArxivEntry { id: string; title: string; primaryCategory: string; categories: string[] }
@@ -63,7 +63,7 @@ test('an arXiv paper keeps its own primary category whichever requested category
       ...(secondaries.length ? [secondaries] : []),
     ];
     for (const requested of requests) {
-      const [paper] = assignRequestedCategories([arxivRecord(arxiv)], requested);
+      const [paper] = noteLabelSearchCategories([arxivRecord(arxiv)], requested);
       if (!isDeepStrictEqual(classification(paper), arxivClassification(arxiv))) {
         replaced.push(`${arxiv.id} asked as [${requested}] became ${paper.primaryCategory} [${paper.allCategories}]`);
       }
@@ -104,7 +104,7 @@ test('2605.02209 shows Artificial Intelligence through discovery and either merg
   assert.equal(openAlexRecord.categories?.[0], 'Mutual information', 'OpenAlex files it under a concept');
 
   for (const requested of [['cs.LG'], ['cs.LG', 'cs.AI'], ['cs.AI', 'cs.LG']]) {
-    const [discovered] = assignRequestedCategories([arxivRecord(arxiv)], requested);
+    const [discovered] = noteLabelSearchCategories([arxivRecord(arxiv)], requested);
     for (const records of [[openAlexRecord, discovered], [discovered, openAlexRecord]]) {
       const [paper] = PaperBuilder.deduplicate(records);
       assert.deepEqual(classification(paper), {
@@ -126,7 +126,7 @@ test('a record that brings no arXiv classification leaves the categories alone',
   const recovered = PaperBuilder.merge(openAlexRecord, { abstract: 'A recovered abstract long enough to be usable.' }, 'arxiv');
   assert.deepEqual(classification(recovered), before);
 
-  // A Hugging Face record carries the category its request asked for.
+  // Whatever category another source's record names, it is not arXiv's.
   const huggingFace = PaperBuilder.merge(openAlexRecord, {
     arxivId: '2605.02209',
     sources: { primary: 'huggingface', enrichedBy: [] },
