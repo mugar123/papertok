@@ -11,7 +11,7 @@ import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interactionProfile.ts';
-import { readSeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
+import { clearUserScopedStorage, readSeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
@@ -447,16 +447,19 @@ test('a reload whose start page has unseen papers asks for no other page', async
 // offer it twice, and is forgotten by the next load.
 function memoryStorage() {
   const values = new Map<string, string>();
-  return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); } };
+  return {
+    getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); },
+    key: (index: number) => [...values.keys()][index] ?? null, get length() { return values.size; },
+  };
 }
 const callbackIn = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
 const paperRecord = (id: string): FeedRecord => ({ id, title: `${id} scientific research`, authors: [], primaryCategory: 'cs.AI' });
 const viewedEvent = (paperId: string, kind = 'viewTime') => ({ paperId, kind, category: 'cs.AI', viewTime: 4 });
 // The real callbacks over one browser's storage; `user` is the signed-in account
-// and `seen` the feed's in-memory set.
+// and `seen` the feed's in-memory set. `auth` is Firebase's own current user.
 function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage() } = {}) {
   const scope = {
-    sessionSeenPapers: seen, activeUserId: ref(user), viewedIds,
+    sessionSeenPapers: seen, activeUserId: ref(user), viewedIds, auth: { currentUser: user ? { uid: user } as { uid: string } | null : null },
     readSeenPaperIds: (userId: string | null) => readSeenPaperIds(userId, storage),
     saveSeenPaperIds: (userId: string | null, ids: Iterable<string>) => saveSeenPaperIds(userId, ids, storage),
   };
@@ -523,6 +526,23 @@ test('a card that reports after the account changed was not viewed by the new ac
   assert.deepEqual(accountA.stored('account-a'), ['before']);
   assert.deepEqual(accountA.stored('account-b'), []);
   assert.equal(accountA.scope.sessionSeenPapers.current.has('late-card'), false);
+});
+
+// Signing out: AuthContext sweeps the account's storage once Firebase has
+// signed out, and React commits the signed-out state later. The card on screen
+// reports from its cleanup before the feed's own account effect resets
+// activeUserId, so the report still names the account that signed out.
+test('a card that reports while signing out does not write the swept viewed list back', async () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  await accountA.trackViewTime(paperRecord('before'), 4);
+  assert.deepEqual(accountA.stored(), ['before']);
+  accountA.scope.auth.currentUser = null;
+  clearUserScopedStorage('account-a', storage);
+  await accountA.trackViewTime(paperRecord('card-on-screen-at-sign-out'), 4);
+  await accountA.trackSkips([paperRecord('skipped-at-sign-out')]);
+
+  assert.equal(storage.getItem('papertok_viewedIds:account-a'), null, 'nothing is written back after the sweep');
 });
 
 // Device A's reader went through every paper of page 1 and nothing else; the

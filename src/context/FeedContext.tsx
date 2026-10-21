@@ -50,7 +50,7 @@ export interface FeedContextValue {
 /* eslint-disable react-refresh/only-export-components */
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
-import { IS_DEMO, db } from '../services/firebase.ts';
+import { IS_DEMO, auth, db } from '../services/firebase.ts';
 import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
@@ -430,10 +430,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // The list kept across loads is read back before it is written, so a second
   // tab's views are not overwritten. A card that reports after the account
   // changed was viewed by the account that owned it, not by the new one.
+  // Signing out sweeps the account's storage before React unmounts the card,
+  // whose cleanup then reports while activeUserId is still that account's;
+  // Firebase already names nobody, so that report does not write the list back.
   const markPaperViewed = useCallback((paperId: string, viewerId: string | null | undefined) => {
     const userId = activeUserId.current;
     if ((viewerId || null) !== userId) return;
     sessionSeenPapers.current.add(paperId);
+    if (auth.currentUser?.uid !== userId) return;
     const viewed = readSeenPaperIds(userId);
     viewed.delete(paperId);
     viewed.add(paperId);
