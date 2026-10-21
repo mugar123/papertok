@@ -123,6 +123,12 @@ const DUKE_HUMANITIES_DISCOVERY = Object.freeze([
   'https://dukeupress.edu/information-for/librarians/account-administration/title-list',
 ]);
 
+const NURSING_DISCOVERY = 'https://lib.ypu.edu.tw/p/404-1021-67932.php';
+const VETERINARY_DISCOVERY = 'https://bib.us.es/sites/bib3.us.es/files/jcr_2016_science.pdf';
+const GEOGRAPHY_DISCOVERY = 'https://chs.nihon-u.ac.jp/library/ej-link/';
+const CALCUTTA_DISCOVERY = 'https://www.culibrary.ac.in/e-journals-list-2024.html';
+const INFORMS_DISCOVERY = 'https://library.iisc.ac.in/journals-informs';
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -403,6 +409,46 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
     platformId: 'chicago', packageHint: 'University of Chicago', publisher: 'University of Chicago Press',
     monogram: 'UCP', color: '#800000', year: 2021, sources: CHICAGO_HUMANITIES_DISCOVERY,
+  })),
+  ...[
+    { name: 'Journal of Advanced Nursing', issn: '0309-2402', eissn: '1365-2648', url: 'https://onlinelibrary.wiley.com/journal/13652648', discovery: NURSING_DISCOVERY },
+    { name: 'Journal of Clinical Nursing', issn: '0962-1067', eissn: '1365-2702', url: 'https://onlinelibrary.wiley.com/journal/13652702', discovery: NURSING_DISCOVERY },
+    { name: 'Research in Nursing & Health', issn: '0160-6891', eissn: '1098-240X', url: 'https://onlinelibrary.wiley.com/journal/1098240X', discovery: NURSING_DISCOVERY },
+    { name: 'Veterinary Surgery', issn: '0161-3499', eissn: '1532-950X', url: 'https://onlinelibrary.wiley.com/journal/1532950X', discovery: VETERINARY_DISCOVERY },
+    { name: 'Journal of Veterinary Pharmacology and Therapeutics', issn: '0140-7783', eissn: '1365-2885', url: 'https://onlinelibrary.wiley.com/journal/13652885', discovery: VETERINARY_DISCOVERY },
+    { name: 'Journal of Animal Physiology and Animal Nutrition', issn: '0931-2439', eissn: '1439-0396', url: 'https://onlinelibrary.wiley.com/journal/14390396', discovery: VETERINARY_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'wiley', packageHint: 'Wiley', publisher: 'Wiley',
+    monogram: 'W', color: '#1F3F77', year: 2021,
+    sources: Object.freeze([discovery, journal.url]),
+  })),
+  ...[
+    { name: 'Urban Geography', issn: '0272-3638', eissn: '1938-2847', url: 'https://www.tandfonline.com/journals/rurb20', discovery: GEOGRAPHY_DISCOVERY },
+    { name: 'Regional Studies', issn: '0034-3404', eissn: '1360-0591', url: 'https://www.tandfonline.com/journals/cres20', discovery: CALCUTTA_DISCOVERY },
+    { name: 'Journal of the American Planning Association', issn: '0194-4363', eissn: '1939-0130', url: 'https://www.tandfonline.com/journals/rjpa20', discovery: CALCUTTA_DISCOVERY },
+    { name: 'Housing Studies', issn: '0267-3037', eissn: '1466-1810', url: 'https://www.tandfonline.com/journals/chos20', discovery: CALCUTTA_DISCOVERY },
+    { name: 'Transport Reviews', issn: '0144-1647', eissn: '1464-5327', url: 'https://www.tandfonline.com/journals/ttrv20', discovery: CALCUTTA_DISCOVERY },
+    { name: 'Cartography and Geographic Information Science', issn: '1523-0406', eissn: '1545-0465', url: 'https://www.tandfonline.com/journals/tcag20', discovery: GEOGRAPHY_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'tandf', packageHint: 'Taylor', publisher: 'Taylor & Francis',
+    monogram: 'T&F', color: '#0A5485', year: 2021,
+    sources: Object.freeze([discovery, journal.url]),
+  })),
+  ...[
+    { name: 'Operations Research', issn: '0030-364X', eissn: '1526-5463', code: 'opre', discovery: `${INFORMS_DISCOVERY}?page=1` },
+    { name: 'Mathematics of Operations Research', issn: '0364-765X', eissn: '1526-5471', code: 'moor', discovery: `${INFORMS_DISCOVERY}?page=1` },
+    { name: 'Transportation Science', issn: '0041-1655', eissn: '1526-5447', code: 'trsc', discovery: `${INFORMS_DISCOVERY}?page=1` },
+    { name: 'Manufacturing & Service Operations Management', issn: '1523-4614', eissn: '1526-5498', code: 'msom', discovery: INFORMS_DISCOVERY },
+    { name: 'INFORMS Journal on Computing', issn: '1091-9856', eissn: '1526-5528', code: 'ijoc', discovery: INFORMS_DISCOVERY },
+    { name: 'Marketing Science', issn: '0732-2399', eissn: '1526-548X', code: 'mksc', discovery: INFORMS_DISCOVERY },
+  ].map(({ code, discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'informs', packageHint: 'INFORMS', publisher: 'INFORMS',
+    url: `https://pubsonline.informs.org/journal/${code}`,
+    monogram: 'INF', color: '#00447C', year: 2021,
+    sources: Object.freeze([discovery, `https://pubsonline.informs.org/page/${code}/prices-and-ordering`]),
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
