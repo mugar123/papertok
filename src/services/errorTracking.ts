@@ -6,7 +6,7 @@ let sdk: Promise<typeof Sentry | null> | null = null;
 
 export function initializeErrorTracking() {
   if (!['papertok.app', 'www.papertok.app'].includes(globalThis.location?.hostname)
-    || readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return Promise.resolve(null);
+    || readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED) return Promise.resolve(null);
   sdk ??= import('@sentry/react').then(client => {
     client.init({
       // Public ingestion key; it cannot read events or administer the project.
@@ -19,7 +19,7 @@ export function initializeErrorTracking() {
       maxBreadcrumbs: 0,
       integrations: [client.globalHandlersIntegration(), client.browserApiErrorsIntegration(), client.dedupeIntegration()],
       defaultIntegrations: false,
-      beforeSend: event => readAnalyticsConsent() === ANALYTICS_CONSENT.GRANTED ? sanitizeErrorEvent(event) : null,
+      beforeSend: event => readAnalyticsConsent() !== ANALYTICS_CONSENT.DENIED ? sanitizeErrorEvent(event) : null,
     });
     return client;
   }).catch(() => null);

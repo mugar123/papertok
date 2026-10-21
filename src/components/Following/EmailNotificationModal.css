@@ -23,7 +23,7 @@
 }
 
 /* Two columns now: the X is the primitive's own, in the sheet's corner. */
-.email-notification-modal > header {
+:is(.email-notification-modal, .email-notification-sheet) > header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 13px;
@@ -49,13 +49,13 @@
   background: rgba(245, 158, 11, 0.07);
 }
 
-.email-notification-modal h2 {
+:is(.email-notification-modal, .email-notification-sheet) h2 {
   margin: 0 0 4px;
   font-size: 20px;
   letter-spacing: 0;
 }
 
-.email-notification-modal header p {
+:is(.email-notification-modal, .email-notification-sheet) header p {
   margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
@@ -169,7 +169,7 @@
 .email-notification-feedback.is-success { color: var(--tint-green-fg); }
 .email-notification-feedback.is-error { color: var(--tint-red-fg); }
 
-.email-notification-modal > footer {
+:is(.email-notification-modal, .email-notification-sheet) > footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
@@ -177,7 +177,7 @@
   border-top: 1px solid var(--border-subtle);
 }
 
-.email-notification-modal footer button {
+:is(.email-notification-modal, .email-notification-sheet) footer button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -190,7 +190,7 @@
   cursor: pointer;
 }
 
-.email-notification-modal footer button:disabled { opacity: 0.55; cursor: default; }
+:is(.email-notification-modal, .email-notification-sheet) footer button:disabled { opacity: 0.55; cursor: default; }
 .email-notification-test {
   border: 1px solid var(--border-default);
   color: var(--text-primary);
@@ -228,20 +228,35 @@
   .email-notification-test-spinner { animation: none; transition: none; }
 }
 
-/* On a phone the sheet docks to the bottom edge: the primitive's centring
-   (`top: 50%`, a two-axis `translate` of -50%) is overridden here. */
-@media (max-width: 520px) {
-  .email-notification-modal {
-    top: auto;
-    bottom: 0;
-    translate: -50% 0;
-    width: 100%;
-    max-height: 92vh;
-    max-height: 92dvh;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  }
-  .email-notification-modal > header,
-  .email-notification-body { padding-left: 18px; padding-right: 18px; }
-  .email-notification-modal > footer { padding-left: 18px; padding-right: 18px; }
-  .email-notification-modal footer button { flex: 1; }
+/* On a phone the content sits in a settings sheet (SettingsSheet.css): the
+   handle replaces the X, the body scrolls on its own, and the two actions
+   share the width (the drawer already clears the home indicator). */
+.email-notification-sheet > header {
+  padding: var(--space-2) var(--space-4) var(--space-4);
+}
+
+.email-notification-sheet .email-notification-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px var(--space-4) var(--space-2);
+}
+
+.email-notification-sheet .email-notification-provider-warning:not(.is-info) {
+  margin: -20px calc(-1 * var(--space-4)) 18px;
+  padding: 10px var(--space-4);
+}
+
+.email-notification-sheet .email-notification-feedback-slot {
+  min-height: 32px;
+}
+
+.email-notification-sheet > footer {
+  padding: var(--space-3) var(--space-4);
+}
+
+.email-notification-sheet footer button {
+  flex: 1;
+  min-height: 44px;
 }

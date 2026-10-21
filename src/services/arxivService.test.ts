@@ -62,22 +62,27 @@ test('keeps an exact arXiv subcategory selected by the user', () => {
     abstract: 'A physics experiment.',
     primaryCategory: 'physics.optics',
     categories: ['physics.optics', 'quant-ph'],
+    allCategories: ['physics.optics', 'quant-ph'],
   }], ['physics.optics', 'quant-ph']);
 
   assert.equal(paper.primaryCategory, 'physics.optics');
   assert.deepEqual(paper.allCategories, ['physics.optics', 'quant-ph']);
 });
 
-test('maps keyword-search papers back to the most relevant requested subcategory', () => {
+// mech.* categories are not arXiv's, so they are fetched with `all:"label"`
+// searches. The record has the parser's shape: every parsed entry carries a primary.
+test('a paper found by a label search keeps arXiv\'s own primary category', () => {
   const [paper] = assignRequestedCategories([{
     id: 'paper-2',
     title: 'Robotics for autonomous vehicles',
     abstract: 'A dynamics method for robotic control.',
+    primaryCategory: 'cs.RO',
     categories: ['cs.RO'],
+    allCategories: ['cs.RO'],
   }], ['mech.fluid', 'mech.dyn']);
 
-  assert.equal(paper.primaryCategory, 'mech.dyn');
-  assert.ok(paper.allCategories!.includes('cs.RO'));
+  assert.equal(paper.primaryCategory, 'cs.RO');
+  assert.deepEqual(paper.allCategories, ['cs.RO']);
 });
 
 // A quote inside the phrase used to close arXiv's quoted term early, which is

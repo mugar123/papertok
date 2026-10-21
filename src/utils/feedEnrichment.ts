@@ -2,6 +2,7 @@ import type { Paper } from '../models/Paper.ts';
 
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
+import { areaKeyForPaper } from './areaAccent.ts';
 import { normalizeArxivId, normalizeDoi } from './publicNavigation.ts';
 
 export function getMissingArxivAbstractIds(papers: Paper[]) {
@@ -11,11 +12,26 @@ export function getMissingArxivAbstractIds(papers: Paper[]) {
     .filter(Boolean))].sort();
 }
 
+// INSPIRE indexes high-energy physics and neighbouring fields; the medicine and
+// economics DOIs sampled for PAP-51 had no INSPIRE record.
 export function getMissingAbstractDois(papers: Paper[]) {
   return [...new Set(papers
     .filter(paper => paper.sources.primary === 'openalex'
-      && !hasUsableAIAbstract(paper.abstract) && !normalizeArxivId(paper.arxivId))
+      && !hasUsableAIAbstract(paper.abstract) && !normalizeArxivId(paper.arxivId)
+      && areaKeyForPaper(paper) === 'physics')
     .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
+}
+
+/**
+ * Cards without an abstract that a request still running can supply one for:
+ * OpenAlex enrichment, Europe PMC by PubMed ID, or recovery from arXiv or INSPIRE.
+ */
+export function abstractsInFlight(papers: Paper[], running: { openAlex: boolean; europePmc: boolean; recovery: boolean }) {
+  return new Set(papers.filter(paper => !hasUsableAIAbstract(paper.abstract) && (
+    (running.openAlex && needsOpenAlexEnrichment(paper))
+    || (running.europePmc && Boolean(paper.pmid))
+    || (running.recovery && (getMissingArxivAbstractIds([paper]).length > 0 || getMissingAbstractDois([paper]).length > 0))
+  )).map(paper => paper.id));
 }
 
 export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
@@ -133,11 +149,13 @@ export function mergeOpenAlexEnrichment(papers: Paper[], enrichmentById: Record<
 }
 
 // Metadata can arrive after admission; the text the reader saw must stay stable.
-export function preserveFeedAbstracts(current: Paper[], enriched: Paper[]) {
+// Only a card in `loading`, which says its abstract is on the way, may receive one.
+export function preserveFeedAbstracts(current: Paper[], enriched: Paper[], loading: ReadonlySet<string> = new Set()) {
   if (current === enriched) return current;
   return enriched.map((paper, index) => {
     const previous = current[index];
     if (paper.abstract === previous.abstract && paper.summary === previous.summary) return paper;
+    if (loading.has(previous.id) && !hasUsableAIAbstract(previous.abstract) && hasUsableAIAbstract(paper.abstract)) return paper;
     const stable = { ...paper, abstract: previous.abstract, summary: previous.summary };
     return paperFieldsEqual(stable, previous) ? previous : stable;
   });

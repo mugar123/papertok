@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-test('SOURCE: the link form keeps its own Google button unless the caller draws the submit', async () => {
+test('SOURCE: the link form keeps its own submit unless the caller draws the submit', async () => {
   const code = stripComments(await read('./InstitutionLink.tsx'));
   // Settings passes neither, so it keeps the button and its own address.
   assert.match(code, /formId,\s*showSubmit = true,\s*email: controlledEmail,\s*onEmailChange,\s*onBusyChange,\s*linkedNote,/);
@@ -13,7 +13,7 @@ test('SOURCE: the link form keeps its own Google button unless the caller draws 
   assert.match(code, /<form id=\{formId\} className="institution-link" onSubmit=\{handleSubmit\}/);
   assert.match(
     code,
-    /\{showSubmit && \(\s*<Button type="submit" variant="outline" className="institution-link-submit" aria-disabled=\{busy \|\| undefined\}>[\s\S]*?COPY\.submit\}\s*<\/Button>\s*\)\}/,
+    /\{showSubmit && \(\s*<Button\s+type="submit"[\s\S]*?aria-label=\{busy \? COPY\.submitting : COPY\.submit\}[\s\S]*?<\/Button>\s*\)\}/,
   );
   // Uncontrolled and empty by default; controlled when the caller passes
   // `email`, and then every write goes through the caller.
@@ -21,9 +21,7 @@ test('SOURCE: the link form keeps its own Google button unless the caller draws 
   assert.match(code, /const email = controlled \? controlledEmail : ownEmail;/);
   assert.match(code, /const setEmail = controlled \? onEmailChange : setOwnEmail;/);
   assert.equal((code.match(/setOwnEmail\(/g) || []).length, 0, 'nothing writes the own copy past the switch');
-  assert.match(code, /useEffect\(\(\) => \{ onBusyChange\?\.\(busy\); \}, \[busy, onBusyChange\]\);/);
-  // The hint names no button: in the onboarding there is none beside it.
-  assert.match(code, /hint: 'When you continue, Google opens so you can sign in with that account\. PaperTok keeps the institution, not the address\.',/);
+  assert.match(code, /const setBusy = \(next: boolean\) => \{ setOwnBusy\(next\); onBusyChange\?\.\(next\); \};/);
 });
 
 test('SOURCE: Settings opens the link as it always has, with its own button', async () => {

@@ -1,4 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
+import type { OpenAlexWork } from './adapters/openAlexTypes.ts';
 import type { EuropePmcRecord } from '../utils/europePmcRecord.ts';
 import type { OpenReviewNote } from './openReviewService.ts';
 import type { HuggingFaceRecord } from './huggingFaceService.ts';
@@ -9,7 +10,8 @@ interface BioRxivRecord { doi?: string; title?: string; version?: string | numbe
 interface BioRxivResponse { _papertok?: { degraded?: string }; collection?: BioRxivRecord[]; }
 interface EuropePmcSearchRecord extends EuropePmcRecord {
   title?: string; doi?: string; firstPublicationDate?: string; electronicPublicationDate?: string; dateOfCreation?: string;
-  source?: string; authorString?: string; journalInfo?: { journal?: { title?: string }; yearOfPublication?: number | string };
+  source?: string; authorString?: string;
+  journalInfo?: { journal?: { title?: string; issn?: string; essn?: string; nlmid?: string }; yearOfPublication?: number | string };
 }
 interface CoreWork {
   id?: string | number; title?: string; doi?: string; publishedDate?: string; acceptedDate?: string; depositedDate?: string;
@@ -47,9 +49,12 @@ interface InspireRecord {
 interface PhysicsResponse { _papertok?: { source?: string }; response?: { docs?: AdsRecord[] }; hits?: { hits?: InspireRecord[] }; }
 type SourceRequest<T> = { path: string; promise: Promise<T> };
 
-import { CATEGORIES } from '../data/categories.ts';
+import { CATEGORIES, getCategoryArea } from '../data/categories.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { assignRequestedCategories } from './arxivService.ts';
+import { openAlexJson } from './openAlexClient.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';
 import { mapOpenReviewNote } from './openReviewService.ts';
 import { mapHuggingFacePaper } from './huggingFaceService.ts';
@@ -57,6 +62,7 @@ import { authenticatedWorkerFetch, hasWorkerSession, sourceResponseError } from 
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
 import { settleWithin } from '../utils/asyncTiming.ts';
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.ts';
+import { isAfterToday, isProtocolBookSeries } from '../utils/medlineRecord.ts';
 import { normalizeScientificMarkup } from '../utils/latex.ts';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
@@ -250,7 +256,13 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
   if ((!providerId && !pmid) || !raw?.title) return null;
   const doi = normalizeDoi(raw.doi);
   const terms = record.terms.slice(0, 12);
-  const published = raw.firstPublicationDate || raw.electronicPublicationDate || raw.dateOfCreation || '';
+  const date = raw.firstPublicationDate || raw.electronicPublicationDate || raw.dateOfCreation || '';
+  // A date after today is a print date ahead (Methods in Molecular Biology
+  // lists next year's volume). Neither that year nor another date is shown.
+  const scheduled = isAfterToday(date || raw.journalInfo?.yearOfPublication);
+  const published = scheduled ? '' : date;
+  const journal = raw.journalInfo?.journal;
+  const chapter = isProtocolBookSeries({ issn: journal?.issn, essn: journal?.essn, nlmId: journal?.nlmid });
   const paper = PaperBuilder.create({
     id: pmid ? `pmid:${pmid}` : `europepmc:${raw.source || 'EPMC'}:${providerId}`,
     pmid: pmid || undefined,
@@ -262,10 +274,12 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     authors: record.authors.length > 0
       ? record.authors
       : authorObjects(String(raw.authorString || '').split(',')),
-    journal: normalizeText(raw.journalInfo?.journal?.title),
-    year: safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
+    journal: normalizeText(journal?.title),
+    year: scheduled ? undefined : safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
     published,
-    publicationType: 'article',
+    // `book-series` is a venue `isFeedPublication` leaves out of the feed.
+    publicationType: chapter ? 'book-chapter' : 'article',
+    sourceType: chapter ? 'book-series' : undefined,
     publicationStatus: 'published',
     openAccess: record.openAccess,
     landingPageUrl: record.europePmcUrl
@@ -549,6 +563,19 @@ function sourceQuery(categories: readonly string[]) {
   return categories.map(categoryLabel).map(label => `"${label}"`).join(' OR ');
 }
 
+/**
+ * The Europe PMC query for a reader's biology categories. Each label is
+ * searched in title, abstract and keywords: in every field `"Molecular
+ * Biology"` also matched the journal Methods in Molecular Biology. Only records
+ * first published by today (UTC) come back, so a recent-first page is not
+ * filled with chapters printed next year.
+ */
+export function europePmcQuery(categories: readonly string[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  const labels = categories.map(categoryLabel).map(label => `TITLE_ABS:"${label}" OR KW:"${label}"`);
+  return `(${labels.join(' OR ')}) AND FIRST_PDATE:[1800-01-01 TO ${today}]`;
+}
+
 export function getDomainSourcePlan(categories: readonly string[] = []) {
   const unique = [...new Set(categories)].filter(Boolean);
   const biology = unique.filter(category => category.startsWith('bio.'));
@@ -662,7 +689,7 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
 
   if (eligible.europepmc) {
     request(DOMAIN_SOURCE_PATHS.europepmc, fetchJson<{ resultList?: { result?: EuropePmcSearchRecord[] } }>('/sources/europepmc', {
-      q: sourceQuery(plan.biology.slice(0, 3)),
+      q: europePmcQuery(plan.biology.slice(0, 3)),
       page: safePage,
       limit: safeLimit,
       sort: queryMode,
@@ -736,4 +763,86 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
   return PaperBuilder.deduplicate(
     settled.flatMap(result => result.status === 'fulfilled' ? result.value.filter(Boolean) as Paper[] : [])
   ).slice(0, safeLimit * 2);
+}
+
+// The series this feed requests, by OpenAlex source ID, each checked with a
+// keyless OpenAlex request on 2026-10-19 (PAP-53). The review rule in
+// publicationStatus.ts owns which sources are working-paper series. A test
+// checks that each ID here is on its list; one that is not would bring its
+// articles in as reviewed journal papers without the Working paper tag. That
+// list also holds FEDS Notes, short notes rather than working papers, and the
+// Kansas City Fed series, which the checks behind this request did not cover.
+// OpenAlex types NBER, CESifo, Banco de España and the New York and
+// Philadelphia Fed series as `report`, hence `type:article|report` below. World
+// Bank Policy Research Working Papers are not listed: OpenAlex files the recent
+// ones under the bank's general eBooks source (S4306464317), and its two PRWP
+// sources hold nothing from this window.
+const REQUESTED_SERIES_IDS = [
+  'S2809516038', // National Bureau of Economic Research
+  'S4210171147', // IMF Working Papers
+  'S7407053623', // CESifo Working Papers
+  'S4393913881', // Banco de España, Documentos de Trabajo
+  'S4393919745', // Federal Reserve Bank of New York, Staff Reports
+  'S4306510381', // Federal Reserve Bank of San Francisco, Working Paper Series
+  'S4210230366', // Federal Reserve Bank of Philadelphia, Working Papers
+  'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
+];
+// 672 works in the 90 days to 2026-10-19, or 112 pages.
+const WORKING_PAPER_WINDOW_DAYS = 90;
+// The per-request cap OSTI and NASA have.
+const WORKING_PAPER_PAGE_SIZE = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * One page of the series above, newest first, for a reader whose interests
+ * include an economics or quantitative-finance category. Any other reader
+ * costs no request. The answer does not depend on which of those categories
+ * asked, so only the feed calls it, with the reader's own interests:
+ * exploration and topic pages would fetch the same series again.
+ *
+ * The cards come from the OpenAlex mapper and are filed under econ.GN. The
+ * mapper marks a report or a listed series as a working paper, not peer
+ * reviewed, so the card shows the Working paper tag. The landing page is the
+ * DOI (262 of 262 probed works), and a missing abstract stays missing.
+ * A failure rejects, so each feed counts a source that did not answer and
+ * fills the page from the others.
+ */
+export async function fetchWorkingPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
+  if (!categories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''))) return [];
+  // A UTC date, so every reader on one day sends the same filter and shares
+  // the Worker's cache entry for each page.
+  const since = new Date(Date.now() - WORKING_PAPER_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const url = new URL('https://api.openalex.org/works');
+  url.searchParams.set('filter', [
+    `primary_location.source.id:${REQUESTED_SERIES_IDS.join('|')}`,
+    // The window also held one dataset.
+    'type:article|report',
+    `from_publication_date:${since}`,
+  ].join(','));
+  url.searchParams.set('sort', 'publication_date:desc');
+  url.searchParams.set('page', String(Math.max(1, Number(page) || 1)));
+  url.searchParams.set('per-page', String(WORKING_PAPER_PAGE_SIZE));
+  url.searchParams.set('select', OPENALEX_WORK_SEARCH_FIELDS.join(','));
+  try {
+    const data = await openAlexJson<{ results: OpenAlexWork[] }>(url, {
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      cacheTtlMs: 10 * 60 * 1000,
+      staleIfError: true,
+      // One attempt per page; the other sources fill a page this one misses.
+      retries: 0,
+    });
+    const adapter = new OpenAlexAdapter();
+    // The request is the same whichever category asked, so the reader's
+    // categories say nothing about a paper's field. Matching their labels
+    // against the text is no better here: "public finances" in an abstract on
+    // immigration would make it Statistical Finance. What the record supports
+    // is that the series publish economics, so every card is General Economics.
+    return assignRequestedCategories(
+      data.results.map(work => adapter.mapToStandard(work)).filter(Boolean) as Paper[],
+      ['econ.GN'],
+    );
+  } catch (error) {
+    console.warn('Working-paper series unavailable', error);
+    throw error;
+  }
 }

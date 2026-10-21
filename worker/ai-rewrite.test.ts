@@ -1529,6 +1529,83 @@ test('a reader that hangs up after content keeps its use and cancels the model',
   assert.equal(upstreamCancelled, true);
 });
 
+test('a reader that hangs up while the model is silent keeps its use spent', { timeout: 15_000 }, async (t) => {
+  const state = newLedgerState();
+  let modelAsked: () => void;
+  const asked = new Promise<void>((resolve) => { modelAsked = resolve; });
+  // The heartbeat is the only write in flight while the model reads the paper,
+  // so it is what discovers the hang-up; its eight seconds are ticked by hand.
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
+  await withRewriteHarness({
+    // Silent until the Worker aborts the request, then fails the read the way an
+    // aborted fetch body does: with a bare AbortError, not a provider error.
+    provider: async (_url, options) => {
+      modelAsked();
+      return new Response(new ReadableStream({
+        start(controller) {
+          options!.signal!.addEventListener('abort', () => {
+            controller.error(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        },
+      }), { headers: { 'content-type': 'text/event-stream' } });
+    },
+  }, async () => {
+    const response = await handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    });
+    const reader = response.body!.getReader();
+    await reader.read(); // meta
+    await asked;
+    await reader.cancel();
+    t.mock.timers.tick(8_000);
+    await settle(50);
+  });
+
+  // The provider was asked and was reading the paper when the reader left. The
+  // abort that followed is ours, not an outage, so it buys no free retry.
+  assert.equal(state.reserve, 1);
+  assert.equal(state.release, 0);
+});
+
+test('a reader that hangs up during a download that then fails still gets the use back', { timeout: 15_000 }, async (t) => {
+  const state = newLedgerState();
+  let downloadStarted: () => void;
+  const started = new Promise<void>((resolve) => { downloadStarted = resolve; });
+  let failDownload: () => void;
+  const failed = new Promise<void>((resolve) => { failDownload = resolve; });
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
+  await withRewriteHarness({
+    pdf: async () => {
+      downloadStarted();
+      await failed;
+      return new Response('gone', { status: 404 });
+    },
+    provider: async () => { throw new Error('The model must not be asked without a PDF'); },
+  }, async () => {
+    const response = await handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    });
+    const reader = response.body!.getReader();
+    await reader.read(); // meta
+    await started;
+    await reader.cancel();
+    // The ping finds the reader gone while the download is still out.
+    t.mock.timers.tick(8_000);
+    await settle(20);
+    failDownload();
+    await settle(50);
+  });
+
+  // Nothing reached the model: the download failing is the source being
+  // unreachable, which gives the use back whoever is still listening.
+  assert.equal(state.reserve, 1);
+  assert.equal(state.release, 1);
+});
+
 /* ============================================================
    NaN: the paper as text, the stream in OpenAI's shape
    ============================================================ */

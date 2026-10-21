@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   arxivCommentSaysPublished,
+  openAlexIsWorkingPaper,
+  openAlexPeerReviewed,
   openAlexPublicationStatus,
   semanticScholarIsPreprint,
 } from './publicationStatus.ts';
@@ -71,6 +73,118 @@ test('an OpenAlex work with no type falls back on whether any copy is published'
   assert.equal(openAlexPublicationStatus({ locations: [{ is_published: false }, { is_published: true }] }), 'published');
   assert.equal(openAlexPublicationStatus({ primary_location: { is_published: false } }), 'preprint');
   assert.equal(openAlexPublicationStatus(null), 'preprint');
+});
+
+// The primary locations OpenAlex returned on 2026-10-19, trimmed to what the
+// rule reads. The series come back exactly as a Nature paper does: `article`,
+// in a `journal`, published version. Only the source ID tells them apart.
+const published = (display_name: string, type: string, id?: string) => ({
+  is_published: true,
+  source: { ...(id ? { id: `https://openalex.org/${id}` } : {}), display_name, type },
+});
+const IMF_WORKING_PAPER = { type: 'article', primary_location: published('IMF Working Paper', 'journal', 'S4210171147') };
+const FEDS_PAPER = {
+  type: 'article',
+  primary_location: published('Finance and Economics Discussion Series', 'journal', 'S4210212089'),
+};
+const FRBSF_PAPER = {
+  type: 'article',
+  primary_location: published('Federal Reserve Bank of San Francisco, Working Paper Series', 'journal', 'S4306510381'),
+};
+const KANSAS_CITY_FED_PAPER = {
+  type: 'article',
+  primary_location: published('The Federal Reserve Bank of Kansas City Research Working Papers', 'journal', 'S4210173933'),
+};
+const FEDS_NOTE = { type: 'article', primary_location: published('FEDS Notes', 'journal', 'S4210225578') };
+const NBER_PAPER = {
+  type: 'report',
+  primary_location: published('National Bureau of Economic Research', 'repository', 'S2809516038'),
+};
+const NATURE_PAPER = { type: 'article', primary_location: published('Nature', 'journal', 'S137773608') };
+
+test('a working paper OpenAlex files as a journal article is not peer reviewed', () => {
+  assert.equal(openAlexPeerReviewed(IMF_WORKING_PAPER), false);
+  assert.equal(openAlexPeerReviewed(FEDS_PAPER), false);
+  assert.equal(openAlexPeerReviewed(FRBSF_PAPER), false);
+  assert.equal(openAlexPeerReviewed(KANSAS_CITY_FED_PAPER), false);
+  // Nothing in the name says so.
+  assert.equal(openAlexPeerReviewed(FEDS_NOTE), false);
+  assert.equal(openAlexPeerReviewed(NBER_PAPER), false);
+  // A copy in a journal elsewhere does not turn the series' paper into one.
+  assert.equal(openAlexPeerReviewed({ ...IMF_WORKING_PAPER, locations: [published('Some Journal', 'journal')] }), false);
+});
+
+// Sources whose OpenAlex name does not say working paper, with the IDs and
+// types OpenAlex gave on 2026-10-19. CESifo already holds one `article`,
+// W7144132107, filed as a journal article in a journal.
+test('an article in a listed working-paper series is not peer reviewed, whatever the series is called', () => {
+  const inSeries = (id: string, name: string, type: string) => ({ type: 'article', primary_location: published(name, type, id) });
+  assert.equal(openAlexPeerReviewed(inSeries('S7407053623', 'CESifo', 'journal')), false);
+  assert.equal(openAlexPeerReviewed(inSeries('S4393919745', 'Staff reports', 'journal')), false);
+  assert.equal(openAlexPeerReviewed(inSeries(
+    'S4393913881', 'Documentos de trabajo/Documento de trabajo - Banco de España, Servicio de Estudios', 'journal',
+  )), false);
+  // NBER's source is a repository, which alone would leave the answer unknown.
+  assert.equal(openAlexPeerReviewed(inSeries('S2809516038', 'National Bureau of Economic Research', 'repository')), false);
+  // A copy in one of the series does not hide the journal that published it.
+  assert.equal(openAlexPeerReviewed({
+    ...NATURE_PAPER,
+    locations: [published('CESifo', 'journal', 'S7407053623')],
+  }), true);
+});
+
+test('a source named like a working-paper series, but not listed, leaves peer review unknown', () => {
+  // A journal (PAGEPress) that a name rule would have called a working paper.
+  const publicHealth = { type: 'article', primary_location: published('Working Paper of Public Health', 'journal', 'S4210222596') };
+  assert.equal(openAlexPeerReviewed(publicHealth), undefined);
+  assert.equal(openAlexIsWorkingPaper(publicHealth), false);
+  // A synthetic unlisted series is not a venue either, so it is not called reviewed.
+  const unlisted = { type: 'article', primary_location: published('Bank of Somewhere Working Paper Series', 'journal', 'S1') };
+  assert.equal(openAlexPeerReviewed(unlisted), undefined);
+  assert.equal(openAlexIsWorkingPaper(unlisted), false);
+});
+
+test('a report or a paper in a listed series is a working paper; a journal article is not', () => {
+  for (const work of [IMF_WORKING_PAPER, FEDS_PAPER, FRBSF_PAPER, KANSAS_CITY_FED_PAPER, FEDS_NOTE, NBER_PAPER]) {
+    assert.equal(openAlexIsWorkingPaper(work), true, work.primary_location.source.display_name);
+  }
+  assert.equal(openAlexIsWorkingPaper(NATURE_PAPER), false);
+  // The primary location is the record's own venue; a copy in a series is not.
+  assert.equal(openAlexIsWorkingPaper({ ...NATURE_PAPER, locations: [IMF_WORKING_PAPER.primary_location] }), false);
+  assert.equal(openAlexIsWorkingPaper(null), false);
+});
+
+test('a paper in a journal or proceedings keeps the peer review its venue shows', () => {
+  assert.equal(openAlexPeerReviewed(NATURE_PAPER), true);
+  assert.equal(openAlexPeerReviewed({ type: 'review', primary_location: published('Nature Reviews Physics', 'journal') }), true);
+  // U-Net (W1901129140): MICCAI, in Lecture Notes in Computer Science.
+  assert.equal(openAlexPeerReviewed({
+    type: 'conference-paper',
+    primary_location: published('Lecture notes in computer science', 'book series'),
+  }), true);
+  // A preprint record whose journal version OpenAlex has found.
+  assert.equal(openAlexPeerReviewed({
+    type: 'preprint',
+    primary_location: { is_published: false, source: { display_name: 'arXiv (Cornell University)', type: 'repository' } },
+    locations: [published('Physical Review Letters', 'journal')],
+  }), true);
+});
+
+test('a record that shows no venue leaves peer review unknown rather than false', () => {
+  assert.equal(openAlexPeerReviewed({ type: 'article', primary_location: published('Zenodo', 'repository') }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'article', primary_location: { is_published: true, source: null } }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'article' }), undefined);
+  assert.equal(openAlexPeerReviewed({ primary_location: published('Nature', 'journal') }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'editorial', primary_location: published('Nature', 'journal') }), undefined);
+  assert.equal(openAlexPeerReviewed({ type: 'book-chapter', primary_location: published('Routledge eBooks', 'ebook platform') }), undefined);
+  assert.equal(openAlexPeerReviewed(null), undefined);
+});
+
+test('a preprint with no published copy is not peer reviewed', () => {
+  assert.equal(openAlexPeerReviewed({
+    type: 'preprint',
+    primary_location: { is_published: false, source: { display_name: 'arXiv (Cornell University)', type: 'repository' } },
+  }), false);
 });
 
 test('a Semantic Scholar review is an article, not a preprint', () => {

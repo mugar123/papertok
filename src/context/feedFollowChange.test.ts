@@ -30,13 +30,13 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
   assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   assert.match(
     code,
-    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, randomizeStart = false, pageOverride\?: number, \{ keepThroughVisible = false \} = \{\}\) => \{/,
+    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, randomizeStart = false, pageOverride\?: number, \{ keepThroughVisible = false, seenFallback \}: Parameters<FeedContextValue\['loadPapers'\]>\[4\] = \{\}\) => \{/,
     'the option is an explicit parameter, not a ref the effect has to set',
   );
-  const resetBranch = bounded(code, 'let nextPapers;', 'const nextHasMore =', 'the reset branch of loadPapers', 20);
+  const resetBranch = bounded(code, 'const addPage = (shown: Paper[]) => {', 'const nextHasMore =', 'the reset branch of loadPapers', 20);
   assert.match(
     resetBranch,
-    /if \(reset\) \{\s*nextPapers = keepThroughVisible\s*\?\s*mergeFreshFeedPage\(papers, filtered, \{\s*anchorPaperIds: \[visiblePaperIdRef\.current\],?\s*\}\)\s*:\s*filtered;/,
+    /if \(reset\) \{\s*return keepThroughVisible\s*\?\s*mergeFreshFeedPage\(shown, filtered, \{\s*anchorPaperIds: \[visiblePaperIdRef\.current\],?\s*\}\)\s*:\s*filtered;/,
     'through the visible card the list stays; the fresh page follows',
   );
 });

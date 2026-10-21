@@ -136,6 +136,25 @@ test('retries a short 429 using Retry-After', async () => {
   assert.deepEqual(delays, [1000]);
 });
 
+test('retries a 502 but not a 504 the Worker sends after OpenAlex stalled', async () => {
+  const callsFor = async (status: number) => {
+    let calls = 0;
+    const client = new OpenAlexClient({
+      random: () => 0.5,
+      sleep: async () => {},
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response('{}', { status });
+      },
+    });
+    await client.fetch('https://api.openalex.org/works/W1', { retries: 2 }).catch(() => null);
+    return calls;
+  };
+
+  assert.equal(await callsFor(502), 3);
+  assert.equal(await callsFor(504), 1);
+});
+
 test('deduplicates identical requests and caches their response', async () => {
   let calls = 0;
   const client = new OpenAlexClient({

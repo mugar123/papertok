@@ -1,9 +1,10 @@
 User-agent: *
 Allow: /
 # Pages that need an account: each one sends a visitor, and so a crawler,
-# back to /feed. Public papers, lists and entities live under /public/ and
-# stay open.
+# to /onboarding. Public papers, lists and entities live under /public/ and
+# stay open. The onboarding is reached from /, the canonical entry.
 Disallow: /onboarding
+Disallow: /feed
 Disallow: /login
 Disallow: /lists
 Disallow: /research
@@ -12,5 +13,6 @@ Disallow: /following
 Disallow: /search
 Disallow: /profile
 Disallow: /settings
+Disallow: /institution
 
 Sitemap: https://papertok.app/sitemap.xml

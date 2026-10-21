@@ -73,6 +73,7 @@ export interface PaperRecommendationScore {
   graphBoost: number;
   personalBoost: number;
   followBoost: number;
+  missingAbstract: number;
   diversityBoost: number;
   authorBoost: number;
   followedEntityMatches: Record<PaperFollowMatch['type'], boolean>;
@@ -123,6 +124,9 @@ export interface Paper {
   publicationType?: string;
   publicationStatus?: 'preprint' | 'published' | 'accepted' | 'retracted';
   peerReviewed?: boolean;
+  // True when the record shows a working paper or report
+  // (`openAlexIsWorkingPaper`); absent when it does not say.
+  workingPaper?: boolean;
   openAccess?: boolean;
   pdfUrl?: string | null;
   openAccessPdfUrl?: string;
@@ -228,7 +232,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   const arxivId = readArxivId(legacyPaper.arxivId) || readArxivId(legacyPaper.id);
   const year = legacyPaper.published
     ? new Date(legacyPaper.published).getFullYear()
-    : (legacyPaper.year || new Date().getFullYear());
+    : (legacyPaper.year || undefined);
 
   const authors = Array.isArray(legacyPaper.authors)
     ? legacyPaper.authors.map(a => typeof a === 'string' ? { name: a } : a)

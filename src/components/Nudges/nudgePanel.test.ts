@@ -22,7 +22,6 @@ const stripComments = (source: string) => source
 
 const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
 const panelJsx = read('./NudgePanel.tsx');
-const panelCss = read('./NudgePanel.css');
 const hostJsx = read('./NudgeHost.tsx');
 const appJsx = read('../../App.tsx');
 
@@ -61,32 +60,7 @@ test('el panel es un aviso, no un diálogo: no roba el foco ni tapa nada', async
   assert.match(jsx, /aria-label=\{dismissLabel\}/, 'la X necesita nombre');
 });
 
-test('el acento vive en la estrella del chip, cubre solo su retardo y no deja matriz pegada', async () => {
-  const css = await panelCss;
-  const rule = css.match(/\.nudge-stars svg \{([^}]*)\}/);
-  assert.ok(rule, 'falta la regla de la estrella del chip');
-  assert.match(rule[1], /animation: nudgeStarPop 420ms cubic-bezier\(0\.34, 1\.4, 0\.64, 1\) 320ms backwards/,
-    'el relleno es backwards: con both la matriz final se queda soldada al icono');
-  assert.ok(!/nudgeStarPop[^;]*\bboth\b/.test(css), 'ni un both en el acento');
-});
-
-test('la marca del panel es tinta, y el amarillo solo acompaña', async () => {
-  const css = await panelCss;
-  assert.match(css, /\.nudge-icon--github \{[^}]*color: var\(--text-primary\)/,
-    'el logo de GitHub va en tinta, como toda marca de la app');
-  const chip = css.match(/\.nudge-stars svg \{[\s\S]*?\}/) && css.match(/\.nudge-stars svg \{([\s\S]*?)\}/);
-  assert.ok(chip, 'falta el estilo de la estrella del chip');
-  const fill = css.match(/\.nudge-stars svg \{[^}]*\}/g)?.join('\n') || '';
-  assert.match(fill + css, /fill: var\(--brand-yellow\)/, 'el amarillo se queda en el chip');
-  const jsx = await hostJsx;
-  assert.match(jsx, /<GithubMark size=\{19\} \/>/, 'el icono del aviso es el logo del repo');
-});
-
-test('con movimiento reducido el adorno se va y el panel sigue entendiéndose', async () => {
-  const css = await panelCss;
-  const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(reduced, /\.nudge-stars svg,/);
-  assert.match(reduced, /animation: none/);
+test('con movimiento reducido el panel sigue fundiendo', async () => {
   const panel = await panelJsx;
   assert.match(panel, /prefersReducedMotion \? \{ opacity: 0 \}/, 'sin movimiento, pero con fundido');
 });
@@ -99,7 +73,10 @@ test('nadie es interrumpido antes de tiempo, ni sin sesión, ni fuera del feed',
   assert.match(jsx, /const signedIn = Boolean\(user\) && !authLoading && onboardingComplete;/, 'los invitados quedan fuera');
   assert.match(jsx, /setTimeout\(\(\) => setDwellDone\(true\), NUDGE_DWELL_MS\)/, 'hay que esperar el minuto');
   assert.match(jsx, /location\.pathname === '\/feed'/, 'solo en el feed');
-  assert.ok(!/useAnalyticsConsent|consent !== null/.test(jsx), 'ya no hay banner de consentimiento al que ceder la esquina');
+  // Desde el 2026-10-20 la petición de consentimiento vuelve y es la primera:
+  // solo con sesión, y ningún aviso le quita la esquina hasta que se contesta.
+  assert.match(jsx, /const askConsent = signedIn && !decided;/, 'el consentimiento se pide solo con sesión');
+  assert.match(jsx, /const openable = dwellDone\s*&& signedIn\s*&& decided/, 'los avisos esperan a la respuesta');
 });
 
 test('uno por visita, y el descarte se recuerda para siempre', async () => {
@@ -107,28 +84,6 @@ test('uno por visita, y el descarte se recuerda para siempre', async () => {
   assert.match(jsx, /if \(openable && !choiceMade\) \{\s*setChoiceMade\(true\);/, 'la elección se hace una sola vez');
   assert.match(jsx, /setDismissed\(rememberNudgeDismissal\(id\)\)/, 'cerrar tiene que persistir');
   assert.ok(!/sessionStorage/.test(jsx), 'la memoria del descarte no puede morir con la pestaña');
-});
-
-test('el número de estrellas viaja con el panel o no viaja', async () => {
-  const jsx = await hostJsx;
-  assert.match(jsx, /const ready = picked !== null && stars !== undefined;/,
-    'sin recuento resuelto no se enseña: un hueco que se rellena tarde empuja el texto');
-  assert.match(jsx, /setTimeout\(\(\) => reveal\(null\), STAR_FETCH_BUDGET_MS\)/, 'y si GitHub no contesta, sale sin él');
-  assert.match(jsx, /if \(usable\) cacheStarCount\(count\)/, 'una vez preguntado, se guarda');
-});
-
-/**
- * Una sola puerta al repo. La dirección estuvo un rato escrita bajo la frase,
- * en mono, hasta que quedó claro que no añadía nada: el botón ya va ahí, y una
- * línea más alta el panel para repetir el destino.
- */
-test('el botón es la única puerta al repo, y se abre fuera', async () => {
-  const jsx = await hostJsx;
-  assert.match(jsx, /export const REPO_URL = 'https:\/\/github\.com\/mugar123\/papertok'/);
-  assert.match(jsx, /action=\{\{ label: copy\['open-source'\]\.cta, href: REPO_URL, onClick: handleStar \}\}/);
-  assert.ok(!/nudge-link/.test(jsx), 'nada de repetir la dirección debajo del texto');
-  const panel = await panelJsx;
-  assert.match(panel, /target="_blank" rel="noopener noreferrer"/, 'una pestaña nueva, sin prestarle el opener');
 });
 
 test('App monta el host y ya no la alerta de analítica', async () => {

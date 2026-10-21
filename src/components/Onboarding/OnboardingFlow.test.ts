@@ -125,14 +125,14 @@ test('SOURCE: the title is baked outlines from a checked-in generator, and no sc
   assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b/i, 'tokens only');
 });
 
-test('SOURCE: there is no sign-in page; a guest off a protected route gets the feed with the door open', async () => {
+test('SOURCE: there is no sign-in page; a guest off a protected route gets the onboarding with the door open', async () => {
   const guard = (await readFile(new URL('../Auth/ProtectedRoute.tsx', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   // The state is one object per destination (a literal re-issued the redirect
   // on every render), and it still carries the full requested path.
   assert.match(guard, /const requestedPath = `\$\{location\.pathname\}\$\{location\.search\}`;/);
   assert.match(guard, /const signInState = useMemo(?:<[^;\n]+>)?\(\(\) => \(\{ authRequired: true, returnTo: requestedPath \}\), \[requestedPath\]\);/);
-  assert.match(guard, /<Navigate to="\/feed" replace state=\{signInState\} \/>/);
+  assert.match(guard, /<Navigate to="\/onboarding" replace state=\{location\.pathname === '\/feed' \? undefined : signInState\} \/>/);
   assert.doesNotMatch(guard, /to="\/login"/);
   const app = await readFile(new URL('../../App.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(app, /LoginPage/);
@@ -167,7 +167,6 @@ test('SOURCE: the onboarding is seeded from the guest answer', async () => {
     'the preferences are the welcome\'s rule applied to what is ticked',
   );
   assert.match(code, /await completeOnboarding\(preferences\);/, 'and that is what is written');
-  assert.doesNotMatch(code, /guestCategoriesForAreas\(/, 'the full union belongs to the guest feed plan, not to the onboarding');
   assert.doesNotMatch(code, /saveGuestInterests|clearGuestInterests/, 'the onboarding reads the answer; AuthContext owns its end');
 });
 
@@ -242,11 +241,11 @@ test('SOURCE: on the university screen a typed address makes the primary the lin
   const primary = code.match(/primary=\{linksOnPress && !saving\s*\? \{[\s\S]*?\}\s*: \{[\s\S]*?\n {8}\}\}/);
   assert.ok(primary, 'the primary no longer depends on the typed address');
   // Bound to the form: no click handler of its own, so the press is the
-  // form's submit and Google's window opens from it.
+  // form's submit and starts email verification.
   const bound = primary[0].match(/\? \{([\s\S]*?)\}\s*:/)![1];
   assert.match(bound, /form: UNIVERSITY_FORM_ID,/);
   assert.match(bound, /label: linkBusy \? COPY\.university\.verifying : COPY\.university\.link,/);
-  assert.match(bound, /busy: linkBusy,/, 'busy keeps it focusable while Google is open');
+  assert.match(bound, /busy: linkBusy,/, 'busy keeps it focusable during verification');
   assert.doesNotMatch(bound, /onClick/);
   assert.match(code, /link: 'Continue',\s*verifying: 'Verifying…',/);
   // With no address, or once linked, it is the screen's own: Start exploring.

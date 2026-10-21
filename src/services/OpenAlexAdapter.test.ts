@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient } from './openAlexClient.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { reviewTagForPaper } from '../utils/paperStatus.ts';
 import type { Paper } from '../models/Paper.ts';
 import type { PaperSearchFilters } from './adapters/index.ts';
 
@@ -77,6 +79,45 @@ test('does not mark repository preprints as published', () => {
 
   assert.equal(paper!.citationCountKnown, true);
   assert.equal(paper!.publicationStatus, 'preprint');
+});
+
+// OpenAlex returns the IMF series exactly as it returns Nature: `article`, in a
+// `journal`, published version (sources as returned on 2026-10-19).
+const feedWork = (id: string, source: { id: string; display_name: string; type: string } | null) => new OpenAlexAdapter().mapToStandard({
+  id: `https://openalex.org/${id}`,
+  title: `Work ${id}`,
+  type: 'article',
+  authorships: [],
+  primary_location: { is_published: true, source },
+});
+const IMF_SOURCE = { id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Paper', type: 'journal' };
+const NATURE_SOURCE = { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal' };
+
+test('a feed card from OpenAlex is peer reviewed only when a venue shows it', () => {
+  // The card used to call both reviewed.
+  const [imf, nature, unsourced] = PaperBuilder.deduplicate([
+    feedWork('W7215107402', IMF_SOURCE),
+    feedWork('W2919115771', NATURE_SOURCE),
+    feedWork('W3', null),
+  ]);
+
+  assert.equal(imf.peerReviewed, false);
+  assert.equal(nature.peerReviewed, true);
+  assert.equal(unsourced.peerReviewed, undefined);
+});
+
+test('a feed card tags the working paper, and neither the journal article nor a journal named Working Paper', () => {
+  const [imf, nature, publicHealth] = PaperBuilder.deduplicate([
+    feedWork('W7215107402', IMF_SOURCE),
+    feedWork('W2919115771', NATURE_SOURCE),
+    // A PAGEPress journal whose name alone would read as a working-paper series.
+    feedWork('W4', { id: 'https://openalex.org/S4210222596', display_name: 'Working Paper of Public Health', type: 'journal' }),
+  ]);
+
+  assert.equal(reviewTagForPaper(imf)?.label, 'Working paper');
+  assert.equal(reviewTagForPaper(nature), null);
+  assert.equal(publicHealth.peerReviewed, undefined);
+  assert.equal(reviewTagForPaper(publicHealth), null);
 });
 
 test('uses current OpenAlex topics when legacy concepts are missing', () => {
@@ -233,11 +274,42 @@ test('category discovery returns working papers and preserves their preprint sta
     assert.deepEqual(result.papers.map(paper => paper.id), ['openalex:W1001', 'openalex:W1002']);
     assert.equal(result.papers[0].publicationType, 'preprint');
     assert.equal(result.papers[0].publicationStatus, 'preprint');
-    assert.equal(result.papers[0].primaryCategory, category);
+    assert.equal(result.papers[0].primaryCategory, undefined, 'the requested category is not stamped on the work');
     assert.equal(result.papers[0].arxivId, undefined);
     assert.equal(result.papers[1].publicationStatus, 'published');
   }
   assert.equal(requests, 2, 'each category search still makes one upstream request');
+});
+
+test('a work with no arXiv category keeps its own field instead of the requested one', async (t) => {
+  // The WIREs survey "Artificial intelligence" (W4233888153) used to come back
+  // from a feed request for hep-th as "High Energy Physics - Theory": the
+  // requested category was chosen by label words found in the abstract
+  // ("theory", "high" in "highlights") and the first one won the tie (PAP-60).
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({
+    meta: { count: 1 },
+    results: [{
+      id: 'https://openalex.org/W4233888153',
+      title: 'Artificial intelligence',
+      type: 'article',
+      abstract_inverted_index: {
+        Artificial: [0], intelligence: [1], theory: [2], and: [3], practice: [4], highlights: [5],
+      },
+      concepts: [{ id: 'https://openalex.org/C154945302', display_name: 'Artificial intelligence', level: 1, score: 0.72 }],
+      primary_topic: { id: 'https://openalex.org/T10883', display_name: 'Artificial Intelligence Applications', field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' } },
+    }],
+  }));
+
+  const result = await new OpenAlexAdapter().search('"High Energy Physics - Theory" OR "Artificial Intelligence"', 1, {
+    internalCategories: ['hep-th', 'cs.AI'],
+  });
+  const [paper] = result.papers;
+  assert.equal(paper.primaryCategory, undefined);
+  for (const list of [paper.categories, paper.allCategories]) {
+    assert.ok(!(list || []).some(category => ['hep-th', 'cs.AI'].includes(category)), `no requested category in ${JSON.stringify(list)}`);
+  }
+  assert.deepEqual(paper.categories, ['Artificial intelligence']);
+  assert.equal(paper.primaryTopic?.field?.display_name, 'Computer Science');
 });
 
 // PAP-31. OpenAlex writes a work's PubMed id as a URL in `ids.pmid`, and the

@@ -3,14 +3,13 @@ import type { PaperSearchFilters, PaperSearchResult } from './index.ts';
 import type { OpenAlexWork } from './openAlexTypes.ts';
 import type { OpenAlexRequestError } from '../openAlexClient.ts';
 
-import { assignRequestedCategories } from '../arxivService.ts';
 import { getCategoryArea } from '../../data/categoryTaxonomy.ts';
 import { openAlexFetch } from '../openAlexClient.ts';
 import { getArxivIdFromWork } from '../openAlexService.ts';
 import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.ts';
 import { usableOpenAlexConcepts } from '../../utils/openAlexConcepts.ts';
 import { normalizePmid } from '../../utils/publicNavigation.ts';
-import { openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
 import { normalizeSearchText } from '../../utils/searchRelevance.ts';
 import { openAlexTypeaheadExpression } from '../openAlexSearchQuery.ts';
 
@@ -106,7 +105,7 @@ export class OpenAlexAdapter {
         // Retrying each keystroke on an outage would multiply provider use.
         ...(filters.typeahead ? { retries: 0 } : {}),
         signal: filters.signal,
-        // The feed's main search: ahead of the entity lookups sharing the queue.
+        // The reader's paper search: ahead of the entity lookups sharing the queue.
         priority: filters.priority === true,
       });
       if (!response.ok) {
@@ -115,10 +114,11 @@ export class OpenAlexAdapter {
 
       const data = await response.json() as { results: OpenAlexWork[]; meta: { count: number } };
       
-      const papers = assignRequestedCategories(
-        data.results.map(work => this.mapToStandard(work)).filter(Boolean) as Paper[],
-        filters.internalCategories
-      );
+      // No category from the request: an OpenAlex work carries none of arXiv's,
+      // and `internalCategories` only widens the work types above. Choosing one
+      // by label words in the abstract called an AI survey "High Energy
+      // Physics - Theory" (PAP-60); the card reads `primaryTopic` instead.
+      const papers = data.results.map(work => this.mapToStandard(work)).filter(Boolean) as Paper[];
 
       return {
         papers,
@@ -180,6 +180,8 @@ export class OpenAlexAdapter {
       sourceType: work.type === 'conference-paper' || work.type === 'proceedings-article' ? 'conference' : 'journal',
       publicationType,
       publicationStatus,
+      peerReviewed: openAlexPeerReviewed(work),
+      workingPaper: openAlexIsWorkingPaper(work) || undefined,
       openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,

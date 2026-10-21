@@ -207,6 +207,6 @@ test('el camino de escritorio sigue intacto: el mouse-up del documento llama a h
   // What has to hold here is the fact, not the byte layout: the mouse-up
   // still hands the selection to `handleSelection`, not to some other path.
   assert.match(jsx, /document\.addEventListener\('mouseup', handleDocumentMouseUp\)/);
-  assert.match(jsx, /handleSelection\(paragraph\.dataset\.section!, paragraphIndex, text, paragraph\)/);
+  assert.match(jsx, /handleSelection\(sectionId, paragraphIndex, text, paragraph, /);
   assert.doesNotMatch(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
 });

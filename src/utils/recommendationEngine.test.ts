@@ -20,6 +20,7 @@ test('selected user category dominates neutral papers', () => {
       allCategories: ['cs.AI'],
       published: '2026-07-05T00:00:00Z',
       authors: ['A. Researcher'],
+      abstract: 'We study how selected categories shape the order of a reading feed.',
     },
     {
       now: NOW,
@@ -235,12 +236,26 @@ test('the session lifts what the reader has just engaged with and sinks what the
 });
 
 test('a paper recommended for the reader\'s own examples is boosted', () => {
-  const plain = scorePaperForRecommendation({ id: 'plain', primaryCategory: 'cs.AI' }, { now: NOW });
-  const personal = scorePaperForRecommendation({ id: 'personal', primaryCategory: 'cs.AI', _isPersonalCandidate: true }, { now: NOW });
+  const abstract = 'A recommended paper with an abstract the card can show.';
+  const plain = scorePaperForRecommendation({ id: 'plain', primaryCategory: 'cs.AI', abstract }, { now: NOW });
+  const personal = scorePaperForRecommendation({ id: 'personal', primaryCategory: 'cs.AI', abstract, _isPersonalCandidate: true }, { now: NOW });
 
   assert.equal(plain.personalBoost, 0);
   assert.equal(personal.personalBoost, 20);
   assert.equal(personal.total - plain.total, 20);
+});
+
+test('a card without an abstract ranks below the same card with one', () => {
+  const paper = { primaryCategory: 'cs.AI', published: '2026-07-01T00:00:00Z' };
+  const context = { now: NOW, userPreferences: ['cs.AI'] };
+  const withAbstract = scorePaperForRecommendation({ ...paper, id: 'with', abstract: 'We measure what a feed card needs to be read.' }, context);
+  // The OpenAlex mapper's placeholder is what a missing abstract looks like in the feed.
+  const placeholder = scorePaperForRecommendation({ ...paper, id: 'placeholder', abstract: 'No abstract available.' }, context);
+  const empty = scorePaperForRecommendation({ ...paper, id: 'empty', abstract: '' }, context);
+
+  assert.ok(placeholder.total < withAbstract.total);
+  assert.equal(empty.total, placeholder.total);
+  assert.match(placeholder.explanation, /missingAbstract/);
 });
 
 test('a paper lends the profile its OpenAlex concepts and first ten OpenAlex authors', () => {

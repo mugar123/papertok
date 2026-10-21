@@ -7,7 +7,11 @@ export interface PubmedSummary {
   authors?: Array<{ name: string }>;
   articleids?: Array<{ idtype: string; value: string }>;
   source?: string;
+  issn?: string;
+  essn?: string;
+  nlmuniqueid?: string;
   pubdate?: string;
+  epubdate?: string;
   pubtype?: string | string[];
 }
 interface PubmedResponse {
@@ -19,6 +23,7 @@ interface PubmedResponse {
 import { CATEGORIES } from '../../data/categories.ts';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.ts';
+import { PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries } from '../../utils/medlineRecord.ts';
 import { fetchWorkerSourceJson } from '../workerApiClient.ts';
 
 // E-utilities answer as three serial requests (esearch → esummary → efetch).
@@ -82,6 +87,24 @@ function getCategoryDefinition(categoryId: string|number) {
     if ((area.subcategories as Record<string, { label: string }>)?.[categoryId]) return (area.subcategories as Record<string, { label: string }>)[categoryId];
   }
   return null;
+}
+
+/**
+ * The feed's PubMed query for a reader's categories. Each label is searched in
+ * every field. Limited to title and abstract (`[tiab]`), the newest matches
+ * were mostly reviews and papers that only name the discipline: on 2026-10-21
+ * page 0 had 40 % on-target papers for molecular biology and 31 % for
+ * neuroscience, against 63 % and 50 % with every field. Every field also
+ * matches Methods in Molecular Biology, a protocol series added a volume at a
+ * time, so the series is left out by its ISSNs. Only records with a
+ * publication date (`[dp]`) by today (UTC) come back, so a recent-first lane
+ * is not filled with issues printed next year.
+ */
+export function pubmedCategoryQuery(categoryIds: readonly string[]) {
+  const labels = categoryIds.map(categoryId => getCategoryDefinition(categoryId)?.label).filter(Boolean);
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+  const protocolSeries = [...PROTOCOL_SERIES_ISSNS].map(issn => `"${issn}"[is]`).join(' OR ');
+  return `(${labels.map(label => `"${label}"`).join(' OR ')}) AND 1800/01/01:${today}[dp] NOT (${protocolSeries})`;
 }
 
 function containsTerm(text: string, term: string) {
@@ -185,6 +208,7 @@ export class PubmedAdapter {
       page,
       filters?.type || '',
       [...(filters?.internalCategories || [])].sort().join(','),
+      filters?.requireAbstract ? 'abstract' : '',
     ].join('|');
 
     const cached = readSourceCache<PaperSearchResult>(cacheKey, PUBMED_CACHE_TTL_MS);
@@ -203,6 +227,7 @@ export class PubmedAdapter {
       if (filters && filters.type === 'author') {
          finalQuery = `${query}[Author]`;
       }
+      if (filters.requireAbstract) finalQuery = `(${finalQuery}) AND hasabstract`;
 
       // 1. The whole E-utilities chain, in one call to the Worker. It returns the
       // three upstream payloads unchanged — esearch, esummary and the efetch XML —
@@ -299,6 +324,11 @@ export class PubmedAdapter {
     }
 
     const landingPageUrl = `https://pubmed.ncbi.nlm.nih.gov/${id}/`;
+    // `pubdate` is the print issue's date, which can be after today for an
+    // article already online; `epubdate` is the day it went online. A date
+    // after today is never shown, and a record with no other date shows none.
+    const published = [raw.pubdate, raw.epubdate].find(date => date && !isAfterToday(date)) || '';
+    const chapter = isProtocolBookSeries({ issn: raw.issn, essn: raw.essn, nlmId: raw.nlmuniqueid });
 
     return {
       id: `pmid:${id}`,
@@ -310,10 +340,12 @@ export class PubmedAdapter {
       authors,
       doi,
       journal: raw.source || '',
-      year: raw.pubdate ? parseInt(raw.pubdate.substring(0, 4)) : new Date().getFullYear(),
-      published: raw.pubdate || '',
+      year: parseInt(published.substring(0, 4)) || undefined,
+      published,
       publicationStatus: 'published',
-      publicationType: publicationTypeFromPubtype(raw.pubtype),
+      // `book-series` is a venue `isFeedPublication` leaves out of the feed.
+      publicationType: chapter ? 'book-chapter' : publicationTypeFromPubtype(raw.pubtype),
+      sourceType: chapter ? 'book-series' : undefined,
       openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,

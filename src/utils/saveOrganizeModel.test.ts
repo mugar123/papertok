@@ -138,7 +138,7 @@ test('SOURCE: firestore writes live only in handleCreateList and handleSave', as
     return found;
   };
 
-  for (const primitive of ['updateDoc(', 'arrayUnion(', 'arrayRemove(']) {
+  for (const primitive of ['writeListMembership(']) {
     const indexes = indexesOf(primitive);
     assert.ok(indexes.length > 0, `${primitive} expected in the save path`);
     for (const at of indexes) {

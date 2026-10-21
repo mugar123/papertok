@@ -16,6 +16,12 @@
   height: calc(100dvh - var(--nav-total));
   margin-top: var(--nav-total);
   background: var(--bg-secondary);
+  /* The pull writes both of these here rather than on the pill, because the
+     papers follow the finger too and this is the one ancestor they share
+     (FeedContainer's `setPull`). `--pull` is 0..1 and drives what grows;
+     `--pull-y` is the resisted distance in px and drives what travels. */
+  --pull: 0;
+  --pull-y: 0px;
 }
 
 .feed-container {
@@ -101,7 +107,10 @@
    thing you are reading and starts being the thing that is going, and ends
    with the travel. Earlier than that it erased the card mid-screen; later and
    two cards stay legible on top of each other. */
-.feed-snap-item--leaving {
+/* The paper an Undo brings back is pinned the same way, over the card the
+   reader is on (see below). */
+.feed-snap-item--leaving,
+.feed-snap-item--returning {
   position: absolute;
   left: 0;
   right: 0;
@@ -139,11 +148,104 @@
   }
 }
 
+/* Undo on "Not interested": the exit reversed. The paper is pinned out of
+   flow over the card the reader is on and comes in from the right; `.pc` is
+   opaque, so it covers that card as it travels, and no fade is needed — the
+   first cut faded in from 0 over a slot the reinsertion had already emptied,
+   and read as a glitch. It lands in flow when the travel ends (landReturn).
+   An arrival, so it brakes where the reader is looking: on the cubic, which
+   still spends most of its frames visibly moving where the expo reads as a
+   cut. The slot clips it, as it clips the exit. 320ms is SKIP_RETURN_MS.
+
+   `cardSlideUp` stays in the list so that dropping `--returning` afterwards
+   does not add it back and replay the card's entrance. */
+.feed-snap-item--returning > .pc {
+  animation:
+    cardSlideUp 0.36s var(--ease-out-expo) backwards,
+    feedSkipReturn 320ms var(--ease-out-cubic) backwards;
+}
+
+@keyframes feedSkipReturn {
+  from { transform: translateX(105%) scale(0.96); }
+}
+
+@keyframes feedSkipReturnFade {
+  from { opacity: 0; }
+}
+
+/* It left whole, so it comes back whole: the pieces do not replay the
+   card's arrival on top of the travel, as they do not on a feed reached by
+   the back arrow (PaperCard.css). `--returned` outlives the travel because
+   putting the animation back once it lands would start it then. */
+.feed-snap-item--returned :is(.pc-sheet, .pc-meta, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
+  animation: none;
+}
+
+/* `.pc` transitions `transform` for the pull to refresh's spring-back.
+   WebKit starts that transition when the return's animations come off the
+   card, and the card lurched 6.4px right of its place and eased back over
+   200ms after landing (measured 2026-10-21, iPhone 13 profile; Chrome starts
+   none). The returned card keeps every other transition. */
+.feed-snap-item--returned > .pc {
+  transition-property: opacity, translate;
+}
+
+/* Without movement it fades in over the card it covers, and lands. */
+@media (prefers-reduced-motion: reduce) {
+  .feed-snap-item--returning > .pc {
+    animation: feedSkipReturnFade 200ms linear backwards;
+  }
+}
+
+/* A read paper is filed away as it leaves. "Mark as read" moves the feed on
+   to the next paper (handleMarkAsRead), and the paper going up and out gives
+   ground: it settles back towards its own bottom edge, the one that stays
+   against the paper coming in, and dims. A swipe past a read paper later
+   files it the same way, so the gesture always means the same thing.
+
+   Driven by the scroll itself (`view()`, the exit range: from the card filling
+   the viewport to the card gone through the top), not by a clock. The native
+   smooth scroll's duration is the browser's to choose, and a clock would have
+   to guess it; this lands with the scroll whatever it does, and scrolling
+   back unfiles the card just as smoothly. Without scroll-driven animations
+   the feed simply moves on.
+
+   `cardSlideUp` is named again so the list keeps it: dropping a name from
+   `animation` and adding it back restarts it, which would replay the card's
+   entrance on "Mark as unread". `scale`, not `transform`, because the pull to
+   refresh owns `.pc`'s transform and the refresh dip its `translate`. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* Not while a read paper leaves on "Not interested" or comes back on its
+       Undo: those motions win. */
+    .feed-snap-item--read:not(.feed-snap-item--leaving, .feed-snap-item--returning) > .pc {
+      transform-origin: 50% 100%;
+      animation:
+        cardSlideUp 0.36s var(--ease-out-expo) backwards,
+        feedReadFile linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, exit 0% exit 100%;
+    }
+  }
+}
+
+@keyframes feedReadFile {
+  to { scale: 0.92; opacity: 0.35; }
+}
+
 /* A source's end slot (`source.endCard`) is deliberately a plain
    .feed-snap-item and nothing more: it inherits the full viewport height, the
    mandatory snap and the `scroll-snap-stop: always` above, so the swipe that
    reveals it is the same swipe that reveals a paper. The `--end` modifier on
    it carries no styles — it is there to name the last item in devtools. */
+
+/* Cards compose in only until the feed first moves. After that every card is
+   already there when it slides up, the way the next video is: the arrival
+   replayed on each swipe kept pieces landing for half a second after the
+   card had. `data-moved` is set by FeedContainer on the first scroll. */
+.feed-container[data-moved] :is(.pc-sheet, .pc-meta, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
+  animation: none;
+}
 
 .feed-sentinel {
   height: 1px;
@@ -151,7 +253,8 @@
 
 /* Manual refresh for For You. Hidden under the navbar until asked for: on a
    fine pointer, while the mouse is in the band beneath the bar (`is-visible`,
-   set by FeedContainer), or to the keyboard. While a refresh runs it stays out and spins;
+   set by FeedContainer); on touch, as a pull progresses (`data-pull` on the
+   wrapper, below); or to the keyboard. While a refresh runs it stays out and spins;
    when it lands it gives one beat (`is-done`) and goes back under the bar.
    `translate`, not `transform`, centres it (papertok-transform-centering-vs-arrival).
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
@@ -191,6 +294,62 @@
   scale: 1;
   pointer-events: auto;
   transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), translate 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+/* Under the finger. Three things move together and none of them is on a
+   clock: what the reader sees IS the gesture, so every value here is read
+   straight off `--pull` / `--pull-y` and `transition: none` keeps a clock
+   from lagging behind the thumb.
+
+   The pill rides the gap the papers open rather than a distance of its own,
+   so it stays in the space that appears under the bar. And the icon turns
+   with the pull — half a revolution by the threshold — which says "far
+   enough" without a second state to arm: it hands over to the spin already
+   part-way round. */
+.feed-wrapper[data-pull='pulling'] .feed-refresh {
+  transition: none;
+  opacity: var(--pull);
+  translate: -50% calc(-40px + 0.9 * var(--pull-y));
+  scale: calc(0.9 + 0.12 * var(--pull));
+  pointer-events: none;
+}
+.feed-wrapper[data-pull='pulling'] .feed-refresh-icon {
+  rotate: calc(var(--pull) * 180deg);
+}
+/* The landing: the frame the thumb lets go and the refresh starts. The pill
+   travels from where the pull left it to its working pose, which is exactly
+   that of `is-visible`, so when React arrives with `is-visible` and
+   `is-refreshing` there is nothing to correct. The papers do not spring
+   back: they enter the veil's sink on the veil's own clock (180ms
+   `--ease-out-quad`, as `.feed-container--refreshing`). A cancelled pull is
+   still a spring — `transform` back to `none` on `.pc`'s own expo — because
+   it means something else. */
+.feed-wrapper[data-pull='landing'] .feed-refresh {
+  opacity: 1;
+  translate: -50% 0;
+  scale: 1;
+  pointer-events: none;
+  transition:
+    opacity 180ms var(--ease-out-quad),
+    translate 180ms var(--ease-out-quad),
+    scale 180ms var(--ease-out-quad);
+}
+.feed-wrapper[data-pull='landing'] .feed-refresh-icon {
+  rotate: 180deg;
+  transition: rotate 180ms var(--ease-out-quad);
+}
+.feed-wrapper[data-pull='landing'] .pc {
+  transform: none;
+  transition: transform 180ms var(--ease-out-quad);
+}
+
+/* The papers themselves. `transform`, not the `translate` the refresh veil
+   uses on this same element: the two compose instead of overwriting one
+   another. The travel is resisted in JS (`pullTravelPx`), not here, because
+   the clamp that stops the pill at the threshold must NOT be what the papers
+   obey: they have to keep answering the thumb while the reader decides. */
+.feed-wrapper[data-pull='pulling'] .pc {
+  transform: translateY(var(--pull-y));
+  transition: none;
 }
 .feed-refresh:active:not(:disabled) { scale: 0.96; transition-duration: 80ms; }
 .feed-refresh:disabled { cursor: default; }
@@ -319,6 +478,15 @@
   .feed-container--refreshing { transition: opacity 120ms linear; }
   .feed-container--refreshing .pc { translate: none; }
   .feed-refresh, .feed-refresh.is-visible { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
+  /* The pull keeps its one unambiguous signal — the pill fading up with the
+     distance — and gives up everything that travels. These win over the
+     rules above on specificity, so without them the travel comes back. */
+  .feed-wrapper[data-pull='pulling'] .feed-refresh { translate: -50% 0; scale: 1; }
+  .feed-wrapper[data-pull='pulling'] .feed-refresh-icon { rotate: none; }
+  .feed-wrapper[data-pull='pulling'] .pc { transform: none; }
+  .feed-wrapper[data-pull='landing'] .feed-refresh { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
+  .feed-wrapper[data-pull='landing'] .feed-refresh-icon { rotate: none; transition: none; }
+  .feed-wrapper[data-pull='landing'] .pc { transform: none; transition: none; }
   .feed-refresh.is-done,
   .feed-refresh-icon--spinning { animation: none; }
 }

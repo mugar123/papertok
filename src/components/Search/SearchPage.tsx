@@ -35,6 +35,7 @@ import { searchProjects } from '../../services/openAireService.ts';
 import { searchPapersAcrossSources } from '../../services/paperSearchService.ts';
 import { useFollowing } from '../../context/FollowingContext.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
+import useQuickSave from '../../hooks/useQuickSave.ts';
 import { useLanguage } from '../../context/LanguageContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
@@ -239,6 +240,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     likedPaperIds, savedPaperIds, readPaperIds,
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
+  const handleSaveToList = useQuickSave(onSaveToList);
   
   // Seeded from the URL, so a search is a place you can be sent to. The
   // palette needs this for the one paper in fifty that carries neither a DOI
@@ -443,6 +445,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
       search_type: 'all',
       result_count: resultCount,
       has_results: resultCount > 0,
+      query: searchTerm,
     });
   }, [language, trackEvent]);
 
@@ -1074,7 +1077,8 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaper(paper)}
-            onSaveToList={onSaveToList}
+            onSaveToList={handleSaveToList}
+            onPickList={onSaveToList}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}

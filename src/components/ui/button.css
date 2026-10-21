@@ -45,20 +45,4 @@
   /* While its menu or popover is open the trigger lies flat: one patterned thing on screen at a time. */
   .btn-halftone[data-popup-open]::before { opacity: 0; }
   .btn-halftone[data-popup-open]::after { background: var(--bg-secondary); }
-
-  .btn-similar { --similar-sweep: color-mix(in srgb, var(--bg-card) 85%, transparent); position: relative; isolation: isolate; overflow: hidden; }
-  :root[data-theme='dark'] .btn-similar { --similar-sweep: color-mix(in srgb, var(--text-primary) 18%, transparent); }
-  .btn-similar > * { position: relative; z-index: 1; }
-  .btn-similar::after {
-    content: ''; position: absolute; inset: -2px auto -2px 0; z-index: 0; width: 60%;
-    background: linear-gradient(105deg, transparent 20%, var(--similar-sweep) 50%, transparent 80%);
-    transform: skewX(-12deg); translate: -120% 0; pointer-events: none;
-    animation: btnSimilarSweep 5s var(--ease-in-out) 1s infinite;
-  }
-  @media (prefers-reduced-motion: reduce) { .btn-similar::after { animation: none; } }
-}
-
-@keyframes btnSimilarSweep {
-  0% { translate: -120% 0; }
-  24%, 100% { translate: 260% 0; }
 }

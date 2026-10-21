@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
-import { CaretDown, CaretLeft, Check } from '@phosphor-icons/react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
@@ -8,8 +7,10 @@ import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Button } from '../ui/button.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../ui/select.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import { Toggle } from '../ui/toggle.tsx';
+import './SettingsSheet.css';
 import './EditInterestsModal.css';
 
 /**
@@ -20,19 +21,14 @@ import './EditInterestsModal.css';
  * overlay never had — a dialog role, `aria-modal`, the focus trap.
  *
  * On a phone the same editor is a bottom Drawer, and the fields are one
- * switcher, as on the phone Settings page: the field you are in, and the list
- * of every field to move to. The list replaces the topics inside the same
- * sheet rather than opening a second drawer over the first.
+ * select above the topics: the field you are in, and a menu of every field
+ * with how many of its topics you picked.
  */
 export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { userPreferences, updatePreferences } = useAuth();
   const [selected, setSelected] = useState(new Set<string>());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeArea, setActiveArea] = useState(Object.keys(INTEREST_AREAS)[0]);
-  const [fieldsOpen, setFieldsOpen] = useState(false);
-  const switcherRef = useRef<HTMLButtonElement | null>(null);
-  const backRef = useRef<HTMLButtonElement | null>(null);
-  const pickedField = useRef(false);
+  const [activeArea, setActiveArea] = useState(() => Object.keys(INTEREST_AREAS)[0]);
   const isPhone = useIsPhone();
 
   // Initialize selection when modal opens
@@ -44,7 +40,6 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
           Object.keys(INTEREST_AREAS[areaKey].subcategories).some(subKey => userPreferences.includes(subKey))
         ));
         setActiveArea(firstFollowed || Object.keys(INTEREST_AREAS)[0]);
-        setFieldsOpen(false);
       }, 0);
       return () => clearTimeout(timeoutId);
     }
@@ -97,17 +92,6 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     } finally {
       setIsSaving(false);
     }
-  };
-
-  useEffect(() => {
-    if (fieldsOpen) backRef.current?.focus();
-    else if (pickedField.current) switcherRef.current?.focus();
-    pickedField.current = false;
-  }, [fieldsOpen]);
-
-  const leaveFields = () => {
-    pickedField.current = true;
-    setFieldsOpen(false);
   };
 
   const counted = (areaKey: string) => Object.keys(INTEREST_AREAS[areaKey].subcategories).filter(k => selected.has(k)).length;
@@ -172,70 +156,37 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     const area = INTEREST_AREAS[activeArea];
     return (
       <Drawer open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}>
-        <DrawerContent className="eim-sheet">
+        <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
           <DrawerHandle />
-          {fieldsOpen ? (
-            <>
-              <div className="eim-fields-head">
-                <Button ref={backRef} variant="ghost" size="icon-sm" aria-label={'Back to topics'} onClick={leaveFields}>
-                  <CaretLeft size={18} aria-hidden="true" />
-                </Button>
-                <DrawerTitle render={<h2 />}>{'Research fields'}</DrawerTitle>
-              </div>
-              <ul className="eim-fields-list" data-base-ui-swipe-ignore="">
+          <div className="settings-sheet-head">
+            <DrawerTitle render={<h2 />}>{'Configure your algorithm'}</DrawerTitle>
+            <p>{'Select the research areas you want to see in your feed'}</p>
+            <Select value={activeArea} onValueChange={value => setActiveArea(value as string)}>
+              <SelectTrigger aria-label={'Research field'} className="settings-sheet-switcher">
+                <span className="settings-sheet-switcher-icon"><area.icon size={18} weight="fill" aria-hidden="true" /></span>
+                <span className="settings-sheet-switcher-copy">
+                  <small>{'Field'}</small>
+                  <strong>{area.label}</strong>
+                </span>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false} sideOffset={6}>
                 {Object.entries(INTEREST_AREAS).map(([areaKey, entry]) => {
                   const picked = counted(areaKey);
-                  const isActive = areaKey === activeArea;
                   return (
-                    <li key={areaKey}>
-                      <button
-                        type="button"
-                        className={isActive ? 'is-active' : undefined}
-                        aria-current={isActive ? 'true' : undefined}
-                        onClick={() => { setActiveArea(areaKey); leaveFields(); }}
-                      >
-                        <entry.icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" style={picked ? { color: entry.gradient } : undefined} />
-                        <span className="eim-fields-copy">
-                          <strong>{entry.label}</strong>
-                          <small>
-                            {picked
-                              ? `${picked} of ${Object.keys(entry.subcategories).length} selected`
-                              : `${Object.keys(entry.subcategories).length} topics`}
-                          </small>
-                        </span>
-                        {isActive && <Check size={16} aria-hidden="true" />}
-                      </button>
-                    </li>
+                    <SelectItem key={areaKey} value={areaKey} className="settings-sheet-option">
+                      <entry.icon size={18} weight={areaKey === activeArea ? 'fill' : 'regular'} aria-hidden="true" style={picked ? { color: entry.gradient } : undefined} />
+                      <span>{entry.label}</span>
+                      {picked > 0 && <small>{picked}</small>}
+                    </SelectItem>
                   );
                 })}
-              </ul>
-            </>
-          ) : (
-            <>
-              <div className="eim-sheet-head">
-                <DrawerTitle render={<h2 />}>{'Configure your algorithm'}</DrawerTitle>
-                <p>{'Select the research areas you want to see in your feed'}</p>
-                <button
-                  ref={switcherRef}
-                  type="button"
-                  className="eim-switcher"
-                  aria-expanded={false}
-                  onClick={() => setFieldsOpen(true)}
-                >
-                  <span className="eim-switcher-icon"><area.icon size={18} weight="fill" aria-hidden="true" /></span>
-                  <span className="eim-switcher-copy">
-                    <small>{'Field'}</small>
-                    <strong>{area.label}</strong>
-                  </span>
-                  <CaretDown size={16} aria-hidden="true" />
-                </button>
-              </div>
-              <div className="eim-area eim-sheet-body" data-base-ui-swipe-ignore="">
-                {fieldTopics(activeArea)}
-              </div>
-              {footer}
-            </>
-          )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="eim-area settings-sheet-body" data-base-ui-swipe-ignore="">
+            {fieldTopics(activeArea)}
+          </div>
+          {footer}
         </DrawerContent>
       </Drawer>
     );

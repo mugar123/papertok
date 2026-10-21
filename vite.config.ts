@@ -242,7 +242,9 @@ export default defineConfig(({ command, mode }) => {
               // cache when offline, so a new deploy is visible on the very
               // next reload instead of being pinned to whatever shipped
               // when the service worker last updated.
-              urlPattern: ({ request }) => request.mode === 'navigate',
+              // Email proof URLs must never be retained as offline cache keys.
+              urlPattern: ({ request, url }) => request.mode === 'navigate'
+                && !/^\/institution\/verify\/?$/.test(url.pathname),
               handler: 'NetworkFirst',
               options: {
                 cacheName: 'papertok-html',

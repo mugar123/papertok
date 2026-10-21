@@ -11,6 +11,7 @@ import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
+import { RequestQuotaLedger } from './request-quota-ledger.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
@@ -429,6 +430,27 @@ test('serves a guest without a session, because the guest feed reads OpenAlex', 
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { results: [{ id: 'W1' }] });
+});
+
+test('an OpenAlex 404 is cached for an hour, an OpenAlex outage is not cached', async () => {
+  const upstreamCalls = (status: number) => withCountedUpstream(
+    async () => new Response(JSON.stringify({ error: 'x' }), { status }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const response = await reportApi.fetch(new Request(
+            'https://papertok-report-api.example/openalex/works/doi:10.1/unindexed',
+            { headers: { origin: 'https://mugar123.github.io' } },
+          ), openAlexEnv());
+          assert.equal(response.status, status);
+          if (status === 404) assert.equal(maxAgeSeconds(response), 3600);
+        }
+      });
+    },
+  );
+
+  assert.equal((await upstreamCalls(404)).length, 1, 'the second 404 comes from the edge');
+  assert.equal((await upstreamCalls(503)).length, 2, 'an outage is asked again');
 });
 
 test('relays an OpenAlex refusal with its own wait instead of flattening it', async () => {
@@ -1114,6 +1136,55 @@ for (const [route, extraEnv] of SOURCE_ROUTES) {
   });
 }
 
+// CORE answered in 7-8 s when measured; the shared six-second deadline cut
+// every such search into a 502 before the edge cache could keep it.
+test('answers a CORE search that takes longer than the shared source deadline', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: RequestInfo | URL, options: RequestInit = {}) => new Promise((resolve, reject) => {
+    const answer = setTimeout(() => resolve(new Response(JSON.stringify({ results: [{ id: 'slow-paper' }] }), {
+      headers: { 'content-type': 'application/json' },
+    })), 6_500);
+    options.signal?.addEventListener('abort', () => {
+      clearTimeout(answer);
+      reject(options.signal!.reason);
+    }, { once: true });
+  })) as typeof fetch;
+  try {
+    const response = await withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/core?q=robotics',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV));
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { results: [{ id: 'slow-paper' }] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// The feed sends CORE its labels as `"A" OR "B"`, and CORE answers a query
+// that starts with a quoted phrase with a 500 (tester report, 2026-10-20).
+test('sends CORE the query inside parentheses', async () => {
+  const upstream: URL[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    upstream.push(new URL(String(url)));
+    return new Response(JSON.stringify({ results: [] }), { headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const response = await withCachedIdentity(() => reportApi.fetch(new Request(
+      `https://papertok-report-api.example/sources/core?q=${encodeURIComponent('"Signal Processing" OR "Power & Energy Systems"')}`,
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV));
+
+    assert.equal(response.status, 200);
+    assert.equal(upstream.length, 1);
+    assert.equal(upstream[0].searchParams.get('q'), '("Signal Processing" OR "Power & Energy Systems")');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('falls back to INSPIRE when NASA ADS stalls instead of waiting on it', async () => {
   let inspireQuery = '';
   const originalFetch = globalThis.fetch;
@@ -1169,6 +1240,19 @@ test('still answers 401 AUTH_REQUIRED when Identity Toolkit refuses the token', 
 
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { code: 'AUTH_REQUIRED' });
+});
+
+test('answers an OpenAlex stall as a gateway timeout', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/openalex/works?per-page=1',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), openAlexEnv()));
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { code: 'UPSTREAM_TIMEOUT' });
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 });
 
 test('answers an OpenAlex network failure with CORS headers instead of throwing', async () => {
@@ -1452,6 +1536,84 @@ async function citationGraphAnswer(upstream: MockProvider) {
   });
 }
 
+// One cold graph against an upstream that answers `works/doi:` with `lookup`,
+// recording when each call starts and when the lookup ends.
+async function coldGraph(lookup: (url: URL) => Response | Promise<Response>) {
+  const events: string[] = [];
+  await withCountedUpstream(async (address) => {
+    const url = new URL(String(address));
+    if (url.pathname.startsWith('/works/doi:')) {
+      events.push(`lookup${url.searchParams.has('api_key') ? '' : ' without key'}`);
+      const response = await lookup(url);
+      events.push('lookup done');
+      return response;
+    }
+    if (url.pathname.includes('/index/v2/references/')) events.push('references');
+    return Response.json(url.hostname.includes('opencitations') ? [] : { results: [] });
+  }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }), {
+        ...AUTHENTICATED_ENV,
+        OPENALEX_API_KEY: 'worker-key',
+      });
+      assert.equal(response.status, 200);
+    });
+  });
+  return events;
+}
+
+test('a citation graph asks OpenCitations for references while the OpenAlex lookup is out', async () => {
+  const events = await coldGraph(async () => {
+    await new Promise(resolve => { setTimeout(resolve, 20); });
+    return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 3 });
+  });
+  assert.ok(events.indexOf('references') < events.indexOf('lookup done'), events.join(', '));
+});
+
+test('a DOI OpenAlex has not indexed is looked up once, not again without the key', async () => {
+  const events = await coldGraph(() => Response.json({ error: 'not found' }, { status: 404 }));
+  assert.deepEqual(events.filter(event => event.startsWith('lookup') && event !== 'lookup done'), ['lookup']);
+});
+
+test('a refused OpenAlex key is asked again without it', async () => {
+  const events = await coldGraph(url => (url.searchParams.has('api_key')
+    ? Response.json({ error: 'budget spent' }, { status: 429 })
+    : Response.json({ id: 'https://openalex.org/W1', cited_by_count: 3 })));
+  assert.deepEqual(events.filter(event => event.startsWith('lookup') && event !== 'lookup done'), ['lookup', 'lookup without key']);
+});
+
+test('a citation graph carries rebuilt abstracts, and none where OpenAlex has no usable one', async () => {
+  const index = (text: string) => text.split(' ').reduce<Record<string, number[]>>((positions, word, position) => {
+    (positions[word] ||= []).push(position);
+    return positions;
+  }, {});
+  const abstract = 'We measure how often a graph keeps the abstracts of the papers it shows.';
+  const works = [
+    { id: 'https://openalex.org/W11', title: 'With abstract', cited_by_count: 9, abstract_inverted_index: index(abstract) },
+    { id: 'https://openalex.org/W12', title: 'An editorial', type: 'editorial', cited_by_count: 8, abstract_inverted_index: index(abstract) },
+    { id: 'https://openalex.org/W13', title: 'Without abstract', cited_by_count: 7 },
+  ];
+  let body: { references: Array<{ title: string; abstract: string }> } | null = null;
+  await withCountedUpstream(async (address) => {
+    const url = new URL(String(address));
+    if (url.pathname.includes('/index/v2/references/')) return Response.json(works.map(work => ({ cited: `openalex:${work.id.split('/').pop()}` })));
+    if (url.hostname.includes('opencitations')) return Response.json([]);
+    if (url.pathname.startsWith('/works/doi:')) return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 0 });
+    return Response.json({ results: works });
+  }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }), AUTHENTICATED_ENV);
+      body = await response.json();
+    });
+  });
+
+  assert.deepEqual(body!.references.map(paper => [paper.title, paper.abstract]), [
+    ['With abstract', abstract],
+    ['An editorial', ''],
+    ['Without abstract', ''],
+  ]);
+});
+
 test('an OpenCitations failure does not own the citation graph for a week', async () => {
   const response = await citationGraphAnswer((url: string|string[]) => (url.includes('opencitations')
     ? new Response('gateway timeout', { status: 504 })
@@ -1486,6 +1648,39 @@ test('a heavily cited paper is partial by design and keeps its week', async () =
   assert.equal(maxAgeSeconds(response), 604800);
 });
 
+test('a citing working paper from OpenAlex is not peer reviewed and is marked one, and a citing work with no venue is unknown', async () => {
+  // OpenAlex returns the IMF series as it returns Nature: `article`, in a
+  // `journal`, published version (probed 2026-10-19).
+  const citingWork = (id: string, title: string, source: { id: string; display_name: string; type: string } | null) => ({
+    id: `https://openalex.org/${id}`,
+    title,
+    type: 'article',
+    primary_location: { is_published: true, source },
+  });
+  const response = await citationGraphAnswer((url: string|string[]) => {
+    if (url.includes('opencitations')) {
+      return new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({
+      id: 'https://openalex.org/W1',
+      cited_by_count: 5_000,
+      results: [
+        citingWork('W7215107402', 'Working paper', { id: 'https://openalex.org/S4210171147', display_name: 'IMF Working Paper', type: 'journal' }),
+        citingWork('W2919115771', 'Journal article', { id: 'https://openalex.org/S137773608', display_name: 'Nature', type: 'journal' }),
+        citingWork('W3', 'No venue', null),
+      ],
+    }), { headers: { 'content-type': 'application/json' } });
+  });
+
+  const { citations } = await response.json<{ citations: Array<{ title: string; peerReviewed?: boolean; workingPaper?: boolean }> }>();
+  const byTitle = new Map(citations.map(paper => [paper.title, paper]));
+  assert.equal(byTitle.get('Working paper')!.peerReviewed, false);
+  assert.equal(byTitle.get('Working paper')!.workingPaper, true);
+  assert.equal(byTitle.get('Journal article')!.peerReviewed, true);
+  assert.equal(byTitle.get('Journal article')!.workingPaper, undefined);
+  assert.equal(byTitle.get('No venue')!.peerReviewed, undefined);
+});
+
 // --- G5: billed spend reaches the ledger, with a daily ceiling --------------
 
 function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accepted: true })) {
@@ -1505,7 +1700,7 @@ function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accept
   };
 }
 
-test('a cold citation graph reserves both OpenAlex periods for what it may spend', async () => {
+test('a cold citation graph reserves both OpenAlex ceilings in one call for what it may spend', async () => {
   const ledger = recordingLedger();
   await withCountedUpstream(citationGraphPage, async () => {
     await withIdentityAndCacheStore(async () => {
@@ -1518,28 +1713,133 @@ test('a cold citation graph reserves both OpenAlex periods for what it may spend
   });
 
   // The `openalex:*` ceiling used to cover only `/openalex/*`. A miss here can
-  // spend nine billed calls -- one `works/doi:` lookup, then up to two batches
-  // for each of the two reference filters and the same for citations -- and the
-  // route reserves all nine before the work starts.
+  // spend seven billed calls -- one `works/doi:` lookup, then up to three
+  // batches for references and three for citations -- and the route reserves
+  // all seven before the work starts, minute and day together.
   const openAlex = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
-  assert.deepEqual(openAlex.map(entry => entry.amount), [9, 9]);
-  assert.match(openAlex[0].periodKey, /^openalex:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-  assert.match(openAlex[1].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
-  assert.equal(openAlex[1].limit, 8_000);
+  assert.deepEqual(openAlex.map(entry => entry.amount), [7]);
+  assert.match(openAlex[0].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
+  assert.equal(openAlex[0].limit, 8_000);
+});
+
+// The ledger itself behind every period key, so the ceilings are checked the way
+// the Durable Object checks them, and every call to it is counted.
+function inMemoryQuotaLedger() {
+  const objects = new Map<string, RequestQuotaLedger>();
+  const calls: string[] = [];
+  const binding = {
+    idFromName: (name: string): unknown => name,
+    get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => {
+      const key = String(name);
+      if (!objects.has(key)) {
+        const values = new Map<string, unknown>();
+        let alarm: number | null = null;
+        objects.set(key, new RequestQuotaLedger({ storage: {
+          transaction: callback => callback({
+            get: <T>(item: string) => values.get(item) as T | undefined,
+            put: (item: string, value: unknown) => { values.set(item, value); },
+            delete: (item: string) => values.delete(item),
+          }),
+          getAlarm: async () => alarm,
+          setAlarm: async (value: number | Date) => { alarm = Number(value); },
+          deleteAll: async () => values.clear(),
+        } as RequestQuotaLedger['state']['storage'] }));
+      }
+      return {
+        fetch: async (url, init) => {
+          calls.push(key);
+          return objects.get(key)!.fetch(new Request(String(url), init));
+        },
+      };
+    },
+  } as Env['REQUEST_QUOTA_LEDGER'];
+  return { binding, calls };
+}
+
+// Two misses in a row against ceilings of one: the second is refused by whichever
+// ceiling is spent, and each miss is one call to the ledger.
+async function secondOpenAlexMiss(limits: Record<string, string>) {
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding, ...limits });
+  const relay = (doi: string) => reportApi.fetch(new Request(
+    `https://papertok-report-api.example/openalex/works?filter=doi:${doi}`,
+    { headers: BROWSER },
+  ), env);
+  const responses = await withWorkerFetchMock(
+    async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
+    () => withIdentityAndCacheStore(async () => [await relay('10.1/x'), await relay('10.1/y')]),
+  );
+  return { responses, calls: ledger.calls };
+}
+
+test('the costliest cold citation graph spends exactly what it reserves', async () => {
+  // 21 candidates known by OpenAlex id and 19 by DOI alone, per relation: the
+  // split that needs the most batches of twenty from 40 candidates.
+  const rows = (field: string, prefix: string) => Array.from({ length: 40 }, (_, index) => ({
+    [field]: index < 21 ? `openalex:W${prefix}${index}` : `doi:10.9999/${prefix}${index}`,
+  }));
+  const ledger = recordingLedger();
+  const calls = await withCountedUpstream(async (url) => {
+    const address = String(url);
+    if (address.includes('/index/v2/references/')) return Response.json(rows('cited', '1'));
+    if (address.includes('/index/v2/citations/')) return Response.json(rows('citing', '2'));
+    if (address.includes('opencitations')) return Response.json([]);
+    return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 40, results: [] });
+  }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }), {
+        ...AUTHENTICATED_ENV,
+        REQUEST_QUOTA_LEDGER: ledger.binding,
+      });
+      assert.equal(response.status, 200);
+    });
+  });
+
+  const reserved = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
+  const spent = calls.filter(address => address.startsWith('https://api.openalex.org/')).length;
+  assert.equal(spent, 7);
+  assert.deepEqual(reserved.map(entry => entry.amount), [spent]);
+});
+
+test('an OpenAlex search reserves the ten list calls it is billed as', async () => {
+  const reserved = async (query: string) => {
+    const ledger = recordingLedger();
+    await withWorkerFetchMock(
+      async () => Response.json({ results: [] }),
+      () => withIdentityAndCacheStore(() => reportApi.fetch(new Request(
+        `https://papertok-report-api.example/openalex/works?${query}`,
+        { headers: BROWSER },
+      ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding }))),
+    );
+    return ledger.reservations.map(entry => entry.amount);
+  };
+
+  assert.deepEqual(await reserved('search=ultracold%20gas'), [10]);
+  assert.deepEqual(await reserved('filter=title_and_abstract.search:ultracold,type:article'), [10]);
+  assert.deepEqual(await reserved('filter=raw_author_name.search:Ada%20Lovelace'), [10]);
+  assert.deepEqual(await reserved('filter=publication_year:2019,type:article'), [1]);
+});
+
+test('the per-minute OpenAlex ceiling refuses within the day and asks for a minute', async () => {
+  const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '1', OPENALEX_GLOBAL_DAILY_LIMIT: '100' });
+
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[1].status, 429);
+  assert.deepEqual(await responses[1].json(), { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(responses[1].headers.get('retry-after'), '60');
+  assert.equal(calls.length, 2, 'one ledger call per miss');
 });
 
 test('the daily OpenAlex ceiling refuses a request the per-minute one would allow', async () => {
-  const ledger = recordingLedger((periodKey: string) => ({ accepted: !periodKey.startsWith('openalex:day:') }));
-  const response = await withIdentityAndCacheStore(() => reportApi.fetch(new Request(
-    'https://papertok-report-api.example/openalex/works?filter=doi:10.1/x',
-    { headers: BROWSER },
-  ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding })));
+  const { responses, calls } = await secondOpenAlexMiss({ OPENALEX_GLOBAL_MINUTE_LIMIT: '100', OPENALEX_GLOBAL_DAILY_LIMIT: '1' });
 
-  assert.equal(response.status, 429);
-  assert.deepEqual(await response.json(), { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[1].status, 429);
+  assert.deepEqual(await responses[1].json(), { code: 'PROVIDER_RATE_LIMITED' });
   // Bounded on purpose. The true wait is the seconds left until UTC midnight, and
   // handing the client six hours is a tab that stops asking until it is reloaded.
-  assert.equal(response.headers.get('retry-after'), '300');
+  assert.equal(responses[1].headers.get('retry-after'), '300');
+  assert.equal(calls.length, 2, 'one ledger call per miss');
 });
 
 test('a cached citation graph spends nothing against either ceiling', async () => {
@@ -2345,12 +2645,11 @@ function scriptedQuotaLedger(state: QuotaScriptState, { refuse = () => false, un
 
 // The period keys the gates use, as predicates: the minute ceiling is
 // `s2:<minute>`, the beat is `s2:pace`, identity is `provider:<minute>`, and
-// OpenAlex is `openalex:<minute>` then `openalex:day:<date>`.
+// OpenAlex is `openalex:day:<date>`, which checks the minute as its subject.
 const IS_MINUTE = (key: string) => key.startsWith('s2:') && !key.endsWith(':pace');
 const IS_PACE = (key: string) => key.endsWith(':pace');
 const IS_IDENTITY = (key: string) => key.startsWith('provider:');
-const IS_OPENALEX_MINUTE = (key: string) => key.startsWith('openalex:') && !key.includes(':day:');
-const IS_OPENALEX_DAY = (key: string) => key.startsWith('openalex:day:');
+const IS_OPENALEX = (key: string) => key.startsWith('openalex:');
 
 const releasesOf = (state: QuotaScriptState) => state.actions.filter((a: { action: string; }) => a.action === 'release');
 
@@ -2429,7 +2728,7 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
   const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
     new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
-    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_MINUTE }) },
+    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX }) },
   )));
 
   assert.equal(response.status, 429);
@@ -2438,40 +2737,22 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
   assert.equal(releasesOf(state).length, 1, 'only the identity unit was held');
 });
 
-// L6: the OpenAlex day ceiling refuses after the minute ceiling accepted. The
-// function used to leave the minute unit to expire -- "the leak lives in the
-// minute bucket, which is thrown away sixty seconds later" -- as the lesser of
-// two leaks, before giving a unit back was a pattern in this file.
-test('gives the OpenAlex minute unit back when the day ceiling refuses after it', async () => {
-  const state: QuotaScriptState = { actions: [] };
-  const response = await withWorkerFetchMock(citationGraphPage, () => withCachedIdentity(() => reportApi.fetch(
-    new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
-    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) },
-  )));
-
-  assert.equal(response.status, 429);
-  assert.equal(response.headers.get('retry-after'), '300', 'the day ceiling names its own wait');
-  assertRefunded(state, IS_OPENALEX_MINUTE);
-  // The graph also holds an identity unit, and `reserveGates` gives that back too.
-  assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 2, 'the OpenAlex minute unit and the identity unit were held');
-});
-
-// The relay reaches the budget without `cacheResponse`, so the refund inside
-// the function is the only one it gets.
-test('the /openalex relay gives the minute unit back when the day ceiling refuses', async () => {
+// The relay reaches the budget without `cacheResponse`, so nothing else would
+// give back a unit the budget took before refusing. Both ceilings are one call,
+// so a refusal holds nothing.
+test('a refused /openalex relay holds no OpenAlex unit', async () => {
   const state: QuotaScriptState = { actions: [] };
   const response = await withWorkerFetchMock(
     async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
     () => reportApi.fetch(new Request(
       RELAY_WORKS_URL,
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ...OPEN_ROUTE_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) }),
+    ), { ...OPEN_ROUTE_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX }) }),
   );
 
   assert.equal(response.status, 429);
-  assertRefunded(state, IS_OPENALEX_MINUTE);
-  assert.equal(releasesOf(state).length, 1, 'only the OpenAlex minute unit was held');
+  assert.equal(state.actions.filter(a => a.action === 'reserve' && IS_OPENALEX(a.periodKey)).length, 1);
+  assert.equal(releasesOf(state).length, 0);
 });
 
 // The accepted path gives nothing back: every unit taken was spent on a real
@@ -3000,6 +3281,23 @@ test('a healthy bioRxiv answer keeps its ten minutes and says nothing is degrade
   assert.equal(maxAgeSeconds(response), 600);
 });
 
+test('bioRxiv pages of any limit share one upstream call and one cache entry', async () => {
+  const collection = Array.from({ length: 30 }, (_, index) => ({ doi: `10.1101/2026.09.01.${index}`, title: `Preprint ${index}` }));
+  const calls = await withCountedUpstream(async () => Response.json({ collection }), async () => {
+    await withIdentityAndCacheStore(async () => {
+      for (const limit of [8, 2, 10]) {
+        const response = await reportApi.fetch(new Request(
+          `https://papertok-report-api.example/sources/biorxiv?category=neuroscience&page=1&limit=${limit}`,
+          { headers: { origin: 'https://mugar123.github.io' } },
+        ), {});
+        // The whole group of thirty: the client keeps the first `limit`.
+        assert.equal((await response.json<{ collection: unknown[] }>()).collection.length, 30);
+      }
+    });
+  });
+  assert.equal(calls.filter(url => url.startsWith('https://api.biorxiv.org/')).length, 1);
+});
+
 /**
  * The share pages (worker/share-pages.ts) as the router serves them: public,
  * GET and HEAD, and with no Origin, because the caller is Vercel relaying a
@@ -3092,6 +3390,20 @@ test('a share lookup its ceiling refuses spends nothing upstream and answers the
     false,
     'OpenAlex budget untouched',
   );
+});
+
+test('a share lookup checks its minute and day ceilings in one ledger call', async () => {
+  const state: QuotaScriptState = { actions: [] };
+  await withWorkerFetchMock(
+    shareUpstream([]),
+    () => reportApi.fetch(crawlerRequest(`/share/paper/${SHARED_DOI_KEY}`), {
+      ...openAlexEnv(),
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state),
+    }),
+  );
+  const lookups = state.actions.filter(action => action.periodKey.startsWith('share:') && !action.periodKey.startsWith('share:arxiv:'));
+  assert.equal(lookups.length, 1, JSON.stringify(state.actions));
+  assert.match(lookups[0].periodKey, /^share:day:\d{4}-\d{2}-\d{2}$/);
 });
 
 // The hourly arXiv unit was taken before the seat and kept when no seat came,

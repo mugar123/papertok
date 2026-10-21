@@ -5,8 +5,11 @@ import { cva } from 'class-variance-authority';
 // `scale-*`), not a `transform`: callers animate buttons with framer, which
 // writes `transform`, and the two compose instead of one replacing the other.
 // Refused motion keeps the colour change and drops the squeeze.
+// A button disabled with `focusableWhenDisabled` keeps focus and never gets
+// the native attribute, so `:disabled` misses it; Base UI marks every
+// disabled button `data-disabled`, and that takes the same look.
 export const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-[color,background-color,border-color,scale] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap no-underline rounded-md text-sm font-semibold transition-[color,background-color,border-color,scale] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:opacity-50 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)]',
   {
     variants: {
       variant: {
@@ -43,7 +46,6 @@ export const buttonVariants = cva(
         // Takes its colour from --accent on the element, so a control can adopt
         // the research field of whatever it belongs to.
         field: 'bg-[color-mix(in_srgb,var(--accent,var(--accent-primary))_9%,var(--bg-card))] text-[var(--accent,var(--accent-primary))] border border-[color-mix(in_srgb,var(--accent,var(--accent-primary))_26%,var(--bg-card))] hover:bg-[var(--accent,var(--accent-primary))] hover:text-[var(--text-inverse)]',
-        similar: 'btn-similar bg-[var(--tint-violet-bg)] text-[var(--tint-violet-fg)] border border-[var(--tint-violet-line)] hover:border-[var(--tint-violet-fg)]',
         destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
       },
       size: {

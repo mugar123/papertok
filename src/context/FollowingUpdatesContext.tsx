@@ -13,7 +13,7 @@ export interface FollowingUpdatesContextValue {
 }
 
 /* eslint-disable react-refresh/only-export-components */
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FollowingUpdatesContext } from './contexts.ts';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, IS_DEMO } from '../services/firebase.ts';
@@ -203,15 +203,17 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     }
   }, [applyProgress, followedEntities, followsLoading, signature, userId]);
 
+  // The signature, not the follow array's identity, says what to fetch.
+  const refreshSilently = useEffectEvent(() => refresh({ silent: true }));
   useEffect(() => {
     if (!userId || followsLoading) return undefined;
     const local = readLocalState(userId);
     const cacheIsFresh = local.signature === signature
       && Date.now() - Date.parse((local.savedAt || 0) as string) < CACHE_TTL_MS;
     if (cacheIsFresh) return undefined;
-    const refreshTimeout = setTimeout(() => refresh({ silent: true }), 0);
+    const refreshTimeout = setTimeout(refreshSilently, 0);
     return () => clearTimeout(refreshTimeout);
-  }, [followsLoading, refresh, signature, userId]);
+  }, [followsLoading, signature, userId]);
 
   const persistSeenIds = useCallback(async (nextSeenIds: string[]) => {
     if (!userId) return;

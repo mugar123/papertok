@@ -15,19 +15,23 @@ import {
   normalizeCitationDoi,
   normalizeCitationRows,
 } from '../src/utils/citationGraph.ts';
+import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';
 
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 
-function reconstructOpenAlexAbstract(invertedIndex: OpenAlexWork['abstract_inverted_index']) {
-  if (!invertedIndex || typeof invertedIndex !== 'object') return '';
-  return Object.entries(invertedIndex)
-    .flatMap(([word, positions]) => (Array.isArray(positions) ? positions : []).map((position): [number, string] => [position, word]))
-    .sort(([positionA], [positionB]) => positionA - positionB)
-    .map(([, word]) => word)
-    .join(' ');
+// Abstracts are rebuilt only for the papers a relation keeps, after the sort and
+// the cut: up to 80 works arrive for 16 kept, and rebuilding the rest spent
+// about 2 ms of a cold graph's 10 ms CPU budget on text nobody received.
+function withAbstracts(papers: Paper[], works: OpenAlexWork[]) {
+  const byId = new Map(works.map(work => [String(work.id).split('/').pop(), work]));
+  return papers.map(paper => {
+    const work = paper.openAlexId ? byId.get(paper.openAlexId) : undefined;
+    return work ? { ...paper, abstract: usableOpenAlexAbstract(work).slice(0, 4000) } : paper;
+  });
 }
 
 function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
@@ -36,14 +40,12 @@ function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
   const openAlexId = String(work.id).split('/').pop();
   const bestLocation = work.best_oa_location || work.primary_location || {};
   const publicationType = work.type || 'article';
-  const isPreprint = publicationType === 'preprint';
-  const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
   return {
     id: doi || `openalex:${openAlexId}`,
     openAlexId,
     sources: { primary: 'openalex', enrichedBy: ['opencitations'] },
     title: work.title,
-    abstract: abstract ? abstract.slice(0, 4000) : 'Resumen no disponible.',
+    abstract: '',
     authors: (work.authorships || []).slice(0, 20).map(authorship => ({
       id: String(authorship.author?.id || '').split('/').pop() || undefined,
       name: authorship.author?.display_name || '',
@@ -53,8 +55,9 @@ function mapCitationGraphWork(work: OpenAlexWork | null): Paper | null {
     published: work.publication_date || (work.publication_year ? `${work.publication_year}-01-01` : ''),
     journal: work.primary_location?.source?.display_name,
     publicationType,
-    publicationStatus: isPreprint ? 'preprint' : 'published',
-    peerReviewed: !isPreprint,
+    publicationStatus: openAlexPublicationStatus(work),
+    peerReviewed: openAlexPeerReviewed(work),
+    workingPaper: openAlexIsWorkingPaper(work) || undefined,
     openAccess: Boolean(work.open_access?.is_oa || bestLocation.pdf_url),
     pdfUrl: bestLocation.pdf_url || undefined,
     landingPageUrl: bestLocation.landing_page_url || (doi ? `https://doi.org/${doi}` : work.id),
@@ -81,7 +84,7 @@ function mapOpenCitationsMetaWork(work: Record<string, string> | null): Paper | 
     openAlexId: openAlexId || undefined,
     sources: { primary: 'opencitations', enrichedBy: [] },
     title: work.title,
-    abstract: 'Resumen no disponible.',
+    abstract: '',
     authors: authorNames.slice(0, 20).map(name => ({ name })),
     doi,
     year: Number.isFinite(year) ? year : undefined,
@@ -180,10 +183,8 @@ async function resolveCitationConnections(connections: CitationConnection[], env
     fetchOpenAlexWorksByFilter('doi', doisWithoutOpenAlexId, env),
   ]);
   let failed = byId.failed || byDoi.failed;
-  let mapped = deduplicateCitationGraphPapers(
-    [...byId.works, ...byDoi.works].map(mapCitationGraphWork).filter(Boolean),
-    40,
-  );
+  const works = [...byId.works, ...byDoi.works];
+  let mapped = deduplicateCitationGraphPapers(works.map(mapCitationGraphWork).filter(Boolean), 40);
   if (mapped.length < limit) {
     const metaFallback = await fetchOpenCitationsMetadata(candidates, env).catch(() => {
       failed = true;
@@ -199,7 +200,7 @@ async function resolveCitationConnections(connections: CitationConnection[], env
     return (paperB.citationCount || 0) - (paperA.citationCount || 0)
       || (paperB.year || 0) - (paperA.year || 0);
   });
-  return { papers: mapped.slice(0, limit), failed };
+  return { papers: withAbstracts(mapped.slice(0, limit), works), failed };
 }
 
 async function fetchOpenAlexCitingWorks(openAlexId: string | undefined, env: WorkerEnv, limit: number) {
@@ -210,10 +211,8 @@ async function fetchOpenAlexCitingWorks(openAlexId: string | undefined, env: Wor
   url.searchParams.set('per-page', String(Math.min(40, limit * 4)));
   url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
   const payload = await fetchOpenAlexJsonWithFallback<{ results?: OpenAlexWork[] }>(url, env, 7500);
-  return deduplicateCitationGraphPapers(
-    (payload?.results || []).map(mapCitationGraphWork).filter(Boolean),
-    limit,
-  );
+  const works = payload?.results || [];
+  return withAbstracts(deduplicateCitationGraphPapers(works.map(mapCitationGraphWork).filter(Boolean), limit), works);
 }
 
 // `partial` and `degraded` are not the same thing, and conflating them is what
@@ -246,11 +245,15 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
   const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 10);
 
   return cacheResponse(request, origin, env, citationGraphCacheSeconds, async () => {
+    // The references do not depend on the OpenAlex lookup, so they no longer wait
+    // for it. The citations do: past three hundred, OpenAlex answers them instead.
+    const referenceRows = fetchOpenCitationsRows(doi, 'references', env);
+    referenceRows.catch(() => {});
     const { work: currentWork, failed: currentWorkFailed } = await fetchOpenAlexCurrentWork(doi, env);
     const currentOpenAlexId = String(currentWork?.id || '').split('/').pop();
     const shouldUseOpenAlexForCitations = (currentWork?.cited_by_count || 0) > 300;
     const [referenceResult, citationResult] = await Promise.allSettled([
-      fetchOpenCitationsRows(doi, 'references', env),
+      referenceRows,
       shouldUseOpenAlexForCitations
         ? Promise.resolve([])
         : fetchOpenCitationsRows(doi, 'citations', env),
@@ -282,21 +285,20 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
       partial = true;
     }
 
-    const resolvedReferences = await resolveCitationConnections(referenceConnections, env, limit, 'reference');
+    const citationsFromOpenAlex = shouldUseOpenAlexForCitations || !citationConnections.length;
+    const [resolvedReferences, resolvedCitations] = await Promise.all([
+      resolveCitationConnections(referenceConnections, env, limit, 'reference'),
+      citationsFromOpenAlex
+        ? fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).then(
+          papers => ({ papers, failed: false }),
+          () => ({ papers: [], failed: true }),
+        )
+        : resolveCitationConnections(citationConnections, env, limit, 'citation'),
+    ]);
     const references = resolvedReferences.papers;
-    degraded = degraded || resolvedReferences.failed;
-    let citations;
-    if (shouldUseOpenAlexForCitations || !citationConnections.length) {
-      citations = await fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).catch(() => {
-        degraded = true;
-        return [];
-      });
-      if (shouldUseOpenAlexForCitations || citations.length) partial = true;
-    } else {
-      const resolvedCitations = await resolveCitationConnections(citationConnections, env, limit, 'citation');
-      citations = resolvedCitations.papers;
-      degraded = degraded || resolvedCitations.failed;
-    }
+    const citations = resolvedCitations.papers;
+    degraded = degraded || resolvedReferences.failed || resolvedCitations.failed;
+    if (citationsFromOpenAlex && (shouldUseOpenAlexForCitations || citations.length)) partial = true;
 
     return {
       references,
@@ -314,7 +316,7 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
     openAlexCalls: OPENALEX_CALLS.citationGraph,
     // The DOI reaching upstream is the normalized one -- lowercased, stripped of
     // its `doi.org` prefix and of trailing punctuation -- so keying on the raw one
-    // made every capitalisation of the same DOI a separate miss worth up to nine
+    // made every capitalisation of the same DOI a separate miss worth up to seven
     // billed OpenAlex calls. Same for a `limit` that `getSafeLimit` clamps to ten.
     canonicalParams: { doi, limit: String(limit) },
   });

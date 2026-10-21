@@ -4,9 +4,10 @@ import { readFile } from 'node:fs/promises';
 
 /**
  * public/sitemap.xml and public/robots.txt against the routes App.tsx
- * declares. The sitemap listed /, /following and /research: / is not
- * canonical (the shell's canonical is /feed), and the other two send a
- * visitor, and so a crawler, back to /feed (audit 2026-09-23, issue 5).
+ * declares. The sitemap listed /following and /research, which send a
+ * visitor, and so a crawler, elsewhere (audit 2026-09-23, issue 5). The root
+ * is the entry and the shell's canonical: it sends an account to /feed and a
+ * visitor to /onboarding.
  */
 
 const APP = new URL('../App.tsx', import.meta.url);
@@ -18,8 +19,8 @@ async function protectedPaths() {
   const routes = code.slice(code.indexOf('<Routes'), code.indexOf('</Routes>'));
   assert.ok(routes.length > 0, 'the route table is gone');
   const chunks = routes.split('<Route').slice(1);
-  // Guarded only when the element IS the guard: /feed wraps it in one branch
-  // of a ternary, for a session, and is the guest's own page otherwise.
+  // Guarded only when the element IS the guard: /onboarding wraps it in one
+  // branch of a ternary, for a session, and is the visitor's welcome otherwise.
   const paths = chunks
     .map(chunk => ({
       path: chunk.match(/^\s+path="([^"]+)"/)?.[1],
@@ -33,13 +34,12 @@ async function protectedPaths() {
 test('the sitemap lists canonical pages only', async () => {
   const sitemap = await readFile(SITEMAP, 'utf8');
   const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1]);
-  assert.ok(locations.includes('https://papertok.app/feed'));
-  assert.ok(!locations.includes('https://papertok.app/'), 'the root is not canonical: the shell names /feed');
+  assert.ok(locations.includes('https://papertok.app/'), 'the root is the canonical entry');
   const guarded = await protectedPaths();
   for (const location of locations) {
     const path = new URL(location).pathname;
     assert.equal(new URL(location).origin, 'https://papertok.app');
-    assert.ok(!guarded.some(route => path === route || path.startsWith(`${route}/`)), `${path} sends a visitor to /feed`);
+    assert.ok(!guarded.some(route => path === route || path.startsWith(`${route}/`)), `${path} sends a visitor to /onboarding`);
   }
 });
 
@@ -50,6 +50,6 @@ test('robots.txt keeps crawlers out of every page that needs an account', async 
     const root = `/${route!.split('/')[1]}`;
     assert.ok(disallowed.includes(root), `${route} is not disallowed`);
   }
-  assert.ok(!disallowed.some(path => '/public/paper/x'.startsWith(path) || '/feed'.startsWith(path)), 'the public pages stay open');
+  assert.ok(!disallowed.some(path => '/public/paper/x'.startsWith(path) || path === '/'), 'the public pages stay open');
   assert.match(robots, /^Sitemap: https:\/\/papertok\.app\/sitemap\.xml$/m);
 });

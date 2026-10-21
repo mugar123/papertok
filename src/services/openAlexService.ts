@@ -24,7 +24,7 @@ import { openAlexTypeaheadExpression } from './openAlexSearchQuery.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory, openAlexFilterForArea } from '../utils/areaAccent.ts';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.ts';
-import { openAlexPublicationStatus } from '../utils/publicationStatus.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publicationStatus.ts';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
 import { paperReferenceFor } from '../utils/explorerPaths.ts';
@@ -185,6 +185,8 @@ export function mapOpenAlexEnrichmentWork(work: OpenAlexWork | null): { openAlex
       related_works: work.related_works || [],
       publicationType: work.type || work.primary_location?.source?.type || 'preprint',
       publicationStatus: openAlexPublicationStatus(work),
+      peerReviewed: openAlexPeerReviewed(work),
+      workingPaper: openAlexIsWorkingPaper(work) || undefined,
       doi: arxivId
         ? getReliableEnrichmentDoi(work, arxivId)
         : (normalizeDoi(work.doi || work.ids?.doi) || undefined),
@@ -1586,9 +1588,11 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
   if (searchQuery) {
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
-  // `v2`: the page is persisted as the papers it became, not as the raw
-  // response (openAlexClient.js says why); the old key's raw pages age out.
-  const worksCacheKey = `entity-works-v2:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
+  // The page is persisted as the papers it became, not as the raw response
+  // (openAlexClient.js says why). `v3`: `v2` papers were built before
+  // `openAlexPeerReviewed` and carry `peerReviewed: true` for working papers,
+  // reports and works with no venue; those pages age out.
+  const worksCacheKey = `entity-works-v3:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
   
   try {
     const data = await openAlexJson<ReturnType<typeof slimWorksPage>, OpenAlexPage<OpenAlexWork>>(url, {
@@ -1779,6 +1783,8 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
     publicationType: work.type || work.primary_location?.source?.type || 'journal',
     publicationStatus: openAlexPublicationStatus(work),
+    peerReviewed: openAlexPeerReviewed(work),
+    workingPaper: openAlexIsWorkingPaper(work) || undefined,
     openAccess: work.open_access?.is_oa,
     pdfUrl: work.open_access?.oa_url,
     landingPageUrl: work.primary_location?.landing_page_url || work.id,

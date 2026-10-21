@@ -12,12 +12,8 @@ interface FeedSource {
   // A source without one (the Similar layer's fixed list) gets no refresh pill.
   refresh?: () => void;
   isRefreshing?: boolean;
-  publicMode?: boolean;
-  onAuthRequired?: (reason: string) => void;
-  onNotInterested?: (paperId: string) => void;
   onPaperViewed?: (paper: Paper) => void;
   surface?: string;
-  showFollowReason?: boolean;
   endCard?: ReactNode;
   emptyState?: ReactNode;
   initialLoadPending?: boolean;
@@ -32,9 +28,12 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { toast } from 'sonner';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 
+import useQuickSave from '../../hooks/useQuickSave.ts';
 import PaperCard from './PaperCard.tsx';
 import SkeletonCard from './SkeletonCard.tsx';
 import {
@@ -53,7 +52,8 @@ import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
-import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
+import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
+import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.ts';
 import './FeedContainer.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
 
@@ -92,6 +92,15 @@ const REFRESH_HOVER_BAND_PX = 120;
 // feedRefresh.test.ts holds the two together: everything this number is used
 // for here is about waiting until the cover is actually down.
 const REFRESH_DIP_MS = 180;
+// The beat between "Mark as read" and the feed moving on: the menu leaves
+// first (the dialog's 150ms; the phone drawer is nine tenths down by then), so
+// the paper is seen bare for a moment before it goes.
+const READ_ADVANCE_DELAY_MS = 240;
+// How long the pull's landing pose is held (`landPull`). It only has to cover
+// the frame or two React takes to give the pill `is-visible` through
+// `isRefreshing`, plus the transition that takes it there; after that the
+// pose is the same with the attribute and without it.
+const PULL_LANDING_MS = 420;
 // Lo que tarda la píldora en meterse bajo la barra (`.feed-refresh`, 280ms de
 // recorrido). La cara se queda en «Actualizado» todo ese rato y sólo vuelve a
 // «Actualizar» cuando ya no se la ve.
@@ -166,9 +175,8 @@ const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
 // The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
-// into every return: GuestFeedPage already renders its own `<main>` around
-// this component, so an unconditional one here would nest two landmarks and
-// produce invalid HTML. Sólo lo pasa quien ES la raíz de una ruta: App.jsx
+// into every return: the Similar layer renders a feed too, and it is an
+// overlay over a page, not a page of its own. Sólo lo pasa quien ES la raíz de una ruta: App.jsx
 // para `/feed` y FollowingFeedPage para `/following`. Todas las ramas —feed,
 // esqueleto, error, vacío y el vacío que trae la fuente— lo comparten, porque
 // una pantalla sin papers sigue siendo la página y necesita su landmark y su
@@ -223,22 +231,19 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  * `source` swaps WHERE the papers come from while every interaction (like,
  * save, read, view tracking) keeps flowing into the recommendation profile
  * through useFeed. Shape: { papers, loading, error, hasMore, loadMore,
- * refresh, isRefreshing, emptyState, endCard, showFollowReason, onPaperViewed }.
+ * refresh, isRefreshing, emptyState, endCard, onPaperViewed }.
  *
  * `endCard` is a node the source appends as one more snap item once the feed
- * has genuinely run out — same height, same snapping, same swipe. The guest
- * feed uses it to end on a sign-up card instead of on nothing.
+ * has genuinely run out — same height, same snapping, same swipe.
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
   const feed = useFeed();
+  const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
-  const publicMode = Boolean(source?.publicMode);
-  const onAuthRequired = source?.onAuthRequired;
-  const dismissFromSource = source?.onNotInterested;
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
-    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
+    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, undoNotInterested, markAsRead, unmarkAsRead,
     trackViewTime, trackSkip, trackSkips: trackSkippedPapers,
   } = feed;
   const papers = source ? source.papers : feed.papers;
@@ -254,21 +259,21 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
-  // Only the For You feed owns the context's list; Following and the guest
-  // feed render a `source` of their own and must not anchor For You's
+  // Only the For You feed owns the context's list; Following and the Similar
+  // layer render a `source` of their own and must not anchor For You's
   // re-rank on a card it does not have.
   const reportVisiblePaper = source ? null : feed.reportVisiblePaper;
+  const loadingAbstractIds = source ? undefined : feed.loadingAbstractIds;
   // Only once nothing more is coming: a page still loading or still pending
-  // would put the ending in front of papers the guest has not seen yet.
+  // would put the ending in front of papers the reader has not seen yet.
   const endCard = source?.endCard ?? null;
   const showEndCard = Boolean(endCard) && papers.length > 0 && !loading && !hasMore;
   const prefersReducedMotion = useReducedMotion();
 
   const handleViewTime = useCallback((paper: Paper, seconds: number) => {
-    if (publicMode) return;
     source?.onPaperViewed?.(paper);
     trackViewTime(paper, seconds);
-  }, [publicMode, source, trackViewTime]);
+  }, [source, trackViewTime]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   // El scroller, además de en el ref: el oyente del hover (más abajo) tiene
   // que atarse al envoltorio VIVO, y un ref no despierta a nadie cuando
@@ -301,12 +306,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the scroll event corrected it. The restore effect below re-seeds it for
   // the other resume shape, a reload whose papers had not arrived yet.
   const [activeIndex, setActiveIndex] = useState(() => resumeAnchor(papers, scrollKey).index);
+  // One gesture's worth of state. `phase` is 'idle' until a touch lands
+  // somewhere a pull may begin, 'pending' until its first move says which
+  // way it is going, and 'owning' once it is ours — from there the feed is
+  // stopped from scrolling under it.
+  const pullRef = useRef({ phase: 'idle', startY: 0, startX: 0, startedAt: 0 });
+  // The touch listeners are attached once per scroller, not per render, so
+  // what they need from the render lives here instead of in their closure.
+  const pullDepsRef = useRef({ refresh: refreshFeed, loading, isRefreshing });
+  const pullLandingTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const refreshPillRef = useRef<HTMLButtonElement | null>(null);
   // Whether the scroll back to the top is still owed (see the effect below).
   const refreshJumpOwedRef = useRef(false);
   // Desktop: the pill lives hidden under the navbar and shows while the mouse
-  // is in the band beneath it. Pulling past the top no longer refreshes
-  // (removed 2026-10-15): the pill is the one way to ask for it.
+  // is in the band beneath it. Touch: it shows as the pull progresses.
   const [refreshPillHover, setRefreshPillHover] = useState(false);
   // True until the pointer leaves the hover band once. Stops the pill from
   // flashing when the feed returns under a cursor that never left the band.
@@ -422,17 +435,20 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
   const skipExitRef = useRef<(NonNullable<ReturnType<typeof skipExitSlot>> & { commit: () => void }) | null>(null);
   const skipExitTimerRef = useRef<number | null>(null);
-  const getInteractionState = useCallback((paper: Paper) => publicMode ? {} : ({
+  // The paper an Undo brought back: pinned over the slot it returns to while
+  // it travels in (`landed` false), at rest in flow afterwards. The ref holds
+  // the one in flight; the scroll position to hold when it lands is its own.
+  const [returning, setReturning] = useState<{ id: string; height: number; landed: boolean } | null>(null);
+  const returningRef = useRef<{ id: string; height: number; landed: boolean } | null>(null);
+  const returnLandingTopRef = useRef<number | null>(null);
+  const readAdvanceTimerRef = useRef<number | null>(null);
+  const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)!),
     isSaved: savedPaperIds.has(interactionIdFor(paper)!),
     isRead: readPaperIds?.has(interactionIdFor(paper)!),
-  }), [interactionIdFor, likedPaperIds, publicMode, readPaperIds, savedPaperIds]);
+  }), [interactionIdFor, likedPaperIds, readPaperIds, savedPaperIds]);
 
   const flushPendingSkips = useCallback(() => {
-    if (publicMode) {
-      pendingSkippedPapersRef.current.clear();
-      return;
-    }
     const skippedPapers = Array.from(pendingSkippedPapersRef.current.values());
     pendingSkippedPapersRef.current.clear();
     if (skippedPapers.length === 0) return;
@@ -442,7 +458,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       return;
     }
     skippedPapers.forEach((paper) => void trackSkip(paper));
-  }, [publicMode, trackSkip, trackSkippedPapers]);
+  }, [trackSkip, trackSkippedPapers]);
 
   const schedulePendingSkipFlush = useCallback(() => {
     if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
@@ -494,21 +510,88 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     flushSkipExit();
   }, [flushSkipExit]);
 
+  // The paper joins the flow where it was pinned. If the reader is on that
+  // slot, the scroller would stay snapped to the card the paper covered,
+  // which is about to move one slot down, and carry the reader with it; the
+  // slot is held instead, in the commit that lands the paper, before paint.
+  const landReturn = useCallback(() => {
+    const current = returningRef.current;
+    if (!current) return;
+    returningRef.current = null;
+    const container = feedRef.current;
+    const index = papersRef.current.findIndex(item => item.id === current.id);
+    if (container && index >= 0 && Math.round(container.scrollTop / current.height) === index) {
+      returnLandingTopRef.current = index * current.height;
+    }
+    setReturning({ ...current, landed: true });
+  }, []);
+  useLayoutEffect(() => {
+    const top = returnLandingTopRef.current;
+    returnLandingTopRef.current = null;
+    if (top !== null && feedRef.current) feedRef.current.scrollTop = top;
+  }, [returning]);
+  // `animationend` lands the paper; this clock is only for a travel that
+  // never runs. It starts with the commit that pins the card, not on the Undo
+  // press — mounting the card back takes frames of its own (about 300ms in
+  // dev) — and it is wide, because landing early is what shows: a clock
+  // started on the press landed the card 74px short of its place, a jump,
+  // and in a browser that transitions `.pc`'s transform out of an interrupted
+  // animation, a lurch to the right and back. Landing late shows nothing:
+  // the pinned card is already exactly where it lands.
+  useEffect(() => {
+    if (!returning || returning.landed) return undefined;
+    const timer = setTimeout(landReturn, SKIP_RETURN_MS + 600);
+    return () => clearTimeout(timer);
+  }, [landReturn, returning]);
+
+  const handleReturnEnd = useCallback((event: AnimationEvent) => {
+    // Named like the exit: the card's own animations bubble here too.
+    if (String(event.animationName).startsWith('feedSkipReturn')) landReturn();
+  }, [landReturn]);
+
+  // Undo brings the paper back the way the exit took it, reversed: out of
+  // flow, pinned over the card the reader is on, and in from the right. The
+  // card is opaque, so it covers that card as it travels; only when it lands
+  // does it join the flow, and the card it covered moves one slot down
+  // unseen. Put back in flow at once, the paper pushed that card away in one
+  // frame and slid in over an empty background (measured 2026-10-21).
+  // An exit still running when Undo arrives has not reached
+  // markNotInterested yet: dropping it is the whole undo.
+  const handleUndoNotInterested = useCallback((paper: Paper) => {
+    const container = feedRef.current;
+    const height = container?.clientHeight ?? 0;
+    // The toast outlives the page: with the feed gone (or not yet measured)
+    // there is nothing to animate, and the mark is still taken back.
+    if (!container || height <= 0) {
+      void undoNotInterested(paper, null);
+      return;
+    }
+    landReturn();
+    returningRef.current = { id: paper.id, height, landed: false };
+    setReturning(returningRef.current);
+    if (skipExitRef.current?.id === paper.id) {
+      clearTimeout(skipExitTimerRef.current!);
+      skipExitRef.current = null;
+      skipExitTimerRef.current = null;
+      setSkipExit(null);
+      return;
+    }
+    void undoNotInterested(paper, source ? null : Math.round(container.scrollTop / height));
+  }, [landReturn, source, undoNotInterested]);
+
   const handleNotInterested = useCallback((paper: Paper) => {
     beginSkipExit(paper?.id, () => markNotInterested(paper));
-  }, [beginSkipExit, markNotInterested]);
-
-  const handleGuestNotInterested = useCallback((paperId: string) => {
-    beginSkipExit(paperId, () => dismissFromSource?.(paperId));
-  }, [beginSkipExit, dismissFromSource]);
+    toast('Marked as not interested', {
+      action: { label: 'Undo', onClick: () => handleUndoNotInterested(paper) },
+    });
+  }, [beginSkipExit, handleUndoNotInterested, markNotInterested]);
 
   const handleSkip = useCallback((paper: Paper) => {
-    if (publicMode) return;
     source?.onPaperViewed?.(paper);
     if (!paper?.id) return;
     pendingSkippedPapersRef.current.set(paper.id, paper);
     schedulePendingSkipFlush();
-  }, [publicMode, schedulePendingSkipFlush, source]);
+  }, [schedulePendingSkipFlush, source]);
 
   // Restore scroll position instantly before browser paints. Must run only once
   // per mount: re-assigning scrollTop on later papers.length changes (infinite
@@ -636,6 +719,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // keeps cards aligned without a non-passive listener blocking momentum
   // scrolling, and nothing here listens to the wheel.
 
+  useEffect(() => {
+    if (!feedNode) return undefined;
+    const moved = () => { feedNode.dataset.moved = ''; };
+    feedNode.addEventListener('scroll', moved, { once: true, passive: true });
+    return () => feedNode.removeEventListener('scroll', moved);
+  }, [feedNode]);
+
   // Implement keyboard arrow navigation on desktop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -668,7 +758,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
         const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
         if (nextIndex >= 0 && nextIndex < itemCount) {
-          container.scrollTo({ top: nextIndex * cardHeight, behavior: 'auto' });
+          // Smooth, as the browser's own arrow scroll is when a focused
+          // control leaves the key to it: an instant jump here made the same
+          // key move the feed two different ways depending on focus.
+          container.scrollTo({ top: nextIndex * cardHeight, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
         }
       }
     };
@@ -685,11 +778,49 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, showEndCard, feedNode]);
+  }, [papers.length, loading, showEndCard, feedNode, prefersReducedMotion]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
   }, [refreshFeed]);
+
+  // The pull's progress goes to the WRAPPER, not to the pill: the papers
+  // follow the finger too, and the wrapper is the one ancestor both they and
+  // the pill hang off. Written to the element, so a drag never re-renders.
+  // A data attribute, not a class: `className` on `.feed-wrapper` is a JSX
+  // literal that React rewrites on every commit, and the commit that starts
+  // the refresh lands on the very frame the finger lets go. `setAttribute`
+  // rather than `dataset.x =`, which the lint reads as mutating a ref value.
+  const setPull = useCallback((progress: number, travelPx = 0) => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper) return;
+    wrapper.style.setProperty('--pull', String(progress));
+    wrapper.style.setProperty('--pull-y', `${travelPx.toFixed(1)}px`);
+    wrapper.setAttribute('data-pull', progress > 0 ? 'pulling' : '');
+  }, []);
+
+  // A pull that refreshes does not let go: it lands. Resetting to zero would
+  // leave the pill with no state for the frame or two before React gives it
+  // `is-visible`, and with no state its transition is the one that LEAVES —
+  // a half-shown pill, a retreat and a jump back, all inside 100ms. The
+  // landing pose is the working pose letter for letter, so when React
+  // arrives there is nothing to correct; and the papers sink on the veil's
+  // clock instead of springing back, so thumb to veil reads as one movement.
+  const landPull = useCallback(() => {
+    const wrapper = feedRef.current?.parentElement;
+    if (!wrapper) return;
+    wrapper.style.setProperty('--pull', '1');
+    wrapper.style.setProperty('--pull-y', '0px');
+    wrapper.setAttribute('data-pull', 'landing');
+    clearTimeout(pullLandingTimerRef.current);
+    pullLandingTimerRef.current = setTimeout(() => {
+      if (wrapper.getAttribute('data-pull') === 'landing') wrapper.setAttribute('data-pull', '');
+    }, PULL_LANDING_MS);
+  }, []);
+  useEffect(() => () => clearTimeout(pullLandingTimerRef.current), []);
+  useEffect(() => {
+    pullDepsRef.current = { refresh: refreshFeed, loading, isRefreshing };
+  });
 
 
   // Fine pointer only: a touch also fires a synthetic mousemove where it
@@ -706,7 +837,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // the pointer leaves the band once; after that, hover works as before.
   // A pointerdown outside the wrapper (sheet, modal, navbar) re-locks.
   const handleMouseMove = useCallback((e: MouseEvent, wrapper: HTMLElement) => {
-    if (publicMode) return;
     if (!window.matchMedia('(pointer: fine)').matches) return;
     const inBand = e.clientY - wrapper.getBoundingClientRect().top < REFRESH_HOVER_BAND_PX;
     if (refreshHoverLockedRef.current) {
@@ -717,7 +847,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       refreshHoverLockedRef.current = false;
     }
     setRefreshPillHover((prev) => (prev === inBand ? prev : inBand));
-  }, [publicMode]);
+  }, []);
   // Enganchado al NODO, no a una lectura del ref en el primer commit. Las dos
   // dependencias de antes —`handleMouseMove` y `publicMode`— eran estables, así
   // que el efecto corría una sola vez por montaje; y el scroller sólo existe en
@@ -729,7 +859,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // envoltorio y CDP no le veía un solo oyente.
   useEffect(() => {
     const wrapper = feedNode?.parentElement;
-    if (!wrapper || publicMode) return undefined;
+    if (!wrapper) return undefined;
     const onMove = (e: MouseEvent) => handleMouseMove(e, wrapper);
     const onLeave = () => {
       refreshHoverLockedRef.current = true;
@@ -750,7 +880,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       wrapper.removeEventListener('mouseleave', onLeave);
       document.removeEventListener('pointerdown', onPointerDownCapture, true);
     };
-  }, [feedNode, handleMouseMove, publicMode]);
+  }, [feedNode, handleMouseMove]);
 
   // A short "done" beat once a refresh lands, before the pill hides again.
   // Long enough for the face crossfade to enter, hold, and leave — 600ms
@@ -786,13 +916,54 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [doneHold, pillOnScreen]);
 
   const handleOpenPdf = useCallback((paper: Paper) => {
-    if (!publicMode) trackPdfOpened(paper);
+    trackPdfOpened(paper);
     onOpenPdf!(paper);
-  }, [onOpenPdf, publicMode, trackPdfOpened]);
+  }, [onOpenPdf, trackPdfOpened]);
 
-  const handleSaveToList = useCallback((paper: Paper) => {
-    onSaveToList!(paper);
-  }, [onSaveToList]);
+  const handleSaveToList = useQuickSave(onSaveToList!);
+
+  // Marking a paper read means the reader is done with it, so the feed moves
+  // on to the next one. The paper itself stays where it was: scrolling back
+  // finds it, read. A paper the list does not hold (the related card inside a
+  // card) and the last snap item have no next one, and nothing moves.
+  // Undo takes the mark back and, if the reader is still on the paper the
+  // feed moved them to, returns them to the one they marked.
+  const handleMarkAsRead = useCallback((paper: Paper) => {
+    void markAsRead(paper);
+    // A visitor's mark is not kept (markAsRead needs an account), so there is
+    // nothing to confirm and no reason to move them on.
+    if (!user) return;
+    const container = feedRef.current;
+    const height = container?.clientHeight ?? 0;
+    const indexOfPaper = () => papersRef.current.findIndex(item => item.id === paper.id);
+    const index = indexOfPaper();
+    const canAdvance = !!container && index >= 0 && height > 0
+      && (index + 1) * height <= container.scrollHeight - height;
+    const isOnCard = (card: number) => !!container && Math.round(container.scrollTop / height) === card;
+    const scrollToCard = (card: number) => container?.scrollTo({
+      top: card * height,
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
+    clearTimeout(readAdvanceTimerRef.current!);
+    if (canAdvance) {
+      readAdvanceTimerRef.current = setTimeout(() => {
+        // The reader scrolled away during the beat: their scroll wins.
+        if (isOnCard(index)) scrollToCard(index + 1);
+      }, READ_ADVANCE_DELAY_MS);
+    }
+    toast('Marked as read', {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          clearTimeout(readAdvanceTimerRef.current!);
+          void unmarkAsRead(paper.id);
+          const at = indexOfPaper();
+          if (canAdvance && at >= 0 && isOnCard(at + 1)) scrollToCard(at);
+        },
+      },
+    });
+  }, [markAsRead, prefersReducedMotion, unmarkAsRead, user]);
+  useEffect(() => () => clearTimeout(readAdvanceTimerRef.current!), []);
 
   /**
    * El `setActiveIndex` de aquí va en transición, y conviene saber exactamente
@@ -874,6 +1045,90 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     if (feedFailed) trackEvent('app_error', { kind: 'feed_load_failed' });
   }, [feedFailed, trackEvent]);
 
+  // Pull-to-refresh, touch only, and only where the pill exists: a source
+  // without a refresh of its own (the Similar layer) has nothing to pull.
+  // utils/feedPullToRefresh.ts says where a pull may begin and how it ends.
+  // Native listeners, not React's: React registers `touchmove` at the root as
+  // passive, so `preventDefault` inside an `onTouchMove` prop is ignored —
+  // and stopping the scroll is the whole point once the pull is ours.
+  const canPull = papers.length > 0 && (!source || Boolean(source.refresh));
+  useEffect(() => {
+    const el = feedNode;
+    if (!el || !canPull) return undefined;
+    const state = pullRef.current;
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      const box = el.getBoundingClientRect();
+      const startY = pullStartFrom({
+        target: event.target as Element | null,
+        scrollTop: el.scrollTop,
+        clientY: touch.clientY,
+        containerTop: box.top,
+        containerHeight: box.height,
+      });
+      state.phase = startY === null ? 'idle' : 'pending';
+      state.startY = startY ?? 0;
+      state.startX = touch.clientX;
+      state.startedAt = performance.now();
+    };
+    const onMove = (event: TouchEvent) => {
+      if (state.phase === 'idle') return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      if (state.phase === 'pending') {
+        if (touch.clientY === state.startY && touch.clientX === state.startX) return;
+        if (!pullTakesOver({
+          startY: state.startY, startX: state.startX, currentY: touch.clientY, currentX: touch.clientX,
+        })) {
+          state.phase = 'idle';
+          return;
+        }
+        state.phase = 'owning';
+      }
+      if (event.cancelable) event.preventDefault();
+      setPull(
+        pullProgress({ startY: state.startY, currentY: touch.clientY }),
+        pullTravelPx({ startY: state.startY, currentY: touch.clientY }),
+      );
+    };
+    const onEnd = (event: TouchEvent) => {
+      const owning = state.phase === 'owning';
+      state.phase = 'idle';
+      if (!owning) return;
+      const touch = event.changedTouches[0];
+      if (!touch) { setPull(0, 0); return; }
+      const outcome = pullOutcome({
+        startY: state.startY,
+        endY: touch.clientY,
+        elapsedMs: performance.now() - state.startedAt,
+      });
+      const { refresh, loading: busy, isRefreshing: running } = pullDepsRef.current;
+      // Released short of a refresh is a spring: everything goes back.
+      // Released into one is a hand-over: see `landPull`.
+      if (outcome === 'refresh' && !busy && !running) {
+        landPull();
+        refresh();
+      } else {
+        setPull(0, 0);
+      }
+    };
+    const onCancel = () => {
+      state.phase = 'idle';
+      setPull(0, 0);
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onCancel, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onCancel);
+    };
+  }, [feedNode, canPull, setPull, landPull]);
+
 
 
 
@@ -941,7 +1196,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
     <FeedLandmark landmark={landmark}>
-      {!publicMode && papers.length > 0 && (!source || source.refresh) && (
+      {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
           ref={refreshPillRef}
@@ -1006,30 +1261,30 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           ) : (
           <div
             key={paper.id}
-            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}`}
-            style={skipExit?.id === paper.id ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` } : undefined}
-            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : undefined}
+            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${returning?.id === paper.id ? ` feed-snap-item--returned${returning.landed ? '' : ' feed-snap-item--returning'}` : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
+            style={skipExit?.id === paper.id
+              ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` }
+              : returning?.id === paper.id && !returning.landed ? { top: `${index * returning.height}px`, height: `${returning.height}px` } : undefined}
+            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : returning?.id === paper.id && !returning.landed ? handleReturnEnd : undefined}
           >
             <PaperCard
               paper={paper}
-              isLiked={!publicMode && likedPaperIds.has(interactionIdFor(paper)!)}
-              isSaved={!publicMode && savedPaperIds.has(interactionIdFor(paper)!)}
-              isRead={!publicMode && readPaperIds?.has(interactionIdFor(paper)!)}
+              isLiked={likedPaperIds.has(interactionIdFor(paper)!)}
+              isSaved={savedPaperIds.has(interactionIdFor(paper)!)}
+              isRead={readPaperIds?.has(interactionIdFor(paper)!)}
               onLike={toggleLike}
               onNotInterested={handleNotInterested}
-              onGuestNotInterested={dismissFromSource ? handleGuestNotInterested : undefined}
-              onMarkAsRead={markAsRead}
+              onMarkAsRead={handleMarkAsRead}
               onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}
               trackSkip={handleSkip}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
+              onPickList={onSaveToList}
               getInteractionState={getInteractionState}
-              showFollowReason={Boolean(source?.showFollowReason)}
-              publicMode={publicMode}
-              onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              abstractLoading={Boolean(loadingAbstractIds?.has(paper.id))}
               // The scroll hint belongs to the first card only, and this prop is
               // the only thing that decides it now: a
               // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:

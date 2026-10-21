@@ -17,6 +17,12 @@ import {
 } from './provider-runtime.ts';
 
 const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
+// A work OpenAlex has not indexed is an answer. The author lookup in
+// `src/services/openAlexService.ts` asks for its paper's work, and for 51 of 56
+// slow author links measured on 2026-09-07 that work was not indexed, so every
+// click on an author of the same paper billed the same 404 again. An hour lets a
+// newly indexed work show up the same day.
+const OPENALEX_NOT_FOUND_CACHE_SECONDS = 60 * 60;
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
 // asks for; the URL is rebuilt from them rather than forwarded.
@@ -65,11 +71,16 @@ export function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   return url;
 }
 
+// Only a refusal of the key itself is worth asking again without it: a key that
+// was rejected or whose budget is spent. A 404 or an outage answers the same
+// without the key, and retrying a timeout doubled the wait.
+const KEY_REFUSALS = new Set([401, 403, 429]);
+
 export async function fetchOpenAlexJsonWithFallback<T = unknown>(url: URL, env: WorkerEnv, timeoutMs: number) {
   try {
     return await fetchJsonWithTimeout<T>(url, { headers: { accept: 'application/json' } }, timeoutMs);
   } catch (error) {
-    if (!env.OPENALEX_API_KEY || !url.searchParams.has('api_key')) throw error;
+    if (!KEY_REFUSALS.has(Number((error as UpstreamError)?.status)) || !env.OPENALEX_API_KEY || !url.searchParams.has('api_key')) throw error;
     const anonymousUrl = new URL(url);
     anonymousUrl.searchParams.delete('api_key');
     return fetchJsonWithTimeout<T>(anonymousUrl, { headers: { accept: 'application/json' } }, timeoutMs);
@@ -147,7 +158,8 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  const budget = await reserveOpenAlexBudget(env, origin, OPENALEX_CALLS.relay);
+  const searching = target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '');
+  const budget = await reserveOpenAlexBudget(env, origin, searching ? OPENALEX_CALLS.search : OPENALEX_CALLS.relay);
   if (budget.error) return budget.error;
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
@@ -159,6 +171,12 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   // A refusal is relayed with its own status and its own `retry-after`, because
   // flattening it into a 502 would leave the client guessing how long to wait --
   // and since February 2026 that wait can be most of a day.
+  if (upstream.status === 404) {
+    headers.set('cache-control', `public, max-age=300, s-maxage=${OPENALEX_NOT_FOUND_CACHE_SECONDS}`);
+    const response = new Response(body, { status: 404, headers });
+    await caches.default.put(cacheKey, response.clone());
+    return response;
+  }
   if (!upstream.ok) {
     headers.set('cache-control', 'no-store');
     return new Response(body, { status: upstream.status, headers });

@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -32,11 +32,14 @@ import { ANALYTICS_CONSENT } from '../../services/analyticsService.ts';
 import { PAPER_REWRITE_LEVELS } from '../../services/paperRewriteService.ts';
 import { INTEREST_AREAS } from '../../data/categories.ts';
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService.ts';
+import { popupReadiness } from '../../services/firebase.ts';
 import GoogleMark from '../Public/GoogleMark.tsx';
+import { PreparingNote } from '../Public/ProviderSignIn.tsx';
 import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
 import InstitutionPill from '../Institution/InstitutionPill.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import EditInterestsModal from './EditInterestsModal.tsx';
+import { FollowingSheet } from './FollowingSettingsPage.tsx';
 import DeleteAccountDialog from './DeleteAccountDialog.tsx';
 import EmailNotificationModal from '../Following/EmailNotificationModal.tsx';
 import { Button } from '../ui/button.tsx';
@@ -46,6 +49,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group.tsx';
 import { Switch } from '../ui/switch.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
+import usePopupReady from '../../hooks/usePopupReady.ts';
 import './SettingsPage.css';
 
 /**
@@ -57,7 +61,7 @@ const SETTINGS_PAGES = [
   { slug: 'discovery', label: 'Discovery', summary: 'Follows and scientific interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'Default level for AI explanations', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
-  { slug: 'privacy', label: 'Privacy', summary: 'Anonymous usage analytics', Icon: ShieldCheck },
+  { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
 ];
 
 const LEVEL_DETAILS = {
@@ -110,11 +114,13 @@ const SETTINGS_COPY = {
   configure: 'Configure',
   configureEmail: 'Configure email updates',
   usageAnalytics: 'Usage analytics',
-  usageAnalyticsDescription: 'Control the anonymous measurements used to improve PaperTok.',
+  usageAnalyticsDescription: 'Control what PaperTok measures to improve the app.',
   analyticsToggleLabel: 'Allow usage analytics',
   analyticsHint: 'Counts pages and actions anonymously, without cookies; never your searches, papers, interests or account. Saved on the spot.',
+  detailedAnalyticsLabel: 'Detailed analytics',
+  detailedAnalyticsHint: 'Links what you do to your account: the papers you open, how long you read, what you search, and recordings of your sessions with typed text hidden. Uses cookies.',
   institution: 'University',
-  institutionDescription: 'Verify where you study or work by signing in with your university\'s Google account.',
+  institutionDescription: 'Verify your university email to link your library.',
   institutionLinked: (name: string) => `Verified with ${name}.`,
   link: 'Link',
   manage: 'Manage',
@@ -209,6 +215,10 @@ function ProfileAccountPage() {
   const { user, signInProviders, linkSignInMethod, signOut, institution } = useAuth();
   // The method being connected, while its popup is open.
   const [linking, setLinking] = useState<string | null>(null);
+  // Until the window can open inside the press (usePopupReady), Connect is
+  // disabled but keeps focus.
+  const preparing = !usePopupReady(popupReadiness);
+  const preparingId = useId();
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
 
@@ -276,6 +286,7 @@ function ProfileAccountPage() {
                     ? (onlyMethod ? copy.onlyMethod : copy.methodLinked)
                     : copy.methodUnlinked}
                 </p>
+                {!method.linked && <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} />}
               </div>
               {method.linked ? (
                 <span className="settings-method-actions">
@@ -291,10 +302,12 @@ function ProfileAccountPage() {
                   size="sm"
                   className="settings-row-action"
                   onClick={() => handleLink(method)}
-                  disabled={Boolean(linking)}
+                  disabled={Boolean(linking) || preparing}
+                  focusableWhenDisabled={preparing}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
+                  aria-describedby={preparing ? `${preparingId}-${method.id}` : undefined}
                 >
-                  {linking === method.id
+                  {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
                     : <LinkSimple size={15} aria-hidden="true" />}
                   {copy.connectShort}
@@ -361,10 +374,25 @@ function PrivacyPage() {
           </span>
           <Switch
             className="settings-toggle"
-            checked={analyticsConsent === ANALYTICS_CONSENT.GRANTED}
+            checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
             aria-label={copy.analyticsToggleLabel}
             onCheckedChange={checked => updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.GRANTED : ANALYTICS_CONSENT.DENIED,
+              checked ? ANALYTICS_CONSENT.ANONYMOUS : ANALYTICS_CONSENT.DENIED,
+            )}
+          />
+        </Label>
+        {/* Turning this on also turns analytics on; off leaves it anonymous. */}
+        <Label className="profile-switch">
+          <span className="profile-switch-copy">
+            <span className="profile-switch-label">{copy.detailedAnalyticsLabel}</span>
+            <span className="profile-switch-hint">{copy.detailedAnalyticsHint}</span>
+          </span>
+          <Switch
+            className="settings-toggle"
+            checked={analyticsConsent === ANALYTICS_CONSENT.DETAILED}
+            aria-label={copy.detailedAnalyticsLabel}
+            onCheckedChange={checked => updateAnalyticsConsent(
+              checked ? ANALYTICS_CONSENT.DETAILED : ANALYTICS_CONSENT.ANONYMOUS,
             )}
           />
         </Label>
@@ -378,6 +406,8 @@ function DiscoveryPage() {
   const { userPreferences } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [isInterestsOpen, setIsInterestsOpen] = useState(false);
+  const [isFollowingOpen, setIsFollowingOpen] = useState(false);
+  const isPhone = useIsPhone();
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;
 
   const selectedAreas = useMemo(() => {
@@ -404,7 +434,7 @@ function DiscoveryPage() {
                   : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
               </p>
             </div>
-            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => navigate('/settings/following')} />
+            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
           </div>
 
           <div className="settings-row">
@@ -428,6 +458,9 @@ function DiscoveryPage() {
         </div>
       </section>
       <EditInterestsModal isOpen={isInterestsOpen} onClose={() => setIsInterestsOpen(false)} />
+      {/* On a phone the follows open in a sheet, like the interests above;
+          wider than that they have their own page. */}
+      {isPhone && <FollowingSheet open={isFollowingOpen} onOpenChange={setIsFollowingOpen} />}
     </>
   );
 }

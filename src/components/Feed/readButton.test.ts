@@ -45,6 +45,21 @@ test('SOURCE: every card mount can take a read mark back', async () => {
     'on the lists page the row also leaves the reading list');
 });
 
+/**
+ * In the feed, "Mark as read" moves the reader on to the next paper and says
+ * so, with a way back: Undo takes the mark back and returns to the paper.
+ * A visitor, whose mark is not kept, gets neither.
+ */
+test('SOURCE: marking a paper read in the feed moves on, with an Undo', async () => {
+  const feed = stripComments(await read('./FeedContainer.tsx'));
+  assert.match(feed, /onMarkAsRead=\{handleMarkAsRead\}/, 'the feed hands the card its own handler');
+  const body = feed.slice(feed.indexOf('const handleMarkAsRead = useCallback('), feed.indexOf('}, [markAsRead,'));
+  assert.match(body, /void markAsRead\(paper\);\s*if \(!user\) return;/, 'the mark lands first; a visitor stops there');
+  assert.match(body, /scrollToCard\(index \+ 1\)/, 'the feed moves to the next paper');
+  assert.match(body, /toast\('Marked as read', \{\s*action: \{\s*label: 'Undo'/, 'the reader is told, with an Undo');
+  assert.match(body, /onClick: \(\) => \{[\s\S]*?unmarkAsRead\(paper\.id\)[\s\S]*?scrollToCard\(at\)/, 'Undo takes the mark back and returns to the paper');
+});
+
 test('SOURCE: a stored copy from a list opens on the skeleton', async () => {
   const lists = await read('../Lists/ListsPage.tsx');
   assert.match(lists, /navigate\(path, \{ state: \{ paper, stored: true, pageMotion: 'still' \} \}\)/);
@@ -54,7 +69,7 @@ test('SOURCE: a stored copy from a list opens on the skeleton', async () => {
 
 test('SOURCE: la acción de leído dice «Mark as read»/«Mark as unread», nunca la acción de abrir', async () => {
   const card = stripComments(await read('./PaperCard.tsx'));
-  // In the rail's More menu (MoreActions): the item says what it will do.
+  // In the rail's More panel (PaperMenu): the item says what it will do.
   const item = card.slice(card.indexOf("id: 'read'"), card.indexOf("id: 'skip'"));
   assert.doesNotMatch(item, /Read article|Open version|Open source/);
   assert.match(item, /label: isReadActive \? 'Mark as unread' : 'Mark as read'/);

@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
+import { reviewTagForPaper } from '../utils/paperStatus.ts';
 
 test('normalizes category and publication metadata used by ranking', () => {
   const paper = PaperBuilder.create({
@@ -57,6 +58,15 @@ test('keeps a confirmed zero citation count distinct from missing metadata', () 
   assert.equal(enriched.citationCountKnown, true);
 });
 
+// A mapper leaves the year out when the provider's date is after today; the
+// builder, and `deduplicate` through it, used to write in the current year.
+test('a record without a year keeps no year', () => {
+  const record = { id: 'pmid:42879010', sources: { primary: 'pubmed', enrichedBy: [] }, title: 'Chapter' };
+  assert.equal(PaperBuilder.create(record).year, undefined);
+  assert.equal(PaperBuilder.deduplicate([record])[0].year, undefined);
+  assert.equal(PaperBuilder.create({ ...record, year: 2025 }).year, 2025);
+});
+
 test('does not treat an OpenAlex repository as a verified publication', () => {
   const paper = PaperBuilder.create({
     id: 'arxiv:2607.08264',
@@ -100,6 +110,132 @@ test('merging an abstract does not manufacture peer review', () => {
   const merged = PaperBuilder.merge(base, { abstract: 'Now with text.' }, 'ads');
 
   assert.equal(merged.peerReviewed, false);
+});
+
+test('a working paper stays unreviewed when another provider also lists it as published', () => {
+  // OpenAlex says what it is (`openAlexPeerReviewed`); a Semantic Scholar row
+  // for the same DOI only says `published`, which used to re-derive `true`.
+  const openAlex = {
+    id: 'openalex:W7215107402',
+    doi: '10.5089/9798229063456.001',
+    title: 'An IMF working paper',
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    peerReviewed: false,
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  const semanticScholar = {
+    id: 's2:abc',
+    doi: '10.5089/9798229063456.001',
+    title: 'An IMF working paper',
+    publicationType: 'JournalArticle',
+    publicationStatus: 'published' as const,
+    sources: { primary: 'semantic_scholar', enrichedBy: [] },
+  };
+
+  for (const order of [[openAlex, semanticScholar], [semanticScholar, openAlex]]) {
+    const [paper] = PaperBuilder.deduplicate(order);
+    assert.equal(paper.peerReviewed, false);
+  }
+});
+
+test('the working-paper tag stays through a merge while the paper stays unreviewed', () => {
+  const doi = '10.5089/9798229063456.001';
+  const imf = {
+    id: 'openalex:W7215107402',
+    doi,
+    title: 'An IMF working paper',
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    peerReviewed: false,
+    workingPaper: true,
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  // Records for the same DOI that say published, reviewed or not, and nothing
+  // about a working paper.
+  const semanticScholar = { ...imf, id: 's2:abc', publicationType: 'JournalArticle', peerReviewed: undefined, workingPaper: undefined, sources: { primary: 'semantic_scholar', enrichedBy: [] } };
+  const crossref = { ...imf, id: 'crossref:1', publicationType: 'publication', workingPaper: undefined, sources: { primary: 'crossref', enrichedBy: [] } };
+
+  for (const order of [[imf, semanticScholar], [semanticScholar, imf], [imf, crossref], [crossref, imf]]) {
+    const [paper] = PaperBuilder.deduplicate(order);
+    assert.equal(reviewTagForPaper(paper)?.label, 'Working paper', order.map(record => record.id).join(' then '));
+  }
+
+  // A venue's answer clears it: OpenAlex's journal article stays reviewed and untagged.
+  const article = { ...imf, id: 'openalex:W100', peerReviewed: true, workingPaper: undefined };
+  const merged = PaperBuilder.merge(PaperBuilder.create(article), imf, 'openalex');
+  assert.equal(merged.peerReviewed, true);
+  assert.equal(reviewTagForPaper(merged), null);
+});
+
+test('a journal article joined to its working paper by title alone is not tagged as one', () => {
+  // A journal article and its working paper usually share title and first
+  // author but not a DOI. Synthetic records, shaped as the mappers return them.
+  const title = 'Monetary policy and bank lending in small open economies';
+  const authors = [{ name: 'Ana Economist' }];
+  const openAlex = { title, authors, publicationStatus: 'published' as const, sources: { primary: 'openalex', enrichedBy: [] } };
+  const arxiv = PaperBuilder.create({
+    id: '2601.00001',
+    arxivId: '2601.00001',
+    title,
+    authors,
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  const article = { ...openAlex, id: 'openalex:W100', doi: '10.1000/ijcb.1', publicationType: 'article', peerReviewed: true };
+  const imf = { ...openAlex, id: 'openalex:W200', doi: '10.5089/imf.1', publicationType: 'article', peerReviewed: false, workingPaper: true };
+
+  const rows = PaperBuilder.deduplicate([arxiv, article, imf]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].doi, '10.1000/ijcb.1');
+  assert.equal(reviewTagForPaper(rows[0]), null);
+
+  const nber = { ...openAlex, id: 'openalex:W300', doi: '10.3386/w1', publicationType: 'report', peerReviewed: false, workingPaper: true };
+  for (const primary of ['pubmed', 'crossref']) {
+    const journalArticle = {
+      id: `${primary}:1`,
+      doi: '10.1000/jhe.1',
+      title,
+      authors,
+      journal: 'Journal of Health Economics',
+      publicationType: 'journal-article',
+      publicationStatus: 'published' as const,
+      sources: { primary, enrichedBy: [] },
+    };
+    const joined = PaperBuilder.deduplicate([journalArticle, nber]);
+    assert.equal(joined.length, 1, primary);
+    assert.equal(joined[0].doi, '10.1000/jhe.1');
+    assert.equal(reviewTagForPaper(joined[0]), null, primary);
+  }
+});
+
+test('an OpenAlex record with no review evidence stays unknown through create and merge', () => {
+  const unknown = {
+    id: 'openalex:W3',
+    doi: '10.1000/no-venue',
+    title: 'No venue',
+    publicationType: 'article',
+    publicationStatus: 'published' as const,
+    sources: { primary: 'openalex', enrichedBy: [] },
+  };
+  const arxivTwin = {
+    id: 'arxiv:2601.00002',
+    doi: '10.1000/no-venue',
+    title: 'No venue',
+    publicationType: 'preprint',
+    publicationStatus: 'preprint' as const,
+    peerReviewed: false,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  };
+
+  assert.equal(PaperBuilder.create(unknown).peerReviewed, undefined);
+  assert.equal(PaperBuilder.merge(PaperBuilder.create(unknown), { abstract: 'Now with text.' }, 'arxiv').peerReviewed, undefined);
+  for (const order of [[unknown, arxivTwin], [arxivTwin, unknown]]) {
+    const [paper] = PaperBuilder.deduplicate(order);
+    assert.equal(paper.publicationStatus, 'published');
+    assert.equal(paper.peerReviewed, undefined);
+  }
 });
 
 test('a merged twin contributes the arXiv id the base was missing', () => {

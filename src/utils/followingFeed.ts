@@ -1,53 +1,11 @@
 import type { Paper, PaperFollowMatch } from '../models/Paper.ts';
 
 import { getFollowingUpdatePaperKey, getPaperPublicationTime } from './followingUpdates.ts';
-import { resolvePaperTopic } from './topicNavigation.ts';
-import { getLocalizedInstitutionName } from './institutionLocalization.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECENCY_DECAY_DAYS = 120;
 const IMMEDIATE_REPEAT_PENALTY = 12;
 const MAX_CONSECUTIVE_PER_FOLLOW = 2;
-
-const TYPE_LABELS = {
-  en: {
-    author: '',
-    topic: '',
-    institution: '',
-    project: 'the project',
-  },
-};
-
-/**
- * One human sentence explaining why a paper is in the Siguiendo feed.
- * Matches come from followingUpdatesService, which resolves follows through
- * stable identifiers (OpenAlex ids, ROR, project ids) before ever falling back
- * to normalized names, so a match here is a proven relationship.
- *
- * @param {Array<{type: string, displayName: string}>} matches
- * @returns {string}
- */
-export function buildFollowReasonLabel(matches: Array<Partial<PaperFollowMatch>> = []): string {
-  const named = matches.filter(match => match?.displayName);
-  if (named.length === 0) return '';
-  if (named.length > 2) {
-    return 'Matches several things you follow';
-  }
-
-  const parts = named.map((match) => {
-    const connector = TYPE_LABELS.en[match.type as keyof typeof TYPE_LABELS.en] ?? '';
-    const localizedTopic = match.type === 'topic'
-      ? resolvePaperTopic(match.canonicalId)
-        || resolvePaperTopic(match.displayName)
-      : null;
-    const localizedInstitution = match.type === 'institution'
-      ? getLocalizedInstitutionName(match)
-      : null;
-    const displayName = localizedTopic?.label || localizedInstitution || match.displayName;
-    return connector ? `${connector} ${displayName}` : displayName;
-  });
-  return `Because you follow ${parts.join(' and ')}`;
-}
 
 function getFollowKeys(paper: Partial<Paper> = {}) {
   return [...new Set(((paper._followedEntityMatches || [])
