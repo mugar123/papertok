@@ -68,22 +68,15 @@ export function hasAuthorsTab(type: string|undefined, entity: { _localTopic?: bo
  *   detail wraps to two lines once the score is known. Measured 2026-09-09:
  *   unreserved, the cell grew 64.5 → 77.5px when the score landed and the
  *   ORCID card under the header dropped 10.3px in one frame.
- *
- * `hasOrcid`: whether the route already knows the author has an ORCID record
- * (an ORCID id in the URL). The card was reserved for every author; three of
- * four authors opened in the 2026-09-05 audit had no record, and a reserved
- * block that never comes is the list rising 113px 400ms after the page has
- * landed. Unreserved, a card that does come grows the hero from the bottom
- * under the settle's clip, which reads as an arrival.
  */
-export function explorerSkeletonShape(type: string|undefined, { hasOrcid = false } = {}) {
+export function explorerSkeletonShape(type: string|undefined) {
   const authorish = type === 'author';
   const institutionish = type === 'institution';
   const projectish = type === 'project';
   return {
     tabs: hasAuthorsTab(type) ? 2 : 1,
     identity: institutionish ? 'credentials' : 'none',
-    aside: authorish ? (hasOrcid ? 'orcid' : 'none') : projectish ? 'summary' : 'none',
+    aside: projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
     // Whether the fourth cell is the recent-impact one, with a detail line
     // under its label. `RecentImpactStat` mounts for authors and institutions
