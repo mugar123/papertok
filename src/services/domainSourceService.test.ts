@@ -23,7 +23,10 @@ import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
-import { areaLabelForPaper } from '../utils/areaAccent.ts';
+import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../utils/areaAccent.ts';
+import { paperLegacyAdapter } from '../models/Paper.ts';
+import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { buildSavedPaperPayload } from '../utils/savedPaperPayload.ts';
 import { getCategoryArea } from '../data/categoryTaxonomy.ts';
 
 // The Worker answers a bioRxiv outage with an empty collection marked
@@ -180,6 +183,36 @@ test('a Europe PMC card ranks as a requested category without carrying it', () =
   assert.equal(preference(['bio.gen']), 100);
   assert.equal(preference(['bio.eco']), 100);
   assert.equal(preference(['bio.neuro']), 0, 'a category the source was not asked for earns nothing');
+});
+
+// A Europe PMC record names no category of the taxonomy, so its card has no
+// field until OpenAlex supplies one. Before the stored copies kept their
+// evidence (PAP-60), the card read Biology from a guess over all its terms,
+// while a savedPapers document kept only the first term ("Nitrogen" for
+// PMID 42820985) and read nothing: saving changed the field of 27 of these 50.
+test('saving or liking a Europe PMC card leaves its field as the feed showed it', () => {
+  const throughFirestore = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+  const field = (paper: Partial<Paper>) => [areaKeyForPaper(paper), areaLabelForPaper(paper), areaAccentForPaper(paper)];
+  const changed: string[] = [];
+  for (const { categories, results } of europePmcSearches) {
+    for (const raw of results) {
+      const card = mapEuropePmcSearchResult(raw, categories)!;
+      const copies: Array<[string, Partial<Paper>]> = [
+        ['interaction copy', paperLegacyAdapter(throughFirestore(serializeLibraryPaper(card)))],
+        ['savedPapers document', paperLegacyAdapter({ id: card.id, ...throughFirestore(buildSavedPaperPayload(card, '2026-10-20T12:00:00.000Z')) })],
+        // An interaction saved without a copy, read as the feed reads it.
+        ['fields-only record', paperLegacyAdapter(serializeLibraryPaper({ id: card.id, title: card.title, authors: card.authors, published: card.published }))],
+      ];
+      for (const [copy, stored] of copies) {
+        if (!isDeepStrictEqual(field(stored), field(card))) changed.push(`PMID ${raw.pmid}, ${copy}`);
+      }
+    }
+  }
+  assert.deepEqual(changed, []);
+
+  const { categories, results } = europePmcSearches[0];
+  const rice = mapEuropePmcSearchResult(results.find(raw => raw.pmid === '42820985')!, categories)!;
+  assert.equal(areaLabelForPaper(rice), null, 'nothing in the record names its field');
 });
 
 // Synthetic records shaped like each provider's payload. A category the
