@@ -21,7 +21,7 @@ const COPY = {
   en: {
     title: 'Delete account',
     close: 'Close',
-    lead: 'This deletes your lists, highlights, follows, preferences, newsletter subscription, and sign-in account, along with any profile, photo, comments or content reports from earlier versions of PaperTok. It cannot be undone. Before anything is deleted, a new window asks you to sign in again.',
+    lead: 'This deletes your lists, highlights, plain-words summaries, follows, preferences, newsletter subscription, and sign-in account, along with any profile, photo, comments or content reports from earlier versions of PaperTok. It cannot be undone. Before anything is deleted, a new window asks you to sign in again.',
     privacy: 'Privacy policy',
     privacyNewTab: 'opens in a new tab',
     typeLabel: 'Type DELETE to confirm',
