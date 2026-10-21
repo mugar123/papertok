@@ -8,9 +8,11 @@ import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
  * so the match exists the moment a card arrives, before OpenAlex has
  * classified it.
  *
- * The feed's scorer does not read the match yet. Tokenizing the 80 new cards
- * of a page took the page past its 10 ms budget, measured on a desktop, and
- * a phone would be slower still.
+ * The feed's scorer does not read the match yet. On a desktop, tokenizing the
+ * 80 new cards of a page took the scorer from 3.0 to 6.5 ms at the median and
+ * to 10 ms at the 95th percentile, which leaves a phone no room under the
+ * 10 ms budget; and on saved pools the match moved no more cards of the liked
+ * subfield into the first 15 than the topics the cards carry already did.
  */
 
 // The interaction document keeps the first 500 characters of an abstract. A
