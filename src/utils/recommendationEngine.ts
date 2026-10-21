@@ -63,9 +63,11 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   // fifth of the selected category's weight, and less than what the preference
   // fades to (selectedCategory * minPreferenceShare = 30), so no text match
   // outranks a category the reader chose. contentCosineScale is the cosine
-  // that earns all of it; real feeds' on-topic cards reach 0.2 to 0.4.
+  // that earns all of it. On saved feed pools, against five likes in one
+  // subfield, cards of that subfield had a median cosine of 0.05 (0.16 at the
+  // 90th percentile) and the others 0.01 (0.08).
   maxContentMatch: 20,
-  contentCosineScale: 0.3,
+  contentCosineScale: 0.15,
   citationMultiplier: 5,
   maxCitationLog: 5,
   graphCandidate: 15,
@@ -277,11 +279,10 @@ function openAlexAuthorKey(author: PaperAuthor | string | null | undefined) {
 
 /**
  * The OpenAlex concepts and authors a paper carries, keyed the way the
- * interaction profile learns them and the ranking reads them back, and the
- * terms of its title and abstract. Authors without an OpenAlex id are left
- * out: a name is not an identity.
+ * interaction profile learns them and the ranking reads them back. Authors
+ * without an OpenAlex id are left out: a name is not an identity.
  */
-export function paperAffinitySignals(paper: Partial<Paper>) {
+function conceptAndAuthorSignals(paper: Partial<Paper>) {
   // The concepts and topics of OpenAlex's own record, then those the card
   // carries itself (a card from OpenAlex has them before any enrichment), each
   // id once.
@@ -295,7 +296,15 @@ export function paperAffinitySignals(paper: Partial<Paper>) {
   const authorIds = [...new Set(
     (paper?.authors || []).slice(0, MAX_LEARNED_AUTHORS_PER_PAPER).map(openAlexAuthorKey).filter(Boolean),
   )];
-  return { concepts, authorIds, terms: [...paperTermCounts(paper).keys()] };
+  return { concepts, authorIds };
+}
+
+/**
+ * What an interaction with a paper teaches the profile: its concepts and
+ * authors, and the terms of its title and abstract.
+ */
+export function paperAffinitySignals(paper: Partial<Paper>) {
+  return { ...conceptAndAuthorSignals(paper), terms: [...paperTermCounts(paper).keys()] };
 }
 
 function conceptWeight(score: number | undefined) {
@@ -373,16 +382,21 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   // (100), so semanticConceptMultiplier IS the maximum semantic contribution.
   // Before this, the raw product reached hundreds of points per concept and
   // whether OpenAlex enrichment had arrived decided the ranking's character.
-  const { concepts, authorIds } = paperAffinitySignals(paper);
+  // The terms are read by contentMatchFor, and only for a reader with enough
+  // positives, so a cold reader's cards are never tokenized.
+  const { concepts, authorIds } = conceptAndAuthorSignals(paper);
   const semanticMatch = concepts.reduce((sum, concept) => {
     const affinityValue = conceptAffinities[concept.id] || 0;
     return sum + conceptWeight(concept.score) * (affinityValue / 100);
   }, 0);
   const semantic = clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier;
 
-  // Authors the reader keeps engaging with, learned rather than followed.
+  // The words of the papers the reader liked, saved or refused, against this
+  // pool's cards: what is left of "reads like what they keep" before any
+  // enrichment has classified the card.
   const contentMatch = contentMatchFor(paper, context, weights);
 
+  // Authors the reader keeps engaging with, learned rather than followed.
   const authorMatch = authorIds.reduce((sum, authorId) => sum + (authorAffinities[authorId] || 0), 0);
   const learnedAuthor = clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor;
 

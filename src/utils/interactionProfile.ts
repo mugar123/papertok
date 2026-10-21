@@ -68,6 +68,14 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * the exception: the documents store neither, so a rebuild starts them empty and
  * `seedLearnedAffinities` refills them from the liked and saved papers.
  *
+ * The terms (`terms`: the words and word pairs of the papers the reader liked,
+ * saved, opened or refused, see contentProfile.ts) are kept like the concepts,
+ * a value and a time under the same 30-day decay, 400 at most. A rebuild learns
+ * them from the title and abstract each document kept, which a like, a save
+ * and a rejection do and a view or a skip does not. They joined the affinities
+ * without a schema bump: a client that predates them ignores the key (and drops
+ * it when it next writes the aggregate), and a bump would rebuild every account.
+ *
  * ── How the category affinities survive being incremental ──
  * The old full scan weighted every interaction by `max(0.2, exp(-ageDays/30))`,
  * a factor that changes every second, so a plain running total cannot
@@ -177,7 +185,7 @@ export const MAX_AFFINITY_JSON_BYTES = 120000;
 export const MAX_TRACKED_CATEGORIES = 300;
 const MAX_TRACKED_CONCEPTS = 400;
 const MAX_TRACKED_AUTHORS = 300;
-export const MAX_TRACKED_TERMS = 400;
+const MAX_TRACKED_TERMS = 400;
 // Below this a learned concept or author no longer moves a score.
 const NEGLIGIBLE_AFFINITY = 0.01;
 
