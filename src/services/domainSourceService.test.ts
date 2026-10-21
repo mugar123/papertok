@@ -529,15 +529,16 @@ test('an economics reader asks the Worker relay for one page of the working-pape
       assert.equal(areaLabelForPaper(paper), 'Economics', paper.id);
       const subcategories = [paper.primaryCategory, ...paper.categories!].filter(category => getCategoryArea(category!));
       assert.deepEqual(subcategories, [], `${paper.id} names no subcategory`);
-      assert.deepEqual(paper._fetchedFor, ['q-fin.ST'], 'fetched for the finance interest, not for cs.AI');
     }
     assert.match(papers[0].abstract, /unauthorized immigration/);
     assert.equal(hasUsableAIAbstract(papers[1].abstract), false, 'a missing abstract stays missing');
 
-    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST']]) {
+    // The request is the same whichever category asked, so a card ranks as
+    // none of them, nor as the General Economics it used to be filed under.
+    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST'], ['econ.GN']]) {
       for (const paper of await fetchWorkingPapers(reader, 3)) {
         assert.equal(areaLabelForPaper(paper), 'Economics', `${paper.id} for a reader of ${reader.join(' and ')}`);
-        assert.deepEqual(paper._fetchedFor, reader, `${paper.id} for a reader of ${reader.join(' and ')}`);
+        assert.equal(scorePaperForRecommendation(paper, { userPreferences: reader }).preference, 0, `${paper.id} for a reader of ${reader.join(' and ')}`);
       }
     }
   } finally {

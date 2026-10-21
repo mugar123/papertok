@@ -785,8 +785,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * OpenAlex's own field is no better guide here. Of 114 recent works from these
  * series (2026-10-19), it read as Economics or Finance for 58, as Statistics,
  * Medicine, Mathematics, Biology or Computer Science for 17, and as a field
- * the app has no area for, mostly Social Sciences, for 39. The reader's
- * economics and finance interests are only why the cards were fetched.
+ * the app has no area for, mostly Social Sciences, for 39. A card earns no
+ * reader category's preference either: the request is the same whichever
+ * category asked, so it is evidence for none of them.
  * The mapper marks a report or a listed series as a working paper, not peer
  * reviewed, so the card shows the Working paper tag. The landing page is the
  * DOI (262 of 262 probed works), and a missing abstract stays missing.
@@ -794,8 +795,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * fills the page from the others.
  */
 export async function fetchWorkingPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
-  const interests = categories.filter(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''));
-  if (interests.length === 0) return [];
+  if (!categories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''))) return [];
   // A UTC date, so every reader on one day sends the same filter and shares
   // the Worker's cache entry for each page.
   const since = new Date(Date.now() - WORKING_PAPER_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -822,7 +822,7 @@ export async function fetchWorkingPapers(categories: readonly string[], page = 1
     return data.results.flatMap((work) => {
       const paper = adapter.mapToStandard(work);
       // The area's own key, which the label and accent lookups read as Economics.
-      return paper ? [{ ...paper, primaryCategory: 'econ', _fetchedFor: interests }] : [];
+      return paper ? [{ ...paper, primaryCategory: 'econ' }] : [];
     });
   } catch (error) {
     console.warn('Working-paper series unavailable', error);
