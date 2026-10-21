@@ -100,6 +100,7 @@ const SAGE_DISCOVERY = 'https://niepa.ac.in/download/Sage-Education%20Subject%20
 const OXFORD_LAW_DISCOVERY = 'https://scalsar.edu.in/assets/pdf/learning_resource_centre_SCALSAR.pdf';
 const OXFORD_HUMANITIES_DISCOVERY = 'https://sba.unipi.it/en/open-access-e-open-science-0/elenco-delle-pubblicazioni-oa/416';
 
+const CAMBRIDGE_ROPAR_DISCOVERY = 'https://www.iitrpr.ac.in/library/cupj.php';
 const CAMBRIDGE_DISCOVERY = 'https://www.uspceu.com/Portals/0/docs/Biblioteca/recursos/Cambridge-listado-por-materias.pdf';
 const CAMBRIDGE_HYDERABAD_DISCOVERY = 'https://igmlnet.uohyd.ac.in/Cambridge%20Journals/Cambridge%20Journals/Cambridge%20Journals%202022.htm';
 const EMERALD_DISCOVERY = Object.freeze([
@@ -369,6 +370,39 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
     platformId: 'dukeupress', packageHint: 'Duke University Press', publisher: 'Duke University Press',
     monogram: 'DUP', color: '#00539B', year: 2021, sources: DUKE_HUMANITIES_DISCOVERY,
+  })),
+  ...[
+    { name: 'The Cambridge Law Journal', issn: '0008-1973', eissn: '1469-2139', url: 'https://www.cambridge.org/core/journals/cambridge-law-journal' },
+    { name: 'Legal Theory', issn: '1352-3252', eissn: '1469-8048', url: 'https://www.cambridge.org/core/journals/legal-theory' },
+    { name: 'American Political Science Review', issn: '0003-0554', eissn: '1537-5943', url: 'https://www.cambridge.org/core/journals/american-political-science-review' },
+    { name: 'British Journal of Political Science', issn: '0007-1234', eissn: '1469-2112', url: 'https://www.cambridge.org/core/journals/british-journal-of-political-science' },
+    { name: 'International Organization', issn: '0020-8183', eissn: '1531-5088', url: 'https://www.cambridge.org/core/journals/international-organization' },
+    { name: 'Econometric Theory', issn: '0266-4666', eissn: '1469-4360', url: 'https://www.cambridge.org/core/journals/econometric-theory' },
+    { name: 'Philosophy', issn: '0031-8191', eissn: '1469-817X', url: 'https://www.cambridge.org/core/journals/philosophy' },
+    { name: 'Utilitas', issn: '0953-8208', eissn: '1741-6183', url: 'https://www.cambridge.org/core/journals/utilitas' },
+    { name: 'Canadian Journal of Philosophy', issn: '0045-5091', eissn: '1911-0820', url: 'https://www.cambridge.org/core/journals/canadian-journal-of-philosophy' },
+    { name: 'Victorian Literature and Culture', issn: '1060-1503', eissn: '1470-1553', url: 'https://www.cambridge.org/core/journals/victorian-literature-and-culture' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'cambridge', packageHint: 'Cambridge', publisher: 'Cambridge University Press',
+    monogram: 'CUP', color: '#D62E2E', year: 2021,
+    sources: Object.freeze([CAMBRIDGE_ROPAR_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'The Journal of Legal Studies', issn: '0047-2530', eissn: '1537-5366', url: 'https://www.journals.uchicago.edu/toc/jls/current' },
+    { name: 'The Journal of Law and Economics', issn: '0022-2186', eissn: '1537-5285', url: 'https://www.journals.uchicago.edu/toc/jle/current' },
+    { name: 'The Journal of Politics', issn: '0022-3816', eissn: '1468-2508', url: 'https://www.journals.uchicago.edu/toc/jop/current' },
+    { name: 'Journal of Labor Economics', issn: '0734-306X', eissn: '1537-5307', url: 'https://www.journals.uchicago.edu/toc/jole/current' },
+    { name: 'Economic Development and Cultural Change', issn: '0013-0079', eissn: '1539-2988', url: 'https://www.journals.uchicago.edu/toc/edcc/current' },
+    { name: 'National Tax Journal', issn: '0028-0283', eissn: '1944-7477', url: 'https://www.journals.uchicago.edu/toc/ntj/current' },
+    { name: 'The British Journal for the Philosophy of Science', issn: '0007-0882', eissn: '1464-3537', url: 'https://www.journals.uchicago.edu/toc/bjps/current' },
+    { name: 'Modern Philology', issn: '0026-8232', eissn: '1545-6951', url: 'https://www.journals.uchicago.edu/toc/mp/current' },
+    { name: 'English Literary Renaissance', issn: '0013-8312', eissn: '1475-6757', url: 'https://www.journals.uchicago.edu/toc/elr/current' },
+    { name: 'Classical Philology', issn: '0009-837X', eissn: '1546-072X', url: 'https://www.journals.uchicago.edu/toc/cp/current' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'chicago', packageHint: 'University of Chicago', publisher: 'University of Chicago Press',
+    monogram: 'UCP', color: '#800000', year: 2021, sources: CHICAGO_HUMANITIES_DISCOVERY,
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
