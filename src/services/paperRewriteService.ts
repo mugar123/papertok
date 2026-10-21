@@ -42,6 +42,18 @@ import { authenticatedWorkerFetch } from './workerApiClient.ts';
  */
 
 const rewriteCache = new Map<string, RewriteResult>();
+// Moves on with every change of account, so a rewrite still streaming for the
+// previous one cannot land in the memory the next one reads.
+let rewriteCacheAccount = 0;
+
+/**
+ * Forgets the rewrites held in memory. They are the signed-in account's, and
+ * would otherwise stand in front of the next account's own saved summaries.
+ */
+export function clearRewriteCache() {
+  rewriteCache.clear();
+  rewriteCacheAccount += 1;
+}
 
 /**
  * No bytes for this long means the stream is dead, not slow. The worker sends a
@@ -245,6 +257,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
   if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
   const rewriteLanguage = 'en';
   const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
+  const cacheAccount = rewriteCacheAccount;
   const reuse = !force && !regenerate;
 
   if (reuse && rewriteCache.has(cacheKey)) {
@@ -266,8 +279,6 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
     }
     if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
     if (saved) {
-      // Not put in the memory cache above: that cache outlives a change of
-      // account, and this copy is one account's own.
       const meta = { level, language: rewriteLanguage, model: saved.model, sourceBasis: saved.sourceBasis };
       onMeta?.({ ...meta, cached: true, remainingUses: null });
       saved.sections.forEach((section, index) => onSection?.(section, index));
@@ -382,7 +393,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
     const incomplete = Boolean(streamError) || !terminal
       || terminal.sectionCount !== sections.length || terminal.truncated === true;
     if (!incomplete) {
-      rewriteCache.set(cacheKey, result);
+      if (cacheAccount === rewriteCacheAccount) rewriteCache.set(cacheKey, result);
       if (uid) {
         void saveSummary(uid, paper, level, {
           sections,

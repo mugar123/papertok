@@ -28,9 +28,12 @@ function streamingClient(events: object[], breakConnection = false, { saved = nu
   const bodies: Record<string, unknown>[] = [];
   const reads: unknown[][] = [];
   const saves: unknown[][] = [];
+  // Each account's own copies; `saved` stands for whatever an account not yet
+  // written to already holds.
+  const savedByAccount = new Map<unknown, SavedCopy>();
   const store = {
-    getSavedSummary: async (...args: unknown[]) => { reads.push(args); return saved; },
-    saveSummary: async (...args: unknown[]) => { saves.push(args); saved = args[3] as SavedCopy; return true; },
+    getSavedSummary: async (...args: unknown[]) => { reads.push(args); return savedByAccount.get(args[0]) ?? saved; },
+    saveSummary: async (...args: unknown[]) => { saves.push(args); savedByAccount.set(args[0], args[3] as SavedCopy); return true; },
   };
   const transport = async (_path: string, options: RequestInit) => {
     requests++;
@@ -45,11 +48,12 @@ function streamingClient(events: object[], breakConnection = false, { saved = nu
     }));
   };
   const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl', 'toRewriteSection', 'getSavedSummary', 'saveSummary',
-    `${clientSource}; return { rewritePaper, getCachedRewrite };`)(transport, isAIReadablePdfUrl, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
+    `${clientSource}; return { rewritePaper, getCachedRewrite, clearRewriteCache };`)(transport, isAIReadablePdfUrl, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
       rewritePaper: typeof rewritePaper;
       getCachedRewrite: typeof import('./paperRewriteService.ts').getCachedRewrite;
+      clearRewriteCache: typeof import('./paperRewriteService.ts').clearRewriteCache;
     };
-  return { ...client, requests: () => requests, bodies, reads, saves };
+  return { ...client, requests: () => requests, bodies, reads, saves, savedByAccount };
 }
 const sectionEvent = { type: 'section', id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['First section.'], highlights: [] };
 const streamPaper = { id: 'stream-test', openAccessPdfUrl: 'https://arxiv.org/pdf/2610.23260' };
@@ -158,6 +162,36 @@ test('regenerate skips the saved copy, asks the worker for a new one and replace
   const reopened = await client.rewritePaper({ ...streamPaper, id: 'another-object-same-paper' }, 'university', { uid: 'reader-1' });
   assert.equal(client.requests(), 1);
   assert.deepEqual(reopened.sections[0].paragraphs, ['First section.']);
+});
+
+test('after a change of account the next reader gets their own saved summary, not the last one in memory', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }]);
+  await client.rewritePaper(streamPaper, 'university', { uid: 'reader-a' });
+  assert.ok(client.getCachedRewrite(streamPaper, 'university'));
+
+  client.clearRewriteCache();
+  client.savedByAccount.set('reader-b', savedCopy);
+  const result = await client.rewritePaper(streamPaper, 'university', { uid: 'reader-b' });
+  assert.deepEqual(result.sections[0].paragraphs, ['Saved section.']);
+  assert.deepEqual(client.reads.map(read => read[0]), ['reader-a', 'reader-b']);
+  assert.equal(client.requests(), 1);
+});
+
+test('a rewrite that finishes after a change of account is not kept in memory for the next one', async () => {
+  let finish: () => void = () => {};
+  const finished = new Promise<void>(resolve => { finish = resolve; });
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }]);
+  const pending = client.rewritePaper(streamPaper, 'university', {
+    uid: 'reader-a',
+    // The account changes while the first section is still arriving.
+    onSection: () => { client.clearRewriteCache(); finish(); },
+  });
+  await finished;
+  const result = await pending;
+  assert.equal(result.incomplete, false);
+  assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
+  // The copy is still saved for the account that spent the use on it.
+  assert.deepEqual(client.saves.map(save => save[0]), ['reader-a']);
 });
 
 test('a guest neither reads nor saves summaries, as before', async () => {
