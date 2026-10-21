@@ -1042,18 +1042,7 @@ button.pc-topics-pop-item:focus-visible {
   mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: pc-checking 1400ms linear infinite;
-}
-
-@keyframes pc-checking {
-  from {
-    -webkit-mask-position: 100% 0;
-    mask-position: 100% 0;
-  }
-  to {
-    -webkit-mask-position: 0 0;
-    mask-position: 0 0;
-  }
+  animation: checkingSweep 1400ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
