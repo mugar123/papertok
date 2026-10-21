@@ -18,6 +18,7 @@ const COPY = {
   loading: 'Loading your summaries…',
   empty: 'No summaries yet. A paper you read in plain words is listed here.',
   stalled: 'Your summaries are taking unusually long. Still trying.',
+  stalledMore: 'More summaries are taking unusually long. Still trying.',
   failed: 'Your summaries could not be loaded.',
   failedMore: 'More summaries could not be loaded.',
   retry: 'Try again',
@@ -41,7 +42,7 @@ export default function SummaryHistory({ uid }: { uid: string }) {
   const [cursor, setCursor] = useState<SummaryHistoryCursor>(null);
   const [hasMore, setHasMore] = useState(false);
   const [status, setStatus] = useState<'loading' | 'stalled' | 'ready' | 'error'>('loading');
-  const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'stalled' | 'error'>('idle');
   const [attempt, setAttempt] = useState(0);
   const [announcement, setAnnouncement] = useState('');
   const [openRow, setOpenRow] = useState<SummaryHistoryRow | null>(null);
@@ -49,6 +50,7 @@ export default function SummaryHistory({ uid }: { uid: string }) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const focusRowRef = useRef<number | null>(null);
   const moreRef = useRef<AbortController | null>(null);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
 
   // A first page that outlasts its read budget says so and keeps trying; the
   // answer still fills the list when it arrives (as on the Lists page).
@@ -87,9 +89,15 @@ export default function SummaryHistory({ uid }: { uid: string }) {
     const controller = new AbortController();
     moreRef.current = controller;
     setMoreStatus('loading');
+    // Cleared so the same sentence is read out again for this page.
+    setAnnouncement('');
     const firstNew = rows.length;
     const append = (page: SummaryHistoryPage) => {
       if (controller.signal.aborted) return;
+      // A page that arrives late must not pull focus away from wherever the
+      // reader went meanwhile; it only moves on from "Show more" itself.
+      const active = document.activeElement;
+      const focusStayed = !active || active === document.body || active === moreButtonRef.current;
       // A summary written again while the list was open moves to the top,
       // and must not be listed twice.
       setRows(current => [...current, ...page.rows.filter(row => !current.some(listed => listed.id === row.id))]);
@@ -97,14 +105,21 @@ export default function SummaryHistory({ uid }: { uid: string }) {
       setHasMore(page.hasMore);
       setMoreStatus('idle');
       setAnnouncement(COPY.loaded(page.rows.length));
-      focusRowRef.current = firstNew;
+      if (focusStayed) focusRowRef.current = firstNew;
     };
     try {
       append(await listSummaryHistory(uid, { cursor, signal: controller.signal, onLateResult: append }));
     } catch (error) {
       if (controller.signal.aborted) return;
       console.warn('Could not list more saved summaries', error);
-      setMoreStatus('error');
+      // Past its budget the read is still running and its page can still
+      // arrive, as for the first page; only a refusal is an error.
+      if (isReadTimeout(error)) {
+        setMoreStatus('stalled');
+        setAnnouncement(COPY.stalledMore);
+      } else {
+        setMoreStatus('error');
+      }
     }
   };
 
@@ -183,8 +198,11 @@ export default function SummaryHistory({ uid }: { uid: string }) {
       )}
 
       {moreStatus === 'error' && <p className="settings-summaries-note" role="alert">{COPY.failedMore}</p>}
+      {/* Read out by the status line below, which is already on the page. */}
+      {moreStatus === 'stalled' && <p className="settings-summaries-note">{COPY.stalledMore}</p>}
       {hasMore && (
         <Button
+          ref={moreButtonRef}
           variant="outline"
           size="sm"
           className="settings-summaries-more"
@@ -193,8 +211,8 @@ export default function SummaryHistory({ uid }: { uid: string }) {
         >
           {moreStatus === 'loading'
             ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
-            : moreStatus === 'error' && <ArrowClockwise size={15} aria-hidden="true" />}
-          {moreStatus === 'error' ? COPY.retry : COPY.showMore}
+            : (moreStatus === 'error' || moreStatus === 'stalled') && <ArrowClockwise size={15} aria-hidden="true" />}
+          {moreStatus === 'error' || moreStatus === 'stalled' ? COPY.retry : COPY.showMore}
         </Button>
       )}
       <p className="visually-hidden" role="status">{announcement}</p>
