@@ -145,6 +145,41 @@
   }
 }
 
+/* A read paper is filed away as it leaves. "Mark as read" moves the feed on
+   to the next paper (handleMarkAsRead), and the paper going up and out gives
+   ground: it settles back towards its own bottom edge, the one that stays
+   against the paper coming in, and dims. A swipe past a read paper later
+   files it the same way, so the gesture always means the same thing.
+
+   Driven by the scroll itself (`view()`, the exit range: from the card filling
+   the viewport to the card gone through the top), not by a clock. The native
+   smooth scroll's duration is the browser's to choose, and a clock would have
+   to guess it; this lands with the scroll whatever it does, and scrolling
+   back unfiles the card just as smoothly. Without scroll-driven animations
+   the feed simply moves on.
+
+   `cardSlideUp` is named again so the list keeps it: dropping a name from
+   `animation` and adding it back restarts it, which would replay the card's
+   entrance on "Mark as unread". `scale`, not `transform`, because the pull to
+   refresh owns `.pc`'s transform and the refresh dip its `translate`. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* Not on a read paper dismissed with "Not interested": its exit wins. */
+    .feed-snap-item--read:not(.feed-snap-item--leaving) > .pc {
+      transform-origin: 50% 100%;
+      animation:
+        cardSlideUp 0.36s var(--ease-out-expo) backwards,
+        feedReadFile linear both;
+      animation-timeline: auto, view();
+      animation-range: normal, exit 0% exit 100%;
+    }
+  }
+}
+
+@keyframes feedReadFile {
+  to { scale: 0.92; opacity: 0.35; }
+}
+
 /* A source's end slot (`source.endCard`) is deliberately a plain
    .feed-snap-item and nothing more: it inherits the full viewport height, the
    mandatory snap and the `scroll-snap-stop: always` above, so the swipe that
