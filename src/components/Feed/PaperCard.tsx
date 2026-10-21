@@ -2298,7 +2298,8 @@ const PaperCard = memo(function PaperCard({
           panel={menuView === 'about' ? {
             id: 'about',
             title: 'About this paper',
-            content: <div className="pc-about">{aboutSections}</div>,
+            content: aboutSections,
+            className: 'pc-about',
             style: { '--area-accent': areaAccentForPaper(paper) },
             onBack: () => setMenuView('actions'),
           } : null}

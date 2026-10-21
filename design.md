@@ -467,7 +467,9 @@ interested, the BibTeX/RIS exports), then the share destinations. About this
 paper replaces the actions in the same surface, with a back arrow, and holds
 the status chips, topics, funding and links that are not on the card face;
 topics and funding are ruled rows, the field's rule in its ink and its topics'
-in a lighter one.
+in a lighter one. Its heading and sections come in from the right one after
+another, and the back arrow brings the actions in from the left; opening the
+menu moves nothing inside it.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square

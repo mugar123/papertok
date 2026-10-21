@@ -100,6 +100,29 @@ const SAGE_DISCOVERY = 'https://niepa.ac.in/download/Sage-Education%20Subject%20
 const OXFORD_LAW_DISCOVERY = 'https://scalsar.edu.in/assets/pdf/learning_resource_centre_SCALSAR.pdf';
 const OXFORD_HUMANITIES_DISCOVERY = 'https://sba.unipi.it/en/open-access-e-open-science-0/elenco-delle-pubblicazioni-oa/416';
 
+const CAMBRIDGE_ROPAR_DISCOVERY = 'https://www.iitrpr.ac.in/library/cupj.php';
+const CAMBRIDGE_DISCOVERY = 'https://www.uspceu.com/Portals/0/docs/Biblioteca/recursos/Cambridge-listado-por-materias.pdf';
+const CAMBRIDGE_HYDERABAD_DISCOVERY = 'https://igmlnet.uohyd.ac.in/Cambridge%20Journals/Cambridge%20Journals/Cambridge%20Journals%202022.htm';
+const EMERALD_DISCOVERY = Object.freeze([
+  'https://www.niser.ac.in/library/content/emerald-publishing-journals-through-onos',
+  'https://www.plus.ac.at/wp-content/uploads/2023/01/Liste-Emerald.pdf',
+]);
+const CANADIAN_SCIENCE_DISCOVERY = Object.freeze([
+  'https://library.wlu.ca/resources/databases/csp',
+  'https://www.openscience.no/en/csp',
+  'https://blog.cdnsciencepub.com/wp-content/uploads/2018/08/PricingCatalogue-2019.pdf',
+]);
+
+const DELHI_HUMANITIES_DISCOVERY = 'https://shivaji.du.ac.in/files/studentcorner/A-Z%20LIST.pdf';
+const CHICAGO_HUMANITIES_DISCOVERY = Object.freeze([
+  DELHI_HUMANITIES_DISCOVERY,
+  'https://www.journals.uchicago.edu/pb-assets/docs/division/Univ-of-Chicago-Press-Jrnls-2026content-coverage-1754941306380.pdf',
+]);
+const DUKE_HUMANITIES_DISCOVERY = Object.freeze([
+  'https://www.culibrary.ac.in/e-journals-list-2024.html',
+  'https://dukeupress.edu/information-for/librarians/account-administration/title-list',
+]);
+
 export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freeze([
   { id: 'sciencedirect', packageHint: 'ScienceDirect', name: 'ScienceDirect', publisher: 'Elsevier', url: 'https://www.sciencedirect.com', monogram: 'SD', color: '#FF6C00', issn: '0925-8388', year: 2021, doi: '10.1016/j.jallcom.2021.161513' },
   { id: 'nature', packageHint: 'Nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', issn: '0028-0836', year: 2020, doi: '10.1038/s41586-020-2782-y' },
@@ -272,6 +295,114 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
     ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
     platformId: 'oup', packageHint: 'Oxford', publisher: 'Oxford University Press',
     monogram: 'OUP', color: '#002147', year: 2021,
+  })),
+  // Agriculture, archaeology, applied management and environmental sciences
+  // remain thinly sampled. These archived-year probes share existing groups.
+  ...[
+    { name: 'The Journal of Agricultural Science', issn: '0021-8596', eissn: '1469-5146', url: 'https://www.cambridge.org/core/journals/journal-of-agricultural-science', discovery: CAMBRIDGE_DISCOVERY },
+    { name: 'Journal of Dairy Research', issn: '0022-0299', eissn: '1469-7629', url: 'https://www.cambridge.org/core/journals/journal-of-dairy-research', discovery: CAMBRIDGE_DISCOVERY },
+    { name: 'Antiquity', issn: '0003-598X', eissn: '1745-1744', url: 'https://www.cambridge.org/core/journals/antiquity', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+    { name: 'Latin American Antiquity', issn: '1045-6635', eissn: '2325-5080', url: 'https://www.cambridge.org/core/journals/latin-american-antiquity', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+    { name: 'Religious Studies', issn: '0034-4125', eissn: '1469-901X', url: 'https://www.cambridge.org/core/journals/religious-studies', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+    { name: 'Journal of Linguistics', issn: '0022-2267', eissn: '1469-7742', url: 'https://www.cambridge.org/core/journals/journal-of-linguistics', discovery: CAMBRIDGE_HYDERABAD_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'cambridge', packageHint: 'Cambridge', publisher: 'Cambridge University Press',
+    monogram: 'CUP', color: '#D62E2E', year: 2021,
+    sources: Object.freeze([discovery, journal.url]),
+  })),
+  ...[
+    { name: 'Agricultural Finance Review', issn: '0002-1466', eissn: '2041-6326', url: 'https://www.emeraldgrouppublishing.com/journal/afr' },
+    { name: 'British Food Journal', issn: '0007-070X', eissn: '1758-4108', url: 'https://www.emeraldgrouppublishing.com/journal/bfj' },
+    { name: 'Supply Chain Management: An International Journal', issn: '1359-8546', eissn: '1758-6852', url: 'https://www.emeraldgrouppublishing.com/journal/scm' },
+    { name: 'International Journal of Contemporary Hospitality Management', issn: '0959-6119', eissn: '1757-1049', url: 'https://www.emeraldgrouppublishing.com/journal/ijchm' },
+    { name: 'Disaster Prevention and Management: An International Journal', issn: '0965-3562', eissn: '1758-6100', url: 'https://www.emeraldgrouppublishing.com/journal/dpm' },
+    { name: 'Records Management Journal', issn: '0956-5698', eissn: '1758-7689', url: 'https://www.emeraldgrouppublishing.com/journal/rmj' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'emerald', packageHint: 'Emerald', publisher: 'Emerald Publishing',
+    monogram: 'E', color: '#006A4E', year: 2021,
+    sources: Object.freeze([...EMERALD_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'Canadian Journal of Forest Research', issn: '0045-5067', eissn: '1208-6037', url: 'https://cdnsciencepub.com/journal/cjfr' },
+    { name: 'Canadian Journal of Fisheries and Aquatic Sciences', issn: '0706-652X', eissn: '1205-7533', url: 'https://cdnsciencepub.com/journal/cjfas' },
+    { name: 'Canadian Journal of Earth Sciences', issn: '0008-4077', eissn: '1480-3313', url: 'https://cdnsciencepub.com/journal/cjes' },
+    { name: 'Canadian Geotechnical Journal', issn: '0008-3674', eissn: '1208-6010', url: 'https://cdnsciencepub.com/journal/cgj' },
+    { name: 'Botany', issn: '1916-2790', eissn: '1916-2804', url: 'https://cdnsciencepub.com/journal/cjb' },
+    { name: 'Canadian Journal of Zoology', issn: '0008-4301', eissn: '1480-3283', url: 'https://cdnsciencepub.com/journal/cjz' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'canscipub', packageHint: 'Canadian Science', publisher: 'Canadian Science Publishing',
+    monogram: 'CSP', color: '#00447C', year: 2021,
+    sources: Object.freeze([...CANADIAN_SCIENCE_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'Current Anthropology', issn: '0011-3204', eissn: '1537-5382', url: 'https://www.journals.uchicago.edu/toc/ca/current' },
+    { name: 'Ethics', issn: '0014-1704', eissn: '1539-297X', url: 'https://www.journals.uchicago.edu/toc/et/current' },
+    { name: 'Signs: Journal of Women in Culture and Society', issn: '0097-9740', eissn: '1545-6943', url: 'https://www.journals.uchicago.edu/toc/signs/current' },
+    { name: 'Critical Inquiry', issn: '0093-1896', eissn: '1539-7858', url: 'https://www.journals.uchicago.edu/toc/ci/current' },
+    { name: 'American Journal of Sociology', issn: '0002-9602', eissn: '1537-5390', url: 'https://www.journals.uchicago.edu/toc/ajs/current' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'chicago', packageHint: 'University of Chicago', publisher: 'University of Chicago Press',
+    monogram: 'UCP', color: '#800000', year: 2021, sources: CHICAGO_HUMANITIES_DISCOVERY,
+  })),
+  ...[
+    { name: 'Music Perception', issn: '0730-7829', eissn: '1533-8312', url: 'https://online.ucpress.edu/mp', discovery: 'https://libraryguides.helsinki.fi/musicology/articles-journals' },
+    { name: 'Journal of Musicology', issn: '0277-9269', eissn: '1533-8347', url: 'https://online.ucpress.edu/jm', discovery: DELHI_HUMANITIES_DISCOVERY },
+    { name: '19th-Century Music', issn: '0148-2076', eissn: '1533-8606', url: 'https://online.ucpress.edu/ncm', discovery: DELHI_HUMANITIES_DISCOVERY },
+    { name: 'Journal of the Society of Architectural Historians', issn: '0037-9808', eissn: '2150-5926', url: 'https://online.ucpress.edu/jsah', discovery: DELHI_HUMANITIES_DISCOVERY },
+    { name: 'Gastronomica', issn: '1529-3262', eissn: '1533-8622', url: 'https://online.ucpress.edu/gastronomica', discovery: DELHI_HUMANITIES_DISCOVERY },
+  ].map(({ discovery, ...journal }) => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'ucpress', packageHint: 'University of California', publisher: 'University of California Press',
+    monogram: 'UCP', color: '#1B3D6D', year: 2021,
+    sources: Object.freeze([discovery, journal.url]),
+  })),
+  ...[
+    { name: 'Ethnohistory', issn: '0014-1801', eissn: '1527-5477', url: 'https://read.dukeupress.edu/ethnohistory' },
+    { name: 'Public Culture', issn: '0899-2363', eissn: '1527-8018', url: 'https://read.dukeupress.edu/public-culture' },
+    { name: 'GLQ: A Journal of Lesbian and Gay Studies', issn: '1064-2684', eissn: '1527-9375', url: 'https://read.dukeupress.edu/glq' },
+    { name: "Journal of Middle East Women's Studies", issn: '1552-5864', eissn: '1558-9579', url: 'https://read.dukeupress.edu/jmews' },
+    { name: 'Theater', issn: '0161-0775', eissn: '1527-196X', url: 'https://read.dukeupress.edu/theater' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'dukeupress', packageHint: 'Duke University Press', publisher: 'Duke University Press',
+    monogram: 'DUP', color: '#00539B', year: 2021, sources: DUKE_HUMANITIES_DISCOVERY,
+  })),
+  ...[
+    { name: 'The Cambridge Law Journal', issn: '0008-1973', eissn: '1469-2139', url: 'https://www.cambridge.org/core/journals/cambridge-law-journal' },
+    { name: 'Legal Theory', issn: '1352-3252', eissn: '1469-8048', url: 'https://www.cambridge.org/core/journals/legal-theory' },
+    { name: 'American Political Science Review', issn: '0003-0554', eissn: '1537-5943', url: 'https://www.cambridge.org/core/journals/american-political-science-review' },
+    { name: 'British Journal of Political Science', issn: '0007-1234', eissn: '1469-2112', url: 'https://www.cambridge.org/core/journals/british-journal-of-political-science' },
+    { name: 'International Organization', issn: '0020-8183', eissn: '1531-5088', url: 'https://www.cambridge.org/core/journals/international-organization' },
+    { name: 'Econometric Theory', issn: '0266-4666', eissn: '1469-4360', url: 'https://www.cambridge.org/core/journals/econometric-theory' },
+    { name: 'Philosophy', issn: '0031-8191', eissn: '1469-817X', url: 'https://www.cambridge.org/core/journals/philosophy' },
+    { name: 'Utilitas', issn: '0953-8208', eissn: '1741-6183', url: 'https://www.cambridge.org/core/journals/utilitas' },
+    { name: 'Canadian Journal of Philosophy', issn: '0045-5091', eissn: '1911-0820', url: 'https://www.cambridge.org/core/journals/canadian-journal-of-philosophy' },
+    { name: 'Victorian Literature and Culture', issn: '1060-1503', eissn: '1470-1553', url: 'https://www.cambridge.org/core/journals/victorian-literature-and-culture' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'cambridge', packageHint: 'Cambridge', publisher: 'Cambridge University Press',
+    monogram: 'CUP', color: '#D62E2E', year: 2021,
+    sources: Object.freeze([CAMBRIDGE_ROPAR_DISCOVERY, journal.url]),
+  })),
+  ...[
+    { name: 'The Journal of Legal Studies', issn: '0047-2530', eissn: '1537-5366', url: 'https://www.journals.uchicago.edu/toc/jls/current' },
+    { name: 'The Journal of Law and Economics', issn: '0022-2186', eissn: '1537-5285', url: 'https://www.journals.uchicago.edu/toc/jle/current' },
+    { name: 'The Journal of Politics', issn: '0022-3816', eissn: '1468-2508', url: 'https://www.journals.uchicago.edu/toc/jop/current' },
+    { name: 'Journal of Labor Economics', issn: '0734-306X', eissn: '1537-5307', url: 'https://www.journals.uchicago.edu/toc/jole/current' },
+    { name: 'Economic Development and Cultural Change', issn: '0013-0079', eissn: '1539-2988', url: 'https://www.journals.uchicago.edu/toc/edcc/current' },
+    { name: 'National Tax Journal', issn: '0028-0283', eissn: '1944-7477', url: 'https://www.journals.uchicago.edu/toc/ntj/current' },
+    { name: 'The British Journal for the Philosophy of Science', issn: '0007-0882', eissn: '1464-3537', url: 'https://www.journals.uchicago.edu/toc/bjps/current' },
+    { name: 'Modern Philology', issn: '0026-8232', eissn: '1545-6951', url: 'https://www.journals.uchicago.edu/toc/mp/current' },
+    { name: 'English Literary Renaissance', issn: '0013-8312', eissn: '1475-6757', url: 'https://www.journals.uchicago.edu/toc/elr/current' },
+    { name: 'Classical Philology', issn: '0009-837X', eissn: '1546-072X', url: 'https://www.journals.uchicago.edu/toc/cp/current' },
+  ].map(journal => ({
+    ...journal, kind: 'journal' as const, id: `journal-${journal.issn}`,
+    platformId: 'chicago', packageHint: 'University of Chicago', publisher: 'University of Chicago Press',
+    monogram: 'UCP', color: '#800000', year: 2021, sources: CHICAGO_HUMANITIES_DISCOVERY,
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 

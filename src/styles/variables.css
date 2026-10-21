@@ -518,6 +518,21 @@
   to { opacity: 0; }
 }
 
+/* A lighter band sweeping across a word that is still being looked up: the
+   card's "Checking" (PaperCard.css) and the library's (Institution.css). It
+   moves a mask, so the word keeps its own colour; the 300% mask size is set
+   where it is used. */
+@keyframes checkingSweep {
+  from {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
 /* The dialog sheet's own arrival and leave (ui/dialog.jsx). Deliberately on
    `opacity` and the NATIVE `scale` property, never `transform` or `translate`:
    Tailwind v4 positions the sheet with the native `translate` property
