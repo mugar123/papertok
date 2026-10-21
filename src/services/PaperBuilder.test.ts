@@ -488,6 +488,9 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     ['topic, arXiv copy first', PaperBuilder.deduplicate([arxiv, arxiv, searchRecord()])],
     ['Explorer page, arXiv copy first', PaperBuilder.deduplicate([arxiv, arxiv, explorerRecord()])],
     ['feed enrichment after an arXiv copy', [PaperBuilder.merge(PaperBuilder.deduplicate([arxiv, arxiv])[0], mapOpenAlexEnrichmentWork(fedsWork)!.enrichment, 'openalex')]],
+    // The followed feed deduplicates a name-only author's arXiv records with
+    // a followed topic's rows, which `fetchTopicPapers` has already merged.
+    ['followed, author arXiv record before a topic row', PaperBuilder.deduplicate([arxiv, ...PaperBuilder.deduplicate([arxiv, searchRecord()])])],
     ...(workingPaperFirst ? [
       ['search, working paper first', PaperBuilder.deduplicate([searchRecord(), arxiv])],
       ['Explorer page, working paper first', PaperBuilder.deduplicate([explorerRecord(), arxiv])],
@@ -663,6 +666,9 @@ test('an arXiv record beside a working paper it is not takes neither its series 
       // The feed asks followed authors and institutions in random order, so a
       // second author's copy of the eprint can follow the institution's work.
       ['followed, arXiv copy last', PaperBuilder.deduplicate([arxiv, slimWorksPage({ results: [work] }).papers[0], arxiv])],
+      // A name-only author's arXiv record before a topic row that already
+      // merged the working paper.
+      ['followed, arXiv record before a topic row', PaperBuilder.deduplicate([arxiv, ...PaperBuilder.deduplicate([arxiv, new OpenAlexAdapter().mapToStandard(work)!])])],
       ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(work)!.enrichment, 'openalex')]],
     ];
   };

@@ -414,13 +414,18 @@ export class PaperBuilder {
       ? enrichmentData.peerReviewed
         ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint')
       : undefined;
-    // A `true` that itself rests on an arXiv DOI adds nothing to a row whose
-    // `true` rested on one: a topic gets the same arXiv record from both its
-    // category listing and its query, and two followed authors can both list
-    // it. Such a record neither re-reads the row's answer, which may be the
-    // unknown a working paper left (below), nor ends `sources.arxivDoiOnly`.
-    const addsNoReview = arxivDoiOnly && restsOnArxivDoi(enrichmentData);
-    if (shouldUpgradePublication && (reviewOpen || reviewDenied) && !addsNoReview
+    // The row and the incoming record can both rest on an arXiv DOI: a topic
+    // gets the same arXiv record from its category listing and its query, and
+    // the followed feed joins a name-only author's arXiv records with a
+    // topic's rows, which may already have merged a working paper. Neither
+    // side's `true` says more than that DOI, so the incoming record does not
+    // end `sources.arxivDoiOnly` (below), and an answer other than `true` on
+    // either side stands: a record merged earlier, such as a working paper,
+    // already read the DOI otherwise.
+    const bothRestOnArxivDoi = arxivDoiOnly && restsOnArxivDoi(enrichmentData);
+    if (bothRestOnArxivDoi) {
+      if (merged.peerReviewed === true) merged.peerReviewed = enrichmentData.peerReviewed;
+    } else if (shouldUpgradePublication && (reviewOpen || reviewDenied)
       && (enrichmentData.peerReviewed !== false || sameRecord)) {
       merged.peerReviewed = enrichmentReview;
     }
@@ -442,7 +447,7 @@ export class PaperBuilder {
     // on the arXiv record's DOI alone. Every other provider's `published`
     // still counts (see `isOpenAlexRecord`), an untyped Semantic Scholar
     // record's or CORE's included.
-    const stillArxivDoiOnly = arxivDoiOnly && (enrichmentReview !== true || addsNoReview);
+    const stillArxivDoiOnly = arxivDoiOnly && (enrichmentReview !== true || bothRestOnArxivDoi);
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
       merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
     }
