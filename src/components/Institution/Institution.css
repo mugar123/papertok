@@ -87,6 +87,14 @@
   padding: var(--space-6);
 }
 
+/* On a phone the sheet's title takes focus when it opens (tabIndex -1), so a
+   screen reader starts there and the keyboard stays down. It is never a tab
+   stop of its own; a ring round the heading would read as a rendering fault,
+   not as focus (as `.gw-title`). */
+.institution-sheet h2:focus-visible {
+  outline: none;
+}
+
 .institution-dialog-lede {
   margin: 0;
   padding-right: var(--space-6);
