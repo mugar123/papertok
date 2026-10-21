@@ -1294,8 +1294,6 @@
   outline-offset: 2px;
 }
 
-/* Room for "999+" whether the count is there yet or not, so a count landing
-   or changing does not move the search box beside the tab. */
 .ee-list-count {
   min-width: 4ch;
   font: 500 0.75rem/1 var(--font-mono);
@@ -1303,7 +1301,6 @@
   color: var(--text-tertiary);
 }
 
-/* The filters in force, each one a press away from gone. */
 .ee-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1343,8 +1340,6 @@
 .ex-skel-seg { flex: none; width: 168px; height: 42px; border-radius: var(--radius-lg); }
 .ex-skel-seg--one { width: 104px; }
 
-/* The search page's field (SearchPage.css `.search-input-wrapper`): one box
-   holding the query and, after a rule, the filters. */
 .explorer-search-box {
   flex: 1;
   display: flex;
@@ -1466,8 +1461,6 @@
   color: var(--text-tertiary);
 }
 
-/* The box marks focus (its border turns to ink), so the field inside it does
-   not draw the global field focus a second time. */
 .explorer-search-box input:focus-visible {
   border-color: transparent;
   box-shadow: none !important;
@@ -1826,8 +1819,6 @@
   align-items: center;
 }
 
-/* On a phone the same controls in a bottom drawer: the list stays in view
-   above it, and the areas and the button sit where the thumb is. */
 .ee-filter-sheet {
   display: flex;
   flex-direction: column;
@@ -1936,8 +1927,6 @@
   outline-offset: 2px;
 }
 
-/* The areas as a list: each one's field colour, its name and how many of the
-   loaded papers it holds. Areas with none are left out. */
 .ee-facets {
   display: flex;
   flex-direction: column;
