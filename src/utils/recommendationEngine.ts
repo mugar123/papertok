@@ -268,13 +268,17 @@ function openAlexAuthorKey(author: PaperAuthor | string | null | undefined) {
 function conceptAndAuthorSignals(paper: Partial<Paper>) {
   // The concepts and topics of OpenAlex's own record, then those the card
   // carries itself (a card from OpenAlex has them before any enrichment), each
-  // id once.
+  // id once. Of the card's own, only OpenAlex concept and topic ids count:
+  // other providers file their keywords there under ids made up for that one
+  // record (`epmc:<pmid>:<index>`) or that restate the category
+  // (`biorxiv:<collection>`), which would match no other card or count the
+  // category twice.
+  const toSignal = (concept: { id?: unknown; score?: number } | null | undefined) => ({ id: openAlexKey(concept?.id), score: concept?.score });
   const carried = [
-    ...(paper?.openAlex?.concepts || []),
-    ...(paper?.concepts || []),
-    ...(paper?.topics || []),
-    ...(paper?.primaryTopic ? [paper.primaryTopic] : []),
-  ].map(concept => ({ id: openAlexKey(concept?.id), score: concept?.score })).filter(concept => concept.id);
+    ...(paper?.openAlex?.concepts || []).map(toSignal).filter(concept => concept.id),
+    ...[...(paper?.concepts || []), ...(paper?.topics || []), ...(paper?.primaryTopic ? [paper.primaryTopic] : [])]
+      .map(toSignal).filter(concept => /^[CT]\d+$/.test(concept.id)),
+  ];
   const concepts = carried.filter((concept, index) => carried.findIndex(other => other.id === concept.id) === index);
   const authorIds = [...new Set(
     (paper?.authors || []).slice(0, MAX_LEARNED_AUTHORS_PER_PAPER).map(openAlexAuthorKey).filter(Boolean),

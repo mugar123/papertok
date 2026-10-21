@@ -458,7 +458,7 @@ const rlPool = ['rl-1', 'rl-2', 'rl-3', 'rl-4', 'rl-5', 'rl-6'].map(id => makeCa
 const visionPool = ['cv-1', 'cv-2', 'cv-3', 'cv-4', 'cv-5', 'cv-6'].map(id => makeCard(id, VISION_TOPIC));
 
 /** What the feed does on a like: the interaction profile learns it, the ranking reads it back. */
-function readerWhoLiked(liked: ReturnType<typeof makeCard>[]) {
+function readerWhoLiked(liked: Array<Parameters<typeof paperAffinitySignals>[0] & { id: string; primaryCategory: string }>) {
   const profile = createEmptyInteractionProfile();
   liked.forEach(card => recordInteractionEvent(profile, {
     paperId: card.id, kind: 'like', category: card.primaryCategory, timestamp: NOW, ...paperAffinitySignals(card),
@@ -504,6 +504,28 @@ test('a concept or topic the card carries itself counts like one under openAlex,
   // 0.8 * 0.5 + 0.9 * 0.2 of the semantic ceiling; a double count of the
   // concept listed in both places would give 0.8 * 1.0 + 0.18.
   assert.ok(Math.abs(score.semantic - (0.8 * 0.5 + 0.9 * 0.2) * 50) < 1e-9, `semantic ${score.semantic}`);
+});
+
+test('the keyword ids a provider makes up for one card teach the reader no concept', () => {
+  // Shaped like europePmcService (`epmc:<pmid>:<index>`) and the bioRxiv
+  // collection of domainSourceService; the PMIDs are made up.
+  const bioRxivCard = (id: string) => ({
+    id, primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z',
+    concepts: [{ id: 'biorxiv:neuroscience', display_name: 'Neuroscience', level: 2 }],
+  });
+  const europePmcCard = {
+    id: 'pubmed:1000001', primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z',
+    concepts: [
+      { id: 'epmc:1000001:0', display_name: 'Neurons', level: 2 },
+      { id: 'epmc:1000001:1', display_name: 'Hippocampus', level: 2 },
+    ],
+    primaryTopic: { id: 'https://openalex.org/T900003', display_name: 'Memory consolidation', score: 0.9 },
+  };
+
+  const reader = readerWhoLiked([bioRxivCard('biorxiv:1'), bioRxivCard('biorxiv:2'), europePmcCard]);
+
+  assert.deepEqual(Object.keys(reader.conceptAffinities), ['T900003']);
+  assert.equal(scorePaperForRecommendation(bioRxivCard('biorxiv:3'), reader).semantic, 0);
 });
 
 test('two readers who picked the same category and liked different papers get different papers first from the same pool', () => {
