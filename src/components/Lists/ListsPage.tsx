@@ -1066,8 +1066,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     saveStoredLists(user.uid, lists);
   }, [user?.uid, lists]);
 
+  // Opening a list goes one level in, so it slides in from the right; going
+  // back to all lists slides in from the left. The view leaving fades first
+  // (`mode="wait"`), briefly, so the gap between the two never reads as a
+  // blank page. The page jumps to the top only once the old view is gone
+  // (`onExitComplete`), so the reader never sees it snap. Without motion, a
+  // fade.
+  const listViewMotion = {
+    variants: {
+      enter: (direction: number) => ({ opacity: 0, transform: prefersReducedMotion ? 'translateX(0px)' : `translateX(${direction * 16}px)` }),
+      center: { opacity: 1, transform: 'translateX(0px)', transition: { duration: 0.24, ease: EASE_OUT } },
+      exit: (direction: number) => ({ opacity: 0, transform: prefersReducedMotion ? 'translateX(0px)' : `translateX(${direction * -8}px)`, transition: { duration: 0.08, ease: EASE_OUT } }),
+    },
+    initial: 'enter',
+    animate: 'center',
+    exit: 'exit',
+  };
+
   const enterList = (list: OwnList) => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
     openList(list);
   };
 
@@ -1553,8 +1569,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         </div>
       )}
 
+      <AnimatePresence
+        initial={false}
+        mode="wait"
+        custom={expandedList || pendingOpen ? 1 : -1}
+        onExitComplete={() => window.scrollTo({ top: 0, behavior: 'instant' })}
+      >
       {expandedList ? (
-        <div className="lists-expanded">
+        <motion.div key="list" className="lists-expanded" {...listViewMotion}>
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
             const backButton = (
@@ -1886,9 +1908,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               </>
             );
           })()}
-        </div>
+        </motion.div>
       ) : pendingOpen ? (
-        <div
+        <motion.div
+          key="list"
+          {...listViewMotion}
           className="lists-opening"
           aria-busy="true"
           aria-label={'Opening list...'}
@@ -1902,9 +1926,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
             </div>
           ))}
-        </div>
+        </motion.div>
       ) : (
-        <div>
+        <motion.div key="index" {...listViewMotion}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -2013,8 +2037,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               </div>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* The card for a saved paper that has no public paper page — see
           `openPaperCard`. Same takeover the search and the explorer use,

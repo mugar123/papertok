@@ -796,6 +796,9 @@ button.pc-topics-pop-item:focus-visible {
   border: 1px solid color-mix(in srgb, var(--area-accent, #888) 24%, var(--bg-card));
   position: relative;
   z-index: calc(3 - var(--i, 0));
+  /* Centre the capital, not the font's line box: mono leaves descender room
+     under the letter and pushed it off-centre in the circle. */
+  text-box: trim-both cap alphabetic;
 }
 
 /* The same 7px tuck under the one before, for every avatar after the first.
@@ -3184,6 +3187,9 @@ button.pc-topics-pop-item:focus-visible {
   flex: none;
   width: 20px;
   height: 20px;
+  /* Half the 4px the stack's dots are wider, so each small dot sits on the
+     centre line of the first dot above it. */
+  margin-left: 2px;
   font-size: 0.5625rem;
 }
 

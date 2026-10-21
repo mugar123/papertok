@@ -10,6 +10,7 @@ import PetriLetGo from './PetriLetGo.tsx';
 import PetriLost from './PetriLost.tsx';
 import PetriProfile from './PetriProfile.tsx';
 import PetriReading from './PetriReading.tsx';
+import PetriSearch from './PetriSearch.tsx';
 import PetriStar from './PetriStar.tsx';
 import PetriThinking from './PetriThinking.tsx';
 import PetriUpset from './PetriUpset.tsx';
@@ -34,6 +35,7 @@ const POSES = {
   download: PetriDownload,
   letGo: PetriLetGo,
   lost: PetriLost,
+  search: PetriSearch,
 };
 
 /**
