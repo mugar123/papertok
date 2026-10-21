@@ -490,6 +490,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     setStatus('streaming');
     // A copy replayed from the account or the worker's cache arrives whole.
     let replayed = false;
+    // A summary saved in the account comes back without a Worker request, so
+    // its result is cached. A Worker cache replay was still a request.
+    let requested = false;
 
     try {
       const result = await rewritePaper(paper, targetLevel, {
@@ -502,6 +505,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         // summary saved in the account never reaches the worker and spends
         // nothing, and a retry, which does spend a use, is still counted.
         onRequest: () => {
+          requested = true;
           setStage('source');
           trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
         },
@@ -524,7 +528,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       });
       void trackEvent('paper_rewrite_result', {
         level: targetLevel, surface: 'reader', result: result.incomplete ? 'incomplete' : 'success',
-        cached: false, duration_ms: performance.now() - startedAt,
+        cached: !requested, duration_ms: performance.now() - startedAt,
       });
       if (result.incomplete && rewriteOf) {
         setSections(rewriteOf.sections);
