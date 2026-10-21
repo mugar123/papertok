@@ -660,6 +660,9 @@ test('an arXiv record beside a working paper it is not takes neither its series 
       ['Explorer across pages', PaperBuilder.deduplicate([...PaperBuilder.deduplicate([arxiv]), slimWorksPage({ results: [work] }).papers[0]])],
       // Each further page deduplicates the rows already shown again.
       ['Explorer, a later page', PaperBuilder.deduplicate(explorerPage)],
+      // The feed asks followed authors and institutions in random order, so a
+      // second author's copy of the eprint can follow the institution's work.
+      ['followed, arXiv copy last', PaperBuilder.deduplicate([arxiv, slimWorksPage({ results: [work] }).papers[0], arxiv])],
       ['feed enrichment', [PaperBuilder.merge(arxiv, mapOpenAlexEnrichmentWork(work)!.enrichment, 'openalex')]],
     ];
   };

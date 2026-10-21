@@ -414,7 +414,13 @@ export class PaperBuilder {
       ? enrichmentData.peerReviewed
         ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint')
       : undefined;
-    if (shouldUpgradePublication && (reviewOpen || reviewDenied)
+    // A `true` that itself rests on an arXiv DOI adds nothing to a row whose
+    // `true` rested on one: a topic gets the same arXiv record from both its
+    // category listing and its query, and two followed authors can both list
+    // it. Such a record neither re-reads the row's answer, which may be the
+    // unknown a working paper left (below), nor ends `sources.arxivDoiOnly`.
+    const addsNoReview = arxivDoiOnly && restsOnArxivDoi(enrichmentData);
+    if (shouldUpgradePublication && (reviewOpen || reviewDenied) && !addsNoReview
       && (enrichmentData.peerReviewed !== false || sameRecord)) {
       merged.peerReviewed = enrichmentReview;
     }
@@ -433,12 +439,10 @@ export class PaperBuilder {
     if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
     // A merged record whose own answer is `true`, such as OpenAlex's record of
     // the journal article, backs the row's; until one does, the `true` rests
-    // on the arXiv record's DOI alone. A `true` that itself rests on an arXiv
-    // DOI backs nothing: a topic gets the same arXiv record from both its
-    // category listing and its query. Every other provider's `published`
+    // on the arXiv record's DOI alone. Every other provider's `published`
     // still counts (see `isOpenAlexRecord`), an untyped Semantic Scholar
     // record's or CORE's included.
-    const stillArxivDoiOnly = arxivDoiOnly && (enrichmentReview !== true || restsOnArxivDoi(enrichmentData));
+    const stillArxivDoiOnly = arxivDoiOnly && (enrichmentReview !== true || addsNoReview);
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
       merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
     }
