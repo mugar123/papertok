@@ -1289,12 +1289,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         // Optional recommendation signals run alongside the primary sources.
         // They enrich the mix when available without extending first paint.
-        // Declared here, ISSUED after the main sources below: the OpenAlex
-        // client queues two at a time in arrival order, and asking for the
-        // followed entities first put the feed's own search behind all of
-        // them (measured 2026-09-16: 2.3 s late on a cold entry, past the
-        // first-paint budget). That search is gone (PAP-73); a main source
-        // that asks OpenAlex again needs the same order.
+        // Declared here, ISSUED after arXiv, PubMed and the domain sources
+        // below: the OpenAlex client queues two at a time in arrival order,
+        // and asking for the followed entities first put the feed's own search
+        // behind all of them (measured 2026-09-16: 2.3 s late on a cold entry,
+        // past the first-paint budget). PAP-73 removed that search. The
+        // working-paper series, the one main source still asking OpenAlex,
+        // waits for the personal and followed lookups on purpose.
         let graphCandidatesPromise = Promise.resolve<Paper[]>([]);
         let personalCandidatesPromise = Promise.resolve<Paper[]>([]);
         let followedCandidatesPromise = Promise.resolve<Paper[]>([]);

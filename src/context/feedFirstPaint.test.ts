@@ -162,9 +162,10 @@ test('SOURCE: the topic table is prewarmed when a topic follow is known', async 
  * Measured 2026-09-16: the optional candidates were created before the main
  * sources, so the feed's OpenAlex search entered the client's two-wide FIFO
  * queue behind every followed-entity lookup and left the browser 2.3 s late —
- * past its own first-paint budget. The main sources are issued first now. The
- * feed no longer searches OpenAlex (PAP-73); the order is kept for a main
- * source that asks OpenAlex again.
+ * past its own first-paint budget. arXiv, PubMed and the domain sources are
+ * issued first now. PAP-73 removed that search. The working-paper series, the
+ * one main source still asking OpenAlex, waits for the personal and followed
+ * lookups on purpose; a test in feedUsableBatch.test.ts covers that order.
  */
 test('SOURCE: the main sources are requested before the optional candidates', async () => {
   const code = stripComments(await read('./FeedContext.tsx'));
