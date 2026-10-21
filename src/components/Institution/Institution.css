@@ -130,10 +130,10 @@
   30% { opacity: 1; }
 }
 
-/* Something added under the field (Cancel, a message, the platform list)
-   opens its own height, so the window grows with it instead of jumping. Its
-   child must size to content: a fixed height cannot fold to zero. The clip
-   only runs while it opens, and leaves room for a focus ring. */
+/* Something added under the field (Cancel, a message) opens its own height,
+   so the window grows with it instead of jumping. Its child must size to
+   content: a fixed height cannot fold to zero. The clip only runs while it
+   opens, and leaves room for a focus ring. */
 .institution-link-reveal {
   display: grid;
   grid-template-rows: 1fr;
@@ -351,6 +351,17 @@
   .institution-link-reveal,
   .is-just-linked > .institution-pill,
   .institution-service-titles > li { animation: none; }
+  .institution-services-message,
+  .institution-services-retry,
+  .institution-services-count,
+  .institution-services-pending > li { animation: institution-piece-fade 200ms linear backwards; }
+  .institution-services-pending > li { animation-delay: 320ms; }
+  .institution-services-message[data-state='loading'] {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .institution-placeholder-plate,
+  .institution-placeholder-lines > span { animation: none; }
   .institution-services-list > li { animation: institution-titles-arrive 100ms ease-out; }
   .institution-service-chevron, .institution-service-panel { transition: none; }
   .institution-service-details { transition: opacity 100ms ease-out; }
@@ -359,6 +370,7 @@
 @media (max-width: 480px) {
   .institution-service-summary { gap: var(--space-2); }
   .institution-service-summary .institution-service-plate { width: 64px; }
+  .institution-placeholder-plate { width: 64px; }
 }
 
 /* The brand colour is data from the Worker's catalogue, like a field's
@@ -419,6 +431,99 @@
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
 }
+
+/* Each thing the library answers arrives as a piece of the window does,
+   rising onto the sheet: "Checking your library…", then what it found, could
+   not check or failed to reach, and Retry just behind a failure. Under a
+   list the message waits for the rows above it to land. The count beside
+   the heading arrives with the list. While the library is asked, the card's
+   "Checking" band sweeps across the words. The box they sit in settles from
+   one answer's height to the next (`useHeightSettle`). */
+.institution-services-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.institution-services-message {
+  display: block;
+}
+
+.institution-services-message,
+.institution-services-retry,
+.institution-services-count {
+  animation:
+    institution-piece-travel 380ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards;
+}
+
+.institution-services-retry { animation-delay: 90ms; }
+
+.institution-services-body:has(.institution-services-list:not(.institution-services-pending)) .institution-services-message { animation-delay: 220ms; }
+
+.institution-services-message[data-state='loading'] {
+  -webkit-mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  animation:
+    institution-piece-travel 380ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards,
+    checkingSweep 1400ms linear infinite;
+}
+
+/* The rows the list will fill, at a real row's size, while the library is
+   asked. They hold their space from the start but show only after 320 ms,
+   the wait every placeholder in the app keeps, so a quick answer never
+   flashes them; then they rise in like the rows that replace them. The bars
+   take the lists' shimmer. */
+.institution-services-pending > li {
+  animation:
+    institution-piece-travel 380ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards;
+  animation-delay: calc(320ms + var(--service-delay, 0ms));
+}
+
+.institution-service-placeholder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 80px;
+  padding: var(--space-3) var(--space-1);
+}
+
+.institution-placeholder-plate,
+.institution-placeholder-lines > span {
+  display: block;
+  border-radius: var(--radius-sm);
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 0%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 38%,
+    var(--bg-card) 50%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 62%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.institution-placeholder-plate {
+  flex: 0 0 auto;
+  width: 88px;
+  height: 40px;
+  border-radius: var(--radius-md);
+}
+
+.institution-placeholder-lines {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.institution-placeholder-lines > span { height: 11px; width: min(180px, 70%); }
+.institution-placeholder-lines > span + span { width: min(112px, 45%); }
 
 /* A publisher's own logo, drawn for a white page, so it sits on the figure
    plate, which stays white on both themes. The image fills the plate and
