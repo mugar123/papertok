@@ -23,9 +23,35 @@ test('does not invent a random PubMed category for ambiguous papers', () => {
   assert.equal(category, null);
 });
 
-test('trusts the query category when PubMed was searched for one subcategory', () => {
-  const category = classifyPubmedCategory({ title: 'Sparse metadata record' }, ['bio.micro']);
-  assert.equal(category, 'bio.micro');
+// Searching one subcategory used to file every record under it, whatever the
+// record said; one subcategory needs the same evidence as several.
+test('files a record searched for one subcategory under it only on evidence', () => {
+  assert.equal(classifyPubmedCategory({ title: 'Sparse metadata record' }, ['bio.micro']), null);
+  assert.equal(classifyPubmedCategory({ title: 'Gut microbiome of aged mice' }, ['bio.micro']), 'bio.micro');
+});
+
+// Synthetic esummary records. The lane keeps what PubMed returned for one
+// subcategory, but the category was written onto every record of it.
+test('a PubMed search for one subcategory files only the records that name it', async () => {
+  const adapter = new PubmedAdapter({
+    apiBase: 'https://papertok-report-api.example',
+    fetchImpl: async () => Response.json({
+      esearchresult: { count: '2', idlist: ['31000011', '31000012'] },
+      result: {
+        31000011: { uid: '31000011', title: 'Histological analysis of Ewing sarcoma', pubtype: ['Journal Article'] },
+        31000012: { uid: '31000012', title: 'Molecular biology of the replication fork', pubtype: ['Journal Article'] },
+      },
+      efetch: '',
+    }),
+  });
+
+  const { papers } = await adapter.search('"Molecular Biology" one subcategory', 1, { internalCategories: ['bio.mol'] });
+
+  assert.deepEqual(papers.map(paper => [paper.id, paper.primaryCategory]), [
+    ['pmid:31000011', undefined],
+    ['pmid:31000012', 'bio.mol'],
+  ]);
+  assert.deepEqual(papers.map(paper => paper._fetchedFor), [['bio.mol'], ['bio.mol']]);
 });
 
 test('a PMC copy makes a PubMed paper open, through the canonical openAccess field', () => {

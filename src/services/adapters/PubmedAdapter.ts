@@ -93,7 +93,6 @@ export function classifyPubmedCategory(paper: Partial<Paper>, internalCategories
     .filter(categoryId => getCategoryDefinition(categoryId));
 
   if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
 
   const title = normalizePubmedText(paper?.title);
   const abstract = normalizePubmedText(paper?.abstract || paper?.summary);
@@ -126,9 +125,13 @@ export function classifyPubmedCategory(paper: Partial<Paper>, internalCategories
   return ranked[0].categoryId;
 }
 
-function assignPubmedCategory(paper: Paper, internalCategories?: string[]) {
+function assignPubmedCategory(paper: Paper, internalCategories: string[] = []) {
   const categoryId = classifyPubmedCategory(paper, internalCategories);
-  if (!categoryId) return null;
+  const fetched = { ...paper, _fetchedFor: internalCategories };
+  // A record that names none of several requested categories is left out, as
+  // it always was. Asked for one, PubMed's answer stays in the lane, filed
+  // under that category only when the record says so itself.
+  if (!categoryId) return new Set(internalCategories).size === 1 ? fetched : null;
 
   const providerCategories = [...new Set([
     ...(paper.categories || []),
@@ -136,7 +139,7 @@ function assignPubmedCategory(paper: Paper, internalCategories?: string[]) {
   ].filter(Boolean))];
 
   return {
-    ...paper,
+    ...fetched,
     primaryCategory: categoryId,
     categories: [categoryId, ...providerCategories],
     allCategories: [categoryId, ...providerCategories],
