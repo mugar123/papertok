@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
+import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent, type InteractionEvent } from './interactionProfile.ts';
 import { rankPreferences } from './preferenceRanking.ts';
 
 const firstN = (area: string, n: number|undefined) => Object.keys(CATEGORIES[area].subcategories).slice(0, n);
@@ -32,4 +33,27 @@ test('duplicates fold, unknown ids keep their order in a group of their own, and
   assert.deepEqual(ranked, ['cs.AI', 'topic:x', 'topic:y']);
   assert.deepEqual(rankPreferences(null!), []);
   assert.deepEqual(rankPreferences(['cs.AI'], { 'cs.AI': 'nope' as never }), ['cs.AI']);
+});
+
+// A reader with ten interests in two areas, as in the 2026-10-20 feed audit.
+const TEN = ['cs.AI', 'quant-ph', 'cs.LG', 'cond-mat.supr-con', 'cs.CV', 'cond-mat.str-el', 'cs.CL', 'cond-mat.mtrl-sci', 'cs.NE', 'cond-mat.mes-hall'];
+const affinitiesAfter = (events: InteractionEvent[], daysLater = 0) => {
+  const now = Date.parse('2026-10-20T12:00:00Z');
+  const profile = createEmptyInteractionProfile();
+  events.forEach(event => recordInteractionEvent(profile, event, now));
+  return readProfileSignals(profile, now + daysLater * 86_400_000).categoryAffinities;
+};
+
+test('one skip or one quick view leaves an interest where it was, today and a year on', () => {
+  const neutral = rankPreferences(TEN, {});
+  for (const event of [
+    { paperId: 'a', kind: 'skip', category: 'cs.AI' },
+    { paperId: 'a', kind: 'viewTime', category: 'cs.AI', viewTime: 2 },
+  ]) {
+    for (const days of [0, 365]) {
+      assert.deepEqual(rankPreferences(TEN, affinitiesAfter([event], days)), neutral, `${event.kind}, ${days} days later`);
+    }
+  }
+  // A long read still moves its interest up.
+  assert.equal(rankPreferences(TEN, affinitiesAfter([{ paperId: 'b', kind: 'viewTime', category: 'cs.NE', viewTime: 13 }]))[0], 'cs.NE');
 });

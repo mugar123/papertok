@@ -10,7 +10,8 @@ import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
-import { readProfileSignals } from '../utils/interactionProfile.ts';
+import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent } from '../utils/interactionProfile.ts';
+import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
@@ -1131,4 +1132,56 @@ test('the working-paper series are asked for once the followed lookups settle, n
   await loading;
   assert.deepEqual(asked, ['followed', 'series']);
   assert.equal(state.error, null);
+});
+
+// What each load asks arXiv for: categories and order.
+function arxivQueries(env: ReturnType<typeof feed>['env']) {
+  const asked: Array<{ categories: string[]; mode: string }> = [];
+  env.fetchPapers = ((...args: unknown[]) => {
+    const [categories, start, count, mode] = args as [string[], number, number, string];
+    // Exploration asks for a handful from nearby categories; the main lane asks for a page.
+    if (count === env.PAGE_SIZE) asked.push({ categories, mode });
+    return Promise.resolve(records(`arxiv-${start}-${categories[0]}`));
+  }) as typeof env.fetchPapers;
+  return asked;
+}
+
+test('one skipped card keeps its interest in the first load, whatever page that load starts on', async t => {
+  const interests = ['cs.AI', 'quant-ph', 'cs.LG', 'cond-mat.supr-con', 'cs.CV', 'cond-mat.str-el', 'cs.CL', 'cond-mat.mtrl-sci', 'cs.NE', 'cond-mat.mes-hall'];
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'skipped', kind: 'skip', category: 'cs.AI' });
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  const loads: Array<{ categories: string[]; nextPage: number }> = [];
+  for (const randomDraw of [0, 0.3, 0.5, 0.7, 0.9]) {
+    draw = randomDraw;
+    const { state, env, run } = feed();
+    Object.assign(env, { userPreferences: interests, rankPreferences, CATEGORIES, profileSignals: ref(readProfileSignals(profile)) });
+    const asked = arxivQueries(env);
+    // The feed's first load: loadPapers(true, null, true) starts on a random page.
+    await run(true, null, true);
+    loads.push({ categories: asked[0].categories, nextPage: state.page });
+  }
+
+  assert.equal(new Set(loads.map(load => load.nextPage)).size, loads.length, 'the first loads start on different pages');
+  for (const load of loads) {
+    assert.ok(load.categories.includes('cs.AI'), `the first load before page ${load.nextPage} asks for ${load.categories}`);
+  }
+});
+
+test('a reader with no lean towards older papers gets arXiv newest first on every load', async t => {
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  for (const [lean, preference, randomDraw, expected] of [
+    ['none', 0, 0.01, 'recent'],
+    ['none', 0, 0.99, 'recent'],
+    ['older papers', -0.5, 0.01, 'relevance'],
+  ] as const) {
+    draw = randomDraw;
+    const { env, run } = feed();
+    env.temporalPreference.current = preference;
+    const asked = arxivQueries(env);
+    await run(true);
+    assert.deepEqual(asked.map(query => query.mode), [expected], `lean ${lean}, Math.random() = ${draw}`);
+  }
 });
