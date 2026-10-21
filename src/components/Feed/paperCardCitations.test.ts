@@ -50,8 +50,8 @@ test('SOURCE: the gate waits for every source that carries a citation count', as
 // Automatic pagination can produce the first visible page after exclusions.
 test('SOURCE: the re-entry the guard was widened for still exists', async () => {
   const code = stripComments(await read('../../context/FeedContext.tsx'));
-  assert.match(code, /loadPapersRef\.current\(false, activeMode, false, nextPageToFetch\)/,
-    'the auto-fetch continuation paints with `reset` false');
+  assert.match(code, /loadPapersRef\.current\?\.\(false, activeMode, false, nextPage\)/,
+    'a first page emptied after the wait continues with `reset` false');
 });
 
 /** A stale request that resolves its gate must not paint over a newer one. */
