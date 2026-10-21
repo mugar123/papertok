@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapHuggingFacePaper, mapHuggingFaceResources } from './huggingFaceService.ts';
 
-test('maps a Hugging Face paper without claiming peer review or citations', () => {
+test('maps a Hugging Face paper without claiming peer review, citations or a field', () => {
   const paper = mapHuggingFacePaper({
     paper: {
       id: '2607.12345',
@@ -18,7 +18,11 @@ test('maps a Hugging Face paper without claiming peer review or citations', () =
 
   assert.equal(paper!.id, 'arxiv:2607.12345');
   assert.equal(paper!.sources.primary, 'huggingface');
-  assert.equal(paper!.primaryCategory, 'cs.CL');
+  // Hugging Face lists no arXiv category; cs.CL is only what the source was
+  // asked for, and it used to become the field of any paper it returned.
+  assert.equal(paper!.primaryCategory, '');
+  assert.deepEqual(paper!.categories, []);
+  assert.deepEqual(paper!._fetchedFor, ['cs.CL']);
   assert.equal(paper!.peerReviewed, false);
   assert.equal(paper!.citationCountKnown, false);
   assert.equal(paper!.huggingFaceUpvotes, 42);

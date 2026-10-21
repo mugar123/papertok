@@ -93,7 +93,6 @@ export function classifyPubmedCategory(paper: Partial<Paper>, internalCategories
     .filter(categoryId => getCategoryDefinition(categoryId));
 
   if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
 
   const title = normalizePubmedText(paper?.title);
   const abstract = normalizePubmedText(paper?.abstract || paper?.summary);
@@ -137,6 +136,7 @@ function assignPubmedCategory(paper: Paper, internalCategories?: string[]) {
 
   return {
     ...paper,
+    _fetchedFor: internalCategories,
     primaryCategory: categoryId,
     categories: [categoryId, ...providerCategories],
     allCategories: [categoryId, ...providerCategories],

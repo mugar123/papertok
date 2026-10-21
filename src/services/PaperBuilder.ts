@@ -115,6 +115,7 @@ export class PaperBuilder {
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',
       _followedEntityMatches: data._followedEntityMatches || [],
+      _fetchedFor: data._fetchedFor?.length ? [...new Set(data._fetchedFor)].sort() : undefined,
       provider: data.provider || undefined,
     };
   }
