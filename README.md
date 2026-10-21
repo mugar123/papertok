@@ -116,4 +116,5 @@ PaperTok depends on open scholarly infrastructure, especially arXiv, OpenAlex an
 
 ## License
 
-[MIT](LICENSE). Built by [Nicolás Muñoz](https://github.com/mugar123), with UI design by Samuel.
+[MIT](LICENSE). Built by [Nicolás Muñoz](https://github.com/mugar123), with UI design by Samuel
+and contributions from Pablo Presa and bipo.
