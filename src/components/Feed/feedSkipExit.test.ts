@@ -68,7 +68,10 @@ test('SOURCE: Not interested can be undone, and the paper comes back', async () 
   assert.match(press, /toast\('Marked as not interested', \{\s*action: \{ label: 'Undo', onClick: \(\) => handleUndoNotInterested\(paper\) \}/);
   const undo = bounded(code, 'const handleUndoNotInterested = useCallback(', '}, [', 'handleUndoNotInterested', 26);
   assert.match(undo, /setReturning\(returningRef\.current\)/, 'the card is marked as coming back');
-  assert.match(undo, /setTimeout\(landReturn, SKIP_RETURN_MS \+ 120\)/, 'a clock lands it if the animation never runs');
+  assert.doesNotMatch(undo, /setTimeout\(landReturn/,
+    'the backstop does not start on the press: the card mounts first, and a clock started here landed it mid-travel');
+  assert.match(code, /if \(!returning \|\| returning\.landed\) return undefined;\s*const timer = setTimeout\(landReturn, SKIP_RETURN_MS \+ \d+\);/,
+    'it starts with the commit that pins the card, and only backs up animationend');
   assert.match(undo, /if \(skipExitRef\.current\?\.id === paper\.id\) \{[\s\S]*?setSkipExit\(null\);\s*return;/, 'a running exit is dropped, never committed');
   assert.match(undo, /undoNotInterested\(paper, source \? null : Math\.round\(container\.scrollTop \/ height\)\)/, 'a landed removal is taken back at the reader\'s slot');
   assert.match(code, /returning\?\.id === paper\.id && !returning\.landed \? \{ top: `\$\{index \* returning\.height\}px`/, 'pinned over its slot while it travels');
@@ -78,6 +81,8 @@ test('SOURCE: Not interested can be undone, and the paper comes back', async () 
   assert.doesNotMatch(stripComments(css).slice(css.indexOf('.feed-snap-item--returning > .pc {')).split('}')[0], /feedSkipReturnFade/,
     'with movement it covers the card opaque, without fading in from nothing');
   assert.match(css, /\.feed-snap-item--returned :is\([^)]*\.pc-title[^)]*\) \{\s*animation: none;/, 'it comes back whole, without replaying the arrival');
+  assert.match(css, /\.feed-snap-item--returned > \.pc \{\s*transition-property: opacity, translate;\s*\}/,
+    'no transform transition on the returned card: WebKit fires it as the return comes off and the card lurches right');
 });
 
 /**

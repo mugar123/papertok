@@ -181,6 +181,15 @@
   animation: none;
 }
 
+/* `.pc` transitions `transform` for the pull to refresh's spring-back.
+   WebKit starts that transition when the return's animations come off the
+   card, and the card lurched 6.4px right of its place and eased back over
+   200ms after landing (measured 2026-10-21, iPhone 13 profile; Chrome starts
+   none). The returned card keeps every other transition. */
+.feed-snap-item--returned > .pc {
+  transition-property: opacity, translate;
+}
+
 /* Without movement it fades in over the card it covers, and lands. */
 @media (prefers-reduced-motion: reduce) {
   .feed-snap-item--returning > .pc {
