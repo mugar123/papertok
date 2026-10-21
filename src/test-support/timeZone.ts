@@ -1,3 +1,5 @@
+declare const process: { env: Record<string, string | undefined> };
+
 /**
  * Runs `run` with the process clock in `timeZone`, then puts the previous zone
  * back. Node applies a TZ assigned at runtime to every Date made after it, and

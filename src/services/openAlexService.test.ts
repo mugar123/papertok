@@ -678,7 +678,7 @@ test('a DOI card keeps the date, abstract and metadata OpenAlex gave it', async 
 
   assert.equal(paper.title, 'The state of OA');
   assert.equal(paper.doi, '10.7717/peerj.4375');
-  assert.deepEqual(paper.authors.map(author => author.name), ['Heather Piwowar']);
+  assert.deepEqual(paper.authors.map(author => (author as PaperAuthor).name), ['Heather Piwowar']);
   assert.equal(paper.abstract, 'Open access to research articles keeps growing every year');
   assert.equal(paper.summary, 'Open access to research articles keeps growing every year');
   assert.equal(paper.year, 2018);
