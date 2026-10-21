@@ -50,10 +50,11 @@ export interface FeedContextValue {
 /* eslint-disable react-refresh/only-export-components */
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
-import { IS_DEMO, auth, db } from '../services/firebase.ts';
+import { IS_DEMO, db } from '../services/firebase.ts';
 import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
+import { auth } from '../services/firebase.ts';
 import { useFollowing } from './FollowingContext.tsx';
 import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
 import { getDeviceInfo } from '../utils/device.ts';
