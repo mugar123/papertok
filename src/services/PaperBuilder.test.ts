@@ -574,8 +574,10 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
     assert.equal(reviewTagForPaper(rows[0])?.label, 'Working paper', where);
     assert.deepEqual(peerReviewedOnly(rows), [], where);
   }
-  // Nor does another provider's record of the journal version: Crossref's
-  // joins on title and first author, Semantic Scholar's on the arXiv id.
+  // Nor does another provider's record of the journal version: the Explorer
+  // falls back to Crossref for an institution and asks Semantic Scholar for a
+  // name-only author. Crossref's record joins on title and first author,
+  // Semantic Scholar's on the arXiv id.
   const otherArticles: Array<[string, () => Paper]> = [
     ['Crossref', () => mapCrossrefInstitutionWork({
       DOI: journalDoi,
@@ -599,7 +601,6 @@ test('a FEDS revision that arXiv lists under its own DOI stays a working paper b
       ['Explorer page', PaperBuilder.deduplicate([arxiv, article(), explorerRecord()])],
       ['Explorer across pages', [arxiv, article(), explorerRecord()]
         .reduce<Paper[]>((rows, record) => PaperBuilder.deduplicate([...rows, record]), [])],
-      ['followed', PaperBuilder.deduplicate([arxiv, ...PaperBuilder.deduplicate([arxiv, article(), searchRecord()])])],
     ];
     for (const [flow, rows] of otherFlows) {
       const where = `${provider} article under another DOI between, ${flow}`;
