@@ -1,4 +1,3 @@
-import type { OwnList } from '../../utils/ownLists.ts';
 import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { Paper } from '../../models/Paper.ts';
@@ -30,16 +29,11 @@ import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { useLanguage } from '../../context/LanguageContext.tsx';
-import { IS_DEMO } from '../../services/firebase.ts';
-import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
-import { readListsHoldingPaper, writeListMembership } from '../../services/paperListMembership.ts';
-import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.ts';
-import { setDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 
+import useQuickSave from '../../hooks/useQuickSave.ts';
 import PaperCard from './PaperCard.tsx';
 import SkeletonCard from './SkeletonCard.tsx';
 import {
@@ -58,7 +52,7 @@ import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
-import { SKIP_EXIT_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
+import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.ts';
 import './FeedContainer.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motionCurves.ts';
@@ -244,12 +238,12 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
   const feed = useFeed();
-  const { trackEvent, markActivation } = useAnalyticsConsent();
+  const { user } = useAuth();
+  const { trackEvent } = useAnalyticsConsent();
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
-    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
-    personalLibrary, toggleReadLater, markSaved, unmarkSaved,
+    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, undoNotInterested, markAsRead, unmarkAsRead,
     trackViewTime, trackSkip, trackSkips: trackSkippedPapers,
   } = feed;
   const papers = source ? source.papers : feed.papers;
@@ -441,6 +435,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
   const skipExitRef = useRef<(NonNullable<ReturnType<typeof skipExitSlot>> & { commit: () => void }) | null>(null);
   const skipExitTimerRef = useRef<number | null>(null);
+  // The paper an Undo brought back: pinned over the slot it returns to while
+  // it travels in (`landed` false), at rest in flow afterwards. The ref holds
+  // the one in flight; the scroll position to hold when it lands is its own.
+  const [returning, setReturning] = useState<{ id: string; height: number; landed: boolean } | null>(null);
+  const returningRef = useRef<{ id: string; height: number; landed: boolean } | null>(null);
+  const returnLandingTopRef = useRef<number | null>(null);
   const readAdvanceTimerRef = useRef<number | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)!),
@@ -510,9 +510,81 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     flushSkipExit();
   }, [flushSkipExit]);
 
+  // The paper joins the flow where it was pinned. If the reader is on that
+  // slot, the scroller would stay snapped to the card the paper covered,
+  // which is about to move one slot down, and carry the reader with it; the
+  // slot is held instead, in the commit that lands the paper, before paint.
+  const landReturn = useCallback(() => {
+    const current = returningRef.current;
+    if (!current) return;
+    returningRef.current = null;
+    const container = feedRef.current;
+    const index = papersRef.current.findIndex(item => item.id === current.id);
+    if (container && index >= 0 && Math.round(container.scrollTop / current.height) === index) {
+      returnLandingTopRef.current = index * current.height;
+    }
+    setReturning({ ...current, landed: true });
+  }, []);
+  useLayoutEffect(() => {
+    const top = returnLandingTopRef.current;
+    returnLandingTopRef.current = null;
+    if (top !== null && feedRef.current) feedRef.current.scrollTop = top;
+  }, [returning]);
+  // `animationend` lands the paper; this clock is only for a travel that
+  // never runs. It starts with the commit that pins the card, not on the Undo
+  // press — mounting the card back takes frames of its own (about 300ms in
+  // dev) — and it is wide, because landing early is what shows: a clock
+  // started on the press landed the card 74px short of its place, a jump,
+  // and in a browser that transitions `.pc`'s transform out of an interrupted
+  // animation, a lurch to the right and back. Landing late shows nothing:
+  // the pinned card is already exactly where it lands.
+  useEffect(() => {
+    if (!returning || returning.landed) return undefined;
+    const timer = setTimeout(landReturn, SKIP_RETURN_MS + 600);
+    return () => clearTimeout(timer);
+  }, [landReturn, returning]);
+
+  const handleReturnEnd = useCallback((event: AnimationEvent) => {
+    // Named like the exit: the card's own animations bubble here too.
+    if (String(event.animationName).startsWith('feedSkipReturn')) landReturn();
+  }, [landReturn]);
+
+  // Undo brings the paper back the way the exit took it, reversed: out of
+  // flow, pinned over the card the reader is on, and in from the right. The
+  // card is opaque, so it covers that card as it travels; only when it lands
+  // does it join the flow, and the card it covered moves one slot down
+  // unseen. Put back in flow at once, the paper pushed that card away in one
+  // frame and slid in over an empty background (measured 2026-10-21).
+  // An exit still running when Undo arrives has not reached
+  // markNotInterested yet: dropping it is the whole undo.
+  const handleUndoNotInterested = useCallback((paper: Paper) => {
+    const container = feedRef.current;
+    const height = container?.clientHeight ?? 0;
+    // The toast outlives the page: with the feed gone (or not yet measured)
+    // there is nothing to animate, and the mark is still taken back.
+    if (!container || height <= 0) {
+      void undoNotInterested(paper, null);
+      return;
+    }
+    landReturn();
+    returningRef.current = { id: paper.id, height, landed: false };
+    setReturning(returningRef.current);
+    if (skipExitRef.current?.id === paper.id) {
+      clearTimeout(skipExitTimerRef.current!);
+      skipExitRef.current = null;
+      skipExitTimerRef.current = null;
+      setSkipExit(null);
+      return;
+    }
+    void undoNotInterested(paper, source ? null : Math.round(container.scrollTop / height));
+  }, [landReturn, source, undoNotInterested]);
+
   const handleNotInterested = useCallback((paper: Paper) => {
     beginSkipExit(paper?.id, () => markNotInterested(paper));
-  }, [beginSkipExit, markNotInterested]);
+    toast('Marked as not interested', {
+      action: { label: 'Undo', onClick: () => handleUndoNotInterested(paper) },
+    });
+  }, [beginSkipExit, handleUndoNotInterested, markNotInterested]);
 
   const handleSkip = useCallback((paper: Paper) => {
     source?.onPaperViewed?.(paper);
@@ -848,64 +920,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     onOpenPdf!(paper);
   }, [onOpenPdf, trackPdfOpened]);
 
-  const { user } = useAuth();
-  const { language } = useLanguage();
-  const saveState = useRef({ personalLibrary, toggleReadLater, markSaved });
-  useEffect(() => {
-    saveState.current = { personalLibrary, toggleReadLater, markSaved };
-  }, [markSaved, personalLibrary, toggleReadLater]);
-
-  const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean) => {
-    const id = interactionIdFor(paper)!;
-    const latest = saveState.current;
-    if (user && !IS_DEMO) {
-      await setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true });
-      await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
-    }
-    if (readLater && !latest.personalLibrary[id]?.readLater) await latest.toggleReadLater(paper);
-    await latest.markSaved(paper);
-  }, [interactionIdFor, language, user]);
-
-  const handleSaveToList = useCallback(async (paper: Paper) => {
-    const id = interactionIdFor(paper)!;
-    const readLater = Boolean(personalLibrary[id]?.readLater);
-    if (savedPaperIds.has(id)) {
-      let lists: OwnList[] | null = null;
-      let removed = false;
-      try {
-        lists = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
-        if (!lists) {
-          onSaveToList!(paper);
-          return;
-        }
-        const held = lists;
-        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
-        removed = true;
-        if (readLater) await toggleReadLater(paper);
-        await unmarkSaved(paper);
-        toast('Removed from your saved papers', {
-          action: {
-            label: 'Undo',
-            onClick: () => { restoreSave(paper, held, readLater).catch(() => toast.error('Could not save this paper')); },
-          },
-        });
-      } catch {
-        // Half an unsave is worse than none: put back what was already taken.
-        if (removed && lists) await restoreSave(paper, lists, readLater).catch(() => {});
-        toast.error('Could not remove this paper');
-      }
-      return;
-    }
-    try {
-      await restoreSave(paper, [], true);
-      markActivation();
-      toast.success('Saved to Read later', {
-        action: { label: 'Add to list', onClick: () => onSaveToList!(paper) },
-      });
-    } catch {
-      toast.error('Could not save this paper');
-    }
-  }, [interactionIdFor, language, markActivation, onSaveToList, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
+  const handleSaveToList = useQuickSave(onSaveToList!);
 
   // Marking a paper read means the reader is done with it, so the feed moves
   // on to the next one. The paper itself stays where it was: scrolling back
@@ -1246,9 +1261,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           ) : (
           <div
             key={paper.id}
-            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
-            style={skipExit?.id === paper.id ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` } : undefined}
-            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : undefined}
+            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${returning?.id === paper.id ? ` feed-snap-item--returned${returning.landed ? '' : ' feed-snap-item--returning'}` : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
+            style={skipExit?.id === paper.id
+              ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` }
+              : returning?.id === paper.id && !returning.landed ? { top: `${index * returning.height}px`, height: `${returning.height}px` } : undefined}
+            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : returning?.id === paper.id && !returning.landed ? handleReturnEnd : undefined}
           >
             <PaperCard
               paper={paper}

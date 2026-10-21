@@ -12,6 +12,7 @@ import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEn
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interactionProfile.ts';
 import { readSeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
+import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
@@ -25,6 +26,7 @@ import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitatio
 import { fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { openAlexClient } from '../services/openAlexClient.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
@@ -78,8 +80,8 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     followedEntities: [], profileSignals: ref(readProfileSignals(null)), temporalPreference: ref(0),
     rankPreferences: <T>(values: T) => values, CATEGORIES: { cs: { subcategories: { 'cs.AI': 'Artificial Intelligence' } } } as Record<string, { subcategories: Record<string, string | { label: string }> }>,
     ARXIV_FEED_AREAS, fetchPapers: (() => Promise.resolve(fast)) as (categories: string[]) => Promise<FeedRecord[]>, PubmedAdapter: class {},
-    OpenAlexAdapter: class { search() { return Promise.resolve(slow).then(papers => ({ papers })); } },
-    fetchDomainPapers: () => Promise.resolve([]), fetchWorkingPapers: (() => Promise.resolve([])) as typeof fetchWorkingPapers,
+    // `slow` stands for any later main source; the loader pools them alike.
+    fetchDomainPapers: () => Promise.resolve(slow), fetchWorkingPapers: (() => Promise.resolve([])) as typeof fetchWorkingPapers,
     relatedCandidates: ref([]),
     personalCandidates: ref([]), fetchPersonalPapers: () => Promise.resolve([]), PERSONAL_CANDIDATES_PER_PAGE: 5,
     pickExplorationCategories,
@@ -97,7 +99,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     recommendationWeights: ref({}), takeFeedPage, mergeFreshFeedPage,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
-    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
+    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()), pubmedCategoryQuery,
     awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract,
     recoverFeedAbstracts: (async () => []) as (papers: Paper[]) => Promise<Partial<Paper>[]>,
     mergeOpenAlexEnrichment, preserveFeedAbstracts, mergeFeedAbstracts, mergeEuropePmcEnrichment, mergeICiteEnrichment,
@@ -665,15 +667,16 @@ for (const commitFirst of [true, false]) {
         if (categories.includes('cs.LG')) return records('nearby', 2);
         return painted ? records('next', 12) : records('first', 5);
       },
+      // Counted, so a category-label search (gone since PAP-73) would show below.
       OpenAlexAdapter: class {
         search(_query: string, _page: number, { internalCategories }: { internalCategories: string[] }) {
-          const painted = send('openalex', internalCategories);
-          return Promise.resolve({ papers: painted ? [awaiting] : [] });
+          send('openalex', internalCategories);
+          return Promise.resolve({ papers: [] });
         }
       },
       fetchDomainPapers: (categories: string[]) => {
-        send('domain', categories);
-        return Promise.resolve([]);
+        const painted = send('domain', categories);
+        return Promise.resolve(painted ? [awaiting] : []);
       },
       recoverFeedAbstracts: (papers: Paper[]) => papers.some(paper => paper.id === awaiting.id) ? recovery.promise : Promise.resolve([]),
     };
@@ -692,8 +695,8 @@ for (const commitFirst of [true, false]) {
 
     const firstPage = records('first', 5).map(paper => paper.id);
     const firstWave = requests.filter(request => !request.painted);
-    assert.deepEqual(['arxiv', 'openalex', 'domain'].map(source => firstWave.filter(request => request.source === source).length), [1, 1, 1],
-      'one request per source before the first page is shown');
+    assert.deepEqual(['arxiv', 'openalex', 'domain'].map(source => firstWave.filter(request => request.source === source).length), [1, 0, 1],
+      'one request per source before the first page is shown, and no OpenAlex search');
     assert.notEqual(firstWave.find(request => request.source === 'arxiv')?.start, 0, 'the reset load asks for its random start page');
     assert.ok(firstWave.every(request => !request.categories.includes('cs.LG')), 'no exploration request before the first page is shown');
     assert.equal(state.error, null);
@@ -777,6 +780,45 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
   });
 }
 
+// Every PubMed lane sends the query `pubmedCategoryQuery` builds, which leaves
+// out Methods in Molecular Biology and records dated after today.
+const BIOMEDICAL_LEAVES = [
+  { id: 'bio.mol', label: 'Molecular Biology', area: 'bio' },
+  // The nearby category exploration adds, and one outside the reader's areas for boredom.
+  { id: 'bio.gen', label: 'Genetics', area: 'bio' },
+  { id: 'med.onco', label: 'Oncology', area: 'med' },
+];
+const withoutDay = (query: string) => query.replace(/\d{4}\/\d{2}\/\d{2}\[dp\]/, 'today[dp]');
+for (const [name, page, boredom, asked] of [
+  ['the first page', 0, 0, [['bio.mol']]],
+  ['a later page with its exploration', 1, 0, [['bio.mol'], ['bio.gen']]],
+  ['a bored reader\'s later page', 1, 8, [['bio.mol'], ['bio.gen'], ['med.onco']]],
+] as const) {
+  test(`${name} asks PubMed with the feed's PubMed query for each lane`, async () => {
+    const queries: string[] = [];
+    const { state, env, run } = feed({ fast: [], page });
+    Object.assign(env, {
+      userPreferences: ['bio.mol'],
+      CATEGORIES,
+      getAllLeafCategories: () => BIOMEDICAL_LEAVES,
+      PubmedAdapter: class {
+        search(query: string) {
+          queries.push(query);
+          return Promise.resolve({ papers: records(`pubmed-${queries.length}`) });
+        }
+      },
+    });
+    env.boredomLevel.current = boredom;
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(
+      queries.map(withoutDay),
+      asked.map(categories => withoutDay(pubmedCategoryQuery(categories))),
+      'the chosen, nearby and random lanes, in that order',
+    );
+  });
+}
+
 for (const [name, preference, boredom] of [
   ['nearby', 'q-fin.RM', 0],
   ['random', 'econ.EM', 8],
@@ -798,6 +840,85 @@ for (const [name, preference, boredom] of [
     assert.equal(state.error, null);
     assert.ok(state.papers.some(paper => paper.primaryCategory === 'q-fin.GN'),
       'the finance paper must reach the displayed batch');
+  });
+}
+
+// PAP-73: the feed no longer asks OpenAlex for works matching the text of the
+// reader's category labels ("Machine Learning" OR "Artificial Intelligence").
+// The real adapter is injected, so any such search reaches the recorded relay.
+function recordOpenAlexRequests(t: import('node:test').TestContext) {
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: string[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(decodeURIComponent(String(input)));
+    return Response.json({ results: [], meta: { count: 0 } });
+  };
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  return urls;
+}
+const searchedLabels = (urls: string[], leaves: Array<{ label: string }>) => urls.filter(url => leaves.some(leaf => url.includes(leaf.label)));
+
+const AI_LEAVES = [
+  { id: 'cs.LG', label: 'Machine Learning', area: 'cs' },
+  { id: 'cs.AI', label: 'Artificial Intelligence', area: 'cs' },
+  // The nearby category exploration adds, and one outside the reader's areas for boredom.
+  { id: 'cs.CL', label: 'Computation and Language', area: 'cs' },
+  { id: 'math.CO', label: 'Combinatorics', area: 'math' },
+];
+for (const [name, page, boredom, asked] of [
+  ['the first page', 0, 0, [['cs.LG', 'cs.AI']]],
+  ['a later page with its exploration', 1, 0, [['cs.LG', 'cs.AI'], ['cs.CL']]],
+  ['a bored reader\'s later page', 1, 8, [['cs.LG', 'cs.AI'], ['cs.CL'], ['math.CO']]],
+] as const) {
+  test(`${name} sends OpenAlex no search for the reader's category labels`, async t => {
+    const urls = recordOpenAlexRequests(t);
+    const { state, env, run } = feed({ page });
+    const arxivRequests: string[][] = [];
+    Object.assign(env, {
+      userPreferences: ['cs.LG', 'cs.AI'],
+      CATEGORIES,
+      getAllLeafCategories: () => AI_LEAVES,
+      OpenAlexAdapter,
+      fetchPapers: async (categories: string[]) => {
+        arxivRequests.push(categories);
+        return records(categories.join('+'));
+      },
+    });
+    env.boredomLevel.current = boredom;
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(arxivRequests, asked, 'arXiv is still asked for the chosen, nearby and random categories');
+    assert.deepEqual(searchedLabels(urls, AI_LEAVES), []);
+  });
+}
+
+// PubMed is now a medicine reader's only main source. The OpenAlex label
+// search beside it could answer first from its cache.
+for (const [name, answered, shown, continuations] of [
+  ['fills its first page from PubMed', 15, 15, []],
+  ['shows a short first page from PubMed and asks for the next', 4, 4, [[false, 'top', false, 1]]],
+] as const) {
+  test(`a medicine reader ${name}, without an OpenAlex label search`, async t => {
+    const urls = recordOpenAlexRequests(t);
+    const leaves = [{ id: 'med.onco', label: 'Oncology', area: 'med' }];
+    const { state, env, run } = feed({ fast: [] });
+    Object.assign(env, {
+      userPreferences: ['med.onco'],
+      CATEGORIES,
+      getAllLeafCategories: () => leaves,
+      OpenAlexAdapter,
+      // Past the 5 ms first-paint budget: the page waits for it.
+      PubmedAdapter: class {
+        search() { return wait(20).then(() => ({ papers: records('pubmed', answered) })); }
+      },
+    });
+    await run(true);
+    await tick();
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), records('pubmed', shown).map(paper => paper.id));
+    assert.deepEqual(state.continuations, continuations);
+    assert.deepEqual(searchedLabels(urls, leaves), []);
   });
 }
 
@@ -1071,7 +1192,7 @@ function stubSeriesRelay(t: import('node:test').TestContext, works: unknown[] | 
 
 test('an economics reader gets each working paper once, not peer reviewed, and other readers do not ask', async t => {
   const seriesRequests = stubSeriesRelay(t, [frbsfPaper, cesifoReport]);
-  // The economics search can find a series article too.
+  // Another source on the page can return a series article too.
   const searched = new OpenAlexAdapter().mapToStandard(frbsfPaper)! as FeedRecord;
   const load = async (preferences: string[]) => {
     seriesRequests.length = 0;
@@ -1128,4 +1249,56 @@ test('the working-paper series are asked for once the followed lookups settle, n
   await loading;
   assert.deepEqual(asked, ['followed', 'series']);
   assert.equal(state.error, null);
+});
+
+// What each load asks arXiv for: categories and order.
+function arxivQueries(env: ReturnType<typeof feed>['env']) {
+  const asked: Array<{ categories: string[]; mode: string }> = [];
+  env.fetchPapers = ((...args: unknown[]) => {
+    const [categories, start, count, mode] = args as [string[], number, number, string];
+    // Exploration asks for a handful from nearby categories; the main lane asks for a page.
+    if (count === env.PAGE_SIZE) asked.push({ categories, mode });
+    return Promise.resolve(records(`arxiv-${start}-${categories[0]}`));
+  }) as typeof env.fetchPapers;
+  return asked;
+}
+
+test('one skipped card keeps its interest in the first load, whatever page that load starts on', async t => {
+  const interests = ['cs.AI', 'quant-ph', 'cs.LG', 'cond-mat.supr-con', 'cs.CV', 'cond-mat.str-el', 'cs.CL', 'cond-mat.mtrl-sci', 'cs.NE', 'cond-mat.mes-hall'];
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'skipped', kind: 'skip', category: 'cs.AI' });
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  const loads: Array<{ categories: string[]; nextPage: number }> = [];
+  for (const randomDraw of [0, 0.3, 0.5, 0.7, 0.9]) {
+    draw = randomDraw;
+    const { state, env, run } = feed();
+    Object.assign(env, { userPreferences: interests, rankPreferences, CATEGORIES, profileSignals: ref(readProfileSignals(profile)) });
+    const asked = arxivQueries(env);
+    // The feed's first load: loadPapers(true, null, true) starts on a random page.
+    await run(true, null, true);
+    loads.push({ categories: asked[0].categories, nextPage: state.page });
+  }
+
+  assert.equal(new Set(loads.map(load => load.nextPage)).size, loads.length, 'the first loads start on different pages');
+  for (const load of loads) {
+    assert.ok(load.categories.includes('cs.AI'), `the first load before page ${load.nextPage} asks for ${load.categories}`);
+  }
+});
+
+test('a reader with no lean towards older papers gets arXiv newest first on every load', async t => {
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  for (const [lean, preference, randomDraw, expected] of [
+    ['none', 0, 0.01, 'recent'],
+    ['none', 0, 0.99, 'recent'],
+    ['older papers', -0.5, 0.01, 'relevance'],
+  ] as const) {
+    draw = randomDraw;
+    const { env, run } = feed();
+    env.temporalPreference.current = preference;
+    const asked = arxivQueries(env);
+    await run(true);
+    assert.deepEqual(asked.map(query => query.mode), [expected], `lean ${lean}, Math.random() = ${draw}`);
+  }
 });

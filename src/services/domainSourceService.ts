@@ -10,7 +10,8 @@ interface BioRxivRecord { doi?: string; title?: string; version?: string | numbe
 interface BioRxivResponse { _papertok?: { degraded?: string }; collection?: BioRxivRecord[]; }
 interface EuropePmcSearchRecord extends EuropePmcRecord {
   title?: string; doi?: string; firstPublicationDate?: string; electronicPublicationDate?: string; dateOfCreation?: string;
-  source?: string; authorString?: string; journalInfo?: { journal?: { title?: string }; yearOfPublication?: number | string };
+  source?: string; authorString?: string;
+  journalInfo?: { journal?: { title?: string; issn?: string; essn?: string; nlmid?: string }; yearOfPublication?: number | string };
 }
 interface CoreWork {
   id?: string | number; title?: string; doi?: string; publishedDate?: string; acceptedDate?: string; depositedDate?: string;
@@ -61,6 +62,7 @@ import { authenticatedWorkerFetch, hasWorkerSession, sourceResponseError } from 
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
 import { settleWithin } from '../utils/asyncTiming.ts';
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.ts';
+import { isAfterToday, isProtocolBookSeries } from '../utils/medlineRecord.ts';
 import { normalizeScientificMarkup } from '../utils/latex.ts';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
@@ -254,7 +256,13 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
   if ((!providerId && !pmid) || !raw?.title) return null;
   const doi = normalizeDoi(raw.doi);
   const terms = record.terms.slice(0, 12);
-  const published = raw.firstPublicationDate || raw.electronicPublicationDate || raw.dateOfCreation || '';
+  const date = raw.firstPublicationDate || raw.electronicPublicationDate || raw.dateOfCreation || '';
+  // A date after today is a print date ahead (Methods in Molecular Biology
+  // lists next year's volume). Neither that year nor another date is shown.
+  const scheduled = isAfterToday(date || raw.journalInfo?.yearOfPublication);
+  const published = scheduled ? '' : date;
+  const journal = raw.journalInfo?.journal;
+  const chapter = isProtocolBookSeries({ issn: journal?.issn, essn: journal?.essn, nlmId: journal?.nlmid });
   const paper = PaperBuilder.create({
     id: pmid ? `pmid:${pmid}` : `europepmc:${raw.source || 'EPMC'}:${providerId}`,
     pmid: pmid || undefined,
@@ -266,10 +274,12 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     authors: record.authors.length > 0
       ? record.authors
       : authorObjects(String(raw.authorString || '').split(',')),
-    journal: normalizeText(raw.journalInfo?.journal?.title),
-    year: safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
+    journal: normalizeText(journal?.title),
+    year: scheduled ? undefined : safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
     published,
-    publicationType: 'article',
+    // `book-series` is a venue `isFeedPublication` leaves out of the feed.
+    publicationType: chapter ? 'book-chapter' : 'article',
+    sourceType: chapter ? 'book-series' : undefined,
     publicationStatus: 'published',
     openAccess: record.openAccess,
     landingPageUrl: record.europePmcUrl
@@ -553,6 +563,19 @@ function sourceQuery(categories: readonly string[]) {
   return categories.map(categoryLabel).map(label => `"${label}"`).join(' OR ');
 }
 
+/**
+ * The Europe PMC query for a reader's biology categories. Each label is
+ * searched in title, abstract and keywords: in every field `"Molecular
+ * Biology"` also matched the journal Methods in Molecular Biology. Only records
+ * first published by today (UTC) come back, so a recent-first page is not
+ * filled with chapters printed next year.
+ */
+export function europePmcQuery(categories: readonly string[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  const labels = categories.map(categoryLabel).map(label => `TITLE_ABS:"${label}" OR KW:"${label}"`);
+  return `(${labels.join(' OR ')}) AND FIRST_PDATE:[1800-01-01 TO ${today}]`;
+}
+
 export function getDomainSourcePlan(categories: readonly string[] = []) {
   const unique = [...new Set(categories)].filter(Boolean);
   const biology = unique.filter(category => category.startsWith('bio.'));
@@ -666,7 +689,7 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
 
   if (eligible.europepmc) {
     request(DOMAIN_SOURCE_PATHS.europepmc, fetchJson<{ resultList?: { result?: EuropePmcSearchRecord[] } }>('/sources/europepmc', {
-      q: sourceQuery(plan.biology.slice(0, 3)),
+      q: europePmcQuery(plan.biology.slice(0, 3)),
       page: safePage,
       limit: safeLimit,
       sort: queryMode,
@@ -749,10 +772,8 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
 // articles in as reviewed journal papers without the Working paper tag. That
 // list also holds FEDS Notes, short notes rather than working papers, and the
 // Kansas City Fed series, which the checks behind this request did not cover.
-// The economics search cannot reach most of these series: OpenAlex types NBER,
-// CESifo, Banco de España and the New York and Philadelphia Fed series as
-// `report`, which that search leaves out, and it finds the IMF, FEDS and San
-// Francisco Fed articles only when a category label matches their text. World
+// OpenAlex types NBER, CESifo, Banco de España and the New York and
+// Philadelphia Fed series as `report`, hence `type:article|report` below. World
 // Bank Policy Research Working Papers are not listed: OpenAlex files the recent
 // ones under the bank's general eBooks source (S4306464317), and its two PRWP
 // sources hold nothing from this window.

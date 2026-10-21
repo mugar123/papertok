@@ -203,6 +203,27 @@ test('a rejection lands on the paper\'s concepts and authors, and only lightly o
   assertClose(signals.sessionAffinities['C-benchmarks'], -10);
 });
 
+test('undoing a rejection gives back everything it took', () => {
+  const profile = createEmptyInteractionProfile();
+  const rejection = {
+    paperId: 'p',
+    category: 'cs.CL',
+    concepts: [{ id: 'C-benchmarks', score: 1 }],
+    authorIds: ['A1'],
+  };
+  recordInteractionEvent(profile, { ...rejection, kind: 'like' }, NOW);
+  recordInteractionEvent(profile, { ...rejection, kind: 'notInterested' }, NOW);
+  assert.deepEqual(positiveExamples(profile), [], 'a rejected paper is no example');
+
+  recordInteractionEvent(profile, { ...rejection, kind: 'undoNotInterested' }, NOW);
+  const signals = readProfileSignals(profile, NOW);
+  assert.deepEqual(curatedIds(profile, 'notInterested'), []);
+  assertClose(signals.categoryAffinities['cs.CL'], 5, 'only the like is left on the category');
+  assertClose(signals.conceptAffinities['C-benchmarks'], 5);
+  assertClose(signals.authorAffinities.A1, 5);
+  assert.deepEqual(positiveExamples(profile).map(example => example.id), ['p'], 'still liked, so an example again');
+});
+
 test('reproduces the affinities of the full subcollection scan', () => {
   const documents = makeDocuments(3000, { spanDays: 40 });
   const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });

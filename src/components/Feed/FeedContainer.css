@@ -107,7 +107,10 @@
    thing you are reading and starts being the thing that is going, and ends
    with the travel. Earlier than that it erased the card mid-screen; later and
    two cards stay legible on top of each other. */
-.feed-snap-item--leaving {
+/* The paper an Undo brings back is pinned the same way, over the card the
+   reader is on (see below). */
+.feed-snap-item--leaving,
+.feed-snap-item--returning {
   position: absolute;
   left: 0;
   right: 0;
@@ -145,6 +148,55 @@
   }
 }
 
+/* Undo on "Not interested": the exit reversed. The paper is pinned out of
+   flow over the card the reader is on and comes in from the right; `.pc` is
+   opaque, so it covers that card as it travels, and no fade is needed — the
+   first cut faded in from 0 over a slot the reinsertion had already emptied,
+   and read as a glitch. It lands in flow when the travel ends (landReturn).
+   An arrival, so it brakes where the reader is looking: on the cubic, which
+   still spends most of its frames visibly moving where the expo reads as a
+   cut. The slot clips it, as it clips the exit. 320ms is SKIP_RETURN_MS.
+
+   `cardSlideUp` stays in the list so that dropping `--returning` afterwards
+   does not add it back and replay the card's entrance. */
+.feed-snap-item--returning > .pc {
+  animation:
+    cardSlideUp 0.36s var(--ease-out-expo) backwards,
+    feedSkipReturn 320ms var(--ease-out-cubic) backwards;
+}
+
+@keyframes feedSkipReturn {
+  from { transform: translateX(105%) scale(0.96); }
+}
+
+@keyframes feedSkipReturnFade {
+  from { opacity: 0; }
+}
+
+/* It left whole, so it comes back whole: the pieces do not replay the
+   card's arrival on top of the travel, as they do not on a feed reached by
+   the back arrow (PaperCard.css). `--returned` outlives the travel because
+   putting the animation back once it lands would start it then. */
+.feed-snap-item--returned :is(.pc-sheet, .pc-meta, .pc-title, .pc-authors, .pc-abstract, .pc-side-actions) {
+  animation: none;
+}
+
+/* `.pc` transitions `transform` for the pull to refresh's spring-back.
+   WebKit starts that transition when the return's animations come off the
+   card, and the card lurched 6.4px right of its place and eased back over
+   200ms after landing (measured 2026-10-21, iPhone 13 profile; Chrome starts
+   none). The returned card keeps every other transition. */
+.feed-snap-item--returned > .pc {
+  transition-property: opacity, translate;
+}
+
+/* Without movement it fades in over the card it covers, and lands. */
+@media (prefers-reduced-motion: reduce) {
+  .feed-snap-item--returning > .pc {
+    animation: feedSkipReturnFade 200ms linear backwards;
+  }
+}
+
 /* A read paper is filed away as it leaves. "Mark as read" moves the feed on
    to the next paper (handleMarkAsRead), and the paper going up and out gives
    ground: it settles back towards its own bottom edge, the one that stays
@@ -164,8 +216,9 @@
    refresh owns `.pc`'s transform and the refresh dip its `translate`. */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    /* Not on a read paper dismissed with "Not interested": its exit wins. */
-    .feed-snap-item--read:not(.feed-snap-item--leaving) > .pc {
+    /* Not while a read paper leaves on "Not interested" or comes back on its
+       Undo: those motions win. */
+    .feed-snap-item--read:not(.feed-snap-item--leaving, .feed-snap-item--returning) > .pc {
       transform-origin: 50% 100%;
       animation:
         cardSlideUp 0.36s var(--ease-out-expo) backwards,

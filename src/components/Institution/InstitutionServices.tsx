@@ -183,8 +183,8 @@ export default function InstitutionServices({ institution }: { institution: Link
     quiet = true;
   }
 
-  // Only a failure offers a retry: a partial answer is cached at the Worker's
-  // edge and in the browser too, so pressing again would replay it.
+  // Only a failure offers a retry: a partial answer is kept in the browser for
+  // an hour, so pressing again would replay it.
   const canRetry = Boolean(failed);
 
   // A retry that succeeds takes its own button away, and with it the focus

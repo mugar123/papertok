@@ -33,6 +33,7 @@ export interface FeedContextValue {
   reportVisiblePaper: (id: string | null) => void;
   toggleLike: (paper: Paper) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
+  undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
   markSaved: (paper: Paper | string) => Promise<void>;
   unmarkSaved: (paper: Paper | string) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
@@ -57,8 +58,7 @@ import { useFollowing } from './FollowingContext.tsx';
 import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
 import { getDeviceInfo } from '../utils/device.ts';
 import { CATEGORIES, getAllLeafCategories } from '../data/categories.ts';
-import { PubmedAdapter } from '../services/adapters/PubmedAdapter.ts';
-import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { PubmedAdapter, pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
 import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService.ts';
 import { getPapersByProject } from '../services/openAireService.ts';
 import { getPaperRecommendations } from '../services/semanticScholarService.ts';
@@ -1303,23 +1303,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
-        const pref = temporalPreference.current || 0;
-        let queryMode;
-        if (pref > 0.3) {
-          queryMode = 'recent';
-        } else if (pref < -0.3) {
-          queryMode = 'relevance';
-        } else {
-          queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
-        }
+        // Relevance order is for a reader whose views lean to older papers. A
+        // new account is neutral, and a coin flip gave half of those loads
+        // arXiv's relevance order: older papers (none from this year on an AI
+        // profile's first page), and a query arXiv did not answer within the
+        // Worker's 5 s deadline (502 at 5.07 s, 2026-09-16), past the 4 s first
+        // paint.
+        const queryMode = (temporalPreference.current || 0) < -0.3 ? 'relevance' : 'recent';
 
         // Optional recommendation signals run alongside the primary sources.
         // They enrich the mix when available without extending first paint.
-        // Declared here, ISSUED after the main sources below: the OpenAlex
-        // client queues two at a time in arrival order, and asking for the
-        // followed entities first put the feed's own search behind all of
-        // them (measured 2026-09-16: 2.3 s late on a cold entry, past the
-        // first-paint budget).
+        // Declared here, ISSUED after arXiv, PubMed and the domain sources
+        // below: the OpenAlex client queues two at a time in arrival order,
+        // and asking for the followed entities first put the feed's own search
+        // behind all of them (measured 2026-09-16: 2.3 s late on a cold entry,
+        // past the first-paint budget). PAP-73 removed that search. The
+        // working-paper series, the one main source still asking OpenAlex,
+        // waits for the personal and followed lookups on purpose.
         let graphCandidatesPromise = Promise.resolve<Paper[]>([]);
         let personalCandidatesPromise = Promise.resolve<Paper[]>([]);
         let followedCandidatesPromise = Promise.resolve<Paper[]>([]);
@@ -1349,26 +1349,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           let pubmedProm = Promise.resolve<Paper[]>([]);
           if (pubmedCats.length > 0) {
              const pubmedAdapter = new PubmedAdapter();
-             const pubmedQuery = pubmedCats.map(c => {
-                const cat = allCategories.find(x => x.id === c);
-                return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-             }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
+             pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedCats), currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
           }
-          
-          let openAlexProm = Promise.resolve<Paper[]>([]);
-          const openAlexCats = rankedPreferences.slice(0, 5);
-          if (openAlexCats.length > 0) {
-             const openAlexAdapter = new OpenAlexAdapter();
-             const openAlexQuery = openAlexCats.map(c => {
-                const cat = allCategories.find(x => x.id === c);
-                return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-             }).join(' OR ');
-             openAlexProm = openAlexAdapter
-               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats, priority: true, requireAbstract: true })
-               .then(res => res.papers);
-          }
-          
+
+          // No OpenAlex search for the category labels' text (PAP-73): of 442
+          // hand-labelled results, 9 were research articles in the reader's
+          // field (audit 2026-10-20).
           const domainProm = fetchDomainPapers(
             rankedPreferences.slice(0, 5),
             currentPage + 1,
@@ -1405,7 +1391,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
 
           const { first, all } = settleSourcesForFirstPaint(
-            [arxivProm, pubmedProm, openAlexProm, domainProm, workingPapersProm],
+            [arxivProm, pubmedProm, domainProm, workingPapersProm],
             FEED_SOURCE_RENDER_BUDGET_MS,
             (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
           );
@@ -1507,28 +1493,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const pubmedNearby = nearbyCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
             let pubmedProm = Promise.resolve<Paper[]>([]);
             if (pubmedNearby.length > 0) {
-                const pubmedQuery = pubmedNearby.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedNearby), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
-            
-            let openAlexProm = Promise.resolve<Paper[]>([]);
-            const openAlexNearby = nearbyCats.slice(0, 3);
-            if (openAlexNearby.length > 0) {
-                const openAlexAdapter = new OpenAlexAdapter();
-                const openAlexQuery = openAlexNearby.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
-                openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby, requireAbstract: true })
-                  .then(res => res.papers)
-                  .catch(() => []);
-            }
-            
+
             const domainProm = fetchDomainPapers(
               nearbyCats.slice(0, 3),
               Math.floor(randomStart / 25) + 1,
@@ -1536,12 +1504,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               queryMode,
             ).catch(() => []);
 
-            const [arx, pub, oa, domain] = await Promise.all(
-              [arxivProm, pubmedProm, openAlexProm, domainProm]
+            const [arx, pub, domain] = await Promise.all(
+              [arxivProm, pubmedProm, domainProm]
                 .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
             );
             // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, exploreCount * 2);
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...domain]).slice(0, exploreCount * 2);
           } catch (e) {
             console.error("Error fetching explore papers:", e);
           }
@@ -1581,28 +1549,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const pubmedRandom = randomCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!));
             let pubmedProm = Promise.resolve<Paper[]>([]);
             if (pubmedRandom.length > 0) {
-                const pubmedQuery = pubmedRandom.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
                 const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
+                pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedRandom), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
             }
-            
-            let openAlexProm = Promise.resolve<Paper[]>([]);
-            const openAlexRandom = randomCats;
-            if (openAlexRandom.length > 0) {
-                const openAlexAdapter = new OpenAlexAdapter();
-                const openAlexQuery = openAlexRandom.map(c => {
-                   const cat = allCategories.find(x => x.id === c);
-                   return cat && cat.label ? `"${cat.label}"` : `"${c.replace(/\./g, ' ')}"`;
-                }).join(' OR ');
-                openAlexProm = openAlexAdapter
-                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom, requireAbstract: true })
-                  .then(res => res.papers)
-                  .catch(() => []);
-            }
-            
+
             let randomPapers: Paper[] = [];
             try {
                 const domainProm = fetchDomainPapers(
@@ -1611,11 +1561,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
                   2,
                   queryMode,
                 ).catch(() => []);
-                const [arx, pub, oa, domain] = await Promise.all(
-                  [arxivProm, pubmedProm, openAlexProm, domainProm]
+                const [arx, pub, domain] = await Promise.all(
+                  [arxivProm, pubmedProm, domainProm]
                     .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
                 );
-                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, 2);
+                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...domain]).slice(0, 2);
             } catch (e) {
                 console.error("Error fetching random bored papers:", e);
             }
@@ -2246,6 +2196,42 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
 
+  // Takes a "Not interested" back. With `atIndex`, the paper returns to this
+  // list there, at the card the reader is on, so it comes back where they let
+  // it go. Following renders a list of its own filtered by `notInterestedIds`
+  // and passes none: the set alone brings it back there.
+  const undoNotInterested = useCallback(async (paperInput: Paper, atIndex: number | null = null) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
+    const newNotInterested = new Set(notInterestedIdsRef.current);
+    newNotInterested.delete(paper.id);
+    setNotInterestedIds(newNotInterested);
+    if (atIndex !== null) {
+      setPapers((prev) => {
+        if (prev.some((p) => p.id === paperInput.id)) return prev;
+        const at = Math.min(Math.max(atIndex, 0), prev.length);
+        return [...prev.slice(0, at), paperInput, ...prev.slice(at)];
+      });
+      // As in markNotInterested: the swap fires no scroll event.
+      visiblePaperIdRef.current = paperInput.id;
+    }
+    recordProfileEvent({
+      paperId: paper.id,
+      kind: 'undoNotInterested',
+      category: paper.primaryCategory,
+    }, paper);
+
+    if (IS_DEMO) {
+      demoSet('notInterestedIds', Array.from(newNotInterested));
+    } else if (userId) {
+      try {
+        await updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() });
+      } catch (err) {
+        console.error('Error undoing not interested:', err);
+      }
+    }
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
+
   const markAsRead = useCallback(async (paperInput: Paper) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
@@ -2734,7 +2720,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     reportVisiblePaper,
-    toggleLike, markNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
+    toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
@@ -2747,7 +2733,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     reportVisiblePaper,
-    toggleLike, markNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
+    toggleLike, markNotInterested, undoNotInterested, markSaved, unmarkSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce,
   ]);

@@ -26,6 +26,38 @@
   transform: scale(0.97);
 }
 
+.pc-share-menu-item {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pc-share-menu-item svg {
+  color: var(--text-secondary);
+}
+
+.pc-share-menu-item[data-highlighted] {
+  background: var(--bg-sunken);
+}
+
+.pc-share-menu-note {
+  margin-left: auto;
+  font: 500 0.6875rem/1 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.pc-share-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border-subtle);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pc-share-menu {
     transition: opacity 120ms linear;
@@ -82,6 +114,40 @@
 
 .pc-share-row:active {
   background: var(--bg-sunken);
+}
+
+.pc-share-row--link {
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-size: var(--fs-sm);
+}
+
+.pc-share-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The rail's icon tile (PaperCard.css .pc-side-icon), a size down. */
+.pc-share-copy {
+  --rail: var(--text-tertiary);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--rail);
+  background: color-mix(in srgb, var(--rail) 7%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--rail) 20%, var(--bg-card));
+}
+
+.pc-share-list-separator {
+  height: 1px;
+  margin: 4px var(--space-3);
+  background: var(--border-subtle);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -210,6 +276,7 @@ ul.pc-menu-group {
 .pc-menu-item[data-action='about'] { --tone: var(--accent-sky); }
 .pc-menu-item[data-action='skip'] { --tone: var(--tint-red-fg); }
 .pc-menu-item:is([data-action='bibtex'], [data-action='ris']) { --tone: var(--accent-violet); }
+.pc-menu-item[data-action='delete'] { --tone: var(--accent-danger); }
 
 .pc-menu-item-icon {
   display: grid;
@@ -225,6 +292,21 @@ ul.pc-menu-group {
 
 .pc-menu-item:active {
   background: color-mix(in srgb, var(--tone, var(--text-secondary)) 6%, var(--bg-card));
+}
+
+.pc-menu-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* A list's delete is the one action that cannot be undone: it sits apart,
+   and its name takes the danger ink too. */
+li:has(> .pc-menu-item[data-action='delete']) {
+  margin-top: var(--space-3);
+}
+
+.pc-menu-item[data-action='delete'] .pc-menu-item-label {
+  color: var(--tone);
 }
 
 .pc-menu-item-label {

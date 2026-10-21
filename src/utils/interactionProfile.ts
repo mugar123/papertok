@@ -570,9 +570,10 @@ function isPaperAccountedFor(profile: InteractionProfile, paperId: string) {
  * Folds one interaction into the profile.
  *
  * `kind` is one of like, unlike, save, unsave, read, unread, readLater,
- * notInterested, openedPdf, pdfBounce, skip, viewTime, metadata. `category` is
- * the paper's primary category, `concepts` and `authorIds` its OpenAlex
- * concepts and authors, already keyed the way the ranking reads them.
+ * notInterested, undoNotInterested, openedPdf, pdfBounce, skip, viewTime,
+ * metadata. `category` is the paper's primary category, `concepts` and
+ * `authorIds` its OpenAlex concepts and authors, already keyed the way the
+ * ranking reads them.
  * `viewTime` is in seconds and `value` belongs to the toggles that carry one.
  *
  * An event's impact lands in full on its concepts, its authors and the
@@ -625,6 +626,17 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       removePositive(profile, event.paperId);
       impact = IMPACT_NOT_INTERESTED;
       categoryImpact = IMPACT_NOT_INTERESTED_CATEGORY;
+      break;
+    // The rejection taken back: its impact is returned, and a paper that is
+    // still liked or saved is an example again, as a rebuild from its
+    // document would make it.
+    case 'undoNotInterested':
+      removeCurated(profile, 'notInterested', event.paperId);
+      if (curatedSet(profile, 'liked')!.members.has(event.paperId) || curatedSet(profile, 'saved')!.members.has(event.paperId)) {
+        addPositive(profile, event.paperId, category);
+      }
+      impact = -IMPACT_NOT_INTERESTED;
+      categoryImpact = -IMPACT_NOT_INTERESTED_CATEGORY;
       break;
     case 'openedPdf':
       impact = IMPACT_OPENED_PDF;

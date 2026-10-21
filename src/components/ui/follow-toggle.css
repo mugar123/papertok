@@ -30,6 +30,12 @@
   }
 }
 
+.follow-toggle--compact {
+  min-width: 0;
+  width: 32px;
+  padding: 0;
+}
+
 /* Press feedback: the catalog's squeeze, cheap on a 32px box. */
 .follow-toggle:active:not(:disabled) {
   transform: scale(0.97);
