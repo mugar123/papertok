@@ -21,16 +21,17 @@ type ListRowProps = Omit<HTMLMotionProps<'div'>, 'title' | 'onClick'> & {
   title: ReactNode;
   titleLang?: string;
   onOpen: () => void;
+  aside?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
 };
 
-export function ListRow({ meta, title, titleLang, onOpen, actions, children, className, ...props }: ListRowProps) {
+export function ListRow({ meta, title, titleLang, onOpen, aside, actions, children, className, ...props }: ListRowProps) {
   const items = (meta ?? []).map((text, slot) => ({ text, slot })).filter((item): item is { text: string; slot: number } => Boolean(item.text));
   return (
     <motion.div {...props} className={cn('list-row', className)} onClick={onOpen}>
       <div className="list-row-content">
-        {items.length > 0 && (
+        {(items.length > 0 || aside) && (
           <div className="list-row-head">
             {items.map(({ text, slot }, index) => (
               <span key={slot} className={slot === 0 ? 'list-row-lead' : 'list-row-meta'}>
@@ -38,6 +39,7 @@ export function ListRow({ meta, title, titleLang, onOpen, actions, children, cla
                 {text}
               </span>
             ))}
+            {aside && <span className="list-row-aside">{aside}</span>}
           </div>
         )}
         <p className="list-row-title" lang={titleLang}>

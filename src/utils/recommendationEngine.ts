@@ -2,6 +2,7 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/Pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
+import { leavesForOpenAlexTopic } from './areaAccent.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
@@ -317,10 +318,13 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
   );
   let preference = 0;
+  // OpenAlex files a work under its own topic, never under a leaf; a chosen
+  // leaf whose topic list holds that topic counts as its primary category.
   // A specialist source's card seldom names a category of the taxonomy. When
   // the source was asked for one of the reader's, the card earns that
   // category's preference without claiming the category.
   if ((primaryCategory && userPreferences.includes(primaryCategory))
+    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => userPreferences.includes(leaf))
     || paper._fetchedFor?.some(category => userPreferences.includes(category))) {
     preference = weights.selectedCategory * preferenceShare;
   } else if (allCategories.some((cat) => userPreferences.includes(cat))) {

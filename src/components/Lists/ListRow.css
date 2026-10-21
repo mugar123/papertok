@@ -56,6 +56,16 @@
   color: var(--text-tertiary);
 }
 
+.list-row-aside {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .list-row-title {
   max-width: 776px;
   margin: 0 0 6px;

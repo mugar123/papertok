@@ -54,7 +54,7 @@
   height: 11px;
 }
 
-/* Two lines of the 33.6px serif title on its 39px line. */
+/* Lines of the 32px serif title on its 37px line. */
 .sk-title {
   display: flex;
   flex-direction: column;
@@ -100,17 +100,21 @@
 }
 
 .sk-button {
+  width: min(28.5rem, 100%);
   height: 40px;
   border-radius: var(--radius-md);
 }
 
-.sk-button--read { width: 7rem; }
-.sk-button--plain { width: 11rem; }
+.sk-glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+}
 
-/* The rail's tiles, at the rail's own 40px. */
-.sk-tile {
-  width: 48px;
-  height: 48px;
+/* The figure's plate, at the size the lead gives it. */
+.sk-figure {
+  width: min(70%, 15rem);
+  height: 100%;
   border-radius: var(--radius-md);
 }
 
@@ -125,22 +129,22 @@
 @media (max-width: 640px) {
   /* The title drops to 1.3rem there. */
   .sk-title {
-    gap: 4px;
+    gap: 6px;
     margin-bottom: var(--space-3);
   }
 
   .sk-title .sk-block {
-    height: 20px;
+    height: 18px;
   }
 
-  .sk-tile {
-    width: 44px;
-    height: 44px;
+  .sk-button {
+    width: 100%;
   }
 
-  /* The buttons show their short words there. */
-  .sk-button--read { width: 4.5rem; }
-  .sk-button--plain { width: 5.5rem; }
+  .sk-glyph {
+    width: 22px;
+    height: 22px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

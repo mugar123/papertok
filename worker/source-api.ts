@@ -424,7 +424,9 @@ export async function handleCore(request: Request, env: WorkerEnv, identity?: Pi
 
   return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.core, async () => {
     const url = new URL('https://api.core.ac.uk/v3/search/works/');
-    url.searchParams.set('q', query);
+    // CORE answers a query that starts with a quoted phrase, as the feed's
+    // `"A" OR "B"` does, with a 500 (tester report, 2026-10-20).
+    url.searchParams.set('q', `(${query})`);
     url.searchParams.set('limit', String(context.limit));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
     const headers: Record<string, string> = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};

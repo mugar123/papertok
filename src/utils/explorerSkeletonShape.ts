@@ -38,8 +38,7 @@ export function hasAuthorsTab(type: string|undefined, entity: { _localTopic?: bo
 /**
  * The blocks the loading skeleton should reserve for an entity of this type.
  *
- * - `identity` — the strip under the name: an author's research topics, an
- *   institution's ROR credentials and its related-organisation chips.
+ * - `identity` — the strip under the name: an institution's ROR credentials.
  * - `aside` — the block between the stats and the tabs, which is where the two
  *   page shapes differ most: an author's ORCID card, a project's summary box.
  *   The Wikipedia block is NOT among them: it was reserved here between
@@ -83,7 +82,7 @@ export function explorerSkeletonShape(type: string|undefined, { hasOrcid = false
   const projectish = type === 'project';
   return {
     tabs: hasAuthorsTab(type) ? 2 : 1,
-    identity: authorish ? 'topics' : institutionish ? 'credentials' : 'none',
+    identity: institutionish ? 'credentials' : 'none',
     aside: authorish ? (hasOrcid ? 'orcid' : 'none') : projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
     // Whether the fourth cell is the recent-impact one, with a detail line

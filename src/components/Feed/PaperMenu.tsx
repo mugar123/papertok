@@ -1,45 +1,20 @@
 import type { Icon } from '@phosphor-icons/react';
 import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactElement, ReactNode, SyntheticEvent } from 'react';
 import type { ExternalToast } from 'sonner';
+import type { Shared } from './shareTargets.ts';
 
-type Shared = (method: string) => void;
-type ShareData = { text: string; url: string };
 export interface PaperMenuAction { id: string; label: string; hint: string; Icon: Icon; onSelect: (event: MouseEvent) => void }
 export interface PaperMenuPanel { id: string; title: string; content: ReactNode; className?: string; style?: CSSProperties; onBack: () => void }
 
 import { cloneElement, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Copy, InstagramLogo, LinkedinLogo, LinkSimple, RedditLogo, WhatsappLogo, XLogo } from '@phosphor-icons/react';
-import { toast } from 'sonner';
+import { ArrowLeft, Copy, LinkSimple } from '@phosphor-icons/react';
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import { cn } from '../../lib/utils.ts';
 import { paperShareData } from '../../utils/shareLink.ts';
+import { INSTAGRAM_NOTE, NETWORKS, copyLink } from './shareTargets.ts';
 import './SharePanel.css';
-
-const enc = encodeURIComponent;
-
-const NETWORKS = [
-  { id: 'x', name: 'X', Icon: XLogo, href: ({ text, url }: ShareData) => `https://twitter.com/intent/tweet?text=${enc(text)}&url=${enc(url)}` },
-  { id: 'reddit', name: 'Reddit', Icon: RedditLogo, href: ({ text, url }: ShareData) => `https://www.reddit.com/submit?url=${enc(url)}&title=${enc(text)}` },
-  { id: 'linkedin', name: 'LinkedIn', Icon: LinkedinLogo, href: ({ url }: ShareData) => `https://www.linkedin.com/sharing/share-offsite/?url=${enc(url)}` },
-  { id: 'whatsapp', name: 'WhatsApp', Icon: WhatsappLogo, href: ({ text, url }: ShareData) => `https://wa.me/?text=${enc(`${text} ${url}`)}` },
-  { id: 'instagram', name: 'Instagram', Icon: InstagramLogo, href: null },
-];
-
-const INSTAGRAM_NOTE = 'Link copied. Paste it in your Instagram story or bio.';
-
-async function copyLink({ url, onShared, method, message, position }: { url: string; onShared?: Shared; method: string; message: string; position?: ExternalToast['position'] }) {
-  try {
-    await navigator.clipboard.writeText(url);
-  } catch (error) {
-    console.error('Could not copy paper link', error);
-    toast.error('Could not copy the link', { position });
-    return;
-  }
-  onShared?.(method);
-  toast.success(message, { position });
-}
 
 export default function PaperMenu({ title, url, onShared, actions, trigger, open, onOpenChange, panel }: {
   title: string; url?: string | null; onShared?: Shared; actions: PaperMenuAction[]; trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;

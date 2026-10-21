@@ -1,6 +1,6 @@
 import type { StyledProps } from './props.ts';
 
-import { Check } from '@phosphor-icons/react';
+import { Check, UserCheck, UserPlus } from '@phosphor-icons/react';
 import { cn } from '../../lib/utils.ts';
 import { Toggle } from './toggle.tsx';
 import './follow-toggle.css';
@@ -13,7 +13,20 @@ import './follow-toggle.css';
  *
  * The labels come from the caller, which owns the language.
  */
-export function FollowToggle({ pressed, followLabel, followingLabel, className, ...props }: StyledProps<typeof Toggle> & { followLabel: string; followingLabel: string }) {
+export function FollowToggle({ pressed, followLabel, followingLabel, compact = false, className, ...props }: StyledProps<typeof Toggle> & { followLabel: string; followingLabel: string; compact?: boolean }) {
+  if (compact) {
+    return (
+      <Toggle
+        variant="outline"
+        className={cn('follow-toggle follow-toggle--compact', className)}
+        pressed={pressed}
+        aria-label={followLabel}
+        {...props}
+      >
+        {pressed ? <UserCheck size={18} aria-hidden="true" /> : <UserPlus size={18} aria-hidden="true" />}
+      </Toggle>
+    );
+  }
   return (
     <Toggle
       variant="outline"

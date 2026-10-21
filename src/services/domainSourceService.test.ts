@@ -17,13 +17,17 @@ import {
   mapOstiRecord,
   readBioRxivResponse,
   fetchWorkingPapers,
+  fetchOpenAlexTopicPapers,
+  europePmcQuery,
 } from './domainSourceService.ts';
+import { PaperBuilder } from './PaperBuilder.ts';
+import { isFeedPublication } from './feedPublicationService.ts';
 import { openAlexClient } from './openAlexClient.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
-import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../utils/areaAccent.ts';
+import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper, leavesForOpenAlexTopic } from '../utils/areaAccent.ts';
 import { paperLegacyAdapter } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
 import { buildSavedPaperPayload } from '../utils/savedPaperPayload.ts';
@@ -115,6 +119,74 @@ test('maps Europe PMC search results including free full text and biomedical ter
   // request is only why it was fetched.
   assert.deepEqual(paper!.categories, ['Cell Biology']);
   assert.deepEqual(paper!._fetchedFor, ['bio.cell']);
+});
+
+// An unfielded `"Molecular Biology"` also matches the journal name, and
+// 139 records in the 2026-10-20 audit were chapters of Methods in Molecular
+// Biology dated 2027. The labels are searched where a paper states its
+// subject, and nothing dated after today comes back.
+test('the Europe PMC request searches each label in title, abstract and keywords, up to today', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const query = europePmcQuery(['bio.gen', 'bio.mol']);
+
+  for (const label of ['Genetics', 'Molecular Biology']) {
+    assert.ok(query.includes(`TITLE_ABS:"${label}"`), `${label} in title and abstract: ${query}`);
+    assert.ok(query.includes(`KW:"${label}"`), `${label} in keywords: ${query}`);
+  }
+  const fields = [...query.matchAll(/(\w+:)?"[^"]*"/g)].map(([, field]) => field);
+  assert.deepEqual([...new Set(fields)].sort(), ['KW:', 'TITLE_ABS:'], `no label is searched in every field: ${query}`);
+  assert.match(query, /\bAND FIRST_PDATE:\[\S+ TO 2026-10-20\]$/);
+});
+
+// Captured from Europe PMC on 2026-10-20 (PMID 42879010), trimmed to the
+// fields the mapper reads.
+const PROTOCOL_CHAPTER = {
+  id: '42879010',
+  source: 'MED',
+  pmid: '42879010',
+  doi: '10.1007/978-1-0716-5587-0_5',
+  title: '(Immuno-)Histological Analysis of Ewing Sarcoma.',
+  authorString: 'Marcilla D, Machado I, Grünewald TGP, Civantos G, Llombart-Bosch A, de Álava E.',
+  journalInfo: {
+    yearOfPublication: 2027,
+    journal: { title: 'Methods in molecular biology (Clifton, N.J.)', essn: '1940-6029', issn: '1064-3745', nlmid: '9214969' },
+  },
+  pubTypeList: { pubType: ['Journal Article'] },
+  abstractText: 'The diagnosis of Ewing sarcoma requires integrating information from numerous techniques.',
+  dateOfCreation: '2026-10-15',
+  firstPublicationDate: '2027-01-01',
+};
+
+test('a Methods in Molecular Biology chapter from Europe PMC is typed as a book-series chapter, which the feed leaves out', () => {
+  const chapter = PaperBuilder.deduplicate([mapEuropePmcSearchResult(PROTOCOL_CHAPTER, ['bio.mol'])])[0];
+  assert.equal(chapter.publicationType, 'book-chapter');
+  assert.equal(isFeedPublication(chapter), false);
+
+  for (const journal of [{ issn: '1064-3745' }, { essn: '1940-6029' }, { nlmid: '9214969' }]) {
+    const paper = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, journalInfo: { journal } }, ['bio.mol']);
+    assert.equal(isFeedPublication(paper!), false, `identified by ${Object.keys(journal)[0]} alone`);
+  }
+
+  const article = mapEuropePmcSearchResult({
+    ...PROTOCOL_CHAPTER,
+    journalInfo: { journal: { title: 'Nature', issn: '0028-0836', essn: '1476-4687', nlmid: '0410462' } },
+  }, ['bio.mol']);
+  assert.equal(article!.publicationType, 'article');
+  assert.equal(isFeedPublication(article!), true);
+});
+
+test('a Europe PMC record dated after today shows no year and no date', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const scheduled = PaperBuilder.deduplicate([mapEuropePmcSearchResult(PROTOCOL_CHAPTER, ['bio.mol'])])[0];
+  assert.equal(scheduled.year, undefined, 'not 2027, and not the 2026 the record was created in');
+  assert.equal(scheduled.published, '');
+
+  const yearOnly = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, firstPublicationDate: undefined, dateOfCreation: undefined }, ['bio.mol']);
+  assert.equal(yearOnly!.year, undefined, 'a publication year of 2027 is after today too');
+
+  const current = mapEuropePmcSearchResult({ ...PROTOCOL_CHAPTER, firstPublicationDate: '2026-10-20' }, ['bio.mol']);
+  assert.equal(current!.year, 2026);
+  assert.equal(current!.published, '2026-10-20');
 });
 
 test('maps CORE, OSTI and NASA records to stable open paper records', () => {
@@ -603,4 +675,88 @@ test("every series the economics request names is on the review rule's list, so 
     const card = adapter.mapToStandard(seriesWork('W1', '10.1/w1', 'article', { id, display_name: 'A series' }, null));
     assert.equal(reviewStatusForPaper(card), 'workingPaper', `${id} is on the review rule's list`);
   }
+});
+
+// OpenAlex W7222916812 as returned on 2026-10-21 (trimmed): a Genetics article
+// whose primary topic, RNA Research and Splicing, is one of bio.mol's.
+const splicingWork = {
+  ...seriesWork('W7222916812', '10.1093/genetics/iyag290', 'article', { id: 'S65932378', display_name: 'Genetics' },
+    'Pathogenic variants in SNRPB, a common core spliceosomal factor, cause Cerebrocostomandibular Syndrome (CCMS).'),
+  title: 'A Novel CCMS Model Reveals a Critical Intronic Sequence in the Snrpb Gene that is Required for Normal Development',
+  publication_date: '2026-10-20',
+  primary_topic: {
+    id: 'https://openalex.org/T10604',
+    display_name: 'RNA Research and Splicing',
+    subfield: { id: 'https://openalex.org/subfields/1312', display_name: 'Molecular Biology' },
+    field: { id: 'https://openalex.org/fields/13', display_name: 'Biochemistry, Genetics and Molecular Biology' },
+    domain: { id: 'https://openalex.org/domains/1', display_name: 'Life Sciences' },
+  },
+};
+
+// Plan A (PAP-73): the leaves arXiv does not serve ask OpenAlex for works by
+// the topic IDs measured for them on 2026-10-21, not for the text of their
+// labels, which found 9 research articles in the reader's field in 442.
+test("a biology reader asks OpenAlex for recent articles under its leaves' topics by ID, with no search text", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: URL[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(new URL(String(input)));
+    return Response.json({ results: [splicingWork] });
+  };
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
+  const topicsOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('primary_topic.id:'))!
+    .slice('primary_topic.id:'.length).split('|');
+
+  assert.deepEqual(await fetchOpenAlexTopicPapers(['cs.LG', 'q-bio.GN', 'med.gen'], 1), []);
+  assert.equal(urls.length, 0, 'arXiv leaves and leaves without measured topics cost no request');
+
+  const papers = await fetchOpenAlexTopicPapers(['cs.LG', 'bio.mol', 'med.gen'], 2);
+  assert.equal(urls.length, 1, 'one request for the page');
+  const [url] = urls;
+  assert.equal(url.searchParams.has('search'), false);
+  assert.ok(filtersOf(url).every(filter => !filter.includes('search')), 'no text search in the filter');
+  assert.ok(topicsOf(url).length > 0 && topicsOf(url).every(id => leavesForOpenAlexTopic(id).join() === 'bio.mol'),
+    "only bio.mol's topics, none for cs.LG or med.gen");
+  const filters = filtersOf(url);
+  const date = (name: string) => filters.find(filter => filter.startsWith(`${name}:`))!.split(':')[1];
+  assert.equal(date('to_publication_date'), '2026-10-21', 'nothing dated after today (UTC)');
+  const windowDays = (Date.parse(date('to_publication_date')) - Date.parse(date('from_publication_date'))) / 86_400_000;
+  assert.ok(windowDays > 0 && windowDays <= 366, `a bounded recent window, got ${windowDays} days`);
+  for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
+    assert.ok(filters.includes(filter), `filters on ${filter}`);
+  }
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(url.searchParams.get('page'), '2');
+
+  // OpenAlex's own classification, not the leaf that asked.
+  assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7222916812']);
+  assert.equal(papers[0].primaryTopic?.id, 'https://openalex.org/T10604');
+  assert.equal(papers[0].primaryCategory, undefined);
+  assert.ok(!papers[0].categories?.includes('bio.mol'), 'the card is not filed under the requested leaf');
+
+  // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
+  await fetchOpenAlexTopicPapers(['mech.aero'], 1);
+  await fetchOpenAlexTopicPapers(['civil.struct'], 1);
+  assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
+  assert.ok(filtersOf(urls[2]).includes('type:article'));
+
+  // Eight measured leaves hold more topics than one filter takes.
+  const eight = ['bio.gen', 'bio.mol', 'bio.cell', 'bio.biochem', 'bio.comp', 'bio.neuro', 'med.neuro', 'med.psych'];
+  await fetchOpenAlexTopicPapers(eight, 1);
+  const topics = topicsOf(urls[3]);
+  assert.ok(topics.length <= 50, `at most 50 topic IDs, got ${topics.length}`);
+  assert.deepEqual(topics.slice(0, eight.length).map(id => leavesForOpenAlexTopic(id).join()), eight,
+    'every leaf is represented, in preference order');
+});
+
+test('a failed topic request rejects, so the feed counts a source that did not answer', async t => {
+  t.mock.method(console, 'warn', () => {});
+  const realFetch = openAlexClient.fetchImpl;
+  openAlexClient.clearMemoryCache();
+  openAlexClient.fetchImpl = async () => new Response('{}', { status: 503 });
+  t.after(() => { openAlexClient.fetchImpl = realFetch; });
+  await assert.rejects(fetchOpenAlexTopicPapers(['bio.mol'], 1));
 });

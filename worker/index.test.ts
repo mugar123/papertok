@@ -1162,6 +1162,29 @@ test('answers a CORE search that takes longer than the shared source deadline', 
   }
 });
 
+// The feed sends CORE its labels as `"A" OR "B"`, and CORE answers a query
+// that starts with a quoted phrase with a 500 (tester report, 2026-10-20).
+test('sends CORE the query inside parentheses', async () => {
+  const upstream: URL[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    upstream.push(new URL(String(url)));
+    return new Response(JSON.stringify({ results: [] }), { headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const response = await withCachedIdentity(() => reportApi.fetch(new Request(
+      `https://papertok-report-api.example/sources/core?q=${encodeURIComponent('"Signal Processing" OR "Power & Energy Systems"')}`,
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV));
+
+    assert.equal(response.status, 200);
+    assert.equal(upstream.length, 1);
+    assert.equal(upstream[0].searchParams.get('q'), '("Signal Processing" OR "Power & Energy Systems")');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('falls back to INSPIRE when NASA ADS stalls instead of waiting on it', async () => {
   let inspireQuery = '';
   const originalFetch = globalThis.fetch;

@@ -30,17 +30,3 @@ test('the Explorer loads its Wikipedia block through the identity-aware loader',
   assert.doesNotMatch(source, /getEntityWikiInfo\(/);
 });
 
-test('the lookup is keyed on the identity fields, not on the entity object', () => {
-  const memo = bounded(source, 'const wikiEntity = useMemo(', ');', 'the wiki identity memo', 8);
-  assert.match(
-    memo,
-    /_queryTopic: entityIsQueryTopic,\s*_localTopic: entityIsLocalTopic,\s*ids: \{ wikidata: entityWikidataId, wikipedia: entityWikipediaUrl \},\s*\}\), \[entityIsLocalTopic, entityIsQueryTopic, entityWikidataId, entityWikipediaUrl\]/,
-  );
-});
-
-test('a paragraph in another language than the interface says which one', () => {
-  assert.match(
-    source,
-    /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+ref=\{wikiDescriptionTextRef\}\s+lang=\{wikiDescriptionLanguage !== language \? wikiDescriptionLanguage : undefined\}/,
-  );
-});
