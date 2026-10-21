@@ -2567,6 +2567,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
       }
+      // PAP-60, D6. The Save button and the save sheet write the savedPapers
+      // document, and the button writes Read later, before this mark. A late
+      // OpenAlex answer in that time found the paper unmarked and left its
+      // copies without the topic the feed's card now carries.
+      const written = typeof paperOrIdInput === 'object' ? paperOrIdInput : paper;
+      const shown = written && papersRef.current.find(card => card.id === written.id);
+      if (written && shown) keepLateTopicsRef.current(cardsGivenTopic([written], [shown]));
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
 
