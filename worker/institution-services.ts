@@ -9,6 +9,10 @@ interface ServiceEntry {
 }
 type ServiceSubscription = { collection: string | null | undefined; ownPlatform: boolean; accessUrl?: string };
 type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | typeof UNCHECKED;
+/** What a probe decided about one catalogue entry, and when. */
+type StoredVerdict = { at: number; verdict: ServiceSubscription | null | 'unchecked' };
+type StoredVerdicts = Record<string, StoredVerdict>;
+type ServicesStore = Pick<KVNamespace, 'get' | 'put'>;
 
 
 /**
@@ -20,10 +24,18 @@ type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | t
  * journals. The catalogue already knows the journal, so Crossref is not asked.
  * A platform is listed when its probe is entitled; the list describes the
  * library and is informative only, the per-paper answer stays with `/access`.
+ *
+ * Verdicts are the library's, and they are kept in KV one per catalogue
+ * entry, under the parameters the probes were sent with. A request answers
+ * from the stored verdicts and probes only the entries that have none, so a
+ * catalogue that grows costs the entries added, not the list again, and a
+ * reader at a library already read gets the list at once wherever they are.
+ * The edge cache used to keep whole pages, per data centre, under the
+ * catalogue's fingerprint: every catalogue change and every new location
+ * probed the whole list again (USAL, 2026-10-14 and 2026-10-21).
  */
 
 import {
-  ACCESS_CACHE_SECONDS,
   GETFTR_BATCH_SIZE,
   InstitutionAccessError,
   RESOLVER_READING,
@@ -35,32 +47,25 @@ import {
   upstreamParams,
 } from './institution-access.ts';
 
-import { cacheResponse } from './provider-runtime.ts';
+import { corsHeaders, json } from './http.ts';
 
 export const INSTITUTION_SERVICES_PATH = '/institution/services';
-const SERVICES_PARTIAL_CACHE_SECONDS = 60 * 60;
 
-// Each page must finish before the browser's 15 s request deadline.
+// Each request must finish before the browser's 15 s request deadline.
 // Timeouts remain partial results rather than evidence of absent access.
 const SERVICES_DEADLINE_MS = 12000;
-const PROBE_CONCURRENCY = 4;
-// How many requests one lookup may send upstream. A Worker invocation on the
-// free plan may make 50 subrequests, and the route spends a handful around
-// this lookup (the identity check, the edge cache); the 66-platform
-// catalogue blew through it on 2026-10-14 and every USAL list came back 502.
-// GetFTR takes twenty DOIs per request, so with a key the whole catalogue is
-// a few requests; the resolver answers one journal per request, so without a
-// key the platforms past the budget are reported as unchecked, not absent.
-export const SUBREQUEST_BUDGET = 40;
-// Leaves room for two GetFTR batches even when every DOI needs a resolver fallback.
-const SERVICES_PAGE_SIZE = 36;
-// No probe starts later than this after a page's first resolver probe, so the
-// slowest one in flight still has half the deadline when GetFTR was quick, and
-// the page ends at the first platform not yet asked about, where the next page
-// begins. TUM's SFX took about 1.3 s a probe: 36 at four at a time ran into the
-// deadline on 2026-10-20, and every retry of the list probed the same first
-// titles and lost the same last ones.
+// Workers allow six simultaneous outbound connections per invocation.
+const PROBE_CONCURRENCY = 6;
+// No probe starts later than this after the first resolver probe, so the
+// slowest one in flight still has half the deadline when GetFTR was quick.
+// The entries no probe started for stay unanswered in the store, and the
+// next request goes on from there: TUM's SFX took about 1.3 s a probe
+// (2026-10-20), so a library read for the first time takes a few requests.
 const SERVICES_START_WINDOW_MS = 6000;
+// Subscriptions change and the probe year ages: a verdict this old is asked
+// again. A library nobody asks about for three months is forgotten.
+export const VERDICT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const STORE_RECORD_TTL_SECONDS = 90 * 24 * 60 * 60;
 const FAILED = Symbol('failed');
 const UNCHECKED = Symbol('unchecked');
 
@@ -456,47 +461,37 @@ export async function handleInstitutionServices(request: Request, env: WorkerEnv
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   const query = readInstitutionQuery(url.searchParams);
-  const rawOffset = url.searchParams.get('offset');
-  const offset = rawOffset === null ? undefined : Number(rawOffset);
-  // Any platform can start a page: a page ends where its time ran out.
-  if (rawOffset !== null && (!/^\d+$/.test(rawOffset) || !Number.isSafeInteger(offset)
-    || offset! < 0 || offset! >= SERVICE_CATALOGUE.length)) {
-    throw new InstitutionAccessError('INVALID_SERVICES_OFFSET', 400);
-  }
-  const ttl = (payload: { partial: boolean }) => (payload.partial ? SERVICES_PARTIAL_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
-  return cacheResponse(request, origin, env, ttl, () => lookupInstitutionServices(query, { env, offset }), {
-    canonicalParams: servicesCacheParams(query, env, offset),
-  });
+  const store = env.INSTITUTION_SERVICES_STORE;
+  // Logged by the router and answered as an outage: without the store every
+  // request would read the library from the start and never finish it.
+  if (!store) throw new Error('INSTITUTION_SERVICES_STORE binding is missing');
+  const payload = await lookupInstitutionServices(query, { env, store });
+  // The store is the cache. A request that left entries unanswered is asked
+  // again at once, so no cache may hand it back.
+  return json(payload, 200, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
 }
 
 /**
- * A short fingerprint of what a list depends on besides the library: the
- * catalogue entries, paging (the page size and the window that ends a page)
- * and the budget. Includes ISSN/year and displayed metadata.
+ * The store key of a library's verdicts: the parameters its probes are sent
+ * with (`upstreamParams`, so every mail domain of a university shares one
+ * record, and the ids only once GetFTR gets them) and how the resolver's
+ * answers are read. Hashed: an entityId alone may run to 300 characters,
+ * and a KV key to 512 bytes.
  */
-export function catalogueFingerprint(entries: ReadonlyArray<ServiceEntry>, budget: number) {
-  let hash = 0x811c9dc5;
-  for (const char of JSON.stringify([budget, SERVICES_PAGE_SIZE, SERVICES_START_WINDOW_MS, entries])) {
-    hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
+export async function servicesStoreKey(query: InstitutionQuery, env: WorkerEnv) {
+  const params = { ...upstreamParams(query, env), reading: RESOLVER_READING };
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(params)));
+  return `services:${Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')}`;
 }
 
-// Hashing the 17 KB catalogue took 0.07 ms warm and up to 0.65 ms in a fresh
-// isolate on every request, cache hits included. Its inputs are module constants.
-// Paged answers carry it too, so a client that keeps where a list stopped can
-// tell a page of another catalogue, whose positions may not match.
-const SERVICE_CATALOGUE_FINGERPRINT = catalogueFingerprint(SERVICE_CATALOGUE, SUBREQUEST_BUDGET);
-
 /**
- * The edge cache key's parameters for a services list: the upstream ones
- * (`upstreamParams`) and the catalogue's fingerprint, so a platform added,
- * changed or budgeted differently is not hidden behind a week-old list.
- * Seen on 2026-10-14: the catalogue grew from 14 to 66 platforms and USAL
- * kept seeing yesterday's 12 until the entry expired.
+ * What a stored verdict answers for: the entry, what its probe asked (ISSN,
+ * year, DOI) and how the answer was read (`packageHint` decides
+ * `ownPlatform`). A changed probe is a new entry; a renamed or recoloured one
+ * keeps its verdict, since the catalogue supplies what is displayed.
  */
-export function servicesCacheParams(query: InstitutionQuery, env: WorkerEnv, offset?: number) {
-  return { ...upstreamParams(query, env), catalogue: SERVICE_CATALOGUE_FINGERPRINT, reading: RESOLVER_READING, ...(offset === undefined ? {} : { offset: String(offset) }) };
+export function probeKey(entry: ServiceEntry) {
+  return [entry.id, entry.issn, entry.year, entry.doi || '', entry.packageHint].join('|');
 }
 
 /** Whether a package name is the platform's or its publisher's own. */
@@ -539,15 +534,15 @@ async function probeResolver(entry: ServiceEntry, resolver: InstitutionResolver,
 }
 
 /**
- * GetFTR on the requested entries with DOIs, a batch per request. Fills
+ * GetFTR on the undecided entries with DOIs, a batch per request. Fills
  * `outcomes` with `{ collection: null, ownPlatform: true }`, null, or leaves
  * a platform undefined for the resolver to decide (GetFTR's `maybe`, a
  * publisher outside it) — UNCHECKED when there is no resolver to ask. A
  * request that fails leaves its platforms to the resolver too, or FAILED
- * without one. Returns the number of requests made.
+ * without one.
  */
 async function askGetFtrForCatalogue(entries: readonly ServiceEntry[], outcomes: ServiceOutcome[], { resolver, entityId, rorId, env, fetchImpl, signal }: Pick<InstitutionQuery, 'entityId' | 'rorId'> & { resolver: InstitutionResolver | null | undefined; env: WorkerEnv; fetchImpl: typeof fetch; signal: AbortSignal }) {
-  const candidates = entries.flatMap((entry, index) => entry.doi ? [{ index, doi: entry.doi }] : []);
+  const candidates = entries.flatMap((entry, index) => entry.doi && outcomes[index] === undefined ? [{ index, doi: entry.doi }] : []);
   const batches = [];
   for (let start = 0; start < candidates.length; start += GETFTR_BATCH_SIZE) {
     batches.push(candidates.slice(start, start + GETFTR_BATCH_SIZE));
@@ -566,72 +561,102 @@ async function askGetFtrForCatalogue(entries: readonly ServiceEntry[], outcomes:
       else outcomes[index] = verdicts ? UNCHECKED : FAILED;
     }
   }));
-  return batches.length;
 }
 
+/**
+ * The library's list from its stored verdicts, probing the entries that have
+ * none. `remaining` counts the entries no probe started for before the window
+ * closed: the caller asks again, and the next request goes on from the store.
+ * Two requests for one library at once probe the same entries and the later
+ * write wins; its verdicts are the same, so nothing is lost but the probes.
+ * Without a store (tests), nothing is remembered between requests.
+ */
 export async function lookupInstitutionServices(
   { domain, entityId = null, rorId = null }: InstitutionQuery,
-  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now, offset }: LookupOptions & { offset?: number } = {},
+  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now, store }: LookupOptions & { store?: ServicesStore } = {},
 ) {
   const resolver = findResolver({ domain, rorId });
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
+  const key = await servicesStoreKey({ domain, entityId, rorId }, env);
+  const stored: StoredVerdicts = (store && await store.get<StoredVerdicts>(key, 'json')) || {};
+  const startedAt = now();
   const signal = AbortSignal.timeout(SERVICES_DEADLINE_MS);
-  const entries = offset === undefined ? SERVICE_CATALOGUE : SERVICE_CATALOGUE.slice(offset, offset + SERVICES_PAGE_SIZE);
 
-  // `undefined` is a platform still to be asked about (filled: a hole would
-  // be skipped by the iteration below).
-  const outcomes = new Array<ServiceOutcome>(entries.length).fill(undefined);
-  let budget = SUBREQUEST_BUDGET;
+  // What the store answers; `undefined` is an entry still to be asked about
+  // (filled: a hole would be skipped by the iteration below).
+  const outcomes: ServiceOutcome[] = SERVICE_CATALOGUE.map((entry) => {
+    const known = stored[probeKey(entry)];
+    if (!known || startedAt - known.at >= VERDICT_TTL_MS) return undefined;
+    return known.verdict === 'unchecked' ? UNCHECKED : known.verdict;
+  });
+  const probing = new Set(outcomes.flatMap((outcome, index) => (outcome === undefined ? [index] : [])));
   if (getFtr) {
-    budget -= await askGetFtrForCatalogue(entries, outcomes, { resolver, entityId, rorId, env, fetchImpl, signal });
+    await askGetFtrForCatalogue(SERVICE_CATALOGUE, outcomes, { resolver, entityId, rorId, env, fetchImpl, signal });
   }
 
-  // The resolver, one journal per request, for what is still undecided and
-  // fits the budget; the rest is unchecked, in catalogue order, so the
-  // platforms most libraries hold are the ones asked about.
-  const pending: number[] = [];
-  outcomes.forEach((outcome, index) => {
-    if (outcome !== undefined) return;
-    if (resolver && pending.length < budget) pending.push(index);
-    else outcomes[index] = UNCHECKED;
-  });
-  let next = 0;
-  // The window opens with the resolver's probes, so the time GetFTR took does
-  // not shorten the page: what the deadline then cuts is partial. A request
-  // without paging has no next page to leave platforms to, so it is not windowed.
-  const startedAt = now();
-  const mayStart = () => offset === undefined || now() - startedAt < SERVICES_START_WINDOW_MS;
-  const drain = async () => {
-    while (next < pending.length && mayStart()) {
-      const index = pending[next++];
-      outcomes[index] = await probeResolver(entries[index], resolver!, fetchImpl, signal).catch(() => FAILED);
-    }
-  };
-  await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
-  // A page ends at the first platform no probe started for, and the next page starts there.
-  const end = next < pending.length ? pending[next] : entries.length;
-  const reported = outcomes.slice(0, end);
+  // The resolver, one journal per request, for what is still undecided, in
+  // catalogue order, so the platforms most libraries hold are asked about
+  // first. The window opens with the resolver's probes, so the time GetFTR
+  // took does not shorten the request: what the deadline then cuts is
+  // partial, what the window leaves unstarted is remaining.
+  const pending = outcomes.flatMap((outcome, index) => (outcome === undefined ? [index] : []));
+  if (resolver) {
+    let next = 0;
+    const windowOpenedAt = now();
+    const drain = async () => {
+      while (next < pending.length && now() - windowOpenedAt < SERVICES_START_WINDOW_MS) {
+        const index = pending[next++];
+        outcomes[index] = await probeResolver(SERVICE_CATALOGUE[index], resolver, fetchImpl, signal).catch(() => FAILED);
+      }
+    };
+    await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
+  } else {
+    for (const index of pending) outcomes[index] = UNCHECKED;
+  }
 
-  const asked = reported.filter(outcome => outcome !== UNCHECKED);
-  if (asked.length > 0 && asked.every(outcome => outcome === FAILED)) {
+  // Every probe made failed and the store answered nothing: an outage, not
+  // an empty library. With a list in hand, failed probes make it partial.
+  const asked = [...probing].map(index => outcomes[index]).filter(outcome => outcome !== undefined && outcome !== UNCHECKED);
+  const remembered = outcomes.some((outcome, index) => outcome !== undefined && !probing.has(index));
+  if (asked.length > 0 && asked.every(outcome => outcome === FAILED) && !remembered) {
     throw new InstitutionAccessError('ACCESS_LOOKUP_UNAVAILABLE', 502);
   }
+
+  if (store) {
+    const record: StoredVerdicts = {};
+    let learned = false;
+    SERVICE_CATALOGUE.forEach((entry, index) => {
+      const outcome = outcomes[index];
+      if (outcome === undefined || outcome === FAILED) return;
+      const id = probeKey(entry);
+      if (probing.has(index)) {
+        record[id] = { at: startedAt, verdict: outcome === UNCHECKED ? 'unchecked' : outcome };
+        learned = true;
+      } else {
+        record[id] = stored[id];
+      }
+    });
+    // Entries no longer in the catalogue are left out. A write that fails
+    // costs the next request these probes again; the answer stands.
+    if (learned) {
+      await store.put(key, JSON.stringify(record), { expirationTtl: STORE_RECORD_TTL_SECONDS })
+        .catch(error => console.error('Institution services store write failed', error));
+    }
+  }
+
   const services: Array<Pick<ServiceEntry, 'id' | 'name' | 'publisher' | 'url' | 'monogram' | 'color' | 'platformId'> & ServiceSubscription> = [];
-  entries.slice(0, end).forEach(({ id, name, publisher, url, monogram, color, platformId }, index) => {
-    const outcome = reported[index];
+  SERVICE_CATALOGUE.forEach(({ id, name, publisher, url, monogram, color, platformId }, index) => {
+    const outcome = outcomes[index];
     if (outcome && outcome !== FAILED && outcome !== UNCHECKED) {
       services.push({ id, name, publisher, url: outcome.accessUrl || url, monogram, color, collection: outcome.collection, ownPlatform: outcome.ownPlatform, ...(platformId ? { platformId } : {}) });
     }
   });
   return {
     services,
-    partial: reported.includes(FAILED),
-    unchecked: reported.filter(outcome => outcome === UNCHECKED).length,
+    partial: outcomes.includes(FAILED),
+    unchecked: outcomes.filter(outcome => outcome === UNCHECKED).length,
+    remaining: outcomes.filter(outcome => outcome === undefined).length,
     checkedAt: new Date(now()).toISOString(),
-    ...(offset === undefined ? {} : {
-      nextOffset: offset + end < SERVICE_CATALOGUE.length ? offset + end : null,
-      catalogue: SERVICE_CATALOGUE_FINGERPRINT,
-    }),
   };
 }
