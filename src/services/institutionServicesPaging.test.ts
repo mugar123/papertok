@@ -158,7 +158,7 @@ test('a slow library\'s list goes on where the client\'s page limit stopped it, 
     t.mock.timers.tick(HOUR + 1);
     alice.offsets.length = 0;
     const second = await findInstitutionServices(TUM, alice);
-    assert.deepEqual(alice.offsets, pagesFrom(160, 5));
+    assert.deepEqual(alice.offsets, pagesFrom(160, 10));
     assert.equal(second!.partial, false);
     assert.deepEqual(ids(second), HELD.map(entry => entry.id));
     // Every title asked once, in catalogue order: nothing lost, nothing asked twice.
@@ -218,7 +218,7 @@ test('a finished list stays what is shown while a later reading is under way, an
     t.mock.timers.tick(HOUR + 1);
     hana.offsets.length = 0;
     const refreshed = await findInstitutionServices(TUM, hana);
-    assert.deepEqual(hana.offsets, pagesFrom(160, 5));
+    assert.deepEqual(hana.offsets, pagesFrom(160, 10));
     assert.deepEqual(ids(refreshed), HELD.map(entry => entry.id));
     assert.equal(refreshed!.unchecked, 2);
   } finally {
@@ -249,8 +249,14 @@ test('a first reading shows what it has found as it goes on; a finished one stay
     assert.deepEqual(ids(remaining), [HELD[0].id, HELD[1].id]);
     t.mock.timers.tick(HOUR + 1);
     ivy.offsets.length = 0;
-    const done = await findInstitutionServices(TUM, ivy);
+    const continuing = await findInstitutionServices(TUM, ivy);
     assert.deepEqual(ivy.offsets, pagesFrom(140, 10));
+    assert.equal(continuing!.partial, true);
+    assert.deepEqual(ids(continuing), [HELD[0].id, HELD[1].id]);
+    t.mock.timers.tick(HOUR + 1);
+    ivy.offsets.length = 0;
+    const done = await findInstitutionServices(TUM, ivy);
+    assert.deepEqual(ivy.offsets, pagesFrom(180, 5));
     assert.deepEqual(ids(done), HELD.map(entry => entry.id));
     // The refresh's first run, then its next page down: the finished list stays.
     t.mock.timers.tick(HOUR + 1);
@@ -317,8 +323,8 @@ test('pages served from the edge cache count too, and no other account or instit
     const aliceDone = await findInstitutionServices(TUM, alice);
     const beforeBob = upstream.asked.length;
     const bobDone = await findInstitutionServices(TUM, bob);
-    assert.deepEqual(alice.offsets, pagesFrom(160, 5));
-    assert.deepEqual(bob.offsets, pagesFrom(160, 5));
+    assert.deepEqual(alice.offsets, pagesFrom(160, 10));
+    assert.deepEqual(bob.offsets, pagesFrom(160, 10));
     assert.equal(upstream.asked.length, beforeBob);
     assert.deepEqual(ids(aliceDone), HELD.map(entry => entry.id));
     assert.deepEqual(ids(bobDone), HELD.map(entry => entry.id));
@@ -432,8 +438,14 @@ test('a page that fails keeps what was found and the place, and the next ask tri
     assert.deepEqual(ids(remaining), [HELD[0].id, HELD[1].id]);
     t.mock.timers.tick(HOUR + 1);
     frank.offsets.length = 0;
-    const done = await findInstitutionServices(TUM, frank);
+    const continuing = await findInstitutionServices(TUM, frank);
     assert.deepEqual(frank.offsets, pagesFrom(140, 10));
+    assert.equal(continuing!.partial, true);
+    assert.deepEqual(ids(continuing), [HELD[0].id, HELD[1].id]);
+    t.mock.timers.tick(HOUR + 1);
+    frank.offsets.length = 0;
+    const done = await findInstitutionServices(TUM, frank);
+    assert.deepEqual(frank.offsets, pagesFrom(180, 5));
     assert.equal(done!.partial, false);
     assert.deepEqual(ids(done), HELD.map(entry => entry.id));
     assert.deepEqual(upstream.asked.map(call => call.issn), SERVICE_CATALOGUE.map(entry => entry.issn));
