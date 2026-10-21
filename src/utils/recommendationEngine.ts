@@ -2,6 +2,13 @@ import type { Paper, PaperAuthor, PaperRecommendationScore } from '../models/Pap
 import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
+import {
+  MIN_CONTENT_POSITIVES,
+  contentSimilarity,
+  paperTermCounts,
+  poolTermStats,
+  type PoolTermStats,
+} from './contentProfile.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
@@ -9,6 +16,7 @@ export interface RecommendationContext {
   weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[] | null; followedAuthors?: string[];
   followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>;
   conceptAffinities?: Record<string, number>; authorAffinities?: Record<string, number>;
+  contentAffinities?: Record<string, number>; positiveCount?: number;
   sessionAffinities?: Record<string, number>; interactionCount?: number;
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
@@ -23,6 +31,7 @@ interface ShuffleOptions<T> {
 // maximum contribution of each signal. Resulting hierarchy: preference and
 // learned category affinity (<=100) > follows (<=70) > learned concepts
 // (<=semanticConceptMultiplier) > learned authors and the session (<=30) >
+// content match (<=maxContentMatch, below what the preference fades to) >
 // citations/classics (<=25) > personal and graph candidates, diversity,
 // recency. A card without an abstract loses missingAbstract: it reaches the
 // page when the pool has little else or a follow carries it. The
@@ -50,6 +59,13 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   learnedAuthorScale: 25,
   maxSession: 30,
   sessionScale: 15,
+  // How much a card that reads like what the reader keeps can earn: at most a
+  // fifth of the selected category's weight, and less than what the preference
+  // fades to (selectedCategory * minPreferenceShare = 30), so no text match
+  // outranks a category the reader chose. contentCosineScale is the cosine
+  // that earns all of it; real feeds' on-topic cards reach 0.2 to 0.4.
+  maxContentMatch: 20,
+  contentCosineScale: 0.3,
   citationMultiplier: 5,
   maxCitationLog: 5,
   graphCandidate: 15,
@@ -261,17 +277,25 @@ function openAlexAuthorKey(author: PaperAuthor | string | null | undefined) {
 
 /**
  * The OpenAlex concepts and authors a paper carries, keyed the way the
- * interaction profile learns them and the ranking reads them back. Authors
- * without an OpenAlex id are left out: a name is not an identity.
+ * interaction profile learns them and the ranking reads them back, and the
+ * terms of its title and abstract. Authors without an OpenAlex id are left
+ * out: a name is not an identity.
  */
 export function paperAffinitySignals(paper: Partial<Paper>) {
-  const concepts = (paper?.openAlex?.concepts || [])
-    .map(concept => ({ id: openAlexKey(concept?.id), score: concept?.score }))
-    .filter(concept => concept.id);
+  // The concepts and topics of OpenAlex's own record, then those the card
+  // carries itself (a card from OpenAlex has them before any enrichment), each
+  // id once.
+  const carried = [
+    ...(paper?.openAlex?.concepts || []),
+    ...(paper?.concepts || []),
+    ...(paper?.topics || []),
+    ...(paper?.primaryTopic ? [paper.primaryTopic] : []),
+  ].map(concept => ({ id: openAlexKey(concept?.id), score: concept?.score })).filter(concept => concept.id);
+  const concepts = carried.filter((concept, index) => carried.findIndex(other => other.id === concept.id) === index);
   const authorIds = [...new Set(
     (paper?.authors || []).slice(0, MAX_LEARNED_AUTHORS_PER_PAPER).map(openAlexAuthorKey).filter(Boolean),
   )];
-  return { concepts, authorIds };
+  return { concepts, authorIds, terms: [...paperTermCounts(paper).keys()] };
 }
 
 function conceptWeight(score: number | undefined) {
@@ -357,6 +381,8 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const semantic = clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier;
 
   // Authors the reader keeps engaging with, learned rather than followed.
+  const contentMatch = contentMatchFor(paper, context, weights);
+
   const authorMatch = authorIds.reduce((sum, authorId) => sum + (authorAffinities[authorId] || 0), 0);
   const learnedAuthor = clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor;
 
@@ -382,6 +408,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     classicBoost,
     semantic,
     learnedAuthor,
+    contentMatch,
     sessionInterest,
     citations,
     graphBoost,
@@ -401,6 +428,8 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     categoryAffinities: context.categoryAffinities,
     conceptAffinities: context.conceptAffinities,
     authorAffinities: context.authorAffinities,
+    contentAffinities: context.contentAffinities,
+    positiveCount: context.positiveCount,
     sessionAffinities: context.sessionAffinities,
     interactionCount: context.interactionCount,
     temporalPreference: context.temporalPreference,
@@ -452,16 +481,34 @@ function diversityBoostFor(stable: StableScore, recentPropsCount: Partial<Recent
 // It has to be scoped that tightly. A module-level cache keyed by paper would
 // go stale between re-ranks: it would keep answering with the affinities of the
 // run that filled it, which ignore the reader's last swipe.
-let activeScoringRun: Map<Partial<Paper>, StableScore> | null = null;
+//
+// The run also names the pool the cards are ranked against, which is what a
+// content match is measured in: how rare a term is among these cards.
+interface ScoringRun { stable: Map<Partial<Paper>, StableScore>; pool: Partial<Paper>[]; stats: PoolTermStats | null }
+let activeScoringRun: ScoringRun | null = null;
 
-function beginScoringRun() {
+function beginScoringRun(pool: Partial<Paper>[]) {
   const previous = activeScoringRun;
-  activeScoringRun = new Map();
+  activeScoringRun = { stable: new Map(), pool: [...pool], stats: null };
   return () => { activeScoringRun = previous; };
 }
 
-function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
+// A card's match to what the reader liked, saved or refused, in the words of
+// its title and abstract, against the cards it is ranked with. A card scored
+// alone has no pool to be rare in, so outside a run the match is 0; the
+// re-rank that follows scores it properly. Below MIN_CONTENT_POSITIVES the
+// reader has said too little to read a taste from, and it is 0 as well.
+function contentMatchFor(paper: Partial<Paper>, context: RecommendationContext, weights: RecommendationWeights) {
+  const affinities = context.contentAffinities;
   const run = activeScoringRun;
+  if (!affinities || !run || !(weights.contentCosineScale > 0) || (context.positiveCount || 0) < MIN_CONTENT_POSITIVES) return 0;
+  run.stats ??= poolTermStats(run.pool);
+  const cosine = contentSimilarity(paperTermCounts(paper), affinities, run.stats);
+  return clamp(cosine / weights.contentCosineScale, -1, 1) * weights.maxContentMatch;
+}
+
+function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
+  const run = activeScoringRun?.stable;
   if (!run) return computeStableScore(paper, context);
 
   const cached = run.get(paper);
@@ -473,6 +520,8 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.categoryAffinities === context.categoryAffinities
     && cached.conceptAffinities === context.conceptAffinities
     && cached.authorAffinities === context.authorAffinities
+    && cached.contentAffinities === context.contentAffinities
+    && cached.positiveCount === context.positiveCount
     && cached.sessionAffinities === context.sessionAffinities
     && cached.interactionCount === context.interactionCount
     && cached.temporalPreference === context.temporalPreference
@@ -561,7 +610,12 @@ export function trimScoredCandidatePool<T extends Partial<Paper>>(papers: T[], o
     const emptyRecent = {
       preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0,
     };
-    list.forEach((paper) => scorePaper(paper, emptyRecent));
+    const endScoringRun = beginScoringRun(list);
+    try {
+      list.forEach((paper) => scorePaper(paper, emptyRecent));
+    } finally {
+      endScoringRun();
+    }
   }
   list.sort((left, right) => (right._dynamicScore || 0) - (left._dynamicScore || 0));
   return list.slice(0, cap);
@@ -586,7 +640,7 @@ export function diversifiedWeightedShuffle<T extends Partial<Paper>>(papers: T[]
   // One re-rank, one scoring run: every paper still gets re-scored against the
   // evolving recent window on every iteration, but the expensive half of that
   // score is now computed once per paper and reused inside this shuffle only.
-  const endScoringRun = beginScoringRun();
+  const endScoringRun = beginScoringRun(pool);
   try {
     while (pool.length > 0) {
       const recentPropsCount = countRecentProperties(history.slice(-5));

@@ -1,3 +1,4 @@
+import type { Paper } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -9,6 +10,11 @@ import {
   scorePaperForRecommendation,
   trimScoredCandidatePool,
 } from './recommendationEngine.ts';
+import {
+  createEmptyInteractionProfile,
+  readProfileSignals,
+  recordInteractionEvent,
+} from './interactionProfile.ts';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
 
@@ -433,4 +439,166 @@ test('trims the shuffle pool to a scored head instead of walking hundreds of ext
     random: () => 0,
   });
   assert.equal(shuffled.length, 12);
+});
+
+// Titles and abstracts written for these tests (synthetic, not captured from a
+// provider). Every card is filed under cs.LG, so what tells them apart is only
+// what they say.
+const rlCards = [
+  ['rl-1', 'Proximal policy optimization for continuous control', 'We study policy gradient reinforcement learning for continuous control tasks and show that clipped policy updates keep training stable.'],
+  ['rl-2', 'Offline reinforcement learning with conservative value estimates', 'Offline reinforcement learning learns a policy from a fixed dataset. Conservative value estimates keep the policy close to the data.'],
+  ['rl-3', 'Model-based reinforcement learning with learned world models', 'An agent learns a world model of its environment and plans with it, which makes reinforcement learning far more sample efficient.'],
+  ['rl-4', 'Exploration bonuses for sample-efficient reinforcement learning', 'Reinforcement learning agents explore with count-based bonuses. The policy reaches high reward in fewer environment steps.'],
+  ['rl-5', 'Reward shaping and policy gradients in sparse environments', 'We analyse policy gradient methods when the reward is sparse and propose a reward shaping scheme for reinforcement learning agents.'],
+  ['rl-6', 'Multi-agent reinforcement learning for traffic control', 'Agents learn a joint policy by reinforcement learning to control traffic signals, with a shared reward and decentralised execution.'],
+];
+const visionCards = [
+  ['cv-1', 'Masked autoencoders for image segmentation', 'We pretrain a vision transformer on images by masking patches, and segmentation of natural images improves.'],
+  ['cv-2', 'Object detection with transformers', 'A vision transformer detects objects in images without hand-designed anchors; detection accuracy matches convolutional baselines.'],
+  ['cv-3', 'Self-supervised visual representations from unlabeled images', 'Contrastive learning on unlabeled images yields visual representations that transfer to classification and detection of objects.'],
+  ['cv-4', 'Diffusion models for image synthesis and editing', 'A diffusion model generates images from noise and supports image editing guided by a text prompt.'],
+  ['cv-5', 'Depth estimation from a single image', 'A convolutional network predicts the depth of a scene from a single image and improves visual odometry.'],
+  ['cv-6', 'Video object segmentation with memory', 'We segment objects across video frames with a memory of earlier frames, improving temporal consistency of segmentation.'],
+];
+const makeCard = ([id, title, abstract]: string[]) => ({
+  id, title, abstract, primaryCategory: 'cs.LG', published: '2026-07-01T00:00:00Z', authors: ['A. Researcher'],
+});
+const rlPool = rlCards.map(makeCard);
+const visionPool = visionCards.map(makeCard);
+
+/** What the feed does on a like: the interaction profile learns it, the ranking reads it back. */
+function readerWhoLiked(liked: ReturnType<typeof makeCard>[]) {
+  const profile = createEmptyInteractionProfile();
+  liked.forEach(card => recordInteractionEvent(profile, {
+    paperId: card.id, kind: 'like', category: card.primaryCategory, timestamp: NOW, ...paperAffinitySignals(card),
+  }, NOW));
+  const signals = readProfileSignals(profile, NOW);
+  return {
+    now: NOW,
+    userPreferences: ['cs.LG'],
+    categoryAffinities: signals.categoryAffinities,
+    conceptAffinities: signals.conceptAffinities,
+    authorAffinities: signals.authorAffinities,
+    contentAffinities: signals.contentAffinities,
+    positiveCount: signals.positiveCount,
+    interactionCount: signals.interactionCount,
+  };
+}
+
+/** The ids a reader's feed would take first from the same pool. */
+function topIds(pool: ReturnType<typeof makeCard>[], context: ReturnType<typeof readerWhoLiked>, take: number) {
+  // Fresh copies: scoring writes onto the cards it scores.
+  return trimScoredCandidatePool(pool.map(card => ({ ...card })), {
+    cap: take,
+    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
+  }).map(paper => paper.id).sort();
+}
+
+
+test('a concept or topic the card carries itself counts like one under openAlex, once', () => {
+  const card = {
+    id: 'carried',
+    primaryCategory: 'cs.LG',
+    published: '2026-07-05T00:00:00Z',
+    abstract: 'We study how learned concepts reach the ranking from the card itself.',
+    concepts: [{ id: 'https://openalex.org/C154945302', display_name: 'Artificial intelligence', level: 1, score: 0.8 }],
+    primaryTopic: { id: 'https://openalex.org/T10320', display_name: 'Neural Networks and Applications', score: 0.9 },
+    openAlex: { concepts: [{ id: 'https://openalex.org/C154945302', score: 0.8 }] },
+  };
+
+  assert.deepEqual(paperAffinitySignals(card).concepts, [
+    { id: 'C154945302', score: 0.8 },
+    { id: 'T10320', score: 0.9 },
+  ]);
+
+  const learned = { now: NOW, conceptAffinities: { C154945302: 50, T10320: 20 } };
+  const score = scorePaperForRecommendation(card, learned);
+  // 0.8 * 0.5 + 0.9 * 0.2 of the semantic ceiling; a double count of the
+  // concept listed in both places would give 0.8 * 1.0 + 0.18.
+  assert.ok(Math.abs(score.semantic - (0.8 * 0.5 + 0.9 * 0.2) * 50) < 1e-9, `semantic ${score.semantic}`);
+});
+
+test('two readers who picked the same category and liked different papers get different papers first from the same pool', () => {
+  const pool = [...rlPool.slice(3), ...visionPool.slice(3)];
+  const likedRl = readerWhoLiked(rlPool.slice(0, 3));
+  const likedVision = readerWhoLiked(visionPool.slice(0, 3));
+
+  assert.deepEqual(topIds(pool, likedRl, 3), ['rl-4', 'rl-5', 'rl-6']);
+  assert.deepEqual(topIds(pool, likedVision, 3), ['cv-4', 'cv-5', 'cv-6']);
+});
+
+test('the shuffle itself puts cards that read like the reader\'s likes earlier', () => {
+  const pool = [...rlPool.slice(3), ...visionPool.slice(3)];
+  const meanRlPosition = (context: ReturnType<typeof readerWhoLiked>) => {
+    const random = seededRandom(5);
+    let total = 0;
+    const runs = 300;
+    for (let run = 0; run < runs; run += 1) {
+      const order = diversifiedWeightedShuffle(pool.map(card => ({ ...card })), {
+        random,
+        maxConsecutiveCategory: 99,
+        scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
+      }).map(paper => paper.id);
+      const positions = order.flatMap((id, position) => (id.startsWith('rl-') ? [position] : []));
+      total += positions.reduce((sum, position) => sum + position, 0) / positions.length;
+    }
+    return total / runs;
+  };
+
+  const forRlReader = meanRlPosition(readerWhoLiked(rlPool.slice(0, 3)));
+  const forVisionReader = meanRlPosition(readerWhoLiked(visionPool.slice(0, 3)));
+
+  // Three RL cards among six sit at 2.5 on average by chance (1.0 first, 4.0
+  // last). The draw stays a lottery weighted by the whole score, in which the
+  // category the reader chose weighs about 100, so the content moves the
+  // average by tenths of a place, not whole ones.
+  assert.ok(forRlReader < 2.5, `RL cards sit at ${forRlReader} for the RL reader`);
+  assert.ok(forRlReader + 0.1 < forVisionReader, `RL cards sit at ${forRlReader} and ${forVisionReader}`);
+});
+
+test('below three positives the content of the likes does not touch the order', () => {
+  const pool = [...rlPool.slice(2), ...visionPool.slice(2)];
+  const contentMatches = (context: ReturnType<typeof readerWhoLiked>) => {
+    const scored: Partial<Paper>[] = pool.map(card => ({ ...card }));
+    trimScoredCandidatePool(scored, {
+      cap: 1,
+      scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
+    });
+    return scored.map(card => card._debugScore!.contentMatch);
+  };
+
+  const twoLikes = readerWhoLiked(rlPool.slice(0, 2));
+  assert.equal(twoLikes.positiveCount, 2);
+  assert.deepEqual(contentMatches(twoLikes), pool.map(() => 0));
+
+  const threeLikes = contentMatches(readerWhoLiked(rlPool.slice(0, 3)));
+  const rlMatches = threeLikes.slice(0, 4) as number[];
+  const visionMatches = threeLikes.slice(4) as number[];
+  assert.ok(Math.min(...rlMatches) > 10, 'RL cards earn it once the third like is in');
+  assert.ok(Math.max(...visionMatches) < Math.min(...rlMatches) / 4, 'vision cards earn little or nothing');
+});
+
+test('a content match is outweighed by the category the reader chose, however well it fits', () => {
+  const readsRl = {
+    now: NOW,
+    userPreferences: ['cs.LG'],
+    // A fully learned profile: the preference has faded to its floor.
+    interactionCount: 5000,
+    positiveCount: 50,
+    contentAffinities: Object.fromEntries(
+      ['reinforcement', 'reinforcement learning', 'policy', 'reward', 'agent'].map(term => [term, 100]),
+    ),
+  };
+  const chosenCategory = { ...makeCard(visionCards[0]), primaryCategory: 'cs.LG' };
+  const perfectFit = { ...makeCard(rlCards[0]), id: 'fit', primaryCategory: 'cs.RO' };
+  const pool = [perfectFit, chosenCategory, ...rlPool.slice(1, 4).map(card => ({ ...card, primaryCategory: 'cs.RO' }))];
+
+  const candidates: Partial<Paper>[] = pool.map(card => ({ ...card }));
+  const [first] = trimScoredCandidatePool(candidates, {
+    cap: 1,
+    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...readsRl, recentPropsCount }),
+  });
+
+  assert.equal(first.id, chosenCategory.id);
+  assert.ok(first._debugScore!.contentMatch! <= 0);
 });

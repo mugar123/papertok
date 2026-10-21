@@ -70,6 +70,7 @@ export interface PaperRecommendationScore {
   classicBoost: number;
   semantic: number;
   learnedAuthor: number;
+  contentMatch: number;
   sessionInterest: number;
   citations: number;
   graphBoost: number;

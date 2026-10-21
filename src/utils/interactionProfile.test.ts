@@ -22,6 +22,7 @@ import {
   seedLearnedAffinities,
   serializeInteractionProfile,
 } from './interactionProfile.ts';
+import { paperAffinitySignals } from './recommendationEngine.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-08-19T12:00:00.000Z');
@@ -130,6 +131,8 @@ test('a new profile is empty and at the current schema version', () => {
     categoryAffinities: {},
     conceptAffinities: {},
     authorAffinities: {},
+    contentAffinities: {},
+    positiveCount: 0,
     sessionAffinities: {},
     categoryExposure: {},
     interactionCount: 0,
@@ -581,4 +584,147 @@ test('a heavily used profile keeps its learned maps inside the stored budget', (
   const stored = serializeInteractionProfile(profile);
   assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
   assert.ok(Object.keys(readProfileSignals(deserializeInteractionProfile(stored), NOW).conceptAffinities).length > 0);
+});
+
+/*
+ * What the reader's text teaches the feed. A like is worth 5 on every term of
+ * the paper's title and abstract and a save 8; a PDF opened or a read of twice
+ * the median 2.5; a rejection -10; a quick skip -0.25, which stops pulling a
+ * term down at -1.5. They decay over thirty days like the concepts.
+ */
+const contentOf = (profile: Parameters<typeof readProfileSignals>[0]) => readProfileSignals(profile, NOW).contentAffinities;
+
+test('the terms of a paper weigh as much as the kind of interaction says', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.LG', terms: ['policy', 'reward'] }, NOW);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'save', category: 'cs.LG', terms: ['policy', 'agent'] }, NOW);
+  recordInteractionEvent(profile, { paperId: 'c', kind: 'openedPdf', category: 'cs.LG', terms: ['agent'] }, NOW);
+  recordInteractionEvent(profile, { paperId: 'd', kind: 'viewTime', category: 'cs.LG', viewTime: 30, terms: ['reward'] }, NOW);
+  // Between the median and twice it: a look, not a read.
+  recordInteractionEvent(profile, { paperId: 'e', kind: 'viewTime', category: 'cs.LG', viewTime: 8, terms: ['glance'] }, NOW);
+  recordInteractionEvent(profile, { paperId: 'f', kind: 'notInterested', category: 'cs.LG', terms: ['benchmark'] }, NOW);
+
+  const content = contentOf(profile);
+  assertClose(content.policy, 5 + 8);
+  assertClose(content.reward, 5 + 2.5);
+  assertClose(content.agent, 8 + 2.5);
+  assertClose(content.benchmark, -10);
+  assert.equal(content.glance, undefined);
+});
+
+test('skips pull a term down a little and stop at a floor; a rejection is not held to it', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'skip-0', kind: 'skip', category: 'cs.LG', terms: ['benchmark'] }, NOW);
+  assertClose(contentOf(profile).benchmark, -0.25);
+
+  for (let index = 1; index < 40; index += 1) {
+    recordInteractionEvent(profile, { paperId: `skip-${index}`, kind: 'skip', category: 'cs.LG', terms: ['benchmark'] }, NOW);
+  }
+  assertClose(contentOf(profile).benchmark, -1.5, 'forty skips');
+
+  recordInteractionEvent(profile, { paperId: 'no', kind: 'notInterested', category: 'cs.LG', terms: ['benchmark'] }, NOW);
+  assertClose(contentOf(profile).benchmark, -10);
+});
+
+test('undoing a like or a rejection gives its terms back, and the positives count follows the examples', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.LG', terms: ['policy'] }, NOW);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'notInterested', category: 'cs.LG', terms: ['benchmark'] }, NOW);
+  assert.equal(readProfileSignals(profile, NOW).positiveCount, 1);
+
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'unlike', category: 'cs.LG', terms: ['policy'] }, NOW);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'undoNotInterested', category: 'cs.LG', terms: ['benchmark'] }, NOW);
+
+  assert.deepEqual(contentOf(profile), {});
+  assert.equal(readProfileSignals(profile, NOW).positiveCount, 0);
+});
+
+test('a term the reader has not touched for months fades out like a concept', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.LG', timestamp: NOW - 30 * DAY_MS, terms: ['policy'] }, NOW);
+
+  assertClose(contentOf(profile).policy, 5 * Math.exp(-1));
+});
+
+test('the learned terms survive writing and reading the aggregate, and stay inside their cap', () => {
+  const profile = createEmptyInteractionProfile();
+  // Strong terms: repeated across twenty likes, beside thirty others each time.
+  for (let index = 0; index < 20; index += 1) {
+    recordInteractionEvent(profile, {
+      paperId: `like-${index}`, kind: 'like', category: 'cs.LG', timestamp: NOW,
+      terms: ['reinforcement learning', 'policy', ...Array.from({ length: 30 }, (_unused, offset) => `rare-${index}-${offset}`)],
+    }, NOW);
+  }
+
+  const stored = serializeInteractionProfile(profile);
+  const before = contentOf(profile);
+  const after = contentOf(deserializeInteractionProfile(stored));
+
+  assert.equal(stored.schemaVersion, INTERACTION_PROFILE_SCHEMA_VERSION);
+  assert.equal(Object.keys(before).length, 400, 'six hundred and two terms were seen, four hundred are kept');
+  assert.equal(Object.keys(after).length, 400);
+  assertClose(after['reinforcement learning'], 100, 'a term liked twenty times reads at the ceiling');
+  assertClose(after.policy, before.policy);
+  assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
+  assert.equal(readProfileSignals(deserializeInteractionProfile(stored), NOW).positiveCount, 20);
+});
+
+test('an aggregate written before the terms existed still loads, with no terms', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.LG', terms: ['policy'] }, NOW);
+  const stored = serializeInteractionProfile(profile);
+  const withoutTerms = JSON.parse(stored.affinities);
+  delete withoutTerms.terms;
+
+  const loaded = deserializeInteractionProfile({ ...stored, affinities: JSON.stringify(withoutTerms) });
+
+  assert.notEqual(loaded, null);
+  assert.deepEqual(contentOf(loaded), {});
+});
+
+test('the terms stay inside the stored budget however many a heavy reader has learned', () => {
+  const profile = createEmptyInteractionProfile();
+  for (let index = 0; index < 600; index += 1) {
+    recordInteractionEvent(profile, {
+      paperId: `p${index}`, kind: 'like', category: `cat.${index % 120}`, timestamp: NOW - (index % 45) * DAY_MS,
+      concepts: Array.from({ length: 12 }, (_unused, offset) => ({ id: `C${index * 12 + offset}`, score: 0.5 })),
+      authorIds: Array.from({ length: 10 }, (_unused, offset) => `A${index * 10 + offset}`),
+      terms: Array.from({ length: 30 }, (_unused, offset) => `a-fairly-long-compound-term ${index * 30 + offset}`),
+    }, NOW);
+  }
+
+  const stored = serializeInteractionProfile(profile);
+
+  assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
+  assert.ok(Object.keys(contentOf(deserializeInteractionProfile(stored))).length > 0);
+});
+
+test('a rebuild learns the terms from the text each document kept, as the events did', () => {
+  const text = {
+    liked: { title: 'Offline reinforcement learning', abstract: 'A policy is learned from a fixed dataset.' },
+    saved: { title: 'World models for planning', abstract: 'An agent plans inside a learned world model.' },
+    rejected: { title: 'A benchmark of language models', abstract: 'We build a benchmark of language models.' },
+    skipped: { title: 'Galaxy surveys', abstract: 'A survey of galaxies in the local universe.' },
+  };
+  const documents: InteractionDocument[] = [
+    { id: 'skipped', data: { skip: 1, paperCategory: 'astro-ph.GA', paperTitle: text.skipped.title, paperAbstract: text.skipped.abstract, timestamp: NOW } },
+    { id: 'rejected', data: { notInterested: true, paperCategory: 'cs.CL', paperTitle: text.rejected.title, paperAbstract: text.rejected.abstract, timestamp: NOW } },
+    { id: 'saved', data: { saved: true, paperCategory: 'cs.LG', paperTitle: text.saved.title, paperAbstract: text.saved.abstract, timestamp: NOW } },
+    { id: 'liked', data: { liked: true, paperCategory: 'cs.LG', paper: { id: 'liked', ...text.liked }, timestamp: NOW } },
+    { id: 'viewed-only', data: { viewTime: 40, paperCategory: 'cs.LG', timestamp: NOW } },
+  ];
+  const rebuilt = buildProfileFromInteractionDocuments(documents, { now: NOW });
+
+  const incremental = createEmptyInteractionProfile();
+  const kinds: Record<string, string> = { liked: 'like', saved: 'save', rejected: 'notInterested', skipped: 'skip' };
+  [...documents].reverse().forEach(({ id }) => {
+    const paper = text[id as keyof typeof text];
+    if (!paper) return;
+    recordInteractionEvent(incremental, { paperId: id, kind: kinds[id], timestamp: NOW, terms: paperAffinitySignals(paper).terms }, NOW);
+  });
+
+  const expected = contentOf(incremental);
+  assert.ok(Object.keys(expected).length > 10);
+  assertMapsClose(contentOf(rebuilt), expected, 1e-9, 'rebuild vs events');
+  assertClose(contentOf(rebuilt).policy, 5);
 });
