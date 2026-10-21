@@ -53,7 +53,6 @@ import { CATEGORIES, getCategoryArea } from '../data/categories.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
-import { assignRequestedCategories } from './arxivService.ts';
 import { openAlexJson } from './openAlexClient.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';
 import { openAlexTopicFilterForLeaves } from '../utils/areaAccent.ts';
@@ -91,6 +90,12 @@ const BIORXIV_CATEGORIES: Record<string, string> = {
   'bio.marine': 'ecology',
   'bio.biotech': 'synthetic biology',
 };
+
+// The same table read back: the collection bioRxiv files a preprint in, as
+// this app's category. Two categories ask for Ecology, which reads as its own.
+const BIORXIV_COLLECTION_CATEGORIES: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(BIORXIV_CATEGORIES).reverse().map(([categoryId, collection]) => [collection, categoryId]),
+);
 
 const OSTI_CATEGORIES = new Set([
   'eess.power',
@@ -178,27 +183,6 @@ function categoryLabel(categoryId: string) {
   return categoryId.replace(/[.-]/g, ' ');
 }
 
-function selectCategory(providerLabel: string, requestedCategories: string[]) {
-  if (!requestedCategories?.length) return '';
-  if (requestedCategories.length === 1) return requestedCategories[0];
-  const normalizedProvider = normalizeText(providerLabel).toLowerCase();
-  return requestedCategories.find(categoryId => {
-    const label = categoryLabel(categoryId).toLowerCase();
-    return normalizedProvider.includes(label) || label.includes(normalizedProvider);
-  }) || requestedCategories[0];
-}
-
-function withRequestedCategory<T extends Partial<Paper>>(paper: T, requestedCategories: string[], providerLabel = ''): T {
-  const selected = selectCategory(providerLabel, requestedCategories);
-  if (!selected) return paper;
-  return {
-    ...paper,
-    primaryCategory: selected,
-    categories: [...new Set([selected, ...(paper.categories || [])])],
-    allCategories: [...new Set([selected, ...(paper.allCategories || paper.categories || [])])],
-  };
-}
-
 function authorObjects(values: ProviderAuthor[] | undefined) {
   return (values || [])
     .map(value => typeof value === 'string' ? value : value?.name || value?.fullName)
@@ -212,6 +196,7 @@ export function mapBioRxivPaper(raw: BioRxivRecord, requestedCategories: string[
   if (!doi || !raw?.title) return null;
   const version = String(raw.version || '1').replace(/\D/g, '') || '1';
   const category = normalizeText(raw.category);
+  const categoryId = BIORXIV_COLLECTION_CATEGORIES[category.toLowerCase()] || '';
   const landingPageUrl = `https://www.biorxiv.org/content/${doi}v${version}`;
   const paper = PaperBuilder.create({
     id: `biorxiv:${encodeURIComponent(doi)}:v${version}`,
@@ -229,10 +214,12 @@ export function mapBioRxivPaper(raw: BioRxivRecord, requestedCategories: string[
     pdfUrl: `${landingPageUrl}.full.pdf`,
     license: normalizeText(raw.license),
     concepts: category ? [{ id: `biorxiv:${category.toLowerCase().replace(/\s+/g, '-')}`, display_name: category, level: 2 }] : [],
-    categories: category ? [category] : [],
+    primaryCategory: categoryId,
+    categories: [categoryId, category].filter(Boolean),
     keywords: category ? [category] : [],
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, category);
+  return paper;
 }
 
 // The payload is read by `mapEuropePmcRecord`, shared with the enrichment path;
@@ -291,6 +278,8 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     license: record.license,
     citationCount: record.citationCount,
     concepts: terms.map((term, index) => ({ id: `europepmc:${providerId || pmid}:${index}`, display_name: term, level: 2 })),
+    // MeSH headings and author keywords stay terms. Read as this app's labels
+    // they would file a maize root study (PMID 42814353) as Machine Learning.
     categories: terms,
     keywords: terms,
     biomedicalTerms: terms,
@@ -298,8 +287,9 @@ export function mapEuropePmcSearchResult(raw: EuropePmcSearchRecord, requestedCa
     hasData: record.hasData,
     hasSupplement: record.hasSupplement,
     accessSource: record.openAccess ? 'europepmc' : undefined,
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, terms.join(' '));
+  return paper;
 }
 
 export function mapCoreWork(raw: CoreWork, requestedCategories: string[] = []): Paper | null {
@@ -330,8 +320,9 @@ export function mapCoreWork(raw: CoreWork, requestedCategories: string[] = []): 
     concepts: providerTerms.map((term, index) => ({ id: `core:${raw.id}:${index}`, display_name: term, level: 2 })),
     categories: providerTerms,
     keywords: providerTerms,
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, providerTerms.join(' '));
+  return paper;
 }
 
 export function mapOstiRecord(raw: OstiRecord, requestedCategories: string[] = []): Paper | null {
@@ -360,8 +351,9 @@ export function mapOstiRecord(raw: OstiRecord, requestedCategories: string[] = [
     concepts: subjects.slice(0, 8).map((term, index) => ({ id: `osti:${raw.osti_id}:${index}`, display_name: term, level: 2 })),
     categories: subjects,
     keywords: subjects,
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, subjects.join(' '));
+  return paper;
 }
 
 export function mapNasaRecord(raw: NasaRecord, requestedCategories: string[] = []): Paper | null {
@@ -392,8 +384,9 @@ export function mapNasaRecord(raw: NasaRecord, requestedCategories: string[] = [
     concepts: terms.slice(0, 8).map((term, index) => ({ id: `nasa:${raw.id}:${index}`, display_name: term, level: 2 })),
     categories: terms,
     keywords: terms,
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, terms.join(' '));
+  return paper;
 }
 
 function extractAdsArxivId(raw: AdsRecord) {
@@ -423,9 +416,11 @@ export function mapAdsPaper(raw: AdsRecord, requestedCategories: string[] = []):
   const arxivCategories = (Array.isArray(raw.arxiv_class) ? raw.arxiv_class : [raw.arxiv_class])
     .map(normalizeText)
     .filter(Boolean);
+  // `arxiv_class` is arXiv's classification as ADS copies it: it leads the
+  // terms, and its first class files the paper.
   const terms = [...new Set([
-    ...rawKeywords.filter(keyword => !isTechnicalClassification(keyword)),
     ...arxivCategories,
+    ...rawKeywords.filter(keyword => !isTechnicalClassification(keyword)),
   ])].slice(0, 12);
   const keywords = [...new Set([...rawKeywords, ...arxivCategories])].slice(0, 20);
   const refereed = properties.includes('REFEREED');
@@ -458,13 +453,15 @@ export function mapAdsPaper(raw: AdsRecord, requestedCategories: string[] = []):
     citationCountKnown: Number.isFinite(citationCount),
     referenceCount: Number(raw.reference_count) || (Array.isArray(raw.reference) ? raw.reference.length : 0),
     concepts: terms.map((term, index) => ({ id: `ads:${bibcode}:term:${index}`, display_name: term, level: 2 })),
+    primaryCategory: arxivCategories[0],
     categories: terms,
     keywords,
     hasReferences: (Number(raw.reference_count) || raw.reference?.length || 0) > 0,
     hasData: Boolean(raw.has_data || (Array.isArray(raw.data) && raw.data.length > 0)),
     provider: 'nasa-ads',
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, terms.join(' '));
+  return paper;
 }
 
 export function mapInspirePaper(hit: InspireRecord, requestedCategories: string[] = []): Paper | null {
@@ -479,12 +476,14 @@ export function mapInspirePaper(hit: InspireRecord, requestedCategories: string[
   const isPublished = Boolean(journal || doi) && !documentTypes.includes('thesis');
   const documents = Array.isArray(raw.documents) ? raw.documents : [];
   const pdfUrl = safeUrl(documents.find(document => /pdf/i.test(document?.key || document?.url || ''))?.url);
+  // INSPIRE names the arXiv primary outright; it files the paper and leads the terms.
+  const [primaryArxivCategory = ''] = (Array.isArray(raw.primary_arxiv_category)
+    ? raw.primary_arxiv_category
+    : [raw.primary_arxiv_category?.value]).map(normalizeText).filter(Boolean);
   const terms = [...new Set([
+    primaryArxivCategory,
     ...(raw.keywords || []).map(keyword => (keyword as { value?: string })?.value || keyword),
     ...(raw.inspire_categories || []).map(category => (category as { term?: string })?.term || category),
-    ...(Array.isArray(raw.primary_arxiv_category)
-      ? raw.primary_arxiv_category
-      : [raw.primary_arxiv_category?.value]),
   ].map(normalizeText).filter(Boolean))].slice(0, 12);
   const citationCount = Number(raw.citation_count);
   const published = normalizeText(raw.earliest_date || raw.imprints?.[0]?.date || raw.publication_info?.[0]?.year);
@@ -511,12 +510,14 @@ export function mapInspirePaper(hit: InspireRecord, requestedCategories: string[
     citationCountKnown: Number.isFinite(citationCount),
     referenceCount: Number(raw.reference_count) || (Array.isArray(raw.references) ? raw.references.length : 0),
     concepts: terms.map((term, index) => ({ id: `inspire:${controlNumber}:term:${index}`, display_name: term, level: 2 })),
+    primaryCategory: primaryArxivCategory,
     categories: terms,
     keywords: terms,
     hasReferences: (Number(raw.reference_count) || raw.references?.length || 0) > 0,
     provider: 'inspire',
+    _fetchedFor: requestedCategories,
   });
-  return withRequestedCategory(paper, requestedCategories, terms.join(' '));
+  return paper;
 }
 
 // The Worker guards these three with an ID token; the client has to know which
@@ -801,8 +802,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * asked, so only the feed calls it, with the reader's own interests:
  * exploration and topic pages would fetch the same series again.
  *
- * The cards come from the OpenAlex mapper and are filed under econ.GN. The
- * mapper marks a report or a listed series as a working paper, not peer
+ * The cards come from the OpenAlex mapper, filed under the Economics area and
+ * no subcategory: the series say a paper is economics, not which branch.
+ * OpenAlex's own field is no better guide here. Of 114 recent works from these
+ * series (2026-10-19), it read as Economics or Finance for 58, as Statistics,
+ * Medicine, Mathematics, Biology or Computer Science for 17, and as a field
+ * the app has no area for, mostly Social Sciences, for 39. A card earns no
+ * reader category's preference either: the request is the same whichever
+ * category asked, so it is evidence for none of them.
+ * The mapper marks a report or a listed series as a working paper, not peer
  * reviewed, so the card shows the Working paper tag. The landing page is the
  * DOI (262 of 262 probed works), and a missing abstract stays missing.
  * A failure rejects, so each feed counts a source that did not answer and
@@ -833,15 +841,11 @@ export async function fetchWorkingPapers(categories: readonly string[], page = 1
       retries: 0,
     });
     const adapter = new OpenAlexAdapter();
-    // The request is the same whichever category asked, so the reader's
-    // categories say nothing about a paper's field. Matching their labels
-    // against the text is no better here: "public finances" in an abstract on
-    // immigration would make it Statistical Finance. What the record supports
-    // is that the series publish economics, so every card is General Economics.
-    return assignRequestedCategories(
-      data.results.map(work => adapter.mapToStandard(work)).filter(Boolean) as Paper[],
-      ['econ.GN'],
-    );
+    return data.results.flatMap((work) => {
+      const paper = adapter.mapToStandard(work);
+      // The area's own key, which the label and accent lookups read as Economics.
+      return paper ? [{ ...paper, primaryCategory: 'econ' }] : [];
+    });
   } catch (error) {
     console.warn('Working-paper series unavailable', error);
     throw error;

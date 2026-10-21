@@ -2,6 +2,7 @@ interface CitationDownload { href: string; download: string; click(): void; remo
 declare const document: { createElement(tag: 'a'): CitationDownload; body: { appendChild(link: CitationDownload): unknown } };
 
 import type { Paper } from '../models/Paper.ts';
+import { storedClassification } from '../models/Paper.ts';
 
 function authorName(author: Paper['authors'][number] | undefined) {
   if (typeof author === 'string') return author.trim();
@@ -26,8 +27,7 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     id: paper.id || paper.arxivId || paper.doi || '',
     title: typeof paper.title === 'string' ? paper.title : '',
     authors: (paper.authors || []).slice(0, STORED_AUTHOR_CAP),
-    primaryCategory: paper.primaryCategory || paper.categories?.[0] || '',
-    categories: paper.categories || (paper.primaryCategory ? [paper.primaryCategory] : []),
+    ...storedClassification(paper),
     published: paper.published || paper.publicationDate || '',
     year: paper.year || (paper.published ? new Date(paper.published!).getFullYear() : null),
     summary: paper.summary?.substring(0, STORED_SUMMARY_CAP) || '',

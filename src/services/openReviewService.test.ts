@@ -21,7 +21,9 @@ test('maps an accepted OpenReview submission as a reviewed conference paper', ()
 
   assert.equal(paper!.sources.primary, 'openreview');
   assert.equal(paper!.id, 'openreview:forum-1');
-  assert.equal(paper!.primaryCategory, 'cs.LG');
+  // OpenReview gives keywords, not a category; cs.LG is what was searched.
+  assert.equal(paper!.primaryCategory, '');
+  assert.deepEqual(paper!._fetchedFor, ['cs.LG']);
   assert.equal(paper!.publicationStatus, 'published');
   assert.equal(paper!.publicationType, 'conference');
   assert.equal(paper!.peerReviewed, true);

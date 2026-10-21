@@ -224,11 +224,12 @@ function paperFromMetadataDoc(source: MetadataRequest['source'], paperId: string
     ? { id: paperId, ...data }
     : data.paper
       ? { id: paperId, ...data.paper }
+      // Without a copy, the record kept only the category its card showed,
+      // which the adapter cannot trust (PAP-60).
       : {
           id: paperId,
           title: data.paperTitle || '',
           authors: data.paperAuthors || [],
-          primaryCategory: data.paperCategory || '',
           published: data.timestamp,
           arxivId: paperId,
         });

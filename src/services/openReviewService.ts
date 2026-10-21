@@ -85,7 +85,6 @@ export function mapOpenReviewNote(note: OpenReviewNote, requestedCategories: str
   const doi = normalizeDoi(content.doi);
   const keywords = [...new Set(list(content.keywords))];
   const published = timestampToIso(note?.pdate, note?.cdate, note?.tcdate);
-  const primaryCategory = requestedCategories[0] || '';
   const authorNames = list(content.authors);
   const authorIds = list(content.authorids);
 
@@ -117,8 +116,9 @@ export function mapOpenReviewNote(note: OpenReviewNote, requestedCategories: str
       display_name: keyword,
       level: 2,
     })),
-    categories: primaryCategory ? [primaryCategory] : [],
-    primaryCategory,
+    // A note has keywords, not a category; the searched one is only why it
+    // was fetched.
+    _fetchedFor: requestedCategories,
     provider: 'openreview',
   });
 }

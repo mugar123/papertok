@@ -55,7 +55,8 @@ test('the feed query searches each label in every field, without the protocol se
 
 // Synthetic esummary records, with the field names NCBI returned on
 // 2026-10-20 and the series identifiers of the Europe PMC record captured that
-// day (PMID 42879010).
+// day (PMID 42879010). The titles are made up. Each names molecular biology,
+// the evidence a search for bio.mol needs to keep a record in the lane.
 function feedSearch(query: string, records: Array<Record<string, unknown>>) {
   return new PubmedAdapter({
     apiBase: 'https://papertok-report-api.example',
@@ -69,7 +70,7 @@ function feedSearch(query: string, records: Array<Record<string, unknown>>) {
 
 const CHAPTER = {
   uid: '42879010',
-  title: '(Immuno-)Histological Analysis of Ewing Sarcoma.',
+  title: 'A molecular biology protocol for Ewing sarcoma.',
   source: 'Methods Mol Biol',
   fulljournalname: 'Methods in molecular biology (Clifton, N.J.)',
   issn: '1064-3745',
@@ -84,7 +85,7 @@ test('a Methods in Molecular Biology chapter is typed as a book-series chapter, 
     CHAPTER,
     { ...CHAPTER, uid: '42879011', issn: '', essn: '', nlmuniqueid: '9214969' },
     { ...CHAPTER, uid: '42879012', issn: '', essn: '1940-6029', nlmuniqueid: '' },
-    { uid: '42800001', title: 'A Nature article', source: 'Nature', issn: '0028-0836', essn: '1476-4687', nlmuniqueid: '0410462', pubdate: '2026 Oct 15', pubtype: ['Journal Article'] },
+    { uid: '42800001', title: 'A Nature article in molecular biology', source: 'Nature', issn: '0028-0836', essn: '1476-4687', nlmuniqueid: '0410462', pubdate: '2026 Oct 15', pubtype: ['Journal Article'] },
   ]);
   const shown = PaperBuilder.deduplicate(papers);
 
@@ -118,9 +119,9 @@ test('a PubMed record dated after today shows no year and no date', async (t) =>
 test('a PubMed article online by today shows its online date when its issue is printed later', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
   const { papers } = await feedSearch('online dates', [
-    { uid: '42900737', title: 'Online before its issue', source: 'Proc Natl Acad Sci U S A', pubdate: '2026 Oct 27', epubdate: '2026 Oct 20', pubtype: ['Journal Article'] },
-    { uid: '42900849', title: 'Online after its issue', source: 'Biol Bull', pubdate: '2025 Oct', epubdate: '2026 Sep 24', pubtype: ['Journal Article'] },
-    { uid: '3', title: 'Not online yet', source: 'Neurology', pubdate: '2026 Dec', epubdate: '2026 Nov 2', pubtype: ['Journal Article'] },
+    { uid: '42900737', title: 'Molecular biology online before its issue', source: 'Proc Natl Acad Sci U S A', pubdate: '2026 Oct 27', epubdate: '2026 Oct 20', pubtype: ['Journal Article'] },
+    { uid: '42900849', title: 'Molecular biology online after its issue', source: 'Biol Bull', pubdate: '2025 Oct', epubdate: '2026 Sep 24', pubtype: ['Journal Article'] },
+    { uid: '3', title: 'Molecular biology not online yet', source: 'Neurology', pubdate: '2026 Dec', epubdate: '2026 Nov 2', pubtype: ['Journal Article'] },
   ]);
 
   assert.deepEqual(PaperBuilder.deduplicate(papers).map(paper => [paper.id, paper.year, paper.published]), [

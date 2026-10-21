@@ -118,7 +118,7 @@ test('switching tabs neither cancels nor repeats a papers request', async () => 
   assert.match(jsx, /const papersRequestRef = useRef<\{ key: string; cancelled: boolean \} \| null>\(null\);/);
   assert.match(jsx, /const requestKey = entityPapersRequestKey\(\{/);
   assert.match(jsx, /if \(papersRequestRef\.current\?\.key === requestKey && !papersRequestRef\.current\.cancelled\) return;/);
-  const deps = jsx.match(/\n {2}\}, \[(afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey)\]\);/);
+  const deps = jsx.match(/\n {2}\}, \[(afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey, publicMode, requestNextPapersPage)\]\);/);
   assert.ok(deps, 'the papers effect is keyed by its inputs, and activeTab is not one of them');
 });
 
@@ -170,6 +170,71 @@ test('the list mounts in idle chunks, rows below the fold are skipped, and the s
   assert.match(jsx, /<PaperListRow\s+key=/, 'each paper is the shared list row');
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.explorer-grid > \.list-row:not\(\.ex-skel-row\) \{\s*content-visibility: auto;\s*contain-intrinsic-size: auto 100px;\s*\}/);
+});
+
+// With no row there is no sentinel to ask for page 2, so the page's landing
+// asks (`explorerListState`). explorerEmptyState.test.ts checks that the
+// empty state waits for the same rule.
+test('a page the filters emptied asks for the next one', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+  assert.match(
+    jsx,
+    /setHasMore\(page \* 30 < total\);\s*if \(explorerListState\(\{ rows: fetchedPapers\.length, hasMore: page \* 30 < total, publicMode \}\) === 'looking'\) \{\s*continuing = requestNextPapersPage\(false\);\s*\}/,
+    'a page that adds no row asks for the next one on the list\'s own allowance',
+  );
+  assert.match(jsx, /setIsLoadingPapers\(false\);\s*setIsFetchingMore\(continuing\);/, 'the list stays loading while it asks');
+});
+
+// entityExplorer.test.ts checks `explorerPageAllowance` by hand; this checks
+// that the component pages through it. A foot that turned the page itself, or
+// that asked as the reader every time, let one reader action load every page
+// the filters emptied until OpenAlex ran out.
+test('the list asks for its next page only through the allowance', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+
+  const ask = jsx.match(/const requestNextPapersPage = useCallback\(\(byReader: boolean\) => \{[\s\S]*?\n {2}\}, \[\]\);/)?.[0] || '';
+  assert.match(
+    ask,
+    /const left = explorerPageAllowance\(papersAutoPagesRef\.current, \{ byReader \}\);\s*if \(left === null\) \{\s*setPapersAwaitReader\(true\);\s*return false;\s*\}\s*papersAutoPagesRef\.current = left;/,
+    'a request spends what is left, and with nothing left waits for "Keep looking"',
+  );
+
+  const observer = jsx.match(/new IntersectionObserver\([\s\S]*?\{ threshold: 0\.1 \}/)?.[0] || '';
+  const papersFoot = observer.match(/if \(activeTab === 'papers'\) \{[\s\S]*?\} else if \(entries\[0\]\.isIntersecting && activeTab === 'authors'/)?.[0] || '';
+  assert.match(papersFoot, /requestNextPapersPage\(papersFootHiddenRef\.current\);/, 'the foot asks as the reader only after the reader scrolled it back into view');
+  assert.doesNotMatch(papersFoot, /setPage\(/, 'the foot does not turn the page outside the allowance');
+
+  assert.match(
+    jsx,
+    /if \(page === 1\) \{[^}]*papersAutoPagesRef\.current = EXPLORER_AUTO_PAGES;[^}]*\}\s*else setIsFetchingMore\(true\);/,
+    'a new list starts with the whole allowance',
+  );
+});
+
+// A failed page sets an error and ends `hasMore`. A button that unmounted
+// then took keyboard focus with it, back to the top of the document.
+test('"Keep looking" stays mounted and focusable after the page it asked for fails', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+  assert.match(jsx, /setPapersError\('PUBLICATIONS_LOAD_FAILED'\);\s*setHasMore\(false\);/);
+  assert.match(
+    jsx,
+    /\{!publicMode && papersAwaitReader && \(\s*<div className="explorer-list-more">\s*<Button[^>]*disabled=\{isFetchingMore \|\| !hasMore\}\s*focusableWhenDisabled/,
+    'neither the error nor the end of the pages takes the button away',
+  );
+});
+
+// The status was emptied when that page failed, leaving the failure to the
+// error strip, which is inserted with its text in it and may go unannounced.
+// The status is the region that is mounted before it speaks.
+test('a "Keep looking" page that fails under rows is said by the mounted status', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.tsx'));
+  const statusChain = jsx.match(/let papersMoreStatus[^\n]*\n\s*if \(papersAwaitReader\) \{[\s\S]*?\n\s*\}/)?.[0] || '';
+  assert.match(
+    statusChain,
+    /else if \(!papersError\) papersMoreStatus = '[^']+';\s*else if \(filteredPapers\.length > 0\) papersMoreStatus = '[^']+';\s*\}$/,
+    'after the end of the pages, a failure with rows on screen has words of its own',
+  );
+  assert.match(jsx, /\{!publicMode && \(\s*<p className="explorer-list-more-status" role="status">\{papersMoreStatus\}<\/p>/);
 });
 
 /**

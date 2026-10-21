@@ -11,6 +11,7 @@ import {
   clearCache,
   fetchPapers,
 } from './arxivService.ts';
+import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 
 test('an ID lookup requests every result in an abstract-recovery batch instead of the default ten', async () => {
   const source = await readFile(new URL('./arxivService.ts', import.meta.url), 'utf8');
@@ -83,6 +84,23 @@ test('a paper found by a label search keeps arXiv\'s own primary category', () =
 
   assert.equal(paper.primaryCategory, 'cs.RO');
   assert.deepEqual(paper.allCategories, ['cs.RO']);
+});
+
+// `all:"Fluid Mechanics"` matches the phrase anywhere in the record. A
+// full-text match is no evidence for mech.fluid, so it earns that reader
+// nothing (PAP-60 plan, F1).
+test('a paper found by a label search earns no preference for the category whose label found it', () => {
+  const [paper] = assignRequestedCategories([{
+    id: '2610.01234',
+    title: 'Wall-bounded turbulence at high Reynolds number',
+    primaryCategory: 'physics.flu-dyn',
+    categories: ['physics.flu-dyn'],
+    allCategories: ['physics.flu-dyn'],
+    published: '2026-10-01T00:00:00Z',
+  }], ['mech.fluid']);
+
+  const now = Date.parse('2026-10-20T00:00:00Z');
+  assert.equal(scorePaperForRecommendation(paper, { now, userPreferences: ['mech.fluid'] }).preference, 0);
 });
 
 // A quote inside the phrase used to close arXiv's quoted term early, which is

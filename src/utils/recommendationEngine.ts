@@ -320,8 +320,12 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   let preference = 0;
   // OpenAlex files a work under its own topic, never under a leaf; a chosen
   // leaf whose topic list holds that topic counts as its primary category.
+  // A specialist source's card seldom names a category of the taxonomy. When
+  // the source was asked for one of the reader's, the card earns that
+  // category's preference without claiming the category.
   if ((primaryCategory && userPreferences.includes(primaryCategory))
-    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => userPreferences.includes(leaf))) {
+    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => userPreferences.includes(leaf))
+    || paper._fetchedFor?.some(category => userPreferences.includes(category))) {
     preference = weights.selectedCategory * preferenceShare;
   } else if (allCategories.some((cat) => userPreferences.includes(cat))) {
     preference = weights.relatedSelectedCategory * preferenceShare;
