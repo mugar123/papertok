@@ -48,7 +48,7 @@ account. Paper results come from live scholarly sources.
 
 | Paper feed | Search | University email verification |
 | --- | --- | --- |
-| <img src="docs/assets/release-0.3/feed.png" width="260" alt="PaperTok feed showing a research paper with Read, Simple, like, save and connections controls"> | <img src="docs/assets/release-0.3/search.png" width="260" alt="PaperTok search with suggestions and tabs for papers, authors, topics, institutions and projects"> | <img src="docs/assets/release-0.3/university.png" width="260" alt="Optional university email verification step with a labeled email field and a Skip for now action"> |
+| <img src="docs/assets/release-0.3/feed.jpg" width="260" alt="PaperTok feed showing a research paper with Read, Simple, like, save and connections controls"> | <img src="docs/assets/release-0.3/search.jpg" width="260" alt="PaperTok search with suggestions and tabs for papers, authors, topics, institutions and projects"> | <img src="docs/assets/release-0.3/university.jpg" width="260" alt="Optional university email verification step with a labeled email field and a Skip for now action"> |
 
 ## Run locally
 
