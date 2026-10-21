@@ -1206,7 +1206,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback<FeedContextValue['loadPapers']>(async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number, { keepThroughVisible = false, seenFallback } = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number, { keepThroughVisible = false, seenFallback }: Parameters<FeedContextValue['loadPapers']>[4] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1743,8 +1743,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
       // Only the first screen waits, and only as long as a loading screen is
       // worth holding, so its citations and abstracts are usually in place.
-      // `papers` is still empty when an excluded first page re-enters with
-      // `reset` false. Later pages and a follow change are shown at once: the
+      // `papers` is still empty when a first page emptied after this wait
+      // continues with `reset` false. Later pages and a follow change are shown at once: the
       // reader is on a card, and the rest arrives while they read.
       const [gatedOpenAlex, gatedICite, gatedEuropePmc, recovered] = await awaitWithinGate([
         enrichmentIds.length > 0 ? enrichmentPromise : null,
