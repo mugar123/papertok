@@ -319,7 +319,7 @@ test('GetFTR is asked about the whole catalogue in batches of twenty DOIs, and i
     { id: 'nature', name: 'Nature', publisher: 'Springer Nature', url: 'https://www.nature.com', monogram: 'N', color: '#1C1C1C', collection: null, ownPlatform: true },
   ]);
   assert.equal(result.partial, false);
-  assert.equal(result.unchecked, 132); // Eight press titles and 124 journals need a resolver.
+  assert.equal(result.unchecked, 144); // Eight press titles and 136 journals need a resolver.
   const bodies = stub.calls.map(call => JSON.parse(call.init.body as string));
   assert.equal(bodies.length, GETFTR_BATCHES);
   for (const body of bodies) {
@@ -355,7 +355,7 @@ test('a GetFTR answer that decides nothing, with no resolver behind it, is unche
   });
   const result = await lookupInstitutionServices({ domain: 'nowhere.example', rorId: 'https://ror.org/0nowher00' }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
-  assert.equal(result.unchecked, 136); // Four undecided DOIs plus 132 titles without DOIs.
+  assert.equal(result.unchecked, 148); // Four undecided DOIs plus 144 titles without DOIs.
   assert.equal(result.partial, false);
 });
 
@@ -377,7 +377,7 @@ test('GetFTR verdicts are final for DOIs; publications without DOIs still use th
   const result = await lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl: stub.fetchImpl, env: GETFTR_ENV });
   assert.deepEqual(result.services, []);
   assert.equal(result.unchecked, 0);
-  assert.equal(stub.calls.length, GETFTR_BATCHES + 132);
+  assert.equal(stub.calls.length, GETFTR_BATCHES + 144);
   assert.deepEqual(stub.calls.filter(call => call.url.host === 'eu01.alma.exlibrisgroup.com').map(call => call.url.searchParams.get('rft.issn')), SERVICE_CATALOGUE.filter(entry => !entry.doi).map(entry => entry.issn));
 });
 
@@ -1090,5 +1090,45 @@ test('nursing, veterinary, geography and operations journals retain independent 
     for (const service of result.services) {
       assert.match(service.url, domain === 'tum.de' ? /^https:\/\/tum-eaccess\.de\/login\?qurl=/ : /^https:\/\/buc-usal\.alma\.exlibrisgroup\.com\//);
     }
+  }
+});
+
+test('language, religion and archaeology journals keep title-specific routes and reuse stored verdicts', async () => {
+  const packages: Record<string, string> = {
+    '1749-5032': 'Edinburgh University Press Journals',
+    '0968-1361': 'JSTOR Arts and Sciences',
+    '0029-5973': 'Brill Online Journals',
+    '0570-5398': 'EBSCOhost Academic Search Premier',
+    '1465-5187': 'Taylor &amp; Francis Journals',
+  };
+  for (const domain of ['usal.es', 'tum.de']) {
+    const stub = upstreams({
+      resolver: issn => xml(packages[issn] ? ctoWith(packages[issn]) : CTO_FREE_ONLY),
+      sfx: issn => xml(packages[issn] ? sfxWith(issn, ['SUBSCRIBED', packages[issn]])
+        : sfxWith(issn, ['FREE', 'Free E-Journals'])),
+    });
+    const store = memoryStore();
+    const options = { fetchImpl: stub.fetchImpl, store, now: NOW };
+    const result = await lookupInstitutionServices({ domain }, options);
+    assert.deepEqual(result.services.map(({ id, name, platformId, ownPlatform }) => ({ id, name, platformId, ownPlatform })), [
+      { id: 'journal-1749-5032', name: 'Corpora', platformId: 'edinburghup', ownPlatform: true },
+      { id: 'journal-0968-1361', name: 'Translation and Literature', platformId: 'edinburghup', ownPlatform: false },
+      { id: 'journal-0029-5973', name: 'Numen', platformId: 'brill', ownPlatform: true },
+      { id: 'journal-0570-5398', name: 'Arabica', platformId: 'brill', ownPlatform: false },
+      { id: 'journal-1465-5187', name: 'Public Archaeology', platformId: 'tandf', ownPlatform: true },
+    ]);
+    assert.equal(result.services[1].collection, 'JSTOR Arts and Sciences');
+    assert.equal(result.services[3].collection, 'EBSCOhost Academic Search Premier');
+    assert.equal(result.partial, false);
+    assert.equal(result.unchecked, 0);
+    assert.equal(result.remaining, 0);
+    assert.equal(stub.calls.length, SERVICE_CATALOGUE.length);
+    assert.ok(stub.calls.filter(({ url }) => JOURNAL_ISSNS.has(url.searchParams.get('rft.issn')!)).every(({ url }) => url.searchParams.get('rft.date') === '2021'));
+    for (const service of result.services) {
+      assert.match(service.url, domain === 'tum.de' ? /^https:\/\/tum-eaccess\.de\/login\?qurl=/ : /^https:\/\/buc-usal\.alma\.exlibrisgroup\.com\//);
+    }
+    const cached = await lookupInstitutionServices({ domain }, options);
+    assert.deepEqual(cached, result);
+    assert.equal(stub.calls.length, SERVICE_CATALOGUE.length);
   }
 });
