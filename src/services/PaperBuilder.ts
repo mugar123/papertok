@@ -439,11 +439,17 @@ export class PaperBuilder {
     } else if (rereads) {
       merged.peerReviewed = enrichmentReview;
     }
-    // A working paper the row is not still contradicts a `true` that rests on
-    // a DOI alone. That DOI may be the journal version's, the paper's own SSRN
-    // entry or the working paper's when OpenAlex lists none, so the answer is
-    // unknown rather than either record's.
-    if (otherWorkingPaper && arxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
+    // A `false` the row does not take, a working paper's or a published
+    // record's, still contradicts a `true` that rests on a DOI alone. The
+    // published record can be a row that merged a working paper: OpenAlex can
+    // file one without the eprint, so it joins OpenAlex's preprint record on
+    // title and first author, and that row reads published but keeps the
+    // preprint's `false` and no tag. The DOI may be the journal version's, the
+    // paper's own SSRN entry or the working paper's when OpenAlex lists none,
+    // so the answer is unknown rather than either record's.
+    const deniedElsewhere = enrichmentData.peerReviewed === false && !sameRecord
+      && (otherWorkingPaper || Boolean(shouldUpgradePublication));
+    if (deniedElsewhere && arxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
     // The working-paper tag explains a `false`. It comes with the `false` of
     // the same record, and with one taken above from a row that rests on an
     // arXiv DOI as this one does, though that row may show the DOI of
