@@ -1839,8 +1839,6 @@ export default function EntityExplorer({
   if (!entity) {
     return (
       <div className={`explorer-error${appChromeClass}`}>
-        {/* Petri says which of the two it is, a sentence says what to do,
-            and the way out is a labelled button under them. */}
         <div className="empty-state-art" aria-hidden="true">
           <Petri pose={entityError ? 'upset' : 'lost'} />
         </div>
@@ -1870,7 +1868,6 @@ export default function EntityExplorer({
     );
   }
 
-  // A person is shown by their initials: first and last word of the name.
   const authorNameWords = (entityDisplayName || '').split(/\s+/).filter(word => /^\p{L}/u.test(word));
   const authorInitials = authorNameWords.length > 0
     ? `${authorNameWords[0][0]}${authorNameWords.length > 1 ? authorNameWords[authorNameWords.length - 1][0] : ''}`.toUpperCase()
@@ -1900,8 +1897,6 @@ export default function EntityExplorer({
     <ProjectTimeline startDate={entity.startDate} endDate={entity.endDate} />
   );
 
-  // The entity's own pages, listed in the sheet rather than behind a menu:
-  // there are at most two of them.
   const sheetLinks = type === 'project' ? [
     ...(entity.openaireId ? [{
       href: `https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`,
@@ -2051,8 +2046,6 @@ export default function EntityExplorer({
         : <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />}
     </button>
   );
-  // A phone keeps the page short: the organizations are one row that opens
-  // them all in a drawer of thumb-sized rows.
   const projectParticipants = type === 'project' && (entity.participants?.length as number) > 0 && (isPhone ? (
     <Drawer>
       <DrawerTrigger render={<Button variant="ghost" className="project-participants-trigger" />}>
@@ -2092,9 +2085,6 @@ export default function EntityExplorer({
         <h4 className="project-section-title"><Buildings size={14} /> {'Participating organizations'}</h4>
         <div id="project-participants-list" className="project-participants-grid">
           {entity.participants!.slice(0, PARTICIPANTS_SHOWN).map(renderParticipant)}
-          {/* The rest unfold under the first rows on the experience panel's
-              fold: the height carries the button and the page below along,
-              the rows fade in inside it. Nothing is scaled. */}
           <AnimatePresence initial={false}>
             {participantsExpanded && (
               <motion.div
@@ -2127,8 +2117,6 @@ export default function EntityExplorer({
       </div>
   ));
 
-  // ROR's links to other institutions, as cards under the name: in the sheet
-  // they made it far taller than the column beside it.
   const institutionRelations = type === 'institution' && (entity.relationships?.length as number) > 0 && (
     <div className="project-participants">
       <h4 className="project-section-title"><Buildings size={14} /> {'Related institutions'}</h4>
@@ -2155,7 +2143,6 @@ export default function EntityExplorer({
     </div>
   );
 
-  // OpenAlex's neighbouring topics in the same subfield, as rows in the sheet.
   const topicRelations = isOpenAlexTopic && (entity.siblings?.length as number) > 0 && (
     <div className="project-participants">
       <h4 className="project-section-title"><Lightbulb size={14} /> {'Related topics'}</h4>
@@ -2196,14 +2183,6 @@ export default function EntityExplorer({
   const filterControls = (
     <>
     <div className="ee-filter-body">
-      {/* Each row of chips is one choice, so each is a single-select
-          ui ToggleGroup: Base UI writes `aria-pressed` on the chip
-          that is on (the old `active` class said nothing to a screen
-          reader) and moves between chips on the arrow keys. The
-          group reports `[]` when the pressed chip is pressed again;
-          "no choice" is not a state these have, so that is ignored.
-          The open choices ("All", "Any date") are stored as '' and
-          carried under a sentinel value here. */}
       <div className="ee-filter-section">
         <h4>{'Area'}</h4>
         <ToggleGroup
