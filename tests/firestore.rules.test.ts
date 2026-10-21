@@ -20,6 +20,8 @@ import {
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.ts';
+import { paperLegacyAdapter } from '../src/models/Paper.ts';
+import { areaLabelForPaper } from '../src/utils/areaAccent.ts';
 import { LIST_COLORS } from '../src/utils/listColors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/accountOnboarding.ts';
 import {
@@ -1181,4 +1183,36 @@ test('another account cannot read or write the classification of a saved paper',
     await assertFails(setDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W2120490784'), payload));
     await assertFails(setDoc(doc(db, 'users', ALICE, 'savedPapers', 'openalex:W1'), payload));
   }
+});
+
+/*
+ * Both writers of savedPapers merge into the stored document. One saved
+ * before PAP-60 kept only the category its card showed: the tester's AI
+ * survey was saved as hep-th. A new save of the same card has to be accepted
+ * as an update of that document and leave it reading Computer Science.
+ */
+test('a save over a savedPapers document from before PAP-60 replaces its category', async () => {
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE, 'savedPapers', 'openalex:W4233888153');
+  await assertSucceeds(setDoc(ref, {
+    title: 'Artificial intelligence', primaryCategory: 'hep-th', savedAt: '2026-10-01T12:00:00.000Z',
+  }));
+
+  const card = {
+    id: 'openalex:W4233888153',
+    title: 'Artificial intelligence',
+    primaryTopic: {
+      id: 'https://openalex.org/T13904',
+      display_name: 'Artificial Intelligence Applications',
+      subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
+      field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
+      domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+    },
+  };
+  await assertSucceeds(setDoc(ref, buildSavedPaperPayload(card, new Date().toISOString()), { merge: true }));
+
+  const stored = (await getDoc(ref)).data()!;
+  assert.equal(stored.primaryCategory, '');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Computer Science');
 });

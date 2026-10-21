@@ -68,6 +68,40 @@ test('no stored copy changes the field, its name or its ink', () => {
   }
 });
 
+type StoredFields = Record<string, unknown>;
+const isMap = (value: unknown): value is StoredFields => typeof value === 'object' && value !== null && !Array.isArray(value);
+// What setDoc(ref, data, { merge: true }) leaves: a field sent replaces the
+// stored one, a map merges key by key, and a field not sent stays.
+const mergeIntoStored = (stored: StoredFields, sent: StoredFields): StoredFields => {
+  const merged = { ...stored };
+  for (const [key, value] of Object.entries(sent)) {
+    const before = merged[key];
+    merged[key] = isMap(value) && isMap(before) ? mergeIntoStored(before, value) : value;
+  }
+  return merged;
+};
+
+// Every write of a stored copy merges into the document already there: the
+// save modal on each new list, Undo after an unsave, and a like, save or read
+// into the interaction's copy. A copy from before PAP-60 kept the category its
+// card showed, here the hep-th the tester saw on the AI survey. A new write
+// that leaves the category out keeps it, now under a classificationVersion,
+// and the copy read Physics where the card said Computer Science.
+test('a save over a copy stored before PAP-60 reads as the card does', () => {
+  const paper = feedPaper(namedWork('W4233888153'));
+  const savedPapers = mergeIntoStored(
+    { title: paper.title, primaryCategory: 'hep-th', savedAt: '2026-10-01T12:00:00.000Z' },
+    throughFirestore(buildSavedPaperPayload(paper, '2026-10-21T12:00:00.000Z')),
+  );
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: paper.id, ...savedPapers })), 'Computer Science', 'savedPapers document');
+
+  const interaction = mergeIntoStored(
+    { liked: true, paper: { id: paper.id, title: paper.title, primaryCategory: 'hep-th', categories: ['hep-th'] } },
+    { saved: true, paper: throughFirestore(serializeLibraryPaper(paper)) },
+  );
+  assert.equal(areaLabelForPaper(paperLegacyAdapter(interaction.paper as Partial<Paper>)), 'Computer Science', 'interaction copy');
+});
+
 const paper = {
   id: 'paper-1',
   title: 'A useful result',

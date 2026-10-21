@@ -31,10 +31,15 @@ test('a field we do not have is left out, never nulled', () => {
   for (const key of Object.keys(payload)) {
     assert.notEqual(payload[key as keyof typeof payload], null, `${key} is null, which the rules refuse`);
   }
-  for (const absent of ['authors', 'summary', 'doi', 'landingPageUrl', 'primaryCategory', 'categories', 'primaryTopic', 'published', 'arxivId']) {
+  for (const absent of ['authors', 'summary', 'doi', 'landingPageUrl', 'primaryTopic', 'published', 'arxivId']) {
     assert.equal(absent in payload, false, `${absent} must be absent, not null`);
   }
-  assert.deepEqual(Object.keys(payload).sort(), ['classificationVersion', 'savedAt', 'title']);
+  // A save merges into the stored document, so the category and its list
+  // are sent even when empty: left out, an older document's would stay and
+  // be read under this payload's classificationVersion (PAP-60).
+  assert.equal(payload.primaryCategory, '');
+  assert.deepEqual(payload.categories, []);
+  assert.deepEqual(Object.keys(payload).sort(), ['categories', 'classificationVersion', 'primaryCategory', 'savedAt', 'title']);
 });
 
 /**
