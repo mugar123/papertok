@@ -306,7 +306,10 @@
 .institution-service-detail-note { margin: 0 0 var(--space-2); }
 .institution-service-titles { list-style: none; margin: 0; padding: 0; }
 .institution-service-titles > li {
-  animation: institution-piece-in 280ms var(--ease-out-expo) calc(var(--title-index, 0) * 28ms + 60ms) backwards;
+  animation:
+    institution-piece-travel 280ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards;
+  animation-delay: calc(var(--title-index, 0) * 28ms + 60ms);
 }
 .institution-service-titles > li + li { border-top: 1px solid var(--border-subtle); }
 
@@ -332,13 +335,21 @@
   border-radius: var(--radius-sm);
 }
 
-.institution-services-list > li:focus-within { animation: none; }
+/* Keyboard focus must never wait for content to finish moving into view.
+   A focused row or title finishes its arrival at once by running it in no
+   time, not by dropping it: `animation: none` handed back when the focus
+   left started the arrival over, so each journal opened replayed the one
+   above it, which read as a blink. Changing only the duration keeps the
+   same animation, already finished. */
+.institution-services-list > li:focus-within,
+.institution-service-group:has(:focus-visible) .institution-service-titles > li {
+  animation-duration: 0s;
+  animation-delay: 0s;
+}
 
-/* Keyboard focus must never wait for content to finish moving into view. */
 .institution-service-group:has(:focus-visible) .institution-service-panel,
 .institution-service-group:has(:focus-visible) .institution-service-details,
 .institution-service-group:has(:focus-visible) .institution-service-chevron { transition: none; }
-.institution-service-group:has(:focus-visible) .institution-service-titles > li { animation: none; }
 
 @media (hover: hover) and (pointer: fine) {
   .institution-service-summary:hover, a.institution-service-title-link:hover { background: var(--bg-glass-hover); }
