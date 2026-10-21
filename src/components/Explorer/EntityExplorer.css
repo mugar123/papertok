@@ -640,7 +640,7 @@
 .ehc-activity-bars span {
   height: calc(var(--v) * 100%);
   min-height: 2px;
-  border-radius: 2px 2px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 70%, transparent);
   transform-origin: bottom;
   animation: activityGrow 0.3s var(--ease-out) backwards;
@@ -1960,7 +1960,7 @@
   flex: none;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: var(--area-accent, var(--text-tertiary));
 }
 

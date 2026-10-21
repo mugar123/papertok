@@ -1078,6 +1078,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaper(paper)}
             onSaveToList={handleSaveToList}
+            onPickList={onSaveToList}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}

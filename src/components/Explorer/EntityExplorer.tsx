@@ -2978,6 +2978,7 @@ export default function EntityExplorer({
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaperToView(paper)}
             onSaveToList={handleSaveToList}
+            onPickList={onSaveToList}
             getInteractionState={getInteractionState}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}

@@ -331,6 +331,7 @@ export default function PublicPaperPage({
             onAuthRequired={onAuthRequired}
             onOpenPdf={handleOpenPdf}
             onSaveToList={handleSaveToList}
+            onPickList={onSaveToList}
             publicMode={!isAuthenticated}
             analyticsSurface="other"
             hideScrollHint
