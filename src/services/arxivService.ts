@@ -38,21 +38,36 @@ function isArxivCategory(category: string) {
   return ARXIV_PREFIXES.some(prefix => category === prefix || category.startsWith(`${prefix}.`));
 }
 
-// arXiv's categories are the paper's classification, and the request only says
-// why it was fetched. Writing the request onto the paper filed 2605.02209, cs.AI
-// with a cs.LG cross-list, as cs.LG whenever cs.LG was asked first. A `cat:`
-// match names the requested category among its own, which ranks it. A label
-// search (`all:"Fluid Mechanics"` for mech.fluid) finds papers arXiv files
-// elsewhere, so the categories it searched for travel in `_fetchedFor`: ranking
-// credit for the reader who chose them, never a category shown on the card.
-export function noteLabelSearchCategories<T extends Partial<Paper>>(papers: T[], requestedCategories: string[]): T[] {
-  const labelCategories = requestedCategories.filter(category => !isArxivCategory(category)).sort();
-  if (!labelCategories.length) return papers;
-  return papers.map(paper => (
-    paper.categories?.some(category => requestedCategories.includes(category))
-      ? paper
-      : { ...paper, _fetchedFor: labelCategories }
-  ));
+function categoryMatchScore(paper: Partial<Paper>, categoryId: string) {
+  if (paper.categories?.includes(categoryId)) return Number.POSITIVE_INFINITY;
+
+  const label = CATEGORY_DEFINITIONS.get(categoryId)?.label || categoryId.replace(/\./g, ' ');
+  const terms = label.toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length >= 4);
+  const text = `${paper.title || ''} ${paper.abstract || ''}`.toLowerCase();
+  return terms.reduce((score: number, term: string) => score + (text.includes(term) ? 1 : 0), 0);
+}
+
+export function assignRequestedCategories<T extends Partial<Paper>>(papers: T[], requestedCategories?: string[]): (T & Pick<Partial<Paper>, 'primaryCategory' | 'allCategories'>)[] {
+  if (!Array.isArray(requestedCategories) || requestedCategories.length === 0) return papers;
+
+  return papers.map(paper => {
+    // A primary category the record already carries is its provider's own
+    // classification, arXiv's for every `fetchPapers` result; the request only
+    // says why the paper was fetched. Every category of a cross-listed paper
+    // matches a `cat:` request exactly, and the first requested one used to win
+    // that tie: 2605.02209, cs.AI with a cs.LG cross-list, came out as cs.LG.
+    if (paper.primaryCategory) return paper;
+    const selectedCategory = requestedCategories.reduce((best, categoryId) => {
+      return categoryMatchScore(paper, categoryId) > categoryMatchScore(paper, best) ? categoryId : best;
+    }, requestedCategories[0]);
+    const providerCategories = paper.allCategories || paper.categories || [];
+
+    return {
+      ...paper,
+      primaryCategory: selectedCategory,
+      allCategories: [...new Set([selectedCategory, ...providerCategories])],
+    };
+  });
 }
 
 // The XML is read here, under the same deadline that covered the headers.
@@ -289,7 +304,7 @@ export async function fetchPapers(categoriesOrQuery: string | string[], start = 
   try {
     const fetchedPapers = await fetchArxivData(url);
     const papers = Array.isArray(categoriesOrQuery)
-      ? noteLabelSearchCategories(fetchedPapers, categoriesOrQuery)
+      ? assignRequestedCategories(fetchedPapers, categoriesOrQuery)
       : fetchedPapers;
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
