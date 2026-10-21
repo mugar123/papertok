@@ -8,7 +8,6 @@ import { useLanguage } from '../../context/LanguageContext.tsx';
 import { INTEREST_AREAS } from '../../data/categories.ts';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import InstitutionLink from '../Institution/InstitutionLink.tsx';
-import { needsUniversityProof, sendInstitutionVerification } from '../../services/institutionService.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../Public/WelcomeShell.tsx';
 import { LibraryPreview } from '../Public/GuestWelcomePreferences.tsx';
@@ -64,7 +63,7 @@ const COPY = {
     skip: 'Skip for now',
     linkedNote: 'You can unlink any time in Settings.',
     sent: 'Check your university inbox',
-    sentDescription: (email: string) => `Open the link sent to ${email} in this browser.`,
+    sentDescription: 'Open the link within an hour, in this browser, while signed in to this account.',
     linked: 'University linked',
     failed: 'Could not verify your university email',
     failedDescription: (message: string) => `${message} You can try again in Settings.`,
@@ -96,7 +95,7 @@ export default function OnboardingFlow() {
   // A welcome's answer starts saving on arrival (the finish screen).
   const [saving, setSaving] = useState(Boolean(guestSeed));
   const [profileError, setProfileError] = useState<string | null>(null);
-  const { completeOnboarding, onboardingComplete, institution, linkInstitution, signOut } = useAuth();
+  const { completeOnboarding, onboardingComplete, institution, signOut } = useAuth();
   const { language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -179,22 +178,19 @@ export default function OnboardingFlow() {
     return next;
   });
 
-  // The address the welcome took, now that there is an account to verify it
-  // for. The onboarding does not wait for it: the outcome is a toast.
-  const verifyGuestUniversity = async (email: string) => {
-    try {
-      if (needsUniversityProof(email)) {
-        await sendInstitutionVerification(email);
-        toast.success(COPY.university.sent, { description: COPY.university.sentDescription(email) });
+  const reportUniversityLink = (link: NonNullable<Awaited<ReturnType<typeof completeOnboarding>>['institutionLink']>) => {
+    link.then((result) => {
+      if (!result) return;
+      if (result.pending) {
+        toast.success(COPY.university.sent, { description: COPY.university.sentDescription, duration: Infinity, closeButton: true });
       } else {
-        await linkInstitution(email);
         toast.success(COPY.university.linked);
       }
-    } catch (error) {
+    }, (error: unknown) => {
       toastError(COPY.university.failed, {
         description: COPY.university.failedDescription(getUiErrorMessage(error, 'INSTITUTION_LINK_FAILED')),
       });
-    }
+    });
   };
 
   const handleFinish = async () => {
@@ -202,10 +198,10 @@ export default function OnboardingFlow() {
     setSaving(true);
     setProfileError(null);
     try {
-      await completeOnboarding(preferences);
+      const { institutionLink } = await completeOnboarding(preferences);
       trackEvent('tutorial_complete', { language });
       markActivation();
-      if (guestAnswer?.institutionEmail) void verifyGuestUniversity(guestAnswer.institutionEmail);
+      if (institutionLink) reportUniversityLink(institutionLink);
       navigate(returnTo, { replace: true });
     } catch (err) {
       if ((err as { code?: string } | null)?.code === 'ONBOARDING_WRITE_TIMEOUT') {

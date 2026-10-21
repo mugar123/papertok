@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { animate, cubicBezier, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from 'framer-motion';
 import { ArrowUpRight, BookOpen, Check, Cursor, FileText, Flask, Folder, GithubLogo, GraduationCap, LockSimple, LockSimpleOpen, Star } from '@phosphor-icons/react';
 import { CATEGORIES } from '../../data/categories.ts';
@@ -115,12 +115,16 @@ export function WelcomeInboxChoice({ subscribed, onChange }: { subscribed: boole
 
 // Asked before there is an account, so only the address is kept: the account
 // onboarding sends the verification once the account exists.
-export function WelcomeUniversityChoice({ email, error, onChange }: { email: string; error: string; onChange: (email: string) => void }) {
+export function WelcomeUniversityChoice({ email, error, onChange, onSubmit }: { email: string; error: string; onChange: (email: string) => void; onSubmit: () => void }) {
+  const input = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { if (error) input.current?.focus(); }, [error]);
   return <div className="gw-preferences gw-university">
-    <div className="gw-university-field">
+    <form className="gw-university-field" noValidate onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
       <Label htmlFor="gw-university-email">University email</Label>
       <Input
+        ref={input}
         id="gw-university-email"
+        enterKeyHint="next"
         type="email"
         inputMode="email"
         autoComplete="email"
@@ -133,7 +137,7 @@ export function WelcomeUniversityChoice({ email, error, onChange }: { email: str
       />
       <p id="gw-university-note" className="gw-preference-note">Optional. Once your account is ready, we email this address a verification link.</p>
       <p id="gw-university-error" className="gw-university-error" role="alert">{error}</p>
-    </div>
+    </form>
   </div>;
 }
 

@@ -1221,7 +1221,6 @@
 .gw-university-field input { min-height: 44px; }
 .gw-university-field .gw-preference-note { margin-top: var(--space-1); }
 .gw-university-error { margin: 0; font-size: var(--fs-sm); color: var(--accent-danger); }
-.gw-university-error:empty { display: none; }
 .gw-library-preview { display: grid; place-items: center; margin-top: var(--space-2); pointer-events: none; }
 .gw-library { position: relative; width: 300px; height: 250px; zoom: 0.9; }
 .gw-library-paper { position: absolute; top: 10px; left: 18px; display: flex; flex-direction: column; gap: 6px; width: 214px; padding: 14px; border: 1px solid var(--border-default); border-top: 3px solid var(--area-accent); border-radius: var(--radius-lg); background: var(--bg-card); box-shadow: var(--shadow-sm); text-align: left; }

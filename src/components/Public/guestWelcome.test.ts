@@ -42,7 +42,7 @@ test('the welcome retains its intro and topics before personalization and option
  */
 test('the specific topics are their own screen, in the area cards, and never block the feed', async () => {
   const [jsx, shell] = await Promise.all([jsxPromise, shellPromise]);
-  assert.match(jsx, /const primary = \(\) => \{[\s\S]*?if \(step === 'support'\) finish\(\);\s*else goTo\(stepIndex \+ 1\);/);
+  assert.match(jsx, /const primary = \(\) => \{\s*if \(step === 'university' && institutionEmail\.trim\(\) && !institutionDomainOf\(institutionEmail\)\) \{\s*setUniversityError\(copy\.university\.invalid\);\s*return;\s*\}\s*if \(step === 'support'\) finish\(\);\s*else goTo\(stepIndex \+ 1\);/);
   assert.match(jsx, /\{isSubtopics && \(\s*<SubtopicsPicker\b/, 'the topics screen draws the shared picker');
   const subtopics = shell.slice(shell.indexOf('export function SubtopicsPicker'));
   assert.match(subtopics, /className="gw-areas"/, 'the same grid as the areas');

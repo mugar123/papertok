@@ -30,11 +30,11 @@ export interface AuthContextValue {
   signInWithGoogle: () => Promise<{ isNewUser: boolean; providerId: string }>;
   signInWithGitHub: () => Promise<{ isNewUser: boolean; providerId: string }>;
   linkSignInMethod: typeof linkSignInProvider;
-  linkInstitution: typeof linkInstitutionAccount;
+  linkInstitution: typeof connectInstitution;
   completeInstitutionVerification: typeof completeInstitutionVerificationAccount;
   unlinkInstitution: () => Promise<void>;
   signOut: () => Promise<void>;
-  completeOnboarding: (preferences: string[]) => Promise<void>;
+  completeOnboarding: (preferences: string[]) => Promise<{ institutionLink: Promise<Awaited<ReturnType<typeof connectInstitution>> | null> | null }>;
   settleEmailDigestOptIn: () => Promise<void>;
   updatePreferences: (preferences: string[]) => Promise<void>;
   setUserPreferences: Dispatch<SetStateAction<string[] | null>>;
@@ -57,7 +57,7 @@ import {
 } from '../services/authIdentityService.ts';
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
-  linkInstitution as linkInstitutionAccount,
+  connectInstitution,
   completeInstitutionVerification as completeInstitutionVerificationAccount,
   pendingInstitutionVerification,
   normalizeInstitution,
@@ -319,9 +319,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // switched during verification cannot inherit the other's.
   const linkInstitution = useCallback(async (email: string) => {
     const userId = user?.uid;
-    const linked = await linkInstitutionAccount(email);
-    if (auth.currentUser?.uid === userId) setInstitution(linked);
-    return linked;
+    const result = await connectInstitution(email);
+    if (!result.pending && auth.currentUser?.uid === userId) setInstitution(result.institution);
+    return result;
   }, [user?.uid]);
 
   const completeInstitutionVerification = useCallback(async (link: string) => {
@@ -382,6 +382,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // Only an explicit yes reaches the account; demo mode has no Worker to
     // subscribe with, so it never records one.
     const guestEmailDigest = !IS_DEMO && guestAnswer?.emailDigest === true;
+    const guestInstitutionEmail = IS_DEMO ? undefined : guestAnswer?.institutionEmail;
+    let institutionLink: Promise<Awaited<ReturnType<typeof connectInstitution>> | null> | null = null;
     const guestReading = guestLevel
       ? normalizeReadingPreferences({ ...readingPreferences, aiExplanationLevel: guestLevel })
       : null;
@@ -395,7 +397,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       clearGuestInterests();
       setUserPreferences(preferences);
       setOnboardingComplete(true);
-      return;
+      return { institutionLink };
     }
 
     const userId = user?.uid;
@@ -446,6 +448,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
           if (auth.currentUser?.uid === userId) setEmailDigestPending(true);
         });
       }
+      if (guestInstitutionEmail) {
+        institutionLink = linkInstitution(guestInstitutionEmail).catch((error: unknown) => {
+          if (auth.currentUser?.uid !== userId) return null;
+          throw error;
+        });
+      }
       saveStoredOnboarding(userId, { complete: true, preferences });
       // The interests a guest picked before signing up have now reached the
       // profile (the onboarding pre-selects from them); the bridge is done.
@@ -453,7 +461,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     setUserPreferences(preferences);
     setOnboardingComplete(true);
-  }, [readingPreferences, user?.uid]);
+    return { institutionLink };
+  }, [linkInstitution, readingPreferences, user?.uid]);
 
   const updatePreferences = useCallback(async (newPreferences: string[]) => {
     setUserPreferences(newPreferences);

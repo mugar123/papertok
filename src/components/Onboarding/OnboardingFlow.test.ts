@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-test('SOURCE: first-run onboarding asks for topics and the university only without a guest answer, and saves a guest answer on arrival', async () => {
+test('SOURCE: first-run onboarding asks for topics and the university only without a guest answer', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /onboardingComplete/);
@@ -22,7 +22,6 @@ test('SOURCE: first-run onboarding asks for topics and the university only witho
   assert.deepEqual(onboardingSteps({ asksTopics: true }), ['topics', 'subtopics', 'university']);
   assert.deepEqual(onboardingSteps({ asksTopics: false }), ['finish']);
   assert.doesNotMatch(code, /'welcome'|ScriptTitle|welcomeTitlePaths/, 'no greeting screen');
-  assert.match(code, /if \(step !== 'finish' \|\| arrivedOnboarded \|\| finishStarted\.current\) return;\s*finishStarted\.current = true;\s*finishOnArrival\(\);/, 'the finish screen saves once, on arrival');
   assert.match(code, /const asksTopics = !guestSeed;/, 'a guest answer never sees the pickers, not even through Back');
   assert.match(code, /const steps = onboardingSteps\(\{ asksTopics \}\);/);
   assert.match(code, /const \[stepIndex, setStep\] = useState(?:<[^;\n]+>)?\(0\);/);
@@ -90,11 +89,10 @@ test('SOURCE: the onboarding is seeded from the guest answer', async () => {
   assert.doesNotMatch(code, /saveGuestInterests|clearGuestInterests/, 'the onboarding reads the answer; AuthContext owns its end');
 });
 
-test('SOURCE: the university screen asks for the address itself, and a welcome address is verified once the account exists', async () => {
+test('SOURCE: the university screen asks for the address itself, in a field that starts empty', async () => {
   const source = await readFile(new URL('./OnboardingFlow.tsx', import.meta.url), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
   assert.match(code, /const \[institutionEmail, setInstitutionEmail\] = useState(?:<[^;\n]+>)?\(''\);/);
-  assert.match(code, /markActivation\(\);\s*if \(guestAnswer\?\.institutionEmail\) void verifyGuestUniversity\(guestAnswer\.institutionEmail\);/, 'sent after the profile is written, without holding the onboarding');
   assert.match(
     code,
     /\{step === 'university' && \([\s\S]*?<InstitutionLink\s+idPrefix="onboarding-institution"\s+formId=\{UNIVERSITY_FORM_ID\}\s+showSubmit=\{false\}\s+email=\{institutionEmail\}\s+onEmailChange=\{setInstitutionEmail\}\s+onBusyChange=\{setLinkBusy\}\s+linkedNote=\{COPY\.university\.linkedNote\}\s*\/>/,

@@ -12,7 +12,7 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import InstitutionPill from './InstitutionPill.tsx';
 import InstitutionServices from './InstitutionServices.tsx';
-import { cancelInstitutionVerification, pendingInstitutionVerification, sendInstitutionVerification, needsUniversityProof } from '../../services/institutionService.ts';
+import { cancelInstitutionVerification, pendingInstitutionVerification } from '../../services/institutionService.ts';
 import './Institution.css';
 
 const COPY = {
@@ -77,15 +77,13 @@ export default function InstitutionLink({
     setFeedback(null);
     pendingFocus.current = 'unlink';
     try {
-      if (needsUniversityProof(email)) {
-        await sendInstitutionVerification(email);
+      const { pending: emailed } = await linkInstitution(email);
+      setEmail!('');
+      if (emailed) {
         setPending(pendingInstitutionVerification());
-        setEmail!('');
         setFeedback({ tone: 'success', text: 'Check your university inbox. Continue in the tab opened by the email.' });
         pendingFocus.current = null;
       } else {
-        await linkInstitution(email);
-        setEmail!('');
         setFeedback({ tone: 'success', text: COPY.linkedNow });
       }
     } catch (error) {

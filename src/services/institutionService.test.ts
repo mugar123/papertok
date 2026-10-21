@@ -4,7 +4,7 @@ import type { Auth, User, UserCredential } from 'firebase/auth';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
 import {
   institutionLabel, normalizeInstitution, needsUniversityProof,
-  linkInstitution, unlinkInstitution, sendInstitutionVerification,
+  connectInstitution, linkInstitution, unlinkInstitution, sendInstitutionVerification,
   completeInstitutionVerification, cancelInstitutionVerification, pendingInstitutionVerification,
 } from './institutionService.ts';
 
@@ -80,6 +80,18 @@ test('a verified primary university address links directly; typed addresses neve
   s.switchAccount({ uid: 'primary', email: 'alice@usal.es', emailVerified: false });
   await assert.rejects(linkInstitution('alice@usal.es', s.options), { code: 'INSTITUTION_EMAIL_NOT_VERIFIED' });
   assert.equal(needsUniversityProof('alice@cs.usal.es', s.options), true);
+});
+
+test('connecting links at once when the sign-in proves the domain, and emails a proof otherwise', async () => {
+  const proven = scenario();
+  proven.switchAccount({ uid: 'primary', email: 'alice@usal.es', emailVerified: true });
+  assert.deepEqual(await connectInstitution('alice@usal.es', proven.options), { pending: false, institution: INSTITUTION });
+  assert.equal(proven.sent.length, 0);
+  const typed = scenario();
+  assert.deepEqual(await connectInstitution('Alice@USAL.es', typed.options), { pending: true, institution: null });
+  assert.deepEqual(typed.sent.map(({ email }) => email), ['alice@usal.es']);
+  assert.deepEqual(typed.calls, [], 'nothing reaches the Worker before the proof');
+  assert.equal(pendingInstitutionVerification(typed.options)?.email, 'alice@usal.es');
 });
 
 test('email delivery is not membership; completing the proof keeps the primary account and releases the secondary', async () => {

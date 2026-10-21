@@ -527,6 +527,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
           email={institutionEmail}
           error={universityError}
           onChange={(email) => { setInstitutionEmail(email); setUniversityError(''); }}
+          onSubmit={primary}
         />
       )}
       {step === 'support' && <WelcomeProjectSupport />}

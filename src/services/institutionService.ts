@@ -249,6 +249,16 @@ export async function linkInstitution(email: string, overrides?: InstitutionOper
   return normalizeInstitution(payload.institution);
 }
 
+/** Links at once when the signed-in account already proves the domain; otherwise emails the proof. */
+export async function connectInstitution(email: string, overrides?: InstitutionOperations) {
+  const api = operations(overrides);
+  if (needsUniversityProof(email, api)) {
+    await sendInstitutionVerification(email, api);
+    return { pending: true, institution: null };
+  }
+  return { pending: false, institution: await linkInstitution(email, api) };
+}
+
 export async function unlinkInstitution(overrides?: InstitutionOperations) {
   const api = operations(overrides);
   const current = requireAccount(api);
