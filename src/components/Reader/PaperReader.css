@@ -694,6 +694,24 @@ button.rd-tag {
   animation: rdErrorIn 320ms var(--ease-out-expo);
 }
 
+/* Under a rewrite that was reused rather than written for this open: what it
+   cost, and the one action that spends a use on a new one. */
+.rd-reused {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.rd-reused p {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
 .rd-error-state {
   animation: rdErrorIn 360ms var(--ease-out-expo);
 }

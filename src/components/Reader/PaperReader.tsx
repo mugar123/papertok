@@ -5,9 +5,11 @@ import type { PassageAnnotation } from '../../hooks/usePassageAnnotations.ts';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
 type ReaderQuota = { dailyLimit: number | null; remainingUses: number; unlimited?: boolean };
 interface PaperReaderProps {
-  paper: Paper; onClose: () => void;
+  paper: Partial<Paper>; onClose: () => void;
   originRect?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | null;
   closeRef?: Ref<() => void> | null;
+  /** The level to open at instead of the reader's default (the summary history opens the one it lists). */
+  initialLevel?: ReadingLevel;
 }
 export type ReaderCopy = typeof COPY.en;
 import { useCallback, useEffect, useEffectEvent, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
@@ -81,12 +83,16 @@ const COPY = {
     original: 'View the original paper',
     adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
     stages: {
+      saved: 'Looking for your saved summary',
       source: 'Downloading the paper',
       reading: 'The model is reading the paper',
       writing: 'Rewriting the paper',
     },
     retry: 'Try again',
     incomplete: 'The rewrite stopped before finishing. You can try again.',
+    reusedNote: 'Written earlier and reused, so it spent no AI use. Writing it again spends one.',
+    writeAgain: 'Write it again',
+    writeAgainFailed: (reason: string) => `${reason}. The summary above was not replaced.`,
     sections: 'sections',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
@@ -350,7 +356,7 @@ function InfoTag({ className, info, children }: { className: string; info: strin
   );
 }
 
-export default function PaperReader({ paper, onClose, originRect = null, closeRef = null }: PaperReaderProps) {
+export default function PaperReader({ paper, onClose, originRect = null, closeRef = null, initialLevel }: PaperReaderProps) {
   const { user, readingPreferences } = useAuth();
   const uid = user?.uid;
   const { trackEvent } = useAnalyticsConsent();
@@ -362,7 +368,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // own copy of it.
   const paragraphHintId = useId();
 
-  const [level, setLevel] = useState(() => readingPreferences?.aiExplanationLevel ?? 'university');
+  const [level, setLevel] = useState(() => initialLevel ?? readingPreferences?.aiExplanationLevel ?? 'university');
   const [sections, setSections] = useState<Array<RewriteSection & { reveal?: boolean }>>([]);
   const [meta, setMeta] = useState<ClientRewriteMeta | null>(null);
   const [status, setStatus] = useState('idle');
@@ -430,17 +436,26 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // Where focus lands on open: the way back, as it always was
   // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  // Where focus goes when "Write it again" takes its own button off the page.
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
 
   const supportsRewrite = canRewritePaper(paper);
   const paperId = paper?.id || paper?.doi || paper?.arxivId || '';
 
-  const load = useCallback(async (targetLevel: string, { force = false } = {}) => {
+  const load = useCallback(async (targetLevel: string, {
+    force = false,
+    // The summary on screen when the reader asked to write it again. It is
+    // still the saved one until a new rewrite replaces it, so a request that
+    // fails before writing anything puts it back instead of an error page.
+    rewriteOf = null as { sections: RewriteSection[]; meta: ClientRewriteMeta } | null,
+  } = {}) => {
+    const regenerate = Boolean(rewriteOf);
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     // A cached level swaps in without a loading state at all.
-    const cached = !force && getCachedRewrite(paper, targetLevel, 'en');
+    const cached = !force && !regenerate && getCachedRewrite(paper, targetLevel, 'en');
     if (cached) {
       setSections(cached.sections);
       setMeta({ ...cached.meta, cached: true });
@@ -454,18 +469,25 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     setError(null);
     setStage('source');
     setStatus('streaming');
-
-    // Counted here rather than in the effect: only this branch reaches the
-    // worker, so a cache hit no longer inflates the metric, and a retry — which
-    // does spend a use — is no longer invisible to it.
-    trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
+    // A copy replayed from the account or the worker's cache arrives whole.
+    let replayed = false;
 
     try {
       const result = await rewritePaper(paper, targetLevel, {
         language: 'en',
         force,
+        regenerate,
+        uid,
         signal: controller.signal,
+        // Counted when the request leaves rather than when loading starts: a
+        // summary saved in the account never reaches the worker and spends
+        // nothing, and a retry, which does spend a use, is still counted.
+        onRequest: () => {
+          setStage('source');
+          trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
+        },
         onMeta: (nextMeta) => {
+          replayed = nextMeta.cached === true;
           setMeta(nextMeta);
           // The reservation has already happened by the time this arrives, so it
           // is the freshest count there is — fresher than what the reader asked
@@ -478,7 +500,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         // that was already there. Only the fresh one gets the wipe; a cached
         // rewrite arrives all at once and must not stage a whole paper's worth
         // of animation nobody asked to watch.
-        onSection: (section) => setSections(current => [...current, { ...section, reveal: true }]),
+        onSection: (section) => setSections(current => [...current, { ...section, reveal: !replayed }]),
         onProgress: ({ stage: nextStage }) => setStage(nextStage),
       });
       setStatus(result.incomplete ? 'incomplete' : 'ready');
@@ -492,13 +514,19 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       setError(caught instanceof PaperRewriteError
         ? { code: caught.code, quota: caught.quota }
         : { code: 'AI_UNAVAILABLE', quota: null });
-      setStatus('error');
+      if (rewriteOf) {
+        setSections(rewriteOf.sections);
+        setMeta(rewriteOf.meta);
+        setStatus('ready');
+      } else {
+        setStatus('error');
+      }
       // Most failures hand the use back, and the worker does it after the count
       // on the `meta` line was already sent. Re-reading is the only way the chip
       // can show the refund rather than a use the reader never actually spent.
       fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
     }
-  }, [paper, trackEvent]);
+  }, [paper, trackEvent, uid]);
 
   useEffect(() => {
     // The two ways the PDF can change are not the same thing. Going from no
@@ -557,7 +585,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // Keyed on the paper's identity: a new object for the same paper is not a
   // second reading.
   const paperTitle = paper.title;
-  const reportReaderTime = useEffectEvent((seconds: number, id: string, title: string) => {
+  const reportReaderTime = useEffectEvent((seconds: number, id: string, title: string | undefined) => {
     trackEvent('reader_time', { level, seconds, paper_id: id, paper_title: title });
   });
   useEffect(() => {
@@ -976,6 +1004,24 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     : '50% 62%';
 
   const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
+  const canSpendUse = quota ? Boolean(quota.unlimited) || quota.remainingUses > 0 : true;
+  // Only a signed-in reader can ask the worker at all, and their copy is the one
+  // a new rewrite replaces. `error` here is a failed attempt to write it again,
+  // which left the reused summary on screen.
+  const canWriteAgain = Boolean(uid) && meta?.cached === true && shownStatus === 'ready';
+  const writeAgainOpen = canSpendUse && (!error || canRetry);
+  const writeAgain = () => {
+    // The button leaves the page while the new rewrite streams in.
+    titleRef.current?.focus();
+    load(level, { rewriteOf: { sections, meta: meta! } });
+  };
+  // A failed attempt brings the button back beside the reason the alert reads
+  // out, so focus returns to it from the title it waited on.
+  const writeAgainRef = useRef<HTMLButtonElement | null>(null);
+  const writeAgainFailed = canWriteAgain && Boolean(error);
+  useEffect(() => {
+    if (writeAgainFailed && document.activeElement === titleRef.current) writeAgainRef.current?.focus();
+  }, [writeAgainFailed]);
   const { error: askError, clearError: clearAskError } = annotations;
   useEffect(() => {
     if (!askError) return;
@@ -1117,12 +1163,12 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {meta?.cached && <InfoTag className="rd-tag" info={copy.cachedTitle}>{copy.cached}</InfoTag>}
               </div>
             )}
-            <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
-            {(paper?.authors?.length ?? 0) > 0 && paper && (
-              <div className="rd-doc-byline">
-                <ListRowAuthors paper={paper} />
-              </div>
-            )}
+            <h1 ref={titleRef} tabIndex={-1} className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
+            {/* The rule under the byline closes the head even with no authors to
+                list, as when a summary reopens from the history. */}
+            <div className="rd-doc-byline">
+              {(paper?.authors?.length ?? 0) > 0 && <ListRowAuthors paper={paper} />}
+            </div>
 
             {/* Pointed at by every paragraph's `aria-describedby` below,
                 never read on its own: the keyboard route's instructions, for
@@ -1265,6 +1311,18 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                   )}
                 </AnimatePresence>
 
+                {canWriteAgain && (
+                  <div className="rd-reused">
+                    {writeAgainFailed
+                      ? <p role="alert">{copy.writeAgainFailed(errorCopy.title)}</p>
+                      : <p>{canSpendUse ? copy.reusedNote : copy.noUsesLeft}</p>}
+                    <Button ref={writeAgainRef} variant="outline" size="sm" onClick={writeAgain} disabled={!writeAgainOpen} focusableWhenDisabled>
+                      <ArrowClockwise size={14} aria-hidden="true" />
+                      {copy.writeAgain}
+                    </Button>
+                  </div>
+                )}
+
                 {shownStatus === 'incomplete' && (
                   <p className="rd-notice" role="alert">
                     {copy.incomplete}
@@ -1315,7 +1373,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
             usesLimit={quota?.dailyLimit ?? null}
             unlimited={Boolean(quota?.unlimited)}
-            canAsk={quota ? quota.unlimited || quota.remainingUses > 0 : true}
+            canAsk={canSpendUse}
             busy={annotations.busy === 'saving'}
             onHighlight={annotations.highlight}
             onSaveNote={annotations.saveNote}
