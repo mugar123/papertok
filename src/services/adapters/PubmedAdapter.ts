@@ -23,7 +23,7 @@ interface PubmedResponse {
 import { CATEGORIES } from '../../data/categories.ts';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.ts';
-import { isAfterToday, isProtocolBookSeries } from '../../utils/medlineRecord.ts';
+import { PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries } from '../../utils/medlineRecord.ts';
 import { fetchWorkerSourceJson } from '../workerApiClient.ts';
 
 // E-utilities answer as three serial requests (esearch → esummary → efetch).
@@ -91,15 +91,20 @@ function getCategoryDefinition(categoryId: string|number) {
 
 /**
  * The feed's PubMed query for a reader's categories. Each label is searched in
- * title and abstract: in every field `"Molecular Biology"` also matched the
- * journal Methods in Molecular Biology. Only records published by today (UTC,
- * print or electronic date) come back, so a recent-first lane is not filled
- * with chapters printed next year.
+ * every field. Limited to title and abstract (`[tiab]`), the newest matches
+ * were mostly reviews and papers that only name the discipline: on 2026-10-21
+ * page 0 had 40 % on-target papers for molecular biology and 31 % for
+ * neuroscience, against 63 % and 50 % with every field. Every field also
+ * matches Methods in Molecular Biology, a protocol series added a volume at a
+ * time, so the series is left out by its ISSNs. Only records with a
+ * publication date (`[dp]`) by today (UTC) come back, so a recent-first lane
+ * is not filled with issues printed next year.
  */
 export function pubmedCategoryQuery(categoryIds: readonly string[]) {
   const labels = categoryIds.map(categoryId => getCategoryDefinition(categoryId)?.label).filter(Boolean);
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
-  return `(${labels.map(label => `"${label}"[tiab]`).join(' OR ')}) AND 1800/01/01:${today}[dp]`;
+  const protocolSeries = [...PROTOCOL_SERIES_ISSNS].map(issn => `"${issn}"[is]`).join(' OR ');
+  return `(${labels.map(label => `"${label}"`).join(' OR ')}) AND 1800/01/01:${today}[dp] NOT (${protocolSeries})`;
 }
 
 function containsTerm(text: string, term: string) {

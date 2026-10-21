@@ -7,8 +7,8 @@
 // PubMed and Europe PMC file it as a journal and type its chapters "Journal
 // Article" (133 of the 139 chapters in the 2026-10-20 audit), so only the
 // series identifiers say what these records are: the print and electronic
-// ISSN and the NLM catalogue ID.
-const PROTOCOL_SERIES_ISSNS = new Set(['1064-3745', '1940-6029']);
+// ISSN and the NLM catalogue ID. The feed's PubMed query excludes the ISSNs.
+export const PROTOCOL_SERIES_ISSNS: ReadonlySet<string> = new Set(['1064-3745', '1940-6029']);
 const PROTOCOL_SERIES_NLM_IDS = new Set(['9214969']);
 
 export function isProtocolBookSeries(journal: { issn?: string; essn?: string; nlmId?: string } | undefined) {

@@ -544,21 +544,21 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
   });
 }
 
-// "Molecular Biology" in every field also matched the journal Methods in
-// Molecular Biology, so every PubMed lane searches title and abstract only.
+// Every PubMed lane sends the query `pubmedCategoryQuery` builds, which leaves
+// out Methods in Molecular Biology and records dated after today.
 const BIOMEDICAL_LEAVES = [
   { id: 'bio.mol', label: 'Molecular Biology', area: 'bio' },
   // The nearby category exploration adds, and one outside the reader's areas for boredom.
   { id: 'bio.gen', label: 'Genetics', area: 'bio' },
   { id: 'med.onco', label: 'Oncology', area: 'med' },
 ];
-const searchedFields = (query: string) => [...query.matchAll(/"([^"]+)"(\[\w+\])?/g)].map(([, label, field]) => `${label}${field ?? ''}`);
+const withoutDay = (query: string) => query.replace(/\d{4}\/\d{2}\/\d{2}\[dp\]/, 'today[dp]');
 for (const [name, page, boredom, asked] of [
-  ['the first page', 0, 0, [['Molecular Biology[tiab]']]],
-  ['a later page with its exploration', 1, 0, [['Molecular Biology[tiab]'], ['Genetics[tiab]']]],
-  ['a bored reader\'s later page', 1, 8, [['Molecular Biology[tiab]'], ['Genetics[tiab]'], ['Oncology[tiab]']]],
+  ['the first page', 0, 0, [['bio.mol']]],
+  ['a later page with its exploration', 1, 0, [['bio.mol'], ['bio.gen']]],
+  ['a bored reader\'s later page', 1, 8, [['bio.mol'], ['bio.gen'], ['med.onco']]],
 ] as const) {
-  test(`${name} asks PubMed for each label in title and abstract, with a publication date bound`, async () => {
+  test(`${name} asks PubMed with the feed's PubMed query for each lane`, async () => {
     const queries: string[] = [];
     const { state, env, run } = feed({ fast: [], page });
     Object.assign(env, {
@@ -575,8 +575,11 @@ for (const [name, page, boredom, asked] of [
     env.boredomLevel.current = boredom;
     await run(page === 0);
     assert.equal(state.error, null);
-    assert.deepEqual(queries.map(searchedFields), asked, 'the chosen, nearby and random lanes, in that order');
-    for (const query of queries) assert.match(query, /\bAND \S+:\d{4}\/\d{2}\/\d{2}\[dp\]$/);
+    assert.deepEqual(
+      queries.map(withoutDay),
+      asked.map(categories => withoutDay(pubmedCategoryQuery(categories))),
+      'the chosen, nearby and random lanes, in that order',
+    );
   });
 }
 

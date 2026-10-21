@@ -38,19 +38,19 @@ test('arXiv keeps the preprint default the builder used to hand everyone', () =>
   assert.equal(paper.publicationType, 'preprint');
 });
 
-// The feed asked for `"Molecular Biology"` in every field, which also matches
-// the journal "Methods in Molecular Biology", and for any date, so the chapters
-// it lists for next year's volume came first in a recent-first lane.
-test('the feed query searches each label in title and abstract, up to today', (t) => {
+// On 2026-10-21 the labels searched in title and abstract (`[tiab]`) returned
+// mostly reviews and papers that only name the discipline, and page 0 fell
+// below main for molecular biology and neuroscience. In every field the labels
+// also match Methods in Molecular Biology, whose chapters arrive a volume at a
+// time and are dropped from the feed, so they would empty the lane; the query
+// leaves the series out by ISSN. Records dated after today stay out as well.
+test('the feed query searches each label in every field, without the protocol series, up to today', (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
-  const query = pubmedCategoryQuery(['bio.gen', 'bio.mol', 'med.psych']);
 
-  for (const label of ['Genetics', 'Molecular Biology', 'Psychiatry & Mental Health']) {
-    assert.ok(query.includes(`"${label}"[tiab]`), `${label} in title and abstract: ${query}`);
-  }
-  const fields = [...query.matchAll(/"[^"]*"(\[\w+\])?/g)].map(([, field]) => field);
-  assert.deepEqual([...new Set(fields)], ['[tiab]'], `no label is searched in every field: ${query}`);
-  assert.match(query, /\bAND \S+:2026\/10\/20\[dp\]$/);
+  assert.equal(
+    pubmedCategoryQuery(['bio.gen', 'bio.mol', 'med.psych']),
+    '("Genetics" OR "Molecular Biology" OR "Psychiatry & Mental Health") AND 1800/01/01:2026/10/20[dp] NOT ("1064-3745"[is] OR "1940-6029"[is])',
+  );
 });
 
 // Synthetic esummary records, with the field names NCBI returned on
