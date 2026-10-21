@@ -15,6 +15,11 @@ export interface PaperSources {
   // under the row's DOI (any record, when that DOI is arXiv's own) has said
   // the paper was reviewed on more than such a DOI.
   arxivDoiOnly?: true;
+  // Written and read only by `PaperBuilder.merge`: a published record the row
+  // is not, such as a working paper on the same eprint, said the paper was
+  // not reviewed. A `true` that rests on an arXiv DOI alone then reads
+  // unknown, whether it reached the row before that record or after it.
+  deniedElsewhere?: true;
 }
 
 export interface PaperSubjectReference {

@@ -1,11 +1,12 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
-import type { OpenAlexWork } from './adapters/openAlexTypes.ts';
+import type { OpenAlexLocation, OpenAlexWork } from './adapters/openAlexTypes.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { mapOpenAlexEnrichmentWork, slimWorksPage } from './openAlexService.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { searchPapersAcrossSources } from './paperSearchService.ts';
 import { SemanticScholarAdapter } from './adapters/SemanticScholarAdapter.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
@@ -970,6 +971,118 @@ test('a working paper joined on title alone keeps a DOI-only arXiv row out of "P
       assert.equal(rows.length, 1, where);
       assert.notEqual(rows[0].peerReviewed, true, where);
       assert.deepEqual(peerReviewedOnly(rows), [], where);
+    }
+  }
+});
+
+test('a working paper\'s `false` left off a row keeps a later DOI-only arXiv `true` from reading reviewed', async () => {
+  // Synthetic records through the real mappers. OpenAlex leaves a journal DOI
+  // without a source, or a series it does not list, unknown, and a working
+  // paper on the same eprint that the row is not leaves it so. Search lists
+  // OpenAlex's works before arXiv's records, and the followed feed can put an
+  // OpenAlex author's works, or a topic row that joined them, before a
+  // name-only author's arXiv record. That record's only claim is a DOI.
+  const title = 'Bank capital and the transmission of monetary policy';
+  const arxivId = '2601.00007';
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const arxivLocation = {
+    landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const work = (id: string, doi: string, type: string, source: OpenAlexLocation['source']): OpenAlexWork => {
+    const location = { landing_page_url: `https://doi.org/${doi}`, is_published: true, source };
+    return {
+      id: `https://openalex.org/${id}`,
+      doi: `https://doi.org/${doi}`,
+      title,
+      type,
+      authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+      publication_year: 2026,
+      primary_location: location,
+      locations: [location, arxivLocation],
+    };
+  };
+  const noSource = work('W507', journalDoi, 'article', null);
+  const ecb = work('W520', '10.2866/402116', 'article', {
+    id: 'https://openalex.org/S4210190871', display_name: 'ECB Working Paper Series', type: 'journal', host_organization_name: 'European Central Bank',
+  });
+  const feds = work('W500', '10.17016/FEDS.2026.007', 'article', {
+    id: 'https://openalex.org/S4210212089',
+    display_name: 'Finance and Economics Discussion Series',
+    type: 'journal',
+    host_organization_name: 'Board of Governors of the Federal Reserve System',
+  });
+  const nber = work('W508', '10.3386/w31999', 'report', {
+    id: 'https://openalex.org/S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository',
+  });
+  // As `arxivService` maps an entry with a DOI and no journal reference.
+  const arxivRecord = (doi: string) => PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    doi,
+    publicationType: 'article',
+    publicationStatus: 'published',
+  });
+  const search = (record: OpenAlexWork) => new OpenAlexAdapter().mapToStandard(record)!;
+  const explorer = (record: OpenAlexWork) => slimWorksPage({ results: [record] }).papers[0];
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
+
+  // The arXiv record's DOI is another version's or the row's own. Either way
+  // it says no more than the DOI, so the answer stays unknown in every order,
+  // as it already did with the arXiv record before the working paper.
+  for (const [label, unknown, workingPaper, doi] of [
+    ['journal DOI without a source, FEDS paper, FEDS revision', noSource, feds, '10.17016/FEDS.2026.007r1'],
+    ['journal DOI without a source, NBER paper, SSRN DOI', noSource, nber, '10.2139/ssrn.4400000'],
+    ['journal DOI without a source, FEDS paper, the same journal DOI', noSource, feds, journalDoi],
+    ['ECB series paper, NBER paper, SSRN DOI', ecb, nber, '10.2139/ssrn.4400000'],
+  ] as Array<[string, OpenAlexWork, OpenAlexWork, string]>) {
+    const arxiv = arxivRecord(doi);
+    const searched = await searchPapersAcrossSources(title, {
+      providers: {
+        searchOpenAlex: async () => ({ papers: [search(unknown), search(workingPaper)] }),
+        searchArxiv: async () => [arxiv],
+      },
+    });
+    for (const [flow, rows] of [
+      ['search', searched],
+      ['followed, an OpenAlex author before an arXiv author', PaperBuilder.deduplicate([explorer(unknown), explorer(workingPaper), arxiv])],
+      ['followed, a topic row before an arXiv author', PaperBuilder.deduplicate([
+        ...PaperBuilder.deduplicate([explorer(unknown), explorer(workingPaper)]), arxiv,
+      ])],
+      ['arXiv record before the working paper', PaperBuilder.deduplicate([search(unknown), arxiv, search(workingPaper)])],
+    ] as Array<[string, Paper[]]>) {
+      const where = `${label}, ${flow}`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, unknown.doi!.replace('https://doi.org/', ''), where);
+      assert.equal(rows[0].peerReviewed, undefined, where);
+      assert.equal(reviewTagForPaper(rows[0]), null, where);
+      assert.deepEqual(peerReviewedOnly(rows), [], where);
+    }
+  }
+
+  // A topic with an OpenAlex id lists only OpenAlex's works, so its row can
+  // join OpenAlex's journal article and the working paper, which both list
+  // the eprint. The followed feed then puts the arXiv record before that row,
+  // which keeps the arXiv record's DOI: the article confirms only its own.
+  const article = work('W502', journalDoi, 'article', {
+    id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal', host_organization_name: 'Elsevier',
+  });
+  for (const [doi, workingPaper, answer] of [
+    ['10.17016/FEDS.2026.007r1', feds, undefined],
+    ['10.2139/ssrn.4400000', nber, undefined],
+    [journalDoi, feds, true],
+  ] as Array<[string, OpenAlexWork, true | undefined]>) {
+    for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+      const where = `${doi}, followed, an arXiv author before a topic row (${mapper})`;
+      const rows = PaperBuilder.deduplicate([arxivRecord(doi), ...PaperBuilder.deduplicate([map(article), map(workingPaper)])]);
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, doi, where);
+      assert.equal(rows[0].peerReviewed, answer, where);
+      assert.equal(peerReviewedOnly(rows).length, answer ? 1 : 0, where);
     }
   }
 });

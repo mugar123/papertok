@@ -455,10 +455,16 @@ export class PaperBuilder {
     // title and first author, and that row reads published but keeps the
     // preprint's `false` and no tag. The DOI may be the journal version's, the
     // paper's own SSRN entry or the working paper's when OpenAlex lists none,
-    // so the answer is unknown rather than either record's.
-    const deniedElsewhere = enrichmentData.peerReviewed === false && !sameRecord
-      && (otherWorkingPaper || Boolean(shouldUpgradePublication));
-    if (deniedElsewhere && arxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
+    // so the answer is unknown rather than either record's. The `true` can
+    // also come later: search lists OpenAlex's works (a journal DOI without a
+    // source, which reads unknown, and the working paper) before arXiv's
+    // record, and the followed feed puts an arXiv record before a topic row
+    // that has already joined OpenAlex's journal article and the working
+    // paper. So `sources.deniedElsewhere` records that the row left off such
+    // a `false`, and the row takes it from a merged record that left one off.
+    const deniedElsewhere = (enrichmentData.peerReviewed === false && !sameRecord
+      && (otherWorkingPaper || Boolean(shouldUpgradePublication)))
+      || existingPaper.sources.deniedElsewhere === true || enrichmentData.sources?.deniedElsewhere === true;
     // The working-paper tag explains a `false`. It comes with the `false` of
     // the same record, and with one taken above from a row that rests on an
     // arXiv DOI as this one does, though that row may show the DOI of
@@ -482,8 +488,13 @@ export class PaperBuilder {
     // before the arXiv record.
     const stillArxivDoiOnly = (arxivDoiOnly && (enrichmentReview !== true || otherDoiTrue || bothRestOnArxivDoi))
       || (rereads && restsOnArxivDoi(enrichmentData));
+    // After this merge's own answer, which may be such a `true`.
+    if (deniedElsewhere && stillArxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
       merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
+    }
+    if (deniedElsewhere !== (merged.sources.deniedElsewhere === true)) {
+      merged.sources = { ...merged.sources, deniedElsewhere: deniedElsewhere || undefined };
     }
 
     // Open Access logic
