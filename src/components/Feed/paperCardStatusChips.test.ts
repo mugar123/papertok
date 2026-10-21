@@ -11,7 +11,7 @@ test('SOURCE: the topics, status and links live in About this paper, and the fie
   assert.doesNotMatch(jsx, /className="pc-filed"/, 'no status row on the card');
   assert.match(jsx, /\{ id: 'about', label: 'About this paper', hint: '[^']+', Icon: Info,/, 'the More menu opens it');
   const about = jsx.slice(jsx.indexOf('const aboutSections = ('));
-  assert.match(jsx, /panel=\{menuView === 'about' \? \{[\s\S]*?<div className="pc-about">\{aboutSections\}<\/div>/, 'the menu turns into it');
+  assert.match(jsx, /panel=\{menuView === 'about' \? \{[\s\S]*?content: aboutSections,\s*className: 'pc-about',/, 'the menu turns into it');
   assert.match(about, /<div className="pc-chips">[\s\S]*reviewTag[\s\S]*accessTag/, 'status chips in the panel');
   assert.match(about, /\{topicsList\}/, 'topics in the panel');
   assert.doesNotMatch(jsx, /pc-project-badge/, 'no funding badge on the card');
