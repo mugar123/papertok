@@ -232,9 +232,6 @@
   flex-shrink: 0;
 }
 
-/* Only a project splits the hero: its reading column on the left, and a sheet
-   of facts, actions and participants beside it. For every other entity the
-   two wrappers leave no box of their own. */
 .ehc-layout,
 .ehc-layout-main {
   display: contents;
@@ -294,7 +291,6 @@
   border-right: 0;
 }
 
-/* An odd last cell takes the whole row rather than leaving a hole beside it. */
 .ehc-project-sheet .ehc-stat-box:last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
@@ -329,15 +325,12 @@
   border-top: 0;
 }
 
-/* Clips the rows while the fold opens; the side room keeps their hover fill
-   from being cut. */
 .project-participants-more {
   margin: 0 -8px;
   padding: 0 8px;
   overflow: hidden;
 }
 
-/* The whole row lights up on hover, the way the cards it replaced did. */
 @media (hover: hover) and (pointer: fine) {
   .ehc-project-sheet .project-participant-card:hover {
     border-top-color: transparent;
@@ -360,7 +353,6 @@
   padding-bottom: 14px;
 }
 
-/* A phone's one row for the organizations, opening them in a drawer. */
 .project-participants-trigger {
   display: flex;
   align-items: center;
@@ -401,8 +393,6 @@
   white-space: normal;
 }
 
-/* The project's dates as a line: solid up to today, then the time left, or
-   dashed when no end date is published. */
 .ehc-timeline {
   padding: 16px 18px 14px;
   border: 1px solid var(--border-default);
@@ -537,10 +527,6 @@
   animation: authorContentFade 0.24s linear backwards;
 }
 
-/* An author's hero: who they are across the top; under it, how much they
-   have published year by year, and their totals in a box on the right, where
-   the other pages keep their facts sheet, the two the same height. The skeleton wears the same rules, so the
-   page does not jump when it lands. */
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -576,8 +562,6 @@
   text-box: trim-both cap alphabetic;
 }
 
-/* The totals in the same boxed grid as a project's or an institution's
-   facts sheet. */
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-stats-grid,
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-stats-grid:has(.ehc-stat-box--impact) {
   grid-column: 2;
@@ -664,7 +648,6 @@
   transition: background-color var(--transition-fast);
 }
 
-/* The year still under way, lighter: it is not finished. */
 .ehc-activity-bars span.is-running {
   background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 35%, transparent);
 }
@@ -1250,8 +1233,6 @@
   gap: var(--space-3);
 }
 
-/* The lists of the page as a segmented switch in the search row: Papers, and
-   Authors where the entity has them. */
 .ee-seg {
   position: relative;
   display: flex;
@@ -1285,9 +1266,6 @@
   font-weight: var(--fw-semibold);
 }
 
-/* The selected tab's surface, drawn once under both tabs so it can slide
-   between them. Moved by transform; its width changes only when the two
-   tabs differ, and nothing is laid out around it. */
 .ee-seg-pill {
   position: absolute;
   top: 3px;
