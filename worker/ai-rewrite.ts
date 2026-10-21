@@ -1119,7 +1119,7 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
 
   const account = await verifyFirebaseAccount(request, env);
   const uid = account.uid;
-  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; retryIncomplete?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
+  const payload = await readBoundedJson<{ level?: unknown; language?: unknown; retryIncomplete?: unknown; regenerate?: unknown; paper?: Parameters<typeof normalizePaperForExplanation>[0] }>(request, MAX_REQUEST_BYTES, {
     tooLarge: () => new AIExplanationError('AI_REQUEST_TOO_LARGE', 413),
     invalid: () => new AIExplanationError('AI_INVALID_REQUEST', 400),
   });
@@ -1137,7 +1137,10 @@ export async function handlePaperRewrite(request: Request, env: WorkerEnv, extra
     : cleanText(env.AI_REWRITE_MODEL || env.AI_MODEL || DEFAULT_REWRITE_MODEL, 100) || DEFAULT_REWRITE_MODEL;
   const cacheKey = await rewriteCacheKey(paper, level, language, model);
 
-  const cached = await readCachedRewrite(env, cacheKey);
+  // A reader who asks to regenerate has a copy of this rewrite saved already and
+  // wants a new one, so replaying the shared entry would hand back the same text.
+  const regenerate = payload.regenerate === true;
+  const cached = regenerate ? null : await readCachedRewrite(env, cacheKey);
   if (cached && !(cached.truncated === true && payload.retryIncomplete === true)) {
     return replayCachedRewrite(cached, level, language, extraHeaders);
   }

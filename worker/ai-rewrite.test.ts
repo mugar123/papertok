@@ -1075,6 +1075,56 @@ test('a failed explicit retry preserves the old partial result for a normal reop
   assert.equal(state.reserve, 2);
 });
 
+test('regenerate writes a complete cached rewrite again and replaces it for later opens', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'First version.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+
+  const { events } = await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Second version.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env, { regenerate: true });
+  assert.equal(events[0].cached, false);
+  assert.equal(events.find(event => event.type === 'section')!.paragraphs![0], 'Second version.');
+  assert.equal(state.reserve, 2);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[1].paragraphs![0], 'Second version.');
+  assert.equal(state.reserve, 2);
+});
+
+test('only a boolean true regenerate bypasses a complete cached rewrite', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = { ...REWRITE_ENV, AI_REWRITE_STORE: store, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Kept.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+  for (const regenerate of [undefined, false, 'true', 1]) {
+    const { events: replay } = await runRewrite({
+      pdf: async () => { throw new Error('Only boolean true requests regeneration'); },
+    }, env, { regenerate });
+    assert.equal(replay[0].cached, true);
+    assert.equal(replay[1].paragraphs![0], 'Kept.');
+  }
+  assert.equal(state.reserve, 1);
+});
+
 test('a rewrite that finished is not replayed as truncated', async () => {
   const store = fakeRewriteStore();
   const env = {
