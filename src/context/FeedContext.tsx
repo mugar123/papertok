@@ -80,6 +80,7 @@ import {
   saveProfileDriftCheckedAt,
   saveSeenPaperIds,
 } from '../utils/userScopedStorage.ts';
+import { readStoredClassification } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.ts';
@@ -589,13 +590,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
        */
       const papers: Record<string, Partial<Paper>> = {};
       records.forEach(({ id, data }) => {
-        const paper = data.paper || serializeLibraryPaper({
-          id,
-          title: data.paperTitle || '',
-          authors: data.paperAuthors || [],
-          primaryCategory: data.paperCategory || '',
-          published: (data.timestamp || '') as string,
-        });
+        // A copy's field is decided here, on the document as it was stored,
+        // because every screen below reads these copies as they are. A record
+        // without a copy kept only the category its card showed, which was
+        // often the one the feed asked for, so it has no field (PAP-60).
+        const paper = data.paper
+          ? { ...data.paper, ...readStoredClassification({ ...data.paper, id }) }
+          : serializeLibraryPaper({
+            id,
+            title: data.paperTitle || '',
+            authors: data.paperAuthors || [],
+            published: (data.timestamp || '') as string,
+          });
         // Only a real title: standing the id in for one used to paint
         // `openalex:W…` on Liked. An empty title stays empty so a later
         // fetch can fill it.
@@ -2460,6 +2466,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (paper?.authors?.length) interactionData.paperAuthors = paper.authors.slice(0, 3);
         if (paper?.primaryCategory) interactionData.paperCategory = paper.primaryCategory;
         if (paper?.summary) interactionData.paperAbstract = paper.summary.substring(0, 500);
+        // The same copy a like keeps. The library reads this record before any
+        // savedPapers document, and without a copy a saved paper had no field
+        // to show (PAP-60).
+        if (paper) interactionData.paper = serializeLibraryPaper(paper);
 
         await setDoc(ref, interactionData, { merge: true });
       } catch (err) {

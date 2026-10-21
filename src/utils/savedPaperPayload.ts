@@ -1,4 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
+import { storedClassification } from '../models/Paper.ts';
 
 /**
  * The document written to `users/{uid}/savedPapers/{paperId}`.
@@ -60,8 +61,14 @@ export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefin
     : [];
   if (authors.length > 0) payload.authors = authors;
 
-  const primaryCategory = text(paper?.primaryCategory, 300);
+  // The same classification an interaction's copy keeps, so a saved paper
+  // reads as the field its card showed (PAP-60).
+  const classification = storedClassification(paper || {});
+  const primaryCategory = text(classification.primaryCategory, 300);
   if (primaryCategory) payload.primaryCategory = primaryCategory;
+  if (classification.categories.length > 0) payload.categories = classification.categories;
+  if (classification.primaryTopic) payload.primaryTopic = classification.primaryTopic;
+  payload.classificationVersion = classification.classificationVersion;
 
   const published = text(paper?.published, 300);
   if (published) payload.published = published;

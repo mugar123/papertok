@@ -81,6 +81,8 @@ export interface InteractionDocument { id: string; data: InteractionDocumentData
  * moved, decayed by the same 30-day exponential with no floor: a narrow
  * interest that is never touched again fades out instead of lasting forever.
  */
+import { readStoredClassification } from '../models/Paper.ts';
+import { areaKeyForCategory } from './areaAccent.ts';
 import {
   addSeenPaper,
   createSeenFilter,
@@ -405,6 +407,11 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   if (!profile) return signals;
 
   profile.categories.forEach((_bucket, category) => {
+    // A key that names no field is a concept name an OpenAlex card carried
+    // where its category belongs (PAP-60). Concepts are learned by their
+    // OpenAlex ids in `concepts`; as a category it would only boost cards
+    // listing the same name.
+    if (!areaKeyForCategory(category)) return;
     signals.categoryAffinities[category] = clamp(categoryAffinityAt(profile, category, now), AFFINITY_MIN, AFFINITY_MAX);
   });
   profile.concepts.forEach((entry, key) => {
@@ -676,6 +683,17 @@ function documentCategoryImpact(data: InteractionDocumentData, viewImpact: numbe
 }
 
 /**
+ * The category an interaction document counts under. Beside the flag it kept
+ * the category the card showed, which was often the one the feed had asked
+ * for; a document that also kept the paper's copy says which value can be
+ * trusted (`readStoredClassification`), so the copy decides (PAP-60).
+ */
+function documentCategory(id: string, data: InteractionDocumentData) {
+  if (data.paper && typeof data.paper === 'object') return readStoredClassification({ ...data.paper, id }).primaryCategory;
+  return typeof data.paperCategory === 'string' ? data.paperCategory : '';
+}
+
+/**
  * Rebuilds a profile from raw interaction documents. Used by the one-off client
  * fallback and by the offline backfill script, and it is the reference the unit
  * tests compare the incremental path against.
@@ -700,7 +718,7 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     if (data.notInterested) addCurated(profile, 'notInterested', id);
     if (data.readLater) addCurated(profile, 'readLater', id);
 
-    const category = typeof data.paperCategory === 'string' ? data.paperCategory : '';
+    const category = documentCategory(id, data);
     const seconds = Number(data.viewTime);
     let strongRead = false;
     if (Number.isFinite(seconds) && seconds > 0) {
@@ -719,7 +737,7 @@ export function buildProfileFromInteractionDocuments(documents: Array<{ id: stri
     if (typeof id !== 'string' || !id || !data) return;
     profile.sourceDocCount += 1;
 
-    const category = typeof data.paperCategory === 'string' ? data.paperCategory : '';
+    const category = documentCategory(id, data);
     if (!category) return;
 
     // Mirror the full scan: a category seen at all exists, even at zero.

@@ -1081,11 +1081,8 @@ function mapOpenAlexPaper(work: DigestOpenAlexWork, follow: Follow | null) {
     citationCount: work?.cited_by_count,
     openAccess: work?.open_access?.is_oa,
     landingPageUrl: work?.best_oa_location?.landing_page_url || work?.primary_location?.landing_page_url,
-    // The card's own resolution: the field, then what the topic is called.
-    area: areaKeyForPaper({
-      primaryTopic: work?.primary_topic,
-      categories: [work?.primary_topic?.display_name].filter(Boolean) as string[],
-    }),
+    // The card's own resolution: the subfield or field OpenAlex filed it under.
+    area: areaKeyForPaper({ primaryTopic: work?.primary_topic }),
     abstract: usableOpenAlexAbstract(work),
     _followedEntityMatches: follow ? [follow] : [],
   });

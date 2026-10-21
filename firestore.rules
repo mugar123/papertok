@@ -19,6 +19,26 @@ service cloud.firestore {
       return value is string && value.size() > 0 && value.size() <= maximum;
     }
 
+    // OpenAlex's primary topic as a stored copy keeps it (`storedClassification`
+    // in src/models/Paper.ts): the topic, its subfield, field and domain, each
+    // by id and name, and nothing else.
+    function storedSubjectReference(value) {
+      return value is map
+        && value.keys().hasOnly(['id', 'display_name'])
+        && validNonEmptyString(value.id, 300)
+        && validNonEmptyString(value.display_name, 300);
+    }
+
+    function storedPrimaryTopic(value) {
+      return value is map
+        && value.keys().hasOnly(['id', 'display_name', 'subfield', 'field', 'domain'])
+        && validNonEmptyString(value.id, 300)
+        && (!('display_name' in value) || validNonEmptyString(value.display_name, 300))
+        && (!('subfield' in value) || storedSubjectReference(value.subfield))
+        && (!('field' in value) || storedSubjectReference(value.field))
+        && (!('domain' in value) || storedSubjectReference(value.domain));
+    }
+
     // ---------------------------------------------------------------------
     // Public lists (F11). Server-written, and that is the whole design.
     //
@@ -337,12 +357,21 @@ service cloud.firestore {
         allow read, delete: if ownsUserTree(userId);
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
-            'title', 'authors', 'primaryCategory', 'published', 'arxivId',
+            'title', 'authors', 'primaryCategory', 'categories', 'primaryTopic',
+            'classificationVersion', 'published', 'arxivId',
             'summary', 'doi', 'landingPageUrl', 'savedAt'
           ])
           && validString(request.resource.data.title, 1000)
           && (!('authors' in request.resource.data)
             || request.resource.data.authors is list && request.resource.data.authors.size() <= 20)
+          // The classification the saved card showed (PAP-60).
+          && (!('categories' in request.resource.data)
+            || request.resource.data.categories is list && request.resource.data.categories.size() <= 20)
+          && (!('primaryTopic' in request.resource.data)
+            || storedPrimaryTopic(request.resource.data.primaryTopic))
+          && (!('classificationVersion' in request.resource.data)
+            || request.resource.data.classificationVersion is int
+              && request.resource.data.classificationVersion > 0)
           && (!('summary' in request.resource.data)
             || validString(request.resource.data.summary, 1000))
           && (!('doi' in request.resource.data)

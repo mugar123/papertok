@@ -52,3 +52,26 @@ test('SOURCE: a like stores the serialized paper beside the flag, the way a save
   assert.match(like, /liked: !isCurrentlyLiked,[\s\S]*?paper: isCurrentlyLiked \? undefined : serializeLibraryPaper\(paper\),/,
     'the like write carries the paper; an unlike only flips the flag');
 });
+
+/**
+ * PAP-60. The library reads a saved paper's interaction record before any
+ * savedPapers document, and a save left that record with the flag, a title
+ * and a category: the Saved list read its field from the category alone,
+ * which for an OpenAlex card was a concept name.
+ */
+test('SOURCE: a save stores the serialized paper beside the flag, the way a like does', async () => {
+  const code = stripComments(await read('./FeedContext.tsx'));
+  const start = code.indexOf('const markSaved = useCallback(');
+  const save = code.slice(start, code.indexOf('const unmarkSaved = useCallback(', start));
+  assert.ok(save.length > 0, 'expected to have found markSaved');
+  assert.match(save, /if \(paper\) interactionData\.paper = serializeLibraryPaper\(paper\);/);
+});
+
+test("SOURCE: the library decides a copy's field on the stored document, and a record without one has none", async () => {
+  const code = stripComments(await read('./FeedContext.tsx'));
+  const start = code.indexOf('const ensurePersonalLibrary = useCallback(');
+  const load = code.slice(start, code.indexOf('setPersonalLibrary(', start));
+  assert.ok(load.length > 0, 'expected to have found ensurePersonalLibrary');
+  assert.match(load, /\{ \.\.\.data\.paper, \.\.\.readStoredClassification\(\{ \.\.\.data\.paper, id \}\) \}/);
+  assert.doesNotMatch(load, /data\.paperCategory/, 'the category beside the flag is not a field the copy can show');
+});

@@ -21,7 +21,7 @@ import type { Paper } from '../models/Paper.ts';
  */
 // The taxonomy, not `categories.ts`: the Worker imports this file to ink the
 // email digest, and `categories.ts` attaches the React icons.
-import { CATEGORIES, getArxivArchiveArea, getAreaKeyFromTopicName } from '../data/categoryTaxonomy.ts';
+import { CATEGORIES, getArxivArchiveArea } from '../data/categoryTaxonomy.ts';
 
 const FALLBACK = 'var(--gradient-brand)';
 
@@ -153,25 +153,15 @@ export function areaKeyForPaper(paper: Partial<Paper> | null | undefined) {
 
   // Then the OpenAlex subfield or field. A paper from the works endpoint has
   // no arXiv category at all, and this is the only thing it says about its
-  // branch.
-  const fieldKey = areaKeyForOpenAlexTopic(paper?.primaryTopic);
-  if (fieldKey) return fieldKey;
-
-  /* Last, the topic's own name. A paper can arrive with neither an arXiv
-     category nor a field, `categories[0]` being a display name like
-     "Wastewater Treatment and Reuse" (the removed Research page's papers all
-     did). Without this every such paper resolved to nothing, which is how they
-     all came to wear the same accent and the same watermark. */
-  for (const candidate of candidates) {
-    const key = getAreaKeyFromTopicName(candidate);
-    if (key) return key as keyof typeof CATEGORIES;
-  }
-  return null;
+  // branch. Nothing after it: the concept and topic names a paper also
+  // carries were once read for keywords, and "Somatic cell nuclear transfer"
+  // made a Genetics paper Physics (PAP-60).
+  return areaKeyForOpenAlexTopic(paper?.primaryTopic);
 }
 
 /**
  * The area a paper belongs to: its arXiv category if it has one, otherwise the
- * branch OpenAlex filed it under, otherwise what its topic is called.
+ * branch OpenAlex filed it under.
  */
 export function areaForPaper(paper: Partial<Paper> | null | undefined) {
   return CATEGORIES[areaKeyForPaper(paper) as keyof typeof CATEGORIES] || null;
@@ -190,8 +180,9 @@ export function areaAccentForPaper(paper: Partial<Paper> | null | undefined) {
  * Imaginary" where the feed said "Physics". Resolving the label through the
  * same chain as the ink means the word and the colour can never disagree.
  *
- * Falls back to OpenAlex's own field name — "Computer Science" — for a branch
- * this app has no area of its own for, and to null when there is nothing to say.
+ * Falls back to OpenAlex's own field name — "Chemistry", "Social Sciences" —
+ * for a field this app has no area of its own for, which then has no field's
+ * ink either, and to null when there is nothing to say.
  */
 export function areaLabelForPaper(paper: Partial<Paper> | null | undefined) {
   const area = areaForPaper(paper);
