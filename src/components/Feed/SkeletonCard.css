@@ -135,7 +135,6 @@
     margin-bottom: var(--space-3);
   }
 
-  /* Three lines of the 20.8px title on its 24px line. */
   .sk-title .sk-block {
     height: 18px;
   }
