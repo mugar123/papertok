@@ -100,6 +100,15 @@
   transition-duration: calc(var(--drawer-swipe-strength, 1) * 360ms);
 }
 
+/* A drawer opened from inside another stacks on it, without a second
+   backdrop, and the one underneath steps back: narrower and lifted, so its
+   top edge stays in sight as the sheet to return to. It rides its own
+   arrival timing back and forth. */
+.ui-drawer-popup[data-side='bottom'][data-nested-drawer-open] {
+  transform: translateY(calc(var(--drawer-swipe-movement-y) - 12px)) scale(0.94);
+  transform-origin: 50% 0;
+}
+
 /* Side drawers: the bleed moves to the outer edge and the swipe to the x axis. */
 .ui-drawer-popup[data-side='right'],
 .ui-drawer-popup[data-side='left'] {
