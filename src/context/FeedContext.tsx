@@ -26,7 +26,8 @@ export interface FeedContextValue {
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
   feedMode: string; setFeedMode: (mode: string) => void;
-  loadPapers: (reset?: boolean, mode?: string | null, randomizeStart?: boolean, pageOverride?: number, options?: { keepThroughVisible?: boolean }) => Promise<void>;
+  /** `seenFallback`: papers shown before, kept by a load that skipped their page. */
+  loadPapers: (reset?: boolean, mode?: string | null, randomizeStart?: boolean, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: Paper[] }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -133,6 +134,8 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 const loadTopicRetrieval = () => import('../services/topicRetrievalService.ts');
 
 const PAGE_SIZE = 15;
+// A reload starts on a random one of the first pages, for variety.
+const RESET_START_PAGES = 5;
 // Per-source cap on the first-render fetch. The slowest healthy source
 // measured 2.4 s in production (OpenAlex, cold edge; PubMed's serial chain
 // 2.05 s); the only upstream ever seen above 4 s is OpenReview's cold 5.2 s,
@@ -1203,7 +1206,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number, { keepThroughVisible = false } = {}) => {
+  const loadPapers = useCallback<FeedContextValue['loadPapers']>(async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number, { keepThroughVisible = false, seenFallback } = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1217,7 +1220,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // that page.
     if (!reset && loading) {
       loadAfterCommit.current = {
-        args: [reset, mode, randomizeStart, pageOverride, { keepThroughVisible }],
+        args: [reset, mode, randomizeStart, pageOverride, { keepThroughVisible, seenFallback }],
         requestId: feedRequestId.current,
         sessionId: feedSessionId.current,
       };
@@ -1240,9 +1243,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setLoading(true);
     setError(null);
     
-    let currentPage = reset ? 0 : (pageOverride !== undefined ? pageOverride : page);
+    let currentPage = pageOverride ?? (reset ? 0 : page);
     if (randomizeStart) {
-      currentPage = Math.floor(Math.random() * 5);
+      currentPage = Math.floor(Math.random() * RESET_START_PAGES);
     }
 
     const isAvailablePaper = (paper: Paper) => (
@@ -1636,10 +1639,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
 
-      // If everything was filtered out but we actually fetched papers, it means the user has seen them all.
-      // We must fetch the NEXT page automatically.
-      if (filtered.length === 0 && newPapers.length > 0) {
-        // First try bypassing sessionSeenPapers to avoid empty feed
+      // No paper on this page can be shown: try a later page before showing
+      // seen papers again.
+      if (filtered.length === 0) {
+        // Shown before, but never liked, saved, read or dismissed.
         const bypassSeen = newPapers.filter((p) => 
           isFeedPublication(p) &&
           !notInterestedIdsRef.current.has(p.id) && 
@@ -1648,23 +1651,38 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !savedPaperIdsRef.current.has(p.id) &&
           !isKnownPaper(p.id)
         );
-        if (bypassSeen.length > 0) {
-          console.log("Bypassing sessionSeenPapers filter to prevent rate limit cascade.");
-          filtered = bypassSeen;
-        } else if (currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
-          console.log(`All fetched papers were seen and interacted, fetching page ${currentPage + 1} automatically...`);
-          const nextPageToFetch = currentPage + 1;
+        // The first such page this load reached is shown again when no later
+        // page has an unseen paper: the feed is never empty because
+        // everything was seen.
+        const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? bypassSeen : undefined);
+        if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
+          // A reload starts on one of the first RESET_START_PAGES pages and
+          // the reader scrolls on from there, so after a few reloads all of
+          // them have been shown (browser check 2026-10-21). A seen page
+          // moves the next try RESET_START_PAGES pages on, past every reload
+          // start; the ceiling above allows two such moves. A page of papers
+          // the reader acted on moves one page.
+          const nextPageToFetch = currentPage + (bypassSeen.length > 0 ? RESET_START_PAGES : 1);
+          console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
+          const loadNextPage = () => {
+            if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
+              return loadPapersRef.current?.(reset, activeMode, false, nextPageToFetch, { keepThroughVisible, seenFallback: shownBefore });
+            }
+          };
+          // A reset goes on as this same load: the first screen keeps waiting
+          // instead of showing an empty feed for a moment, and a refresh still
+          // replaces the list rather than extending the old one.
+          if (reset) return loadNextPage();
           // This load ends here, so the next page's load is not refused as a second one.
           feedLoadInFlight.current = false;
           setLoading(false);
           setPage(nextPageToFetch);
-          
-          setTimeout(() => {
-            if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId && loadPapersRef.current) {
-              loadPapersRef.current(false, activeMode, false, nextPageToFetch);
-            }
-          }, 0);
+          setTimeout(loadNextPage, 0);
           return;
+        }
+        if (shownBefore) {
+          console.log('No later page has a paper the reader has not seen; showing seen papers again.');
+          filtered = shownBefore;
         }
       }
 

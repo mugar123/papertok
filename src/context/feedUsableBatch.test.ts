@@ -66,7 +66,7 @@ function deferred() {
 function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
-    userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
+    userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15, RESET_START_PAGES: 5,
     feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<object | null>(null),
     openAlexEnrichmentAttempts: ref(new Set()), openAlexEnrichmentRequests: ref(new Map()),
     lateSourceCandidatesRef: ref([]), latePoolGenerationRef: ref(0),
@@ -318,8 +318,83 @@ test('an entirely known page advances instead of declaring provider exhaustion',
   await tick();
   assert.equal(state.error, null);
   assert.equal(state.hasMore, true);
-  assert.equal(state.page, 1);
-  assert.deepEqual(state.continuations, [[false, 'top', false, 1]]);
+  // A reset goes on as the same load, still a reset, on the next page.
+  assert.deepEqual(state.continuations, [[true, 'top', false, 1, { keepThroughVisible: false, seenFallback: undefined }]]);
+});
+
+// A reload starts on a random one of the first pages; Math.random() at 0.2
+// makes it page 1 (arXiv start 15). Each page holds papers of its own.
+function reloadOnPageOne(t: import('node:test').TestContext, { seen = [] as string[], papers = [] as FeedRecord[], page = (start: number) => records(`page-${start / 15}`) } = {}) {
+  t.mock.method(Math, 'random', () => 0.2);
+  t.mock.method(console, 'log', () => {});
+  const loaded = feed({ seen, papers });
+  const starts: number[] = [];
+  loaded.env.fetchPapers = (_categories: string[], start = 0) => {
+    starts.push(start);
+    return Promise.resolve(page(start));
+  };
+  return { ...loaded, starts };
+}
+const pageIds = (...pages: number[]) => pages.flatMap(index => records(`page-${index}`)).map(paper => paper.id);
+
+// The browser check of 2026-10-21: after five reloads every page a reload
+// starts on (0 to 4) had been shown, and the sixth showed page 1 again.
+test('a reload after every start page was shown shows unseen papers from a later page', async t => {
+  const { state, env, run, starts } = reloadOnPageOne(t, { seen: pageIds(0, 1, 2, 3, 4) });
+  env.loadPapersRef.current = run;
+  const steps: string[] = [];
+  const { setLoading, setPapers } = env;
+  env.setLoading = value => { steps.push(`loading ${value}`); setLoading(value); };
+  env.setPapers = value => { setPapers(value); steps.push(`${state.papers.length} papers`); };
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(starts[0], 15, 'the reload started on page 1');
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(0, 1, 2, 3, 4).includes(id)), [],
+    'no paper shown before is shown again');
+  assert.equal(starts.length, 2, 'one more page was asked for');
+  assert.ok(steps.indexOf('15 papers') < steps.indexOf('loading false'),
+    `the first screen stays loading until the later page is shown: ${steps.join(', ')}`);
+});
+
+test('a refresh whose start page was all shown before replaces the cards on screen with unseen ones', async t => {
+  const onScreen = records('page-1');
+  const { state, env, run } = reloadOnPageOne(t, { seen: pageIds(1), papers: onScreen });
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => id.startsWith('page-1-')), [],
+    'the list is replaced, neither shown again nor extended');
+});
+
+for (const [name, page] of [
+  ['every later page was shown before too', (start: number) => records(`page-${start / 15}`)],
+  ['no later page has papers', (start: number) => start === 15 ? records('page-1') : []],
+] as const) {
+  test(`a reload whose start page was all shown before still gets a feed when ${name}`, async t => {
+    const everyPage = Array.from({ length: 30 }, (_, index) => records(`page-${index}`)).flat().map(paper => paper.id);
+    const { state, env, run, starts } = reloadOnPageOne(t, { seen: everyPage, page });
+    env.loadPapersRef.current = run;
+    await run(true, null, true);
+    assert.equal(state.error, null);
+    assert.equal(state.papers.length, 15, 'the feed is not empty');
+    assert.ok(starts.length <= 3, `at most two more pages are asked for: ${JSON.stringify(starts)}`);
+  });
+}
+
+test('a reload whose start page has unseen papers asks for no other page', async t => {
+  // A source returns a wider pool than a page: 20 papers, 5 shown before.
+  const { state, run, starts } = reloadOnPageOne(t, {
+    seen: records('page-1', 5).map(paper => paper.id),
+    page: start => records(`page-${start / 15}`, 20),
+  });
+  await run(true, null, true);
+  await tick();
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(starts, [15]);
+  assert.deepEqual(state.continuations, []);
 });
 
 test('a short screen schedules its next page and preserves papers when it fills', async () => {
@@ -351,7 +426,8 @@ for (const knownCount of [0, 2]) {
   for (const guard of ['feedRequestId', 'feedSessionId'] as const) {
     test(`changing ${guard} cancels a scheduled continuation with ${knownCount} excluded papers`, async () => {
       const { state, env, run } = feed({ fast: records('fast', 2), known: records('fast', knownCount).map(paper => paper.id) });
-      await run(true);
+      // A later page: a reset load whose page is all excluded goes on at once.
+      await run(false);
       env[guard].current += 1;
       await tick();
       assert.equal(state.error, null);
@@ -651,7 +727,8 @@ for (const [name, args] of [
 test('a card already shown with no abstract keeps it when a later page offers it again through the seen bypass', async t => {
   const existing = records('already-visible', 3).map(paper => ({ ...paper, sources: { primary: 'arxiv', enrichedBy: [] } }));
   const shown = [...existing, electron];
-  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: shown, seen: shown.map(paper => paper.id) });
+  // From page 10 no later page is tried, so the seen card is offered again.
+  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: shown, seen: shown.map(paper => paper.id), page: 10 });
   t.mock.method(console, 'log', () => {});
   const recovery = pendingRecords();
   env.recoverFeedAbstracts = () => recovery.promise;
