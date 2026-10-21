@@ -51,6 +51,7 @@ export default function SummaryHistory({ uid }: { uid: string }) {
   const focusRowRef = useRef<number | null>(null);
   const moreRef = useRef<AbortController | null>(null);
   const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const retryRef = useRef<HTMLButtonElement | null>(null);
 
   // A first page that outlasts its read budget says so and keeps trying; the
   // answer still fills the list when it arrives (as on the Lists page).
@@ -58,6 +59,9 @@ export default function SummaryHistory({ uid }: { uid: string }) {
     const controller = new AbortController();
     const show = (page: SummaryHistoryPage) => {
       if (controller.signal.aborted) return;
+      // A late page takes the stalled note's Try again away; focus on it stays
+      // in the section, on the heading.
+      if (retryRef.current && document.activeElement === retryRef.current) headingRef.current?.focus();
       setRows(page.rows);
       setCursor(page.cursor);
       setHasMore(page.hasMore);
@@ -163,7 +167,7 @@ export default function SummaryHistory({ uid }: { uid: string }) {
             ? <p key="failed" role="alert">{COPY.failed}</p>
             : <p key="status" role="status">{status === 'stalled' ? COPY.stalled : COPY.loading}</p>}
           {status !== 'loading' && (
-            <Button variant="outline" size="sm" onClick={retryFirstPage}>
+            <Button ref={retryRef} variant="outline" size="sm" onClick={retryFirstPage}>
               <ArrowClockwise size={15} aria-hidden="true" />
               {COPY.retry}
             </Button>
