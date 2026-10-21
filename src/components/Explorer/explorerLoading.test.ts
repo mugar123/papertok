@@ -95,7 +95,9 @@ test('the ORCID card lands at the page\'s tempo, not over four seconds from noth
   assert.doesNotMatch(css, /orcidPremiumReveal/);
   assert.doesNotMatch(css, /@keyframes orcidReveal/);
   assert.match(css, /\.orcid-career-section--animate > \* \{\s*animation:\s*authorContentFade 0\.36s linear backwards,\s*authorContentTravel 0\.42s var\(--ease-out-quad\) backwards;\s*\}/);
+  assert.match(css, /\.orcid-career-section--animate > \.orcid-career-header \{\s*animation: authorContentFade 0\.36s linear backwards;\s*\}/, 'the badge resolves in place');
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  assert.match(reduced, /\.orcid-career-section--animate > \.orcid-career-header,/);
   assert.match(reduced, /\.ehc-experience-panel \.orcid-timeline-item,/);
   assert.match(css, /\.orcid-career-section--animate > \*:nth-child\(7\) \{ animation-delay: 0\.24s; \}/);
 });

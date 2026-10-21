@@ -78,7 +78,6 @@ import { areaAccentForCategory as getAreaGradient } from '../../utils/areaAccent
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.ts';
 import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorerHandover.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
-import OrcidStamp from './OrcidStamp.tsx';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
@@ -145,6 +144,30 @@ const EXPERIENCE_FOLD_OUT: Transition = {
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
 };
 
+
+/**
+ * The ORCID card before it has a name in it.
+ *
+ * Written once and used twice — by the page's own skeleton while the entity is
+ * resolving, and by the ORCID fetch that follows it — because the two run back
+ * to back on an author page and any difference between them is a step the
+ * reader watches happen. It reserves the card's header and nothing else: that
+ * is the part every verified profile has, and the three body lines this used
+ * to show were promising a biography most authors do not have, reserving 148px
+ * against the 96px that arrives.
+ */
+const OrcidCardSkeleton = () => (
+  <div className="orcid-skeleton" aria-hidden="true">
+    <div className="orcid-skeleton-header">
+      <div className="ex-skel ex-skel-avatar" />
+      <div className="ex-skel-stack">
+        <div className="ex-skel ex-skel-sub ex-skel-sub--short" />
+        <div className="ex-skel ex-skel-sub ex-skel-orcid-id" />
+      </div>
+      <div className="ex-skel ex-skel-orcid-action" />
+    </div>
+  </div>
+);
 
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
@@ -1682,7 +1705,7 @@ export default function EntityExplorer({
        all reserved between the stats and the tab strip. On an author that was
        a second tab the page would never render and a 177px drop when the real
        header arrived; on an institution, 242px. */
-    const shape = explorerSkeletonShape(type);
+    const shape = explorerSkeletonShape(type, { hasOrcid: Boolean(extractOrcid(id)) });
     return (
       <div
         className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}${appChromeClass}`}
@@ -1780,6 +1803,7 @@ export default function EntityExplorer({
                 the live ones are: hung off `.explorer-hero` instead it missed
                 the container's 16px gap and measured against the wrong
                 parent. */}
+            {shape.aside === 'orcid' && <OrcidCardSkeleton />}
             {shape.aside === 'summary' && <ProjectSummarySkeleton />}
           </div>
 
@@ -2315,10 +2339,7 @@ export default function EntityExplorer({
                     `?name=`. It stands in HERE, not in `entity.display_name`,
                     which is the follow identity; and being read on every
                     render it follows a language toggle without a remount. */}
-                <div className="ehc-name-line">
-                  <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
-                  {type === 'author' && orcidInfo && !isLoadingOrcid && <OrcidStamp orcid={orcidInfo.orcid} />}
-                </div>
+                <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
                 {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
                   <button
                     type="button"
@@ -2528,8 +2549,26 @@ export default function EntityExplorer({
           
 
           {/* ORCID Career Section */}
-          {orcidInfo && !isLoadingOrcid && (orcidInfo.biography || orcidInfo.researcherUrls?.length > 0 || orcidInfo.educations?.length > 0) && (
+          {isLoadingOrcid && <OrcidCardSkeleton />}
+          {orcidInfo && !isLoadingOrcid && (
             <div className="orcid-career-section orcid-career-section--animate">
+
+              {/* Header: Badge + link */}
+              <div className="orcid-career-header">
+                <div className="orcid-badge">
+                  <div className="orcid-badge-icon">
+                    <img src="https://info.orcid.org/wp-content/uploads/2019/11/orcid_16x16.png" alt="ORCID" />
+                  </div>
+                  <div className="orcid-badge-text">
+                    <span className="orcid-badge-label">{'Verified ORCID profile'}</span>
+                    <span className="orcid-badge-id">{orcidInfo.orcid}</span>
+                  </div>
+                </div>
+                <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="orcid-profile-link">
+                  {'View profile'} <ArrowSquareOut size={12} />
+                </a>
+              </div>
+
               {/* Biography */}
               {orcidInfo.biography && (
                 <div className="orcid-biography">
