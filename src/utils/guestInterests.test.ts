@@ -173,12 +173,13 @@ test('the email digest travels only as an explicit yes', () => {
   assert.equal(readGuestInterests(storage), null);
 });
 
-test('a university address is neither stored nor read back: the account onboarding asks for it', () => {
+test('a university address travels with the answer only when it has a domain', () => {
   const storage = fakeStorage();
-  saveGuestInterests({ areas: ['cs'], institutionEmail: 'alice@usal.es' } as NonNullable<Parameters<typeof saveGuestInterests>[0]> & Record<string, unknown>, storage);
-  assert.equal('institutionEmail' in JSON.parse(storage.getItem('papertok_guestInterests')!), false);
-  // An answer stored before the welcome stopped asking still reads.
-  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], institutionEmail: 'alice@usal.es' }));
+  saveGuestInterests({ areas: ['cs'], institutionEmail: ' Alice@USAL.es ' }, storage);
+  assert.equal(readGuestInterests(storage)?.institutionEmail, 'alice@usal.es');
+  saveGuestInterests({ areas: ['cs'], institutionEmail: 'alice@localhost' }, storage);
+  assert.equal('institutionEmail' in readGuestInterests(storage)!, false);
+  storage.setItem('papertok_guestInterests', JSON.stringify({ areas: ['cs'], institutionEmail: 'not an address' }));
   assert.deepEqual(readGuestInterests(storage), { areas: ['cs'], topics: [], dismissed: false });
 });
 
