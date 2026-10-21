@@ -838,9 +838,9 @@ const OPENALEX_TOPIC_PAGE_SIZE = 25;
  * the leaf's field against 65 % without it. No language filter: OpenAlex
  * leaves `language` empty on 14-74 % of these works, mostly English ones.
  *
- * The cards keep OpenAlex's own topic, not the leaf that asked. A failure
- * rejects, with no retry and no wider second request, so each feed counts a
- * source that did not answer and fills the page from the others.
+ * The cards keep OpenAlex's own topic, not the leaf that asked. A failure with
+ * no cached copy rejects, with no retry and no wider second request, so the
+ * feed counts a source that did not answer and fills the page from the others.
  */
 export async function fetchOpenAlexTopicPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
   const topicFilter = openAlexTopicFilterForLeaves(categories);
