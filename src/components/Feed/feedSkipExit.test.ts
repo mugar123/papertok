@@ -58,6 +58,24 @@ test('SOURCE: the skip runs the card out before removing it', async () => {
 });
 
 /**
+ * "Not interested" says so in a toast with an Undo. Undo during the exit
+ * drops the removal that has not happened yet; after it, the paper is put
+ * back where the reader is, and comes in from the side it left by.
+ */
+test('SOURCE: Not interested can be undone, and the paper comes back', async () => {
+  const code = stripComments(await read('./FeedContainer.tsx'));
+  const press = bounded(code, 'const handleNotInterested = useCallback(', '}, [', 'handleNotInterested', 14);
+  assert.match(press, /toast\('Marked as not interested', \{\s*action: \{ label: 'Undo', onClick: \(\) => handleUndoNotInterested\(paper\) \}/);
+  const undo = bounded(code, 'const handleUndoNotInterested = useCallback(', '}, [', 'handleUndoNotInterested', 20);
+  assert.match(undo, /setReturningId\(paper\.id\)/, 'the card is marked as coming back');
+  assert.match(undo, /if \(skipExitRef\.current\?\.id === paper\.id\) \{[\s\S]*?setSkipExit\(null\);\s*return;/, 'a running exit is dropped, never committed');
+  assert.match(undo, /undoNotInterested\(paper, atIndex\)/, 'a landed removal is taken back');
+  assert.match(code, /' feed-snap-item--returning'/);
+  const css = await read('./FeedContainer.css');
+  assert.match(css, /@keyframes feedSkipReturn \{\s*from \{ transform: translateX\(105%\)/, 'it comes back from the right, the side it left by');
+});
+
+/**
  * The removal is deferred by the length of the exit, so it needs the two
  * escapes every deferred commit in this file already has: the animation
  * ending, and a clock in case it never runs (a `prefers-reduced-motion` rule

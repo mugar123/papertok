@@ -248,7 +248,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
-    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
+    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, undoNotInterested, markAsRead, unmarkAsRead,
     personalLibrary, toggleReadLater, markSaved, unmarkSaved,
     trackViewTime, trackSkip, trackSkips: trackSkippedPapers,
   } = feed;
@@ -441,6 +441,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const [skipExit, setSkipExit] = useState<ReturnType<typeof skipExitSlot>>(null);
   const skipExitRef = useRef<(NonNullable<ReturnType<typeof skipExitSlot>> & { commit: () => void }) | null>(null);
   const skipExitTimerRef = useRef<number | null>(null);
+  // The paper an Undo is bringing back, while it travels in.
+  const [returningId, setReturningId] = useState<string | null>(null);
+  const returnSlotRef = useRef<{ id: string; index: number } | null>(null);
   const readAdvanceTimerRef = useRef<number | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(interactionIdFor(paper)!),
@@ -503,6 +506,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     skipExitTimerRef.current = setTimeout(flushSkipExit, SKIP_EXIT_MS + 120);
   }, [flushSkipExit]);
 
+  const handleReturnEnd = useCallback((event: AnimationEvent) => {
+    if (event.animationName === 'feedSkipReturnFade') setReturningId(null);
+  }, []);
+
   const handleSkipExitEnd = useCallback((event: AnimationEvent) => {
     // The card is full of animations of its own and they all bubble to here,
     // so the exit has to name itself. Both halves of it start with this.
@@ -510,9 +517,44 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     flushSkipExit();
   }, [flushSkipExit]);
 
+  // Undo brings the paper back the way it left, from the right, at the card
+  // the reader is on. An exit still running when Undo arrives has not reached
+  // markNotInterested yet: dropping it is the whole undo.
+  const handleUndoNotInterested = useCallback((paper: Paper) => {
+    setReturningId(paper.id);
+    if (skipExitRef.current?.id === paper.id) {
+      clearTimeout(skipExitTimerRef.current!);
+      skipExitRef.current = null;
+      skipExitTimerRef.current = null;
+      setSkipExit(null);
+      return;
+    }
+    const container = feedRef.current;
+    const height = container?.clientHeight ?? 0;
+    const atIndex = !source && container && height > 0 ? Math.round(container.scrollTop / height) : null;
+    if (atIndex !== null) returnSlotRef.current = { id: paper.id, index: atIndex };
+    void undoNotInterested(paper, atIndex);
+  }, [source, undoNotInterested]);
+
+  // The paper is put back in front of the card the reader is on, and the
+  // scroller stays snapped to that card, which now sits one slot down: the
+  // view followed it and the return played off-screen (measured, scrollTop
+  // 0 → one card). Holding the slot in the commit that brings the paper back,
+  // before paint, keeps the reader where they were.
+  useLayoutEffect(() => {
+    const slot = returnSlotRef.current;
+    returnSlotRef.current = null;
+    const container = feedRef.current;
+    if (!slot || !container || papers[slot.index]?.id !== slot.id) return;
+    container.scrollTop = slot.index * container.clientHeight;
+  }, [papers]);
+
   const handleNotInterested = useCallback((paper: Paper) => {
     beginSkipExit(paper?.id, () => markNotInterested(paper));
-  }, [beginSkipExit, markNotInterested]);
+    toast('Marked as not interested', {
+      action: { label: 'Undo', onClick: () => handleUndoNotInterested(paper) },
+    });
+  }, [beginSkipExit, handleUndoNotInterested, markNotInterested]);
 
   const handleSkip = useCallback((paper: Paper) => {
     source?.onPaperViewed?.(paper);
@@ -1246,9 +1288,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           ) : (
           <div
             key={paper.id}
-            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
+            className={`feed-snap-item${skipExit?.id === paper.id ? ' feed-snap-item--leaving' : ''}${returningId === paper.id ? ' feed-snap-item--returning' : ''}${readPaperIds?.has(interactionIdFor(paper)!) ? ' feed-snap-item--read' : ''}`}
             style={skipExit?.id === paper.id ? { top: `${skipExit.top}px`, height: `${skipExit.height}px` } : undefined}
-            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : undefined}
+            onAnimationEnd={skipExit?.id === paper.id ? handleSkipExitEnd : returningId === paper.id ? handleReturnEnd : undefined}
           >
             <PaperCard
               paper={paper}
