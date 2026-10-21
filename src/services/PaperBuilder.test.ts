@@ -717,6 +717,91 @@ test('an arXiv record beside a working paper it is not takes neither its series 
   }
 });
 
+test('a row merged again keeps the answer its first merge gave it', () => {
+  // Synthetic records through the real mappers. The followed feed
+  // deduplicates the candidates of several follows together, and a followed
+  // topic's candidates are rows `fetchTopicPapers` has already merged. A
+  // topic with an OpenAlex id lists OpenAlex's works first, its record of the
+  // eprint under arXiv's DOI among them; one without asks arXiv first.
+  const title = 'Bank capital and the transmission of monetary policy';
+  const arxivId = '2601.00007';
+  const arxivLocation = {
+    landing_page_url: `https://arxiv.org/abs/${arxivId}`,
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const openAlexRecord = (id: string, doi: string | null, type: string, location: typeof arxivLocation | {
+    landing_page_url: string;
+    is_published: boolean;
+    source: { id: string; display_name: string; type: string; host_organization_name?: string };
+  }) => slimWorksPage({ results: [{
+    id: `https://openalex.org/${id}`,
+    doi: doi ? `https://doi.org/${doi}` : null,
+    title,
+    type,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    publication_year: 2026,
+    primary_location: location,
+    locations: location === arxivLocation ? [arxivLocation] : [location, arxivLocation],
+  }] }).papers[0];
+  const fedsDoi = '10.17016/FEDS.2026.007';
+  const feds = () => openAlexRecord('W700', fedsDoi, 'article', {
+    landing_page_url: `https://doi.org/${fedsDoi}`,
+    is_published: true,
+    source: {
+      id: 'https://openalex.org/S4210212089',
+      display_name: 'Finance and Economics Discussion Series',
+      type: 'journal',
+      host_organization_name: 'Board of Governors of the Federal Reserve System',
+    },
+  });
+  const nberSource = { id: 'https://openalex.org/S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository' };
+  const nber = () => openAlexRecord('W701', '10.3386/w31999', 'report', {
+    landing_page_url: 'https://doi.org/10.3386/w31999', is_published: true, source: nberSource,
+  });
+  const nberWithoutDoi = () => openAlexRecord('W702', null, 'report', {
+    landing_page_url: 'https://www.nber.org/papers/w30000', is_published: true, source: nberSource,
+  });
+  const preprint = () => openAlexRecord('W703', `10.48550/arXiv.${arxivId}`, 'preprint', arxivLocation);
+  // As `arxivService` maps an entry with a DOI and no journal reference.
+  const arxivRecord = (doi: string) => PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    authors: [{ name: 'Ana Economist' }],
+    doi,
+    publicationType: 'article',
+    publicationStatus: 'published',
+  });
+  const flows = (arxiv: Paper, workingPaper: () => Paper): Array<[string, Paper[]]> => [
+    // A topic row holding only OpenAlex's preprint record, then a topic row
+    // that merged the arXiv record and the working paper.
+    ['preprint row, then a row with the working paper', PaperBuilder.deduplicate([
+      ...PaperBuilder.deduplicate([preprint()]),
+      ...PaperBuilder.deduplicate([arxiv, workingPaper()]),
+    ])],
+  ];
+  const peerReviewedOnly = (rows: Paper[]) => filterAndSortEntityPapers(rows, { filters: { peerReviewed: true } });
+
+  // Each row reads as it does after its first merge: the FEDS revision as
+  // the FEDS paper, the other DOIs as unknown.
+  for (const [label, doi, workingPaper, expected] of [
+    ['FEDS revision, FEDS', `${fedsDoi}r1`, feds, false],
+    ['journal DOI, FEDS', '10.1016/j.jinteco.2026.103900', feds, undefined],
+    ['SSRN DOI, NBER', '10.2139/ssrn.4400000', nber, undefined],
+    ['NBER DOI, NBER without a DOI', '10.3386/w30000', nberWithoutDoi, undefined],
+  ] as Array<[string, string, () => Paper, false | undefined]>) {
+    for (const [flow, rows] of flows(arxivRecord(doi), workingPaper)) {
+      const where = `${label}, ${flow}`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].peerReviewed, expected, where);
+      assert.equal(reviewTagForPaper(rows[0])?.label ?? null, expected === false ? 'Working paper' : null, where);
+      assert.deepEqual(peerReviewedOnly(rows), [], where);
+    }
+  }
+});
+
 test('a report from a journal\'s registrant does not unreview the journal article', () => {
   // Synthetic records. OpenAlex types an unlisted series' paper `report`, and
   // the St. Louis Fed registers both its working papers and its Review under

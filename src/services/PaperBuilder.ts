@@ -33,6 +33,11 @@ function doiRegistrant(normalizedDoi: string) {
   return normalizedDoi.split('/')[0];
 }
 
+// `merge` lists in `enrichedBy` the source of each record it merges in.
+function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
+  return (record.sources?.enrichedBy?.length ?? 0) > 0;
+}
+
 // `arxivService` reads any DOI as publication, so an arXiv record without a
 // journal reference has nothing else behind its `true`. A merged record that
 // does not say the paper was reviewed leaves it so (OpenAlex's record of the
@@ -40,7 +45,7 @@ function doiRegistrant(normalizedDoi: string) {
 // (Cornell University)" among them. So a record's own fields are read before
 // its first merge, and `sources.arxivDoiOnly` carries the answer after it.
 function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
-  return (record.sources?.enrichedBy?.length ?? 0) === 0
+  return !hasMerged(record)
     ? record.sources?.primary === 'arxiv' && !record.journal && isPublisherDoi(normalizeDoi(record.doi))
     : record.sources?.arxivDoiOnly === true;
 }
@@ -67,7 +72,7 @@ export class PaperBuilder {
     // A record that has merged another holds the answer `merge` gave it, an
     // unknown included. The Explorer deduplicates its rows again with each
     // page, and deriving one here turned that unknown into `true`.
-    const fromMerge = (data.sources?.enrichedBy?.length ?? 0) > 0;
+    const fromMerge = hasMerged(data);
 
     // Normalize DOI
     let doi = data.doi;
@@ -409,10 +414,14 @@ export class PaperBuilder {
     // Re-read only when the enrichment brought publication evidence of its own.
     // A merge that carried nothing but an abstract once overwrote an explicit
     // `peerReviewed: false` with `true`, and deriving an answer for a record
-    // that had none turned OpenAlex's unknown into `true` the same way.
+    // that had none turned OpenAlex's unknown into `true` the same way. Nor is
+    // one derived for a record that has merged another, as in `create`: the
+    // followed feed and the Explorer merge rows that are already merged.
     const enrichmentReview = shouldUpgradePublication
       ? enrichmentData.peerReviewed
-        ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint')
+        ?? (isOpenAlexRecord(enrichmentData, sourceName) || hasMerged(enrichmentData)
+          ? undefined
+          : merged.publicationType !== 'preprint')
       : undefined;
     // The row and the incoming record can both rest on an arXiv DOI: a topic
     // gets the same arXiv record from its category listing and its query, and
