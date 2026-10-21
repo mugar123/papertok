@@ -1,5 +1,5 @@
 import type { FollowEntity } from '../../utils/following.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { EASE_OUT } from '../../utils/motionCurves.ts';
@@ -7,9 +7,6 @@ import {
   ArrowLeft,
   Briefcase,
   Buildings,
-  CaretDown,
-  CaretLeft,
-  Check,
   CircleNotch,
   Tag,
   User,
@@ -29,6 +26,7 @@ import {
 } from '../ui/alert-dialog.tsx';
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../ui/select.tsx';
 import Petri from '../Onboarding/Petri.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import './SettingsSheet.css';
@@ -314,100 +312,44 @@ export default function FollowingSettingsPage() {
 
 /**
  * The same follows, opened from Settings on a phone: a sheet like the
- * interests editor, whose switcher swaps the follows for the four types
- * inside the same sheet. SettingsPage keeps it mounted and drives `open`.
+ * interests editor, whose type is a select above the list. SettingsPage keeps
+ * it mounted and drives `open`.
  */
 export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
   const view = useFollowedView();
   const { language, followedByType, activeType, activeTab, setSelectedType } = view;
-  const [typesOpen, setTypesOpen] = useState(false);
-  // Whether the sheet has changed page since it opened: the page it opens on
-  // arrives with the sheet, every later one slides in (SettingsSheet.css).
-  const [moved, setMoved] = useState(false);
-  const switcherRef = useRef<HTMLButtonElement | null>(null);
-  const backRef = useRef<HTMLButtonElement | null>(null);
-  const pickedType = useRef(false);
-
-  useEffect(() => {
-    if (typesOpen) backRef.current?.focus();
-    else if (pickedType.current) switcherRef.current?.focus();
-    pickedType.current = false;
-  }, [typesOpen]);
-
-  const leaveTypes = () => {
-    pickedType.current = true;
-    setTypesOpen(false);
-  };
+  const countOf = (type: string) => followedByType[type]?.length || 0;
 
   return (
-    <Drawer
-      open={open}
-      onOpenChange={onOpenChange}
-      onOpenChangeComplete={(isOpen) => {
-        if (isOpen) return;
-        setTypesOpen(false);
-        setMoved(false);
-      }}
-    >
+    <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
         <DrawerHandle />
-        {typesOpen ? (
-          <div key="types" className="settings-sheet-view" data-direction="forward">
-            <div className="settings-sheet-choices-head">
-              <Button ref={backRef} variant="ghost" size="icon-sm" aria-label={'Back to follows'} onClick={leaveTypes}>
-                <CaretLeft size={18} aria-hidden="true" />
-              </Button>
-              <DrawerTitle render={<h2 />}>{'Types of followed content'}</DrawerTitle>
-            </div>
-            <ul className="settings-sheet-choices" data-base-ui-swipe-ignore="">
-              {FOLLOW_TABS.map(({ type, label, Icon }) => {
-                const count = followedByType[type]?.length || 0;
-                const isActive = type === activeType;
-                return (
-                  <li key={type}>
-                    <button
-                      type="button"
-                      className={isActive ? 'is-active' : undefined}
-                      aria-current={isActive ? 'true' : undefined}
-                      onClick={() => { setSelectedType(type); leaveTypes(); }}
-                    >
-                      <Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                      <span className="settings-sheet-choice-copy">
-                        <strong>{label[language]}</strong>
-                        <small>{`${count} followed`}</small>
-                      </span>
-                      {isActive && <Check size={16} aria-hidden="true" />}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ) : (
-          <div key="follows" className="settings-sheet-view" data-direction={moved ? 'back' : undefined}>
-            <div className="settings-sheet-head">
-              <DrawerTitle render={<h2 />}>{'Follows'}</DrawerTitle>
-              <p>{followSummary(view)}</p>
-              <button
-                ref={switcherRef}
-                type="button"
-                className="settings-sheet-switcher"
-                onClick={() => { setTypesOpen(true); setMoved(true); }}
-              >
-                <span className="settings-sheet-switcher-icon"><activeTab.Icon size={18} weight="fill" aria-hidden="true" /></span>
-                <span className="settings-sheet-switcher-copy">
-                  <small>{'Type'}</small>
-                  <strong>{`${activeTab.label[language]} · ${followedByType[activeType]?.length || 0}`}</strong>
-                </span>
-                <CaretDown size={16} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
-              <FollowedList view={view} onExplore={() => navigate('/search')} />
-            </div>
-          </div>
-        )}
+        <div className="settings-sheet-head">
+          <DrawerTitle render={<h2 />}>{'Follows'}</DrawerTitle>
+          <p>{followSummary(view)}</p>
+          <Select value={activeType} onValueChange={value => setSelectedType(value as string)}>
+            <SelectTrigger aria-label={'Type of followed content'} className="settings-sheet-switcher">
+              <span className="settings-sheet-switcher-icon"><activeTab.Icon size={18} weight="fill" aria-hidden="true" /></span>
+              <span className="settings-sheet-switcher-copy">
+                <small>{'Type'}</small>
+                <strong>{`${activeTab.label[language]} · ${countOf(activeType)}`}</strong>
+              </span>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false} sideOffset={6}>
+              {FOLLOW_TABS.map(({ type, label, Icon }) => (
+                <SelectItem key={type} value={type} className="settings-sheet-option">
+                  <Icon size={18} weight={type === activeType ? 'fill' : 'regular'} aria-hidden="true" />
+                  <span>{label[language]}</span>
+                  <small>{countOf(type)}</small>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
+          <FollowedList view={view} onExplore={() => navigate('/search')} />
+        </div>
         <UnfollowConfirm view={view} />
       </DrawerContent>
     </Drawer>
