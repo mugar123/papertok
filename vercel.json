@@ -46,7 +46,7 @@
       "destination": "https://api.papertok.app/share/:kind/:rest*"
     },
     {
-      "source": "/:path((?:login|onboarding|feed|lists|research|report|following|search|profile|settings|explorer|public)(?:/.*)?)",
+      "source": "/:path((?:institution|login|onboarding|feed|lists|research|report|following|search|profile|settings|explorer|public)(?:/.*)?)",
       "destination": "/index.html"
     }
   ],

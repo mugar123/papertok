@@ -58,6 +58,34 @@ test('SOURCE: the skip runs the card out before removing it', async () => {
 });
 
 /**
+ * "Not interested" says so in a toast with an Undo. Undo during the exit
+ * drops the removal that has not happened yet; after it, the paper is put
+ * back where the reader is, and comes in from the side it left by.
+ */
+test('SOURCE: Not interested can be undone, and the paper comes back', async () => {
+  const code = stripComments(await read('./FeedContainer.tsx'));
+  const press = bounded(code, 'const handleNotInterested = useCallback(', '}, [', 'handleNotInterested', 14);
+  assert.match(press, /toast\('Marked as not interested', \{\s*action: \{ label: 'Undo', onClick: \(\) => handleUndoNotInterested\(paper\) \}/);
+  const undo = bounded(code, 'const handleUndoNotInterested = useCallback(', '}, [', 'handleUndoNotInterested', 26);
+  assert.match(undo, /setReturning\(returningRef\.current\)/, 'the card is marked as coming back');
+  assert.doesNotMatch(undo, /setTimeout\(landReturn/,
+    'the backstop does not start on the press: the card mounts first, and a clock started here landed it mid-travel');
+  assert.match(code, /if \(!returning \|\| returning\.landed\) return undefined;\s*const timer = setTimeout\(landReturn, SKIP_RETURN_MS \+ \d+\);/,
+    'it starts with the commit that pins the card, and only backs up animationend');
+  assert.match(undo, /if \(skipExitRef\.current\?\.id === paper\.id\) \{[\s\S]*?setSkipExit\(null\);\s*return;/, 'a running exit is dropped, never committed');
+  assert.match(undo, /undoNotInterested\(paper, source \? null : Math\.round\(container\.scrollTop \/ height\)\)/, 'a landed removal is taken back at the reader\'s slot');
+  assert.match(code, /returning\?\.id === paper\.id && !returning\.landed \? \{ top: `\$\{index \* returning\.height\}px`/, 'pinned over its slot while it travels');
+  const css = await read('./FeedContainer.css');
+  assert.match(css, /\.feed-snap-item--leaving,\n\.feed-snap-item--returning \{\s*position: absolute;/, 'out of flow, over the card it covers, like the exit');
+  assert.match(css, /@keyframes feedSkipReturn \{\s*from \{ transform: translateX\(105%\)/, 'it comes back from the right, the side it left by');
+  assert.doesNotMatch(stripComments(css).slice(css.indexOf('.feed-snap-item--returning > .pc {')).split('}')[0], /feedSkipReturnFade/,
+    'with movement it covers the card opaque, without fading in from nothing');
+  assert.match(css, /\.feed-snap-item--returned :is\([^)]*\.pc-title[^)]*\) \{\s*animation: none;/, 'it comes back whole, without replaying the arrival');
+  assert.match(css, /\.feed-snap-item--returned > \.pc \{\s*transition-property: opacity, translate;\s*\}/,
+    'no transform transition on the returned card: WebKit fires it as the return comes off and the card lurches right');
+});
+
+/**
  * The removal is deferred by the length of the exit, so it needs the two
  * escapes every deferred commit in this file already has: the animation
  * ending, and a clock in case it never runs (a `prefers-reduced-motion` rule
@@ -95,7 +123,7 @@ test('SOURCE: the exit moves nothing but transform and opacity', async () => {
   assert.match(fade, /opacity:\s*0/, 'and it retires');
   assert.doesNotMatch(fade, /\b(width|height|margin|padding|top|left|right|bottom|transform)\s*:/);
 
-  const leaving = bounded(stripComments(css), '.feed-snap-item--leaving {', '}', 'the leaving item rule', 16);
+  const leaving = bounded(stripComments(css), '.feed-snap-item--leaving,\n.feed-snap-item--returning {', '}', 'the leaving item rule', 16);
   assert.match(leaving, /position:\s*absolute/, 'out of flow, so the next card takes the slot in the same frame');
   assert.match(leaving, /scroll-snap-align:\s*none/, 'a card on its way out is not a place to stop');
   assert.match(leaving, /pointer-events:\s*none/, 'and it cannot be tapped on its way out');

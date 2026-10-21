@@ -178,7 +178,7 @@ test('asks the Worker for the library platforms and keeps only well-formed, safe
   assert.equal(url.searchParams.has('entityId'), false);
 });
 
-test('keeps a complete platform list for a week and a partial one for an hour', async (t) => {
+test('keeps a complete platform list for a day and a partial one for an hour', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: 0 });
   const complete = worker(servicesAnswer(false));
   const partial = worker(servicesAnswer(true));
@@ -196,7 +196,7 @@ test('keeps a complete platform list for a week and a partial one for an hour', 
   await findInstitutionServices(institution('partial.es'), { ...partial, apiBase: API });
   assert.equal(partial.urls.length, 2);
 
-  t.mock.timers.tick(7 * 24 * HOUR - HOUR - 1);
+  t.mock.timers.tick(24 * HOUR - HOUR - 1);
   await findInstitutionServices(institution('complete.es'), { ...complete, apiBase: API });
   assert.equal(complete.urls.length, 1);
   t.mock.timers.tick(1);
@@ -269,25 +269,26 @@ test('a failed platform check is null and asked again next time', async () => {
 });
 
 
-const servicesPage = (id: string, nextOffset: unknown, partial = false, unchecked = 0) => ({
-  status: 200, body: { services: [{ id, name: id }], nextOffset, partial, unchecked },
+const servicesRound = (ids: string[], remaining: number, partial = false, unchecked = 0) => ({
+  status: 200, body: { services: ids.map(id => ({ id, name: id })), remaining, partial, unchecked },
 });
 
-test('follows the catalogue pages once, combines their results, and caches the whole list', async () => {
-  const api = worker(servicesPage('nature', 36, false, 2), servicesPage('economist', 72, true, 1), servicesPage('hbr', null));
-  const library = institution('paged.es');
+test('asks again while the Worker reports entries remaining, and the last answer is the whole list', async () => {
+  const api = worker(servicesRound(['nature'], 120, false, 2), servicesRound(['nature', 'economist'], 40, true, 1), servicesRound(['nature', 'economist', 'hbr'], 0));
+  const library = institution('rounds.es');
   const answer = await findInstitutionServices(library, { ...api, apiBase: API });
   assert.deepEqual(answer!.services.map(service => service.id), ['nature', 'economist', 'hbr']);
-  assert.equal(answer!.partial, true);
-  assert.equal(answer!.unchecked, 3);
-  assert.deepEqual(api.urls.map(url => new URL(url).searchParams.get('offset')), ['0', '36', '72']);
+  assert.equal(answer!.partial, false);
+  assert.equal(answer!.unchecked, 0);
+  assert.equal(api.urls.length, 3);
+  assert.ok(api.urls.every(url => !new URL(url).searchParams.has('offset')));
   assert.equal(await findInstitutionServices(library, { ...api, apiBase: API }), answer);
   assert.equal(api.urls.length, 3);
 });
 
-test('an unavailable later page preserves earlier results as partial, with the short cache lifetime', async t => {
+test('a later request that fails keeps the earlier list as partial, for an hour', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: 0 });
-  const api = worker(servicesPage('economist', 36), { status: 502, body: {} }, servicesPage('guardian', null));
+  const api = worker(servicesRound(['economist'], 36), { status: 502, body: {} }, servicesRound(['guardian'], 0));
   const library = institution('later-failure.es');
   const answer = await findInstitutionServices(library, { ...api, apiBase: API });
   assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
@@ -298,28 +299,48 @@ test('an unavailable later page preserves earlier results as partial, with the s
   assert.deepEqual(retry!.services.map(service => service.id), ['guardian']);
 });
 
-test('malformed or repeating continuations do not start an unbounded catalogue scan', async () => {
-  for (const next of [0, -1, 1.5, '36', {}, Number.MAX_SAFE_INTEGER + 1]) {
-    const api = worker(servicesPage('economist', next));
-    const answer = await findInstitutionServices(institution(`invalid-page-${typeof next}-${String(next).replace(/[^a-z0-9]/gi, '')}.es`), { ...api, apiBase: API });
-    assert.equal(answer, null);
+test('a Worker that still has entries remaining after ten requests leaves the list partial', async () => {
+  const api = worker(servicesRound(['economist'], 1));
+  const answer = await findInstitutionServices(institution('endless.es'), { ...api, apiBase: API });
+  assert.equal(answer!.partial, true);
+  assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
+  assert.equal(api.urls.length, 10);
+});
+
+test('a malformed remaining count ends the asking, as an older Worker\'s answer does', async () => {
+  for (const [index, remaining] of [undefined, -1, 1.5, '36', {}].entries()) {
+    const api = worker({ status: 200, body: { services: [{ id: 'economist', name: 'The Economist' }], remaining } });
+    const answer = await findInstitutionServices(institution(`no-count-${index}.es`), { ...api, apiBase: API });
+    assert.equal(answer!.partial, false);
+    assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
     assert.equal(api.urls.length, 1);
   }
-  const api = worker(servicesPage('economist', 36), servicesPage('guardian', 36));
-  const answer = await findInstitutionServices(institution('repeated-page.es'), { ...api, apiBase: API });
-  assert.equal(answer!.partial, true);
-  assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
-  assert.equal(api.urls.length, 2);
 });
 
-test('duplicate entries across pages are shown once and a later unsupported response preserves results', async () => {
-  const api = worker(servicesPage('economist', 36), servicesPage('economist', 72), { status: 404, body: { code: 'INSTITUTION_NOT_SUPPORTED' } });
-  const answer = await findInstitutionServices(institution('overlap.es'), { ...api, apiBase: API });
-  assert.equal(answer!.partial, true);
-  assert.equal(answer!.unsupported, undefined);
-  assert.deepEqual(answer!.services.map(service => service.id), ['economist']);
+test('a list is kept in localStorage and known at once on the next page load; a malformed or expired one is not', async () => {
+  const stored = new Map<string, string>();
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => { stored.set(key, value); } },
+  });
+  try {
+    const library = institution('persisted.es', { rorId: 'https://ror.org/02f40zc51' });
+    const answer = await findInstitutionServices(library, { ...worker(servicesRound(['jstor'], 0)), apiBase: API });
+    const [key] = stored.keys();
+    assert.equal(key, 'papertok_institution_services:persisted.es||https://ror.org/02f40zc51');
+    // The memory cache is this page's; the next page load reads what was stored.
+    stored.set('papertok_institution_services:persisted-reload.es||', stored.get(key)!);
+    assert.deepEqual(knownInstitutionServices(institution('persisted-reload.es')), answer);
+    stored.set('papertok_institution_services:garbled.es||', '{"answer":{"services":"none"},"expiresAt":1e15}');
+    assert.equal(knownInstitutionServices(institution('garbled.es')), undefined);
+    stored.set('papertok_institution_services:expired.es||', JSON.stringify({ answer, expiresAt: 0 }));
+    assert.equal(knownInstitutionServices(institution('expired.es')), undefined);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete (globalThis as Partial<typeof globalThis>).localStorage;
+  }
 });
-
 
 test('journal rows retain separate ISSN identities while sharing the platform logo', async () => {
   const api = worker({ status: 200, body: { services: [

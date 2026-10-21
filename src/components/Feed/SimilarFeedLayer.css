@@ -18,7 +18,7 @@
   border-radius: 0;
   box-shadow: none;
   background: var(--bg-secondary);
-  /* The pill's box, from SimilarFeedLayer.jsx: the layer grows out of it and,
+  /* The rail button's box, from SimilarFeedLayer.tsx: the layer grows out of it and,
      closed with the X, Escape or Back, folds back into it. */
   clip-path: inset(0 round 0);
   transform: translateY(var(--similar-drag, 0px));
@@ -31,7 +31,7 @@
 
 /* An animation, not a transition: Base UI holds the closing popup only while
    `getAnimations()` reports one on it (design.md, traps). The ground starts
-   as the pill's own tint so the layer reads as the button opening up. */
+   as the button's violet tint so the layer reads as the button opening up. */
 .similar-layer[data-open] {
   animation: similarGrow 420ms var(--ease-out-cubic) both;
 }
@@ -45,7 +45,7 @@
   animation: similarDrop 240ms var(--ease-out) both;
 }
 
-/* A link in the layer took the page somewhere else: there is no pill left to
+/* A link in the layer took the page somewhere else: there is no button left to
    fold into, so it only steps aside for the page arriving. */
 .similar-layer[data-closed][data-dropped-by='route'] {
   animation: fadeOut 160ms var(--ease-out) both;

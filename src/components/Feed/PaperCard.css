@@ -38,9 +38,12 @@
      half of it that runs on the way back up (.feed-container--refreshing in
      FeedContainer.css holds the way down). */
   --pc-travel: 340ms 80ms var(--ease-out-quad);
+  /* `transform` is the pull-to-refresh's (FeedContainer.css): a pull let go
+     short of the threshold springs back on this. */
   transition:
     opacity 0.9s ease,
-    translate var(--pc-travel);
+    translate var(--pc-travel),
+    transform 320ms var(--ease-out-expo);
 }
 
 /* ── The page ──
@@ -738,10 +741,6 @@ button.pc-topics-pop-item:focus-visible {
   }
 }
 
-.pc-similar-row {
-  flex-basis: 100%;
-}
-
 /* ── Clickable topics ── */
 .pc-topic-link {
   cursor: pointer;
@@ -800,6 +799,7 @@ button.pc-topics-pop-item:focus-visible {
   border: 1px solid color-mix(in srgb, var(--area-accent, #888) 24%, var(--bg-card));
   position: relative;
   z-index: calc(3 - var(--i, 0));
+  text-box: trim-both cap alphabetic;
 }
 
 /* The same 7px tuck under the one before, for every avatar after the first.
@@ -1043,18 +1043,7 @@ button.pc-topics-pop-item:focus-visible {
   mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: pc-checking 1400ms linear infinite;
-}
-
-@keyframes pc-checking {
-  from {
-    -webkit-mask-position: 100% 0;
-    mask-position: 100% 0;
-  }
-  to {
-    -webkit-mask-position: 0 0;
-    mask-position: 0 0;
-  }
+  animation: checkingSweep 1400ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1140,8 +1129,8 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .pc-side-icon {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
@@ -1153,16 +1142,29 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .pc-side-btn--like { --rail: var(--accent-rose); }
-.pc-side-btn--bookmark { --rail: var(--accent-save); }
+.pc-side-btn--bookmark {
+  --rail: var(--accent-save);
+  /* Save is held to pick a list (PaperCard.tsx, `saveHold`); iOS would answer
+     the same hold with its callout and a text selection. */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
 .pc-side-btn--connections { --rail: var(--accent-primary); }
+.pc-side-btn--similar { --rail: var(--accent-violet); }
 .pc-side-btn--more { --rail: var(--text-tertiary); }
 
 .pc-side-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
+/* Ghost at rest, so the hover is the tile: a wash of the button's own colour
+   behind the glyph, the area a click lands on. */
 @media (hover: hover) and (pointer: fine) {
+  .pc-side-btn:hover .pc-side-icon {
+    background: color-mix(in srgb, var(--rail, var(--text-secondary)) 10%, transparent);
+  }
+
   .pc-side-btn:hover .pc-side-label {
     color: var(--rail, var(--text-secondary));
   }
@@ -2754,6 +2756,11 @@ button.pc-topics-pop-item:focus-visible {
       padding-top: var(--space-2);
     }
 
+    /* Five 52px buttons at the usual step fill the ~310px card edge to edge. */
+    .pc-side-actions {
+      gap: var(--space-2);
+    }
+
     /* Petri is decoration; on a card this short the state is its words. */
     .pc-abstract-empty .empty-state {
       padding-block: var(--space-2);
@@ -2793,6 +2800,17 @@ button.pc-topics-pop-item:focus-visible {
 
   .pc-side-btn {
     width: 54px;
+  }
+
+  /* Beside a phone's 16px body text the desktop's 28px glyphs read loud. */
+  .pc-side-icon {
+    width: 48px;
+    height: 48px;
+  }
+
+  .pc-side-icon svg {
+    width: 24px;
+    height: 24px;
   }
 
 
@@ -2836,28 +2854,42 @@ button.pc-topics-pop-item:focus-visible {
     object-fit: contain;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
-    background: var(--bg-card);
+    padding: 6px;
+    background: var(--bg-figure-plate);
     opacity: 0;
-    transition: opacity 200ms var(--ease-out);
+    transform-origin: 50% 0;
   }
 
   .pc-lead-figure.is-loaded {
     opacity: 1;
+    animation: pcLeadDevelop 360ms var(--ease-out-expo) both;
   }
 
+  .pc-lead-figure.is-loaded.is-resumed {
+    animation: figureClipFade 200ms linear both;
+  }
+
+  /* On a phone the field's glyph is the card's picture: it fills the lead and
+     runs on behind the title, about nine rem past the lead, no wider than the
+     column, and leans towards the rail until the screen's edge cuts it. The
+     box reaches that edge and clips there itself: overflowing the sheet would
+     leave the sheet (`overflow: hidden`, still scrollable from code) room to
+     slide sideways. The body sits above it (z-index 1), so the type stays on
+     top. */
   .pc-watermark {
     top: var(--space-5);
     left: var(--space-5);
-    right: 72px;
+    right: 0;
     display: grid;
-    place-items: center;
-    height: var(--pc-lead);
+    justify-items: center;
+    overflow: clip;
   }
 
   .pc-watermark svg {
-    width: auto;
-    height: 100%;
+    width: min(calc(100% - 66px), calc(var(--pc-lead) + 9rem));
+    height: auto;
     transform-origin: 50% 50%;
+    translate: 14% 0;
   }
 
   /* The rail sits beside the abstract, not the actions: the two reading
@@ -2915,7 +2947,6 @@ button.pc-topics-pop-item:focus-visible {
   .pc-watermark {
     top: var(--space-4);
     left: var(--space-4);
-    right: 66px;
   }
 }
 
@@ -2955,7 +2986,24 @@ button.pc-topics-pop-item:focus-visible {
   .related-header .graph-view-button { width: 40px; height: 40px; }
 }
 
+@keyframes pcLeadDevelop {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0 round var(--radius-md));
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round var(--radius-md));
+    scale: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .pc-lead-figure.is-loaded {
+    animation: figureClipFade 200ms linear both;
+  }
+
   /* The press keeps its colour and its dip; the squeeze is movement. */
   .pc-topic-link:active,
   .pc-side-btn:active .pc-side-icon {
@@ -3141,6 +3189,7 @@ button.pc-topics-pop-item:focus-visible {
   flex: none;
   width: 20px;
   height: 20px;
+  margin-left: 2px;
   font-size: 0.5625rem;
 }
 
@@ -3243,4 +3292,78 @@ button.pc-topics-pop-item:focus-visible {
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
   color: var(--text-tertiary);
+}
+
+/* Topics and funding as ruled rows, the Explorer's list: a hairline between
+   rows and a short rule down the inner edge, the field's ink for the field and
+   a lighter one for its topics. Funding claims no subject, so its rule is ink. */
+.pc-about .pc-topics-pop-list {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pc-about .pc-topics-pop-list > li {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pc-about .pc-topics-pop-item {
+  --rule: var(--border-strong);
+  position: relative;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: 0;
+  transition: background-color 120ms ease-out;
+}
+
+.pc-about .pc-topics-pop-item::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 20px;
+  translate: 0 -50%;
+  background: var(--rule);
+}
+
+.pc-about .pc-topics-pop-item[data-kind='field'] {
+  --rule: var(--area-accent, var(--accent-primary));
+}
+
+.pc-about .pc-topics-pop-item[data-kind='topic'] {
+  --rule: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 40%, var(--bg-card));
+}
+
+.pc-about .pc-topics-pop-kind {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.pc-about .pc-topics-pop-item[data-kind='field'] .pc-topics-pop-kind {
+  color: var(--area-accent, var(--text-tertiary));
+}
+
+.pc-about .pc-topics-pop-item > svg {
+  transition: color 120ms ease-out, translate 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pc-about button.pc-topics-pop-item:hover {
+    background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 6%, var(--bg-card));
+  }
+
+  .pc-about button.pc-topics-pop-item:hover > svg {
+    color: var(--area-accent, var(--text-primary));
+    translate: 2px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-about .pc-topics-pop-item > svg {
+    transition: color 120ms ease-out;
+  }
+
+  .pc-about button.pc-topics-pop-item:hover > svg {
+    translate: none;
+  }
 }

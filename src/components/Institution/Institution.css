@@ -87,9 +87,83 @@
   padding: var(--space-6);
 }
 
+/* On a phone the sheet's title takes focus when it opens (tabIndex -1), so a
+   screen reader starts there and the keyboard stays down. It is never a tab
+   stop of its own; a ring round the heading would read as a rendering fault,
+   not as focus (as `.gw-title`). */
+.institution-sheet h2:focus-visible {
+  outline: none;
+}
+
 .institution-dialog-lede {
   margin: 0;
   padding-right: var(--space-6);
+}
+
+/* The window hangs from the top, so it drops a little and grows down from
+   there; it is opaque within a few frames while it still moves, because
+   fading it with its content let the page behind read through the text.
+   Its pieces then compose onto the opaque sheet in reading order, 45 ms
+   apart, as a card's pieces arrive (PaperCard.css, "The arrival"): heading,
+   lede, then each piece of the form or the linked row. They start from
+   nothing rather than a ghost of themselves, so the window never shows all
+   of its text at once half-drawn. Travel rides the expo; opacity runs on its
+   own short linear clock, because an expo fade is nearly whole in its first
+   frames. The pieces replay when the form and the linked row replace each
+   other: each is a new node under an open window. `:where` keeps the pill's
+   pin and the reveals their own animation. */
+.institution-dialog { transform-origin: 50% 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .institution-dialog[data-open] { animation: institution-dialog-in 320ms var(--ease-out-expo); }
+
+  .institution-dialog[data-open] > :where(h2, p),
+  .institution-dialog[data-open] :where(.institution-link > :not(.institution-link-reveal)) {
+    animation:
+      institution-piece-travel 380ms var(--ease-out-expo) backwards,
+      institution-piece-fade 200ms linear backwards;
+  }
+
+  .institution-dialog[data-open] > h2 { animation-delay: 70ms; }
+  .institution-dialog[data-open] > p { animation-delay: 115ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(1)) { animation-delay: 160ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(2)) { animation-delay: 205ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(3)) { animation-delay: 250ms; }
+  .institution-dialog[data-open] :where(.institution-link > :nth-child(n + 4)) { animation-delay: 295ms; }
+}
+
+/* `translate` keeps the -50% that centres the window across. */
+@keyframes institution-dialog-in {
+  0% { opacity: 0; scale: 0.96; translate: -50% -12px; }
+  30% { opacity: 1; }
+}
+
+/* Something added under the field (Cancel, a message) opens its own height,
+   so the window grows with it instead of jumping. Its child must size to
+   content: a fixed height cannot fold to zero. The clip only runs while it
+   opens, and leaves room for a focus ring. */
+.institution-link-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: institution-reveal 320ms var(--ease-out-expo) backwards;
+}
+
+.institution-link-reveal > * { min-height: 0; }
+
+/* Linked just now: the university pill is pinned beside the name. */
+.is-just-linked > .institution-pill { animation: institution-pill-pin 420ms 200ms var(--ease-out) backwards; }
+
+@keyframes institution-piece-travel {
+  from { translate: 0 12px; }
+}
+
+@keyframes institution-piece-fade {
+  from { opacity: 0; }
+}
+
+@keyframes institution-reveal {
+  from { grid-template-rows: 0fr; opacity: 0; clip-path: inset(-8px -8px 0 -8px); }
+  to { clip-path: inset(-8px -8px 0 -8px); }
 }
 
 /* The submit sits inside the field, at its right edge, and the field's text
@@ -104,8 +178,7 @@
   right: 4px;
 }
 
-/* With its margin it fills the 16px of the Google mark it replaces, so the
-   button keeps its width while the window is prepared. */
+/* Keep the submit width steady while verification runs. */
 .institution-link-spinner {
   width: 14px;
   height: 14px;
@@ -142,42 +215,175 @@
 .institution-services-kicker {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: baseline;
+  gap: var(--space-3);
   margin: 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
 }
 
-.institution-services-count::before {
-  content: '· ';
+.institution-services-count {
+  color: var(--text-secondary);
+  font: var(--mono-label);
 }
 
 .institution-services-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-  gap: var(--space-2);
-  margin: 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--border-default);
 }
 
-.institution-service-row {
+.institution-services-list > li {
+  border-bottom: 1px solid var(--border-default);
+  animation: institution-source-arrive 360ms cubic-bezier(0.16, 1, 0.3, 1) var(--service-delay, 0ms) backwards;
+}
+
+.institution-service-summary {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 48px;
-  padding: var(--space-1);
-  border-radius: var(--radius-md);
+  min-height: 80px;
+  padding: var(--space-3) var(--space-1);
+  width: 100%;
+  border: 0;
+  background: transparent;
   color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.institution-service-summary > .institution-service-text { flex: 1; }
+
+.institution-service-chevron {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.institution-service-summary[data-panel-open] .institution-service-chevron { transform: rotate(180deg); }
+
+.institution-service-coverage, .institution-service-route, .institution-service-detail-note {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.institution-service-count {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font: var(--mono-label);
+}
+
+/* Height moves the following sources with the panel; Base UI measures the content. */
+.institution-service-panel {
+  height: var(--collapsible-panel-height);
+  overflow: clip;
+  transition: height 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.institution-service-panel[data-starting-style],
+.institution-service-panel[data-ending-style] { height: 0; }
+.institution-service-panel[data-ending-style] { transition-duration: 200ms; }
+
+/* Opacity only: Base UI measures the panel's height while it starts, and a
+   translated child shifts that measure, so the rule jumped by the offset when
+   the height went to auto. The titles carry the movement instead. */
+.institution-service-details {
+  padding: 0 var(--space-2) var(--space-3);
+  opacity: 1;
+  transition: opacity 180ms ease-out;
+}
+
+.institution-service-panel[data-starting-style] .institution-service-details,
+.institution-service-panel[data-ending-style] .institution-service-details { opacity: 0; }
+
+.institution-service-panel[data-ending-style] .institution-service-details { transition-duration: 100ms; }
+
+.institution-service-detail-note { margin: 0 0 var(--space-2); }
+.institution-service-titles { list-style: none; margin: 0; padding: 0; }
+.institution-service-titles > li {
+  animation:
+    institution-piece-travel 280ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards;
+  animation-delay: calc(var(--title-index, 0) * 28ms + 60ms);
+}
+.institution-service-titles > li + li { border-top: 1px solid var(--border-subtle); }
+
+.institution-service-title-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-primary);
   text-decoration: none;
 }
 
+.institution-service-title-link > span:first-child { min-width: 0; }
+.institution-service-title-link > svg { flex: 0 0 auto; }
+.institution-service-title-name { display: block; overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.institution-service-route { display: block; overflow-wrap: anywhere; }
+
+.institution-service-summary:focus-visible, .institution-service-title-link:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Keyboard focus must never wait for content to finish moving into view.
+   Rows and titles are left alone, though: their arrival plays once, on
+   mount, and nothing switches it by focus. Taking it off the focused row
+   (`animation: none`, then a zero duration) and handing it back when focus
+   moved on replayed that row's arrival as a blink, wherever in the list it
+   was. */
+.institution-service-group:has(:focus-visible) .institution-service-panel,
+.institution-service-group:has(:focus-visible) .institution-service-details,
+.institution-service-group:has(:focus-visible) .institution-service-chevron { transition: none; }
+
 @media (hover: hover) and (pointer: fine) {
-  a.institution-service-row:hover {
-    background: var(--bg-glass-hover);
+  .institution-service-summary:hover, a.institution-service-title-link:hover { background: var(--bg-glass-hover); }
+  a.institution-service-title-link:hover .institution-service-title-name { text-decoration: underline; text-underline-offset: 3px; }
+}
+
+@keyframes institution-source-arrive {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes institution-titles-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .institution-link-reveal,
+  .is-just-linked > .institution-pill,
+  .institution-service-titles > li { animation: none; }
+  .institution-services-message,
+  .institution-services-retry,
+  .institution-services-count,
+  .institution-services-pending > li { animation: institution-piece-fade 200ms linear backwards; }
+  .institution-services-pending > li { animation-delay: 320ms; }
+  .institution-services-message[data-state='loading'] {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
+  .institution-placeholder-plate,
+  .institution-placeholder-lines > span { animation: none; }
+  .institution-services-list > li { animation: institution-titles-arrive 100ms ease-out; }
+  .institution-service-chevron, .institution-service-panel { transition: none; }
+  .institution-service-details { transition: opacity 100ms ease-out; }
+}
+
+@media (max-width: 480px) {
+  .institution-service-summary { gap: var(--space-2); }
+  .institution-service-summary .institution-service-plate { width: 64px; }
+  .institution-placeholder-plate { width: 64px; }
 }
 
 /* The brand colour is data from the Worker's catalogue, like a field's
@@ -224,14 +430,6 @@
   line-height: var(--lh-tight);
 }
 
-.institution-service-publisher {
-  overflow-wrap: anywhere;
-  color: var(--text-tertiary);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-}
-
 .institution-services-status {
   display: flex;
   flex-wrap: wrap;
@@ -246,6 +444,99 @@
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
 }
+
+/* Each thing the library answers arrives as a piece of the window does,
+   rising onto the sheet: "Checking your library…", then what it found, could
+   not check or failed to reach, and Retry just behind a failure. Under a
+   list the message waits for the rows above it to land. The count beside
+   the heading arrives with the list. While the library is asked, the card's
+   "Checking" band sweeps across the words. The box they sit in settles from
+   one answer's height to the next (`useHeightSettle`). */
+.institution-services-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.institution-services-message {
+  display: block;
+}
+
+.institution-services-message,
+.institution-services-retry,
+.institution-services-count {
+  animation:
+    institution-piece-travel 380ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards;
+}
+
+.institution-services-retry { animation-delay: 90ms; }
+
+.institution-services-body:has(.institution-services-list:not(.institution-services-pending)) .institution-services-message { animation-delay: 220ms; }
+
+.institution-services-message[data-state='loading'] {
+  -webkit-mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  animation:
+    institution-piece-travel 380ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards,
+    checkingSweep 1400ms linear infinite;
+}
+
+/* The rows the list will fill, at a real row's size, while the library is
+   asked. They hold their space from the start but show only after 320 ms,
+   the wait every placeholder in the app keeps, so a quick answer never
+   flashes them; then they rise in like the rows that replace them. The bars
+   take the lists' shimmer. */
+.institution-services-pending > li {
+  animation:
+    institution-piece-travel 380ms var(--ease-out-expo) backwards,
+    institution-piece-fade 200ms linear backwards;
+  animation-delay: calc(320ms + var(--service-delay, 0ms));
+}
+
+.institution-service-placeholder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 80px;
+  padding: var(--space-3) var(--space-1);
+}
+
+.institution-placeholder-plate,
+.institution-placeholder-lines > span {
+  display: block;
+  border-radius: var(--radius-sm);
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 0%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 38%,
+    var(--bg-card) 50%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 62%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-card)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.institution-placeholder-plate {
+  flex: 0 0 auto;
+  width: 88px;
+  height: 40px;
+  border-radius: var(--radius-md);
+}
+
+.institution-placeholder-lines {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.institution-placeholder-lines > span { height: 11px; width: min(180px, 70%); }
+.institution-placeholder-lines > span + span { width: min(112px, 45%); }
 
 /* A publisher's own logo, drawn for a white page, so it sits on the figure
    plate, which stays white on both themes. The image fills the plate and
@@ -267,4 +558,62 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+/* The verification page is the app's status screen (EmptyState) on its own
+   route. Petri arrives as she does everywhere; the one moment of its own is
+   the confirmation: she changes into her university look, settles with a
+   small hop, and the university pill from Settings is pinned under her. */
+.institution-verification {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  color: var(--text-primary);
+}
+
+.institution-verification-state {
+  width: min(520px, 100%);
+  overflow-wrap: anywhere;
+}
+
+.institution-verification-state .empty-state-art { gap: var(--space-2); }
+.institution-verification-state .empty-state-body { max-width: 42ch; }
+.institution-verification-state strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.institution-verification-state .institution-link-feedback {
+  flex-basis: 100%;
+  font-size: var(--fs-sm);
+}
+
+.is-connected .petri {
+  transform-origin: 50% 100%;
+  animation: institution-petri-settle 520ms 200ms var(--ease-out);
+}
+
+.is-connected .institution-pill { animation: institution-pill-pin 420ms 480ms var(--ease-out) backwards; }
+
+/* A link that cannot be used arrives quietly: no overshoot, no shake. */
+.is-stopped .institution-verification-state { animation: institution-settle 320ms var(--ease-out) backwards; }
+.is-stopped .petri .onboarding-petri-body { animation: institution-fade 320ms ease-out backwards; }
+
+@keyframes institution-petri-settle {
+  35% { translate: 0 -7px; scale: 0.97 1.04; }
+  70% { translate: 0 0; scale: 1.03 0.97; }
+}
+
+@keyframes institution-pill-pin {
+  from { opacity: 0; translate: 0 -8px; scale: 1.12; }
+  65% { opacity: 1; translate: 0 1px; scale: 0.97; }
+}
+
+@keyframes institution-settle { from { opacity: 0; translate: 0 6px; } }
+@keyframes institution-fade { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .is-connected .petri,
+  .is-connected .institution-pill,
+  .is-stopped .institution-verification-state,
+  .is-stopped .petri .onboarding-petri-body { animation: none; }
 }

@@ -10,7 +10,8 @@ import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
-import { readProfileSignals } from '../utils/interactionProfile.ts';
+import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent } from '../utils/interactionProfile.ts';
+import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
@@ -24,6 +25,7 @@ import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitatio
 import { fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { openAlexClient } from '../services/openAlexClient.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
+import { pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
@@ -66,7 +68,7 @@ function deferred() {
 function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
-    userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
+    userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15, RESET_START_PAGES: 5,
     feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<object | null>(null),
     openAlexEnrichmentAttempts: ref(new Set()), openAlexEnrichmentRequests: ref(new Map()),
     lateSourceCandidatesRef: ref([]), latePoolGenerationRef: ref(0),
@@ -97,7 +99,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     recommendationWeights: ref({}), takeFeedPage, mergeFreshFeedPage,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
-    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()),
+    fetchICiteMetrics: () => Promise.resolve({}), enrichPubmedIds: () => Promise.resolve(new Map()), pubmedCategoryQuery,
     awaitWithinGate, CITATION_GATE_MAX_WAIT_MS, hasUsableAIAbstract,
     recoverFeedAbstracts: (async () => []) as (papers: Paper[]) => Promise<Partial<Paper>[]>,
     mergeOpenAlexEnrichment, preserveFeedAbstracts, mergeFeedAbstracts, mergeEuropePmcEnrichment, mergeICiteEnrichment,
@@ -319,8 +321,124 @@ test('an entirely known page advances instead of declaring provider exhaustion',
   await tick();
   assert.equal(state.error, null);
   assert.equal(state.hasMore, true);
-  assert.equal(state.page, 1);
-  assert.deepEqual(state.continuations, [[false, 'top', false, 1]]);
+  // A reset goes on as the same load, still a reset, on the next page.
+  assert.deepEqual(state.continuations, [[true, 'top', false, 1, { keepThroughVisible: false, seenFallback: undefined }]]);
+});
+
+// A reload starts on a random one of the first pages; Math.random() at 0.2
+// makes it page 1 (arXiv start 15). Each page holds papers of its own.
+function reloadOnPageOne(t: import('node:test').TestContext, { seen = [] as string[], papers = [] as FeedRecord[], page = (start: number) => records(`page-${start / 15}`) } = {}) {
+  t.mock.method(Math, 'random', () => 0.2);
+  t.mock.method(console, 'log', () => {});
+  const loaded = feed({ seen, papers });
+  const starts: number[] = [];
+  loaded.env.fetchPapers = (_categories: string[], start = 0) => {
+    starts.push(start);
+    return Promise.resolve(page(start));
+  };
+  return { ...loaded, starts };
+}
+const pageIds = (...pages: number[]) => pages.flatMap(index => records(`page-${index}`)).map(paper => paper.id);
+
+// The browser check of 2026-10-21: after five reloads every page a reload
+// starts on (0 to 4) had been shown, and the sixth showed page 1 again.
+test('a reload after every start page was shown shows unseen papers from a later page', async t => {
+  const { state, env, run, starts } = reloadOnPageOne(t, { seen: pageIds(0, 1, 2, 3, 4) });
+  env.loadPapersRef.current = run;
+  const steps: string[] = [];
+  const { setLoading, setPapers } = env;
+  env.setLoading = value => { steps.push(`loading ${value}`); setLoading(value); };
+  env.setPapers = value => { setPapers(value); steps.push(`${state.papers.length} papers`); };
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(starts[0], 15, 'the reload started on page 1');
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(0, 1, 2, 3, 4).includes(id)), [],
+    'no paper shown before is shown again');
+  assert.equal(starts.length, 2, 'one more page was asked for');
+  assert.ok(steps.indexOf('15 papers') < steps.indexOf('loading false'),
+    `the first screen stays loading until the later page is shown: ${steps.join(', ')}`);
+});
+
+test('a refresh whose start page was all shown before replaces the cards on screen with unseen ones', async t => {
+  const onScreen = records('page-1');
+  const { state, env, run } = reloadOnPageOne(t, { seen: pageIds(1), papers: onScreen });
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => id.startsWith('page-1-')), [],
+    'the list is replaced, neither shown again nor extended');
+});
+
+for (const [name, page] of [
+  ['every later page was shown before too', (start: number) => records(`page-${start / 15}`)],
+  ['no later page has papers', (start: number) => start === 15 ? records('page-1') : []],
+] as const) {
+  test(`a reload whose start page was all shown before still gets a feed when ${name}`, async t => {
+    const everyPage = Array.from({ length: 30 }, (_, index) => records(`page-${index}`)).flat().map(paper => paper.id);
+    const { state, env, run, starts } = reloadOnPageOne(t, { seen: everyPage, page });
+    env.loadPapersRef.current = run;
+    await run(true, null, true);
+    assert.equal(state.error, null);
+    assert.equal(state.papers.length, 15, 'the feed is not empty');
+    assert.equal(state.hasMore, true, 'the reader can scroll on');
+    assert.ok(starts.length <= 3, `at most two more pages are asked for: ${JSON.stringify(starts)}`);
+  });
+}
+
+test('after a reload shows its seen start page because the later page was empty, scrolling goes on from the page after it', async t => {
+  // Page 1 was shown before, pages 2 to 4 were not, and nothing comes after page 4.
+  const { state, env, run, starts } = reloadOnPageOne(t, {
+    seen: pageIds(1),
+    page: start => start < 75 ? records(`page-${start / 15}`) : [],
+  });
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1));
+  assert.equal(state.hasMore, true);
+  // The reader reaches the end of the list.
+  await run(false);
+  assert.equal(state.error, null);
+  assert.deepEqual(starts, [15, 90, 30]);
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1, 2));
+});
+
+// The later page is rarely in the Worker's edge cache, so it is the one that
+// waits for a seat at arXiv and can be refused.
+for (const status of [429, 502]) {
+  test(`a reload whose start page was all shown before shows those papers when arXiv answers the later page with ${status}`, async t => {
+    const { state, env, run, starts } = reloadOnPageOne(t, { seen: pageIds(0, 1, 2, 3, 4) });
+    env.loadPapersRef.current = run;
+    env.fetchPapers = (_categories: string[], start = 0) => {
+      starts.push(start);
+      return start === 15
+        ? Promise.resolve(records('page-1'))
+        : Promise.reject(Object.assign(new Error(`arXiv API error: ${status}`), { status }));
+    };
+    // Every timer the loader sets fires at once, so a retry would already have run.
+    Object.assign(env, { setTimeout: (callback: () => void) => setTimeout(callback, 0) });
+    await run(true, null, true);
+    await wait(20);
+    assert.equal(state.error, null);
+    assert.deepEqual(state.papers.map(paper => paper.id), pageIds(1), 'the start page is shown again');
+    assert.equal(state.hasMore, true, 'the reader can scroll on');
+    assert.deepEqual(starts, [15, 90], 'no request after the refused one');
+  });
+}
+
+test('a reload whose start page has unseen papers asks for no other page', async t => {
+  // A source returns a wider pool than a page: 20 papers, 5 shown before.
+  const { state, run, starts } = reloadOnPageOne(t, {
+    seen: records('page-1', 5).map(paper => paper.id),
+    page: start => records(`page-${start / 15}`, 20),
+  });
+  await run(true, null, true);
+  await tick();
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(starts, [15]);
+  assert.deepEqual(state.continuations, []);
 });
 
 test('a short screen schedules its next page and preserves papers when it fills', async () => {
@@ -352,7 +470,8 @@ for (const knownCount of [0, 2]) {
   for (const guard of ['feedRequestId', 'feedSessionId'] as const) {
     test(`changing ${guard} cancels a scheduled continuation with ${knownCount} excluded papers`, async () => {
       const { state, env, run } = feed({ fast: records('fast', 2), known: records('fast', knownCount).map(paper => paper.id) });
-      await run(true);
+      // A later page: a reset load whose page is all excluded goes on at once.
+      await run(false);
       env[guard].current += 1;
       await tick();
       assert.equal(state.error, null);
@@ -542,6 +661,45 @@ for (const category of ['econ.EM', 'q-fin.RM', 'q-fin.GN']) {
     await run(true);
     assert.equal(state.error, null);
     assert.deepEqual(state.papers.map(paper => paper.primaryCategory), [category]);
+  });
+}
+
+// Every PubMed lane sends the query `pubmedCategoryQuery` builds, which leaves
+// out Methods in Molecular Biology and records dated after today.
+const BIOMEDICAL_LEAVES = [
+  { id: 'bio.mol', label: 'Molecular Biology', area: 'bio' },
+  // The nearby category exploration adds, and one outside the reader's areas for boredom.
+  { id: 'bio.gen', label: 'Genetics', area: 'bio' },
+  { id: 'med.onco', label: 'Oncology', area: 'med' },
+];
+const withoutDay = (query: string) => query.replace(/\d{4}\/\d{2}\/\d{2}\[dp\]/, 'today[dp]');
+for (const [name, page, boredom, asked] of [
+  ['the first page', 0, 0, [['bio.mol']]],
+  ['a later page with its exploration', 1, 0, [['bio.mol'], ['bio.gen']]],
+  ['a bored reader\'s later page', 1, 8, [['bio.mol'], ['bio.gen'], ['med.onco']]],
+] as const) {
+  test(`${name} asks PubMed with the feed's PubMed query for each lane`, async () => {
+    const queries: string[] = [];
+    const { state, env, run } = feed({ fast: [], page });
+    Object.assign(env, {
+      userPreferences: ['bio.mol'],
+      CATEGORIES,
+      getAllLeafCategories: () => BIOMEDICAL_LEAVES,
+      PubmedAdapter: class {
+        search(query: string) {
+          queries.push(query);
+          return Promise.resolve({ papers: records(`pubmed-${queries.length}`) });
+        }
+      },
+    });
+    env.boredomLevel.current = boredom;
+    await run(page === 0);
+    assert.equal(state.error, null);
+    assert.deepEqual(
+      queries.map(withoutDay),
+      asked.map(categories => withoutDay(pubmedCategoryQuery(categories))),
+      'the chosen, nearby and random lanes, in that order',
+    );
   });
 }
 
@@ -806,7 +964,8 @@ for (const [name, args] of [
 test('a card already shown with no abstract keeps it when a later page offers it again through the seen bypass', async t => {
   const existing = records('already-visible', 3).map(paper => ({ ...paper, sources: { primary: 'arxiv', enrichedBy: [] } }));
   const shown = [...existing, electron];
-  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: shown, seen: shown.map(paper => paper.id) });
+  // From page 10 no later page is tried, so the seen card is offered again.
+  const { state, env, run, loadingAbstracts } = feed({ fast: [electron], papers: shown, seen: shown.map(paper => paper.id), page: 10 });
   t.mock.method(console, 'log', () => {});
   const recovery = pendingRecords();
   env.recoverFeedAbstracts = () => recovery.promise;
@@ -1048,4 +1207,56 @@ test('the working-paper series are asked for once the followed lookups settle, n
   await loading;
   assert.deepEqual(asked, ['followed', 'series']);
   assert.equal(state.error, null);
+});
+
+// What each load asks arXiv for: categories and order.
+function arxivQueries(env: ReturnType<typeof feed>['env']) {
+  const asked: Array<{ categories: string[]; mode: string }> = [];
+  env.fetchPapers = ((...args: unknown[]) => {
+    const [categories, start, count, mode] = args as [string[], number, number, string];
+    // Exploration asks for a handful from nearby categories; the main lane asks for a page.
+    if (count === env.PAGE_SIZE) asked.push({ categories, mode });
+    return Promise.resolve(records(`arxiv-${start}-${categories[0]}`));
+  }) as typeof env.fetchPapers;
+  return asked;
+}
+
+test('one skipped card keeps its interest in the first load, whatever page that load starts on', async t => {
+  const interests = ['cs.AI', 'quant-ph', 'cs.LG', 'cond-mat.supr-con', 'cs.CV', 'cond-mat.str-el', 'cs.CL', 'cond-mat.mtrl-sci', 'cs.NE', 'cond-mat.mes-hall'];
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'skipped', kind: 'skip', category: 'cs.AI' });
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  const loads: Array<{ categories: string[]; nextPage: number }> = [];
+  for (const randomDraw of [0, 0.3, 0.5, 0.7, 0.9]) {
+    draw = randomDraw;
+    const { state, env, run } = feed();
+    Object.assign(env, { userPreferences: interests, rankPreferences, CATEGORIES, profileSignals: ref(readProfileSignals(profile)) });
+    const asked = arxivQueries(env);
+    // The feed's first load: loadPapers(true, null, true) starts on a random page.
+    await run(true, null, true);
+    loads.push({ categories: asked[0].categories, nextPage: state.page });
+  }
+
+  assert.equal(new Set(loads.map(load => load.nextPage)).size, loads.length, 'the first loads start on different pages');
+  for (const load of loads) {
+    assert.ok(load.categories.includes('cs.AI'), `the first load before page ${load.nextPage} asks for ${load.categories}`);
+  }
+});
+
+test('a reader with no lean towards older papers gets arXiv newest first on every load', async t => {
+  let draw = 0;
+  t.mock.method(Math, 'random', () => draw);
+  for (const [lean, preference, randomDraw, expected] of [
+    ['none', 0, 0.01, 'recent'],
+    ['none', 0, 0.99, 'recent'],
+    ['older papers', -0.5, 0.01, 'relevance'],
+  ] as const) {
+    draw = randomDraw;
+    const { env, run } = feed();
+    env.temporalPreference.current = preference;
+    const asked = arxivQueries(env);
+    await run(true);
+    assert.deepEqual(asked.map(query => query.mode), [expected], `lean ${lean}, Math.random() = ${draw}`);
+  }
 });

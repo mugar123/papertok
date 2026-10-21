@@ -55,6 +55,7 @@ import './App.css'
 // screens are preloadable (`lazyWithPreload`) so the ones prefetched below
 // never suspend at all.
 
+const InstitutionVerification = lazyWithPreload(() => import('./components/Institution/InstitutionVerification.tsx'))
 const OnboardingFlow = lazyWithPreload(() => import('./components/Onboarding/OnboardingFlow.tsx'))
 const ListsPage = lazyWithPreload(() => import('./components/Lists/ListsPage.tsx'))
 const PDFViewer = lazyWithPreload(() => import('./components/PDF/PDFViewer.tsx'))
@@ -330,6 +331,7 @@ function AppContent() {
               session is unknown it is the feed, whose veil is the boot screen;
               ProtectedRoute sends a visitor on from there. */}
           <Route path="/" element={<Navigate to={authLoading || user ? '/feed' : '/onboarding'} replace />} />
+          <Route path="/institution/verify" element={<InstitutionVerification />} />
           <Route path="/login" element={<LoginRedirect />} />
           {/* Signed out, the onboarding is the welcome, and it ends in a
               sign-up: there is no guest feed. Signed in, it is the account's

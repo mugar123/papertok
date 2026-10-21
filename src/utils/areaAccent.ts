@@ -12,15 +12,16 @@ import type { Paper } from '../models/Paper.ts';
  * chances for one of them to stop matching `PaperCard`, which is the file they
  * are all mirroring and none of them import.
  *
- * The prefix match is the part worth keeping in one place: arXiv category ids
- * are `cs.LG`, `math-ph`, `econ.EM`, and a paper is routinely filed under a
- * subcategory the map does not list explicitly. Splitting on `.` and `-` and
- * matching the area whose subcategories share that prefix is what stops a
- * `cs.NE` paper from falling through to the brand ink.
+ * The category lookup is the part worth keeping in one place: arXiv category
+ * ids are `cs.LG`, `math-ph`, `econ.EM`, and a paper is routinely filed under a
+ * subcategory the map does not list explicitly. Such a category (`cs.NE`,
+ * `nlin.CD`) takes its area from the taxonomy's archive table, the table that
+ * also names its chip, so its ink neither falls back to the brand nor disagrees
+ * with the chip.
  */
 // The taxonomy, not `categories.ts`: the Worker imports this file to ink the
 // email digest, and `categories.ts` attaches the React icons.
-import { CATEGORIES, getAreaKeyFromTopicName } from '../data/categoryTaxonomy.ts';
+import { CATEGORIES, getArxivArchiveArea, getAreaKeyFromTopicName } from '../data/categoryTaxonomy.ts';
 
 const FALLBACK = 'var(--gradient-brand)';
 
@@ -38,28 +39,13 @@ export function areaKeyForCategory(categoryId: unknown): keyof typeof CATEGORIES
   const category = categoryId.trim();
   if (CATEGORIES[category as keyof typeof CATEGORIES]) return category as keyof typeof CATEGORIES;
 
-  // Every exact match, before any prefix match — two passes, not one.
-  //
-  // With both tests inside a single loop the first area to match *either* way
-  // won, and the areas are iterated in declaration order. Physics is declared
-  // before maths and owns `math-ph`, mathematical physics, whose key starts
-  // with "math" — so `math.NT` matched physics by prefix and returned before
-  // maths was ever reached, and every number-theory, algebra and topology paper
-  // in the app was painted as physics. An exact hit is knowledge; a prefix hit
-  // is a guess, and a guess must never outrank knowledge just for being earlier
-  // in the list.
   for (const [key, area] of Object.entries(CATEGORIES)) {
     if ((area.subcategories as Record<string, { label: string }>)?.[category]) return key as keyof typeof CATEGORIES;
   }
 
-  const prefix = category.split('.')[0].split('-')[0];
-  for (const [key, area] of Object.entries(CATEGORIES)) {
-    const subcategories = Object.keys(area.subcategories || {});
-    if (subcategories.some(subKey => subKey.startsWith(prefix))) {
-      return key as keyof typeof CATEGORIES;
-    }
-  }
-  return null;
+  // Not a prefix match: `math.AC` shares its first letters with `math-ph` and
+  // `q-bio.NC` with `quant-ph`, and both were painted as physics.
+  return getArxivArchiveArea(category);
 }
 
 /** The area one category id belongs to, or null. */

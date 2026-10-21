@@ -352,6 +352,14 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'a headline would read as a rendering bug rather than as focus',
   ],
   [
+    '.institution-sheet h2:focus-visible',
+    'the Your university sheet (InstitutionDialog, phone only) opens with focus on its '
+    + 'h2 (tabIndex={-1}, initialFocus), so a screen reader starts at the title and the '
+    + 'keyboard does not rise over the sheet before the reader taps the email field. It '
+    + 'is never a tab stop of its own; as with .gw-title, a ring round the heading '
+    + 'would read as a rendering bug rather than as focus',
+  ],
+  [
     "input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible, "
     + "textarea:focus-visible, [contenteditable='true']:focus-visible",
     'the same rule that removes the outline draws the replacement in the next two '

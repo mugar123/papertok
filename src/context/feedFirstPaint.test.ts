@@ -171,7 +171,7 @@ test('SOURCE: the main sources are requested before the optional candidates', as
   const code = stripComments(await read('./FeedContext.tsx'));
   const block = bounded(
     code,
-    "queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';",
+    "const queryMode = (temporalPreference.current || 0) < -0.3 ? 'relevance' : 'recent';",
     'let sourceResults = await first;',
     'the source fan-out',
     100,

@@ -1,4 +1,4 @@
-import type { PaperSubject } from '../../models/Paper.ts';
+import type { PaperSubject, PaperSubjectReference } from '../../models/Paper.ts';
 
 // Raw provider records; normalized results use Paper.
 export interface OpenAlexWork {
@@ -82,6 +82,7 @@ export interface OpenAlexAuthor extends EntityMetrics {
   x_concepts?: PaperSubject[];
   concepts?: PaperSubject[];
   verified?: boolean;
+  counts_by_year?: Array<{ year: number; works_count: number; cited_by_count?: number }>;
 }
 
 export interface OpenAlexTopic extends Partial<PaperSubject>, EntityMetrics {
@@ -95,5 +96,7 @@ export interface OpenAlexTopic extends Partial<PaperSubject>, EntityMetrics {
   parent_display_name?: string;
   field_display_name?: string;
   keywords?: string[];
+  siblings?: PaperSubjectReference[];
+  ids?: { openalex?: string; wikipedia?: string };
   _localTopic?: boolean;
 }

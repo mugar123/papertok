@@ -18,6 +18,7 @@ const LABELS: Record<string, string> = {
   '/settings/following': 'Following settings',
   '/login': 'Sign in',
   '/onboarding': 'Welcome',
+  '/institution/verify': 'Verify your university email',
 }
 
 // These set document.title on their own (the SettingsPage pages); the

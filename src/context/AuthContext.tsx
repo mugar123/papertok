@@ -31,6 +31,7 @@ export interface AuthContextValue {
   signInWithGitHub: () => Promise<{ isNewUser: boolean; providerId: string }>;
   linkSignInMethod: typeof linkSignInProvider;
   linkInstitution: typeof linkInstitutionAccount;
+  completeInstitutionVerification: typeof completeInstitutionVerificationAccount;
   unlinkInstitution: () => Promise<void>;
   signOut: () => Promise<void>;
   completeOnboarding: (preferences: string[]) => Promise<void>;
@@ -57,6 +58,8 @@ import {
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
   linkInstitution as linkInstitutionAccount,
+  completeInstitutionVerification as completeInstitutionVerificationAccount,
+  pendingInstitutionVerification,
   normalizeInstitution,
   unlinkInstitution as unlinkInstitutionAccount,
 } from '../services/institutionService.ts';
@@ -142,6 +145,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
       setInstitution(null);
+      pendingInstitutionVerification({ currentUser: () => currentUser });
 
       if (currentUser) {
         hydrateAccountCaches(currentUser.uid);
@@ -312,10 +316,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   // The Worker writes the field and answers with what it wrote; that answer is
   // applied here, guarded by uid like the profile writes below, so an account
-  // switched while the Google window was open cannot inherit the other's.
+  // switched during verification cannot inherit the other's.
   const linkInstitution = useCallback(async (email: string) => {
     const userId = user?.uid;
     const linked = await linkInstitutionAccount(email);
+    if (auth.currentUser?.uid === userId) setInstitution(linked);
+    return linked;
+  }, [user?.uid]);
+
+  const completeInstitutionVerification = useCallback(async (link: string) => {
+    const userId = user?.uid;
+    const linked = await completeInstitutionVerificationAccount(link);
     if (auth.currentUser?.uid === userId) setInstitution(linked);
     return linked;
   }, [user?.uid]);
@@ -540,6 +551,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     signInWithGitHub,
     linkSignInMethod,
     linkInstitution,
+    completeInstitutionVerification,
     unlinkInstitution,
     signOut,
     completeOnboarding,
@@ -551,7 +563,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     retryProfileLoad,
     isDemo: IS_DEMO,
   }), [
-    completeOnboarding, emailDigestPending, error, followedAuthors, institution, linkInstitution,
+    completeOnboarding, completeInstitutionVerification, emailDigestPending, error, followedAuthors, institution, linkInstitution,
     linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
     retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,

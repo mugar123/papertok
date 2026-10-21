@@ -106,6 +106,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/lists',
   '/login',
   '/onboarding',
+  '/institution/verify',
   '/profile',
   '/report',
   '/research',
