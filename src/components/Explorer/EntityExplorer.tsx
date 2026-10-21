@@ -54,8 +54,11 @@ import { getPapersByProject, getProjectDetails } from '../../services/openAireSe
 import { PaperBuilder } from '../../services/PaperBuilder.ts';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService.ts';
 import {
+  EXPLORER_AUTO_PAGES,
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
+  explorerListState,
+  explorerPageAllowance,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
@@ -440,6 +443,26 @@ export default function EntityExplorer({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const observerRef = useRef<HTMLDivElement | null>(null);
   const papersRequestRef = useRef<{ key: string; cancelled: boolean } | null>(null);
+  // The pages the list may still ask for on its own (`explorerPageAllowance`),
+  // and whether the foot of the list has been off screen since the last page
+  // landed: if it has, the next time it shows the reader scrolled to it.
+  const papersAutoPagesRef = useRef(EXPLORER_AUTO_PAGES);
+  const papersFootHiddenRef = useRef(false);
+  // Once the allowance runs out the foot is a "Keep looking" button, until the
+  // list starts over.
+  const [papersAwaitReader, setPapersAwaitReader] = useState(false);
+  const requestNextPapersPage = useCallback((byReader: boolean) => {
+    const left = explorerPageAllowance(papersAutoPagesRef.current, { byReader });
+    if (left === null) {
+      setPapersAwaitReader(true);
+      return false;
+    }
+    papersAutoPagesRef.current = left;
+    papersFootHiddenRef.current = false;
+    setIsFetchingMore(true);
+    setPage(p => p + 1);
+    return true;
+  }, []);
 
   const [activeTab, setActiveTab] = useState(() => resumed?.activeTab ?? 'papers');
   // Whether the Authors tab has been opened on this entity. The list is
@@ -1164,9 +1187,14 @@ export default function EntityExplorer({
         setIsLoadingPapers(true);
         setPapersError(null);
         setRowBudget(EXPLORER_ROW_CHUNK);
+        // A new list is the reader's request.
+        papersAutoPagesRef.current = EXPLORER_AUTO_PAGES;
+        papersFootHiddenRef.current = false;
+        setPapersAwaitReader(false);
       }
       else setIsFetchingMore(true);
-      
+      let continuing = false;
+
       try {
         let arxivIds: string[] = [];
         let dois: string[] = [];
@@ -1395,6 +1423,12 @@ export default function EntityExplorer({
           });
         }
         setHasMore(page * 30 < total);
+        // `rows` counts what this page added, not the list: a page that adds
+        // none under earlier rows leaves the list's foot on screen, which
+        // would ask for the next page on the same allowance.
+        if (explorerListState({ rows: fetchedPapers.length, hasMore: page * 30 < total, publicMode }) === 'looking') {
+          continuing = requestNextPapersPage(false);
+        }
       } catch (err) {
         console.error("Failed to load papers for entity", err);
         if (request.cancelled) return;
@@ -1404,12 +1438,12 @@ export default function EntityExplorer({
       }
       if (request.cancelled) return;
       setIsLoadingPapers(false);
-      setIsFetchingMore(false);
+      setIsFetchingMore(continuing);
     }
     loadPapers();
     // No cleanup: a request is superseded by key, above, and cancelled on
     // unmount, below — not by the next render of the same request.
-  }, [afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey]);
+  }, [afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey, publicMode, requestNextPapersPage]);
 
   useEffect(() => () => {
     if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
@@ -1541,6 +1575,20 @@ export default function EntityExplorer({
     isLoading: isLoadingAuthors,
   });
   const rowsSettled = rowBudget >= filteredPapers.length;
+  // What the foot of the list says once it waits for "Keep looking", and what
+  // each press found. Nothing before that: the pages the list asks for on its
+  // own have the sentinel's spinner. A failed page under rows is said here
+  // too, because the error strip is inserted with its text already in it and
+  // a screen reader may not announce it. With no rows the error state is an
+  // alert and says it.
+  let papersMoreStatus: string | null = null;
+  if (papersAwaitReader) {
+    if (isFetchingMore) papersMoreStatus = 'Checking more publications…';
+    else if (hasMore && filteredPapers.length === 0) papersMoreStatus = 'No matches yet. More publications remain to check.';
+    else if (hasMore) papersMoreStatus = `${filteredPapers.length.toLocaleString(locale)} listed so far. More publications remain to check.`;
+    else if (!papersError) papersMoreStatus = 'No more publications to check.';
+    else if (filteredPapers.length > 0) papersMoreStatus = 'More publications could not be checked.';
+  }
   useEffect(() => {
     if (rowsSettled) return undefined;
     const schedule = typeof window.requestIdleCallback === 'function'
@@ -1555,12 +1603,19 @@ export default function EntityExplorer({
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          if (activeTab === 'papers' && hasMore && !isLoadingPapers && !isFetchingMore) {
-            setPage(p => p + 1);
-          } else if (activeTab === 'authors' && hasMoreAuthors && !isLoadingAuthors && !isFetchingMoreAuthors) {
-            setAuthorsPage(p => p + 1);
+        if (activeTab === 'papers') {
+          // A new observer reports the foot where it already is, so a page
+          // that left it on screen asks again at once: that request is the
+          // list's own, and the reader's only once the foot had gone. Only
+          // while no page loads: the skeleton of a new list pushes the old
+          // foot off screen without the reader moving.
+          if (!entries[0].isIntersecting) {
+            if (!isLoadingPapers && !isFetchingMore) papersFootHiddenRef.current = true;
+          } else if (hasMore && !isLoadingPapers && !isFetchingMore) {
+            requestNextPapersPage(papersFootHiddenRef.current);
           }
+        } else if (entries[0].isIntersecting && activeTab === 'authors' && hasMoreAuthors && !isLoadingAuthors && !isFetchingMoreAuthors) {
+          setAuthorsPage(p => p + 1);
         }
       },
       { threshold: 0.1 }
@@ -1568,7 +1623,7 @@ export default function EntityExplorer({
     if (activeTab === 'papers' && observerRef.current) observer.observe(observerRef.current);
     if (activeTab === 'authors' && observerAuthorsRef.current) observer.observe(observerAuthorsRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
+  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled, papersAwaitReader, requestNextPapersPage]);
 
   const handleFollow = (event: MouseEvent) => {
     event.stopPropagation();
@@ -2775,12 +2830,38 @@ export default function EntityExplorer({
                   leaving it on the page would make the two-row preview a coat
                   of paint over a list that kept loading itself. The wall below
                   takes its place. */}
-              {!publicMode && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
+              {!publicMode && !papersAwaitReader && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
                 <div ref={observerRef} className="ehc-sentinel">
                   <Petri pose="flask" className={isFetchingMore ? 'petri-loader' : undefined} />
                   <span>{isFetchingMore
                     ? ('Loading more articles…')
                     : ('Scroll for more')}</span>
+                </div>
+              )}
+
+              {/* The list stopped asking for pages on its own
+                  (`explorerPageAllowance`). The status is mounted before it
+                  has anything to say, so its first words are spoken. The
+                  button stays mounted and focusable while a page loads, after
+                  the last one and after a failed one, so a keyboard reader
+                  keeps their place. A failure under rows is said by the
+                  status, with no rows by the error state; the error strip or
+                  the error state offers Try again. */}
+              {!publicMode && (
+                <p className="explorer-list-more-status" role="status">{papersMoreStatus}</p>
+              )}
+              {!publicMode && papersAwaitReader && (
+                <div className="explorer-list-more">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isFetchingMore || !hasMore}
+                    focusableWhenDisabled
+                    onClick={() => requestNextPapersPage(true)}
+                  >
+                    {isFetchingMore && <CircleNotch className="ehc-spinner" size={16} aria-hidden="true" />}
+                    Keep looking
+                  </Button>
                 </div>
               )}
 
@@ -2801,7 +2882,9 @@ export default function EntityExplorer({
                 más artículos…» y, debajo, «No hay publicaciones». Una
                 promesa y su desmentido en la misma pantalla. Vacío es una
                 afirmación sobre algo terminado: se espera a que lo esté. */}
-            {!isLoadingPapers && !isFetchingMore && filteredPapers.length === 0 && (
+            {/* And only once there is no next page this reader may load: a
+                page the filters emptied is not an empty list. */}
+            {!isLoadingPapers && !isFetchingMore && explorerListState({ rows: filteredPapers.length, hasMore, publicMode }) === 'empty' && (
               <ExplorerEmptyState
                 variant={pickEmptyVariant({
                   papersError,

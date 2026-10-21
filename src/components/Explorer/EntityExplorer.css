@@ -2088,6 +2088,26 @@
   font-size: var(--fs-sm);
 }
 
+/* The sentinel's place and voice, for a list that waits for "Keep looking".
+   The status is always mounted and takes no room while it is empty. */
+.explorer-list-more-status {
+  margin: 0;
+  padding: 40px var(--space-5) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.explorer-list-more-status:empty {
+  padding: 0;
+}
+
+.explorer-list-more {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-5) 40px;
+}
+
 /* The feed's loader, a size down. */
 .ehc-sentinel .petri {
   width: 4.5rem;

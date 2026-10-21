@@ -24,7 +24,7 @@ import { openAlexTypeaheadExpression } from './openAlexSearchQuery.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory, openAlexFilterForArea } from '../utils/areaAccent.ts';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.ts';
-import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publicationStatus.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publicationStatus.ts';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
 import { paperReferenceFor } from '../utils/explorerPaths.ts';
@@ -1565,9 +1565,11 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
   const filterId = isRor ? (id.startsWith('http') ? id : `https://ror.org/${cleanId}`) : cleanId;
   let filterParams = `${filterKey}:${filterId}`;
   
-  // Advanced Filters
+  // Advanced Filters. The Explorer still drops what `openAlexPeerReviewed`
+  // does not call reviewed. Asking OpenAlex to leave out what it can name
+  // keeps a page of working papers from arriving only to be emptied.
   if (filters.peerReviewed) {
-    filterParams += ',primary_location.is_published:true';
+    filterParams += `,primary_location.is_published:true,${OPENALEX_PEER_REVIEWED_FILTER}`;
   }
   if (filters.category) {
     const areaFilter = openAlexFilterForArea(areaKeyForCategory(filters.category));
@@ -1589,10 +1591,13 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
   // The page is persisted as the papers it became, not as the raw response
-  // (openAlexClient.js says why). `v3`: `v2` papers were built before
+  // (openAlexClient.js says why), under the query it was asked with. Keyed by
+  // the reader's filters (`v3`), a "Peer-reviewed only" page fetched before
+  // the query named the working-paper series would answer the narrower query,
+  // whose page numbers count other works. `v2` papers were built before
   // `openAlexPeerReviewed` and carry `peerReviewed: true` for working papers,
-  // reports and works with no venue; those pages age out.
-  const worksCacheKey = `entity-works-v3:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
+  // reports and works with no venue. Both kinds of page age out.
+  const worksCacheKey = `entity-works-v4:${url.slice(url.indexOf('?') + 1)}`;
   
   try {
     const data = await openAlexJson<ReturnType<typeof slimWorksPage>, OpenAlexPage<OpenAlexWork>>(url, {

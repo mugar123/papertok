@@ -22,6 +22,34 @@ function arxivIdKey(value: unknown) {
   return normalizeArxivId(value).replace(/v\d+$/, '');
 }
 
+// A DOI a publisher issued. arXiv's own DataCite DOI (10.48550/arXiv.<id>)
+// names the eprint, as the arXiv id does.
+function isPublisherDoi(normalizedDoi: string) {
+  return normalizedDoi !== '' && !normalizedDoi.startsWith('10.48550/arxiv.');
+}
+
+// The registrant prefix, `10.17016` in 10.17016/feds.2026.007r1.
+function doiRegistrant(normalizedDoi: string) {
+  return normalizedDoi.split('/')[0];
+}
+
+// `merge` lists in `enrichedBy` the source of each record it merges in.
+function hasMerged(record: Pick<Partial<Paper>, 'sources'>) {
+  return (record.sources?.enrichedBy?.length ?? 0) > 0;
+}
+
+// `arxivService` reads any DOI as publication, so an arXiv record without a
+// journal reference has nothing else behind its `true`. A merged record that
+// does not say the paper was reviewed leaves it so (OpenAlex's record of the
+// eprint under arXiv's DOI), yet can give the row a DOI or a journal, "arXiv
+// (Cornell University)" among them. So a record's own fields are read before
+// its first merge, and `sources.arxivDoiOnly` carries the answer after it.
+function restsOnArxivDoi(record: Pick<Partial<Paper>, 'sources' | 'journal' | 'doi'>) {
+  return !hasMerged(record)
+    ? record.sources?.primary === 'arxiv' && !record.journal && isPublisherDoi(normalizeDoi(record.doi))
+    : record.sources?.arxivDoiOnly === true;
+}
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -41,7 +69,11 @@ export class PaperBuilder {
     // `preprint` into it turned every PubMed journal article into one.
     const publicationType = data.publicationType
       || ((data.sources?.primary === 'arxiv' || data.provider === 'arxiv') ? 'preprint' : undefined);
-    
+    // A record that has merged another holds the answer `merge` gave it, an
+    // unknown included. The Explorer deduplicates its rows again with each
+    // page, and deriving one here turned that unknown into `true`.
+    const fromMerge = hasMerged(data);
+
     // Normalize DOI
     let doi = data.doi;
     if (doi && doi.startsWith('https://doi.org/')) {
@@ -80,7 +112,7 @@ export class PaperBuilder {
       publisher: data.publisher || undefined,
       publicationType,
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
-      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) ? undefined : !isPreprint),
+      peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) || fromMerge ? undefined : !isPreprint),
       workingPaper: data.workingPaper || undefined,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
@@ -154,13 +186,28 @@ export class PaperBuilder {
       };
     }
 
+    // Evidence of publication reopens only a preprint's `false` or a missing
+    // answer; a published record's answer stands.
+    const reviewOpen = merged.peerReviewed === undefined
+      || merged.publicationStatus === 'preprint'
+      || merged.publicationType === 'preprint';
+
     // Normalize DOI from enrichment if existing doesn't have it
     let newDoi = enrichmentData.doi;
     if (newDoi && newDoi.startsWith('https://doi.org/')) {
       newDoi = newDoi.replace('https://doi.org/', '');
     }
-    
-    if (!merged.doi && newDoi) {
+
+    // A working paper's published `false` stands against a record that does
+    // not deny review too, so the row stays the working paper and does not
+    // take that record's publisher DOI either. The journal's DOI beside a
+    // working paper's `false` would give one DOI two answers: the same pair
+    // shows it reviewed when the journal version arrives first. Any other
+    // `false` (an untyped Semantic Scholar record, a non-refereed ADS one)
+    // says nothing about which work the row is, and the DOI fills its gap.
+    const keepsOwnFalse = !reviewOpen && merged.peerReviewed === false
+      && merged.workingPaper === true && enrichmentData.peerReviewed !== false;
+    if (!merged.doi && newDoi && !(keepsOwnFalse && isPublisherDoi(normalizeDoi(newDoi)))) {
       merged.doi = newDoi;
       // NOTE: Do NOT overwrite merged.id here. The id must remain stable (arXiv ID)
       // so that all subsequent state updates can find the paper by its original ID.
@@ -203,9 +250,56 @@ export class PaperBuilder {
       merged.huggingFaceUpvotes = enrichmentData.huggingFaceUpvotes;
     }
 
+    // A `false` and the working-paper tag describe the record that sent them,
+    // so the row takes them only while it keeps that record's identity: the
+    // base had no DOI, or both share a DOI, or the base's only DOI is arXiv's
+    // own and both share an arXiv id. A shared eprint never outranks a
+    // publisher's DOI on the base, whether the other record has a DOI or not.
+    // `deduplicate` also joins a journal article and its working paper on
+    // title and first author, or on an eprint both list: OpenAlex can file an
+    // arXiv eprint among a FEDS paper's locations while arXiv lists the
+    // journal's DOI for it. A row that keeps the article's DOI and journal is
+    // not the working paper.
+    // An arXiv record whose only claim is a DOI from a working paper's own
+    // registrant is that working paper too: arXiv can list a FEDS revision,
+    // 10.17016/feds.2026.007r1, for the paper OpenAlex files as
+    // 10.17016/feds.2026.007. The evidence covers the listed series: in
+    // Crossref on 2026-10-20, the prefix of each series in
+    // `WORKING_PAPER_SOURCE_IDS` held only its institution's own
+    // publications. `workingPaper` also marks every OpenAlex `report`, and
+    // some report registrants issue journals too (the St. Louis Fed its Review
+    // under 10.20955). An arXiv record that names its journal, has no DOI of
+    // its own or has merged a record under that DOI saying, on more than an
+    // arXiv DOI, that the paper was reviewed therefore keeps its own answer,
+    // as does a record from another provider; an arXiv record listing the
+    // Review's DOI without a journal reference still reads as the report.
+    // Only a working paper gets this reading: Springer registers journal
+    // articles and chapters alike under 10.1007.
+    const baseDoi = normalizeDoi(existingPaper.doi);
+    const enrichmentDoi = normalizeDoi(enrichmentData.doi);
+    const baseArxivId = arxivIdKey(existingPaper.arxivId);
+    const arxivDoiOnly = restsOnArxivDoi(existingPaper);
+    const sameRecord = !existingPaper.doi
+      || (baseDoi !== '' && baseDoi === enrichmentDoi)
+      || (arxivDoiOnly && enrichmentData.workingPaper === true && enrichmentDoi !== ''
+        && doiRegistrant(baseDoi) === doiRegistrant(enrichmentDoi))
+      || (!isPublisherDoi(baseDoi)
+        && baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
+    // A working paper the row is not. Its `false` and tag stay off the row
+    // (below), and so do its series name and institution.
+    const otherWorkingPaper = enrichmentData.workingPaper === true
+      && enrichmentData.peerReviewed === false && !sameRecord;
+
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)
-    if (!merged.journal && enrichmentData.journal) merged.journal = enrichmentData.journal;
-    if (!merged.publisher && enrichmentData.publisher) merged.publisher = enrichmentData.publisher;
+    // A working paper that keeps its `false` takes neither the other record's
+    // journal nor its publisher: like that record's DOI, they would put the
+    // journal version's venue on the unreviewed working paper. Nor does a row
+    // take the series and institution of a working paper it is not. A `false`
+    // from a record that is no working paper (a non-refereed NASA ADS one)
+    // still comes with the same work's venue.
+    const takesVenue = !keepsOwnFalse && !otherWorkingPaper;
+    if (!merged.journal && enrichmentData.journal && takesVenue) merged.journal = enrichmentData.journal;
+    if (!merged.publisher && enrichmentData.publisher && takesVenue) merged.publisher = enrichmentData.publisher;
     if (!merged.conference && enrichmentData.conference) merged.conference = enrichmentData.conference;
     if (!merged.pmid && enrichmentData.pmid) merged.pmid = enrichmentData.pmid;
     if (!merged.pmcid && enrichmentData.pmcid) merged.pmcid = enrichmentData.pmcid;
@@ -319,18 +413,11 @@ export class PaperBuilder {
       || (!hasExplicitPublicationStatus
         && enrichmentData.publicationType
         && !['preprint', 'repository'].includes(enrichmentData.publicationType));
-    // Evidence of publication reopens only a preprint's `false` or a missing
-    // answer; a published record's answer stands.
-    const reviewOpen = merged.peerReviewed === undefined
-      || merged.publicationStatus === 'preprint'
-      || merged.publicationType === 'preprint';
     // A published record that says outright it was not reviewed wins from
     // either side, so an IMF working paper that another provider also lists as
     // published stays unreviewed whichever record arrives first. It does not
     // replace an OpenAlex `true`, which is the base's own venue evidence
-    // (`create` derives none for OpenAlex): `deduplicate` also joins a journal
-    // article and its working paper on title and first author, and the row
-    // keeps the article's venue and DOI.
+    // (`create` derives none for OpenAlex).
     const reviewDenied = enrichmentData.peerReviewed === false
       && !(merged.peerReviewed === true && isOpenAlexRecord(merged));
     if (shouldUpgradePublication) {
@@ -341,28 +428,88 @@ export class PaperBuilder {
     // Re-read only when the enrichment brought publication evidence of its own.
     // A merge that carried nothing but an abstract once overwrote an explicit
     // `peerReviewed: false` with `true`, and deriving an answer for a record
-    // that had none turned OpenAlex's unknown into `true` the same way.
-    if (shouldUpgradePublication && (reviewOpen || reviewDenied)) {
-      merged.peerReviewed = enrichmentData.peerReviewed
-        ?? (isOpenAlexRecord(enrichmentData, sourceName) ? undefined : merged.publicationType !== 'preprint');
+    // that had none turned OpenAlex's unknown into `true` the same way. Nor is
+    // one derived for a record that has merged another, as in `create`: the
+    // followed feed and the Explorer merge rows that are already merged.
+    const enrichmentReview = shouldUpgradePublication
+      ? enrichmentData.peerReviewed
+        ?? (isOpenAlexRecord(enrichmentData, sourceName) || hasMerged(enrichmentData)
+          ? undefined
+          : merged.publicationType !== 'preprint')
+      : undefined;
+    // The row and the incoming record can both rest on an arXiv DOI: a topic
+    // gets the same arXiv record from its category listing and its query, and
+    // the followed feed joins a name-only author's arXiv records with a
+    // topic's rows, which may already have merged a working paper. Neither
+    // side's `true` says more than that DOI, so the incoming record does not
+    // end `sources.arxivDoiOnly` (below), and an answer other than `true` on
+    // either side stands: a record merged earlier, such as a working paper,
+    // already read the DOI otherwise.
+    const bothRestOnArxivDoi = arxivDoiOnly && restsOnArxivDoi(enrichmentData);
+    // A `true` speaks for the DOI it came with. OpenAlex files the eprint
+    // among the locations of the journal version and of the FEDS paper alike,
+    // while arXiv lists the FEDS revision's DOI. Beside a row whose `true`
+    // rests on that DOI alone, the journal record's `true` is another
+    // version's: it neither ends the reading (below) nor answers for a row
+    // that reads unknown. A row showing arXiv's own DOI names the eprint
+    // rather than a version, so any record's `true` still counts for it.
+    const otherDoiTrue = arxivDoiOnly && enrichmentReview === true
+      && isPublisherDoi(baseDoi) && enrichmentDoi !== baseDoi;
+    const rereads = !bothRestOnArxivDoi && !otherDoiTrue && Boolean(shouldUpgradePublication)
+      && (reviewOpen || reviewDenied) && (enrichmentData.peerReviewed !== false || sameRecord);
+    if (bothRestOnArxivDoi) {
+      if (merged.peerReviewed === true) merged.peerReviewed = enrichmentData.peerReviewed;
+    } else if (rereads) {
+      merged.peerReviewed = enrichmentReview;
     }
-    // The working-paper tag explains a `false`. It stays while the answer is
-    // `false`, and goes when a venue's `true` stands, as for the journal article
-    // whose working paper merged in. It names one record, so the enrichment's
-    // tag is taken only when the row keeps that record's identity: the base had
-    // no DOI, or both share a DOI or arXiv id. `deduplicate` also joins a
-    // journal article to its working paper on title and first author, and a
-    // row that keeps the article's DOI is not the working paper.
-    const baseDoi = normalizeDoi(existingPaper.doi);
-    const baseArxivId = arxivIdKey(existingPaper.arxivId);
-    const sameRecord = !existingPaper.doi
-      || (baseDoi !== '' && baseDoi === normalizeDoi(enrichmentData.doi))
-      || (baseArxivId !== '' && baseArxivId === arxivIdKey(enrichmentData.arxivId));
+    // A `false` the row does not take, a working paper's or a published
+    // record's, still contradicts a `true` that rests on a DOI alone. The
+    // published record can be a row that merged a working paper: OpenAlex can
+    // file one without the eprint, so it joins OpenAlex's preprint record on
+    // title and first author, and that row reads published but keeps the
+    // preprint's `false` and no tag. The DOI may be the journal version's, the
+    // paper's own SSRN entry or the working paper's when OpenAlex lists none,
+    // so the answer is unknown rather than either record's. The `true` can
+    // also come later: search lists OpenAlex's works (a journal DOI without a
+    // source, which reads unknown, and the working paper) before arXiv's
+    // record, and the followed feed puts an arXiv record before a topic row
+    // that has already joined OpenAlex's journal article and the working
+    // paper. So `sources.deniedElsewhere` records that the row left off such
+    // a `false`, and the row takes it from a merged record that left one off.
+    const deniedElsewhere = (enrichmentData.peerReviewed === false && !sameRecord
+      && (otherWorkingPaper || Boolean(shouldUpgradePublication)))
+      || existingPaper.sources.deniedElsewhere === true || enrichmentData.sources?.deniedElsewhere === true;
+    // The working-paper tag explains a `false`. It comes with the `false` of
+    // the same record, and with one taken above from a row that rests on an
+    // arXiv DOI as this one does, though that row may show the DOI of
+    // OpenAlex's preprint record. It stays while the answer is `false`, and
+    // goes when a venue's `true` stands, as for the journal article whose
+    // working paper merged in.
     const workingPaper = merged.peerReviewed === false
-      && (merged.workingPaper === true || (sameRecord && enrichmentData.workingPaper === true));
+      && (merged.workingPaper === true
+        || ((sameRecord || bothRestOnArxivDoi) && enrichmentData.workingPaper === true));
     // Written only when it changes: a merge that adds nothing must return a
     // paper equal to the one it got (`paperFieldsEqual`), key for key.
     if (workingPaper !== (merged.workingPaper === true)) merged.workingPaper = workingPaper || undefined;
+    // A merged record whose own answer is `true` under the row's DOI, such as
+    // OpenAlex's record of the journal article the arXiv record lists, backs
+    // the row's; until one does, the `true` rests on the arXiv record's DOI
+    // alone. Every other provider's `published` still counts (see
+    // `isOpenAlexRecord`), an untyped Semantic Scholar record's or CORE's
+    // included. A row that takes its answer from a record resting on an arXiv
+    // DOI rests on it too, whatever record it began as: a topic with an
+    // OpenAlex id lists OpenAlex's record of the eprint under arXiv's DOI
+    // before the arXiv record.
+    const stillArxivDoiOnly = (arxivDoiOnly && (enrichmentReview !== true || otherDoiTrue || bothRestOnArxivDoi))
+      || (rereads && restsOnArxivDoi(enrichmentData));
+    // After this merge's own answer, which may be such a `true`.
+    if (deniedElsewhere && stillArxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
+    if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
+      merged.sources = { ...merged.sources, arxivDoiOnly: stillArxivDoiOnly || undefined };
+    }
+    if (deniedElsewhere !== (merged.sources.deniedElsewhere === true)) {
+      merged.sources = { ...merged.sources, deniedElsewhere: deniedElsewhere || undefined };
+    }
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {
