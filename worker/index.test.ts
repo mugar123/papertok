@@ -3972,6 +3972,40 @@ test("OpenAlex's own refusal reporting an empty key closes billed misses at once
   assert.equal(calls, 1);
 });
 
+// Before the readings, a work opened by id reached no Durable Object at all.
+// Filing its reading must not make the reader, or everyone waiting on the same
+// miss, wait for a ledger that is slow or stuck.
+test('a reading the ledger does not take does not hold the answer it came with', { timeout: 5_000 }, async t => {
+  const now = Date.parse('2026-10-22T15:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const actions: string[] = [];
+  const env = openAlexEnv({
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: (name: string): unknown => name,
+      get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => ({
+        fetch: async (_url, init) => {
+          const { action } = JSON.parse(String(init!.body));
+          actions.push(`${action} ${name}`);
+          return action === 'observe' ? new Promise<Response>(() => {}) : Response.json({ accepted: true });
+        },
+      }),
+    } as Env['REQUEST_QUOTA_LEDGER'],
+  });
+  const relay = (path: string) => reportApi.fetch(new Request(relayPath(path), { headers: BROWSER }), env);
+  const responses = await withWorkerFetchMock(
+    async () => Response.json({ id: 'https://openalex.org/W1', results: [] }, {
+      headers: budgetHeaders(5_000, (Date.parse('2026-10-23T00:00:00Z') - now) / 1000),
+    }),
+    () => Promise.all([relay('works/W1'), relay('works/W1'), relay('works?filter=doi:10.1000/a&per-page=1')]),
+  );
+  assert.deepEqual(responses.map(response => response.status), [200, 200, 200]);
+  assert.deepEqual(
+    actions.sort(),
+    ['observe openalex:day:2026-10-22', 'observe openalex:day:2026-10-22', 'reserve openalex:day:2026-10-22'],
+    'one reading per upstream answer, the shared miss counted once',
+  );
+});
+
 test('/health/openalex/budget reports today\'s units by tier and kind with the ceiling and its source, asks OpenAlex nothing, is edge-cacheable and refuses an unknown Origin', async t => {
   const now = Date.parse('2026-10-22T15:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now });

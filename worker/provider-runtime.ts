@@ -602,6 +602,11 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
 
 // The most the ledger accepts as `remaining`.
 const MAX_OBSERVED_UNITS = 1_000_000;
+// How long an answer waits for its reading to be filed. A work opened by id
+// reaches the ledger only for its reading, and a slow or stuck ledger must not
+// hold that reader, or everyone waiting on the same miss. A reading dropped
+// here is followed by the next answer's, and the margin covers the gap.
+const OPENALEX_OBSERVATION_WAIT_MS = 250;
 
 /**
  * Files what OpenAlex reports is left of the key's day
@@ -611,8 +616,9 @@ const MAX_OBSERVED_UNITS = 1_000_000;
  * ceiling at the next reading, and credit added mid-day reopens it without a
  * deploy. No reading is filed when either header is missing or unusable, or
  * when `x-ratelimit-reset` does not end that UTC day: the cap then stands, and
- * an unknown budget stays unknown. A reading that cannot be filed is dropped;
- * the answer it came with is still served.
+ * an unknown budget stays unknown. A reading that cannot be filed, or that the
+ * ledger has not taken within `OPENALEX_OBSERVATION_WAIT_MS`, is dropped; the
+ * answer it came with is still served.
  */
 export async function observeOpenAlexBudget(env: WorkerEnv, now: string, headers: Pick<Headers, 'get'>) {
   const remainingUsd = numberOrNull(headers.get('x-ratelimit-remaining-usd'));
@@ -622,13 +628,17 @@ export async function observeOpenAlexBudget(env: WorkerEnv, now: string, headers
   if (Math.abs(Date.now() + resetSeconds * 1000 - dayEnds) > OPENALEX_RESET_TOLERANCE_MS) return;
   // In millionths of a dollar first, so 0.0246 is 246 units and not 245.99….
   const units = Math.floor(Math.round(remainingUsd * 1e6) / Math.round(OPENALEX_UNIT_USD * 1e6));
-  try {
-    await observeRequestQuota(env.REQUEST_QUOTA_LEDGER, {
-      ...openAlexLedgerRequest(env, now),
-      remaining: Math.min(MAX_OBSERVED_UNITS, Math.max(0, units - OPENALEX_OBSERVATION_MARGIN)),
-    });
-  } catch {
+  const filed = observeRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    ...openAlexLedgerRequest(env, now),
+    remaining: Math.min(MAX_OBSERVED_UNITS, Math.max(0, units - OPENALEX_OBSERVATION_MARGIN)),
+  }).catch(() => {
     // The previous reading, or the cap, stands.
+  });
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    await Promise.race([filed, new Promise(resolve => { timer = setTimeout(resolve, OPENALEX_OBSERVATION_WAIT_MS); })]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }
 
