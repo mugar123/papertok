@@ -207,11 +207,10 @@ test('SOURCE: arXiv, OpenAlex and Semantic Scholar mappers read their status fro
   const service = await read('../services/openAlexService.ts');
   const format = service.slice(service.indexOf('function formatOpenAlexWorkAsPaper('), service.indexOf('function formatOpenAlexWorkAsPaper(') + 3000);
   assert.match(format, /publicationStatus: openAlexPublicationStatus\(work\),/);
-  const enrichment = service.slice(service.indexOf('export function mapOpenAlexEnrichmentWork('), service.indexOf('export function mapOpenAlexEnrichmentWork(') + 3000);
+  const work = await read('./openAlexWork.ts');
+  const enrichment = work.slice(work.indexOf('export function mapOpenAlexEnrichmentWork('), work.indexOf('export function mapOpenAlexEnrichmentWork(') + 3000);
   assert.match(enrichment, /publicationStatus: openAlexPublicationStatus\(work\),/);
-
-  const adapter = await read('../services/adapters/OpenAlexAdapter.ts');
-  assert.match(adapter, /const publicationStatus = openAlexPublicationStatus\(work\);/);
+  assert.match(work, /const publicationStatus = openAlexPublicationStatus\(work\);/);
 
   const s2 = await read('../services/adapters/SemanticScholarAdapter.ts');
   assert.match(s2, /const isPreprint = semanticScholarIsPreprint\(raw\.publicationTypes\);/);

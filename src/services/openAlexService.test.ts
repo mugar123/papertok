@@ -33,8 +33,6 @@ import {
   getLocalTopicEntity,
   getWorksByEntity,
   isOpenAlexEnrichmentId,
-  MAX_ENRICHMENT_AUTHORS,
-  mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
   peekEntity,
   searchAuthors,
@@ -43,6 +41,7 @@ import {
   searchLocalTopics,
   slimWorksPage,
 } from './openAlexService.ts';
+import { MAX_ENRICHMENT_AUTHORS, mapOpenAlexEnrichmentWork } from '../utils/openAlexWork.ts';
 
 test('names local topic entities without changing their canonical category identity', () => {
   const topic = getLocalTopicEntity('gr-qc');

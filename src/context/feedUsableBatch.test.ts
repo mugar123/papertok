@@ -26,7 +26,7 @@ import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitatio
 import { fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
 import { openAlexClient } from '../services/openAlexClient.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
-import { pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
+import { pubmedCategoryQuery } from '../services/adapters/pubmedRecords.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries

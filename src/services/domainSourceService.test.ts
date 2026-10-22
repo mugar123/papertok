@@ -4,10 +4,14 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { Paper } from '../models/Paper.ts';
 import {
-  getDomainSourcePlan,
-  getEligibleDomainSources,
   reportDomainSourceFailures,
   settleDomainSources,
+  fetchWorkingPapers,
+  fetchOpenAlexTopicPapers,
+} from './domainSourceService.ts';
+import {
+  getDomainSourcePlan,
+  getEligibleDomainSources,
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
@@ -16,10 +20,8 @@ import {
   mapNasaRecord,
   mapOstiRecord,
   readBioRxivResponse,
-  fetchWorkingPapers,
-  fetchOpenAlexTopicPapers,
   europePmcQuery,
-} from './domainSourceService.ts';
+} from './domainSourceRecords.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isFeedPublication } from './feedPublicationService.ts';
 import { openAlexClient } from './openAlexClient.ts';

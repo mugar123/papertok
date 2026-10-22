@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PubmedAdapter, pubmedCategoryQuery } from './PubmedAdapter.ts';
+import { PubmedAdapter } from './PubmedAdapter.ts';
+import { pubmedCategoryQuery } from './pubmedRecords.ts';
 import { isFeedPublication } from '../feedPublicationService.ts';
 import { PaperBuilder } from '../PaperBuilder.ts';
 import { reviewStatusForPaper } from '../../utils/paperStatus.ts';
