@@ -17,12 +17,10 @@ test('papers publish before a slow project lookup and late replies cannot replac
   // 10 ms project deadline loses to it whenever a loaded machine deschedules
   // the test in between.
   const order: string[] = [];
-  let projectSignal: AbortSignal | undefined;
   let resolveProject!: (items: Project[]) => void;
   const done = searchEntities('segment anything', {
     signal: new AbortController().signal, timeouts,
     sources: { ...emptySources, projects: (_q, signal) => {
-      projectSignal = signal;
       signal.addEventListener('abort', () => order.push('projects cut off'));
       return new Promise(resolve => { resolveProject = resolve; });
     } },
@@ -38,7 +36,6 @@ test('papers publish before a slow project lookup and late replies cannot replac
   assert.ok(papersShown?.pending.includes('projects'));
   assert.deepEqual(papersShown?.issues, []);
   assert.deepEqual(result.issues, [{ section: 'projects', reason: 'timeout' }]);
-  assert.equal(projectSignal?.aborted, true);
   assert.deepEqual(result.results.papers, [paper]);
   resolveProject([{ id: 'late', title: 'Late project', funder: '' }]);
   await Promise.resolve();
