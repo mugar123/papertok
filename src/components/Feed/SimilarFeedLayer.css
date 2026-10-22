@@ -114,10 +114,6 @@
 
 /* ── The header, in the navbar's place ── */
 
-/* The bar holds the X and the count; what the papers are similar to is a
-   violet band of its own under it, the kicker and the title on one line.
-   The band counts as header: the feed inside starts below `--nav-total`, so
-   the token grows by the band's height for this layer alone. */
 .similar-layer {
   --similar-bar: var(--nav-height);
   --similar-strip: 40px;
