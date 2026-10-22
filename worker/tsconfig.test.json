@@ -2,6 +2,7 @@
   "extends": "../tsconfig.node.json",
   "include": [
     "**/*.test.ts",
+    "test-support/**/*.ts",
     "../worker-configuration.d.ts",
     "../src/services/paperFigureService.test.ts",
     "../src/components/Institution/publisherLogos.test.ts",

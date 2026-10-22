@@ -74,8 +74,11 @@ PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
 
 # Estimated input tokens the paper store may embed per UTC day (worker/paper-store.ts).
-# 7.5M is about 8,100 neurons of Workers AI's free 10,000.
-EMBEDDING_DAILY_TOKEN_LIMIT = "7500000"
+# 60M estimated (~45M real) is about 48,000 neurons, ~$0.40 a day past the free
+# 10,000 at $0.011 per 1,000: it drains the corpus's first backlog (~200,000
+# papers, ~$1 in all) in two nights. A day's new papers (~5,000) stay inside the
+# free allocation, so the ceiling spends nothing once the backlog is gone.
+EMBEDDING_DAILY_TOKEN_LIMIT = "60000000"
 
 # Also holds the OpenAlex relay's shared answers under the `openalex:v1:` prefix
 # (worker/openalex-api.ts), global where the edge cache is per location, and the
@@ -100,14 +103,16 @@ id = "a6b32a20ed4748139e828f1cbeff5b93"
 # binding = "AI_REWRITE_STORE"
 # id = "<id from wrangler kv namespace create>"
 
-# Workers AI, for toMarkdown only: it turns a paper's PDF into the text NaN
-# reads in /ai/rewrite (worker/paper-text.ts). No model runs on it.
+# Workers AI: toMarkdown turns a paper's PDF into the text NaN reads in
+# /ai/rewrite (worker/paper-text.ts), and the paper store embeds papers with
+# EMBEDDING_MODEL (worker/paper-store.ts).
 [ai]
 binding = "AI"
 
-# The paper store (worker/paper-store.ts): arXiv papers and their vectors,
-# filled by the harvest Workflow and read by /store/feed. Apply migrations with
-# `npx wrangler d1 migrations apply PAPER_STORE --remote` before deploying.
+# The paper store (worker/paper-store.ts): every feed source's papers, their
+# lanes and vectors, filled by the harvest Workflow and read by /store/papers.
+# Apply migrations with `npx wrangler d1 migrations apply PAPER_STORE --remote`
+# before deploying.
 [[d1_databases]]
 binding = "PAPER_STORE"
 database_name = "papertok-paper-store"

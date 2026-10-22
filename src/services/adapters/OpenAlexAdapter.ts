@@ -5,41 +5,9 @@ import type { OpenAlexRequestError } from '../openAlexClient.ts';
 
 import { getCategoryArea } from '../../data/categoryTaxonomy.ts';
 import { openAlexFetch } from '../openAlexClient.ts';
-import { getArxivIdFromWork } from '../openAlexService.ts';
-import { usableOpenAlexAbstract } from '../../utils/openAlexAbstract.ts';
-import { usableOpenAlexConcepts } from '../../utils/openAlexConcepts.ts';
-import { normalizePmid } from '../../utils/publicNavigation.ts';
-import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../../utils/publicationStatus.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../../utils/openAlexWork.ts';
 import { normalizeSearchText } from '../../utils/searchRelevance.ts';
 import { openAlexTypeaheadExpression } from '../openAlexSearchQuery.ts';
-
-// The top-level fields `mapToStandard` and `getArxivIdFromWork` read, and
-// the only ones a search asks for (`select=`). A works page used to arrive
-// whole: 455 KB uncompressed, 65–82 KB on the wire, most of it fields nothing
-// here reads (`referenced_works`, `keywords`, `counts_by_year`, the second
-// half of `authorships`). Measured 2026-09-16 with this list: 326 KB and
-// 45–49 KB. The Worker relays `select` untouched (OPENALEX_PARAMS). Nested
-// selection is not something OpenAlex offers, so `authorships` and
-// `locations` still travel whole. OpenAlexAdapter.test.ts holds the guard:
-// a work stripped to these fields must map to the same paper as the full one.
-export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
-  'id',
-  'doi',
-  'ids',
-  'title',
-  'type',
-  'publication_date',
-  'publication_year',
-  'authorships',
-  'abstract_inverted_index',
-  'primary_location',
-  'locations',
-  'open_access',
-  'cited_by_count',
-  'concepts',
-  'topics',
-  'primary_topic',
-]);
 
 // OpenAlex work types, in OpenAlex's current vocabulary. The filter used to ask
 // for `proceedings-article`, Crossref's name for a conference paper, which
@@ -133,67 +101,6 @@ export class OpenAlexAdapter {
   }
 
   mapToStandard(work: OpenAlexWork | null | undefined): Paper | null {
-    if (!work || !work.id) return null;
-
-    const doi = work.doi ? work.doi.replace('https://doi.org/', '') : null;
-    const authors = (work.authorships || []).map(a => ({
-      name: a.author?.display_name || 'Unknown',
-      id: a.author?.id,
-      affiliation: a.institutions?.[0]?.display_name || null
-    }));
-    const institutions = [...new Map((work.authorships || [])
-      .flatMap(authorship => authorship.institutions || [])
-      .filter(Boolean)
-      .map(institution => [institution.id || institution.ror || institution.display_name, {
-        id: institution.id,
-        ror: institution.ror,
-        displayName: institution.display_name,
-      }])).values()];
-
-    const abstract = usableOpenAlexAbstract(work) || 'No abstract available.';
-
-    const isOpenAccess = work.open_access?.is_oa || false;
-    const pdfUrl = work.open_access?.oa_url || null;
-    const landingPageUrl = work.primary_location?.landing_page_url || work.doi || null;
-    
-    const sourceName = work.primary_location?.source?.display_name || 'Unknown Journal';
-    
-    const semanticEntries = work.concepts?.length ? work.concepts : (work.topics || []);
-    const conceptObjects = usableOpenAlexConcepts(semanticEntries);
-    const concepts = conceptObjects.map(concept => concept.display_name);
-    const publicationType = work.type || work.primary_location?.source?.type || 'article';
-    const publicationStatus = openAlexPublicationStatus(work);
-
-    return {
-      id: work.id.replace('https://openalex.org/', 'openalex:'),
-      sources: { primary: 'openalex', enrichedBy: [] },
-      doi,
-      arxivId: getArxivIdFromWork(work) || undefined,
-      pmid: normalizePmid(work.ids?.pmid) || undefined,
-      title: work.title || 'Untitled',
-      abstract,
-      authors,
-      institutions,
-      publishedDate: work.publication_date,
-      year: work.publication_year,
-      sourceName,
-      sourceType: work.type === 'conference-paper' || work.type === 'proceedings-article' ? 'conference' : 'journal',
-      publicationType,
-      publicationStatus,
-      peerReviewed: openAlexPeerReviewed(work),
-      workingPaper: openAlexIsWorkingPaper(work) || undefined,
-      openAccess: isOpenAccess,
-      pdfUrl,
-      landingPageUrl,
-      citationsCount: work.cited_by_count || 0,
-      citationCountKnown: Number.isFinite(work.cited_by_count),
-      concepts: conceptObjects,
-      topics: work.topics || [],
-      primaryTopic: work.primary_topic || null,
-      provider: this.name,
-      categories: concepts,
-      keywords: concepts,
-      raw: work
-    };
+    return mapOpenAlexWork(work, this.name);
   }
 }
