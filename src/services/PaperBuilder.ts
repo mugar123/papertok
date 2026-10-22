@@ -76,14 +76,14 @@ function ownAnswer(record: Pick<Partial<Paper>, 'peerReviewed' | 'publicationSta
 }
 
 // What a record that has merged no other says of itself under its DOI: a
-// published record's outright `false` (a preprint's is open to a later
-// `true`, as in `merge`, and the `false` that `create` derives for a record
-// without a type, Semantic Scholar's, is a gap rather than an answer), or a
-// `true` on more than an arXiv DOI. A merged row's answer can come
-// from one record and its DOI from another: OpenAlex's journal record without
-// a DOI beside the paper's SSRN entry. An untyped Semantic Scholar record
-// reads as a preprint by itself, though a row's type can make it read
-// published in `merge`.
+// published, typed record's outright `false`, or a `true` on more than an
+// arXiv DOI. A preprint's `false` is open to a later `true`, as in `merge`,
+// and the `false` that `create` derives for a record without a type is a gap
+// rather than an answer: an untyped Semantic Scholar record reads as a
+// preprint by itself, though a row's type can make it read published in
+// `merge`. A merged row's answer can come from one record and its DOI from
+// another: OpenAlex's journal record without a DOI beside the paper's SSRN
+// entry.
 function ownPeerReviewedByDoi(record: Partial<Paper>, sourceName?: string): NonNullable<PaperSources['peerReviewedByDoi']> {
   const doi = normalizeDoi(record.doi);
   if (doi === '' || hasMerged(record)) return {};
