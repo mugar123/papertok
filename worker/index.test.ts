@@ -3966,3 +3966,114 @@ test("OpenAlex's own refusal reporting an empty key closes billed misses at once
   assert.equal(responses[1].headers.get('x-papertok-budget-tier'), 'essential');
   assert.equal(calls, 1);
 });
+
+test('/health/openalex/budget reports today\'s units by tier and kind with the ceiling and its source, asks OpenAlex nothing, is edge-cacheable and refuses an unknown Origin', async t => {
+  const now = Date.parse('2026-10-22T15:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const cap = 1_000;
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding, OPENALEX_GLOBAL_DAILY_LIMIT: String(cap) });
+  const relay = (path: string) => reportApi.fetch(new Request(relayPath(path), { headers: BROWSER }), env);
+  const budget = (headers: Record<string, string> = BROWSER) => reportApi.fetch(
+    new Request('https://papertok-report-api.example/health/openalex/budget', { headers }),
+    env,
+  );
+  const limitOf = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(cap * OPENALEX_TIER_PERCENT[tier] / 100);
+
+  // A feed page, a search and a card batch, then the day pushed past the
+  // exploration share by spend the ledger cannot name, and one exploration
+  // miss refused.
+  const elsewhere = limitOf('exploration') - 12;
+  const upstream = await withCountedUpstream(async () => Response.json({ results: [] }), () => withIdentityAndCacheStore(async () => {
+    assert.equal((await relay('works?filter=primary_topic.id:T10604,type:article&per-page=25')).status, 200);
+    assert.equal((await relay('works?search=ultracold')).status, 200);
+    assert.equal((await relay('works?filter=doi:10.1000/a|10.1000/b&per-page=50')).status, 200);
+    await reserveRequestQuota(ledger.binding, {
+      periodKey: 'openalex:day:2026-10-22', subject: 'elsewhere', subjectLimit: cap, globalLimit: cap, amount: elsewhere,
+    });
+    assert.equal((await relay('authors?filter=last_known_institutions.id:I1')).status, 429);
+  }));
+  assert.equal(upstream.length, 3);
+  const used = 12 + elsewhere;
+
+  const report = await withCountedUpstream(async () => { throw new Error('the report asks OpenAlex nothing'); }, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await budget();
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get('cache-control'), 'public, max-age=30, s-maxage=60');
+      assert.equal(response.headers.get('access-control-allow-origin'), BROWSER.origin);
+      const body = await response.json<Record<string, unknown>>();
+      const tier = (name: keyof typeof OPENALEX_TIER_PERCENT, spent: number, refused: number) => ({
+        percent: OPENALEX_TIER_PERCENT[name],
+        limit: limitOf(name),
+        used: spent,
+        refused,
+        open: used + 1 <= limitOf(name),
+      });
+      assert.deepEqual(body, {
+        provider: 'openalex',
+        day: '2026-10-22',
+        resetsAt: '2026-10-23T00:00:00.000Z',
+        unitUsd: OPENALEX_UNIT_USD,
+        cap,
+        observedCeiling: null,
+        observedAt: null,
+        ceiling: cap,
+        used,
+        remaining: cap - used,
+        tiers: {
+          essential: tier('essential', 0, 0),
+          feed: tier('feed', 1, 0),
+          enrichment: tier('enrichment', 1, 0),
+          exploration: tier('exploration', 10, 1),
+        },
+        kinds: {
+          search: { used: 10, refused: 0 },
+          list: { used: 2, refused: 1 },
+          graph: { used: 0, refused: 0 },
+          share: { used: 0, refused: 0 },
+        },
+      });
+      assert.equal((body.tiers as Record<string, { open: boolean }>).exploration.open, false);
+      assert.doesNotMatch(JSON.stringify(body), /[a-f0-9]{64}/, 'no subject hashes');
+
+      const calls = ledger.calls.length;
+      assert.equal((await budget()).status, 200);
+      assert.equal(ledger.calls.length, calls, 'the second read is served from the edge');
+    });
+  });
+  assert.deepEqual(report, []);
+
+  await withIdentityAndCacheStore(async () => {
+    assert.equal((await budget({ origin: 'https://evil.example' })).status, 403);
+  });
+
+  // A reading from OpenAlex lowers the ceiling below the cap, and says when.
+  const left = 300;
+  await withWorkerFetchMock(async () => Response.json({ id: 'https://openalex.org/W1' }, {
+    headers: {
+      'x-ratelimit-remaining-usd': (left * OPENALEX_UNIT_USD).toFixed(4),
+      'x-ratelimit-reset': String((Date.parse('2026-10-23T00:00:00Z') - now) / 1000),
+    },
+  }), () => relay('works/W1'));
+  await withIdentityAndCacheStore(async () => {
+    const body = await (await budget()).json<{ observedCeiling: number; observedAt: string; ceiling: number; remaining: number }>();
+    assert.equal(body.observedCeiling, used + left - OPENALEX_OBSERVATION_MARGIN);
+    assert.equal(body.observedAt, '2026-10-22T15:00:00.000Z');
+    assert.equal(body.ceiling, Math.min(cap, used + left - OPENALEX_OBSERVATION_MARGIN));
+    assert.equal(body.remaining, body.ceiling - used);
+  });
+});
+
+test('/health/openalex/budget is unavailable, and not cached, without a ledger to read', async () => {
+  await withIdentityAndCacheStore(async stored => {
+    const response = await reportApi.fetch(
+      new Request('https://papertok-report-api.example/health/openalex/budget', { headers: BROWSER }),
+      { OPENALEX_API_KEY: 'worker-key' },
+    );
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: 'PROVIDER_QUOTA_NOT_CONFIGURED' });
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(stored.size, 0);
+  });
+});

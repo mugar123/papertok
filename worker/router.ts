@@ -36,7 +36,7 @@ import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } f
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
-import { handleAIHealth, handleEmailHealth, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
+import { handleAIHealth, handleEmailHealth, handleOpenAlexBudget, handleOpenAlexHealth, handleScopusHealth } from './health-api.ts';
 import {
   handleBioRxiv,
   handleCore,
@@ -444,6 +444,10 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
   if (url.pathname === '/health/openalex') {
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     return handleOpenAlexHealth(request, env);
+  }
+  if (url.pathname === '/health/openalex/budget') {
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    return handleOpenAlexBudget(request, env);
   }
   if (url.pathname === '/health/scopus') {
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

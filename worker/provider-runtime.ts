@@ -1,6 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
-import type { QuotaRequest } from './request-quota-ledger.ts';
+import type { QuotaReading, QuotaRequest } from './request-quota-ledger.ts';
 
 export interface UpstreamError extends Error {
   status?: number;
@@ -17,7 +17,7 @@ export interface MinuteCeiling {
 
 // What one OpenAlex miss may spend, and for what. `tier` decides how much of
 // the day's ceiling it may reach (`OPENALEX_TIER_PERCENT`); `kind` only names
-// the spend in the day's tally.
+// the spend in the day's tally, which `/health/openalex/budget` reports.
 export type OpenAlexTier = 'essential' | 'feed' | 'enrichment' | 'exploration';
 export type OpenAlexKind = 'entity' | 'search' | 'list' | 'graph' | 'share';
 export interface OpenAlexBudget {
@@ -38,7 +38,7 @@ interface CacheOptions {
 type QuotaGate = { error?: Response; reservation?: QuotaRequest };
 
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { observeRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
+import { observeRequestQuota, peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 
 // The default upstream deadlines for the provider modules; some modules set their
@@ -96,7 +96,8 @@ export const OPENALEX_CALLS = Object.freeze({
 // opened only at the ceiling. The whole day's usage counts against each share,
 // so a tier is closed for everyone once the day passes it. Entity lookups cost
 // nothing and are never refused. Code rather than variables, because changing
-// a variable needs a Worker deploy all the same; retune from the day's tally.
+// a variable needs a Worker deploy all the same; retune from the day's tally on
+// `/health/openalex/budget`.
 export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Object.freeze({
   essential: 100,
   feed: 95,
@@ -628,4 +629,68 @@ export async function observeOpenAlexBudget(env: WorkerEnv, now: string, headers
   } catch {
     // The previous reading, or the cap, stands.
   }
+}
+
+const OPENALEX_REPORTED_KINDS = ['search', 'list', 'graph', 'share'] as const;
+
+function sumTally(counts: Record<string, number> | undefined, matches: (tier: string, kind: string) => boolean) {
+  return Object.entries(counts || {}).reduce((total, [name, units]) => {
+    const [tier, kind] = name.split('.');
+    return matches(tier, kind) ? total + (Number(units) || 0) : total;
+  }, 0);
+}
+
+/**
+ * Today's OpenAlex budget as the ledger holds it, for `/health/openalex/budget`:
+ * units, not calls, and only aggregates. Entity lookups cost nothing and never
+ * appear; spend outside the ledger shows only through `observedCeiling`. Reads
+ * without spending, through the ledger's `peek`.
+ */
+export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOString()) {
+  const request = openAlexLedgerRequest(env, now);
+  let reading: QuotaReading;
+  try {
+    reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, request);
+  } catch {
+    return { code: 'QUOTA_LEDGER_UNAVAILABLE' };
+  }
+  if (!reading.accepted) {
+    return { code: reading.code === 'QUOTA_LEDGER_NOT_CONFIGURED' ? 'PROVIDER_QUOTA_NOT_CONFIGURED' : 'QUOTA_LEDGER_UNAVAILABLE' };
+  }
+  const day = now.slice(0, 10);
+  const cap = request.globalLimit;
+  const observedCeiling = reading.observed?.ceiling ?? null;
+  const ceiling = observedCeiling === null ? cap : Math.min(cap, observedCeiling);
+  const used = reading.globalUsage ?? 0;
+  const tiers = Object.fromEntries(Object.entries(OPENALEX_TIER_PERCENT).map(([tier, percent]) => {
+    const limit = Math.floor(ceiling * percent / 100);
+    return [tier, {
+      percent,
+      limit,
+      used: sumTally(reading.tally?.used, name => name === tier),
+      refused: sumTally(reading.tally?.refused, name => name === tier),
+      // Whether a one-unit miss of this tier would be accepted now.
+      open: used + 1 <= limit,
+    }];
+  }));
+  const kinds = Object.fromEntries(OPENALEX_REPORTED_KINDS.map(kind => [kind, {
+    used: sumTally(reading.tally?.used, (_, name) => name === kind),
+    refused: sumTally(reading.tally?.refused, (_, name) => name === kind),
+  }]));
+  return {
+    report: {
+      provider: 'openalex',
+      day,
+      resetsAt: new Date(Date.parse(`${day}T00:00:00.000Z`) + DAY_MS).toISOString(),
+      unitUsd: OPENALEX_UNIT_USD,
+      cap,
+      observedCeiling,
+      observedAt: reading.observed ? new Date(reading.observed.at).toISOString() : null,
+      ceiling,
+      used,
+      remaining: Math.max(0, ceiling - used),
+      tiers,
+      kinds,
+    },
+  };
 }
