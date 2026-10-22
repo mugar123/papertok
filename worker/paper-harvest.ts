@@ -11,7 +11,14 @@ export const PAPER_HARVEST_CRON = '30 2 * * *';
 // arXiv asks harvesters to pause between requests; a 503 carries its own wait.
 const PAGE_GAP = '5 seconds';
 const EMBED_STEP_PAPERS = 256;
-const ENRICH_STEP_PAPERS = 200;
+// 25 to 50 papers per OpenAlex call: a step of 1,000 is about 40 calls, and a
+// run's ENRICH_STEPS about 3,000 of the day's 8,000-call ledger, the rest left
+// to readers' searches. A larger backlog drains over the next runs.
+const ENRICH_STEP_PAPERS = 1_000;
+const ENRICH_STEPS = 75;
+// Followed lanes harvested a run, most recently asked first. A followed search
+// costs ten calls, an entity one.
+const FOLLOWED_LANES_PER_RUN = 400;
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout: a lane that has started finishes within the step.
 const LANE_STEP_BUDGET_MS = 3 * 60_000;
@@ -61,8 +68,8 @@ async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jo
 }
 
 async function followedJobs(db: D1Database, now: number) {
-  const { results } = await db.prepare('SELECT lane FROM followed_lanes WHERE requested_at >= ? ORDER BY requested_at DESC')
-    .bind(daysFromNow(-FOLLOWED_LANE_DAYS, now)).all<{ lane: string }>();
+  const { results } = await db.prepare('SELECT lane FROM followed_lanes WHERE requested_at >= ? ORDER BY requested_at DESC LIMIT ?')
+    .bind(daysFromNow(-FOLLOWED_LANE_DAYS, now), FOLLOWED_LANES_PER_RUN).all<{ lane: string }>();
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
 }
 
@@ -118,7 +125,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await runLaneJobs(env, step, 'categories', categoryLaneJobs());
   await runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)));
 
-  for (let batch = 0; ; batch += 1) {
+  for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
     const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
     if (enriched === 0) break;
   }

@@ -126,7 +126,13 @@ function workKeys(paper: Paper) {
 
 // ─── Lanes ───
 
-const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
+const LEAVES = getAllLeafCategories();
+const LEAF_IDS = new Set(LEAVES.map(leaf => leaf.id));
+// The economics working-paper series (paper-sources.ts), shown to a reader of
+// any economics or finance category. Asked for alongside them, never as one:
+// the series say a paper is economics, not which branch.
+export const WORKING_PAPERS_LANE = 'series:working-papers';
+const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
 const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
 
@@ -474,7 +480,7 @@ interface Candidate { workId: number; published: string; lanes: string[]; embedd
 async function readCandidates(db: D1Database, lanes: string[]) {
   const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
   const { results } = await db.prepare(`SELECT c.work_id, c.published, c.lanes, v.embedding FROM (
-      SELECT work_id, MAX(published) AS published, group_concat(lane, ' ') AS lanes FROM (${lanes.map(() => `SELECT * FROM (
+      SELECT work_id, MAX(published) AS published, group_concat(lane, char(31)) AS lanes FROM (${lanes.map(() => `SELECT * FROM (
         SELECT lane, work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
       GROUP BY work_id
     ) c LEFT JOIN work_vectors v ON v.work_id = c.work_id`)
@@ -483,7 +489,8 @@ async function readCandidates(db: D1Database, lanes: string[]) {
   return results.map((row): Candidate => ({
     workId: row.work_id,
     published: row.published,
-    lanes: row.lanes.split(' '),
+    // Unit-separated: a followed search's lane holds spaces.
+    lanes: row.lanes.split('\u001f'),
     embedding: row.embedding == null ? null : readVector(row.embedding),
   }));
 }
@@ -507,7 +514,8 @@ export interface FeedQuery {
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), embedMissing }: { now?: number; embedMissing?: (db: D1Database, workByPaperId: Map<string, number>) => Promise<void> } = {}) {
   const db = database(env);
-  const lanes = [...new Set([...query.categories, ...query.follows.map(follow => follow.lane)])];
+  const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
+  const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
   if (lanes.length === 0) return [];
   let positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
   if (embedMissing) {

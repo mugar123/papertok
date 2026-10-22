@@ -164,3 +164,20 @@ test("the app's ids for a paper find it whichever form they take", () => {
   assert.deepEqual(keysForPaperId('pmid:41000001'), ['id:pmid:41000001', 'pmid:41000001']);
   assert.deepEqual(keysForPaperId('doi:10.1145/3320269.3372198'), ['id:doi:10.1145/3320269.3372198', '10.1145/3320269.3372198']);
 });
+
+test("a reader of economics also gets the working-paper series, filed under none of their categories, and a followed search matches its papers", async () => {
+  const { env } = corpus();
+  const paper = (id: string, title: string) => ({ ...arxivRecord, id, arxivId: id, title, published: '2026-10-15T00:00:00.000Z', allCategories: [], categories: [] });
+  await ingestPapers(env, [
+    { paper: paper('2610.00011', 'An econometrics preprint'), lanes: ['econ.EM'] },
+    { paper: paper('2610.00012', 'A working paper of a series'), lanes: ['series:working-papers'] },
+    { paper: paper('2610.00013', 'A paper a followed search found'), lanes: ['query:large language models'] },
+  ], { now: NOW });
+  const economics = await readFeedPage(env, parseFeedRequest({ categories: ['econ.EM'] }), { now: NOW });
+  assert.deepEqual(economics.map(item => [item.id, item._fetchedFor]).sort(), [['2610.00011', ['econ.EM']], ['2610.00012', undefined]]);
+  assert.deepEqual((await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'] }), { now: NOW })).map(item => item.id), [], 'other readers do not get the series');
+  const followed = await readFeedPage(env, parseFeedRequest({
+    follows: [{ type: 'topic', canonicalId: 'query-topic-1', displayName: 'Large language models', metadata: { query: 'large language models' } }],
+  }), { now: NOW });
+  assert.deepEqual(followed.map(item => [item.id, item._followedEntityMatches?.map(match => match.canonicalId)]), [['2610.00013', ['query-topic-1']]]);
+});

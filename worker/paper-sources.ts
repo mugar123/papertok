@@ -20,7 +20,7 @@ import { handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, PaperStoreError, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
+import { CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -241,7 +241,6 @@ export const WORKING_PAPER_SERIES_IDS = [
   'S4210230366', // Federal Reserve Bank of Philadelphia, Working Papers
   'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
 ];
-export const WORKING_PAPERS_LANE = 'series:working-papers';
 
 export type SourceName =
   | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
