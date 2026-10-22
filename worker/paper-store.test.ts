@@ -1,4 +1,5 @@
 import type { PaperFollowMatch } from '../src/models/Paper.ts';
+import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -96,6 +97,44 @@ test('a record that names two stored papers folds them into one, keeping one id 
   assert.equal(works.length, 1);
   assert.deepEqual(rows(db, 'SELECT DISTINCT work_id FROM work_keys').map(row => row.work_id), [works[0].id], 'every key names the remaining row');
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['bio.comp', 'cs.CL', 'cs.LG']);
+});
+
+test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
+  // Synthetic OpenAlex records as the harvest maps them, one harvest each, so
+  // the stored row is the base of each later merge. OpenAlex's record of the
+  // eprint, typed `preprint` under arXiv's DOI while listing the journal's
+  // copy, reopens the article's answer; its record of the journal DOI
+  // without a source gives none.
+  const { env, db } = corpus();
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const arxivLocation: OpenAlexLocation = {
+    landing_page_url: 'https://arxiv.org/abs/2610.00007',
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const journalLocation: OpenAlexLocation = {
+    landing_page_url: `https://doi.org/${journalDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal', host_organization_name: 'Elsevier' },
+  };
+  const work = (id: string, doi: string, type: string, locations: OpenAlexLocation[]) => mapOpenAlexWork({
+    id: `https://openalex.org/${id}`,
+    doi: `https://doi.org/${doi}`,
+    title: 'Bank capital and the transmission of monetary policy',
+    type,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    publication_date: '2026-10-12',
+    primary_location: locations[0],
+    locations,
+  })!;
+  const article = work('W502', journalDoi, 'article', [journalLocation, arxivLocation]);
+  const eprint = work('W503', '10.48550/arXiv.2610.00007', 'preprint', [arxivLocation, journalLocation]);
+  const withoutSource = work('W507', journalDoi, 'article', [{ ...journalLocation, source: null }, arxivLocation]);
+  for (const paper of [article, eprint, withoutSource]) await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+  const works = rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)));
+  assert.equal(works.length, 1);
+  assert.equal(works[0].doi, journalDoi);
+  assert.equal(works[0].peerReviewed, true);
 });
 
 test('a paper published before the corpus window is not filed, unless its lane keeps listings', async () => {
