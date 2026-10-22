@@ -1131,6 +1131,9 @@ test('a journal record under the row\'s DOI keeps the row reviewed beside a work
   const ssrn = work('W513', '10.2139/ssrn.4400000', 'preprint', {
     id: 'https://openalex.org/S4210172589', display_name: 'SSRN Electronic Journal', type: 'repository', host_organization_name: 'RELX Group',
   }, false);
+  const conference = work('W505', '10.1145/3600000.3600001', 'article', {
+    id: 'https://openalex.org/S222', display_name: 'ACM Economics and Computation', type: 'conference', host_organization_name: 'ACM',
+  });
   const nber = work('W508', '10.3386/w31999', 'report', {
     id: 'https://openalex.org/S2809516038', display_name: 'National Bureau of Economic Research', type: 'repository',
   });
@@ -1175,16 +1178,21 @@ test('a journal record under the row\'s DOI keeps the row reviewed beside a work
   // row that joined the SSRN entry, the journal article and a working paper.
   // The topic row shows the SSRN DOI, but its `true` is the article's. The
   // merged row shows the journal's DOI, so the article confirms it. Under
-  // the FEDS revision's DOI the `true` is still another version's.
+  // the FEDS revision's DOI the `true` is still another version's. The topic
+  // row can also begin as the conference version OpenAlex lists under an ACM
+  // DOI: it reads `true` under that DOI, and the article in it still confirms
+  // the journal's.
   for (const [doi, answer] of [[journalDoi, true], [`${fedsDoi}r1`, undefined]] as Array<[string, true | undefined]>) {
     for (const [label, workingPaper] of [['NBER', nber], ['FEDS', feds]] as const) {
-      for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
-        const where = `${doi}, ${label}, followed, an arXiv author before a topic row that began as the SSRN entry (${mapper})`;
-        const rows = PaperBuilder.deduplicate([arxivRecord(doi), ...PaperBuilder.deduplicate([map(ssrn), map(article), map(workingPaper)])]);
-        assert.equal(rows.length, 1, where);
-        assert.equal(rows[0].doi, doi, where);
-        assert.equal(rows[0].peerReviewed, answer, where);
-        assert.equal(peerReviewedOnly(rows).length, answer ? 1 : 0, where);
+      for (const [began, first] of [['the SSRN entry', ssrn], ['the conference version', conference]] as const) {
+        for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+          const where = `${doi}, ${label}, followed, an arXiv author before a topic row that began as ${began} (${mapper})`;
+          const rows = PaperBuilder.deduplicate([arxivRecord(doi), ...PaperBuilder.deduplicate([map(first), map(article), map(workingPaper)])]);
+          assert.equal(rows.length, 1, where);
+          assert.equal(rows[0].doi, doi, where);
+          assert.equal(rows[0].peerReviewed, answer, where);
+          assert.equal(peerReviewedOnly(rows).length, answer ? 1 : 0, where);
+        }
       }
     }
   }
