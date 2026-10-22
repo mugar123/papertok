@@ -41,6 +41,8 @@ const USER_SUBCOLLECTIONS = Object.freeze([
   'profileStash',
   'aggregates',
   'rateLimits',
+  'summaries',
+  'summaryHistory',
 ]);
 
 const PAGE_SIZE = 80;
@@ -227,6 +229,9 @@ async function deleteUserTree(admin: DeletionAdmin, uid: string) {
       parentSegments: ['users', uid],
       collectionId,
       limit: PAGE_SIZE,
+      // A delete needs only the name, and a page of saved summaries read whole
+      // is megabytes of text to parse; a list also needs its share pointer.
+      select: collectionId === 'lists' ? ['publicShareId'] : ['__name__'],
     });
     if (rows.length === 0) continue;
     const writes = [];

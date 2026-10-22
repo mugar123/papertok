@@ -25,6 +25,7 @@ import { areaLabelForPaper } from '../src/utils/areaAccent.ts';
 import { serializeLibraryPaper } from '../src/utils/readingLibrary.ts';
 import { LIST_COLORS } from '../src/utils/listColors.ts';
 import { USER_PREFERENCES_MAX } from '../src/utils/accountOnboarding.ts';
+import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/savedSummaryService.ts';
 import {
   deleteDoc,
   deleteField,
@@ -1077,6 +1078,173 @@ test('the shape the modal used to send is still refused, so the fix is load-bear
     landingPageUrl: null,
     savedAt: new Date().toISOString(),
   }));
+});
+
+/* --- Plain-words summaries (PAP-59) ---------------------------------------- */
+
+/**
+ * A reader's finished rewrites, kept in two documents per paper and level:
+ * `summaries` holds the text and is fetched one at a time when the paper opens,
+ * `summaryHistory` holds the row the history pages through. The payloads and
+ * the history query below are the ones `savedSummaryService` builds, so a rule
+ * that refused the client's own write fails here rather than in a reader's
+ * console.
+ */
+const SUMMARY_PDF = 'https://arxiv.org/pdf/2401.00001.pdf';
+const SUMMARY_SECTION = {
+  id: 's0',
+  kind: 'intro',
+  heading: 'What they asked',
+  originalHeading: '1 Introduction',
+  paragraphs: ['First paragraph.', 'Second paragraph.'],
+  highlights: [{ paragraphIndex: 1, quote: 'Second paragraph', kind: 'finding' }],
+};
+const SUMMARY_PAPER = { id: '2401.00001v1', arxivId: '2401.00001v1', title: 'A paper about $x^2$' };
+type RulesDb = ReturnType<typeof asAlice>;
+
+function summaryWrite(paper: typeof SUMMARY_PAPER = SUMMARY_PAPER, level = 'university', sections: object[] = [SUMMARY_SECTION]) {
+  const write = buildSummaryWrite(paper, level, { sections: sections as never, model: 'deepseek-v4-flash', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3' }, SUMMARY_PDF);
+  assert.ok(write, 'the client has to be able to build the write under test');
+  return write;
+}
+
+const summaryRef = (database: RulesDb, id: string, uid = ALICE) => doc(database, 'users', uid, 'summaries', id);
+const historyRef = (database: RulesDb, id: string, uid = ALICE) => doc(database, 'users', uid, 'summaryHistory', id);
+
+/** The batch `saveSummary` commits, with fields overridden or removed (`undefined`) per document. */
+function saveSummaryBatch(database: RulesDb, {
+  uid = ALICE,
+  write = summaryWrite(),
+  summary = {} as Record<string, unknown>,
+  history = {} as Record<string, unknown>,
+} = {}) {
+  const strip = (body: Record<string, unknown>) => Object.fromEntries(Object.entries(body).filter(([, value]) => value !== undefined));
+  const batch = writeBatch(database);
+  batch.set(summaryRef(database, write.id, uid), strip({ ...write.summary, ...summary }));
+  batch.set(historyRef(database, write.id, uid), strip({ ...write.history, updatedAt: serverTimestamp(), ...history }));
+  return batch.commit();
+}
+
+/** A page of history exactly as `listSummaryHistory` asks for it. */
+const historyPage = (database: RulesDb, uid = ALICE, cursor: Parameters<typeof buildSummaryHistoryQuery>[1] = null) => (
+  getDocs(buildSummaryHistoryQuery(uid, cursor, { database: database as never }))
+);
+
+async function seedSummary(write = summaryWrite()) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users', ALICE, 'summaries', write.id), write.summary);
+    await setDoc(doc(db, 'users', ALICE, 'summaryHistory', write.id), { ...write.history, updatedAt: new Date() });
+  });
+}
+
+test('PAP-59: a reader saves, reopens, pages, rewrites and deletes their own summaries', async () => {
+  await reset();
+  const db = asAlice();
+  const first = summaryWrite();
+  const second = summaryWrite({ ...SUMMARY_PAPER, id: '2401.00002', arxivId: '2401.00002' }, 'beginner');
+  await assertSucceeds(saveSummaryBatch(db, { write: first }));
+  await assertSucceeds(saveSummaryBatch(db, { write: second }));
+  const saved = await assertSucceeds(getDoc(summaryRef(db, first.id)));
+  assert.deepEqual(saved.data(), first.summary);
+  const page = await assertSucceeds(historyPage(db));
+  assert.deepEqual(page.docs.map(row => row.id).sort(), [first.id, second.id].sort());
+  await assertSucceeds(historyPage(db, ALICE, page.docs[0] as never));
+  // Writing the paper again replaces both documents in place.
+  await assertSucceeds(saveSummaryBatch(db, { write: first, summary: { model: 'another-model' } }));
+  assert.equal((await getDoc(summaryRef(db, first.id))).data()?.model, 'another-model');
+  await assertSucceeds(deleteDoc(summaryRef(db, first.id)));
+  await assertSucceeds(deleteDoc(historyRef(db, first.id)));
+});
+
+test('PAP-59: another account or a guest can neither read, page, write nor delete a summary', async () => {
+  await reset();
+  const write = summaryWrite();
+  await seedSummary(write);
+  for (const db of [asBob(), asGuest()]) {
+    await assertFails(getDoc(summaryRef(db, write.id)));
+    await assertFails(getDoc(historyRef(db, write.id)));
+    // The page the owner's own history asks for, so the only thing wrong with
+    // it is who is asking.
+    await assertFails(historyPage(db));
+    await assertFails(saveSummaryBatch(db));
+    await assertFails(setDoc(summaryRef(db, write.id), write.summary));
+    await assertFails(deleteDoc(summaryRef(db, write.id)));
+    await assertFails(deleteDoc(historyRef(db, write.id)));
+  }
+  const alice = asAlice();
+  assert.deepEqual((await getDoc(summaryRef(alice, write.id))).data(), write.summary);
+  assert.equal((await getDoc(historyRef(alice, write.id))).exists(), true);
+});
+
+test('PAP-59: the text is fetched one summary at a time, never listed', async () => {
+  await reset();
+  await seedSummary();
+  const db = asAlice();
+  const summaries = collection(db, 'users', ALICE, 'summaries');
+  await assertFails(getDocs(summaries));
+  await assertFails(getDocs(query(summaries, limit(1))));
+});
+
+test('PAP-59: a history page has to carry the ceiling the client asks for', async () => {
+  await reset();
+  await seedSummary();
+  const db = asAlice();
+  const history = collection(db, 'users', ALICE, 'summaryHistory');
+  await assertFails(getDocs(history));
+  await assertFails(getDocs(query(history, limit(SUMMARY_HISTORY_PAGE_SIZE + 2))));
+  await assertSucceeds(getDocs(query(history, limit(SUMMARY_HISTORY_PAGE_SIZE + 1))));
+  await assertSucceeds(historyPage(db));
+});
+
+test('PAP-59: a summary holds its sections, model, source basis and prompt version, and nothing else', async () => {
+  await reset();
+  const db = asAlice();
+  const write = summaryWrite();
+  // Each refusal rides on an otherwise valid batch, so the clause under test is
+  // the only one that can deny it.
+  await assertFails(saveSummaryBatch(db, { summary: { paperTitle: 'A paper about $x^2$' } }));
+  await assertFails(saveSummaryBatch(db, { summary: { sourceBasis: undefined } }));
+  await assertFails(saveSummaryBatch(db, { summary: { model: undefined } }));
+  await assertFails(saveSummaryBatch(db, { summary: { sections: [] } }));
+  await assertFails(saveSummaryBatch(db, { summary: { sections: 'First paragraph.' } }));
+  await assertFails(saveSummaryBatch(db, { summary: { sections: Array.from({ length: 25 }, (_, index) => ({ ...SUMMARY_SECTION, id: `s${index}` })) } }));
+  await assertFails(saveSummaryBatch(db, { summary: { model: 'm'.repeat(101) } }));
+  await assertFails(saveSummaryBatch(db, { summary: { sourceBasis: 'f'.repeat(41) } }));
+  await assertFails(saveSummaryBatch(db, { summary: { promptVersion: undefined } }));
+  await assertFails(saveSummaryBatch(db, { summary: { promptVersion: 3 } }));
+  await assertFails(saveSummaryBatch(db, { summary: { promptVersion: 'v'.repeat(41) } }));
+  // An unknown basis or prompt version is stored as unknown, and the longest
+  // rewrite the client keeps is a clean allow.
+  await assertSucceeds(saveSummaryBatch(db, { summary: { sourceBasis: '' } }));
+  await assertSucceeds(saveSummaryBatch(db, { summary: { promptVersion: '' } }));
+  const longest = summaryWrite(SUMMARY_PAPER, 'researcher', Array.from({ length: 24 }, (_, index) => ({ ...SUMMARY_SECTION, id: `s${index}` })));
+  await assertSucceeds(saveSummaryBatch(db, { write: longest }));
+  // The id has to be a paper key and a level, like every id the client builds.
+  await assertFails(setDoc(summaryRef(db, 'not a key.university'), write.summary));
+  await assertFails(setDoc(summaryRef(db, write.id.replace(/\.university$/, '')), write.summary));
+  await assertFails(setDoc(summaryRef(db, write.id.replace(/university$/, 'expert')), write.summary));
+});
+
+test('PAP-59: a history row names its paper, level, title and PDF, stamped by the server', async () => {
+  await reset();
+  const db = asAlice();
+  const other = summaryWrite({ ...SUMMARY_PAPER, id: '2401.00002', arxivId: '2401.00002' });
+  await assertFails(saveSummaryBatch(db, { history: { abstract: 'Smuggled text.' } }));
+  await assertFails(saveSummaryBatch(db, { history: { title: '' } }));
+  await assertFails(saveSummaryBatch(db, { history: { title: 't'.repeat(1001) } }));
+  await assertFails(saveSummaryBatch(db, { history: { paperId: '' } }));
+  await assertFails(saveSummaryBatch(db, { history: { level: 'expert' } }));
+  // A row has to describe the summary its id names: another paper's key or
+  // another level would reopen a summary that is not there.
+  await assertFails(saveSummaryBatch(db, { history: { paperKey: other.history.paperKey } }));
+  await assertFails(saveSummaryBatch(db, { history: { level: 'beginner' } }));
+  await assertFails(saveSummaryBatch(db, { history: { pdfUrl: 'http://arxiv.org/pdf/2401.00001.pdf' } }));
+  await assertFails(saveSummaryBatch(db, { history: { pdfUrl: 'javascript:alert(1)' } }));
+  await assertFails(saveSummaryBatch(db, { history: { pdfUrl: `https://arxiv.org/${'p'.repeat(2000)}` } }));
+  await assertFails(saveSummaryBatch(db, { history: { updatedAt: new Date('2026-01-01T00:00:00Z') } }));
+  await assertFails(saveSummaryBatch(db, { history: { updatedAt: undefined } }));
+  await assertSucceeds(saveSummaryBatch(db));
 });
 
 /*
