@@ -5,6 +5,7 @@ type InstitutionLinkProps = {
 } & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.tsx';
@@ -18,7 +19,7 @@ import './Institution.css';
 const COPY = {
   email: 'University email',
   placeholder: 'name@university.edu',
-  hint: 'We will email a verification link. Open it in this browser while signed into this PaperTok account.',
+  inbox: 'Check your university inbox. Open the link in this browser while signed into this PaperTok account, then continue in the tab it opens.',
   submit: 'Verify university email',
   submitting: 'Verifying…',
   linked: (name: string) => `Verified with ${name}.`,
@@ -73,7 +74,6 @@ export default function InstitutionLink({
     pendingFocus.current = null;
   }, [institution]);
   const inputId = `${idPrefix}-email`;
-  const hintId = `${idPrefix}-hint`;
   const feedbackId = `${idPrefix}-feedback`;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -87,7 +87,8 @@ export default function InstitutionLink({
         await sendInstitutionVerification(email);
         setPending(pendingInstitutionVerification());
         setEmail!('');
-        setFeedback({ tone: 'success', text: 'Check your university inbox. Continue in the tab opened by the email.' });
+        toast.success('Verification email sent');
+        setFeedback({ tone: 'success', text: COPY.inbox });
         pendingFocus.current = null;
       } else {
         await linkInstitution(email);
@@ -120,7 +121,7 @@ export default function InstitutionLink({
     }
   };
 
-  const feedbackText = feedback?.text || (pending ? 'Check your university inbox. Continue in the tab opened by the email.' : '');
+  const feedbackText = feedback?.text || (pending ? COPY.inbox : '');
   // The region stays mounted so each message is announced; the keyed span
   // opens again whenever the message changes.
   const feedbackNode = (
@@ -171,7 +172,7 @@ export default function InstitutionLink({
           required
           aria-required="true"
           aria-invalid={feedback?.tone === 'error' ? 'true' : undefined}
-          aria-describedby={feedback?.tone === 'error' ? `${hintId} ${feedbackId}` : hintId}
+          aria-describedby={feedback?.tone === 'error' ? feedbackId : undefined}
         />
         {showSubmit && (
           <Button
@@ -200,7 +201,6 @@ export default function InstitutionLink({
           </div>
         </div>
       )}
-      <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
     </form>
   );

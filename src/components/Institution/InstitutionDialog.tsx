@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dia
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import InstitutionLink from './InstitutionLink.tsx';
+import PetriStamp from '../Onboarding/PetriStamp.tsx';
 import '../Settings/SettingsSheet.css';
 import './Institution.css';
 
@@ -29,7 +30,7 @@ export default function InstitutionDialog({ open, onOpenChange }: { open: boolea
         <DrawerContent className="settings-sheet institution-sheet" overlayClassName="settings-sheet-backdrop" initialFocus={titleRef}>
           <DrawerHandle />
           <div className="settings-sheet-head">
-            <DrawerTitle ref={titleRef} tabIndex={-1} render={<h2 />}>{TITLE}</DrawerTitle>
+            <DrawerTitle ref={titleRef} tabIndex={-1} render={<h2 />} className="institution-title"><PetriStamp />{TITLE}</DrawerTitle>
             <DrawerDescription>{LEDE}</DrawerDescription>
           </div>
           <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
@@ -43,7 +44,7 @@ export default function InstitutionDialog({ open, onOpenChange }: { open: boolea
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="institution-dialog" closeLabel="Close">
-        <DialogTitle>{TITLE}</DialogTitle>
+        <DialogTitle className="institution-title"><PetriStamp />{TITLE}</DialogTitle>
         <DialogDescription className="institution-dialog-lede">{LEDE}</DialogDescription>
         <InstitutionLink idPrefix="settings-institution" />
       </DialogContent>
