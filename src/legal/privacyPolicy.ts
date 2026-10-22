@@ -12,4 +12,4 @@
  */
 export const PRIVACY_POLICY_VERSION = '2026-10-22';
 
-export const PRIVACY_POLICY_CHANGE = 'Technical error reports go to Sentry, your feed sends our server the identifiers of papers you liked or saved to rank new ones, and Brevo delivers university verification emails.';
+export const PRIVACY_POLICY_CHANGE = 'Our server now picks your feed from a shared catalogue using your interests, follows and liked or saved papers; technical error reports go to Sentry; and Brevo sends university verification emails.';
