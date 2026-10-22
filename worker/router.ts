@@ -157,7 +157,7 @@ const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/resources/figures': handlePaperFigures,
 };
 
-export async function handleRequest(request: Request, env: WorkerEnv): Promise<Response> {
+export async function handleRequest(request: Request, env: WorkerEnv, context?: Pick<ExecutionContext, 'waitUntil'>): Promise<Response> {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (request.method === 'OPTIONS') {
@@ -402,7 +402,7 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
     const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
     try {
       const answer = url.pathname === '/store/papers'
-        ? await handleCorpusFeed(request, env, identity)
+        ? await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined)
         : await handleStoreFeed(request, env, identity);
       return json(answer, 200, headers);
     } catch (error) {

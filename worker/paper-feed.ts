@@ -26,27 +26,27 @@ const NEW_FOLLOWED_LANES_PER_READER = 20;
 const NEW_FOLLOWED_LANES_PER_DAY = 2_000;
 
 /**
- * Liked papers the corpus cannot rank against yet, fetched and embedded. Only
- * for a profile with fewer than ENOUGH_STORED_POSITIVES ranked likes: a reader
- * with a few already gets a ranked page, and the lookup delays the page it
- * serves. Failures leave the page ranked by the likes already stored.
+ * Liked papers the corpus cannot rank against yet, fetched and embedded, for
+ * the reader's next page: only for a profile with fewer than
+ * ENOUGH_STORED_POSITIVES ranked likes, since a reader with a few already gets
+ * a ranked page. Failures leave the likes already stored.
  */
-function embedMissingPositives(env: FeedEnv, positiveIds: string[]) {
-  return async (db: D1Database, workByPaperId: Map<string, number>) => {
-    try {
-      const workIds = [...new Set(workByPaperId.values())];
-      const { results } = workIds.length
-        ? await db.prepare('SELECT work_id FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(workIds)).all<{ work_id: number }>()
-        : { results: [] };
-      if (results.length >= ENOUGH_STORED_POSITIVES) return;
-      const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
-      if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
-      const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
-      await embedWorks(env, [...new Set(found.values())]);
-    } catch (error) {
-      console.warn('Paper store could not add liked papers', error);
-    }
-  };
+async function addMissingPositives(env: FeedEnv, positiveIds: string[]) {
+  try {
+    const db = database(env);
+    const workByPaperId = await findWorks(db, positiveIds);
+    const workIds = [...new Set(workByPaperId.values())];
+    const { results } = workIds.length
+      ? await db.prepare('SELECT work_id FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(workIds)).all<{ work_id: number }>()
+      : { results: [] };
+    if (results.length >= ENOUGH_STORED_POSITIVES) return;
+    const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
+    if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+    const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
+    await embedWorks(env, [...new Set(found.values())]);
+  } catch (error) {
+    console.warn('Paper store could not add liked papers', error);
+  }
 }
 
 /**
@@ -99,7 +99,13 @@ function readBody<T>(request: Request) {
  * `POST /store/papers`: a page of corpus papers for the reader's categories,
  * follows and likes, or with `ids`, the corpus's copies of those papers.
  */
-export async function handleCorpusFeed(request: Request, env: FeedEnv, identity: Pick<VerifiedIdentity, 'uid'>): Promise<{ papers: Paper[] }> {
+export async function handleCorpusFeed(
+  request: Request,
+  env: FeedEnv,
+  identity: Pick<VerifiedIdentity, 'uid'>,
+  // Work the page does not wait for; awaited when nothing can outlive the response.
+  later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
+): Promise<{ papers: Paper[] }> {
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request);
   if (Array.isArray(body?.ids)) {
     const ids = [...new Set(body.ids.map(id => String(id ?? '').trim().slice(0, 300)).filter(Boolean))].slice(0, LOOKUP_MAX_IDS);
@@ -120,11 +126,16 @@ export async function handleCorpusFeed(request: Request, env: FeedEnv, identity:
   }
   await reserveFeedRequest(env, identity.uid);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
-  await registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane));
-  // Only a first page of categories looks liked papers up: the follows asked
-  // beside it, and later pages, would repeat the same lookup.
-  const looksUp = query.page === 0 && query.follows.length === 0;
-  return { papers: await readFeedPage(env, query, looksUp ? { embedMissing: embedMissingPositives(env, query.positiveIds) } : {}) };
+  const papers = await readFeedPage(env, query);
+  // After the page, not before it: a lookup of liked papers can take seconds
+  // (arXiv's pace), and the page is ranked by the likes the corpus has now.
+  // Only a first page of categories looks them up: the follows asked beside
+  // it, and later pages, would repeat the same lookup.
+  await later(Promise.all([
+    registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
+    query.page === 0 && query.follows.length === 0 && query.positiveIds.length ? addMissingPositives(env, query.positiveIds) : null,
+  ]).catch(error => console.warn('Paper store follow-up failed', error)));
+  return { papers };
 }
 
 /**

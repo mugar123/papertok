@@ -585,16 +585,12 @@ export interface FeedQuery {
  * first without any. Each paper says which asked categories it was found in
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
-export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), embedMissing }: { now?: number; embedMissing?: (db: D1Database, workByPaperId: Map<string, number>) => Promise<void> } = {}) {
+export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now() }: { now?: number } = {}) {
   const db = database(env);
   const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
   const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
   if (lanes.length === 0) return [];
-  let positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
-  if (embedMissing) {
-    await embedMissing(db, positiveWorks);
-    positiveWorks = await findWorks(db, query.positiveIds);
-  }
+  const positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
   const positiveIds = [...new Set(positiveWorks.values())];
   const [candidates, positives] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
