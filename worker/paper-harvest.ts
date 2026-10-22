@@ -27,6 +27,9 @@ const LANES_PER_STEP = 5;
 // A followed lane nobody asked for in this long is no longer harvested.
 const FOLLOWED_LANE_DAYS = 14;
 const PAGE_STEP = { retries: { limit: 5, delay: '1 minute', backoff: 'exponential' }, timeout: '5 minutes' } as const;
+// An arXiv OAI page that fails three times is an outage, not a blip (2026-10-22:
+// no answer within 90 s for an hour); the run moves on instead of waiting on it.
+const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential' }, timeout: '5 minutes' } as const;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
 
 /** Where a set's harvest starts: the last day it was harvested to the end, else the corpus window. */
@@ -90,8 +93,10 @@ async function embedAll(env: WorkerEnv, step: WorkflowStep, label = 'embed') {
 async function phase(name: string, work: () => Promise<unknown>) {
   try {
     await work();
+    return true;
   } catch (error) {
     console.error(`Paper harvest phase failed: ${name}`, error);
+    return false;
   }
 }
 
@@ -132,13 +137,14 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   // The day the run started, so a run that crosses midnight records the day it covered.
   const today = event.timestamp.toISOString();
   for (const set of ARXIV_HARVEST_SETS) {
-    // A set that fails is harvested from the same day on the next run.
-    await phase(`arXiv ${set}`, async () => {
+    // A set that fails is harvested from the same day on the next run, and so
+    // are the ones after it: arXiv is down, and each would wait out its retries.
+    const harvested = await phase(`arXiv ${set}`, async () => {
       const from = await step.do(`${set}: start`, () => harvestStart(db, set));
       let resumptionToken = '';
       // Step names are the replay keys, so each request gets its own number.
       for (let request = 0, done = false; !done; request += 1) {
-        const page = await step.do(`${set}: request ${request}`, PAGE_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
+        const page = await step.do(`${set}: request ${request}`, OAI_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
         if (page.retryAfterSeconds) {
           await step.sleep(`${set}: wait ${request}`, page.retryAfterSeconds * 1000);
           continue;
@@ -152,6 +158,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
           ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(set, today).run();
       });
     });
+    if (!harvested) break;
   }
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 

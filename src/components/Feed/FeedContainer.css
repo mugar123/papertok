@@ -255,7 +255,7 @@
    fine pointer, while the mouse is in the band beneath the bar (`is-visible`,
    set by FeedContainer); on touch, as a pull progresses (`data-pull` on the
    wrapper, below); or to the keyboard. While a refresh runs it stays out and spins;
-   when it lands it gives one beat (`is-done`) and goes back under the bar.
+   when it lands it says Updated and goes back under the bar.
    `translate`, not `transform`, centres it (papertok-transform-centering-vs-arrival).
    `top: 12px`, not `--nav-total + 12px`: this is an absolutely-positioned
    child of .feed-wrapper, which already carries `margin-top: var(--nav-total)`. */
@@ -283,9 +283,9 @@
   scale: 0.9;
   pointer-events: none;
   transition:
-    opacity 160ms 60ms var(--ease-out-quad),
-    translate 280ms var(--ease-out-quad),
-    scale 280ms var(--ease-out-quad);
+    opacity 140ms 60ms var(--ease-out),
+    translate 200ms var(--ease-out),
+    scale 200ms var(--ease-out);
 }
 .feed-refresh.is-visible,
 .feed-refresh:focus-visible {
@@ -293,7 +293,7 @@
   translate: -50% 0;
   scale: 1;
   pointer-events: auto;
-  transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1), translate 200ms cubic-bezier(0.2, 0, 0, 1), scale 200ms cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity 200ms var(--ease-out), translate 240ms var(--ease-out), scale 240ms var(--ease-out);
 }
 /* Under the finger. Three things move together and none of them is on a
    clock: what the reader sees IS the gesture, so every value here is read
@@ -318,7 +318,8 @@
 /* The landing: the frame the thumb lets go and the refresh starts. The pill
    travels from where the pull left it to its working pose, which is exactly
    that of `is-visible`, so when React arrives with `is-visible` and
-   `is-refreshing` there is nothing to correct. The papers do not spring
+   `is-refreshing` there is nothing to correct. It runs on the veil's clock
+   with the strong ease-out, so it settles instead of drifting. The papers do not spring
    back: they enter the veil's sink on the veil's own clock (180ms
    `--ease-out-quad`, as `.feed-container--refreshing`). A cancelled pull is
    still a spring — `transform` back to `none` on `.pc`'s own expo — because
@@ -329,13 +330,13 @@
   scale: 1;
   pointer-events: none;
   transition:
-    opacity 180ms var(--ease-out-quad),
-    translate 180ms var(--ease-out-quad),
-    scale 180ms var(--ease-out-quad);
+    opacity 180ms var(--ease-out),
+    translate 180ms var(--ease-out),
+    scale 180ms var(--ease-out);
 }
 .feed-wrapper[data-pull='landing'] .feed-refresh-icon {
   rotate: 180deg;
-  transition: rotate 180ms var(--ease-out-quad);
+  transition: rotate 180ms var(--ease-out);
 }
 .feed-wrapper[data-pull='landing'] .pc {
   transform: none;
@@ -361,18 +362,6 @@
   translate: -50% 0;
   scale: 1;
 }
-/* El acuse de recibo de la píldora: un respiro, no un pop.
-   Era 1 → 1.12 → 0.96 → 1 en 520ms de expo MIENTRAS la cara de dentro entraba
-   escalando de 0.84 a 1 con un muelle propio: dos escalas anidadas que se
-   multiplican sobre texto de 0.8rem, y tres relojes distintos en el único
-   instante de todo esto que el lector está mirando de verdad. El reparto
-   ahora es uno por caja — la cara viaja, la píldora escala — y esta escala
-   sola, sin rebote por debajo de 1.
-   El pico cae a los 180ms, que es cuando «Actualizado» acaba de hacerse
-   legible (0.1s de retardo + 0.16s de fundido, en FeedContainer.jsx): lo que
-   se ve es la píldora tomando aire al recibir la respuesta, no un botón
-   dando un salto por su cuenta. */
-.feed-refresh.is-done { animation: feedRefreshDone 360ms var(--ease-out-quad); }
 /* Face slot. Las tres caras se apilan en UNA celda de rejilla, y con ellas un
    medidor invisible que lleva las tres etiquetas: la celda mide siempre lo
    que la más ancha, así que la píldora no cambia de tamaño al cambiar de
@@ -417,11 +406,6 @@
   animation: feedRefreshSpin 0.72s linear infinite;
 }
 @keyframes feedRefreshSpin { to { rotate: 360deg; } }
-@keyframes feedRefreshDone {
-  0% { scale: 1; }
-  50% { scale: 1.05; }
-  100% { scale: 1; }
-}
 /* The environment being replaced. Measured 2026-09-12 with none of this: at
    498ms the card count went 12 → 4 and the paper changed outright, with the
    long frames of mounting a new feed in plain sight — a cut, not a refresh.
@@ -487,7 +471,6 @@
   .feed-wrapper[data-pull='landing'] .feed-refresh { transition: opacity 120ms linear; translate: -50% 0; scale: 1; }
   .feed-wrapper[data-pull='landing'] .feed-refresh-icon { rotate: none; transition: none; }
   .feed-wrapper[data-pull='landing'] .pc { transform: none; transition: none; }
-  .feed-refresh.is-done,
   .feed-refresh-icon--spinning { animation: none; }
 }
 
