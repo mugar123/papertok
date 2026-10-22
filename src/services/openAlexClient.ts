@@ -150,6 +150,9 @@ export function parseRetryAfter(value: string | null | undefined, now = Date.now
 const RATE_LIMIT_EPOCH_THRESHOLD_S = 1e9; // ~2001-09-09: no sane delta reaches it
 const MAX_RATE_LIMIT_DELAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
+// Set by the Worker on its own budget refusals (`OPENALEX_BUDGET_TIER_HEADER`
+// in worker/provider-runtime.ts), never by OpenAlex.
+const BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
 
 // Only ever called for a response that IS rate limited, so a delay that comes
 // out at zero or below -- an epoch already in the past, a negative header --
@@ -527,7 +530,14 @@ export class OpenAlexClient {
 
         const retryAfterMs = getOpenAlexRateLimitDelay(response, this.now());
         if (retryAfterMs > 0) {
-          this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.now() + retryAfterMs);
+          // A refusal naming a budget tier is the Worker keeping the day's
+          // OpenAlex budget for other kinds of request (PAP-88): an opened
+          // paper, a free lookup by id or a feed lane may still be served, so
+          // only this request fails. Without the header OpenAlex refused the
+          // key itself, and the whole tab waits.
+          if (!response.headers.has(BUDGET_TIER_HEADER)) {
+            this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.now() + retryAfterMs);
+          }
           // Not asked again, however short the wait: every ask is a miss the
           // Worker reserves against the day's OpenAlex ceiling, and a refusal
           // says that budget is what is short. The caller fills the page from
