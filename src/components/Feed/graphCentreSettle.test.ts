@@ -61,7 +61,7 @@ test('the centre carries its column on `translate`, never on `left`, so the move
 
   // The x is handed over as a variable; the stylesheet decides what property
   // it lands on. `left` would lay the plot out again every frame, and
-  // `transform` is taken -- `relatedItemIn` animates it.
+  // `transform` is taken -- `rise` animates it.
   assert.match(jsx, /'--mark-x': `\$\{\(isArriving && !hasSlid \? previousCenter\.x : layout\.centerX\) - 8\}px`/);
   // On the timeline the centre moves up and down too: its height is its count.
   assert.match(jsx, /'--mark-y': `\$\{\(isArriving && !hasSlid \? previousCenter\.y : layout\.centerY\) - 8\}px`/);

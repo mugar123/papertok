@@ -3,6 +3,7 @@ import test from 'node:test';
 import worker from './index.ts';
 import { routeForLog } from './router.ts';
 import { OPENALEX_PREFETCH_CRON } from './openalex-prefetch.ts';
+import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
 import { readFileSync } from 'node:fs';
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals, TestNamespace } from './test-types.ts';
@@ -207,28 +208,34 @@ test('the scheduled entry point passes the event time and keeps the job alive wi
   assert.ok(saved.some(({ value }) => value.scheduledAt === '2026-10-13T07:20:00.000Z'));
 });
 
-// PAP-88: 00:05 UTC fetches the feed's OpenAlex lanes for the day. It runs
-// after the budget resets and before any digest window, and it must not run
-// the digest: an extra run would be recorded as a schedule run.
-test('the 00:05 trigger runs the prefetch and not the email schedule; any other trigger still runs the schedule', async t => {
-  t.mock.method(console, 'info', () => {});
+// Three triggers, three jobs. 00:05 UTC fetches the feed's OpenAlex lanes after
+// the budget resets (PAP-88), 02:30 UTC starts the day's paper harvest, and the
+// morning windows run the email schedule. Neither daily job may run the digest:
+// an extra run would be recorded as a schedule run.
+test('each cron trigger runs its own job, and only the digest windows run the email schedule', async t => {
+  let prefetches = 0;
+  t.mock.method(console, 'info', (label?: unknown) => { if (label === 'OpenAlex prefetch') prefetches += 1; });
   const saved: string[] = [];
+  const harvests: string[] = [];
   const env = {
-    NOTIFICATION_STORE: { put: async (key: string) => { saved.push(key); } } as unknown as KVNamespace,
-  };
+    NOTIFICATION_STORE: { put: async (key: string) => { saved.push(key); } },
+    PAPER_HARVEST: { create: async ({ id }: { id: string }) => { harvests.push(id); } },
+  } as unknown as WorkerEnv;
   const run = async (cron: string, at: string) => {
     const jobs: Promise<unknown>[] = [];
+    prefetches = 0;
+    saved.length = 0;
+    harvests.length = 0;
     await worker.scheduled({ cron, scheduledTime: Date.parse(at) }, env, { waitUntil: job => { jobs.push(job); } });
     await Promise.all(jobs);
-    return jobs.length;
+    return { jobs: jobs.length, prefetches, harvests: [...harvests], scheduleRun: saved.includes('notification:schedule:last-run') };
   };
 
-  assert.equal(await run(OPENALEX_PREFETCH_CRON, '2026-10-22T00:05:00Z'), 1);
-  assert.equal(saved.length, 0, 'no schedule run recorded');
-  assert.equal(await run('*/20 7-13 * * *', '2026-10-22T07:20:00Z'), 1);
-  assert.ok(saved.includes('notification:schedule:last-run'), saved.join());
+  assert.deepEqual(await run(OPENALEX_PREFETCH_CRON, '2026-10-22T00:05:00Z'), { jobs: 1, prefetches: 1, harvests: [], scheduleRun: false });
+  assert.deepEqual(await run(PAPER_HARVEST_CRON, '2026-10-22T02:30:00Z'), { jobs: 1, prefetches: 0, harvests: ['harvest-2026-10-22'], scheduleRun: false });
+  assert.deepEqual(await run('*/20 7-13 * * *', '2026-10-22T07:20:00Z'), { jobs: 1, prefetches: 0, harvests: [], scheduleRun: true });
 
-  // The trigger exists only if wrangler.toml declares the same expression.
+  // A trigger exists only if wrangler.toml declares the same expression.
   const crons = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8').match(/^crons = \[(.*)\]$/m)![1];
-  assert.ok(crons.split(',').map(value => JSON.parse(value.trim())).includes(OPENALEX_PREFETCH_CRON), crons);
+  assert.deepEqual(crons.split(',').map(value => JSON.parse(value.trim())).sort(), ['*/20 7-13 * * *', OPENALEX_PREFETCH_CRON, PAPER_HARVEST_CRON].sort());
 });

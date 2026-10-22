@@ -73,7 +73,7 @@ test('the band opens on the bar’s own clock instead of appearing in one frame'
   const navbar = await read('../Layout/Navbar.css');
 
   // Read from the bar rather than repeated, so the two cannot drift.
-  const arrive = navbar.match(/\.navbar--arriving \{\s*animation: navbarArrive ([\d.]+s) (ease-out) both;/);
+  const arrive = navbar.match(/\.navbar--arriving \{\s*animation: fadeIn ([\d.]+s) (ease-out) both;/);
   assert.ok(arrive, 'the bar still arrives on an animation of its own');
   const [, duration, easing] = arrive;
 

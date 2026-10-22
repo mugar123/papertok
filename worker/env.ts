@@ -1,8 +1,9 @@
 import type { TextExtractionEnv } from './paper-text.ts';
+import type { EmbeddingEnv } from './paper-store.ts';
 // Bindings come from Wrangler. Configuration may be absent in local requests;
 // optional secrets are provisioned separately from wrangler.toml.
 export type WorkerEnv = {
-  [Key in keyof Env]?: Key extends 'AI' ? TextExtractionEnv['AI'] : Env[Key] extends string ? string : Env[Key];
+  [Key in keyof Env]?: Key extends 'AI' ? TextExtractionEnv['AI'] & EmbeddingEnv['AI'] : Env[Key] extends string ? string : Env[Key];
 } & Partial<Record<
   | 'AI_ANNOTATION_MODEL'
   | 'AI_UNLIMITED_EMAILS'
