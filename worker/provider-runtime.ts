@@ -592,10 +592,12 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
     'access-control-expose-headers': `retry-after, ${OPENALEX_BUDGET_TIER_HEADER}`,
     [OPENALEX_BUDGET_TIER_HEADER]: budget.tier,
     'cache-control': 'no-store',
-    // The day's refusal is not the true seconds until UTC midnight: a
-    // `retry-after` of several hours is a client that stops asking until someone
-    // reloads the tab, and the daily ceiling is an emergency brake, not a normal
-    // state.
+    // The day's refusal is not the true seconds until UTC midnight: a tier
+    // closes every day and can reopen at the next budget reading, and a
+    // `retry-after` of several hours is a client that stops asking until
+    // someone reloads the tab. It bounds how soon a client may ask again, not
+    // when the tier reopens, so the browser shows no countdown for a refusal
+    // naming its tier (`isOpenAlexBudgetRefusal` in openAlexClient.ts).
     'retry-after': reservation.scope === 'global' ? '300' : '60',
   }) };
 }

@@ -4,6 +4,7 @@ import {
   OpenAlexClient,
   getOpenAlexRateLimitDelay,
   identifyOpenAlexUrl,
+  isOpenAlexBudgetRefusal,
   isOpenAlexRateLimitError,
   parseRetryAfter,
 } from './openAlexClient.ts';
@@ -636,4 +637,27 @@ test('a budget-tier refusal fails that request without closing OpenAlex for the 
   assert.equal(client.getHealth().rateLimited, true);
   await assert.rejects(() => client.json('https://api.openalex.org/works/W2'), isOpenAlexRateLimitError);
   assert.equal(asked.length, 3, 'the tab asks nothing once OpenAlex itself refused');
+});
+
+// The page tells the two refusals apart: OpenAlex refusing the key is an
+// outage with a wait, the Worker holding back one kind of request for the
+// day's budget is not, and gets other words.
+test('a budget-tier refusal is told apart from OpenAlex refusing the key, through a wrapping error too', async () => {
+  const client = new OpenAlexClient({
+    storage: null,
+    fetchImpl: async (input) => (String(input).includes('search=')
+      ? new Response('{"code":"PROVIDER_RATE_LIMITED"}', { status: 429, headers: { 'Retry-After': '300', 'X-PaperTok-Budget-Tier': 'exploration' } })
+      : new Response('{}', { status: 429, headers: { 'Retry-After': '120' } })),
+  });
+  const refusal = (url: string) => client.json(url).then(() => null, (error: unknown) => error);
+
+  const paused = await refusal('https://api.openalex.org/works?search=physics');
+  assert.equal(isOpenAlexRateLimitError(paused), true);
+  assert.equal(isOpenAlexBudgetRefusal(paused), true);
+  assert.equal(isOpenAlexBudgetRefusal(new Error('Paper search failed', { cause: paused })), true);
+
+  const keyRefused = await refusal('https://api.openalex.org/works?filter=doi:10.1/x');
+  assert.equal(isOpenAlexRateLimitError(keyRefused), true);
+  assert.equal(isOpenAlexBudgetRefusal(keyRefused), false);
+  assert.equal(isOpenAlexBudgetRefusal(null), false);
 });

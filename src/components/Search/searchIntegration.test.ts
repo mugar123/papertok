@@ -584,7 +584,7 @@ test('typing preserves the selected type and the type strip is available before 
 import { searchEntities } from '../../services/entitySearchService.ts';
 import type { SearchProviders } from '../../services/entitySearchService.ts';
 import { SECTION_SOURCES, describeSearchOutage } from '../../utils/searchOutage.ts';
-import { OpenAlexRequestError, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import { OpenAlexRequestError, isOpenAlexBudgetRefusal, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 
 /** The page's code between two anchors, which must both exist. */
 function pageSlice(from: string, to: string) {
@@ -609,6 +609,7 @@ function pageSearch(sources: Partial<SearchProviders>) {
   const painted = {
     papers: [] as unknown[], authors: [] as unknown[], institutions: [] as unknown[],
     notices: [] as (string[] | null)[], retryAts: [] as (number | null)[], searching: [] as boolean[],
+    pauses: [] as (boolean | null)[],
   };
   const run = vm.runInNewContext(pageSearchCode, {
     AbortController, setTimeout, Date,
@@ -616,7 +617,7 @@ function pageSearch(sources: Partial<SearchProviders>) {
     requestRef: { current: null },
     searchEntities, SECTION_SOURCES, describeSearchOutage,
     getOpenAlexHealth: () => ({ rateLimited: false, retryAfterMs: 0 }),
-    isOpenAlexRateLimitError,
+    isOpenAlexRateLimitError, isOpenAlexBudgetRefusal,
     pageSources: {
       papers: async () => [searchPaper], authors: async () => [], institutions: async () => [], topics: async () => [], projects: async () => [],
       ...sources,
@@ -629,9 +630,10 @@ function pageSearch(sources: Partial<SearchProviders>) {
     setAuthorResults: (items: unknown) => painted.authors.push(items),
     setInstitutionResults: (items: unknown) => painted.institutions.push(items),
     setConceptResults() {}, setProjectResults() {},
-    setSearchIssue: (issue: { sections: string[]; retryAtMs: number | null } | null) => {
+    setSearchIssue: (issue: { sections: string[]; retryAtMs: number | null; budgetPaused?: boolean } | null) => {
       painted.notices.push(issue?.sections ?? null);
       painted.retryAts.push(issue?.retryAtMs ?? null);
+      painted.pauses.push(issue ? Boolean(issue.budgetPaused) : null);
     },
     setHasSearched() {}, setActiveSearchFilter() {}, setSearchIntent() {},
     trackEvent() {},
@@ -734,4 +736,22 @@ test('opening a settled scope keeps the wait a rate limit named, counted from th
   await settle();
   assert.deepEqual(painted.notices.at(-1), ['authors']);
   assert.equal(painted.retryAts.at(-1), null, 'a wait that had ended started again');
+});
+
+// PAP-88: past 60 % of the day's OpenAlex budget the Worker refuses searches
+// and names the tier. OpenAlex is not down and the refusal's `retry-after` is
+// not when searches return: a new budget reading can reopen them at any
+// moment, so the notice says they are paused, promises no time, and keeps
+// Retry.
+test('a search the Worker refused for the budget is a pause with no countdown, not an OpenAlex outage', async t => {
+  t.mock.method(Date, 'now', () => 1_000_000);
+  const { performSearch, painted } = pageSearch({
+    papers: async () => {
+      throw new OpenAlexRequestError('OpenAlex rate limit reached', { code: 'rate_limited', status: 429, retryAfterMs: 300_000, budgetTier: 'exploration' });
+    },
+  });
+  await performSearch('nebula', 'papers');
+  assert.deepEqual(painted.notices.at(-1), ['papers']);
+  assert.equal(painted.pauses.at(-1), true);
+  assert.equal(painted.retryAts.at(-1), null);
 });

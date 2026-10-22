@@ -51,16 +51,22 @@ const SOURCE_ORDER = ['openalex', 'ror', 'openaire'];
  * The wait is returned as `retryAtMs`, an absolute instant. A duration frozen
  * at render time stops being true a second later; an instant lets the caller
  * recompute what is left whenever it repaints.
+ *
+ * `budgetPaused` is the Worker holding back OpenAlex searches for the day's
+ * budget (`isOpenAlexBudgetRefusal`), not OpenAlex down. It promises no time,
+ * because a new budget reading can reopen them at any moment, and it gives way
+ * to `rateLimited`: once OpenAlex refuses the key, that is what the page says.
  */
 export function describeSearchOutage({
   sections = [],
   rateLimited = false,
+  budgetPaused = false,
   retryAfterMs = 0,
   now = Date.now(),
-}: { sections?: string[]; rateLimited?: boolean; retryAfterMs?: number; now?: number } = {}) {
+}: { sections?: string[]; rateLimited?: boolean; budgetPaused?: boolean; retryAfterMs?: number; now?: number } = {}) {
   const failedSections = sections.filter(section => section in SECTION_SOURCES);
   const affected = new Set(failedSections.map(section => SECTION_SOURCES[section]));
-  if (rateLimited) affected.add('openalex');
+  if (rateLimited || budgetPaused) affected.add('openalex');
 
   const sources = SOURCE_ORDER.filter(source => affected.has(source));
   if (sources.length === 0) return null;
@@ -78,6 +84,7 @@ export function describeSearchOutage({
     sections: failedSections,
     involvesOpenAlex: affected.has('openalex'),
     rateLimited: Boolean(rateLimited),
+    budgetPaused: Boolean(budgetPaused) && !rateLimited,
     retryAtMs: rateLimited && usableRetry ? now + retryAfterMs : null,
   };
 }

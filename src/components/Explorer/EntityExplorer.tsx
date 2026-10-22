@@ -47,7 +47,7 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService.ts';
-import { isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import { isOpenAlexBudgetRefusal, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService.ts';
 import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters/index.ts';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService.ts';
@@ -1020,13 +1020,15 @@ export default function EntityExplorer({
         } catch (error) {
           if (!isCancelled) {
             setRecentImpactError(
-              isOpenAlexRateLimitError(error)
-                ? 'rate_limited'
-                : (error as { code?: string } | null)?.code === 'timeout'
-                  ? 'timeout'
-                  : (error as { code?: string } | null)?.code === 'network_error'
-                    ? 'network_error'
-                    : 'unavailable'
+              isOpenAlexBudgetRefusal(error)
+                ? 'budget_paused'
+                : isOpenAlexRateLimitError(error)
+                  ? 'rate_limited'
+                  : (error as { code?: string } | null)?.code === 'timeout'
+                    ? 'timeout'
+                    : (error as { code?: string } | null)?.code === 'network_error'
+                      ? 'network_error'
+                      : 'unavailable'
             );
             console.error(`Failed to load recent ${type} impact`, error);
           }

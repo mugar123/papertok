@@ -106,12 +106,16 @@ export class OpenAlexRequestError extends Error {
   declare code: string;
   declare status: number | null;
   declare retryAfterMs: number;
-  constructor(message: string | undefined, options: { cause?: unknown; code?: string; status?: number; retryAfterMs?: number } = {}) {
+  // The tier a Worker budget refusal names (`x-papertok-budget-tier`); null
+  // for every other failure, OpenAlex's own refusals included.
+  declare budgetTier: string | null;
+  constructor(message: string | undefined, options: { cause?: unknown; code?: string; status?: number; retryAfterMs?: number; budgetTier?: string | null } = {}) {
     super(message, options.cause ? { cause: options.cause } : undefined);
     this.name = 'OpenAlexRequestError';
     this.code = options.code || 'request_failed';
     this.status = options.status || null;
     this.retryAfterMs = options.retryAfterMs || 0;
+    this.budgetTier = options.budgetTier || null;
   }
 }
 
@@ -119,6 +123,22 @@ export function isOpenAlexRateLimitError(error: unknown) {
   let current = error as { code?: string; status?: number; cause?: unknown } | null | undefined;
   while (current) {
     if (current.code === 'rate_limited' || current.status === 429) return true;
+    current = current.cause as typeof current;
+  }
+  return false;
+}
+
+/**
+ * Whether the refusal is the Worker holding back one kind of OpenAlex request
+ * for the day's budget (PAP-88) rather than OpenAlex refusing the key. It is
+ * also a rate-limit error. OpenAlex still answers other kinds of request, and
+ * the refusal's wait is not when this kind returns: a new budget reading can
+ * reopen it at any moment, and the day ends at 00:00 UTC.
+ */
+export function isOpenAlexBudgetRefusal(error: unknown) {
+  let current = error as { budgetTier?: string | null; cause?: unknown } | null | undefined;
+  while (current) {
+    if (current.budgetTier) return true;
     current = current.cause as typeof current;
   }
   return false;
@@ -535,7 +555,8 @@ export class OpenAlexClient {
           // paper, a free lookup by id or a feed lane may still be served, so
           // only this request fails. Without the header OpenAlex refused the
           // key itself, and the whole tab waits.
-          if (!response.headers.has(BUDGET_TIER_HEADER)) {
+          const budgetTier = response.headers.get(BUDGET_TIER_HEADER);
+          if (!budgetTier) {
             this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.now() + retryAfterMs);
           }
           // Not asked again, however short the wait: every ask is a miss the
@@ -546,6 +567,7 @@ export class OpenAlexClient {
             code: 'rate_limited',
             status: 429,
             retryAfterMs,
+            budgetTier,
           });
         }
 
