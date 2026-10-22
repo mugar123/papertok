@@ -602,8 +602,8 @@ test('a persistentSlim response is what is kept, and what a cache hit returns', 
 
 // PAP-88: the Worker refuses a miss when its tier's share of the day's
 // OpenAlex budget is spent, and names the tier. That refusal is about one kind
-// of request: an opened paper, a free entity lookup or a feed lane may still be
-// served, so it must not close OpenAlex for the whole tab. A 429 without the
+// of request: an opened paper, a free entity lookup or a card batch may still
+// be served, so it must not close OpenAlex for the whole tab. A 429 without the
 // header is OpenAlex refusing the key, and still does.
 test('a budget-tier refusal fails that request without closing OpenAlex for the tab; a refusal without it still does', async () => {
   const answers: Record<string, () => Response> = {

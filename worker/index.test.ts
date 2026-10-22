@@ -10,12 +10,12 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publicationStatus.ts';
-import { openAlexTopicLaneUrl, openAlexWorkingPapersUrl } from '../src/utils/openAlexFeedLanes.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
-import { fetchWithDeadline, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD } from './provider-runtime.ts';
+import { handleHarvestOpenAlex } from './openalex-api.ts';
+import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -3733,14 +3733,10 @@ test('a PDF relay closes when there is no ledger to bound it', async () => {
 // On launch day every OpenAlex request stopped at once when the day's ceiling
 // ran out, the paper a reader had just opened included. Each miss now reserves
 // under a tier read from the URL the Worker is about to pay for, and a lower
-// tier stops at a smaller share of the ceiling, so the reads the feed and an
-// opened paper need keep working longest.
+// tier stops at a smaller share of the ceiling, so the reads the feed's
+// harvest and an opened paper need keep working longest.
 
 const relayPath = (path: string) => (path.startsWith('https://') ? path : `https://papertok-report-api.example/openalex/${path}`);
-// A browser-built OpenAlex URL as it reaches this Worker: `identifyOpenAlexUrl`
-// keeps the path and the parameters (that module needs the DOM, so it is not
-// imported here; domainSourceService.test.ts holds the browser side).
-const asReader = (url: URL) => `https://papertok-report-api.example/openalex${url.pathname}${url.search}`;
 
 test('each OpenAlex request shape reserves under its tier', async () => {
   const tallied = async (path: string) => {
@@ -3754,9 +3750,11 @@ test('each OpenAlex request shape reserves under its tier', async () => {
   const shapes: Array<[string, string[]]> = [
     // One paper being opened: the public page's fallback by arXiv landing page.
     ['works?filter=locations.landing_page_url:http://arxiv.org/abs/2601.00001|https://arxiv.org/abs/2601.00001&per_page=1', ['essential.list 1']],
-    // The feed's topic lane and working-paper series, as the browser asks.
-    [asReader(openAlexTopicLaneUrl(['bio.mol', 'mech.aero'], 1, Date.now())!), ['feed.list 1']],
-    [asReader(openAlexWorkingPapersUrl(2, Date.now())), ['feed.list 1']],
+    // The feed's topic lane and working-paper series. Since #272 only the
+    // harvest asks for them, and it spends `feed` whatever it asks; from a
+    // reader they are exploration like any other list.
+    ['works?filter=primary_topic.id:T10604,type:article&per-page=25', ['exploration.list 1']],
+    ['works?filter=primary_location.source.id:S2809516038|S4210171147,type:article|report&per-page=6', ['exploration.list 1']],
     // Shown cards, by DOI, OpenAlex id or arXiv landing page.
     ['works?filter=doi:10.1000/a|10.1000/b&per-page=50', ['enrichment.list 1']],
     ['works?filter=openalex:W1|W2&per_page=50&select=id,doi,ids', ['enrichment.list 1']],
@@ -3787,7 +3785,7 @@ test('each OpenAlex request shape reserves under its tier', async () => {
   );
 });
 
-test('past the exploration share an exploration miss is refused with its tier named, while a feed miss at the same usage and a stored exploration answer are still served', async () => {
+test("past the exploration share an exploration miss is refused with its tier named, while the harvest's miss at the same usage and a stored exploration answer are still served", async () => {
   const ceiling = 1_000;
   const ledger = inMemoryQuotaLedger();
   const env = openAlexEnv({
@@ -3800,6 +3798,7 @@ test('past the exploration share an exploration miss is refused with its tier na
   const feed = relayPath('works?filter=primary_topic.id:T10604,type:article&per-page=25');
   // A fresh edge cache for every request: another location, or a later hour.
   const ask = (url: string) => withIdentityAndCacheStore(() => reportApi.fetch(new Request(url, { headers: BROWSER }), env));
+  const harvest = (url: string) => withIdentityAndCacheStore(() => handleHarvestOpenAlex(new Request(url), env));
 
   const calls = await withCountedUpstream(async () => Response.json({ results: [] }), async () => {
     assert.equal((await ask(stored)).status, 200);
@@ -3822,10 +3821,10 @@ test('past the exploration share an exploration miss is refused with its tier na
     const exposed = refused.headers.get('access-control-expose-headers')!.split(',').map(name => name.trim());
     assert.ok(exposed.includes('retry-after') && exposed.includes('x-papertok-budget-tier'), exposed.join());
 
-    assert.equal((await ask(feed)).status, 200, 'the feed still has its share');
+    assert.equal((await harvest(feed)).status, 200, 'the harvest still has its share');
     assert.equal((await ask(stored)).status, 200, 'a stored answer needs no budget');
   });
-  assert.equal(calls.length, 2, 'the first stored answer and the feed miss; nothing for the refusal or the stored read');
+  assert.equal(calls.length, 2, 'the first stored answer and the harvest miss; nothing for the refusal or the stored read');
 });
 
 test('a refusal at the full ceiling and a minute refusal also name the tier', async () => {
@@ -3988,12 +3987,12 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
   );
   const limitOf = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(cap * OPENALEX_TIER_PERCENT[tier] / 100);
 
-  // A feed page, a search and a card batch, then the day pushed past the
-  // exploration share by spend the ledger cannot name, and one exploration
-  // miss refused.
+  // A harvested feed page, a search and a card batch, then the day pushed past
+  // the exploration share by spend the ledger cannot name, and one
+  // exploration miss refused.
   const elsewhere = limitOf('exploration') - 12;
   const upstream = await withCountedUpstream(async () => Response.json({ results: [] }), () => withIdentityAndCacheStore(async () => {
-    assert.equal((await relay('works?filter=primary_topic.id:T10604,type:article&per-page=25')).status, 200);
+    assert.equal((await handleHarvestOpenAlex(new Request(relayPath('works?filter=primary_topic.id:T10604,type:article&per-page=25')), env)).status, 200);
     assert.equal((await relay('works?search=ultracold')).status, 200);
     assert.equal((await relay('works?filter=doi:10.1000/a|10.1000/b&per-page=50')).status, 200);
     await reserveRequestQuota(ledger.binding, {
@@ -4014,6 +4013,8 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
       const tier = (name: keyof typeof OPENALEX_TIER_PERCENT, spent: number, refused: number) => ({
         percent: OPENALEX_TIER_PERCENT[name],
         limit: limitOf(name),
+        // The harvest's own share of the day, beside the feed tier it spends.
+        ...(name === 'feed' ? { share: OPENALEX_HARVEST_DAILY_UNITS } : {}),
         used: spent,
         refused,
         open: used + 1 <= limitOf(name),
@@ -4111,8 +4112,8 @@ test('/health/openalex/budget is unavailable without a ledger to read, and asks 
 
 // The units are spent once OpenAlex has answered; the shared store is what
 // keeps them from being spent again elsewhere. An edge cache that refuses a
-// write (it is not guaranteed outside a request to a zone, as in the nightly
-// prefetch) must not lose that store write or the answer.
+// write (it is not guaranteed outside a request to a zone, as in the paper
+// harvest's Workflow) must not lose that store write or the answer.
 test('the KV entry is written even when the edge put throws', async () => {
   const store = fakeOpenAlexStore();
   const env = openAlexEnv({ NOTIFICATION_STORE: store });

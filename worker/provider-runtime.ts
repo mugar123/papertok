@@ -17,7 +17,9 @@ export interface MinuteCeiling {
 
 // What one OpenAlex miss may spend, and for what. `tier` decides how much of
 // the day's ceiling it may reach (`OPENALEX_TIER_PERCENT`); `kind` only names
-// the spend in the day's tally, which `/health/openalex/budget` reports.
+// the spend in the day's tally, which `/health/openalex/budget` reports. Only
+// the paper harvest spends `feed`, within its own share of the day
+// (`OPENALEX_HARVEST_DAILY_UNITS`).
 export type OpenAlexTier = 'essential' | 'feed' | 'enrichment' | 'exploration';
 export type OpenAlexKind = 'entity' | 'search' | 'list' | 'graph' | 'share';
 export interface OpenAlexBudget {
@@ -92,9 +94,11 @@ export const OPENALEX_CALLS = Object.freeze({
 // the whole budget ran out at once, and a paper a reader had just opened
 // stopped with the searches (PAP-86). Exploration (searches, profile pages,
 // graph expansions, the citation graph) stops first, the enrichment of cards
-// already shown next, the feed's own lanes after that, and one paper being
-// opened only at the ceiling. The whole day's usage counts against each share,
-// so a tier is closed for everyone once the day passes it. Entity lookups cost
+// already shown next, the paper harvest that fills the feed after that, and
+// one paper being opened only at the ceiling. The whole day's usage counts
+// against each share, so a tier is closed for everyone once the day passes it.
+// Readers' searches and card batches therefore cannot close the harvest, and
+// the harvest leaves the last 5 % to papers being opened. Entity lookups cost
 // nothing and are never refused. Code rather than variables, because changing
 // a variable needs a Worker deploy all the same; retune from the day's tally on
 // `/health/openalex/budget`.
@@ -104,6 +108,14 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
   enrichment: 80,
   exploration: 60,
 });
+// The most the paper harvest (`feed`) may spend in a UTC day, in units (a
+// search is ten), its enrichment and the runs started by new follows included.
+// It is the ledger subject of the harvest's reservations, in the day's object
+// where readers' misses count the minute: the share and the day's ceiling are
+// checked in one transaction, and a page the harvest finds stored spends none
+// of it. With this bound of its own, the harvest does not count against the
+// minute's ceiling, which guards the day against readers' bursts.
+export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
 // Names the tier on every refusal of the OpenAlex budget, so the client can
 // tell the Worker's own refusal of one request from OpenAlex refusing the key:
 // only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
@@ -555,22 +567,28 @@ export function boundedText(value: unknown, maxLength: number) {
 // transaction: one Durable Object request per miss instead of two, and no object
 // (with its own alarm and cleanup) created for every minute. What was taken
 // travels back to the caller, the same shape as every other gate, so whoever
-// owns the refund can name it.
-function openAlexLedgerRequest(env: WorkerEnv, now: string): QuotaRequest {
-  return {
+// owns the refund can name it. The harvest's reservations (`feed`) check its
+// day's share as the subject instead of the minute.
+function openAlexLedgerRequest(env: WorkerEnv, now: string, tier?: OpenAlexTier): QuotaRequest {
+  const day = {
     periodKey: `openalex:day:${now.slice(0, 10)}`,
-    subject: `openalex:minute:${now.slice(0, 16)}`,
-    subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
     globalLimit: boundedLimit(env.OPENALEX_GLOBAL_DAILY_LIMIT, DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT, 1_000_000),
   };
+  return tier === 'feed'
+    ? { ...day, subject: 'openalex:harvest', subjectLimit: OPENALEX_HARVEST_DAILY_UNITS }
+    : {
+      ...day,
+      subject: `openalex:minute:${now.slice(0, 16)}`,
+      subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+    };
 }
 
 // The tier's share of the ceiling travels with the reservation, so the share is
-// checked in the same transaction as the day and the minute. `now` names the
+// checked in the same transaction as the day and the subject. `now` names the
 // day's object; the relay passes the instant its reading will name too.
 export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budget: OpenAlexBudget, now = new Date().toISOString()) {
   const ledgerRequest = {
-    ...openAlexLedgerRequest(env, now),
+    ...openAlexLedgerRequest(env, now, budget.tier),
     amount: budget.units,
     percent: OPENALEX_TIER_PERCENT[budget.tier],
     tally: `${budget.tier}.${budget.kind}`,
@@ -597,8 +615,9 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
     // `retry-after` of several hours is a client that stops asking until
     // someone reloads the tab. It bounds how soon a client may ask again, not
     // when the tier reopens, so the browser shows no countdown for a refusal
-    // naming its tier (`isOpenAlexBudgetRefusal` in openAlexClient.ts).
-    'retry-after': reservation.scope === 'global' ? '300' : '60',
+    // naming its tier (`isOpenAlexBudgetRefusal` in openAlexClient.ts). The
+    // harvest's subject is its day's share, so its every refusal is a day's.
+    'retry-after': reservation.scope === 'global' || budget.tier === 'feed' ? '300' : '60',
   }) };
 }
 
@@ -678,13 +697,17 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
   const used = reading.globalUsage ?? 0;
   const tiers = Object.fromEntries(Object.entries(OPENALEX_TIER_PERCENT).map(([tier, percent]) => {
     const limit = Math.floor(ceiling * percent / 100);
+    const spent = sumTally(reading.tally?.used, spentBy => spentBy === tier);
+    // The harvest's own share of the day closes `feed` too.
+    const harvest = tier === 'feed';
     return [tier, {
       percent,
       limit,
-      used: sumTally(reading.tally?.used, spentBy => spentBy === tier),
+      ...(harvest ? { share: OPENALEX_HARVEST_DAILY_UNITS } : {}),
+      used: spent,
       refused: sumTally(reading.tally?.refused, spentBy => spentBy === tier),
       // Whether a one-unit miss of this tier would be accepted now.
-      open: used + 1 <= limit,
+      open: used + 1 <= limit && (!harvest || spent + 1 <= OPENALEX_HARVEST_DAILY_UNITS),
     }];
   }));
   const kinds = Object.fromEntries(OPENALEX_REPORTED_KINDS.map(kind => [kind, {

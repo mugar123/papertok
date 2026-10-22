@@ -552,7 +552,7 @@ export class OpenAlexClient {
         if (retryAfterMs > 0) {
           // A refusal naming a budget tier is the Worker keeping the day's
           // OpenAlex budget for other kinds of request (PAP-88): an opened
-          // paper, a free lookup by id or a feed lane may still be served, so
+          // paper, a free lookup by id or a card batch may still be served, so
           // only this request fails. Without the header OpenAlex refused the
           // key itself, and the whole tab waits.
           const budgetTier = response.headers.get(BUDGET_TIER_HEADER);

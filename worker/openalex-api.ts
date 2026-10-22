@@ -218,8 +218,8 @@ async function readShared(env: WorkerEnv, key: string) {
 }
 
 // The edge cache is not guaranteed outside a request to the zone, as in the
-// nightly prefetch. A read that fails there is a miss, and a failed copy is
-// one more store read later; neither is a failed answer.
+// paper harvest's Workflow. A read that fails there is a miss, and a failed
+// copy is one more store read later; neither is a failed answer.
 async function matchAtEdge(cacheKey: Request) {
   try {
     return await caches.default.match(cacheKey);
@@ -252,10 +252,6 @@ async function writeShared(env: WorkerEnv, key: string, status: number, body: st
 // The filter keys that name works by identifier. A list filtered only by them
 // is a lookup of known papers, not a query.
 const IDENTIFIER_FILTER_KEYS = new Set(['doi', 'openalex', 'ids.openalex', 'locations.landing_page_url']);
-// The feed's own lanes: the topic lane (`primary_topic.id`) and the
-// working-paper series (`primary_location.source.id`). A negated value is not
-// a lane: the Explorer's reviewed-only lists exclude the series that way.
-const FEED_FILTER_KEYS = new Set(['primary_topic.id', 'primary_location.source.id']);
 
 function filterClauses(filter: string) {
   return filter.split(',').filter(Boolean).map(clause => {
@@ -275,11 +271,12 @@ function filterClauses(filter: string) {
  * - enrichment: known works by identifier, the cards already on screen;
  * - exploration: a graph expansion (`select=id,ids`), every search, and any
  *   shape not listed here, so a request the rules do not know stops early
- *   rather than spending late;
- * - feed: the feed's topic lane and working-paper series.
+ *   rather than spending late. The feed's lanes are among them: the paper
+ *   harvest asks for those, and its misses spend `feed` (`relayMiss`).
  * No header or parameter from the client is read, so a cached bundle gets its
- * tier from what it asks for, and one URL always has one tier. A scripted
- * caller can shape a URL to look essential: the ceiling is the frontier.
+ * tier from what it asks for, and one URL always has one tier for a reader. A
+ * scripted caller can shape a URL to look essential: the ceiling is the
+ * frontier.
  */
 export function openAlexCostFor(target: URL): OpenAlexBudget {
   const [entity, id] = target.pathname.slice(1).split('/');
@@ -299,13 +296,13 @@ export function openAlexCostFor(target: URL): OpenAlexBudget {
     const perPage = target.searchParams.get('per-page') ?? target.searchParams.get('per_page');
     return list(perPage === '1' ? 'essential' : 'enrichment');
   }
-  return list(clauses.some(clause => named(FEED_FILTER_KEYS, clause)) ? 'feed' : 'exploration');
+  return list('exploration');
 }
 
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
-async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promise<RelayedAnswer> {
+async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest: boolean): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
   if (shared) {
@@ -319,6 +316,9 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
   // both name the same day's ledger even when the call crosses midnight.
   const now = new Date().toISOString();
   const cost = openAlexCostFor(target);
+  // The harvest spends its own share of the day whatever it asks for, so the
+  // shares closed by readers' searches and card batches do not stop it.
+  if (harvest) cost.tier = 'feed';
   if (cost.units > 0) {
     const budget = await reserveOpenAlexBudget(env, '', cost, now);
     if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
@@ -350,7 +350,21 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
   return { status: upstream.status, body, headers };
 }
 
-export async function handleOpenAlex(request: Request, env: WorkerEnv) {
+export function handleOpenAlex(request: Request, env: WorkerEnv) {
+  return relayOpenAlex(request, env, false);
+}
+
+/**
+ * The relay as the paper harvest asks it in-process: the same validation,
+ * cache keys, shared store and reading, but a billed miss reserves the
+ * harvest's share of the day (`feed`, `OPENALEX_HARVEST_DAILY_UNITS`) rather
+ * than a reader's tier.
+ */
+export function handleHarvestOpenAlex(request: Request, env: WorkerEnv) {
+  return relayOpenAlex(request, env, true);
+}
+
+async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: boolean) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -364,7 +378,7 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
 
   let pending = inFlight.get(cacheKey.url);
   if (!pending) {
-    pending = relayMiss(target, cacheKey, env).finally(() => inFlight.delete(cacheKey.url));
+    pending = relayMiss(target, cacheKey, env, harvest).finally(() => inFlight.delete(cacheKey.url));
     inFlight.set(cacheKey.url, pending);
   }
   return forOrigin(await pending, origin, env);

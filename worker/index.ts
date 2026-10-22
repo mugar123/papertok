@@ -1,7 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 
 import { runEmailNotificationSchedule } from './email-notifications.ts';
-import { OPENALEX_PREFETCH_CRON, prefetchOpenAlexFeedLanes } from './openalex-prefetch.ts';
 import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
 import { handleRequest, routeForLog } from './router.ts';
 import { captureWorkerResponseFailure } from './error-tracking.ts';
@@ -32,14 +31,7 @@ export default {
       }
     }
   },
-  // `cron` names the trigger. The 00:05 UTC one prefetches the feed's OpenAlex
-  // lanes and the 02:30 UTC one starts the paper harvest; neither runs a digest.
-  // Every other trigger runs the email schedule.
   async scheduled(controller: Pick<ScheduledController, 'scheduledTime'> & Partial<Pick<ScheduledController, 'cron'>>, env: WorkerEnv, context: Pick<ExecutionContext, 'waitUntil'>) {
-    if (controller.cron === OPENALEX_PREFETCH_CRON) {
-      context.waitUntil(prefetchOpenAlexFeedLanes(env, controller.scheduledTime));
-      return;
-    }
     if (controller.cron === PAPER_HARVEST_CRON) {
       // One instance per UTC day: a repeated trigger finds the id taken.
       const id = `harvest-${new Date(controller.scheduledTime).toISOString().slice(0, 10)}`;
