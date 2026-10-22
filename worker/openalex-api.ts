@@ -24,9 +24,11 @@ const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
 // click on an author of the same paper billed the same 404 again. An hour lets a
 // newly indexed work show up the same day.
 const OPENALEX_NOT_FOUND_CACHE_SECONDS = 60 * 60;
-// The edge cache above is per data centre. On launch day (2026-10-21) every
-// location asked OpenAlex the same questions again, and the day's ceiling ran
-// out of units while the key still had a quarter of its dollars. So an answer
+// The edge cache above is per data centre, so every location asks OpenAlex the
+// same questions again. On launch day (2026-10-21) the day's ceiling ran out of
+// units while two `/health/openalex` readings showed the key with a quarter of
+// its dollars left -- the inference from them, not a measurement of the relay,
+// is that the ledger refused before the money ran out (PAP-86). So an answer
 // is also kept in KV, which every location reads: a day for an answer, the
 // hour the edge keeps for a 404. The relay carries no identity -- an answer
 // depends only on the canonical upstream parameters -- so there is nothing

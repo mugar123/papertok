@@ -1436,9 +1436,10 @@ test('whitespace around an OpenAlex filter is trimmed once, for the key and the 
 });
 
 // --- PAP-86: one OpenAlex answer for every location, and for every request in flight ---
-// The edge cache is per data centre, so on launch day every location asked
-// OpenAlex the same questions again and the daily ceiling ran out of units
-// before the key ran out of dollars. The relay carries no identity: an answer
+// The edge cache is per data centre, so every location asks OpenAlex the same
+// questions again. On launch day the daily ceiling ran out of units while the
+// health readings showed dollars left on the key (an inference from those
+// readings, not a relay measurement). The relay carries no identity: an answer
 // depends only on the canonical upstream parameters, so it can be shared.
 
 /** The KV namespace the relay shares its answers through, remembering TTLs. */

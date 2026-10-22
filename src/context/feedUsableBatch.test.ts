@@ -489,9 +489,10 @@ test('a load remembers the papers it shows for this session, not in the reader\'
 });
 
 // Reading a card for ten seconds used to walk its citation network: an OpenAlex
-// call (and a Semantic Scholar one) for a reader who did nothing. On launch day
-// those walks were a tenth of the OpenAlex ceiling (PAP-86). A like, a save or
-// an opened PDF still expands the graph; a passive read only ranks.
+// call (and a Semantic Scholar one) for a reader who did nothing. In the PAP-86
+// audit's model those walks were about a tenth of a signed-in session's
+// OpenAlex units; nothing was measured. A like, a save or an opened PDF still
+// expands the graph; a passive read only ranks.
 test('a ten-second read no longer walks the citation network', async () => {
   const walked: string[] = [];
   const { trackViewTime, stored } = viewing({ traverseAndExpandNetwork: (paper: FeedRecord) => { walked.push(paper.id); } });
