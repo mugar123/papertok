@@ -13,6 +13,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 test('papers publish before a slow project lookup and late replies cannot replace them', async t => {
   const keepAlive = setTimeout(() => {}, 1000);
   t.after(() => clearTimeout(keepAlive));
+  t.mock.method(Date, 'now', () => 5_000);
   const updates: SearchSnapshot[] = [];
   let projectSignal: AbortSignal | undefined;
   let resolveProject!: (items: Project[]) => void;
@@ -26,7 +27,7 @@ test('papers publish before a slow project lookup and late replies cannot replac
   assert.ok(updates.at(-1)?.pending.includes('projects'));
   assert.deepEqual(updates.at(-1)?.issues, []);
   const result = await done;
-  assert.deepEqual(result.issues, [{ section: 'projects', reason: 'timeout' }]);
+  assert.deepEqual(result.issues, [{ section: 'projects', reason: 'timeout', failedAtMs: 5_000 }]);
   assert.equal(projectSignal?.aborted, true);
   assert.deepEqual(result.results.papers, [paper]);
   resolveProject([{ id: 'late', title: 'Late project', funder: '' }]);

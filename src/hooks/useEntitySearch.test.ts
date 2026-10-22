@@ -122,7 +122,7 @@ test('All publishes only after every category settles, including an empty or fai
   h.calls[0].onUpdate({ ...complete, pending: ['projects'] });
   view = h.render();
   assert.equal(view.hasSearched, false);
-  h.calls[0].onUpdate({ ...complete, issues: [{ section: 'projects', reason: 'timeout' }] });
+  h.calls[0].onUpdate({ ...complete, issues: [{ section: 'projects', reason: 'timeout', failedAtMs: 0 }] });
   view = h.render();
   assert.equal(view.isPending, false);
   assert.equal(view.results.papers[0].title, 'Graph neural networks');
@@ -168,7 +168,7 @@ test('switching scope asks the same search for the type and exposes the newly se
 test('an empty type settles without waiting for unrelated sources, retaining their terminal metadata', t => {
   const h = start(t);
   h.scope('topics');
-  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'institutions', 'projects'], issues: [{ section: 'authors', reason: 'error' }] });
+  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'institutions', 'projects'], issues: [{ section: 'authors', reason: 'error', failedAtMs: 0 }] });
   const view = h.render();
   assert.equal(view.hasSearched, true);
   assert.equal(view.isPending, false);
@@ -180,7 +180,7 @@ test('an empty type settles without waiting for unrelated sources, retaining the
 test('a failed selected type publishes its failure without claiming a successful empty answer', t => {
   const h = start(t);
   h.scope('institutions');
-  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'authors', 'topics', 'projects'], issues: [{ section: 'institutions', reason: 'timeout' }] });
+  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'authors', 'topics', 'projects'], issues: [{ section: 'institutions', reason: 'timeout', failedAtMs: 0 }] });
   const view = h.render();
   assert.equal(view.isPending, false);
   assert.equal(view.searchIssues[0].reason, 'timeout');

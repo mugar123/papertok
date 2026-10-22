@@ -14,7 +14,8 @@ export type SearchSection = keyof SearchResults;
 export type SearchScope = 'all' | SearchSection;
 // `error` is the failure itself, for what a reason cannot carry: the wait a
 // rate limit named, which the OpenAlex client parsed out of `Retry-After`.
-export interface SearchIssue { section: SearchSection; reason: 'timeout' | 'error'; error?: unknown }
+// That wait counts from `failedAtMs`, when the section failed.
+export interface SearchIssue { section: SearchSection; reason: 'timeout' | 'error'; error?: unknown; failedAtMs: number }
 export interface SearchSnapshot { results: SearchResults; pending: SearchSection[]; issues: SearchIssue[] }
 export type SearchProviders = { [K in SearchSection]: (query: string, signal: AbortSignal) => Promise<SearchResults[K]> };
 export const SEARCH_SECTIONS: SearchSection[] = ['papers', 'authors', 'institutions', 'topics', 'projects'];
@@ -76,13 +77,13 @@ export function searchEntities(query: string, {
       resolve({ section, items, issue });
     }
     function abort() {
-      finish(EMPTY_SEARCH.results[section], { section, reason: deadline.reason?.name === 'TimeoutError' ? 'timeout' : 'error' });
+      finish(EMPTY_SEARCH.results[section], { section, reason: deadline.reason?.name === 'TimeoutError' ? 'timeout' : 'error', failedAtMs: Date.now() });
     }
     if (deadline.aborted) { abort(); return; }
     deadline.addEventListener('abort', abort, { once: true });
     Promise.resolve().then(() => sources[section](query, deadline)).then(
       items => finish(items),
-      error => finish(EMPTY_SEARCH.results[section], { section, reason: error?.name === 'TimeoutError' ? 'timeout' : 'error', error }),
+      error => finish(EMPTY_SEARCH.results[section], { section, reason: error?.name === 'TimeoutError' ? 'timeout' : 'error', error, failedAtMs: Date.now() }),
     );
   });
   const reveal = (outcome: Awaited<ReturnType<typeof search>>) => {

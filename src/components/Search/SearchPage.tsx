@@ -341,13 +341,18 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     const health = getOpenAlexHealth();
     const rateLimited = health.rateLimited
       || openAlexIssues.some(issue => isOpenAlexRateLimitError(issue.error));
-    // Both sources of the figure, largest wins: the client zeroes
+    // Both sources of the wait, latest end wins: the client zeroes
     // `rateLimitedUntil` as soon as any request succeeds, so health can read 0
-    // while the error that just failed still carries what OpenAlex said.
-    const retryAfterMs = Math.max(
-      health.retryAfterMs || 0,
+    // while the error that failed still carries what OpenAlex said. That wait
+    // counts from the failure, not from this paint: opening a scope repaints
+    // the same answer.
+    const now = Date.now();
+    const retryAtMs = Math.max(
+      now + (health.retryAfterMs || 0),
       ...openAlexIssues.map(issue => (
-        isOpenAlexRateLimitError(issue.error) ? (issue.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0 : 0
+        isOpenAlexRateLimitError(issue.error)
+          ? issue.failedAtMs + ((issue.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0)
+          : 0
       )),
     );
     setPaperResults(snapshot.results.papers);
@@ -355,7 +360,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setInstitutionResults(snapshot.results.institutions);
     setConceptResults(snapshot.results.topics);
     setProjectResults(snapshot.results.projects);
-    setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs }));
+    setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs: retryAtMs - now, now }));
     setIsSearching(false);
   }, []);
 

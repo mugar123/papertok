@@ -584,6 +584,7 @@ test('typing preserves the selected type and the type strip is available before 
 import { searchEntities } from '../../services/entitySearchService.ts';
 import type { SearchProviders } from '../../services/entitySearchService.ts';
 import { SECTION_SOURCES, describeSearchOutage } from '../../utils/searchOutage.ts';
+import { OpenAlexRequestError, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 
 /** The page's code between two anchors, which must both exist. */
 function pageSlice(from: string, to: string) {
@@ -603,19 +604,19 @@ const searchAuthor = { id: 'https://openalex.org/A1', display_name: 'Someone' };
 const searchInstitution = { id: 'https://ror.org/02f40zc51', display_name: 'University of Salamanca' };
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-/** The page's search over `sources`, recording each paint of a section, of the notice (its failed sections) and of the searching status. */
+/** The page's search over `sources`, recording each paint of a section, of the notice (its failed sections and the end of its wait) and of the searching status. */
 function pageSearch(sources: Partial<SearchProviders>) {
   const painted = {
     papers: [] as unknown[], authors: [] as unknown[], institutions: [] as unknown[],
-    notices: [] as (string[] | null)[], searching: [] as boolean[],
+    notices: [] as (string[] | null)[], retryAts: [] as (number | null)[], searching: [] as boolean[],
   };
   const run = vm.runInNewContext(pageSearchCode, {
-    AbortController, setTimeout,
+    AbortController, setTimeout, Date,
     useCallback: (fn: unknown) => fn,
     requestRef: { current: null },
     searchEntities, SECTION_SOURCES, describeSearchOutage,
     getOpenAlexHealth: () => ({ rateLimited: false, retryAfterMs: 0 }),
-    isOpenAlexRateLimitError: () => false,
+    isOpenAlexRateLimitError,
     pageSources: {
       papers: async () => [searchPaper], authors: async () => [], institutions: async () => [], topics: async () => [], projects: async () => [],
       ...sources,
@@ -628,7 +629,10 @@ function pageSearch(sources: Partial<SearchProviders>) {
     setAuthorResults: (items: unknown) => painted.authors.push(items),
     setInstitutionResults: (items: unknown) => painted.institutions.push(items),
     setConceptResults() {}, setProjectResults() {},
-    setSearchIssue: (issue: { sections: string[] } | null) => painted.notices.push(issue?.sections ?? null),
+    setSearchIssue: (issue: { sections: string[]; retryAtMs: number | null } | null) => {
+      painted.notices.push(issue?.sections ?? null);
+      painted.retryAts.push(issue?.retryAtMs ?? null);
+    },
     setHasSearched() {}, setActiveSearchFilter() {}, setSearchIntent() {},
     trackEvent() {},
   }) as { performSearch: (term: string, scope: string) => Promise<void>; handleSearchFilterChange: (scope: string) => void };
@@ -687,4 +691,27 @@ test('between two scope changes only the scope on screen paints', async () => {
   await allSearch;
   assert.deepEqual(painted.institutions, [[searchInstitution]], 'painted once, by the Institutions answer');
   assert.deepEqual(painted.searching, [true, true, true, false]);
+});
+
+// OpenAlex's Retry-After counts from the refusal. Opening a scope repaints the
+// answer the search already has; a wait restarted on each repaint kept Retry
+// hidden for as long as the reader kept switching, after OpenAlex was back.
+test('opening a settled scope keeps the wait a rate limit named, counted from the refusal', async t => {
+  let clock = 1_000_000;
+  t.mock.method(Date, 'now', () => clock);
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    authors: async () => { throw new OpenAlexRequestError('OpenAlex rate limit reached', { code: 'rate_limited', status: 429, retryAfterMs: 300_000 }); },
+  });
+  await performSearch('nebula', 'all');
+  assert.deepEqual(painted.retryAts, [null, 1_300_000]);
+  clock += 100_000;
+  handleSearchFilterChange('papers');
+  await settle();
+  assert.deepEqual(painted.notices.at(-1), ['authors']);
+  assert.equal(painted.retryAts.at(-1), 1_300_000, 'opening Papers restarted the wait');
+  clock += 250_000;
+  handleSearchFilterChange('all');
+  await settle();
+  assert.deepEqual(painted.notices.at(-1), ['authors']);
+  assert.equal(painted.retryAts.at(-1), null, 'a wait that had ended started again');
 });
