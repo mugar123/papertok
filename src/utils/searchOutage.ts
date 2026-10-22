@@ -66,7 +66,7 @@ export function describeSearchOutage({
 }: { sections?: string[]; rateLimited?: boolean; budgetPaused?: boolean; retryAfterMs?: number; now?: number } = {}) {
   const failedSections = sections.filter(section => section in SECTION_SOURCES);
   const affected = new Set(failedSections.map(section => SECTION_SOURCES[section]));
-  if (rateLimited || budgetPaused) affected.add('openalex');
+  if (rateLimited) affected.add('openalex');
 
   const sources = SOURCE_ORDER.filter(source => affected.has(source));
   if (sources.length === 0) return null;
