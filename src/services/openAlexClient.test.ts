@@ -114,7 +114,13 @@ test('reopens OpenAlex once an epoch-shaped reset has passed', async () => {
   assert.equal(client.getHealth().rateLimited, false);
 });
 
-test('retries a short 429 using Retry-After', async () => {
+// A short 429 used to be asked again after its wait. Every ask is a miss the
+// Worker reserves against the day's OpenAlex ceiling, and a refusal is OpenAlex
+// (or the Worker's ledger) saying the budget is what is short -- asking again
+// spends more of it to get the same answer. The refusal is the answer: the
+// circuit opens for the wait it names and the caller fills the page from the
+// other sources (PAP-86).
+test('does not ask again after a 429, however short its wait', async () => {
   let calls = 0;
   const delays: unknown[] = [];
   const client = new OpenAlexClient({
@@ -129,11 +135,13 @@ test('retries a short 429 using Retry-After', async () => {
     },
   });
 
-  const data = await client.json<{ id: string }>('https://api.openalex.org/works/W1', { retries: 1 });
-
-  assert.equal(data.id, 'W1');
-  assert.equal(calls, 2);
-  assert.deepEqual(delays, [1000]);
+  await assert.rejects(
+    () => client.json('https://api.openalex.org/works/W1', { retries: 1 }),
+    (error: unknown) => isOpenAlexRateLimitError(error) && (error as { retryAfterMs: number }).retryAfterMs === 1000,
+  );
+  assert.equal(calls, 1);
+  assert.deepEqual(delays, []);
+  assert.equal(client.getHealth().rateLimited, true);
 });
 
 test('retries a 502 but not a 504 the Worker sends after OpenAlex stalled', async () => {
