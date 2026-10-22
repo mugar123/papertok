@@ -1086,20 +1086,21 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     exit: 'exit',
   };
 
-  // Where the index was and which list the reader opened from it, for the way
-  // back. Only the reader's own open records it: a list reopened on the way
-  // back from a paper was never left from an index on screen.
+  // Where the index was scrolled and which list the reader opened from it.
+  // Only an open from the index records this: a list reopened on the way back
+  // from a paper has no index position in this visit to return to.
   const indexReturn = useRef<{ top: number; listId: string } | null>(null);
   const enterList = (list: OwnList) => {
     indexReturn.current = { top: window.scrollY, listId: list.id };
     openList(list);
   };
 
-  // Closing the list brings the index back where it was left, with focus on
-  // the list that was open. On the index's own commit: AnimatePresence calls
-  // `onExitComplete` before the index is in the document, while the page is
-  // still only as tall as the list leaving, so a position restored there is
-  // clamped. `preventScroll`, or focus would scroll again, smoothly.
+  // Closing the list puts the index back at that position, with focus on the
+  // list that was open. This runs when the index is committed, not in
+  // `onExitComplete`: AnimatePresence calls that before the index is in the
+  // document, while the page is only as tall as the list leaving, and the
+  // position would be clamped. `preventScroll` stops focus from scrolling the
+  // page again, which `html { scroll-behavior: smooth }` would animate.
   const returnToIndex = useCallback((node: HTMLDivElement | null) => {
     const back = indexReturn.current;
     if (!node || !back) return;
