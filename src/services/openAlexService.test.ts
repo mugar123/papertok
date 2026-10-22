@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
-import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcRecords.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
@@ -28,13 +28,10 @@ import {
   fetchRecentImpactWorks,
   fetchPaperByWorkId,
   fetchPapersByDois,
-  getArxivIdsForOpenAlexWorks,
   getAuthorProfileExact,
   getLocalTopicEntity,
   getWorksByEntity,
   isOpenAlexEnrichmentId,
-  MAX_ENRICHMENT_AUTHORS,
-  mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
   peekEntity,
   searchAuthors,
@@ -43,6 +40,7 @@ import {
   searchLocalTopics,
   slimWorksPage,
 } from './openAlexService.ts';
+import { MAX_ENRICHMENT_AUTHORS, mapOpenAlexEnrichmentWork } from '../utils/openAlexWork.ts';
 
 test('names local topic entities without changing their canonical category identity', () => {
   const topic = getLocalTopicEntity('gr-qc');
@@ -782,29 +780,6 @@ test('an Explorer works page persisted before the review rule is fetched again',
   }
 });
 
-// The related works of a liked paper were fetched once per reader: the forty
-// asked about were picked at random, so no two readers built the same URL and
-// the Worker's shared cache never matched (PAP-86). The first forty OpenAlex
-// listed, in its order, are one URL for everyone.
-test('the same related works ask the same URL every time', async () => {
-  const realFetch = openAlexClient.fetchImpl;
-  const urls: string[] = [];
-  openAlexClient.fetchImpl = async (url) => {
-    urls.push(String(url));
-    return Response.json({ results: [] });
-  };
-  const works = Array.from({ length: 12 }, (_, index) => `https://openalex.org/W${900 - index}`);
-  try {
-    await getArxivIdsForOpenAlexWorks(works);
-    await getArxivIdsForOpenAlexWorks(works);
-    assert.equal(new Set(urls).size, 1, urls.join('\n'));
-    const filter = new URL(urls[0]).searchParams.get('filter');
-    assert.equal(filter, `openalex:${works.map(url => url.split('/').pop()).join('|')}`);
-  } finally {
-    openAlexClient.fetchImpl = realFetch;
-  }
-});
-
 // What OpenAlex does with each clause of the works query, as keyless requests
 // showed on 2026-10-20: `|` is OR inside one filter, comma-separated filters
 // are ANDed, and so is each repeated negated `primary_location.source.id`,
@@ -1023,7 +998,7 @@ test('SOURCE: the enrichment request asks OpenAlex for the authorships', async (
   // Without this field the ids never reach the browser at all, and the card
   // has to send the reader through the name door. OpenAlex refuses subfield
   // selection (`authorships.author.id` answers 400), so it is all or nothing.
-  const source = (await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8'))
+  const source = (await readFile(new URL('../utils/openAlexWork.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   const select = source.match(/const OPENALEX_ENRICHMENT_SELECT = \[([\s\S]*?)\]\.join/);

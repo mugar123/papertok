@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { Paper } from '../models/Paper.ts';
 import {
-  getDomainSourcePlan,
-  getEligibleDomainSources,
   reportDomainSourceFailures,
   settleDomainSources,
+} from './domainSourceService.ts';
+import {
+  getDomainSourcePlan,
+  getEligibleDomainSources,
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
@@ -16,22 +18,15 @@ import {
   mapNasaRecord,
   mapOstiRecord,
   readBioRxivResponse,
-  fetchWorkingPapers,
-  fetchOpenAlexTopicPapers,
   europePmcQuery,
-} from './domainSourceService.ts';
+} from './domainSourceRecords.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
-import { isFeedPublication } from './feedPublicationService.ts';
-import { openAlexClient } from './openAlexClient.ts';
-import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
-import { reviewStatusForPaper } from '../utils/paperStatus.ts';
-import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
+import { isFeedPublication } from './feedPublicationRules.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
-import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper, leavesForOpenAlexTopic } from '../utils/areaAccent.ts';
+import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../utils/areaAccent.ts';
 import { paperLegacyAdapter } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
 import { buildSavedPaperPayload } from '../utils/savedPaperPayload.ts';
-import { getCategoryArea } from '../data/categoryTaxonomy.ts';
 
 // The Worker answers a bioRxiv outage with an empty collection marked
 // `_papertok.degraded` (cached briefly). Read as papers it would be "bioRxiv has
@@ -550,213 +545,3 @@ test('the failure report shows the upstream status once the body travels on the 
   assert.match(logged[0], /\/sources\/openreview failed: \/sources\/openreview returned 502 \(upstream 400\)/);
 });
 
-// Works as OpenAlex returned them on 2026-10-19 (trimmed): a San Francisco Fed
-// working paper filed as a journal article, a CESifo working paper typed
-// `report`, here without its abstract, and the one CESifo work typed `article`
-// in a journal, W7144132107.
-const invertedIndex = (text: string) => {
-  const index: Record<string, number[]> = {};
-  text.split(' ').forEach((word, position) => { (index[word] ||= []).push(position); });
-  return index;
-};
-const seriesWork = (id: string, doi: string, type: string, source: { id: string; display_name: string }, abstract: string | null) => ({
-  id: `https://openalex.org/${id}`,
-  doi: `https://doi.org/${doi}`,
-  title: `Working paper ${id}`,
-  type,
-  publication_date: '2026-10-14',
-  publication_year: 2026,
-  authorships: [{ author: { id: `https://openalex.org/A${id.slice(1)}`, display_name: `Author ${id}` }, institutions: [] }],
-  abstract_inverted_index: abstract ? invertedIndex(abstract) : null,
-  primary_location: {
-    landing_page_url: `https://doi.org/${doi}`,
-    is_published: true,
-    version: 'publishedVersion',
-    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: 'journal' },
-  },
-  locations: [],
-  open_access: { is_oa: true, oa_url: null },
-  cited_by_count: 0,
-});
-const FRBSF = { id: 'S4306510381', display_name: 'Federal Reserve Bank of San Francisco, Working Paper Series' };
-const CESIFO = { id: 'S7407053623', display_name: 'CESifo' };
-const NBER = { id: 'S2809516038', display_name: 'National Bureau of Economic Research' };
-// OpenAlex's primary topic for this NBER paper, as saved on 2026-10-19.
-const TYLENOL_TOPIC = {
-  id: 'https://openalex.org/T11633',
-  display_name: 'Prenatal Substance Exposure Effects',
-  subfield: { id: 'https://openalex.org/subfields/2735', display_name: 'Pediatrics, Perinatology and Child Health' },
-  field: { id: 'https://openalex.org/fields/27', display_name: 'Medicine' },
-  domain: { id: 'https://openalex.org/domains/4', display_name: 'Health Sciences' },
-};
-
-test('an economics reader asks the Worker relay for one page of the working-paper series and gets unreviewed Economics cards', async () => {
-  const realFetch = openAlexClient.fetchImpl;
-  const realBase = openAlexClient.apiBase;
-  const urls: URL[] = [];
-  openAlexClient.clearMemoryCache();
-  openAlexClient.apiBase = 'https://api.papertok.app';
-  openAlexClient.fetchImpl = async (input) => {
-    urls.push(new URL(String(input)));
-    return Response.json({ results: [
-      seriesWork('W7221947410', '10.24148/wp2026-23', 'article', FRBSF, 'These findings help inform debates surrounding how unauthorized immigration impacts labor and housing markets and public finances in the U.S.'),
-      seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
-      seriesWork('W7144132107', '10.65864/cesifo/tqjga1w74a', 'article', CESIFO, null),
-      { ...seriesWork('W7220380262', '10.3386/w35873', 'report', NBER, null), primary_topic: TYLENOL_TOPIC },
-    ] });
-  };
-  try {
-    assert.deepEqual(await fetchWorkingPapers(['cs.AI', 'math.PR'], 3), []);
-    assert.equal(urls.length, 0, 'a reader without economics or finance interests costs no request');
-
-    const papers = await fetchWorkingPapers(['q-fin.ST', 'cs.AI'], 3);
-    assert.equal(urls.length, 1);
-    const [url] = urls;
-    assert.equal(`${url.origin}${url.pathname}`, 'https://api.papertok.app/openalex/works');
-    assert.ok(!url.searchParams.has('api_key') && !url.searchParams.has('mailto'), 'the Worker attaches the credential');
-    const filters = url.searchParams.get('filter')!.split(',');
-    const since = filters.find(filter => filter.startsWith('from_publication_date:'))!.split(':')[1];
-    const ageDays = (Date.now() - Date.parse(since)) / 86_400_000;
-    assert.ok(ageDays > 0 && ageDays <= 366, `a bounded recent window, got ${since}`);
-    assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
-    assert.equal(url.searchParams.get('page'), '3');
-    assert.ok(Number(url.searchParams.get('per-page')) <= 6, 'no more of a page than OSTI or NASA may take');
-
-    assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7221947410', 'openalex:W7222541626', 'openalex:W7144132107', 'openalex:W7220380262']);
-    for (const paper of papers) {
-      assert.equal(paper.peerReviewed, false, `${paper.id} is a working paper, not a reviewed article`);
-      assert.equal(reviewStatusForPaper(paper), 'workingPaper', `${paper.id} shows the Working paper tag`);
-      assert.equal(paper.landingPageUrl, `https://doi.org/${paper.doi}`);
-      // The series make every card economics, the NBER paper OpenAlex files
-      // under Medicine included. Neither the reader's q-fin.ST nor General
-      // Economics: the series do not say which branch, and "public finances"
-      // on immigration does not make a finance paper.
-      assert.equal(areaLabelForPaper(paper), 'Economics', paper.id);
-      const subcategories = [paper.primaryCategory, ...paper.categories!].filter(category => getCategoryArea(category!));
-      assert.deepEqual(subcategories, [], `${paper.id} names no subcategory`);
-    }
-    assert.match(papers[0].abstract, /unauthorized immigration/);
-    assert.equal(hasUsableAIAbstract(papers[1].abstract), false, 'a missing abstract stays missing');
-
-    // The request is the same whichever category asked, so a card ranks as
-    // none of them, nor as the General Economics it used to be filed under.
-    for (const reader of [['q-fin.PR'], ['econ.EM', 'q-fin.ST'], ['econ.GN']]) {
-      for (const paper of await fetchWorkingPapers(reader, 3)) {
-        assert.equal(areaLabelForPaper(paper), 'Economics', `${paper.id} for a reader of ${reader.join(' and ')}`);
-        assert.equal(scorePaperForRecommendation(paper, { userPreferences: reader }).preference, 0, `${paper.id} for a reader of ${reader.join(' and ')}`);
-      }
-    }
-  } finally {
-    openAlexClient.fetchImpl = realFetch;
-    openAlexClient.apiBase = realBase;
-  }
-});
-
-test("every series the economics request names is on the review rule's list, so its journal articles carry the Working paper tag", async () => {
-  const realFetch = openAlexClient.fetchImpl;
-  let requested: string[] = [];
-  openAlexClient.clearMemoryCache();
-  openAlexClient.fetchImpl = async (input) => {
-    const sources = new URL(String(input)).searchParams.get('filter')!.split(',')
-      .find(filter => filter.startsWith('primary_location.source.id:'))!;
-    requested = sources.slice('primary_location.source.id:'.length).split('|');
-    return Response.json({ results: [] });
-  };
-  try {
-    await fetchWorkingPapers(['econ.GN'], 1);
-  } finally {
-    openAlexClient.fetchImpl = realFetch;
-  }
-  assert.ok(requested.length > 0, 'the request names its series');
-  const adapter = new OpenAlexAdapter();
-  for (const id of requested) {
-    // An `article` in a `journal` source: only the rule's list tells it apart
-    // from a reviewed journal paper.
-    const card = adapter.mapToStandard(seriesWork('W1', '10.1/w1', 'article', { id, display_name: 'A series' }, null));
-    assert.equal(reviewStatusForPaper(card), 'workingPaper', `${id} is on the review rule's list`);
-  }
-});
-
-// OpenAlex W7222916812 as returned on 2026-10-21 (trimmed): a Genetics article
-// whose primary topic, RNA Research and Splicing, is one of bio.mol's.
-const splicingWork = {
-  ...seriesWork('W7222916812', '10.1093/genetics/iyag290', 'article', { id: 'S65932378', display_name: 'Genetics' },
-    'Pathogenic variants in SNRPB, a common core spliceosomal factor, cause Cerebrocostomandibular Syndrome (CCMS).'),
-  title: 'A Novel CCMS Model Reveals a Critical Intronic Sequence in the Snrpb Gene that is Required for Normal Development',
-  publication_date: '2026-10-20',
-  primary_topic: {
-    id: 'https://openalex.org/T10604',
-    display_name: 'RNA Research and Splicing',
-    subfield: { id: 'https://openalex.org/subfields/1312', display_name: 'Molecular Biology' },
-    field: { id: 'https://openalex.org/fields/13', display_name: 'Biochemistry, Genetics and Molecular Biology' },
-    domain: { id: 'https://openalex.org/domains/1', display_name: 'Life Sciences' },
-  },
-};
-
-// Plan A (PAP-73): the leaves arXiv does not serve ask OpenAlex for works by
-// the topic IDs measured for them on 2026-10-21, not for the text of their
-// labels, which found 9 research articles in the reader's field in 442.
-test("a biology reader asks OpenAlex for recent articles under its leaves' topics by ID, with no search text", async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
-  const realFetch = openAlexClient.fetchImpl;
-  const urls: URL[] = [];
-  openAlexClient.clearMemoryCache();
-  openAlexClient.fetchImpl = async (input) => {
-    urls.push(new URL(String(input)));
-    return Response.json({ results: [splicingWork] });
-  };
-  t.after(() => { openAlexClient.fetchImpl = realFetch; });
-  const filtersOf = (url: URL) => url.searchParams.get('filter')!.split(',');
-  const topicsOf = (url: URL) => filtersOf(url).find(filter => filter.startsWith('primary_topic.id:'))!
-    .slice('primary_topic.id:'.length).split('|');
-
-  assert.deepEqual(await fetchOpenAlexTopicPapers(['cs.LG', 'q-bio.GN', 'med.gen'], 1), []);
-  assert.equal(urls.length, 0, 'arXiv leaves and leaves without measured topics cost no request');
-
-  const papers = await fetchOpenAlexTopicPapers(['cs.LG', 'bio.mol', 'med.gen'], 2);
-  assert.equal(urls.length, 1, 'one request for the page');
-  const [url] = urls;
-  assert.equal(url.searchParams.has('search'), false);
-  assert.ok(filtersOf(url).every(filter => !filter.includes('search')), 'no text search in the filter');
-  assert.ok(topicsOf(url).length > 0 && topicsOf(url).every(id => leavesForOpenAlexTopic(id).join() === 'bio.mol'),
-    "only bio.mol's topics, none for cs.LG or med.gen");
-  const filters = filtersOf(url);
-  const date = (name: string) => filters.find(filter => filter.startsWith(`${name}:`))!.split(':')[1];
-  assert.equal(date('to_publication_date'), '2026-10-21', 'nothing dated after today (UTC)');
-  const windowDays = (Date.parse(date('to_publication_date')) - Date.parse(date('from_publication_date'))) / 86_400_000;
-  assert.ok(windowDays > 0 && windowDays <= 366, `a bounded recent window, got ${windowDays} days`);
-  for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
-    assert.ok(filters.includes(filter), `filters on ${filter}`);
-  }
-  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
-  assert.equal(url.searchParams.get('page'), '2');
-
-  // OpenAlex's own classification, not the leaf that asked.
-  assert.deepEqual(papers.map(paper => paper.id), ['openalex:W7222916812']);
-  assert.equal(papers[0].primaryTopic?.id, 'https://openalex.org/T10604');
-  assert.equal(papers[0].primaryCategory, undefined);
-  assert.ok(!papers[0].categories?.includes('bio.mol'), 'the card is not filed under the requested leaf');
-
-  // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
-  await fetchOpenAlexTopicPapers(['mech.aero'], 1);
-  await fetchOpenAlexTopicPapers(['civil.struct'], 1);
-  assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
-  assert.ok(filtersOf(urls[2]).includes('type:article'));
-
-  // Eight measured leaves hold more topics than one filter takes.
-  const eight = ['bio.gen', 'bio.mol', 'bio.cell', 'bio.biochem', 'bio.comp', 'bio.neuro', 'med.neuro', 'med.psych'];
-  await fetchOpenAlexTopicPapers(eight, 1);
-  const topics = topicsOf(urls[3]);
-  assert.ok(topics.length <= 50, `at most 50 topic IDs, got ${topics.length}`);
-  assert.deepEqual(topics.slice(0, eight.length).map(id => leavesForOpenAlexTopic(id).join()), eight,
-    'every leaf is represented, in preference order');
-});
-
-test('a failed topic request rejects, so the feed counts a source that did not answer', async t => {
-  t.mock.method(console, 'warn', () => {});
-  const realFetch = openAlexClient.fetchImpl;
-  openAlexClient.clearMemoryCache();
-  openAlexClient.fetchImpl = async () => new Response('{}', { status: 503 });
-  t.after(() => { openAlexClient.fetchImpl = realFetch; });
-  await assert.rejects(fetchOpenAlexTopicPapers(['bio.mol'], 1));
-});

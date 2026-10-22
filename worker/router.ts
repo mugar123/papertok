@@ -31,7 +31,8 @@ import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
-import { PaperStoreError, handleStoreFeed } from './paper-store.ts';
+import { PaperStoreError } from './paper-store.ts';
+import { handleCorpusFeed, handleStoreFeed } from './paper-feed.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
@@ -384,10 +385,11 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
     }
   }
-  // The feed's arXiv leg from the paper store (worker/paper-store.ts). Asked
-  // with a body, so routed ahead of the GET-only gate below; personal, so it
-  // checks the reader's identity first and is never cached.
-  if (url.pathname === '/store/feed') {
+  // The feed's papers from the paper corpus (worker/paper-feed.ts): `/store/papers`,
+  // and `/store/feed` for bundles published before it. Asked with a body, so
+  // routed ahead of the GET-only gate below; personal, so they check the
+  // reader's identity first and are never cached.
+  if (url.pathname === '/store/papers' || url.pathname === '/store/feed') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     let identity: VerifiedIdentity;
@@ -399,7 +401,10 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
     }
     const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
     try {
-      return json(await handleStoreFeed(request, env, identity), 200, headers);
+      const answer = url.pathname === '/store/papers'
+        ? await handleCorpusFeed(request, env, identity)
+        : await handleStoreFeed(request, env, identity);
+      return json(answer, 200, headers);
     } catch (error) {
       if (error instanceof PaperStoreError) {
         return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);

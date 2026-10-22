@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapEuropePmcRecord } from './europePmcRecord.ts';
-import { mapEuropePmcResult } from '../services/europePmcService.ts';
-import { mapEuropePmcSearchResult } from '../services/domainSourceService.ts';
+import { mapEuropePmcResult } from '../services/europePmcRecords.ts';
+import { mapEuropePmcSearchResult } from '../services/domainSourceRecords.ts';
 
 // The four places where the two copies of this reader had drifted apart. Each
 // assertion here was true on exactly one side before they were merged.
