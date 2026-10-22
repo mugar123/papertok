@@ -375,6 +375,21 @@ test('runQuery sends a field filter and collection-group descendants', async () 
   assert.equal(body!.structuredQuery.limit, 80);
 });
 
+test('runQuery can ask for document names without their fields', async () => {
+  const bodies: Array<{ structuredQuery: Record<string, unknown> }> = [];
+  const { admin } = adminWith(async (_url, init) => {
+    bodies.push(JSON.parse(init.body as string));
+    return new Response(JSON.stringify([
+      { document: { name: 'projects/p/databases/(default)/documents/users/u/summaries/s1' } },
+    ]), { status: 200 });
+  });
+  const rows = await admin.runQuery({ parentSegments: ['users', 'u'], collectionId: 'summaries', select: ['__name__'] });
+  await admin.runQuery({ parentSegments: ['users', 'u'], collectionId: 'lists' });
+  assert.deepEqual(bodies[0].structuredQuery.select, { fields: [{ fieldPath: '__name__' }] });
+  assert.equal('select' in bodies[1].structuredQuery, false);
+  assert.deepEqual(rows, [{ id: 's1', data: {}, path: ['users', 'u', 'summaries', 's1'] }]);
+});
+
 test('countQuery reads the integer aggregation alias', async () => {
   const { admin } = adminWith(async () => new Response(JSON.stringify([
     { result: { aggregateFields: { count: { integerValue: '7' } } } },
