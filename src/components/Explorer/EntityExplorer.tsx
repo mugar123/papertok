@@ -57,6 +57,7 @@ import {
   EXPLORER_AUTO_PAGES,
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
+  explorerListErrorCode,
   explorerListState,
   explorerPageAllowance,
   entityPapersRequestKey,
@@ -1412,7 +1413,7 @@ export default function EntityExplorer({
         console.error("Failed to load papers for entity", err);
         if (request.cancelled) return;
         if (page === 1) setPapers([]);
-        setPapersError('PUBLICATIONS_LOAD_FAILED');
+        setPapersError(explorerListErrorCode(err, 'PUBLICATIONS_LOAD_FAILED'));
         setHasMore(false); // Stop infinite looping on errors
       }
       if (request.cancelled) return;
@@ -1470,7 +1471,7 @@ export default function EntityExplorer({
         console.error("Failed to load authors for entity", err);
         if (isCancelled) return;
         if (authorsPage === 1) setEntityAuthors([]);
-        setAuthorsError('AUTHORS_LOAD_FAILED');
+        setAuthorsError(explorerListErrorCode(err, 'AUTHORS_LOAD_FAILED'));
         setHasMoreAuthors(false); // Stop infinite looping on errors
       }
       if (isCancelled) return;

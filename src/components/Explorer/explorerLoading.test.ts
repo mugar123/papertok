@@ -215,7 +215,7 @@ test('the list asks for its next page only through the allowance', async () => {
 // then took keyboard focus with it, back to the top of the document.
 test('"Keep looking" stays mounted and focusable after the page it asked for fails', async () => {
   const jsx = stripComments(await read('./EntityExplorer.tsx'));
-  assert.match(jsx, /setPapersError\('PUBLICATIONS_LOAD_FAILED'\);\s*setHasMore\(false\);/);
+  assert.match(jsx, /setPapersError\(explorerListErrorCode\(err, 'PUBLICATIONS_LOAD_FAILED'\)\);\s*setHasMore\(false\);/);
   assert.match(
     jsx,
     /\{!publicMode && papersAwaitReader && \(\s*<div className="explorer-list-more">\s*<Button[^>]*disabled=\{isFetchingMore \|\| !hasMore\}\s*focusableWhenDisabled/,
