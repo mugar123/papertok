@@ -24,6 +24,8 @@ export interface QueryOptions {
   limit?: number;
   where?: { field: string; op?: string; value: unknown };
   allDescendants?: boolean;
+  /** Field paths to return; `['__name__']` returns the document names alone. */
+  select?: string[];
 }
 export interface FirestoreWrite {
   update?: { name: string; fields: Record<string, FirestoreValue> };
@@ -234,6 +236,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
       limit: pageSize,
       where: whereFilter,
       allDescendants = false,
+      select,
     }: QueryOptions = {}) {
       if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
         throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
@@ -243,6 +246,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
         : documentRoot(projectId);
       const url = `https://firestore.googleapis.com/v1/${parent}:runQuery`;
       const structuredQuery = {
+        ...(select?.length ? { select: { fields: select.map(fieldPath => ({ fieldPath })) } } : {}),
         from: [{ collectionId, allDescendants: allDescendants === true }],
         ...(whereFilter?.field ? {
           where: {

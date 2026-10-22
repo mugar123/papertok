@@ -78,3 +78,26 @@ test('somebody else\'s ceiling is not shown as the reader\'s own', async () => {
   // Which means the error state has to keep the quota, not just the code.
   assert.doesNotMatch(source, /setError\(caught instanceof PaperRewriteError \? caught\.code : 'AI_UNAVAILABLE'\)/);
 });
+
+/**
+ * A saved summary that could not be read is not a failed rewrite: the worker was
+ * never asked, and the copy may well exist. A forced retry skips the lookup and
+ * could write a new copy over the saved one, so this retry has to look it up again.
+ */
+test('a saved summary that could not be read has its own copy, and its retry looks it up again', async () => {
+  const source = stripComments(await read());
+  assert.match(errorCopyBlock(source), /AI_SAVED_SUMMARY_READ_FAILED: \{/);
+
+  const errorState = source.match(/className="rd-error-state"[\s\S]*?<\/EmptyState>/);
+  assert.ok(errorState, 'expected the reader error state');
+  const onClick = errorState[0].match(/\{canRetry && \(\s*<Button\b[^>]*?onClick=\{(\w+)\}/);
+  assert.ok(onClick, 'expected the error state retry to call a named handler');
+  const handler = source.match(new RegExp(String.raw`const ${onClick[1]} = \(\) => \{([\s\S]*?)\n {2}\};`));
+  assert.ok(handler, `expected ${onClick[1]} in the reader`);
+  const force = handler[1].match(/load\(level, \{ force: ([^}]+?) \}\)/);
+  assert.ok(force, 'expected the retry to load the current level again');
+  const forcedAfter = new Function('shownError', `return ${force[1]};`) as (code: string) => boolean;
+  assert.equal(forcedAfter('AI_SAVED_SUMMARY_READ_FAILED'), false);
+  // A failed rewrite still asks the worker to replace what it kept of it.
+  assert.equal(forcedAfter('AI_TIMEOUT'), true);
+});
