@@ -394,6 +394,21 @@ test('accepted and refused units are tallied by name, a release gives the used u
   assert.deepEqual(new Map(harness.values), before, 'looking spends nothing');
 });
 
+// The tally says what the day's shares refused. A subject's refusal (for
+// OpenAlex, the minute's ceiling) is a burst, not a closed tier, and counting
+// it would add a write to this object exactly when it is busiest.
+test('a refusal by the subject ceiling is not tallied and writes nothing', async () => {
+  const { read, harness } = dayLedger();
+
+  await read({ action: 'reserve', amount: 3, subjectLimit: 3, tally: 'feed.list' });
+  const before = new Map(harness.values);
+  const refused = await read({ action: 'reserve', amount: 1, subjectLimit: 3, tally: 'feed.list' });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'user');
+  assert.deepEqual(new Map(harness.values), before);
+  assert.deepEqual((await read({ action: 'peek' })).tally, { used: { 'feed.list': 3 }, refused: {} });
+});
+
 test('a malformed percent, tally or remaining is refused, not ignored', async () => {
   const { call, harness } = dayLedger();
   const malformed: Array<Record<string, unknown>> = [

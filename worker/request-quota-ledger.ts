@@ -201,8 +201,12 @@ export class RequestQuotaLedger {
       const scope = subjectUsage + amount > subjectLimit
         ? 'user'
         : globalUsage + amount > limit ? 'global' : '';
+      // Only the day's share refusing is tallied: a subject's refusal (for
+      // OpenAlex, the minute's ceiling) is a burst rather than a closed tier,
+      // and counting it would add a write here exactly when the object is
+      // busiest.
       if (scope) {
-        if (tallyName) {
+        if (tallyName && scope === 'global') {
           addToTally(tally.refused, tallyName, amount);
           await transaction.put('tally', tally);
         }
