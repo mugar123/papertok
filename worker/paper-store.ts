@@ -377,16 +377,29 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
   return changed.length;
 }
 
-/** Papers past their keeping date leave with their keys, lanes and vector. */
+/**
+ * What the corpus no longer needs leaves with its keys, lanes and vector:
+ * - a lane keeps its newest FEED_CANDIDATE_LIMIT papers, the most a page can
+ *   ever rank from it, so a busy category does not pile up papers no reader
+ *   reaches;
+ * - a paper past its keeping date, or left in no lane, goes, unless readers
+ *   still rank their feed by it (`liked_until`).
+ */
 export async function evictExpired(env: StoreEnv, now = Date.now()) {
   const db = database(env);
   const cutoff = new Date(now).toISOString();
-  const expired = '(SELECT id FROM works WHERE kept_until < ?)';
+  const { results: crowded } = await db.prepare('SELECT lane FROM work_lanes GROUP BY lane HAVING COUNT(*) > ?')
+    .bind(FEED_CANDIDATE_LIMIT).all<{ lane: string }>();
+  const trims = crowded.map(({ lane }) => db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
+    SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT -1 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT));
+  for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
+  const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
+    AND (w.kept_until < ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id)))`;
   await db.batch([
-    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${expired}`).bind(cutoff),
-    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${expired}`).bind(cutoff),
-    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${expired}`).bind(cutoff),
-    db.prepare('DELETE FROM works WHERE kept_until < ?').bind(cutoff),
+    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff),
+    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff),
+    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff),
+    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff),
   ]);
 }
 
@@ -581,7 +594,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   ]);
   // A liked paper is not offered again, and keeps its vector in the corpus.
   if (positiveIds.length) {
-    await db.prepare('UPDATE works SET kept_until = ? WHERE id IN (SELECT value FROM json_each(?)) AND kept_until < ?')
+    await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
+      AND (liked_until IS NULL OR liked_until < ?)`)
       .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
   }
   const liked = new Set(positiveIds);

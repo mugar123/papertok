@@ -144,7 +144,9 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.deepEqual(page[1]._followedEntityMatches, [{ type: 'author', canonicalId: 'https://openalex.org/A123', displayName: 'Ana Pérez' }]);
   assert.equal(page[0]._followedEntityMatches, undefined);
   // The like, due to leave on 2026-10-28, is kept while readers rank by it.
-  assert.equal(rows(db, `SELECT kept_until FROM works WHERE id = ${idOf('2610.00001')}`)[0].kept_until, '2026-11-21T03:00:00.000Z');
+  assert.equal(rows(db, `SELECT liked_until FROM works WHERE id = ${idOf('2610.00001')}`)[0].liked_until, '2026-11-21T03:00:00.000Z');
+  await evictExpired(env, Date.parse('2026-11-01T00:00:00Z'));
+  assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
 });
 
 test('a follow is served from the lane its entity names, and a followed category from the category itself', () => {
@@ -194,4 +196,18 @@ test('two writers filing one paper at once meet on one row, and a short title jo
   const short = (id: string) => ({ ...arxivRecord, id, arxivId: id, title: '2024', authors: [{ name: 'Wei Wang' }] });
   await ingestPapers(env, [{ paper: short('2610.00031'), lanes: [] }, { paper: short('2610.00032'), lanes: [] }], { now: NOW });
   assert.equal(rows(db, 'SELECT id FROM works').length, 3);
+});
+
+test('a lane keeps the newest papers a page can rank from, and a paper left in no lane goes', async () => {
+  const { env, db } = corpus();
+  // More than the 4,000 a lane keeps, in one category, a day apart.
+  const many = Array.from({ length: 4_003 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.${String(index).padStart(5, '0')}`, arxivId: `2610.${String(index).padStart(5, '0')}`, title: `Paper number ${index} of a busy category`, allCategories: [], categories: [], published: new Date(NOW - index * 60_000).toISOString() },
+    lanes: ['cs.LG'],
+  }));
+  await ingestPapers(env, many, { now: NOW });
+  await evictExpired(env, NOW);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'cs.LG'").length, 4_000);
+  assert.equal(rows(db, 'SELECT id FROM works').length, 4_000, 'the three oldest, in no lane now, are gone');
+  assert.equal(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.04002'").length, 0);
 });
