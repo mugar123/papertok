@@ -96,9 +96,17 @@ test('stored papers get what the feed used to add to every page, once; an unknow
   assert.equal(await enrichPending(env, 50, NOW), 0, 'nothing is asked twice');
 });
 
-test("a spent OpenAlex day leaves the papers it could not ask about for tomorrow's run", async t => {
-  providers(t, { openAlexStatus: 429 });
-  const { env, db } = await corpus();
-  assert.equal(await enrichPending(env, 50, NOW), 0);
-  assert.ok(Object.values(stored(db)).every(work => work.enrichedAt === null && work.misses === 0));
-});
+for (const status of [429, 502]) {
+  test(`an OpenAlex that answers ${status} leaves the papers waiting for it to the next run, and marks the rest done`, async t => {
+    providers(t, { openAlexStatus: status });
+    const { env, db } = await corpus();
+    assert.equal(await enrichPending(env, 50, NOW), 0, 'the run stops asking');
+    const works = stored(db);
+    assert.equal(works['2610.11111'].enrichedAt, null);
+    assert.equal(works['2610.22222'].enrichedAt, null);
+    assert.equal(works['2610.22222'].misses, 0, 'not a miss: OpenAlex was not heard');
+    // OpenAlex's own record needed no OpenAlex: Crossref's answer applies, and it is done.
+    assert.equal(works['openalex:W568341909'].paper.publicationType, 'book');
+    assert.notEqual(works['openalex:W568341909'].enrichedAt, null);
+  });
+}

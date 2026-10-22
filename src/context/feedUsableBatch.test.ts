@@ -519,13 +519,28 @@ test('a short screen schedules its next page and preserves papers when it fills'
   assert.deepEqual(state.continuations, []);
 });
 
-test('genuinely empty providers end the feed without scheduling another page', async () => {
-  const { state, run } = feed({ fast: [] });
-  await run(true);
+test('an empty later page ends the feed without scheduling another page', async () => {
+  const { state, run } = feed({ fast: [], page: 3, papers: records('shown', 5) });
+  await run(false);
   await tick();
   assert.equal(state.error, null);
   assert.equal(state.hasMore, false);
   assert.deepEqual(state.continuations, []);
+});
+
+test('an empty first page is an error with a retry, not an empty feed, and a reload past the corpus starts over at the first page', async t => {
+  t.mock.method(console, 'error', () => {});
+  const timers: Array<() => void> = [];
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void) => { timers.push(callback); return 0; });
+  const empty = feed({ fast: [] });
+  await empty.run(true);
+  assert.equal(empty.state.error, 'FEED_LOAD_FAILED');
+  assert.equal(timers.length, 1, 'one automatic retry is scheduled');
+
+  const pastTheEnd = feed();
+  pastTheEnd.env.fetchPapers = async (_categories: string[], start = 0) => (start === 0 ? records('first') : []);
+  await pastTheEnd.run(true, null, false, 3);
+  assert.deepEqual(pastTheEnd.state.continuations, [[true, 'top', false, 0, { keepThroughVisible: false }]]);
 });
 
 for (const knownCount of [0, 2]) {

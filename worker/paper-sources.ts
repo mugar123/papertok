@@ -19,6 +19,7 @@ import { handleArxiv } from './arxiv-api.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
@@ -29,7 +30,6 @@ import { parseXmlDocument } from './xml-dom.ts';
 // browser used to call for every reader and page.
 
 const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
-const DAY_MS = 86_400_000;
 const text = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const day = (iso: string) => iso.slice(0, 10);
 
@@ -287,7 +287,25 @@ async function arxivSearch(env: SourceEnv, query: string, page: number, lane: st
 
 const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?.label || leafId.replace(/\./g, ' ');
 
+// The share of OpenAlex's day the harvest may spend, enrichment included, in
+// list calls (a search is ten). The rest of the day's ledger stays for readers'
+// searches and pages; the shared ledger still counts every call.
+const HARVEST_OPENALEX_DAILY_CALLS = 4_000;
+
+/** Reserves harvest calls against its own daily share before the shared ledger sees them. */
+export async function reserveHarvestOpenAlex(env: Pick<WorkerEnv, 'REQUEST_QUOTA_LEDGER'>, calls: number) {
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+    periodKey: `harvest-openalex:day:${new Date().toISOString().slice(0, 10)}`,
+    subject: 'harvest',
+    subjectLimit: HARVEST_OPENALEX_DAILY_CALLS,
+    globalLimit: HARVEST_OPENALEX_DAILY_CALLS,
+    amount: calls,
+  });
+  if (!reservation.accepted) throw new SourceRefused('/openalex (harvest share)', 3_600);
+}
+
 async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '' }: { page: number; perPage: number; search?: string }) {
+  await reserveHarvestOpenAlex(env, search ? 10 : 1);
   const params: Record<string, string | number> = {
     filter, sort: 'publication_date:desc', page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
@@ -309,8 +327,10 @@ async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPag
 const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id' };
 
 async function openAireProjectDois(lane: string) {
-  const [, rest] = lane.split(':');
-  const [funder, project] = rest.includes('|') ? rest.split('|') : ['', rest];
+  // An OpenAIRE project id holds `::` itself; a funder, when stored, comes first.
+  const rest = lane.slice('project:'.length);
+  const bar = rest.indexOf('|');
+  const [funder, project] = bar >= 0 ? [rest.slice(0, bar), rest.slice(bar + 1)] : ['', rest];
   const url = new URL('https://api.openaire.eu/search/publications');
   url.searchParams.set('format', 'json');
   url.searchParams.set('size', '30');
@@ -493,6 +513,12 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
 
 // ─── Papers asked for by id ───
 
+/** arXiv's records of these ids (at most 50), through the paced `/arxiv` route. */
+export async function fetchArxivPapers(env: WorkerEnv, arxivIds: string[]) {
+  const response = await askRoute(handleArxiv, '/arxiv', { id_list: arxivIds.slice(0, 50).join(','), max_results: Math.min(50, arxivIds.length) }, env);
+  return parseArxivAtom(await response.text()).map(arxivRecordPaper);
+}
+
 const LOOKUP_TIMEOUT_MS = 2_000;
 
 /**
@@ -517,8 +543,7 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
     return paper ? [{ paper, lanes: [] }] : [];
   });
   if (arxivIds.length) {
-    lookups.push(askRoute(handleArxiv, '/arxiv', { id_list: arxivIds.join(','), max_results: arxivIds.length }, env)
-      .then(async response => parseArxivAtom(await response.text()).map(record => ({ paper: arxivRecordPaper(record), lanes: [] }))));
+    lookups.push(fetchArxivPapers(env, arxivIds).then(papers => papers.map(paper => ({ paper, lanes: [] }))));
   }
   const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), LOOKUP_TIMEOUT_MS));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
@@ -526,4 +551,3 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   return ingestPapers(env, found, { keepUntil, now });
 }
 
-export { DAY_MS };

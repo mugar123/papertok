@@ -83,10 +83,38 @@ async function embedAll(env: WorkerEnv, step: WorkflowStep, label = 'embed') {
 }
 
 /**
+ * A phase that failed past its step's retries is logged and passed over: the
+ * corpus is the feed's only source, so one provider's outage must not cost the
+ * others their day.
+ */
+async function phase(name: string, work: () => Promise<unknown>) {
+  try {
+    await work();
+  } catch (error) {
+    console.error(`Paper harvest phase failed: ${name}`, error);
+  }
+}
+
+/**
+ * The lanes no reader has asked for in FOLLOWED_LANE_DAYS leave the harvest,
+ * and the corpus forgets which papers they named and how far they got: a
+ * followed search's text is gone with them.
+ */
+async function forgetFollowedLanes(db: D1Database, now: number) {
+  const before = daysFromNow(-FOLLOWED_LANE_DAYS, now);
+  const dropped = 'SELECT lane FROM followed_lanes WHERE requested_at < ?';
+  await db.batch([
+    db.prepare(`DELETE FROM work_lanes WHERE lane IN (${dropped})`).bind(before),
+    db.prepare(`DELETE FROM lane_state WHERE lane IN (${dropped})`).bind(before),
+    db.prepare('DELETE FROM followed_lanes WHERE requested_at < ?').bind(before),
+  ]);
+}
+
+/**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
- * lanes readers follow, then enrichment and embedding of what arrived within
- * the day's budgets, and the papers past the corpus window removed. A run for
+ * lanes readers follow, the papers past their keeping date removed, then
+ * enrichment and embedding of what arrived within the day's budgets. A run for
  * newly followed lanes (`payload.lanes`) harvests and embeds only those.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
@@ -97,51 +125,56 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   const followed = event.payload?.lanes;
   if (followed?.length) {
     await runLaneJobs(env, step, 'followed', followed.map(followedLaneJob).filter(Boolean) as LaneJob[]);
-    await embedAll(env, step);
+    await phase('embed', () => embedAll(env, step));
     return;
   }
 
   // The day the run started, so a run that crosses midnight records the day it covered.
   const today = event.timestamp.toISOString();
   for (const set of ARXIV_HARVEST_SETS) {
-    const from = await step.do(`${set}: start`, () => harvestStart(db, set));
-    let resumptionToken = '';
-    // Step names are the replay keys, so each request gets its own number.
-    for (let request = 0, done = false; !done; request += 1) {
-      const page = await step.do(`${set}: request ${request}`, PAGE_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
-      if (page.retryAfterSeconds) {
-        await step.sleep(`${set}: wait ${request}`, page.retryAfterSeconds * 1000);
-        continue;
+    // A set that fails is harvested from the same day on the next run.
+    await phase(`arXiv ${set}`, async () => {
+      const from = await step.do(`${set}: start`, () => harvestStart(db, set));
+      let resumptionToken = '';
+      // Step names are the replay keys, so each request gets its own number.
+      for (let request = 0, done = false; !done; request += 1) {
+        const page = await step.do(`${set}: request ${request}`, PAGE_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
+        if (page.retryAfterSeconds) {
+          await step.sleep(`${set}: wait ${request}`, page.retryAfterSeconds * 1000);
+          continue;
+        }
+        resumptionToken = page.resumptionToken;
+        done = !resumptionToken;
+        if (!done) await step.sleep(`${set}: gap ${request}`, PAGE_GAP);
       }
-      resumptionToken = page.resumptionToken;
-      done = !resumptionToken;
-      if (!done) await step.sleep(`${set}: gap ${request}`, PAGE_GAP);
-    }
-    await step.do(`${set}: finish`, async () => {
-      await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES ('arxiv-oai', ?, ?)
-        ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(set, today).run();
+      await step.do(`${set}: finish`, async () => {
+        await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES ('arxiv-oai', ?, ?)
+          ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(set, today).run();
+      });
     });
   }
-  await step.do('carry arXiv vectors', carryArxivVectors(db));
+  await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
-  await runLaneJobs(env, step, 'categories', categoryLaneJobs());
-  await runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)));
-
-  for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
-    const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
-    if (enriched === 0) break;
-  }
-  await embedAll(env, step);
-  await step.do('evict', async () => {
+  await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
+  await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started))));
+  await phase('evict', () => step.do('evict', async () => {
     await evictExpired(env, started);
-    await db.prepare('DELETE FROM followed_lanes WHERE requested_at < ?').bind(daysFromNow(-FOLLOWED_LANE_DAYS, started)).run();
+    await forgetFollowedLanes(db, started);
+  }));
+
+  await phase('enrich', async () => {
+    for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
+      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
+      if (enriched === 0) break;
+    }
   });
+  await phase('embed', () => embedAll(env, step));
 }
 
 /**
  * The arXiv-only store of 0001 embedded its papers already: their vectors move
  * to the corpus rows the same papers now have, rather than being bought again.
- * A no-op once migration 0003 has dropped the old tables.
+ * A no-op once a later migration drops the old tables.
  */
 function carryArxivVectors(db: D1Database) {
   return async () => {

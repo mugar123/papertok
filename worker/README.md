@@ -81,6 +81,8 @@ The `30 2 * * *` cron starts one `PaperHarvestWorkflow` instance per UTC day (`w
 5. Embedding of the newest papers without a vector until `EMBEDDING_DAILY_TOKEN_LIMIT` (7.5M estimated tokens, about 8,100 of the 10,000 free daily neurons) is reserved.
 6. Eviction of papers past their keeping date: 90 days after publication, 14 days after a specialist source or a followed lane last listed them, 30 days after a reader last ranked by them.
 
+A new or emptied database needs a harvest before a frontend that reads it is published: apply the migrations, deploy the Worker, start a run with `npx wrangler workflows trigger papertok-paper-harvest`, and wait for its lanes to fill. Until then the feed answers an empty first page with its error and retry.
+
 Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
 
 ```bash

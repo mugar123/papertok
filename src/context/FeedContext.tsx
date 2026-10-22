@@ -1080,7 +1080,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               return [];
             });
             if (superseded()) return;
-            const seedExamples = stored.map(paper => paperAffinitySignals({ openAlex: { concepts: paper.concepts }, authors: paper.authors }));
+            const seedExamples = stored.map(paper => paperAffinitySignals(paper));
             if (seedExamples.length > 0) {
               seedLearnedAffinities(profile, seedExamples);
               profileSignals.current = readProfileSignals(profile);
@@ -1372,6 +1372,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         
         const corePapers = Array.from(uniqueMap.values());
         newPapers = corePapers;
+
+        // An empty first page is not the end of the feed. A reload's random
+        // start page can lie past what the corpus holds for these interests,
+        // and a corpus with nothing for them is not ready: that is an error
+        // with a retry, not an empty feed.
+        if (reset && newPapers.length === 0 && !seenFallback) {
+          if (currentPage > 0) return loadPapersRef.current?.(reset, activeMode, false, 0, { keepThroughVisible });
+          throw new Error('The paper store has no papers for these interests yet.');
+        }
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }

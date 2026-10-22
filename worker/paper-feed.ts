@@ -1,12 +1,15 @@
 import type { Paper } from '../src/models/Paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
-import type { StoreEnv } from './paper-store.ts';
+import type { FeedRequestBody, StoreEnv } from './paper-store.ts';
 
-import type { FeedRequestBody } from './paper-store.ts';
-import { FEED_LAST_PAGE, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage, readPapersByIds, reserveFeedRequest } from './paper-store.ts';
+import {
+  FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
+  readPapersByIds, reserveFeedRequest,
+} from './paper-store.ts';
 import { ingestPaperIds } from './paper-sources.ts';
 import { readBoundedJson } from './bounded-body.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The routes that read the paper corpus (paper-store.ts) for a reader.
 
@@ -14,9 +17,13 @@ type FeedEnv = StoreEnv & WorkerEnv;
 
 const ENOUGH_STORED_POSITIVES = 3;
 const LIKED_LOOKUP_MAX_PAPERS = 10;
-const KEEP_LIKED_DAYS = 30;
 // A followed lane asked for again within a day is not written again.
 const FOLLOW_REFRESH_MS = 86_400_000;
+// New followed lanes a reader may add to the harvest a day, and the whole app.
+// A new lane costs a Workflow run and OpenAlex calls (ten for a search), so
+// one account cannot spend the day's budget on lanes nobody reads.
+const NEW_FOLLOWED_LANES_PER_READER = 20;
+const NEW_FOLLOWED_LANES_PER_DAY = 2_000;
 
 /**
  * Liked papers the corpus cannot rank against yet, fetched and embedded. Only
@@ -47,17 +54,29 @@ function embedMissingPositives(env: FeedEnv, positiveIds: string[]) {
  * served, and starts a harvest of the ones nobody had asked for yet: their
  * papers arrive for the reader's next page rather than tomorrow's.
  */
-async function registerFollowedLanes(env: FeedEnv, lanes: string[], now = Date.now()) {
+async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], now = Date.now()) {
   if (lanes.length === 0 || !env.PAPER_STORE) return;
   const db = env.PAPER_STORE;
   const { results } = await db.prepare('SELECT lane, requested_at FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
     .bind(JSON.stringify(lanes)).all<{ lane: string; requested_at: string }>();
   const known = new Map(results.map(row => [row.lane, row.requested_at]));
-  const fresh = lanes.filter(lane => !known.has(lane));
-  const due = lanes.filter(lane => !known.has(lane) || Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
-  if (due.length === 0) return;
+  const due = lanes.filter(lane => known.has(lane) && Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
+  let fresh = lanes.filter(lane => !known.has(lane));
+  if (fresh.length) {
+    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+      periodKey: `followed-lanes:day:${new Date(now).toISOString().slice(0, 10)}`,
+      subject: `uid:${uid}`,
+      subjectLimit: NEW_FOLLOWED_LANES_PER_READER,
+      globalLimit: NEW_FOLLOWED_LANES_PER_DAY,
+      amount: fresh.length,
+    });
+    // Past the allowance the follow is still served from what the corpus has.
+    if (!reservation.accepted) fresh = [];
+  }
+  const written = [...due, ...fresh];
+  if (written.length === 0) return;
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
-    ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(due)).run();
+    ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(written)).run();
   if (fresh.length && env.PAPER_HARVEST) {
     try {
       await env.PAPER_HARVEST.create({ id: `follow-${new Date(now).toISOString().slice(0, 10)}-${crypto.randomUUID()}`, params: { lanes: fresh } });
@@ -94,11 +113,18 @@ export async function handleCorpusFeed(request: Request, env: FeedEnv, identity:
     return { papers: await readPapersByIds(env, ids) };
   }
   const query = parseFeedRequest(body);
-  if (query.categories.length === 0 && query.follows.length === 0) throw new PaperStoreError('LANES_REQUIRED', 400);
+  if (query.categories.length === 0 && query.follows.length === 0) {
+    // Follows that are all categories, or name nothing a lane serves, have no papers of their own.
+    if (Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
+    throw new PaperStoreError('LANES_REQUIRED', 400);
+  }
   await reserveFeedRequest(env, identity.uid);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
-  await registerFollowedLanes(env, query.follows.map(follow => follow.lane));
-  return { papers: await readFeedPage(env, query, { embedMissing: embedMissingPositives(env, query.positiveIds) }) };
+  await registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane));
+  // Only a first page of categories looks liked papers up: the follows asked
+  // beside it, and later pages, would repeat the same lookup.
+  const looksUp = query.page === 0 && query.follows.length === 0;
+  return { papers: await readFeedPage(env, query, looksUp ? { embedMissing: embedMissingPositives(env, query.positiveIds) } : {}) };
 }
 
 /**

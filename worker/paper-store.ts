@@ -23,7 +23,8 @@ export type EmbeddingEnv = {
 // Papers published longer ago than this leave the corpus, unless a reader's
 // like keeps them (KEEP_LIKED_DAYS); the feed never ranks further back.
 export const CORPUS_DAYS = 90;
-const KEEP_LIKED_DAYS = 30;
+// A liked paper the feed ranks by stays this long after a reader last did.
+export const KEEP_LIKED_DAYS = 30;
 const FEED_CANDIDATE_LIMIT = 4_000;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
@@ -66,7 +67,6 @@ export interface Harvested { paper: Partial<Paper>; lanes: string[] }
 
 const text = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
 export const daysFromNow = (days: number, now = Date.now()) => new Date(now + days * DAY_MS).toISOString();
-const placeholders = (count: number) => Array.from({ length: count }, () => '?').join(',');
 
 export function database(env: Pick<StoreEnv, 'PAPER_STORE'>) {
   if (!env.PAPER_STORE) throw new PaperStoreError('PAPER_STORE_UNAVAILABLE', 503);
@@ -120,8 +120,16 @@ export function keysForPaperId(value: unknown) {
   return [...keys];
 }
 
+// A title key (`<title>_<surname>`, `<title>~<token>`) is stored only for a
+// title long enough to name one paper on its own. Stored keys join records for
+// good, and a short or non-Latin title ("2024", "Editorial") would fold
+// distinct papers together. Every other key holds a `:` or a DOI's `/`.
+const TITLE_KEY = /^([a-z0-9]*)[_~][^:/]*$/;
+const MIN_STORED_TITLE_KEY = 30;
+
 function workKeys(paper: Paper) {
-  return [...new Set([`id:${paper.id.toLowerCase()}`, ...PaperBuilder.identityKeys(paper)])];
+  const keys = PaperBuilder.identityKeys(paper).filter(key => (key.match(TITLE_KEY)?.[1].length ?? MIN_STORED_TITLE_KEY) >= MIN_STORED_TITLE_KEY);
+  return [...new Set([`id:${paper.id.toLowerCase()}`, ...keys])];
 }
 
 // ─── Lanes ───
@@ -186,11 +194,18 @@ const embeddingText = (paper: Partial<Paper>) => `${text(paper.title)}\n\n${text
 interface WorkRow { id: number; paper: string; kept_until: string }
 interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
 
-function newWorkId() {
-  const bytes = crypto.getRandomValues(new Uint32Array(2));
-  // 48 bits: unique among a few million rows, and exact as a JavaScript number.
-  return (bytes[0] % 0x10000) * 0x100000000 + bytes[1];
+// A new row's number comes from its paper id, so two writers filing the same
+// paper at once (a like looked up by two requests, a followed lane's run beside
+// the daily one) meet on one row instead of making two. 48 bits: exact as a
+// JavaScript number, and unique among a few million rows.
+async function workIdFor(paper: Paper) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`id:${paper.id.toLowerCase()}`)));
+  return digest.slice(0, 6).reduce((value, byte) => value * 256 + byte, 0);
 }
+
+// Which row keeps its id when a record shows two are one paper: the one under
+// the most lasting identifier, so the id readers hold for it rarely changes.
+const idRank = (paper: Paper) => (arxivIdOf(paper.id) ? 0 : /^pmid:/i.test(paper.id) ? 1 : /^openalex:/i.test(paper.id) ? 2 : 3);
 
 // D1 counts every statement of a batch towards the invocation's query limit,
 // so rows travel as one JSON parameter per chunk rather than one each.
@@ -220,9 +235,9 @@ async function readWorks(db: D1Database, ids: number[]) {
  * Files what sources returned: records of one paper merge (PaperBuilder.merge,
  * the rule the browser applied to every page) into the row any of their
  * identifiers already names, or start a new one. A record that bridges two
- * rows folds them into the lower-numbered one, whose paper id stays. A merge
- * that changes the title or abstract drops the vector for the embedding pass.
- * Returns how many rows were written.
+ * rows folds them into one (`idRank`). A merge that changes the title or
+ * abstract drops the vector for the embedding pass. Returns how many rows were
+ * written.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
@@ -264,18 +279,19 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const folded: Array<{ from: number; into: number }> = [];
 
   for (const group of groups) {
-    const ids = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
-      .sort((a, b) => a - b);
-    const stored = ids.map(id => JSON.parse(works.get(id)!.paper) as Paper);
+    const stored = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
+      .map(id => ({ id, paper: JSON.parse(works.get(id)!.paper) as Paper }))
+      .sort((a, b) => idRank(a.paper) - idRank(b.paper) || a.id - b.id);
+    const ids = stored.map(work => work.id);
     let paper = group.paper;
     let id = ids[0];
     if (id === undefined) {
-      id = newWorkId();
+      id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
-      paper = stored.slice(1).reduce((base, other) => PaperBuilder.merge(base, other, other.provider || other.sources?.primary), stored[0]);
+      paper = stored.slice(1).reduce((base, other) => PaperBuilder.merge(base, other.paper, other.paper.provider || other.paper.sources?.primary), stored[0].paper);
       paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
-      if (embeddingText(paper) !== embeddingText(stored[0])) staleVectors.push(id);
+      if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
     paper = storedPaper(paper);
@@ -395,16 +411,27 @@ async function reserveEmbeddingTokens(env: StoreEnv, tokens: number) {
   return reservation.accepted === true;
 }
 
-async function embedTexts(env: StoreEnv, texts: string[]) {
+async function embedBatch(env: StoreEnv, texts: string[]) {
   if (typeof env.AI?.run !== 'function') throw new PaperStoreError('EMBEDDINGS_UNAVAILABLE', 503);
-  const vectors: Int8Array[] = [];
+  const { data } = await env.AI.run(EMBEDDING_MODEL, { text: texts });
+  if (!Array.isArray(data) || data.length !== texts.length || data.some(vector => vector?.length !== EMBEDDING_DIMENSIONS)) {
+    throw new PaperStoreError('EMBEDDINGS_INVALID', 502);
+  }
+  return data.map(quantize);
+}
+
+// A batch Workers AI refuses is asked again a text at a time, so one paper it
+// cannot embed is left without a vector instead of holding back the others.
+async function embedTexts(env: StoreEnv, texts: string[]) {
+  const vectors: Array<Int8Array | null> = [];
   for (let start = 0; start < texts.length; start += EMBED_BATCH) {
     const batch = texts.slice(start, start + EMBED_BATCH);
-    const { data } = await env.AI.run(EMBEDDING_MODEL, { text: batch });
-    if (!Array.isArray(data) || data.length !== batch.length || data.some(vector => vector?.length !== EMBEDDING_DIMENSIONS)) {
-      throw new PaperStoreError('EMBEDDINGS_INVALID', 502);
+    try {
+      vectors.push(...await embedBatch(env, batch));
+    } catch (error) {
+      if (error instanceof PaperStoreError && error.code === 'EMBEDDINGS_UNAVAILABLE') throw error;
+      for (const text of batch) vectors.push(await embedBatch(env, [text]).then(([vector]) => vector, () => null));
     }
-    vectors.push(...data.map(quantize));
   }
   return vectors;
 }
@@ -418,16 +445,17 @@ async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string 
   const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
   if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts)))) return 0;
   const vectors = await embedTexts(env, texts);
+  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index]! }] : []));
   const db = database(env);
   // Two parameters a row, under D1's hundred per statement.
   const statements = [];
-  for (let start = 0; start < rows.length; start += 50) {
-    const chunk = rows.slice(start, start + 50);
+  for (let start = 0; start < embedded.length; start += 50) {
+    const chunk = embedded.slice(start, start + 50);
     statements.push(db.prepare(`INSERT OR REPLACE INTO work_vectors (work_id, embedding) VALUES ${chunk.map(() => '(?, ?)').join(',')}`)
-      .bind(...chunk.flatMap((row, index) => [row.id, vectors[start + index].buffer])));
+      .bind(...chunk.flatMap(row => [row.id, row.vector.buffer])));
   }
-  await db.batch(statements);
-  return rows.length;
+  if (statements.length) await db.batch(statements);
+  return embedded.length;
 }
 
 /** The newest stored papers without a vector, embedded. 0 once none are left or today's budget is spent. */
@@ -645,4 +673,3 @@ export async function readPapersByIds(env: StoreEnv, paperIds: string[]) {
 }
 
 export const FEED_LAST_PAGE = FEED_MAX_PAGE;
-export { placeholders };

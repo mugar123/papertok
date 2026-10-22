@@ -1,3 +1,4 @@
+import type { PaperFollowMatch } from '../src/models/Paper.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -179,5 +180,18 @@ test("a reader of economics also gets the working-paper series, filed under none
   const followed = await readFeedPage(env, parseFeedRequest({
     follows: [{ type: 'topic', canonicalId: 'query-topic-1', displayName: 'Large language models', metadata: { query: 'large language models' } }],
   }), { now: NOW });
-  assert.deepEqual(followed.map(item => [item.id, item._followedEntityMatches?.map(match => match.canonicalId)]), [['2610.00013', ['query-topic-1']]]);
+  assert.deepEqual(followed.map(item => [item.id, item._followedEntityMatches?.map(match => (match as PaperFollowMatch).canonicalId)]), [['2610.00013', ['query-topic-1']]]);
+});
+
+test('two writers filing one paper at once meet on one row, and a short title joins nothing', async () => {
+  const { env, db } = corpus();
+  await Promise.all([
+    ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW }),
+    ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.AI'] }], { now: NOW }),
+  ]);
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1);
+  // "2024" by a Wang is no paper's fingerprint: two such records stay two papers.
+  const short = (id: string) => ({ ...arxivRecord, id, arxivId: id, title: '2024', authors: [{ name: 'Wei Wang' }] });
+  await ingestPapers(env, [{ paper: short('2610.00031'), lanes: [] }, { paper: short('2610.00032'), lanes: [] }], { now: NOW });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 3);
 });

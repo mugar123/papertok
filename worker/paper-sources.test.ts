@@ -254,3 +254,33 @@ test('a lane pages until the source reaches what the last run had, and records h
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM works').get() as { n: number }).n, 201);
   assert.deepEqual(db.prepare('SELECT harvested_through FROM lane_state').all().map(row => (row as { harvested_through: string }).harvested_through), ['2026-10-21T05:21:00.000Z']);
 });
+
+test("a followed project's lane asks OpenAIRE by its id, with the funder only for a bare grant code, then OpenAlex by DOI", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/Genetics/IYAG290' }] } } } }] } } }
+    : { results: [splicingWork] }));
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:EC|corda__h2020::0123456789abcdef', page: 1, since: '' });
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '' });
+  const openAire = urls.filter(url => url.hostname === 'api.openaire.eu');
+  assert.equal(openAire[0].searchParams.get('openaireProjectID'), 'corda__h2020::0123456789abcdef');
+  assert.equal(openAire[0].searchParams.has('funder'), false, 'an OpenAIRE id names its funder already');
+  assert.equal(openAire[1].searchParams.get('projectID'), '2047484');
+  assert.equal(openAire[1].searchParams.get('funder'), 'NSF');
+  assert.ok(urls.some(url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter') === 'doi:10.1093/genetics/iyag290'));
+});
+
+test("the harvest stops asking OpenAlex once its share of the day is spent, leaving the rest to readers", async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  await assert.rejects(
+    (async () => {
+      for (let call = 0; call < 401; call += 1) {
+        await SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '' });
+      }
+    })(),
+    (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60,
+  );
+  // A search is ten list calls of the harvest's 4,000.
+  assert.equal(urls.length, 400);
+});
