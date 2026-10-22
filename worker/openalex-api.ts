@@ -76,8 +76,17 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
   'x-ratelimit-remaining-usd',
 ];
 
-// What a miss resolved to, before the asking origin is put on it.
+// What a miss resolved to, before the asking origin is put on it. Identical
+// misses in flight in this isolate share one of these (see `inFlight`), and a
+// shared `Response` would have one body for several readers.
 type RelayedAnswer = { status: number; body: string; headers: Headers };
+
+// A launch burst asks the same question from many tabs within the second it
+// takes OpenAlex to answer the first. Each of those used to miss the edge,
+// reserve its own units and make its own call. Keyed by the canonical cache
+// URL; an entry leaves when its miss settles, so a failure is not shared with
+// anyone who asks after it.
+const inFlight = new Map<string, Promise<RelayedAnswer>>();
 
 export function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   url.searchParams.set('mailto', 'app@papertok.io');
@@ -219,7 +228,8 @@ async function writeShared(env: WorkerEnv, key: string, status: number, body: st
 }
 
 // An edge miss: the shared store first, then -- and only then -- a reservation
-// and the call.
+// and the call. Resolves without an origin so that everyone waiting on the
+// same miss can put their own on.
 async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
@@ -266,7 +276,12 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  return forOrigin(await relayMiss(target, cacheKey, env), origin, env);
+  let pending = inFlight.get(cacheKey.url);
+  if (!pending) {
+    pending = relayMiss(target, cacheKey, env).finally(() => inFlight.delete(cacheKey.url));
+    inFlight.set(cacheKey.url, pending);
+  }
+  return forOrigin(await pending, origin, env);
 }
 
 // OpenAlex reports the remaining daily budget on every response. With the quota

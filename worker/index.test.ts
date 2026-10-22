@@ -1435,7 +1435,7 @@ test('whitespace around an OpenAlex filter is trimmed once, for the key and the 
   assert.match(calls[0], /filter=doi%3A10\.1%2Fx&/);
 });
 
-// --- PAP-86: one OpenAlex answer for every location ---
+// --- PAP-86: one OpenAlex answer for every location, and for every request in flight ---
 // The edge cache is per data centre, so on launch day every location asked
 // OpenAlex the same questions again and the daily ceiling ran out of units
 // before the key ran out of dollars. The relay carries no identity: an answer
@@ -1533,6 +1533,56 @@ test('a 404 served from the shared store keeps its own status', async () => {
 
   assert.equal(calls.length, 1);
   assert.deepEqual(statuses, [404, 404]);
+});
+
+test('identical OpenAlex misses in flight share one upstream call and one reservation', async () => {
+  const ledger = recordingLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  const origins = ['https://mugar123.github.io', 'https://papertok.app', 'https://mugar123.github.io'];
+
+  const responses = await withWorkerFetchMock(async () => {
+    calls += 1;
+    await gate;
+    return new Response(JSON.stringify({ results: [{ id: 'W1' }] }), { status: 200 });
+  }, async () => {
+    const pending = origins.map(origin => reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers: { origin } }), env));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    release();
+    const settled = await Promise.all(pending);
+    // The edge cache of this harness remembers nothing, so a request after the
+    // shared one has settled is a miss of its own: nothing stays coalesced.
+    await reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers: BROWSER }), env);
+    return settled;
+  });
+
+  assert.equal(calls, 2, 'three requests in flight are one call; the one after them is its own');
+  assert.equal(ledger.reservations.length, 2);
+  for (const [index, response] of responses.entries()) {
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), origins[index], 'each answer carries its own origin');
+    assert.deepEqual(await response.json(), { results: [{ id: 'W1' }] });
+  }
+});
+
+test('a ledger refusal is shared with the identical requests waiting behind it', async () => {
+  const ledger = recordingLedger(() => ({ accepted: false, scope: 'global' }));
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+  const responses = await withWorkerFetchMock(async () => {
+    throw new Error('A refused reservation makes no upstream call');
+  }, () => Promise.all([BROWSER, BROWSER, { origin: 'https://papertok.app' }].map(headers => (
+    reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers }), env)
+  ))));
+
+  assert.equal(ledger.reservations.length, 1, 'one answer from the ledger for the three');
+  for (const response of responses) {
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('retry-after'), '300');
+    assert.deepEqual(await response.json(), { code: 'PROVIDER_RATE_LIMITED' });
+  }
+  assert.equal(responses[2].headers.get('access-control-allow-origin'), 'https://papertok.app');
 });
 
 test('a repeated PubMed identifier does not buy a second iCite entry', async () => {
