@@ -54,3 +54,21 @@ test("a reader's new follows join the harvest at once, up to a daily allowance, 
   assert.equal(lanes.length, 21);
   assert.deepEqual(Object.keys(lanes[0]).sort(), ['lane', 'requested_at']);
 });
+
+test("a reader's ranking is kept for their next pages under their own key, never another reader's", async t => {
+  const entries = new Map<string, Response>();
+  const realCaches = (globalThis as { caches?: unknown }).caches;
+  (globalThis as { caches?: unknown }).caches = { default: {
+    match: async (request: Request) => entries.get(request.url)?.clone() ?? undefined,
+    put: async (request: Request, response: Response) => { entries.set(request.url, response); },
+  } };
+  t.after(() => { (globalThis as { caches?: unknown }).caches = realCaches; });
+  const { env, ask } = store();
+  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  await ask({ categories: ['cs.CL'] }, 'reader-1');
+  assert.equal(entries.size, 1);
+  await ask({ categories: ['cs.CL'], page: 1 }, 'reader-1');
+  assert.equal(entries.size, 1, 'the next page reads the order the first one kept');
+  await ask({ categories: ['cs.CL'], page: 1 }, 'reader-2');
+  assert.equal(entries.size, 2, "another reader's identical request ranks for them");
+});
