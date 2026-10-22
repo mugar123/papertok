@@ -154,7 +154,7 @@ test('the leaving page keeps the direction it arrived with, so the held feed\'s 
  * landing near 500ms; Following -> For you had every piece at 1 from the
  * first frame. The page writes whether it arrived laterally, frozen on the
  * way out exactly as the direction is (a flip on eject would hand the held
- * feed's pieces a fresh `pcArrive` under the tab covering them), and the
+ * feed's pieces a fresh `rise` under the tab covering them), and the
  * stylesheet reads it beside the direction for every piece, the sheet
  * included. The first entry of a session carries neither, so the card still
  * composes under the atom veil at boot.
@@ -172,7 +172,7 @@ test('a step between tabs resumes the cards at rest in both directions, like the
     assert.ok(pieces.includes(piece), `.pc-${piece} sits at rest too`);
   }
   // Every piece the arrival animates is in that list.
-  const arriving = css.match(/\n((?:\.pc-[\w-]+,\n)+\.pc-[\w-]+) \{\s*animation: pcArrive/);
+  const arriving = css.match(/\n((?:\.pc-[\w-]+,\n)+\.pc-[\w-]+) \{\s*animation: appear /);
   assert.ok(arriving, 'the arrival rule is still one list of pieces');
   for (const m of arriving[1].matchAll(/\.pc-([\w-]+)/g)) {
     assert.ok(pieces.includes(m[1]), `.pc-${m[1]} arrives, so it must also know how to sit still`);

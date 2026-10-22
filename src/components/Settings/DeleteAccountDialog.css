@@ -83,16 +83,12 @@
   }
 }
 
-@keyframes delete-account-spin {
-  to { transform: rotate(360deg); }
-}
-
 .delete-account-spinner {
-  animation: delete-account-spin 0.9s linear infinite;
+  animation: spin 0.9s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .delete-account-spinner {
-    animation: none;
+    animation-duration: 2.4s;
   }
 }

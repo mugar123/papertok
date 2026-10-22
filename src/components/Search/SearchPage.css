@@ -481,7 +481,7 @@
 
 .search-initial-hero {
   text-align: center;
-  margin-bottom: var(--space-10);
+  margin-bottom: var(--space-6);
   max-width: 400px;
 }
 
@@ -503,32 +503,14 @@
   font-family: var(--font-serif);
   font-size: var(--fs-2xl);
   font-weight: var(--fw-semibold);
-  margin: 0 0 var(--space-2);
+  margin: 0;
   color: var(--text-primary);
   letter-spacing: -0.01em;
-}
-
-.search-initial-hero p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-normal);
 }
 
 .search-suggestions {
   width: 100%;
   max-width: 600px;
-}
-
-.search-suggestions-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  color: var(--text-tertiary);
-  margin: 0 0 var(--space-4) 0;
-  text-transform: uppercase;
 }
 
 .search-suggestions-grid {

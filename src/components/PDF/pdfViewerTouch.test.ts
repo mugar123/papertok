@@ -68,9 +68,9 @@ test('en táctil, el visor sale por donde entró', async () => {
   const css = stripComments(await readFile(new URL('./PDFViewer.css', import.meta.url), 'utf8'));
   const keyframes = (name: string) => css.match(new RegExp(`@keyframes ${name}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] || '';
   assert.match(css, /\.pdf-overlay\[data-open\] \.pdf-viewer\s*\{\s*animation: pdfViewerIn 280ms var\(--ease-out\);/);
-  assert.match(css, /\.pdf-overlay\[data-open\]\s*\{\s*animation: pdfOverlayIn 280ms var\(--ease-out\);/);
+  assert.match(css, /\.pdf-overlay\[data-open\]\s*\{\s*animation: fadeIn 280ms var\(--ease-out\);/);
   const coarse = css.match(/@media \(pointer: coarse\)\s*\{([\s\S]*?)\n\}/)?.[1] || '';
-  assert.match(coarse, /\.pdf-overlay\[data-closed\]\s*\{\s*animation: pdfOverlayOut 220ms var\(--ease-out\) forwards;/);
+  assert.match(coarse, /\.pdf-overlay\[data-closed\]\s*\{\s*animation: fadeOut 220ms var\(--ease-out\) forwards;/);
   assert.match(coarse, /\.pdf-overlay\[data-closed\] \.pdf-viewer\s*\{\s*animation: pdfViewerSlideOut 220ms var\(--ease-out\) forwards;/);
   assert.match(keyframes('pdfViewerIn'), /from\s*\{\s*transform: translateY\(100%\);[\s\S]*to\s*\{\s*transform: translateY\(0\);/);
   assert.match(keyframes('pdfViewerSlideOut'), /from\s*\{\s*transform: translateY\(0\);[\s\S]*to\s*\{\s*transform: translateY\(100%\);/);

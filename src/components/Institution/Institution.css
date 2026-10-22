@@ -26,11 +26,6 @@
   margin-top: var(--space-3);
 }
 
-.institution-link-field {
-  position: relative;
-}
-
-.institution-link-hint,
 .institution-link-feedback {
   margin: 0;
   color: var(--text-tertiary);
@@ -76,13 +71,8 @@
   flex-direction: column;
   gap: var(--space-3);
   width: min(460px, calc(100vw - 2 * var(--space-4)));
-  /* Hung from the top rather than centred (the primitive's `top: 50%` and
-     two-axis translate): the platform list arrives after the window opens,
-     and a centred window jumped up by half of what it added. */
-  top: 12dvh;
-  translate: -50% 0;
   /* A long platform list must not push the window past a short screen. */
-  max-height: calc(88dvh - var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
   overflow-y: auto;
   padding: var(--space-6);
 }
@@ -95,47 +85,31 @@
   outline: none;
 }
 
+/* One short form under the lede: no rule between them, as in the dialog, and
+   as much room under the field as above it. */
+.institution-sheet .settings-sheet-body {
+  padding-top: 0;
+  padding-bottom: var(--space-6);
+  border-top: 0;
+}
+
+.institution-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.institution-title > .onboarding-petri-stamp {
+  position: static;
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  animation-delay: 200ms;
+}
+
 .institution-dialog-lede {
   margin: 0;
   padding-right: var(--space-6);
-}
-
-/* The window hangs from the top, so it drops a little and grows down from
-   there; it is opaque within a few frames while it still moves, because
-   fading it with its content let the page behind read through the text.
-   Its pieces then compose onto the opaque sheet in reading order, 45 ms
-   apart, as a card's pieces arrive (PaperCard.css, "The arrival"): heading,
-   lede, then each piece of the form or the linked row. They start from
-   nothing rather than a ghost of themselves, so the window never shows all
-   of its text at once half-drawn. Travel rides the expo; opacity runs on its
-   own short linear clock, because an expo fade is nearly whole in its first
-   frames. The pieces replay when the form and the linked row replace each
-   other: each is a new node under an open window. `:where` keeps the pill's
-   pin and the reveals their own animation. */
-.institution-dialog { transform-origin: 50% 0; }
-
-@media (prefers-reduced-motion: no-preference) {
-  .institution-dialog[data-open] { animation: institution-dialog-in 320ms var(--ease-out-expo); }
-
-  .institution-dialog[data-open] > :where(h2, p),
-  .institution-dialog[data-open] :where(.institution-link > :not(.institution-link-reveal)) {
-    animation:
-      institution-piece-travel 380ms var(--ease-out-expo) backwards,
-      institution-piece-fade 200ms linear backwards;
-  }
-
-  .institution-dialog[data-open] > h2 { animation-delay: 70ms; }
-  .institution-dialog[data-open] > p { animation-delay: 115ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(1)) { animation-delay: 160ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(2)) { animation-delay: 205ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(3)) { animation-delay: 250ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(n + 4)) { animation-delay: 295ms; }
-}
-
-/* `translate` keeps the -50% that centres the window across. */
-@keyframes institution-dialog-in {
-  0% { opacity: 0; scale: 0.96; translate: -50% -12px; }
-  30% { opacity: 1; }
 }
 
 /* Something added under the field (Cancel, a message) opens its own height,
@@ -157,25 +131,24 @@
   from { translate: 0 12px; }
 }
 
-@keyframes institution-piece-fade {
-  from { opacity: 0; }
-}
-
 @keyframes institution-reveal {
   from { grid-template-rows: 0fr; opacity: 0; clip-path: inset(-8px -8px 0 -8px); }
   to { clip-path: inset(-8px -8px 0 -8px); }
 }
 
-/* The submit sits inside the field, at its right edge, and the field's text
-   stops short of it. */
-.institution-link-field:has(.institution-link-submit) > .institution-link-input {
-  padding-right: calc(32px + var(--space-2));
+.institution-link-field {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.institution-link-input::placeholder {
+  font-size: var(--fs-sm);
 }
 
 .institution-link-submit {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  flex: none;
+  width: 40px;
+  height: 40px;
 }
 
 /* Keep the submit width steady while verification runs. */
@@ -186,11 +159,7 @@
   border: 2px solid var(--border-strong);
   border-top-color: var(--text-primary);
   border-radius: var(--radius-full);
-  animation: institution-spin 0.8s linear infinite;
-}
-
-@keyframes institution-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 0.8s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -238,7 +207,7 @@
 
 .institution-services-list > li {
   border-bottom: 1px solid var(--border-default);
-  animation: institution-source-arrive 360ms cubic-bezier(0.16, 1, 0.3, 1) var(--service-delay, 0ms) backwards;
+  animation: rise var(--motion-base) var(--ease-out) var(--service-delay, 0ms) backwards;
 }
 
 .institution-service-summary {
@@ -308,7 +277,7 @@
 .institution-service-titles > li {
   animation:
     institution-piece-travel 280ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards;
+    appear var(--motion-base) linear backwards;
   animation-delay: calc(var(--title-index, 0) * 28ms + 60ms);
 }
 .institution-service-titles > li + li { border-top: 1px solid var(--border-subtle); }
@@ -350,16 +319,6 @@
   a.institution-service-title-link:hover .institution-service-title-name { text-decoration: underline; text-underline-offset: 3px; }
 }
 
-@keyframes institution-source-arrive {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes institution-titles-arrive {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .institution-link-reveal,
   .is-just-linked > .institution-pill,
@@ -367,7 +326,7 @@
   .institution-services-message,
   .institution-services-retry,
   .institution-services-count,
-  .institution-services-pending > li { animation: institution-piece-fade 200ms linear backwards; }
+  .institution-services-pending > li { animation: appear var(--motion-base) linear backwards; }
   .institution-services-pending > li { animation-delay: 320ms; }
   .institution-services-message[data-state='loading'] {
     -webkit-mask-image: none;
@@ -375,7 +334,7 @@
   }
   .institution-placeholder-plate,
   .institution-placeholder-lines > span { animation: none; }
-  .institution-services-list > li { animation: institution-titles-arrive 100ms ease-out; }
+  .institution-services-list > li { animation: fadeIn 100ms ease-out; }
   .institution-service-chevron, .institution-service-panel { transition: none; }
   .institution-service-details { transition: opacity 100ms ease-out; }
 }
@@ -467,7 +426,7 @@
 .institution-services-count {
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards;
+    appear var(--motion-base) linear backwards;
 }
 
 .institution-services-retry { animation-delay: 90ms; }
@@ -481,7 +440,7 @@
   mask-size: 300% 100%;
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards,
+    appear var(--motion-base) linear backwards,
     checkingSweep 1400ms linear infinite;
 }
 
@@ -493,7 +452,7 @@
 .institution-services-pending > li {
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards;
+    appear var(--motion-base) linear backwards;
   animation-delay: calc(320ms + var(--service-delay, 0ms));
 }
 

@@ -5,6 +5,7 @@ type InstitutionLinkProps = {
 } & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.tsx';
@@ -18,7 +19,7 @@ import './Institution.css';
 const COPY = {
   email: 'University email',
   placeholder: 'name@university.edu',
-  hint: 'We will email a verification link. Open it in this browser while signed into this PaperTok account.',
+  inbox: 'Check your university inbox. Open the link in this browser while signed into this PaperTok account, then continue in the tab it opens.',
   submit: 'Verify university email',
   submitting: 'Verifying…',
   linked: (name: string) => `Verified with ${name}.`,
@@ -47,6 +48,12 @@ export default function InstitutionLink({
   const setBusy = (next: boolean) => { setOwnBusy(next); onBusyChange?.(next); };
   const [pending, setPending] = useState(() => pendingInstitutionVerification());
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  // A request already pending when the form opens is part of it: Cancel and
+  // its message arrive with the other pieces. Only a request or a message that
+  // appears afterwards opens its own height, so the window does not grow again
+  // once it has arrived.
+  const [openedPending] = useState(pending);
+  const pendingFromOpening = pending !== null && pending === openedPending;
   // The pill is pinned only when the link lands while this form is on screen,
   // not each time the window opens on an account that was already linked.
   const [wasLinked, setWasLinked] = useState(Boolean(institution));
@@ -67,7 +74,6 @@ export default function InstitutionLink({
     pendingFocus.current = null;
   }, [institution]);
   const inputId = `${idPrefix}-email`;
-  const hintId = `${idPrefix}-hint`;
   const feedbackId = `${idPrefix}-feedback`;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -81,7 +87,8 @@ export default function InstitutionLink({
         await sendInstitutionVerification(email);
         setPending(pendingInstitutionVerification());
         setEmail!('');
-        setFeedback({ tone: 'success', text: 'Check your university inbox. Continue in the tab opened by the email.' });
+        toast.success('Verification email sent');
+        setFeedback({ tone: 'success', text: COPY.inbox });
         pendingFocus.current = null;
       } else {
         await linkInstitution(email);
@@ -89,6 +96,7 @@ export default function InstitutionLink({
         setFeedback({ tone: 'success', text: COPY.linkedNow });
       }
     } catch (error) {
+      setPending(pendingInstitutionVerification());
       setFeedback({ tone: 'error', text: getUiErrorMessage(error, 'INSTITUTION_LINK_FAILED') });
       pendingFocus.current = null;
     } finally {
@@ -113,7 +121,7 @@ export default function InstitutionLink({
     }
   };
 
-  const feedbackText = feedback?.text || (pending ? 'Check your university inbox. Continue in the tab opened by the email.' : '');
+  const feedbackText = feedback?.text || (pending ? COPY.inbox : '');
   // The region stays mounted so each message is announced; the keyed span
   // opens again whenever the message changes.
   const feedbackNode = (
@@ -123,7 +131,7 @@ export default function InstitutionLink({
       role={feedback?.tone === 'error' ? 'alert' : 'status'}
       aria-live="polite"
     >
-      {feedbackText && <span key={feedbackText} className="institution-link-reveal"><span>{feedbackText}</span></span>}
+      {feedbackText && <span key={feedbackText} className={pendingFromOpening && !feedback ? undefined : 'institution-link-reveal'}><span>{feedbackText}</span></span>}
     </p>
   );
 
@@ -164,7 +172,7 @@ export default function InstitutionLink({
           required
           aria-required="true"
           aria-invalid={feedback?.tone === 'error' ? 'true' : undefined}
-          aria-describedby={feedback?.tone === 'error' ? `${hintId} ${feedbackId}` : hintId}
+          aria-describedby={feedback?.tone === 'error' ? feedbackId : undefined}
         />
         {showSubmit && (
           <Button
@@ -182,7 +190,7 @@ export default function InstitutionLink({
         )}
       </div>
       {pending && (
-        <div className="institution-link-reveal">
+        <div className={pendingFromOpening ? undefined : 'institution-link-reveal'}>
           <div>
             <Button type="button" variant="outline" className="w-full" onClick={() => {
               cancelInstitutionVerification();
@@ -193,7 +201,6 @@ export default function InstitutionLink({
           </div>
         </div>
       )}
-      <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
     </form>
   );

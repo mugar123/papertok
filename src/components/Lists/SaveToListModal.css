@@ -302,15 +302,11 @@
      announcing a wait that was already over. Deliberately still animated under
      reduced motion — this is a delay, not decoration. */
   opacity: 0;
-  animation: save-modal-reveal 140ms ease-out 320ms forwards;
+  animation: fadeIn 140ms ease-out 320ms forwards;
 }
 
 .save-modal-skeleton + .save-modal-skeleton {
   border-top: 1px solid var(--border-subtle);
-}
-
-@keyframes save-modal-reveal {
-  to { opacity: 1; }
 }
 
 .save-modal-notice {
@@ -550,16 +546,7 @@
    fading it in made that corner flash navy, paper, navy. */
 .save-modal-discard p,
 .save-modal-discard-actions > :first-child {
-  animation: save-modal-discard-in 180ms var(--ease-out-expo);
-}
-
-@keyframes save-modal-discard-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
-
-@keyframes save-modal-discard-fade {
-  from { opacity: 0; }
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .save-modal-discard p {
@@ -586,7 +573,7 @@
   /* No rise, but still a fade: the prompt arrives rather than appearing. */
   .save-modal-discard p,
   .save-modal-discard-actions > :first-child {
-    animation: save-modal-discard-fade 120ms var(--ease-out);
+    animation: appear 120ms var(--ease-out);
   }
 
   .save-modal-tick > svg,

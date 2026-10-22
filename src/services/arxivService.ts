@@ -34,7 +34,7 @@ const CATEGORY_DEFINITIONS = new Map(
   )
 );
 
-function isArxivCategory(category: string) {
+export function isArxivCategory(category: string) {
   return ARXIV_PREFIXES.some(prefix => category === prefix || category.startsWith(`${prefix}.`));
 }
 
@@ -88,6 +88,35 @@ async function fetchXmlWithTimeout(url: string, timeoutMs: number, errorLabel: s
   return response.text();
 }
 
+// One arXiv record as a paper, whether it came from the Atom API or the
+// paper store's harvest (paperStoreService.ts).
+export function arxivPaper({ arxivId, title, abstract, authors, doi, journalRef, comment, published, allCategories, primaryCategory, pdfUrl }: {
+  arxivId: string; title: string; abstract: string; authors: string[]; doi: string; journalRef: string; comment: string;
+  published: string; allCategories: string[]; primaryCategory: string; pdfUrl?: string;
+}) {
+  const isPublishedInArxiv = !!(doi || journalRef || arxivCommentSaysPublished(comment));
+  return PaperBuilder.create({
+    id: arxivId,
+    arxivId,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+    title,
+    abstract,
+    authors: authors.map(name => ({ name })),
+    doi,
+    journal: journalRef,
+    year: new Date(published).getFullYear(),
+    publicationType: isPublishedInArxiv ? 'article' : 'preprint',
+    publicationStatus: isPublishedInArxiv ? 'published' : 'preprint',
+    openAccess: true,
+    pdfUrl: pdfUrl || `https://arxiv.org/pdf/${arxivId}`,
+    landingPageUrl: `https://arxiv.org/abs/${arxivId}`,
+    categories: allCategories,
+    keywords: allCategories,
+    primaryCategory,
+    published,
+  });
+}
+
 function parseArxivXml(xmlText: string) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'text/xml');
@@ -137,28 +166,7 @@ function parseArxivXml(xmlText: string) {
     const publishedRaw = entry.querySelector('published')?.textContent || entry.getElementsByTagNameNS('*', 'published')[0]?.textContent || '';
     const published = safeDateISO(publishedRaw);
 
-    const isPublishedInArxiv = !!(doi || journalRef || arxivCommentSaysPublished(comment));
-
-    papers.push(PaperBuilder.create({
-      id: arxivId,
-      arxivId,
-      sources: { primary: 'arxiv', enrichedBy: [] },
-      title,
-      abstract: summary,
-      authors: authors.map(name => ({ name })),
-      doi,
-      journal: journalRef,
-      year: new Date(published).getFullYear(),
-      publicationType: isPublishedInArxiv ? 'article' : 'preprint',
-      publicationStatus: isPublishedInArxiv ? 'published' : 'preprint',
-      openAccess: true,
-      pdfUrl,
-      landingPageUrl: `https://arxiv.org/abs/${arxivId}`,
-      categories: allCategories,
-      keywords: allCategories,
-      primaryCategory,
-      published,
-    }));
+    papers.push(arxivPaper({ arxivId, title, abstract: summary, authors, doi, journalRef, comment, published, allCategories, primaryCategory, pdfUrl }));
   });
 
   return papers;
