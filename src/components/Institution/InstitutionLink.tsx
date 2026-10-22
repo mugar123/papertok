@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 type InstitutionLinkProps = {
-  idPrefix?: string; formId?: string; showSubmit?: boolean; hideLabel?: boolean;
+  idPrefix?: string; formId?: string; showSubmit?: boolean;
   onBusyChange?: (busy: boolean) => void; linkedNote?: string;
 } & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
@@ -38,7 +38,6 @@ export default function InstitutionLink({
   onEmailChange,
   onBusyChange,
   linkedNote,
-  hideLabel = false,
 }: InstitutionLinkProps) {
   const { institution, linkInstitution, unlinkInstitution } = useAuth();
   const [ownEmail, setOwnEmail] = useState('');
@@ -152,7 +151,7 @@ export default function InstitutionLink({
 
   return (
     <form id={formId} className="institution-link" onSubmit={handleSubmit} noValidate aria-busy={busy || undefined}>
-      <Label htmlFor={inputId} className={hideLabel ? 'visually-hidden' : undefined}>{COPY.email}</Label>
+      <Label htmlFor={inputId}>{COPY.email}</Label>
       <div className="institution-link-field">
         <Input
           ref={inputRef}

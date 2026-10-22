@@ -26,6 +26,6 @@ test('SOURCE: the link form keeps its own submit unless the caller draws the sub
 
 test('SOURCE: Settings opens the link as it always has, with its own button', async () => {
   const dialog = stripComments(await read('./InstitutionDialog.tsx'));
-  assert.match(dialog, /<InstitutionLink idPrefix="settings-institution" hideLabel \/>/);
+  assert.match(dialog, /<InstitutionLink idPrefix="settings-institution" \/>/);
   assert.doesNotMatch(dialog, /showSubmit|formId|onEmailChange|onBusyChange|linkedNote/);
 });

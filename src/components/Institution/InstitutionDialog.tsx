@@ -34,7 +34,7 @@ export default function InstitutionDialog({ open, onOpenChange }: { open: boolea
             <DrawerDescription>{LEDE}</DrawerDescription>
           </div>
           <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
-            <InstitutionLink idPrefix="settings-institution" hideLabel />
+            <InstitutionLink idPrefix="settings-institution" />
           </div>
         </DrawerContent>
       </Drawer>
@@ -46,7 +46,7 @@ export default function InstitutionDialog({ open, onOpenChange }: { open: boolea
       <DialogContent className="institution-dialog" closeLabel="Close">
         <DialogTitle className="institution-title"><PetriStamp />{TITLE}</DialogTitle>
         <DialogDescription className="institution-dialog-lede">{LEDE}</DialogDescription>
-        <InstitutionLink idPrefix="settings-institution" hideLabel />
+        <InstitutionLink idPrefix="settings-institution" />
       </DialogContent>
     </Dialog>
   );
