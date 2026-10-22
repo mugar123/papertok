@@ -7,7 +7,7 @@ import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
-import { ingestPaperIds } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, ingestPaperIds } from './paper-sources.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -138,6 +138,10 @@ export async function handleStoreFeed(request: Request, env: FeedEnv, identity: 
   if (query.categories.length === 0) throw new PaperStoreError('CATEGORIES_REQUIRED', 400);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
   await reserveFeedRequest(env, identity.uid);
+  // Until the first harvest has finished every arXiv set the corpus holds its
+  // oldest papers first; those bundles ask arXiv itself when this is empty.
+  const harvested = await database(env).prepare("SELECT COUNT(*) AS sets FROM lane_state WHERE source = 'arxiv-oai'").first<{ sets: number }>();
+  if ((harvested?.sets || 0) < ARXIV_HARVEST_SETS.length) return { papers: [] };
   const papers = await readFeedPage(env, query);
   return {
     papers: papers.filter(paper => paper.arxivId && paper.sources?.primary === 'arxiv').map(paper => ({
