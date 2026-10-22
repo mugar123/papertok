@@ -1086,9 +1086,27 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     exit: 'exit',
   };
 
+  // Where the index was and which list the reader opened from it, for the way
+  // back. Only the reader's own open records it: a list reopened on the way
+  // back from a paper was never left from an index on screen.
+  const indexReturn = useRef<{ top: number; listId: string } | null>(null);
   const enterList = (list: OwnList) => {
+    indexReturn.current = { top: window.scrollY, listId: list.id };
     openList(list);
   };
+
+  // Closing the list brings the index back where it was left, with focus on
+  // the list that was open. On the index's own commit: AnimatePresence calls
+  // `onExitComplete` before the index is in the document, while the page is
+  // still only as tall as the list leaving, so a position restored there is
+  // clamped. `preventScroll`, or focus would scroll again, smoothly.
+  const returnToIndex = useCallback((node: HTMLDivElement | null) => {
+    const back = indexReturn.current;
+    if (!node || !back) return;
+    indexReturn.current = null;
+    window.scrollTo({ top: back.top, behavior: 'instant' });
+    node.querySelector<HTMLElement>(`[data-list-id="${CSS.escape(back.listId)}"]`)?.focus({ preventScroll: true });
+  }, []);
 
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
@@ -1931,7 +1949,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           ))}
         </motion.div>
       ) : (
-        <motion.div key="index" {...listViewMotion}>
+        <motion.div key="index" ref={returnToIndex} {...listViewMotion}>
           <header className="lists-header">
             <div className="lists-header-row">
               <h1>{'My lists'}</h1>
@@ -1978,6 +1996,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       <button
                         type="button"
                         className="list-card-name-btn"
+                        data-list-id={list.id}
                         onClick={(e) => { e.stopPropagation(); enterList(list); }}
                       >
                         {list.name}
