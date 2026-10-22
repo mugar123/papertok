@@ -54,10 +54,16 @@ PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
 # call counted as one.
 OPENALEX_GLOBAL_MINUTE_LIMIT = "3000"
 # And a daily one, because the budget is daily and the per-minute ceiling bounds
-# nothing against it: 3000/min is 4.320.000/day. Measured on /health/openalex the
-# allowance is $1/day = 10.000 calls, so this leaves ~2.000 for the digest cron
-# (which spends outside this ledger) and the health probe. Both ceilings count
-# list calls ($0.0001); a search, billed $0.001, is reserved as ten.
+# nothing against it: 3000/min is 4.320.000/day. Both ceilings count list calls
+# ($0.0001); a search, billed $0.001, is reserved as ten. The daily value has
+# two roles. It is the cap: the day's ceiling never exceeds it. And it is the
+# fallback: until OpenAlex reports the key's remaining budget for the day
+# (x-ratelimit-remaining-usd, less a 200-unit margin), or whenever that header
+# is missing, it is the ceiling. Measured on /health/openalex the allowance is
+# $1/day = 10.000 calls, so without a reading this leaves ~2.000 for the digest
+# cron (which spends outside this ledger) and the health probe. Each budget
+# tier closes at its share of the ceiling (OPENALEX_TIER_PERCENT in
+# worker/provider-runtime.ts); /health/openalex/budget reports the day.
 OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 # PubMed and Semantic Scholar limit by provider, not by caller, and the guest feed
 # reads both, so their ceiling is global like OpenAlex's. Each miss spends three
