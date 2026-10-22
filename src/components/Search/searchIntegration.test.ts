@@ -671,6 +671,26 @@ test('a scope that has already settled paints at once from what the search has, 
   assert.deepEqual(painted.notices, [null, ['institutions'], ['institutions']], 'the notice was cleared on the way to a scope it still describes');
 });
 
+// A paint one task after the scope change let React render the new scope
+// with the previous paint first: open Papers while the authors run, let them
+// land, open Authors, and "No authors found" reached the DOM and its live
+// region before the authors did.
+test('a scope that settled after the last paint paints with the scope change', async () => {
+  let resolveAuthors!: (items: typeof searchAuthor[]) => void;
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    authors: () => new Promise(resolve => { resolveAuthors = resolve; }),
+  });
+  const allSearch = performSearch('nebula', 'all');
+  await settle();
+  handleSearchFilterChange('papers');
+  await settle();
+  assert.deepEqual(painted.authors, [[]], 'Papers painted while the authors were still running');
+  resolveAuthors([searchAuthor]);
+  await allSearch;
+  handleSearchFilterChange('authors');
+  assert.deepEqual(painted.authors, [[], [searchAuthor]], 'Authors rendered the Papers paint before its own');
+});
+
 test('between two scope changes only the scope on screen paints', async () => {
   let resolveAuthors!: (items: typeof searchAuthor[]) => void;
   let resolveInstitutions!: (items: typeof searchInstitution[]) => void;

@@ -50,6 +50,8 @@ export interface EntitySearch {
   ask(scope: SearchScope): Promise<SearchSnapshot>;
   /** Whether everything `scope` shows has settled. */
   settled(scope: SearchScope): boolean;
+  /** What the search has now: for a settled scope, what `ask` would resolve with. */
+  snapshot(): SearchSnapshot;
 }
 
 /**
@@ -108,6 +110,7 @@ export function searchEntities(query: string, {
 
   return {
     settled: scope => sectionsShown(scope).every(section => !snapshot.pending.includes(section)),
+    snapshot: () => snapshot,
     async ask(scope) {
       if (scope === 'all') {
         await Promise.all([

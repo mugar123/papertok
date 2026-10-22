@@ -687,15 +687,20 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
     // A scope the search was not asked for is asked for now, so a reader who
-    // stays on Papers never pays for the author search. The skeleton covers the
-    // wait; a scope already answered paints at once from what it has, the
-    // notice included. Only the answer for the scope on screen paints: the one
-    // for the scope the reader left still settles, and would paint this
-    // scope's sections empty, and announce that, before they are in.
+    // stays on Papers never pays for the author search; the skeleton covers
+    // the wait. A scope already answered paints with the scope change, the
+    // notice included, so the new scope never renders the previous paint's
+    // sections. Only the answer for the scope on screen paints: the one for
+    // the scope the reader left still settles, and would paint this scope's
+    // sections empty, and announce that, before they are in.
     const run = requestRef.current;
     if (!run || run.controller.signal.aborted) return;
     run.scope = filterId;
-    if (!run.search.settled(filterId)) setIsSearching(true);
+    if (run.search.settled(filterId)) {
+      commit(run.search.snapshot());
+      return;
+    }
+    setIsSearching(true);
     void run.search.ask(filterId).then(snapshot => {
       if (!run.controller.signal.aborted && run.scope === filterId) commit(snapshot);
     });
