@@ -9,8 +9,7 @@ import type { OpenAlexWork } from '../services/adapters/openAlexTypes.ts';
  * and skipped the whitespace pass the others did — which is the same shape as
  * the `openalex:` filter that diverged and spent years answering 400.
  *
- * Returns the text, or an empty string when there is nothing to rebuild. The
- * caller supplies its own placeholder, because they differ by locale.
+ * Returns the text, or an empty string when there is nothing to rebuild.
  */
 export function reconstructOpenAlexAbstract(invertedIndex: unknown) {
   if (!invertedIndex || typeof invertedIndex !== 'object') return '';

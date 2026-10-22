@@ -347,9 +347,9 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
   // click on such a paper in a list opened a broken arXiv PDF instead of the
   // paper page.
   const arxivId = readArxivId(legacyPaper.arxivId) || readArxivId(legacyPaper.id);
-  const year = legacyPaper.published
-    ? new Date(legacyPaper.published).getFullYear()
-    : (legacyPaper.year || undefined);
+  // The year is read from the date's text. A date-only `2026-01-01` read as a
+  // Date is midnight UTC, which is still 2025 west of Greenwich.
+  const year = Number(String(legacyPaper.published || '').slice(0, 4)) || legacyPaper.year || undefined;
 
   const authors = Array.isArray(legacyPaper.authors)
     ? legacyPaper.authors.map(a => typeof a === 'string' ? { name: a } : a)

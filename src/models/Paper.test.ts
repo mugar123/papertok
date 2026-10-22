@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { paperLegacyAdapter, readArxivId } from './Paper.ts';
 import { areaKeyForPaper, areaLabelForPaper } from '../utils/areaAccent.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { inTimeZone } from '../test-support/timeZone.ts';
 
 /**
  * The stored copies of papers — a list entry, a library record — reach the
@@ -78,6 +79,17 @@ test('a stored copy keeps the branch the feed filed it under, every category, an
   assert.deepEqual(paper.categories, ['cond-mat.str-el', 'cs.ET', 'q-bio.NC'], 'the list used to collapse to the primary alone');
   assert.equal(paper.published, '2014-12-01');
   assert.equal(paper.year, 2014);
+});
+
+// OpenAlex files a work known only by its year under 1 January, and a saved
+// copy keeps that date and no year. Read as a Date it is midnight UTC, which
+// is still 31 December in Los Angeles.
+test('a stored copy dated 1 January keeps its year in a time zone behind UTC', async () => {
+  const paper = await inTimeZone('America/Los_Angeles', () => {
+    assert.equal(new Date('2026-01-01').getDate(), 31, 'the clock reads Los Angeles time');
+    return paperLegacyAdapter({ id: 'openalex:W4400000001', title: 'T', published: '2026-01-01' });
+  });
+  assert.equal(paper.year, 2026);
 });
 
 /*
