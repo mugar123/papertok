@@ -511,7 +511,16 @@ export class PaperBuilder {
     // journal article's answer, and an arXiv record's DOI would otherwise
     // become all that answer rests on.
     const repeatsTrue = merged.peerReviewed === true && !arxivDoiOnly && enrichmentReview === true;
-    const rereads = !repeatsTrue && !bothRestOnArxivDoi && !otherDoiTrue && shouldUpgradePublication
+    // Nor does a record without an answer end a `true` that a record under the
+    // row's publisher DOI gave. A published record typed `preprint` reopens
+    // that answer: OpenAlex's record of the eprint listing a published copy,
+    // or a preprint row that Semantic Scholar's untyped record made read
+    // published. OpenAlex's record of the journal DOI without a source then
+    // reads unknown.
+    const rowPeerReviewedByDoi = existingPaper.sources.peerReviewedByDoi ?? ownPeerReviewedByDoi(existingPaper);
+    const keepsConfirmed = merged.peerReviewed === true && enrichmentReview === undefined
+      && isPublisherDoi(baseDoi) && rowPeerReviewedByDoi[baseDoi] === true;
+    const rereads = !repeatsTrue && !keepsConfirmed && !bothRestOnArxivDoi && !otherDoiTrue && shouldUpgradePublication
       && (reviewOpen || reviewDenied) && (incomingAnswer !== false || sameRecord || deniesBaseDoi);
     if (bothRestOnArxivDoi) {
       if (merged.peerReviewed === true) merged.peerReviewed = enrichmentData.peerReviewed;
@@ -575,7 +584,7 @@ export class PaperBuilder {
     // it shows: each side's own, or what it carries. A `false` under a DOI
     // stands against a `true` under it from either side, so the order of the
     // records does not decide. Written only when it changes.
-    const peerReviewedByDoi = { ...(existingPaper.sources.peerReviewedByDoi ?? ownPeerReviewedByDoi(existingPaper)) };
+    const peerReviewedByDoi = { ...rowPeerReviewedByDoi };
     for (const [doi, answer] of Object.entries(enrichmentData.sources?.peerReviewedByDoi ?? ownPeerReviewedByDoi(enrichmentData, sourceName))) {
       if (peerReviewedByDoi[doi] !== false) peerReviewedByDoi[doi] = answer;
     }

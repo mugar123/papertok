@@ -1257,21 +1257,29 @@ test('a journal record under the row\'s DOI keeps the row reviewed beside a work
 
   // The row begins as the journal article. A row that joined OpenAlex's
   // preprint record with Semantic Scholar's record of the article reads
-  // `false` and reopens the answer, and an arXiv record that lists only the
-  // FEDS revision's DOI then gives the `true` the article already gave.
-  for (const [flow, rows] of [
-    ['deduplicate', PaperBuilder.deduplicate([
-      search(article), ...PaperBuilder.deduplicate([search(preprint), semanticScholarArticle()]), arxivRecord(`${fedsDoi}r1`),
-    ])],
-    // The Explorer deduplicates each page with the rows already shown.
-    ['Explorer across pages', [[explorer(article)], [explorer(preprint), semanticScholarArticle()], [arxivRecord(`${fedsDoi}r1`)]]
-      .reduce<Paper[]>((rows, page) => PaperBuilder.deduplicate([...rows, ...PaperBuilder.deduplicate(page)]), [])],
-  ] as Array<[string, Paper[]]>) {
-    const where = `journal article first, ${flow}`;
-    assert.equal(rows.length, 1, where);
-    assert.equal(rows[0].doi, journalDoi, where);
-    assert.equal(rows[0].peerReviewed, true, where);
-    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
+  // `false`, published under the preprint's type, which reopens the
+  // article's answer. A later record leaves that answer as it was: an arXiv
+  // record that lists only the FEDS revision's DOI gives the `true` the
+  // article already gave, and OpenAlex's record of the journal DOI without a
+  // source gives none.
+  for (const [last, record] of [
+    ['an arXiv record', () => arxivRecord(`${fedsDoi}r1`)],
+    ['OpenAlex without a source', map => map(noSource)],
+  ] as Array<[string, (map: (record: OpenAlexWork) => Paper) => Paper]>) {
+    for (const [flow, rows] of [
+      ['deduplicate', PaperBuilder.deduplicate([
+        search(article), ...PaperBuilder.deduplicate([search(preprint), semanticScholarArticle()]), record(search),
+      ])],
+      // The Explorer deduplicates each page with the rows already shown.
+      ['Explorer across pages', [[explorer(article)], [explorer(preprint), semanticScholarArticle()], [record(explorer)]]
+        .reduce<Paper[]>((rows, page) => PaperBuilder.deduplicate([...rows, ...PaperBuilder.deduplicate(page)]), [])],
+    ] as Array<[string, Paper[]]>) {
+      const where = `journal article first, ${last} last, ${flow}`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi, journalDoi, where);
+      assert.equal(rows[0].peerReviewed, true, where);
+      assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
+    }
   }
 });
 
