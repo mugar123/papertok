@@ -18,7 +18,7 @@
          Measured in a browser, not assumed: with the default policy,
          `strict-origin-when-cross-origin`, a
          SAME-ORIGIN subresource request carries the full URL as `Referer` — so
-         a reader on /public/paper/<key> made the app's own
+         a reader on /paper/<key> made the app's own
          `<script src="/_vercel/insights/script.js">` announce that key to
          Vercel's edge, on every page view, in a header. The analytics payload
          itself has always been normalized (`sanitizeAnalyticsEventUrl`), and
@@ -27,7 +27,7 @@
          were on. Real paths (src/main.tsx) put the identifier back in it.
 
          /privacy.html promises the opposite in as many words: "Reading a
-         specific paper is recorded as /public/paper/:id [...] which one never
+         specific paper is recorded as /paper/:id [...] which one never
          travels." `strict-origin` caps every request this document makes — the
          analytics script and requests, the API calls, an outbound link to a publisher — at
          the origin, so the promise does not depend on any one of them behaving.

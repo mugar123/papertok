@@ -50,6 +50,6 @@ test('robots.txt keeps crawlers out of every page that needs an account', async 
     const root = `/${route!.split('/')[1]}`;
     assert.ok(disallowed.includes(root), `${route} is not disallowed`);
   }
-  assert.ok(!disallowed.some(path => '/public/paper/x'.startsWith(path) || path === '/'), 'the public pages stay open');
+  assert.ok(!disallowed.some(path => '/paper/x'.startsWith(path) || path === '/'), 'the public pages stay open');
   assert.match(robots, /^Sitemap: https:\/\/papertok\.app\/sitemap\.xml$/m);
 });

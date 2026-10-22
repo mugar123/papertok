@@ -12,7 +12,7 @@ test('SOURCE: a page view is sent on every pathname change, to both services, on
   // way analyticsService.test.ts does, so only real code is scanned below.
   const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
-  // Two papers share the pattern `/public/paper/:id`. Keyed on the pattern,
+  // Two papers share the pattern `/paper/:id`. Keyed on the pattern,
   // the second one was never a page view; keyed on the pathname it is, and
   // what travels is still only the pattern.
   const tag = code.match(/<Analytics\b[\s\S]*?\/>/);

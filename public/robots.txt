@@ -1,8 +1,8 @@
 User-agent: *
 Allow: /
 # Pages that need an account: each one sends a visitor, and so a crawler,
-# to /onboarding. Public papers, lists and entities live under /public/ and
-# stay open. The onboarding is reached from /, the canonical entry.
+# to /onboarding. Papers live under /paper/, lists and entities under /public/,
+# and all of them stay open. The onboarding is reached from /, the canonical entry.
 Disallow: /onboarding
 Disallow: /feed
 Disallow: /login

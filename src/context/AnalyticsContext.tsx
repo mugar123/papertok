@@ -64,7 +64,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   // `route` and `path` carry the SAME normalized value on purpose. Vercel reads
   // `route` as the pattern and `path` as the concrete URL that matched it, but
   // the concrete URL is the one thing that must not travel: the privacy policy
-  // promises that reading a paper is reported as `/public/paper/:id` and never
+  // promises that reading a paper is reported as `/paper/:id` and never
   // says which. `trackPageView` normalizes the same way for PostHog, unless the
   // reader opted in to detailed analytics.
   useEffect(() => {
@@ -115,7 +115,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   // where the app was served — so `route` was what made page views work at all.
   // Since the router moved to real paths (src/main.tsx), the pathname IS the
   // route, identifier and all, so this prop is now what keeps the script from
-  // filing a view under `/public/paper/<the real id>`. The views themselves are
+  // filing a view under `/paper/<the real id>`. The views themselves are
   // emitted above, already normalized.
   const analyticsPath = normalizeAnalyticsPath(location.pathname);
 

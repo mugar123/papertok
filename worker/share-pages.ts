@@ -66,7 +66,7 @@ import {
  * JavaScript: WhatsApp, Twitterbot, facebookexternalhit and Googlebot all
  * received the same 8963 bytes, titled «PaperTok», with og:url and canonical
  * at /feed and an empty #root. Vercel sends those bots here instead
- * (vercel.json), from /public/{paper,list,user,entity}/… to /share/…, and
+ * (vercel.json), from /paper/… and /public/{list,user,entity}/… to /share/…, and
  * this module answers the same shell with the page's own head (profiles are
  * gone, so a /share/user/… path gets the not-found page): title,
  * description, canonical, og:* and twitter:*, JSON-LD, a static copy of the
@@ -698,9 +698,12 @@ function paperPage(route: Extract<ShareRoute, { kind: 'paper' }>, paper: NonNull
 function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList) {
   const pageUrl = absoluteUrl(route.canonicalPath);
   const description = list.description || COPY.listFallback;
-  const papers = asArray(list.papers).map(paper => ({ ...paper, title: plainScientificText(paper.title) }));
-  const items = papers.map(paper => (paper.key
-    ? `<li><a href="/public/paper/${paper.key}">${escapeHtml(paper.title)}</a></li>`
+  const papers = asArray(list.papers).map(paper => ({
+    title: plainScientificText(paper.title),
+    path: paper.key ? getPublicPaperPath(paper.key) : null,
+  }));
+  const items = papers.map(paper => (paper.path
+    ? `<li><a href="${paper.path}">${escapeHtml(paper.title)}</a></li>`
     : `<li>${escapeHtml(paper.title)}</li>`)).join('');
   // The list's own content language (its owner's title and description) is data:
   // a list recorded as written in Spanish is marked `lang="es"` inside the English page.
@@ -726,7 +729,7 @@ function listPage(route: Extract<ShareRoute, { kind: 'list' }>, list: ShareList)
             '@type': 'ListItem',
             position: index + 1,
             name: paper.title,
-            url: paper.key ? absoluteUrl(`/public/paper/${paper.key}`) : '',
+            url: paper.path ? absoluteUrl(paper.path) : '',
           })),
         },
       },

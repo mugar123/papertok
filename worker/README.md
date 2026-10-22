@@ -264,8 +264,9 @@ reader gives examples of it.
 
 `/share/*` answers HTML, not JSON: the page a crawler reads for a shared link
 (`worker/share-pages.ts`). `vercel.json`
-rewrites crawler user agents from `/public/{paper,list,user,entity}/…` here (profiles are gone, so
-`/share/user/…` answers the not-found page), so the routes are
+rewrites crawler user agents from `/paper/…` and `/public/{list,user,entity}/…` here (profiles are
+gone, so `/share/user/…` answers the not-found page). A paper link from before PAP-44,
+`/public/paper/…`, gets a 308 to `/paper/…` from Vercel before any rewrite. The routes are
 public, GET and HEAD only, and need no `Origin`: they sit ahead of every Origin gate. Each answers
 the deployed shell (`https://papertok.app/index.html`, kept five minutes) with the page's own
 head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a page whose source

@@ -1,4 +1,5 @@
 import { markAppForcedReload, PRELOAD_RELOAD_KEY } from '../utils/appReload.ts';
+import { getPublicPaperPath } from '../utils/publicNavigation.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -182,12 +183,23 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
   assert.equal(normalizeAnalyticsPath('/paper/10.1234/private-id'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/explorer/person/private-id'), '/explorer/entity/:id');
   assert.equal(normalizeAnalyticsPath('/search/private-query'), '/unknown');
+  assert.equal(normalizeAnalyticsPath('/paper/private-key'), '/paper/:id');
+  // The address a paper had before PAP-44, held for one render while the app
+  // redirects a link that never reached the server.
   assert.equal(normalizeAnalyticsPath('/public/paper/private-key'), '/public/paper/:id');
   assert.equal(normalizeAnalyticsPath('/public/list/private-key'), '/public/list/:id');
   // Profile pages are gone; an old link to one is a not-found page, and the
   // handle in it (a person) never reaches the report.
   assert.equal(normalizeAnalyticsPath('/public/user/private-handle?ref=share'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/public/entity/topic/private-key'), '/public/entity/topic/:id');
+});
+
+test('a paper page is recorded under the path the privacy policy names for it', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const policy = await readFile(new URL('../../privacy.html', import.meta.url), 'utf8');
+  const promised = policy.match(/Reading a specific paper is recorded as <code>([^<]+)<\/code>/)?.[1];
+  assert.ok(promised, 'the policy no longer says how a paper is recorded');
+  assert.equal(normalizeAnalyticsPath(getPublicPaperPath('arxiv', '2401.12345')!), promised);
 });
 
 test('classifies acquisition without exposing the referring URL', () => {
@@ -331,7 +343,7 @@ test('builds page locations from the sanitized path and origin only', () => {
  * carries the real entity id in the PATH -- so this is the function standing
  * between a paper id and a request leaving the browser. The policy published at
  * /privacy.html promises it never does: "Reading a specific paper is recorded
- * as /public/paper/:id [...] which one never travels. A search is recorded as
+ * as /paper/:id [...] which one never travels. A search is recorded as
  * a search, with its type and how many results it returned, never with what
  * you searched for."
  *
@@ -341,6 +353,10 @@ test('builds page locations from the sanitized path and origin only', () => {
  * search query (what they typed). None of them has a fragment any more.
  */
 test('strips the identifier out of the real path before the page-view URL is sent', () => {
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/paper/W2741809807'),
+    'https://papertok.app/paper/:id',
+  );
   assert.equal(
     sanitizeAnalyticsEventUrl('https://papertok.app/public/paper/W2741809807'),
     'https://papertok.app/public/paper/:id',
@@ -364,6 +380,7 @@ test('strips the identifier out of the real path before the page-view URL is sen
   // No fragment anywhere in the inputs above, and none in the outputs: an `#`
   // in a returned value would mean the id survived somewhere this reads past.
   for (const url of [
+    'https://papertok.app/paper/W2741809807',
     'https://papertok.app/public/paper/W2741809807',
     'https://papertok.app/explorer/author/a5023888391',
     'https://papertok.app/public/list/private-list-key',

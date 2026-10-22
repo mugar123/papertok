@@ -346,10 +346,16 @@ function resolvePaperArguments(typeOrPaper: PaperInput, identifier: string | Sha
   return { identifier, options };
 }
 
+/**
+ * A paper's page is `/paper/<key>`, outside the `/public` prefix the list and
+ * entity pages keep (PAP-44). Links minted as `/public/paper/<key>` before the
+ * move are redirected permanently by vercel.json, and by App.tsx for the
+ * addresses that never reach the server.
+ */
 export function getPublicPaperPath(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {
   const input = resolvePaperArguments(typeOrPaper, identifier, options);
   const key = resolvePaperKey(typeOrPaper, input.identifier, input.options);
-  return key ? `${PUBLIC_ROUTE_PREFIX}/paper/${encodePathSegment(key)}` : null;
+  return key ? `/paper/${encodePathSegment(key)}` : null;
 }
 
 export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string | ShareOptions, options: ShareOptions = {}) {

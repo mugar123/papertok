@@ -11,7 +11,7 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
   // account from there to choose its interests (audit of 2026-09-16,
   // hallazgo 2).
   const code = stripComments(await readFile(new URL('../../App.tsx', import.meta.url), 'utf8'));
-  assert.match(code, /const PUBLIC_ROUTE_PREFIXES = \['\/public\/', '\/explorer\/'\]/);
+  assert.match(code, /const PUBLIC_ROUTE_PREFIXES = \['\/public\/', '\/explorer\/', '\/paper\/'\]/);
   assert.match(code, /function isPublicRoute\(path: string\) \{\s*return PUBLIC_ROUTE_PREFIXES\.some\(prefix => path\.startsWith\(prefix\)\)\s*\}/);
   const effect = code.match(
     /useEffect\(\(\) => \{\s*if \(!user \|\| authLoading \|\| onboardingComplete \|\| profileLoadError\) return\s*if \(!isPublicRoute\(location\.pathname\)\) return\s*navigate\('\/onboarding', \{ replace: true, state: \{ returnTo: `\$\{location\.pathname\}\$\{location\.search\}` \} \}\)\s*\}, \[user, authLoading, onboardingComplete, profileLoadError, location\.pathname, location\.search, navigate\]\)/,
@@ -30,7 +30,7 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
   const covered = [...declaredPrefixes[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
   assert.ok(covered.length > 0, 'no prefixes are declared, so nothing is covered');
 
-  const REDIRECT_ONLY = ['/', '/login', '/research', '/report', '/profile', '/settings'];
+  const REDIRECT_ONLY = ['/', '/login', '/research', '/report', '/profile', '/settings', '/public/paper/:paperKey'];
   // The not-found page (`*`) has no door to sign in from: its one action is
   // the link to /feed, which runs the onboarding itself.
   // Email verification offers no sign-in door; it returns to onboarding if needed.
@@ -41,7 +41,7 @@ test('SOURCE: a new account that signed in from a public page is sent to the onb
       guarded: chunk.split(/<\/Route>|\/>/)[0].includes('ProtectedRoute'),
     }))
     .filter(route => route.path);
-  assert.equal(declared.length, 23, `expected the whole route table, found ${declared.length}`);
+  assert.equal(declared.length, 24, `expected the whole route table, found ${declared.length}`);
 
   const guestReachable = declared.filter(route => (
     !route.guarded && !REDIRECT_ONLY.includes(route.path) && !NO_DOOR.includes(route.path)

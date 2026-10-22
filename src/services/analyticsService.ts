@@ -318,6 +318,8 @@ export function normalizeAnalyticsPath(pathname = '/') {
       : 'entity';
     return `/public/entity/${type}/:id`;
   }
+  if (/^\/paper\/[^/]+$/.test(path)) return '/paper/:id';
+  // The address before PAP-44, on screen for one render while App.tsx redirects it.
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
 
@@ -339,7 +341,7 @@ export function sanitizeAnalyticsLocation(pathname: string|undefined, browserLoc
  * The door that is easy to miss. Both transports read `location.href` on their
  * own: the Vercel script builds its payload's `url` field from it, and PostHog
  * fills `$current_url` from it on EVERY event, page view or not. That string is
- * whatever the address bar says: `https://papertok.app/public/paper/<the real
+ * whatever the address bar says: `https://papertok.app/paper/<the real
  * id>`, or `/search?q=<what was searched>`, precisely the value the privacy
  * policy promises never leaves the browser. AnalyticsContext's `beforeSend`
  * and `sanitizeAnalyticsCapture` are where it gets replaced, and this is what
@@ -622,7 +624,7 @@ async function sendAnalyticsEvent(eventName: string, properties: Record<string, 
 
 /**
  * One view per change of concrete pathname, filed under its pattern: two papers
- * share `/public/paper/:id` and are still two views. PostHog's own page view
+ * share `/paper/:id` and are still two views. PostHog's own page view
  * capture stays off because it would read the address bar. The URL is fixed
  * here, from the route the view belongs to, so a navigation made while the
  * library loads cannot file this view under the next page.

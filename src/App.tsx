@@ -73,9 +73,19 @@ const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCo
 // one of these doors (like, save, follow) leaves the new account right there,
 // and none of them is behind ProtectedRoute, so App itself has to take it to
 // the onboarding (the effect below).
-const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
+const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/', '/paper/']
 function isPublicRoute(path: string) {
   return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
+}
+
+// A paper's page was /public/paper/:key until PAP-44. vercel.json moves that
+// address permanently, but two arrivals never ask the server for it: a
+// `#/public/paper/…` link from the HashRouter era, which utils/legacyHashRoute.ts
+// turns into this path inside the page, and the document the service worker
+// serves offline. The key, query and fragment carry over untouched.
+function LegacyPaperRedirect() {
+  const { pathname, search, hash } = useLocation()
+  return <Navigate to={{ pathname: pathname.replace(/^\/public/, ''), search, hash }} replace />
 }
 
 function LoginRedirect() {
@@ -162,7 +172,7 @@ function AppContent() {
   // tap and left an empty band over the card while it dissolved. Signed-out
   // visitors still get the standalone page (`user` gates below).
   const showNavbar = (navbarRoutes.includes(normalizedPathname)
-    || normalizedPathname.startsWith('/public/paper/')
+    || normalizedPathname.startsWith('/paper/')
     || normalizedPathname.startsWith('/public/list/')
     || normalizedPathname.startsWith('/explorer/'))
     && Boolean(user)
@@ -497,8 +507,9 @@ function AppContent() {
               </PageTransition>
             }
           />
+          <Route path="/public/paper/:paperKey" element={<LegacyPaperRedirect />} />
           <Route
-            path="/public/paper/:paperKey"
+            path="/paper/:paperKey"
             element={
               <PageTransition>
                 <PublicPaperPage
