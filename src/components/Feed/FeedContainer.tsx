@@ -117,11 +117,8 @@ const PILL_EXIT_MS = 300;
 // salida a propósito: solapan los últimos 40ms, con la saliente por debajo
 // del 15%, para que tampoco haya un fotograma de píldora vacía.
 //
-// Y el reparto de papeles: la CARA viaja, la PÍLDORA escala (`is-done`, en la
-// hoja). La cara llevaba además un `scale` de 0.84 a 1 con muelle mientras el
-// botón entero hacía su pop de 1.12 — dos escalas anidadas multiplicándose
-// sobre texto de 0.8rem, y tres relojes distintos justo en el instante que el
-// lector está mirando. Una caja, una escala.
+// Only the face moves when Updated arrives. The pill used to pulse on top
+// of the face's spring, which marked the same moment twice.
 const FACE_OUT_S = 0.14;
 const FACE_IN_DELAY_S = 0.08;
 const EASE_OUT_QUAD: [number, number, number, number] = [0.25, 0.46, 0.45, 0.94];
@@ -137,9 +134,11 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
   // que el feed se remonta —fotogramas de 90-173ms, medidos— y una cadena de
   // transform es lo que el compositor puede llevarse fuera del hilo. Un atajo
   // se recompone en JS en cada fotograma, que es justo lo que ahí no hay.
+  // The leaving face blurs, so the few frames where both show read as one change.
   const exit = {
     opacity: 0,
     transform: 'translateY(-6px)',
+    filter: 'blur(2px)',
     transition: { duration: FACE_OUT_S, ease: EASE_OUT_QUAD },
   };
   // «Actualizado» es la única que llega con muelle: es la respuesta a lo que
@@ -153,6 +152,7 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
       animate: {
         opacity: 1,
         transform: 'translateY(0px)',
+        filter: 'blur(0px)',
         transition: {
           transform: { type: 'spring', duration: 0.32, bounce: 0.2, delay: FACE_IN_DELAY_S },
           opacity: { duration: 0.16, delay: FACE_IN_DELAY_S, ease: EASE_OUT_QUAD },
@@ -166,6 +166,7 @@ function refreshFaceMotion(phase: string, reduced: boolean | null): Pick<MotionP
     animate: {
       opacity: 1,
       transform: 'translateY(0px)',
+      filter: 'blur(0px)',
       transition: { duration: 0.2, delay: FACE_IN_DELAY_S, ease: EASE_OUT_QUAD },
     },
     exit,
@@ -1200,7 +1201,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         <button
           type="button"
           ref={refreshPillRef}
-          className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}${refreshDone && !isRefreshing ? ' is-done' : ''}`}
+          className={`feed-refresh${refreshPillHover || isRefreshing || refreshDone ? ' is-visible' : ''}${isRefreshing ? ' is-refreshing' : ''}`}
           onClick={handleRefresh}
           onFocus={(event) => setRefreshPillFocused(event.currentTarget.matches(':focus-visible'))}
           onBlur={() => setRefreshPillFocused(false)}
