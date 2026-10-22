@@ -1,4 +1,5 @@
 import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/Paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
 export interface PaperCardProps {
@@ -188,22 +189,30 @@ function ClippedName({ name }: { name: string }) {
 // lazy routes.
 const PaperReader = lazy(() => import('../Reader/PaperReader.tsx'));
 
-// One quiet watermark per research area, engraved in the corner of
-// the sheet. It replaces the old animated icon constellation: the same visual
-// cue about the field, without the haze competing with the type.
-const AREA_WATERMARK_ICONS = {
-  physics: Planet,
-  cs: Cpu,
-  math: Sigma,
-  stat: ChartBar,
-  econ: TrendUp,
-  'q-fin': CurrencyCircleDollar,
-  eess: Lightning,
-  mech: Gear,
-  civil: Building,
-  chemeng: Flask,
-  med: Heartbeat,
-  bio: Dna,
+// One quiet watermark per research area, engraved in the head of the sheet.
+// It replaces the old animated icon constellation: the same visual cue about
+// the field, without the haze competing with the type.
+//
+// `ink` is the icon's own extent inside Phosphor's 256-unit box (the paths'
+// bounding box, read with getBBox on 2026-10-22), passed as the svg's viewBox:
+// every field then fills the same square, where the lightning's 176×240 of
+// ink and the trend arrow's 224×144 used to draw at the box's size and read as
+// two different sizes. Phosphor draws its maths symbols' fill weight on a
+// plate — Sigma, Pi, Function and Radical alike — while every other icon is
+// the thing's silhouette, so maths takes the bold weight, the Σ's own shape.
+const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: string; weight?: IconWeight }> = {
+  physics: { Icon: Planet, ink: '8 32 240 192' },
+  cs: { Icon: Cpu, ink: '16 16 224 224' },
+  math: { Icon: Sigma, ink: '52 36 152 184', weight: 'bold' },
+  stat: { Icon: ChartBar, ink: '24 32 208 184' },
+  econ: { Icon: TrendUp, ink: '16 48 224 144' },
+  'q-fin': { Icon: CurrencyCircleDollar, ink: '24 24 208 208' },
+  eess: { Icon: Lightning, ink: '40 8 176 240' },
+  mech: { Icon: Gear, ink: '23 23 210 210' },
+  civil: { Icon: Building, ink: '16 16 224 224' },
+  chemeng: { Icon: Flask, ink: '32 24 192 200' },
+  med: { Icon: Heartbeat, ink: '16 40 224 192' },
+  bio: { Icon: Dna, ink: '56 16 144 224' },
 };
 
 const RESOURCE_KIND_CONFIG = {
@@ -1321,10 +1330,10 @@ const PaperCard = memo(function PaperCard({
    * atom. Resolved through the same chain as the accent ink now, so the mark
    * and the colour cannot disagree, and nothing is drawn at all when the branch
    * is genuinely unknown: a wrong field is worse than no field. */
-  const WatermarkIcon = useMemo(
-    () => AREA_WATERMARK_ICONS[areaKeyForPaper(paper) as keyof typeof AREA_WATERMARK_ICONS] || null,
-    [paper],
-  );
+  const watermark = useMemo(() => {
+    const area = areaKeyForPaper(paper);
+    return area ? { ...AREA_WATERMARK_ICONS[area], weight: AREA_WATERMARK_ICONS[area].weight ?? 'fill' } : null;
+  }, [paper]);
 
   // Only a tap on the card itself. The sheets, the related card and the
   // reader are portaled to the body, and React still bubbles their clicks
@@ -1875,13 +1884,16 @@ const PaperCard = memo(function PaperCard({
       )}
 
       <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
-        {WatermarkIcon && (
+        <div className="pc-body">
+        {/* The head: lead, kicker, title and authors, parted from the abstract
+            by the authors' rule. The field's glyph lives in it (PaperCard.css,
+            `.pc-watermark`), standing on that rule. */}
+        <div className="pc-head">
+        {watermark && (
           <span className="pc-watermark" aria-hidden="true">
-            <WatermarkIcon size={220} weight="fill" />
+            <watermark.Icon size={220} weight={watermark.weight} viewBox={watermark.ink} />
           </span>
         )}
-
-        <div className="pc-body">
         <div className="pc-lead" aria-hidden="true">
           {figures[0] && (
             <img
@@ -2033,6 +2045,7 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </div>
           )}
+        </div>
         </div>
 
         <div ref={slotRef} className={`pc-slot${abstractText ? '' : ' pc-slot--no-abstract'}`}>
