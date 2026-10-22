@@ -57,6 +57,14 @@ function readsAsPreprint(record: Pick<Partial<Paper>, 'publicationStatus' | 'pub
     || !record.publicationType;
 }
 
+// A record that says it was published: by its status, or by a type that is
+// no preprint's or repository's when it states no status.
+function readsAsPublished(record: Pick<Partial<Paper>, 'publicationStatus' | 'publicationType'>) {
+  return record.publicationStatus === 'published'
+    || (record.publicationStatus === undefined
+      && Boolean(record.publicationType && !['preprint', 'repository'].includes(record.publicationType)));
+}
+
 // The answer a record gives of itself, which `create` writes. Another
 // provider's record is read from its own type and status. A record that has
 // merged another holds the answer `merge` gave it, an unknown included: the
@@ -68,16 +76,18 @@ function ownAnswer(record: Pick<Partial<Paper>, 'peerReviewed' | 'publicationSta
 }
 
 // What a record that has merged no other says of itself under its DOI: a
-// `true` on more than an arXiv DOI. A merged row's answer can come from one
-// record and its DOI from another: OpenAlex's journal record without a DOI
-// beside the paper's SSRN entry. An untyped Semantic Scholar record reads as
-// a preprint by itself, though a row's type can make it read published in
-// `merge`.
+// published record's outright `false`, the base's as `create` wrote it or
+// the incoming record's own (a preprint's is open to a later `true`, as in
+// `merge`), or a `true` on more than an arXiv DOI. A merged row's answer can come
+// from one record and its DOI from another: OpenAlex's journal record without
+// a DOI beside the paper's SSRN entry. An untyped Semantic Scholar record
+// reads as a preprint by itself, though a row's type can make it read
+// published in `merge`.
 function ownPeerReviewedByDoi(record: Partial<Paper>, sourceName?: string): NonNullable<PaperSources['peerReviewedByDoi']> {
   const doi = normalizeDoi(record.doi);
-  return doi !== '' && !hasMerged(record) && ownAnswer(record, sourceName) === true && !restsOnArxivDoi(record)
-    ? { [doi]: true }
-    : {};
+  if (doi === '' || hasMerged(record)) return {};
+  if (record.peerReviewed === false) return readsAsPublished(record) ? { [doi]: false } : {};
+  return ownAnswer(record, sourceName) === true && !restsOnArxivDoi(record) ? { [doi]: true } : {};
 }
 
 /**
@@ -431,22 +441,22 @@ export class PaperBuilder {
     merged.hasSupplement = Boolean(merged.hasSupplement || enrichmentData.hasSupplement);
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published
-    const hasExplicitPublicationStatus = enrichmentData.publicationStatus !== undefined;
-    const shouldUpgradePublication = enrichmentData.publicationStatus === 'published'
-      || (!hasExplicitPublicationStatus
-        && enrichmentData.publicationType
-        && !['preprint', 'repository'].includes(enrichmentData.publicationType));
-    // A merged row that shows another DOI can hold a record that said, under
-    // this row's DOI, that the paper was reviewed (`sources.peerReviewedByDoi`,
-    // below). For this row it then answers as that record would, whatever its
-    // own answer, which is about the DOI it shows: the followed feed joins
-    // topic rows that began as the paper's SSRN entry, as an arXiv record
-    // listing a FEDS revision's DOI, or as the conference version under its
-    // own DOI, with OpenAlex's journal article in them. A row under this DOI
-    // already answers for it.
-    const confirmsBaseDoi = baseDoi !== '' && enrichmentDoi !== baseDoi
-      && enrichmentData.sources?.peerReviewedByDoi?.[baseDoi] === true;
-    const incomingAnswer = confirmsBaseDoi ? true : enrichmentData.peerReviewed;
+    const shouldUpgradePublication = readsAsPublished(enrichmentData);
+    // A merged row that shows another DOI can hold a record that answered,
+    // under this row's DOI, whether the paper was reviewed
+    // (`sources.peerReviewedByDoi`, below). For this row it then answers as
+    // that record would, whatever its own answer, which is about the DOI it
+    // shows: the followed feed joins topic rows that began as the paper's
+    // SSRN entry, as an arXiv record listing a FEDS revision's DOI, or as the
+    // conference version under its own DOI, with OpenAlex's journal article
+    // in them, or with NASA ADS's non-refereed record of it. A row under this
+    // DOI already answers for it.
+    const baseDoiAnswer = baseDoi !== '' && enrichmentDoi !== baseDoi
+      ? enrichmentData.sources?.peerReviewedByDoi?.[baseDoi]
+      : undefined;
+    const confirmsBaseDoi = baseDoiAnswer === true;
+    const deniesBaseDoi = baseDoiAnswer === false;
+    const incomingAnswer = baseDoiAnswer ?? enrichmentData.peerReviewed;
     // A published record that says outright it was not reviewed wins from
     // either side, so an IMF working paper that another provider also lists as
     // published stays unreviewed whichever record arrives first. It does not
@@ -478,8 +488,9 @@ export class PaperBuilder {
     // side's `true` says more than that DOI, so the incoming record does not
     // end `sources.arxivDoiOnly` (below), and an answer other than `true` on
     // either side stands: a record merged earlier, such as a working paper,
-    // already read the DOI otherwise.
-    const bothRestOnArxivDoi = arxivDoiOnly && restsOnArxivDoi(enrichmentData) && !confirmsBaseDoi;
+    // already read the DOI otherwise. A record under the row's DOI that the
+    // incoming row holds answers for it instead.
+    const bothRestOnArxivDoi = arxivDoiOnly && restsOnArxivDoi(enrichmentData) && baseDoiAnswer === undefined;
     // A `true` speaks for the DOI it came with. OpenAlex files the eprint
     // among the locations of the journal version and of the FEDS paper alike,
     // while arXiv lists the FEDS revision's DOI. Beside a row whose `true`
@@ -494,8 +505,8 @@ export class PaperBuilder {
     // journal article's answer, and an arXiv record's DOI would otherwise
     // become all that answer rests on.
     const repeatsTrue = merged.peerReviewed === true && !arxivDoiOnly && enrichmentReview === true;
-    const rereads = !repeatsTrue && !bothRestOnArxivDoi && !otherDoiTrue && Boolean(shouldUpgradePublication)
-      && (reviewOpen || reviewDenied) && (incomingAnswer !== false || sameRecord);
+    const rereads = !repeatsTrue && !bothRestOnArxivDoi && !otherDoiTrue && shouldUpgradePublication
+      && (reviewOpen || reviewDenied) && (incomingAnswer !== false || sameRecord || deniesBaseDoi);
     if (bothRestOnArxivDoi) {
       if (merged.peerReviewed === true) merged.peerReviewed = enrichmentData.peerReviewed;
     } else if (rereads) {
@@ -516,7 +527,7 @@ export class PaperBuilder {
     // paper. So `sources.deniedElsewhere` records that the row left off such
     // a `false`, and the row takes it from a merged record that left one off.
     const deniedElsewhere = (enrichmentData.peerReviewed === false && !sameRecord
-      && (otherWorkingPaper || Boolean(shouldUpgradePublication)))
+      && (otherWorkingPaper || shouldUpgradePublication))
       || existingPaper.sources.deniedElsewhere === true || enrichmentData.sources?.deniedElsewhere === true;
     // The working-paper tag explains a `false`. It comes with the `false` of
     // the same record, and with one taken above from a row that rests on an
@@ -539,8 +550,8 @@ export class PaperBuilder {
     // DOI rests on it too, whatever record it began as: a topic with an
     // OpenAlex id lists OpenAlex's record of the eprint under arXiv's DOI
     // before the arXiv record. A record under the row's DOI that a merged row
-    // holds backs it too, whatever that row's own answer.
-    const stillArxivDoiOnly = !confirmsBaseDoi
+    // holds answers for it too, whatever that row's own answer.
+    const stillArxivDoiOnly = baseDoiAnswer === undefined
       && ((arxivDoiOnly && (enrichmentReview !== true || otherDoiTrue || bothRestOnArxivDoi))
         || (rereads && restsOnArxivDoi(enrichmentData)));
     // After this merge's own answer, which may be such a `true`.
@@ -552,13 +563,14 @@ export class PaperBuilder {
       merged.sources = { ...merged.sources, deniedElsewhere: deniedElsewhere || undefined };
     }
     // `sources.peerReviewedByDoi`, whatever the row's own answer and the DOI
-    // it shows: each side's own, or what it carries. Written only when the
-    // incoming record adds a DOI.
-    const peerReviewedByDoi = {
-      ...(existingPaper.sources.peerReviewedByDoi ?? ownPeerReviewedByDoi(existingPaper)),
-      ...(enrichmentData.sources?.peerReviewedByDoi ?? ownPeerReviewedByDoi(enrichmentData, sourceName)),
-    };
-    if (Object.keys(peerReviewedByDoi).some(doi => existingPaper.sources.peerReviewedByDoi?.[doi] === undefined)) {
+    // it shows: each side's own, or what it carries. A `false` under a DOI
+    // stands against a `true` under it from either side, so the order of the
+    // records does not decide. Written only when it changes.
+    const peerReviewedByDoi = { ...(existingPaper.sources.peerReviewedByDoi ?? ownPeerReviewedByDoi(existingPaper)) };
+    for (const [doi, answer] of Object.entries(enrichmentData.sources?.peerReviewedByDoi ?? ownPeerReviewedByDoi(enrichmentData, sourceName))) {
+      if (peerReviewedByDoi[doi] !== false) peerReviewedByDoi[doi] = answer;
+    }
+    if (Object.entries(peerReviewedByDoi).some(([doi, answer]) => existingPaper.sources.peerReviewedByDoi?.[doi] !== answer)) {
       merged.sources = { ...merged.sources, peerReviewedByDoi };
     }
 
