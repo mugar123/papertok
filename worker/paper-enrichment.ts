@@ -173,12 +173,13 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })));
   // A paper OpenAlex should have known but did not counts a miss; one it was
   // not asked about (the budget ran out) is left as it was.
-  const attempted = spent ? [] : rows;
-  const statements = attempted.map((row, index) => {
-    const missed = needsOpenAlexEnrichment(papers[index]) && needsOpenAlexEnrichment(enriched[index]);
-    return db.prepare('UPDATE works SET enriched_at = ?, enrich_misses = ? WHERE id = ?')
-      .bind(new Date(now).toISOString(), missed ? row.enrich_misses + 1 : 0, row.id);
-  });
-  for (const chunk of chunks(statements, 50)) await db.batch(chunk);
+  if (!spent) {
+    const marks = rows.map((row, index) => ({
+      id: row.id,
+      misses: needsOpenAlexEnrichment(papers[index]) && needsOpenAlexEnrichment(enriched[index]) ? row.enrich_misses + 1 : 0,
+    }));
+    await db.batch(chunks(marks, 200).map(chunk => db.prepare(`UPDATE works SET enriched_at = ?, enrich_misses = j.value ->> 'misses'
+      FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(new Date(now).toISOString(), JSON.stringify(chunk))));
+  }
   return spent ? 0 : rows.length;
 }

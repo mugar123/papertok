@@ -11,17 +11,19 @@ export const PAPER_HARVEST_CRON = '30 2 * * *';
 // arXiv asks harvesters to pause between requests; a 503 carries its own wait.
 const PAGE_GAP = '5 seconds';
 const EMBED_STEP_PAPERS = 256;
-// 25 to 50 papers per OpenAlex call: a step of 1,000 is about 40 calls, and a
+// 25 to 50 papers per OpenAlex call: a step of 500 is about 20 calls, and a
 // run's ENRICH_STEPS about 3,000 of the day's 8,000-call ledger, the rest left
 // to readers' searches. A larger backlog drains over the next runs.
-const ENRICH_STEP_PAPERS = 1_000;
-const ENRICH_STEPS = 75;
+const ENRICH_STEP_PAPERS = 500;
+const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, most recently asked first. A followed search
 // costs ten calls, an entity one.
 const FOLLOWED_LANES_PER_RUN = 400;
 // Lanes a step works through before handing the rest to the next one, well
-// inside its timeout: a lane that has started finishes within the step.
+// inside its timeout and D1's 1,000 queries per invocation (a lane is at most
+// about 125): a lane that has started finishes within the step.
 const LANE_STEP_BUDGET_MS = 3 * 60_000;
+const LANES_PER_STEP = 5;
 // A followed lane nobody asked for in this long is no longer harvested.
 const FOLLOWED_LANE_DAYS = 14;
 const PAGE_STEP = { retries: { limit: 5, delay: '1 minute', backoff: 'exponential' }, timeout: '5 minutes' } as const;
@@ -45,7 +47,7 @@ export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], budgetMs = L
   const refused = new Set<string>();
   let processed = 0;
   for (const job of jobs) {
-    if (processed > 0 && Date.now() - started > budgetMs) break;
+    if (processed >= LANES_PER_STEP || (processed > 0 && Date.now() - started > budgetMs)) break;
     processed += 1;
     if (refused.has(job.source)) continue;
     try {

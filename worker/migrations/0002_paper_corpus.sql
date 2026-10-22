@@ -17,6 +17,8 @@ CREATE TABLE works (
 );
 
 CREATE INDEX works_kept ON works (kept_until);
+-- The embedding pass takes the newest papers without a vector first.
+CREATE INDEX works_published ON works (published DESC);
 CREATE INDEX works_enrichment ON works (enriched_at, published DESC);
 
 -- Every identifier a work is known by (PaperBuilder.identityKeys), plus

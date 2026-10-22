@@ -323,23 +323,39 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
 
 /**
  * Rewrites stored papers after an enrichment merged into them. Same rules as
- * `ingestPapers` for the vector and the lanes; nothing else changes.
+ * `ingestPapers` for the vector and the lanes; nothing else changes. A few
+ * statements per chunk of papers: D1 counts each against the invocation.
  */
 export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>) {
   const db = database(env);
+  const changed = updates
+    .filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after))
+    .map(({ id, before, after }) => {
+      const paper = storedPaper(after);
+      return {
+        id,
+        paper: JSON.stringify(paper),
+        published: publishedOf(paper) || publishedOf(before),
+        textChanged: embeddingText(paper) !== embeddingText(before),
+        // A book or book review the enrichment revealed leaves every lane.
+        offered: isFeedPublication(paper),
+        keys: workKeys(paper),
+        lanes: recordLanes(paper),
+      };
+    });
   const statements: D1PreparedStatement[] = [];
-  const changed = updates.filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after));
-  for (const { id, before, after } of changed) {
-    const paper = storedPaper(after);
-    const published = publishedOf(paper) || publishedOf(before);
-    statements.push(db.prepare('UPDATE works SET paper = ? WHERE id = ?').bind(JSON.stringify(paper), id));
-    if (embeddingText(paper) !== embeddingText(before)) statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id = ?').bind(id));
-    const keys = workKeys(paper);
-    statements.push(db.prepare('INSERT OR IGNORE INTO work_keys (key, work_id) SELECT value, ? FROM json_each(?)').bind(id, JSON.stringify(keys)));
-    statements.push(db.prepare('INSERT OR IGNORE INTO work_lanes (lane, work_id, published) SELECT value, ?, ? FROM json_each(?)')
-      .bind(id, published, JSON.stringify(recordLanes(paper))));
-    // A book or book review the enrichment revealed leaves every lane.
-    if (!isFeedPublication(paper)) statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(id));
+  for (let start = 0; start < changed.length; start += WRITE_CHUNK) {
+    const chunk = JSON.stringify(changed.slice(start, start + WRITE_CHUNK));
+    statements.push(
+      db.prepare(`UPDATE works SET paper = j.value ->> 'paper' FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
+      db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
+      db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
+        SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`).bind(chunk),
+      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published)
+        SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l
+        WHERE j.value ->> 'offered'`).bind(chunk),
+      db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
+    );
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   return changed.length;
