@@ -85,8 +85,11 @@
   outline: none;
 }
 
-/* One short form under the lede: no rule between them, as in the dialog. */
+/* One short form under the lede: no rule between them, as in the dialog, and
+   as much room under the field as above it. */
 .institution-sheet .settings-sheet-body {
+  padding-top: 0;
+  padding-bottom: var(--space-6);
   border-top: 0;
 }
 
