@@ -63,7 +63,7 @@ test('SOURCE: el tirón escribe en el envoltorio con un atributo, no con una cla
 test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
   const end = src.slice(src.indexOf('const onEnd = (event: TouchEvent) => {'), src.indexOf('const onCancel ='));
-  assert.match(end, /if \(outcome === 'refresh' && !busy && !running\) \{\s*landPull\(\);\s*refresh\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/);
+  assert.match(end, /if \(outcome === 'refresh' && !running\) \{\s*landPull\(\);\s*refresh\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/);
 
   const css = strip(await read('./FeedContainer.css'));
   const grab = (sel: string) => { const at = css.indexOf(sel); assert.ok(at > 0, `falta ${sel}`); return css.slice(at, css.indexOf('}', at)); };
