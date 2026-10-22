@@ -1,0 +1,105 @@
+import type { Paper } from '../src/models/Paper.ts';
+import type { WorkerEnv } from './env.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { StoreEnv } from './paper-store.ts';
+
+import { FEED_LAST_PAGE, PaperStoreError, acceptFeedRequest, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage, reserveFeedRequest } from './paper-store.ts';
+import { ingestPaperIds } from './paper-sources.ts';
+import { readBoundedJson } from './bounded-body.ts';
+
+// The routes that read the paper corpus (paper-store.ts) for a reader.
+
+type FeedEnv = StoreEnv & WorkerEnv;
+
+const ENOUGH_STORED_POSITIVES = 3;
+const LIKED_LOOKUP_MAX_PAPERS = 10;
+const KEEP_LIKED_DAYS = 30;
+// A followed lane asked for again within a day is not written again.
+const FOLLOW_REFRESH_MS = 86_400_000;
+
+/**
+ * Liked papers the corpus cannot rank against yet, fetched and embedded. Only
+ * for a profile with fewer than ENOUGH_STORED_POSITIVES ranked likes: a reader
+ * with a few already gets a ranked page, and the lookup delays the page it
+ * serves. Failures leave the page ranked by the likes already stored.
+ */
+function embedMissingPositives(env: FeedEnv, positiveIds: string[]) {
+  return async (db: D1Database, workByPaperId: Map<string, number>) => {
+    try {
+      const workIds = [...new Set(workByPaperId.values())];
+      const { results } = workIds.length
+        ? await db.prepare('SELECT work_id FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(workIds)).all<{ work_id: number }>()
+        : { results: [] };
+      if (results.length >= ENOUGH_STORED_POSITIVES) return;
+      const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
+      if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+      const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
+      await embedWorks(env, [...new Set(found.values())]);
+    } catch (error) {
+      console.warn('Paper store could not add liked papers', error);
+    }
+  };
+}
+
+/**
+ * Notes the followed lanes a reader asked for, so the daily harvest keeps them
+ * served, and starts a harvest of the ones nobody had asked for yet: their
+ * papers arrive for the reader's next page rather than tomorrow's.
+ */
+async function registerFollowedLanes(env: FeedEnv, lanes: string[], now = Date.now()) {
+  if (lanes.length === 0 || !env.PAPER_STORE) return;
+  const db = env.PAPER_STORE;
+  const { results } = await db.prepare('SELECT lane, requested_at FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(lanes)).all<{ lane: string; requested_at: string }>();
+  const known = new Map(results.map(row => [row.lane, row.requested_at]));
+  const fresh = lanes.filter(lane => !known.has(lane));
+  const due = lanes.filter(lane => !known.has(lane) || Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
+  if (due.length === 0) return;
+  await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
+    ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(due)).run();
+  if (fresh.length && env.PAPER_HARVEST) {
+    try {
+      await env.PAPER_HARVEST.create({ id: `follow-${new Date(now).toISOString().slice(0, 10)}-${crypto.randomUUID()}`, params: { lanes: fresh } });
+    } catch (error) {
+      console.warn('Followed lanes harvest did not start', error);
+    }
+  }
+}
+
+/** `POST /store/papers`: a page of corpus papers for the reader's categories, follows and likes. */
+export async function handleCorpusFeed(request: Request, env: FeedEnv, identity: Pick<VerifiedIdentity, 'uid'>): Promise<{ papers: Paper[] }> {
+  const query = await acceptFeedRequest(request, env, identity);
+  if (query.page > FEED_LAST_PAGE) return { papers: [] };
+  await registerFollowedLanes(env, query.follows.map(follow => follow.lane));
+  return { papers: await readFeedPage(env, query, { embedMissing: embedMissingPositives(env, query.positiveIds) }) };
+}
+
+/**
+ * `POST /store/feed`, the arXiv-only contract of the bundles published before
+ * the corpus (2026-10-22): the same page in its old shape, arXiv papers only.
+ * Remove once those bundles have updated themselves.
+ */
+export async function handleStoreFeed(request: Request, env: FeedEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
+  const body = await readBoundedJson<{ categories?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown }>(request, 16_384, {
+    tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
+    invalid: () => new PaperStoreError('INVALID_JSON', 400),
+  });
+  const query = parseFeedRequest({ categories: body?.categories, positiveIds: body?.positiveIds, page: body?.page, pageSize: body?.pageSize });
+  if (query.categories.length === 0) throw new PaperStoreError('CATEGORIES_REQUIRED', 400);
+  if (query.page > FEED_LAST_PAGE) return { papers: [] };
+  await reserveFeedRequest(env, identity.uid);
+  const papers = await readFeedPage(env, query);
+  return {
+    papers: papers.filter(paper => paper.arxivId && paper.sources?.primary === 'arxiv').map(paper => ({
+      arxivId: paper.arxivId,
+      title: paper.title,
+      abstract: paper.abstract,
+      authors: paper.authors.map(author => (typeof author === 'string' ? author : author.name)),
+      categories: paper.allCategories || paper.categories || [],
+      doi: paper.doi || null,
+      journalRef: paper.journal || null,
+      comments: null,
+      published: paper.published,
+    })),
+  };
+}

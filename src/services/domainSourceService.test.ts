@@ -23,7 +23,7 @@ import {
   europePmcQuery,
 } from './domainSourceRecords.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
-import { isFeedPublication } from './feedPublicationService.ts';
+import { isFeedPublication } from './feedPublicationRules.ts';
 import { openAlexClient } from './openAlexClient.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';

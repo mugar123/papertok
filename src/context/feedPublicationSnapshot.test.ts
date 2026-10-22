@@ -2,22 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
-import { applyKnownPublicationTypes, isFeedPublication } from '../services/feedPublicationService.ts';
+import { applyKnownPublicationTypes } from '../services/feedPublicationService.ts';
+import { isFeedPublication } from '../services/feedPublicationRules.ts';
 
 const source = readFileSync(new URL('./FeedContext.tsx', import.meta.url), 'utf8');
 const start = source.indexOf('function feedSnapshotKey(');
 const end = source.indexOf('// ── Demo mode storage helpers', start);
 assert.ok(start >= 0 && end > start);
 const helpers = stripTypeScriptTypes(source.slice(start, end));
-type Publications = Pick<typeof import('../services/feedPublicationService.ts'), 'applyKnownPublicationTypes' | 'isFeedPublication'>;
-function snapshots(publications: Publications = { applyKnownPublicationTypes, isFeedPublication }) {
+type Publications = Pick<typeof import('../services/feedPublicationService.ts'), 'applyKnownPublicationTypes'>;
+function snapshots(publications: Publications = { applyKnownPublicationTypes }) {
   const stored = new Map<string, string>();
   const storage = { getItem: (key: string) => stored.get(key) || null, setItem: (key: string, value: string) => stored.set(key, value) };
   const helpersFor = new Function(
     'localStorage', 'FEED_SNAPSHOT_TTL_MS', 'FEED_SNAPSHOT_MAX_PAPERS', 'applyKnownPublicationTypes', 'isFeedPublication',
     `${helpers}; return { feedSnapshotKey, readFeedSnapshot, writeFeedSnapshot };`,
   );
-  return { stored, ...helpersFor(storage, 15 * 60 * 1000, 30, publications.applyKnownPublicationTypes, publications.isFeedPublication) };
+  return { stored, ...helpersFor(storage, 15 * 60 * 1000, 30, publications.applyKnownPublicationTypes, isFeedPublication) };
 }
 
 test('old unchecked snapshots are refreshed, while current snapshots preserve scientific reviews and account isolation', () => {

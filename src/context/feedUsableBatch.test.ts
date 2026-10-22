@@ -14,13 +14,14 @@ import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfi
 import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
-import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
+import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
 import { mergeFreshFeedPage } from '../utils/feedReRankSplit.ts';
 import { settleWithin } from '../test-support/deadlineHarness.ts';
 
-import { mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
-import { mergeICiteEnrichment } from '../services/iCiteService.ts';
+import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
+import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
 import { fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';

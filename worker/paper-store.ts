@@ -1,18 +1,19 @@
+import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 
-import { XMLParser } from 'fast-xml-parser';
+import { PaperBuilder } from '../src/services/PaperBuilder.ts';
+import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
+import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
 import { readBoundedJson } from './bounded-body.ts';
-import { fetchWithDeadline } from './provider-runtime.ts';
-import { ARXIV_PACE_PERIOD_MS } from './arxiv-api.ts';
-import { awaitUpstreamSlot } from './upstream-pace.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
-// The paper store: arXiv harvested once a day over OAI-PMH (paper-harvest.ts),
-// each paper embedded once, and the feed's arXiv leg served from D1 instead of
-// one arXiv query per reader and page. Ranking compares int8 vectors in the
-// Worker over the categories' recent rows; Vectorize's included allowance on
-// Workers Paid (10M stored dimensions) holds fewer papers than one week.
+// The paper corpus: every source the feed reads, harvested once a day
+// (paper-harvest.ts), merged into one row per paper, enriched and embedded
+// once, and served from D1 instead of one request per reader, page and source.
+// Ranking compares int8 vectors in the Worker over the asked lanes' recent rows;
+// Vectorize's included allowance on Workers Paid (10M stored dimensions) holds
+// fewer papers than one week.
 
 export const EMBEDDING_MODEL = '@cf/qwen/qwen3-embedding-0.6b';
 export const EMBEDDING_DIMENSIONS = 1024;
@@ -21,27 +22,23 @@ export type EmbeddingEnv = {
   AI?: { run?: (model: string, input: { text: string[] }) => Promise<{ data?: number[][] }> };
 };
 
-const OAI_ENDPOINT = 'https://oaipmh.arxiv.org/oai';
-const ARXIV_API = 'https://export.arxiv.org/api/query';
-const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
-const OAI_TIMEOUT_MS = 60_000;
-// Papers first submitted longer ago than this are not harvested; the feed never
-// ranks further back than FEED_WINDOW_DAYS.
+// Papers published longer ago than this leave the corpus, unless a reader's
+// like keeps them (KEEP_LIKED_DAYS); the feed never ranks further back.
 export const CORPUS_DAYS = 90;
-const FEED_WINDOW_DAYS = 90;
+const KEEP_LIKED_DAYS = 30;
 const FEED_CANDIDATE_LIMIT = 4_000;
-const FEED_MAX_CATEGORIES = 10;
+const FEED_MAX_CATEGORIES = 12;
+const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_PAGE_SIZE = 30;
 const FEED_MAX_PAGE = 100;
 const DEFAULT_FEED_USER_MINUTE_LIMIT = 60;
 const DEFAULT_FEED_GLOBAL_MINUTE_LIMIT = 2_000;
-const LIKED_LOOKUP_PACE_WAIT_MS = 1_000;
-const LIKED_LOOKUP_TIMEOUT_MS = 2_000;
-const ENOUGH_STORED_POSITIVES = 3;
-const LIKED_LOOKUP_MAX_PAPERS = 10;
 const EMBED_BATCH = 32;
 const EMBED_TEXT_CHARS = 2_000;
+// A card names a few authors; a 2,000-author collaboration paper would be
+// ~150K characters of them in every row and every response.
+const STORED_AUTHORS = 50;
 // Workers AI gives 10,000 neurons a day; this model costs 1,075 per million
 // input tokens (pricing page, 2026-10-22), so 7.5M estimated tokens keeps the
 // store inside the free allocation with room for the PDF conversions.
@@ -49,22 +46,10 @@ const DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT = 7_500_000;
 const EMBEDDING_TOKENS_PER_UNIT = 1_000;
 // Similarity orders the page; recency only separates near ties, so a reader
 // with likes still sees this week's papers ahead of last month's lookalikes.
-const RECENCY_WEIGHT = 0.15;
+// Relevance order is for a reader whose views lean older: no recency at all.
+const RECENCY_WEIGHT = { recent: 0.15, relevance: 0 } as const;
 const RECENCY_HALF_LIFE_DAYS = 7;
 const DAY_MS = 86_400_000;
-
-export interface StoredPaper {
-  arxivId: string;
-  title: string;
-  abstract: string;
-  authors: string[];
-  categories: string[];
-  doi: string | null;
-  journalRef: string | null;
-  comments: string | null;
-  published: string;
-  updated: string;
-}
 
 export class PaperStoreError extends Error {
   code: string;
@@ -76,88 +61,18 @@ export class PaperStoreError extends Error {
   }
 }
 
-const XML = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  removeNSPrefix: true,
-  parseTagValue: false,
-  trimValues: true,
-  isArray: name => ['record', 'version', 'entry', 'author', 'category'].includes(name),
-});
+export type StoreEnv = Pick<WorkerEnv, 'PAPER_STORE' | 'REQUEST_QUOTA_LEDGER' | 'EMBEDDING_DAILY_TOKEN_LIMIT'> & EmbeddingEnv;
+
+/** A paper a source returned, and the lanes that source listed it under. */
+export interface Harvested { paper: Partial<Paper>; lanes: string[] }
 
 const text = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
-const optional = (value: unknown) => text(value) || null;
-const isoDate = (value: unknown) => {
-  const date = new Date(text(value));
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
-};
-const versionless = (value: unknown) => text(value).replace(/^.*\/abs\//, '').replace(/v\d+$/, '');
-const daysAgo = (days: number, now = Date.now()) => new Date(now - days * DAY_MS).toISOString();
+export const daysFromNow = (days: number, now = Date.now()) => new Date(now + days * DAY_MS).toISOString();
+const placeholders = (count: number) => Array.from({ length: count }, () => '?').join(',');
 
-// arXivRaw lists authors as one string: "A, B (MIT) and C".
-export function splitRawAuthors(value: unknown) {
-  let names = text(value);
-  while (/\([^()]*\)/.test(names)) names = names.replace(/\([^()]*\)/g, '');
-  return names.split(/,|\s+and\s+/).map(text).filter(Boolean);
-}
-
-/** The records of one OAI-PMH `ListRecords` page in arXivRaw, and the token for the next. */
-export function parseOaiPage(xml: string) {
-  const root = XML.parse(xml)?.['OAI-PMH'];
-  const errorCode = root?.error?.['@_code'];
-  if (errorCode === 'noRecordsMatch') return { papers: [], resumptionToken: '' };
-  if (errorCode || !root?.ListRecords) throw new PaperStoreError('OAI_RESPONSE_INVALID', 502);
-  const token = root.ListRecords.resumptionToken;
-  const papers: StoredPaper[] = [];
-  for (const record of root.ListRecords.record || []) {
-    const raw = record?.metadata?.arXivRaw;
-    if (!raw || record.header?.['@_status'] === 'deleted') continue;
-    const versions = (raw.version || []).map((version: { date?: unknown }) => isoDate(version?.date)).filter(Boolean);
-    const paper = {
-      arxivId: versionless(raw.id),
-      title: text(raw.title),
-      abstract: text(raw.abstract),
-      authors: splitRawAuthors(raw.authors),
-      categories: [...new Set(text(raw.categories).split(' ').filter(Boolean))],
-      doi: optional(raw.doi),
-      journalRef: optional(raw['journal-ref']),
-      comments: optional(raw.comments),
-      published: versions[0] || '',
-      updated: versions.at(-1) || '',
-    };
-    if (paper.arxivId && paper.title && paper.abstract && paper.categories.length && paper.published) papers.push(paper);
-  }
-  return { papers, resumptionToken: text(typeof token === 'object' ? token?.['#text'] : token) };
-}
-
-interface AtomEntry {
-  id?: unknown; title?: unknown; summary?: unknown; published?: unknown; updated?: unknown;
-  doi?: unknown; journal_ref?: unknown; comment?: unknown;
-  primary_category?: { '@_term'?: unknown };
-  category?: Array<{ '@_term'?: unknown }>;
-  author?: Array<{ name?: unknown }>;
-}
-
-/** Papers of an arXiv API Atom feed (an `id_list` lookup). */
-export function parseArxivAtom(xml: string) {
-  const entries: AtomEntry[] = XML.parse(xml)?.feed?.entry || [];
-  return entries.flatMap((entry): StoredPaper[] => {
-    const primary = text(entry.primary_category?.['@_term']);
-    const categories = [...new Set([primary, ...(entry.category || []).map(category => text(category?.['@_term']))].filter(Boolean))];
-    const paper = {
-      arxivId: versionless(entry.id),
-      title: text(entry.title),
-      abstract: text(entry.summary),
-      authors: (entry.author || []).map(author => text(author?.name)).filter(Boolean),
-      categories,
-      doi: optional(entry.doi),
-      journalRef: optional(entry.journal_ref),
-      comments: optional(entry.comment),
-      published: isoDate(entry.published),
-      updated: isoDate(entry.updated),
-    };
-    return paper.arxivId && paper.title && paper.abstract && categories.length && paper.published ? [paper] : [];
-  });
+export function database(env: Pick<StoreEnv, 'PAPER_STORE'>) {
+  if (!env.PAPER_STORE) throw new PaperStoreError('PAPER_STORE_UNAVAILABLE', 503);
+  return env.PAPER_STORE;
 }
 
 /** The unit vector as int8 components scaled by 127, the stored form. */
@@ -178,59 +93,265 @@ function cosine(a: Int8Array, b: Int8Array) {
   return dot / (127 * 127);
 }
 
-type StoreEnv = Pick<WorkerEnv, 'PAPER_STORE' | 'REQUEST_QUOTA_LEDGER' | 'EMBEDDING_DAILY_TOKEN_LIMIT'> & EmbeddingEnv;
+// ─── Identity ───
 
-function database(env: StoreEnv) {
-  if (!env.PAPER_STORE) throw new PaperStoreError('PAPER_STORE_UNAVAILABLE', 503);
-  return env.PAPER_STORE;
+const ARXIV_ID = /^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/;
+
+// An old-style id names its archive only: math.GT/0309136 is math/0309136.
+export function arxivIdOf(value: unknown) {
+  const id = text(value).replace(/^arxiv:/i, '').replace(/v\d+$/, '').replace(/^([a-z-]+)\.[A-Z]{2}\//, '$1/');
+  return ARXIV_ID.test(id) ? id : '';
 }
 
-const placeholders = (count: number) => Array.from({ length: count }, () => '?').join(',');
+/**
+ * The keys a paper id the app holds (a liked or saved card's) can be found by:
+ * the id the corpus served it under, and the identifier inside it.
+ */
+export function keysForPaperId(value: unknown) {
+  const id = text(value).slice(0, 300);
+  if (!id) return [];
+  const keys = new Set([`id:${id.toLowerCase()}`]);
+  const arxivId = arxivIdOf(id);
+  if (arxivId) keys.add(`arxiv:${arxivId.toLowerCase()}`);
+  const openAlex = id.match(/^(?:openalex:|https:\/\/openalex\.org\/)?(W\d+)$/i)?.[1];
+  if (openAlex) keys.add(`id:openalex:${openAlex.toLowerCase()}`);
+  const pmid = id.match(/^pmid:(\d{1,12})$/i)?.[1];
+  if (pmid) keys.add(`pmid:${pmid}`);
+  const doi = id.replace(/^doi:/i, '').replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+  if (/^10\.\d{4,9}\//.test(doi)) keys.add(doi.toLowerCase());
+  return [...keys];
+}
 
-async function storedVersions(db: D1Database, arxivIds: string[]) {
-  const found = new Map<string, string>();
-  for (let start = 0; start < arxivIds.length; start += 90) {
-    const ids = arxivIds.slice(start, start + 90);
-    const { results } = await db.prepare(`SELECT arxiv_id, updated FROM papers WHERE arxiv_id IN (${placeholders(ids.length)})`)
-      .bind(...ids).all<{ arxiv_id: string; updated: string }>();
-    results.forEach(row => found.set(row.arxiv_id, row.updated));
+function workKeys(paper: Paper) {
+  return [...new Set([`id:${paper.id.toLowerCase()}`, ...PaperBuilder.identityKeys(paper)])];
+}
+
+// ─── Lanes ───
+
+const LEAF_IDS = new Set(getAllLeafCategories().map(leaf => leaf.id));
+const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
+const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
+
+function entityLane(value: unknown) {
+  const match = text(value).match(OPENALEX_ENTITY);
+  const id = (match?.[1] || match?.[2] || '').toUpperCase();
+  return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
+}
+
+/**
+ * The lanes a paper belongs to by its own record, whichever source listed it:
+ * its arXiv categories that are categories of the app, and the OpenAlex
+ * authors, institutions, topics and concepts it names (what a reader follows).
+ */
+export function recordLanes(paper: Partial<Paper>) {
+  const lanes = new Set<string>();
+  if (paper.sources?.primary === 'arxiv' || paper.arxivId) {
+    for (const category of [...(paper.allCategories || []), ...(paper.categories || [])]) {
+      if (LEAF_IDS.has(category)) lanes.add(category);
+    }
+  }
+  for (const author of paper.authors || []) {
+    if (typeof author === 'object') lanes.add(entityLane(author?.id));
+  }
+  for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
+  for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
+  lanes.delete('');
+  return [...lanes];
+}
+
+// ─── Writing ───
+
+/** The date a paper is windowed and ordered by, or '' when it has none. */
+export function publishedOf(paper: Partial<Paper>) {
+  for (const value of [paper.published, paper.publishedDate, paper.publicationDate]) {
+    const time = Date.parse(text(value));
+    if (Number.isFinite(time)) return new Date(time).toISOString();
+  }
+  return '';
+}
+
+// Transient fields describe one fetch or one reader, never the paper.
+function storedPaper(paper: Paper): Paper {
+  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw')) as Paper;
+  if (stored.authors?.length > STORED_AUTHORS) stored.authors = stored.authors.slice(0, STORED_AUTHORS);
+  return stored;
+}
+
+const embeddingText = (paper: Partial<Paper>) => `${text(paper.title)}\n\n${text(paper.abstract)}`.slice(0, EMBED_TEXT_CHARS);
+
+interface WorkRow { id: number; paper: string; kept_until: string }
+interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
+
+function newWorkId() {
+  const bytes = crypto.getRandomValues(new Uint32Array(2));
+  // 48 bits: unique among a few million rows, and exact as a JavaScript number.
+  return (bytes[0] % 0x10000) * 0x100000000 + bytes[1];
+}
+
+// D1 counts every statement of a batch towards the invocation's query limit,
+// so rows travel as one JSON parameter per chunk rather than one each.
+const WRITE_CHUNK = 100;
+
+async function lookUpKeys(db: D1Database, keys: string[]) {
+  const found = new Map<string, number>();
+  for (let start = 0; start < keys.length; start += 500) {
+    const { results } = await db.prepare('SELECT key, work_id FROM work_keys WHERE key IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(keys.slice(start, start + 500))).all<{ key: string; work_id: number }>();
+    results.forEach(row => found.set(row.key, row.work_id));
   }
   return found;
 }
 
-// D1 counts every statement of a batch towards the invocation's query limit,
-// so papers travel as one JSON parameter per chunk rather than one row each.
-const WRITE_CHUNK = 200;
+async function readWorks(db: D1Database, ids: number[]) {
+  const works = new Map<number, WorkRow>();
+  for (let start = 0; start < ids.length; start += 200) {
+    const { results } = await db.prepare('SELECT id, paper, kept_until FROM works WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(ids.slice(start, start + 200))).all<WorkRow>();
+    results.forEach(row => works.set(row.id, row));
+  }
+  return works;
+}
 
 /**
- * Writes the papers not already stored at their latest version. A changed
- * title or abstract drops the paper's vector, which the next embedding pass
- * recomputes; a new version with the same text keeps it.
+ * Files what sources returned: records of one paper merge (PaperBuilder.merge,
+ * the rule the browser applied to every page) into the row any of their
+ * identifiers already names, or start a new one. A record that bridges two
+ * rows folds the younger into the older, which keeps its id. A merge that
+ * changes the title or abstract drops the vector for the embedding pass.
+ * Returns how many rows were written.
  */
-export async function storePapers(env: StoreEnv, papers: StoredPaper[]) {
+export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
-  const known = await storedVersions(db, papers.map(paper => paper.arxivId));
-  const fresh = papers.filter(paper => known.get(paper.arxivId) !== paper.updated);
-  for (let start = 0; start < fresh.length; start += WRITE_CHUNK) {
-    const rows = JSON.stringify(fresh.slice(start, start + WRITE_CHUNK));
-    await db.batch([
-      db.prepare(`DELETE FROM paper_vectors WHERE arxiv_id IN (
-        SELECT p.arxiv_id FROM json_each(?) j JOIN papers p ON p.arxiv_id = j.value ->> 'arxivId'
-        WHERE p.title != j.value ->> 'title' OR p.abstract != j.value ->> 'abstract')`).bind(rows),
-      db.prepare(`INSERT INTO papers (arxiv_id, title, abstract, authors, categories, doi, journal_ref, comments, published, updated)
-        SELECT value ->> 'arxivId', value ->> 'title', value ->> 'abstract', value -> 'authors', value -> 'categories',
-          value ->> 'doi', value ->> 'journalRef', value ->> 'comments', value ->> 'published', value ->> 'updated'
-        FROM json_each(?) WHERE true
-        ON CONFLICT (arxiv_id) DO UPDATE SET title = excluded.title, abstract = excluded.abstract, authors = excluded.authors,
-          categories = excluded.categories, doi = excluded.doi, journal_ref = excluded.journal_ref, comments = excluded.comments,
-          published = excluded.published, updated = excluded.updated`).bind(rows),
-      db.prepare(`DELETE FROM paper_categories WHERE arxiv_id IN (SELECT value ->> 'arxivId' FROM json_each(?))`).bind(rows),
-      db.prepare(`INSERT INTO paper_categories (category, arxiv_id, published)
-        SELECT c.value, p.value ->> 'arxivId', p.value ->> 'published' FROM json_each(?) p, json_each(p.value -> 'categories') c`).bind(rows),
-    ]);
+  const since = daysFromNow(-CORPUS_DAYS, now);
+  const groups: Group[] = [];
+  const groupOfKey = new Map<string, Group>();
+  for (const item of items) {
+    if (!item?.paper?.title || !item.paper.id || !isFeedPublication(item.paper)) continue;
+    const published = publishedOf(item.paper);
+    if (!published || (published < since && !keepUntil)) continue;
+    const paper = PaperBuilder.create(item.paper);
+    const keys = workKeys(paper);
+    const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
+    let group = joined[0];
+    if (!group) {
+      group = { paper, lanes: new Set(), keys: new Set() };
+      groups.push(group);
+    } else {
+      for (const other of joined.slice(1)) {
+        group.paper = PaperBuilder.merge(group.paper, other.paper, other.paper.provider || other.paper.sources?.primary);
+        other.lanes.forEach(lane => group.lanes.add(lane));
+        other.keys.forEach(key => group.keys.add(key));
+        groups.splice(groups.indexOf(other), 1);
+      }
+      group.paper = PaperBuilder.merge(group.paper, paper, paper.provider || paper.sources?.primary);
+    }
+    item.lanes.forEach(lane => group.lanes.add(lane));
+    keys.forEach(key => group.keys.add(key));
+    group.keys.forEach(key => groupOfKey.set(key, group));
   }
-  return fresh.length;
+  if (groups.length === 0) return 0;
+
+  const existingByKey = await lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]);
+  const works = await readWorks(db, [...new Set(existingByKey.values())]);
+  const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
+  const keyRows: Array<{ key: string; id: number }> = [];
+  const laneRows: Array<{ lane: string; id: number; published: string }> = [];
+  const staleVectors: number[] = [];
+  const folded: Array<{ from: number; into: number }> = [];
+
+  for (const group of groups) {
+    const ids = [...new Set([...group.keys].map(key => existingByKey.get(key)).filter((id): id is number => id !== undefined && works.has(id)))]
+      .sort((a, b) => a - b);
+    const stored = ids.map(id => JSON.parse(works.get(id)!.paper) as Paper);
+    let paper = group.paper;
+    let id = ids[0];
+    if (id === undefined) {
+      id = newWorkId();
+    } else {
+      // The stored row is the base: its id is the one readers already hold.
+      paper = stored.slice(1).reduce((base, other) => PaperBuilder.merge(base, other, other.provider || other.sources?.primary), stored[0]);
+      paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
+      if (embeddingText(paper) !== embeddingText(stored[0])) staleVectors.push(id);
+      for (const other of ids.slice(1)) folded.push({ from: other, into: id });
+    }
+    paper = storedPaper(paper);
+    const published = publishedOf(paper);
+    const keptUntil = [daysFromNow(CORPUS_DAYS, Date.parse(published)), keepUntil, ...ids.map(other => works.get(other)!.kept_until)].sort().at(-1)!;
+    rows.push({ id, paper: JSON.stringify(paper), published, keptUntil });
+    for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
+    for (const lane of new Set([...group.lanes, ...recordLanes(paper)])) laneRows.push({ lane, id, published });
+  }
+
+  const statements: D1PreparedStatement[] = [];
+  for (const { from, into } of folded) {
+    statements.push(
+      db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
+      db.prepare('INSERT OR IGNORE INTO work_lanes (lane, work_id, published) SELECT lane, ?, published FROM work_lanes WHERE work_id = ?').bind(into, from),
+      db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
+      db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
+      db.prepare('DELETE FROM works WHERE id = ?').bind(from),
+    );
+  }
+  for (let start = 0; start < staleVectors.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(staleVectors.slice(start, start + WRITE_CHUNK))));
+  }
+  for (let start = 0; start < rows.length; start += WRITE_CHUNK) {
+    statements.push(db.prepare(`INSERT INTO works (id, paper, published, kept_until)
+      SELECT value ->> 'id', value ->> 'paper', value ->> 'published', value ->> 'keptUntil' FROM json_each(?) WHERE true
+      ON CONFLICT (id) DO UPDATE SET paper = excluded.paper, published = excluded.published,
+        kept_until = max(works.kept_until, excluded.kept_until)`).bind(JSON.stringify(rows.slice(start, start + WRITE_CHUNK))));
+  }
+  for (let start = 0; start < keyRows.length; start += WRITE_CHUNK * 4) {
+    statements.push(db.prepare(`INSERT OR REPLACE INTO work_keys (key, work_id)
+      SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
+  }
+  for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
+    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published)
+      SELECT value ->> 'lane', value ->> 'id', value ->> 'published' FROM json_each(?) WHERE true
+      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+  }
+  for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
+  return rows.length;
 }
+
+/**
+ * Rewrites stored papers after an enrichment merged into them. Same rules as
+ * `ingestPapers` for the vector and the lanes; nothing else changes.
+ */
+export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>) {
+  const db = database(env);
+  const statements: D1PreparedStatement[] = [];
+  const changed = updates.filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after));
+  for (const { id, before, after } of changed) {
+    const paper = storedPaper(after);
+    const published = publishedOf(paper) || publishedOf(before);
+    statements.push(db.prepare('UPDATE works SET paper = ? WHERE id = ?').bind(JSON.stringify(paper), id));
+    if (embeddingText(paper) !== embeddingText(before)) statements.push(db.prepare('DELETE FROM work_vectors WHERE work_id = ?').bind(id));
+    const keys = workKeys(paper);
+    statements.push(db.prepare('INSERT OR IGNORE INTO work_keys (key, work_id) SELECT value, ? FROM json_each(?)').bind(id, JSON.stringify(keys)));
+    statements.push(db.prepare('INSERT OR IGNORE INTO work_lanes (lane, work_id, published) SELECT value, ?, ? FROM json_each(?)')
+      .bind(id, published, JSON.stringify(recordLanes(paper))));
+    // A book or book review the enrichment revealed leaves every lane.
+    if (!isFeedPublication(paper)) statements.push(db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(id));
+  }
+  for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
+  return changed.length;
+}
+
+/** Papers past their keeping date leave with their keys, lanes and vector. */
+export async function evictExpired(env: StoreEnv, now = Date.now()) {
+  const db = database(env);
+  const cutoff = new Date(now).toISOString();
+  const expired = '(SELECT id FROM works WHERE kept_until < ?)';
+  await db.batch([
+    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${expired}`).bind(cutoff),
+    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${expired}`).bind(cutoff),
+    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${expired}`).bind(cutoff),
+    db.prepare('DELETE FROM works WHERE kept_until < ?').bind(cutoff),
+  ]);
+}
+
+// ─── Embedding ───
 
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);
 
@@ -266,12 +387,12 @@ async function embedTexts(env: StoreEnv, texts: string[]) {
 }
 
 /**
- * Embeds `rows` within today's budget and stores their vectors. Returns how
- * many were embedded: 0 when the budget is spent.
+ * Embeds the rows' title and abstract within today's budget and stores the
+ * vectors. Returns how many were embedded: 0 when the budget is spent.
  */
-async function embedRows(env: StoreEnv, rows: Array<{ arxiv_id: string; title: string; abstract: string }>) {
+async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>) {
   if (rows.length === 0) return 0;
-  const texts = rows.map(row => `${row.title}\n\n${row.abstract}`.slice(0, EMBED_TEXT_CHARS));
+  const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
   if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts)))) return 0;
   const vectors = await embedTexts(env, texts);
   const db = database(env);
@@ -279,8 +400,8 @@ async function embedRows(env: StoreEnv, rows: Array<{ arxiv_id: string; title: s
   const statements = [];
   for (let start = 0; start < rows.length; start += 50) {
     const chunk = rows.slice(start, start + 50);
-    statements.push(db.prepare(`INSERT OR REPLACE INTO paper_vectors (arxiv_id, embedding) VALUES ${chunk.map(() => '(?, ?)').join(',')}`)
-      .bind(...chunk.flatMap((row, index) => [row.arxiv_id, vectors[start + index].buffer])));
+    statements.push(db.prepare(`INSERT OR REPLACE INTO work_vectors (work_id, embedding) VALUES ${chunk.map(() => '(?, ?)').join(',')}`)
+      .bind(...chunk.flatMap((row, index) => [row.id, vectors[start + index].buffer])));
   }
   await db.batch(statements);
   return rows.length;
@@ -288,100 +409,42 @@ async function embedRows(env: StoreEnv, rows: Array<{ arxiv_id: string; title: s
 
 /** The newest stored papers without a vector, embedded. 0 once none are left or today's budget is spent. */
 export async function embedPending(env: StoreEnv, limit: number) {
-  const { results } = await database(env).prepare(`SELECT p.arxiv_id, p.title, p.abstract FROM papers p
-    WHERE NOT EXISTS (SELECT 1 FROM paper_vectors v WHERE v.arxiv_id = p.arxiv_id)
-    ORDER BY p.published DESC LIMIT ?`).bind(limit).all<{ arxiv_id: string; title: string; abstract: string }>();
+  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
+    WHERE NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
+    ORDER BY w.published DESC LIMIT ?`).bind(limit).all<{ id: number; paper: string }>();
   return embedRows(env, results);
 }
 
-/**
- * One OAI-PMH page of an arXiv set, stored without vectors. Only papers first
- * submitted within CORPUS_DAYS are kept: the set also lists revisions of old
- * papers, and a new paper is announced days after its v1 date, so `from`
- * alone would drop it.
- */
-export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionToken }: { set: string; from: string; resumptionToken?: string }) {
-  const url = new URL(OAI_ENDPOINT);
-  url.searchParams.set('verb', 'ListRecords');
-  if (resumptionToken) url.searchParams.set('resumptionToken', resumptionToken);
-  else {
-    url.searchParams.set('metadataPrefix', 'arXivRaw');
-    url.searchParams.set('set', set);
-    url.searchParams.set('from', from);
-  }
-  const response = await fetchWithDeadline(url, { headers: { 'user-agent': USER_AGENT } }, OAI_TIMEOUT_MS);
-  if (response.status === 503) return { stored: 0, listed: 0, resumptionToken: resumptionToken || '', retryAfterSeconds: Number(response.headers.get('retry-after')) || 30 };
-  if (!response.ok) throw new PaperStoreError(`OAI_HTTP_${response.status}`, 502);
-  const page = parseOaiPage(await response.text());
-  const since = daysAgo(CORPUS_DAYS);
-  const recent = page.papers.filter(paper => paper.published >= since);
-  return { stored: await storePapers(env, recent), listed: page.papers.length, resumptionToken: page.resumptionToken, retryAfterSeconds: 0 };
+/** The given works that have no vector yet, embedded within today's budget. */
+export async function embedWorks(env: StoreEnv, workIds: number[]) {
+  if (workIds.length === 0) return 0;
+  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
+    WHERE w.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)`)
+    .bind(JSON.stringify(workIds)).all<{ id: number; paper: string }>();
+  return embedRows(env, results);
 }
 
-/**
- * Liked arXiv papers the harvest did not cover, fetched, stored and embedded.
- * Bounded well inside the client's deadline: a slow arXiv or a spent budget
- * leaves the page ranked by the likes already stored.
- */
-async function storeMissingPositives(env: StoreEnv, arxivIds: string[]) {
-  const db = database(env);
-  const { results } = await db.prepare(`SELECT arxiv_id FROM paper_vectors WHERE arxiv_id IN (${placeholders(arxivIds.length)})`)
-    .bind(...arxivIds).all<{ arxiv_id: string }>();
-  const embedded = new Set(results.map(row => row.arxiv_id));
-  // A reader with a few likes stored already gets a ranked page; the lookup is
-  // for a profile the store cannot rank yet, and it delays the page it serves.
-  if (embedded.size >= ENOUGH_STORED_POSITIVES) return;
-  const missing = arxivIds.filter(id => !embedded.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
-  if (missing.length === 0) return;
-  try {
-    const known = await storedVersions(db, missing);
-    const unknown = missing.filter(id => !known.has(id));
-    if (unknown.length) {
-      const seat = env.REQUEST_QUOTA_LEDGER
-        ? await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: 'arxiv', periodMs: ARXIV_PACE_PERIOD_MS, maxWaitMs: LIKED_LOOKUP_PACE_WAIT_MS })
-        : { accepted: false };
-      if (seat.accepted) {
-        const url = new URL(ARXIV_API);
-        url.searchParams.set('id_list', unknown.join(','));
-        url.searchParams.set('max_results', String(unknown.length));
-        const response = await fetchWithDeadline(url, { headers: { 'user-agent': USER_AGENT } }, LIKED_LOOKUP_TIMEOUT_MS);
-        if (response.ok) await storePapers(env, parseArxivAtom(await response.text()));
-      }
-    }
-    const { results: rows } = await db.prepare(`SELECT arxiv_id, title, abstract FROM papers WHERE arxiv_id IN (${placeholders(missing.length)})`)
-      .bind(...missing).all<{ arxiv_id: string; title: string; abstract: string }>();
-    await embedRows(env, rows);
-  } catch (error) {
-    console.warn('Paper store could not add liked papers', error);
-  }
-}
-
-const ARXIV_ID = /^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})$/;
-
-// An old-style id names its archive only: math.GT/0309136 is math/0309136.
-export function arxivIdOf(value: unknown) {
-  const id = text(value).replace(/^arxiv:/i, '').replace(/v\d+$/, '').replace(/^([a-z-]+)\.[A-Z]{2}\//, '$1/');
-  return ARXIV_ID.test(id) ? id : '';
-}
+// ─── Reading ───
 
 /**
  * Closest liked paper first, recency as the tie-breaker. A paper not yet
  * embedded ranks by recency alone, below the ones that are, so a reader is
  * never left without papers while the store catches up.
  */
-export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], now = Date.now()) {
+export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent' as keyof typeof RECENCY_WEIGHT } = {}) {
+  const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
   const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
   return rows
     .map(row => {
       const similarity = positives.length && row.embedding
         ? positives.reduce((best, positive) => Math.max(best, cosine(row.embedding as Int8Array, positive)), -1)
         : 0;
-      return { row, score: similarity + RECENCY_WEIGHT * recency(row.published) };
+      return { row, score: similarity + weight * recency(row.published) };
     })
     .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
 }
 
-async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER_MINUTE_LIMIT' | 'PROVIDER_GLOBAL_MINUTE_LIMIT'>, uid: string) {
+export async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER_MINUTE_LIMIT' | 'PROVIDER_GLOBAL_MINUTE_LIMIT'>, uid: string) {
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
     periodKey: `store-feed:${new Date().toISOString().slice(0, 16)}`,
     subject: `uid:${uid}`,
@@ -393,76 +456,169 @@ async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER
   if (!reservation.accepted && !reservation.code) throw new PaperStoreError('RATE_LIMITED', 429);
 }
 
-interface CandidateRow { arxiv_id: string; published: string; embedding: unknown }
-interface PaperRow {
-  arxiv_id: string; title: string; abstract: string; authors: string; categories: string;
-  doi: string | null; journal_ref: string | null; comments: string | null; published: string;
+/** Work ids of the papers these app ids name, with whether each has a vector. */
+export async function findWorks(db: D1Database, paperIds: string[]) {
+  const keysById = new Map(paperIds.map(id => [id, keysForPaperId(id)]));
+  const found = await lookUpKeys(db, [...new Set([...keysById.values()].flat())]);
+  const workByPaperId = new Map<string, number>();
+  for (const [id, keys] of keysById) {
+    const workId = keys.map(key => found.get(key)).find(value => value !== undefined);
+    if (workId !== undefined) workByPaperId.set(id, workId);
+  }
+  return workByPaperId;
 }
-interface FeedRequest { categories?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown }
+
+interface Candidate { workId: number; published: string; lanes: string[]; embedding: Int8Array | null }
+
+async function readCandidates(db: D1Database, lanes: string[], since: string) {
+  const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
+  const { results } = await db.prepare(`SELECT c.work_id, c.published, c.lanes, v.embedding FROM (
+      SELECT work_id, MAX(published) AS published, group_concat(lane, ' ') AS lanes FROM (${lanes.map(() => `SELECT * FROM (
+        SELECT lane, work_id, published FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
+      GROUP BY work_id
+    ) c LEFT JOIN work_vectors v ON v.work_id = c.work_id`)
+    .bind(...lanes.flatMap(lane => [lane, since, share]))
+    .all<{ work_id: number; published: string; lanes: string; embedding: unknown }>();
+  return results.map((row): Candidate => ({
+    workId: row.work_id,
+    published: row.published,
+    lanes: row.lanes.split(' '),
+    embedding: row.embedding == null ? null : readVector(row.embedding),
+  }));
+}
+
+export interface FeedFollow { type: PaperFollowMatch['type']; canonicalId: string; displayName?: string; lane: string }
+
+export interface FeedQuery {
+  categories: string[];
+  follows: FeedFollow[];
+  positiveIds: string[];
+  page: number;
+  pageSize: number;
+  order: keyof typeof RECENCY_WEIGHT;
+}
 
 /**
- * A page of stored papers in the reader's categories, ordered by the closest
- * of their liked or saved papers, or newest first without any.
+ * A page of corpus papers in the asked categories and followed entities,
+ * ordered by the closest of the reader's liked or saved papers, or newest
+ * first without any. Each paper says which asked categories it was found in
+ * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
-export async function handleStoreFeed(request: Request, env: StoreEnv & WorkerEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
-  const body = await readBoundedJson<FeedRequest>(request, 16_384, {
+export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), embedMissing }: { now?: number; embedMissing?: (db: D1Database, workByPaperId: Map<string, number>) => Promise<void> } = {}) {
+  const db = database(env);
+  const lanes = [...new Set([...query.categories, ...query.follows.map(follow => follow.lane)])];
+  if (lanes.length === 0) return [];
+  const since = daysFromNow(-CORPUS_DAYS, now);
+  let positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
+  if (embedMissing) {
+    await embedMissing(db, positiveWorks);
+    positiveWorks = await findWorks(db, query.positiveIds);
+  }
+  const positiveIds = [...new Set(positiveWorks.values())];
+  const [candidates, positives] = await Promise.all([
+    // Each lane contributes its newest share of the candidates through its own
+    // index range, which stops at the share: one query over the whole window
+    // read every row of it (146k rows for five busy cs categories, 2026-10-22),
+    // and D1 bills rows read. A quiet lane keeps its share instead of being
+    // crowded out by a busy one. Only the candidates' vectors are read.
+    readCandidates(db, lanes, since),
+    positiveIds.length
+      ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
+      : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
+  ]);
+  // A liked paper is not offered again, and keeps its vector in the corpus.
+  if (positiveIds.length) {
+    await db.prepare('UPDATE works SET kept_until = ? WHERE id IN (SELECT value FROM json_each(?)) AND kept_until < ?')
+      .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
+  }
+  const liked = new Set(positiveIds);
+  const ranked = rankBySimilarity(candidates.filter(candidate => !liked.has(candidate.workId)), positives.results.map(row => readVector(row.embedding)), { now, order: query.order })
+    .slice(query.page * query.pageSize, (query.page + 1) * query.pageSize)
+    .map(({ row }) => row);
+  if (ranked.length === 0) return [];
+  const works = await readWorks(db, ranked.map(candidate => candidate.workId));
+  const categories = new Set(query.categories);
+  return ranked.flatMap(candidate => {
+    const row = works.get(candidate.workId);
+    if (!row) return [];
+    const paper = JSON.parse(row.paper) as Paper;
+    const fetchedFor = candidate.lanes.filter(lane => categories.has(lane));
+    const follows = query.follows.filter(follow => candidate.lanes.includes(follow.lane));
+    return [{
+      ...paper,
+      ...(fetchedFor.length ? { _fetchedFor: fetchedFor } : {}),
+      ...(follows.length ? { _followedEntityMatches: follows.map(({ type, canonicalId, displayName }) => ({ type, canonicalId, displayName: displayName || canonicalId })) } : {}),
+    }];
+  });
+}
+
+// ─── Requests ───
+
+const CATEGORY_ID = /^[\w.-]{1,32}$/;
+const FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
+
+/**
+ * The lane a followed entity is served from: the OpenAlex entity a paper
+ * names, a search for a followed query or an author known by name only, or
+ * a funded project. A topic that is one of the app's categories is asked for
+ * as that category instead, and gets no lane here.
+ */
+export function followLane(follow: { type?: unknown; canonicalId?: unknown; displayName?: unknown; metadata?: { query?: unknown; funder?: unknown } | null }) {
+  const type = text(follow?.type);
+  const canonicalId = text(follow?.canonicalId).split('/').pop()!.slice(0, 200);
+  if (!FOLLOW_TYPES.has(type) || !canonicalId) return '';
+  if (type === 'project') {
+    const funder = text(follow.metadata?.funder).slice(0, 80);
+    return `project:${funder ? `${funder}|` : ''}${canonicalId}`;
+  }
+  const entity = entityLane(canonicalId);
+  if (entity && (type === 'topic' ? /^(topic|concept):/.test(entity) : entity.startsWith(`${type}:`))) return entity;
+  if (LEAF_IDS.has(canonicalId)) return '';
+  const query = text(type === 'topic' ? follow.metadata?.query || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
+  if (!query) return '';
+  return type === 'author' ? `author-name:${query}` : type === 'topic' ? `query:${query}` : '';
+}
+
+interface FeedRequestBody {
+  categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
+}
+
+export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
+  const categories = [...new Set((Array.isArray(body?.categories) ? body.categories : []).map(text).filter(category => CATEGORY_ID.test(category)))]
+    .slice(0, FEED_MAX_CATEGORIES);
+  const follows = (Array.isArray(body?.follows) ? body.follows : [])
+    .map(follow => ({ follow, lane: followLane(follow) }))
+    .filter(({ lane }) => lane)
+    .slice(0, FEED_MAX_FOLLOWS)
+    .map(({ follow, lane }) => ({
+      type: text(follow.type) as PaperFollowMatch['type'],
+      canonicalId: text(follow.canonicalId).slice(0, 200),
+      displayName: text(follow.displayName).slice(0, 200),
+      lane,
+    }));
+  const positiveIds = [...new Set((Array.isArray(body?.positiveIds) ? body.positiveIds : []).map(id => text(id).slice(0, 300)).filter(Boolean))]
+    .slice(0, FEED_MAX_POSITIVES);
+  return {
+    categories,
+    follows,
+    positiveIds,
+    page: Math.max(0, Math.floor(Number(body?.page) || 0)),
+    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE),
+    order: body?.order === 'relevance' ? 'relevance' : 'recent',
+  };
+}
+
+/** Reads a feed request's body, checks the reader's minute allowance and parses it. */
+export async function acceptFeedRequest(request: Request, env: StoreEnv & WorkerEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
+  const body = await readBoundedJson<FeedRequestBody>(request, 16_384, {
     tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
     invalid: () => new PaperStoreError('INVALID_JSON', 400),
   });
-  const categories = [...new Set((Array.isArray(body?.categories) ? body.categories : []).map(text).filter(category => /^[\w.-]{1,32}$/.test(category)))]
-    .slice(0, FEED_MAX_CATEGORIES);
-  const positiveIds = [...new Set((Array.isArray(body?.positiveIds) ? body.positiveIds : []).map(arxivIdOf).filter(Boolean))]
-    .slice(0, FEED_MAX_POSITIVES);
-  const page = Math.max(0, Math.floor(Number(body?.page) || 0));
-  const pageSize = Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE);
-  if (categories.length === 0) throw new PaperStoreError('CATEGORIES_REQUIRED', 400);
-  if (page > FEED_MAX_PAGE) return { papers: [] };
+  const query = parseFeedRequest(body);
+  if (query.categories.length === 0 && query.follows.length === 0) throw new PaperStoreError('LANES_REQUIRED', 400);
   await reserveFeedRequest(env, identity.uid);
-
-  const db = database(env);
-  if (positiveIds.length) await storeMissingPositives(env, positiveIds);
-  const since = daysAgo(FEED_WINDOW_DAYS);
-  const [candidates, positives] = await Promise.all([
-    // Each category contributes its newest share of the candidates through its
-    // own index range, which stops at the share: one query over the whole window
-    // read every row of it (146k rows for five busy cs categories, 2026-10-22),
-    // and D1 bills rows read. A quiet category keeps its share instead of being
-    // crowded out by a busy one. Only the candidates' vectors are read.
-    db.prepare(`SELECT c.arxiv_id, c.published, v.embedding FROM (
-        SELECT arxiv_id, MAX(published) AS published FROM (${categories.map(() => `SELECT * FROM (
-          SELECT arxiv_id, published FROM paper_categories WHERE category = ? AND published >= ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
-        GROUP BY arxiv_id
-      ) c LEFT JOIN paper_vectors v ON v.arxiv_id = c.arxiv_id`)
-      .bind(...categories.flatMap(category => [category, since, Math.ceil(FEED_CANDIDATE_LIMIT / categories.length)])).all<CandidateRow>(),
-    positiveIds.length
-      ? db.prepare(`SELECT embedding FROM paper_vectors WHERE arxiv_id IN (${placeholders(positiveIds.length)})`).bind(...positiveIds).all<{ embedding: unknown }>()
-      : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
-  ]);
-  const liked = new Set(positiveIds);
-  const rows = candidates.results
-    .filter(row => !liked.has(row.arxiv_id))
-    .map(row => ({ arxivId: row.arxiv_id, published: row.published, embedding: row.embedding == null ? null : readVector(row.embedding) }));
-  const pageIds = rankBySimilarity(rows, positives.results.map(row => readVector(row.embedding)))
-    .slice(page * pageSize, (page + 1) * pageSize)
-    .map(({ row }) => row.arxivId);
-  if (pageIds.length === 0) return { papers: [] };
-  const { results } = await db.prepare(`SELECT arxiv_id, title, abstract, authors, categories, doi, journal_ref, comments, published
-    FROM papers WHERE arxiv_id IN (${placeholders(pageIds.length)})`).bind(...pageIds).all<PaperRow>();
-  const byId = new Map(results.map(row => [row.arxiv_id, row]));
-  return {
-    papers: pageIds.flatMap(id => {
-      const row = byId.get(id);
-      return row ? [{
-        arxivId: row.arxiv_id,
-        title: row.title,
-        abstract: row.abstract,
-        authors: JSON.parse(row.authors) as string[],
-        categories: JSON.parse(row.categories) as string[],
-        doi: row.doi,
-        journalRef: row.journal_ref,
-        comments: row.comments,
-        published: row.published,
-      }] : [];
-    }),
-  };
+  return query;
 }
+
+export const FEED_LAST_PAGE = FEED_MAX_PAGE;
+export { placeholders };

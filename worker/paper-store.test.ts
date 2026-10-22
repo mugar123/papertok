@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, parseOaiPage, quantize, rankBySimilarity, readVector, splitRawAuthors } from './paper-store.ts';
+import { arxivIdOf, quantize, rankBySimilarity, readVector } from './paper-store.ts';
+import { parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
 // trimmed to one record, its abstract shortened, plus a deleted record.
@@ -73,8 +74,8 @@ test('the closest liked paper orders the page; recency separates near ties', () 
     { id: 'close-new', embedding: quantize([1, 0]), published: '2026-10-20T00:00:00Z' },
   ];
   const likes = [quantize([1, 0])];
-  assert.deepEqual(rankBySimilarity(rows, likes, now).map(({ row }) => row.id), ['close-new', 'close-old', 'far-new']);
-  assert.deepEqual(rankBySimilarity(rows, [], now).map(({ row }) => row.id), ['far-new', 'close-new', 'close-old']);
+  assert.deepEqual(rankBySimilarity(rows, likes, { now }).map(({ row }) => row.id), ['close-new', 'close-old', 'far-new']);
+  assert.deepEqual(rankBySimilarity(rows, [], { now }).map(({ row }) => row.id), ['far-new', 'close-new', 'close-old']);
 });
 
 test('a paper not yet embedded is still served, after the ones that match', () => {
@@ -83,8 +84,8 @@ test('a paper not yet embedded is still served, after the ones that match', () =
     { id: 'pending-newest', embedding: null, published: '2026-10-21T12:00:00Z' },
     { id: 'match', embedding: quantize([1, 0]), published: '2026-10-15T00:00:00Z' },
   ];
-  assert.deepEqual(rankBySimilarity(rows, [quantize([1, 0])], now).map(({ row }) => row.id), ['match', 'pending-newest']);
-  assert.deepEqual(rankBySimilarity(rows, [], now).map(({ row }) => row.id), ['pending-newest', 'match']);
+  assert.deepEqual(rankBySimilarity(rows, [quantize([1, 0])], { now }).map(({ row }) => row.id), ['match', 'pending-newest']);
+  assert.deepEqual(rankBySimilarity(rows, [], { now }).map(({ row }) => row.id), ['pending-newest', 'match']);
 });
 
 test('a stored vector reads back the same whether D1 returns bytes or numbers', () => {

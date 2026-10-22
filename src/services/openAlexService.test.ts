@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
-import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcRecords.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
@@ -1022,7 +1022,7 @@ test('SOURCE: the enrichment request asks OpenAlex for the authorships', async (
   // Without this field the ids never reach the browser at all, and the card
   // has to send the reader through the name door. OpenAlex refuses subfield
   // selection (`authorships.author.id` answers 400), so it is all or nothing.
-  const source = (await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8'))
+  const source = (await readFile(new URL('../utils/openAlexWork.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   const select = source.match(/const OPENALEX_ENRICHMENT_SELECT = \[([\s\S]*?)\]\.join/);

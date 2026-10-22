@@ -1,6 +1,7 @@
 import type { Paper } from '../models/Paper.ts';
 
-import { arxivPaper, fetchPapers, isArxivCategory } from './arxivService.ts';
+import { fetchPapers } from './arxivService.ts';
+import { arxivPaper, isArxivCategory } from './arxivRecords.ts';
 import { authenticatedWorkerFetch, hasWorkerSession, workerSourceUrl } from './workerApiClient.ts';
 
 // Short enough that the live fallback below can still answer inside the

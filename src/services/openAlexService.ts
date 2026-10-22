@@ -38,7 +38,7 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entityMetadata.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
-import { extractArxivId, getArxivIdFromWork, mapOpenAlexEnrichmentWork, normalizeDoi } from '../utils/openAlexWork.ts';
+import { OPENALEX_ENRICHMENT_SELECT, extractArxivId, getArxivIdFromWork, mapOpenAlexEnrichmentWork, normalizeDoi } from '../utils/openAlexWork.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -75,34 +75,6 @@ const IMPACT_INSUFFICIENT_TTL_MS = 60 * 60 * 1000;
 const IMPACT_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const ENRICHMENT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ENTITY_WORKS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const OPENALEX_ENRICHMENT_SELECT = [
-  'id',
-  'doi',
-  'ids',
-  'concepts',
-  'topics',
-  'primary_topic',
-  'cited_by_count',
-  'related_works',
-  'locations',
-  'primary_location',
-  'type',
-  'open_access',
-  // The ids that decide which door a card's author link opens: with one, the
-  // explorer asks for the profile once; without, it has to find the author
-  // again from the name. Measured 2026-09-07, that is 433 ms against 2462 ms.
-  // Subfield selection is refused (`authorships.author.id` answers 400), so
-  // this costs the whole authorships array: ~5.7 KB a work.
-  'authorships',
-  // OpenAlex charges per call, not per field, so this rides along on a request
-  // the feed already makes. It costs ~2.6 KB per paper and buys a readable card
-  // for the sources that arrive without one -- half of NASA's records, a tenth
-  // of Europe PMC's -- which also unlocks the AI explanation, gated on having a
-  // usable abstract.
-  'abstract_inverted_index',
-].join(',');
-
-
 // OpenAlex ORs *values* of one filter, not filters. `openalex:W1|openalex:W2`
 // is refused with «It looks like you're trying to do an OR query between filters
 // and it's not supported», so the key goes once and the ids are joined. This

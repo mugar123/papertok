@@ -127,12 +127,15 @@ import {
 import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
-import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
+import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
-import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
+import { fetchICiteMetrics } from '../services/iCiteService.ts';
+import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
 import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
-import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
+import { enrichPubmedIds } from '../services/europePmcService.ts';
+import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { recoverFeedAbstracts } from '../services/feedAbstractService.ts';
 import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feedAbstractWait.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters

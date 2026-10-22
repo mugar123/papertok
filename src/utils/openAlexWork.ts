@@ -10,6 +10,63 @@ import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus
 // fields it adds to a card from another source (`mapOpenAlexEnrichmentWork`).
 // Free of browser modules, so the Worker's paper store maps works the same way.
 
+// The top-level fields `mapOpenAlexWork` and `getArxivIdFromWork` read, and
+// the only ones a search asks for (`select=`). A works page used to arrive
+// whole: 455 KB uncompressed, 65–82 KB on the wire, most of it fields nothing
+// here reads (`referenced_works`, `keywords`, `counts_by_year`, the second
+// half of `authorships`). Measured 2026-09-16 with this list: 326 KB and
+// 45–49 KB. The Worker relays `select` untouched (OPENALEX_PARAMS). Nested
+// selection is not something OpenAlex offers, so `authorships` and
+// `locations` still travel whole. OpenAlexAdapter.test.ts holds the guard:
+// a work stripped to these fields must map to the same paper as the full one.
+export const OPENALEX_WORK_SEARCH_FIELDS = Object.freeze([
+  'id',
+  'doi',
+  'ids',
+  'title',
+  'type',
+  'publication_date',
+  'publication_year',
+  'authorships',
+  'abstract_inverted_index',
+  'primary_location',
+  'locations',
+  'open_access',
+  'cited_by_count',
+  'concepts',
+  'topics',
+  'primary_topic',
+]);
+
+
+// The fields an enrichment of another source's card asks for.
+export const OPENALEX_ENRICHMENT_SELECT = [
+  'id',
+  'doi',
+  'ids',
+  'concepts',
+  'topics',
+  'primary_topic',
+  'cited_by_count',
+  'related_works',
+  'locations',
+  'primary_location',
+  'type',
+  'open_access',
+  // The ids that decide which door a card's author link opens: with one, the
+  // explorer asks for the profile once; without, it has to find the author
+  // again from the name. Measured 2026-09-07, that is 433 ms against 2462 ms.
+  // Subfield selection is refused (`authorships.author.id` answers 400), so
+  // this costs the whole authorships array: ~5.7 KB a work.
+  'authorships',
+  // OpenAlex charges per call, not per field, so this rides along on a request
+  // the feed already makes. It costs ~2.6 KB per paper and buys a readable card
+  // for the sources that arrive without one -- half of NASA's records, a tenth
+  // of Europe PMC's -- which also unlocks the AI explanation, gated on having a
+  // usable abstract.
+  'abstract_inverted_index',
+].join(',');
+
 export type OpenAlexEnrichment = Partial<Paper> & { related_works?: string[] };
 
 /**

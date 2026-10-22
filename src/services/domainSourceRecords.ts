@@ -1,7 +1,7 @@
 import type { Paper } from '../models/Paper.ts';
 import type { EuropePmcRecord } from '../utils/europePmcRecord.ts';
 import type { OpenReviewNote } from './openReviewService.ts';
-import type { HuggingFaceRecord } from './huggingFaceService.ts';
+import type { HuggingFaceRecord } from './huggingFaceRecords.ts';
 
 type ProviderAuthor = string | { name?: string; fullName?: string } | undefined;
 interface BioRxivRecord { doi?: string; title?: string; version?: string | number; category?: string; abstract?: string; authors?: string; date?: string; license?: string; }
@@ -50,7 +50,7 @@ import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';
 import { mapOpenReviewNote } from './openReviewService.ts';
-import { mapHuggingFacePaper } from './huggingFaceService.ts';
+import { mapHuggingFacePaper } from './huggingFaceRecords.ts';
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.ts';
 import { isAfterToday, isProtocolBookSeries } from '../utils/medlineRecord.ts';
 import { normalizeScientificMarkup } from '../utils/latex.ts';

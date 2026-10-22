@@ -201,7 +201,7 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.
 const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
 
 test('SOURCE: arXiv, OpenAlex and Semantic Scholar mappers read their status from these rules', async () => {
-  const arxiv = await read('../services/arxivService.ts');
+  const arxiv = await read('../services/arxivRecords.ts');
   assert.match(arxiv, /const isPublishedInArxiv = !!\(doi \|\| journalRef \|\| arxivCommentSaysPublished\(comment\)\);/);
 
   const service = await read('../services/openAlexService.ts');
