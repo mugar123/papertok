@@ -79,7 +79,10 @@ const SEARCH_MIN_LOADING_MS = 180;
 // looks at less often get less.
 const PAGE_SECTION_TIMEOUTS = { papers: 6000, authors: 5000, institutions: 4500, topics: 4500, projects: 6000 };
 
-type SearchRun = { controller: AbortController; search: EntitySearch };
+// `scope` is the one on screen, which the page changes when the reader opens
+// another; the search answers each scope it was asked for, and only the
+// answer for this one paints.
+type SearchRun = { controller: AbortController; search: EntitySearch; scope: SearchScopeId };
 
 // What this page asks each source, where it differs from the palette's
 // (entitySearchService.ts): its author rows carry the ORCID and prominence
@@ -354,7 +357,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setProjectResults(snapshot.results.projects);
     setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs }));
     setIsSearching(false);
-    return Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
   }, []);
 
   const performSearch = useCallback(async (searchTerm: string, scope: SearchScopeId) => {
@@ -363,6 +365,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     const controller = new AbortController();
     const run: SearchRun = {
       controller,
+      scope,
       // The page paints once, below, so the running snapshot goes unread.
       search: searchEntities(searchTerm, {
         signal: controller.signal, sources: pageSources, timeouts: PAGE_SECTION_TIMEOUTS, onUpdate: () => {},
@@ -385,7 +388,11 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     );
     if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
     if (run.controller.signal.aborted) return;
-    const resultCount = commit(snapshot);
+    // Unless the reader has opened another scope meanwhile: its own answer
+    // paints then (handleSearchFilterChange). This one, with that scope's
+    // sections still pending, would paint and announce an empty page under it.
+    if (run.scope === scope) commit(snapshot);
+    const resultCount = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
 
     // After the commit, never before: with the whole page behind the pending
     // gate, anything that throws on the way to `setIsSearching(false)` no
@@ -674,18 +681,18 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const handleSearchFilterChange = (filterId: SearchScopeId) => {
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
-    // The notice belongs to the sections the previous view was showing. Kept
-    // across a filter change it would reappear, unretried, over a view it never
-    // described.
-    setSearchIssue(null);
     // A scope the search was not asked for is asked for now, so a reader who
     // stays on Papers never pays for the author search. The skeleton covers the
-    // wait; a scope already answered paints from what it has.
+    // wait; a scope already answered paints at once from what it has, the
+    // notice included. Only the answer for the scope on screen paints: the one
+    // for the scope the reader left still settles, and would paint this
+    // scope's sections empty, and announce that, before they are in.
     const run = requestRef.current;
-    if (!run || run.controller.signal.aborted || run.search.settled(filterId)) return;
-    setIsSearching(true);
+    if (!run || run.controller.signal.aborted) return;
+    run.scope = filterId;
+    if (!run.search.settled(filterId)) setIsSearching(true);
     void run.search.ask(filterId).then(snapshot => {
-      if (!run.controller.signal.aborted) commit(snapshot);
+      if (!run.controller.signal.aborted && run.scope === filterId) commit(snapshot);
     });
   };
 
