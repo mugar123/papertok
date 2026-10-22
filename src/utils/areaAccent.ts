@@ -159,6 +159,9 @@ const OPENALEX_LEAF_TOPICS: Readonly<Record<string, readonly string[]>> = Object
   'civil.struct': ['T10160', 'T10713', 'T10479', 'T11606', 'T10534', 'T10690', 'T12940', 'T11352', 'T11807', 'T13031', 'T11874', 'T13852', 'T11870', 'T10687', 'T12487'],
 });
 
+/** The leaves with a measured topic list, the only ones the topic lane serves. */
+export const OPENALEX_TOPIC_LEAVES = Object.freeze(Object.keys(OPENALEX_LEAF_TOPICS));
+
 // OpenAlex takes at most 50 values for one filter key.
 const MAX_OPENALEX_FILTER_VALUES = 50;
 

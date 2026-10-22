@@ -4082,3 +4082,39 @@ test('/health/openalex/budget is unavailable, and not cached, without a ledger t
     assert.equal(stored.size, 0);
   });
 });
+
+// The units are spent once OpenAlex has answered; the shared store is what
+// keeps them from being spent again elsewhere. An edge cache that refuses a
+// write (it is not guaranteed outside a request to a zone, as in the nightly
+// prefetch) must not lose that store write or the answer.
+test('the KV entry is written even when the edge put throws', async () => {
+  const store = fakeOpenAlexStore();
+  const env = openAlexEnv({ NOTIFICATION_STORE: store });
+  const globals = globalThis as TestGlobals;
+  const realFetch = globalThis.fetch;
+  const realCaches = globals.caches;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json({ results: [{ id: 'W1' }] });
+  };
+  globals.caches = {
+    default: {
+      match: async () => null,
+      put: async () => { throw new Error('no cache here'); },
+    },
+  };
+  try {
+    const first = await reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers: BROWSER }), env);
+    assert.equal(first.status, 200);
+    assert.equal(store.entries.size, 1, 'the answer reached the shared store');
+    const second = await reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers: BROWSER }), env);
+    assert.equal(second.status, 200);
+    assert.deepEqual(await second.json(), { results: [{ id: 'W1' }] });
+    assert.equal(calls, 1, 'the second answer came from the store');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete globals.caches;
+    else globals.caches = realCaches;
+  }
+});

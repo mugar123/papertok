@@ -217,6 +217,17 @@ async function readShared(env: WorkerEnv, key: string) {
   }
 }
 
+// The edge cache is not guaranteed outside a request to the zone, as in the
+// nightly prefetch, and a failed copy there is one more store read later, not
+// a failed answer.
+async function putAtEdge(cacheKey: Request, response: Response) {
+  try {
+    await caches.default.put(cacheKey, response);
+  } catch {
+    // The shared store still has it.
+  }
+}
+
 async function writeShared(env: WorkerEnv, key: string, status: number, body: string) {
   const store = openAlexStore(env);
   if (!store) return;
@@ -292,7 +303,7 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
   if (shared) {
     const headers = relayHeaders();
     headers.set('cache-control', cacheControl(shared.status));
-    await caches.default.put(cacheKey, new Response(shared.body, { status: shared.status, headers }));
+    await putAtEdge(cacheKey, new Response(shared.body, { status: shared.status, headers }));
     return { ...shared, headers };
   }
 
@@ -324,8 +335,10 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
   }
 
   headers.set('cache-control', cacheControl(upstream.status));
-  await caches.default.put(cacheKey, new Response(body, { status: upstream.status, headers }));
+  // The shared store first: the units are spent, and it is what saves them
+  // everywhere else. The edge copy only saves this location a store read.
   await Promise.all([writeShared(env, key, upstream.status, body), observed]);
+  await putAtEdge(cacheKey, new Response(body, { status: upstream.status, headers }));
   return { status: upstream.status, body, headers };
 }
 

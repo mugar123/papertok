@@ -1,6 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 
 import { runEmailNotificationSchedule } from './email-notifications.ts';
+import { OPENALEX_PREFETCH_CRON, prefetchOpenAlexFeedLanes } from './openalex-prefetch.ts';
 import { handleRequest, routeForLog } from './router.ts';
 import { captureWorkerResponseFailure } from './error-tracking.ts';
 
@@ -30,7 +31,13 @@ export default {
       }
     }
   },
-  async scheduled(controller: Pick<ScheduledController, 'scheduledTime'>, env: WorkerEnv, context: Pick<ExecutionContext, 'waitUntil'>) {
+  // `cron` names the trigger. The 00:05 UTC one prefetches the feed's OpenAlex
+  // lanes and runs no digest; every other trigger runs the email schedule.
+  async scheduled(controller: Pick<ScheduledController, 'scheduledTime'> & Partial<Pick<ScheduledController, 'cron'>>, env: WorkerEnv, context: Pick<ExecutionContext, 'waitUntil'>) {
+    if (controller.cron === OPENALEX_PREFETCH_CRON) {
+      context.waitUntil(prefetchOpenAlexFeedLanes(env, controller.scheduledTime));
+      return;
+    }
     context.waitUntil(runEmailNotificationSchedule(env, controller.scheduledTime));
   },
 };

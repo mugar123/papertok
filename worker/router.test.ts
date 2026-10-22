@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.ts';
 import { routeForLog } from './router.ts';
+import { OPENALEX_PREFETCH_CRON } from './openalex-prefetch.ts';
+import { readFileSync } from 'node:fs';
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals, TestNamespace } from './test-types.ts';
 import type { runEmailNotificationSchedule } from './email-notifications.ts';
@@ -201,4 +203,30 @@ test('the scheduled entry point passes the event time and keeps the job alive wi
   assert.equal(summary.disabled, true);
   assert.equal(summary.sent, 0);
   assert.ok(saved.some(({ value }) => value.scheduledAt === '2026-10-13T07:20:00.000Z'));
+});
+
+// PAP-88: 00:05 UTC fetches the feed's OpenAlex lanes for the day. It runs
+// after the budget resets and before any digest window, and it must not run
+// the digest: an extra run would be recorded as a schedule run.
+test('the 00:05 trigger runs the prefetch and not the email schedule; any other trigger still runs the schedule', async t => {
+  t.mock.method(console, 'log', () => {});
+  const saved: string[] = [];
+  const env = {
+    NOTIFICATION_STORE: { put: async (key: string) => { saved.push(key); } } as unknown as KVNamespace,
+  };
+  const run = async (cron: string, at: string) => {
+    const jobs: Promise<unknown>[] = [];
+    await worker.scheduled({ cron, scheduledTime: Date.parse(at) }, env, { waitUntil: job => { jobs.push(job); } });
+    await Promise.all(jobs);
+    return jobs.length;
+  };
+
+  assert.equal(await run(OPENALEX_PREFETCH_CRON, '2026-10-22T00:05:00Z'), 1);
+  assert.equal(saved.length, 0, 'no schedule run recorded');
+  assert.equal(await run('*/20 7-13 * * *', '2026-10-22T07:20:00Z'), 1);
+  assert.ok(saved.includes('notification:schedule:last-run'), saved.join());
+
+  // The trigger exists only if wrangler.toml declares the same expression.
+  const crons = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8').match(/^crons = \[(.*)\]$/m)![1];
+  assert.ok(crons.split(',').map(value => JSON.parse(value.trim())).includes(OPENALEX_PREFETCH_CRON), crons);
 });
