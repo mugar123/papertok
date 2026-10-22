@@ -675,37 +675,39 @@ async function runRewrite(harnessOptions: HarnessOptions, env: WorkerEnv, reques
  * not simulated with a timer here on purpose: a wall-clock threshold would make
  * these tests flaky on a loaded machine, and what is being asserted is an
  * ordering — the reader hears from us *before* the slow stage finishes — not a
- * duration.
+ * duration. `reached` resolves when the rewrite arrives at the stage.
  */
 function heldOpen() {
   let release!: (value?: unknown) => void;
+  let arrive!: () => void;
   const gate = new Promise(resolve => { release = resolve; });
-  return { gate, release };
+  const reached = new Promise<void>(resolve => { arrive = resolve; });
+  return { reached, release, hold: () => { arrive(); return gate; } };
 }
 
 const SILENCE = Symbol('nothing reached the reader');
 
 /**
- * The first NDJSON event, or `SILENCE` if none arrived in time.
+ * The first NDJSON event, or `SILENCE` if the rewrite reached `stage` first.
  *
  * The browser arms its stall timer before the POST and resets it only when bytes
  * arrive, so a rewrite fails at 45s not because the model is slow but because
  * nothing at all came back while it worked. That is what this measures.
+ *
+ * Silence is decided by order, not by a stopwatch: the stage has been reached,
+ * the callbacks already queued have run (`setImmediate`), and the reader still
+ * holds nothing. The 200 ms this used to allow measured the machine instead:
+ * under load the handler alone took longer than that.
  */
-async function firstEventWithin(pending: Promise<Response>, ms: number) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const silence = new Promise(resolve => { timer = setTimeout(() => resolve(SILENCE), ms); });
-  const firstEvent = pending.then(async (response: Response) => {
-    const reader = response.body!.getReader();
-    const { value } = await reader.read();
-    reader.releaseLock();
+async function firstEventBefore(reader: Promise<ReadableStreamDefaultReader>, stage: { reached: Promise<void> }) {
+  const firstEvent = reader.then(async (open) => {
+    const { value } = await open.read();
     return JSON.parse(new TextDecoder().decode(value).trim().split('\n')[0]);
   });
-  try {
-    return await Promise.race([firstEvent, silence]);
-  } finally {
-    clearTimeout(timer);
-  }
+  const silence = stage.reached
+    .then(() => new Promise((resolve) => { setImmediate(resolve); }))
+    .then(() => SILENCE);
+  return Promise.race([firstEvent, silence]);
 }
 
 test('the reader hears from the worker while the model is still thinking', async () => {
@@ -714,7 +716,7 @@ test('the reader hears from the worker while the model is still thinking', async
 
   await withRewriteHarness({
     provider: async () => {
-      await model.gate;
+      await model.hold();
       return sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]);
     },
   }, async () => {
@@ -722,8 +724,9 @@ test('the reader hears from the worker while the model is still thinking', async
       ...REWRITE_ENV,
       REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
     });
+    const reader = pending.then(response => response.body!.getReader());
     try {
-      const first = await firstEventWithin(pending, 200);
+      const first = await firstEventBefore(reader, model);
       assert.notEqual(
         first,
         SILENCE,
@@ -737,9 +740,11 @@ test('the reader hears from the worker while the model is still thinking', async
     } finally {
       model.release();
       // Draining matters: a transform nobody reads blocks its writer on the
-      // second line, and the pump then never reaches the `close` that lets the
-      // test runner exit.
-      await pending.then(response => response.body!.cancel()).catch(() => {});
+      // second line, and the pump then never reaches the `close` that stops its
+      // heartbeat interval and lets the test runner exit. Cancel through the
+      // reader: `response.body.cancel()` is refused while the reader holds the
+      // lock, which it does whenever the first event never came.
+      await reader.then(open => open.cancel()).catch(() => {});
     }
   });
 });
@@ -750,7 +755,7 @@ test('the reader hears from the worker while the PDF is still downloading', asyn
 
   await withRewriteHarness({
     pdf: async () => {
-      await download.gate;
+      await download.hold();
       return readablePdf();
     },
     provider: async () => sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]),
@@ -759,13 +764,14 @@ test('the reader hears from the worker while the PDF is still downloading', asyn
       ...REWRITE_ENV,
       REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
     });
+    const reader = pending.then(response => response.body!.getReader());
     try {
-      const first = await firstEventWithin(pending, 200);
+      const first = await firstEventBefore(reader, download);
       assert.notEqual(first, SILENCE, 'the PDF download gets up to twelve seconds of it, in total silence');
       assert.equal(first.type, 'meta');
     } finally {
       download.release();
-      await pending.then(response => response.body!.cancel()).catch(() => {});
+      await reader.then(open => open.cancel()).catch(() => {});
     }
   });
 });

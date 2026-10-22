@@ -13,18 +13,30 @@ test('papers publish before a slow project lookup and late replies cannot replac
   const keepAlive = setTimeout(() => {}, 1000);
   t.after(() => clearTimeout(keepAlive));
   const updates: SearchSnapshot[] = [];
+  // Recorded as it happens, not sampled after a timer: a timer armed after the
+  // 10 ms project deadline loses to it whenever a loaded machine deschedules
+  // the test in between.
+  const order: string[] = [];
   let projectSignal: AbortSignal | undefined;
   let resolveProject!: (items: Project[]) => void;
   const done = searchEntities('segment anything', {
     signal: new AbortController().signal, timeouts,
-    sources: { ...emptySources, projects: (_q, signal) => { projectSignal = signal; return new Promise(resolve => { resolveProject = resolve; }); } },
-    onUpdate: snapshot => updates.push(snapshot),
+    sources: { ...emptySources, projects: (_q, signal) => {
+      projectSignal = signal;
+      signal.addEventListener('abort', () => order.push('projects cut off'));
+      return new Promise(resolve => { resolveProject = resolve; });
+    } },
+    onUpdate: snapshot => {
+      if (snapshot.results.papers.length > 0 && !order.includes('papers shown')) order.push('papers shown');
+      updates.push(snapshot);
+    },
   });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.deepEqual(updates.at(-1)?.results.papers, [paper]);
-  assert.ok(updates.at(-1)?.pending.includes('projects'));
-  assert.deepEqual(updates.at(-1)?.issues, []);
   const result = await done;
+  assert.deepEqual(order, ['papers shown', 'projects cut off']);
+  const papersShown = updates.find(snapshot => snapshot.results.papers.length > 0);
+  assert.deepEqual(papersShown?.results.papers, [paper]);
+  assert.ok(papersShown?.pending.includes('projects'));
+  assert.deepEqual(papersShown?.issues, []);
   assert.deepEqual(result.issues, [{ section: 'projects', reason: 'timeout' }]);
   assert.equal(projectSignal?.aborted, true);
   assert.deepEqual(result.results.papers, [paper]);
