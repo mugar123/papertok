@@ -93,9 +93,6 @@
   border-top: 0;
 }
 
-/* The window opens still; only Petri's stamp lands beside the title. */
-.institution-dialog[data-open] { animation: none; }
-
 .institution-title {
   display: flex;
   align-items: center;
@@ -107,7 +104,7 @@
   flex: none;
   width: 1.15em;
   height: 1.15em;
-  animation-delay: 120ms;
+  animation-delay: 200ms;
 }
 
 .institution-dialog-lede {
