@@ -458,7 +458,7 @@ const paperRecord = (id: string): FeedRecord => ({ id, title: `${id} scientific 
 const viewedEvent = (paperId: string, kind = 'viewTime') => ({ paperId, kind, category: 'cs.AI', viewTime: 4 });
 // The real callbacks over one browser's storage; `user` is the signed-in account
 // and `seen` the feed's in-memory set. `auth` is Firebase's own current user.
-function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage() } = {}) {
+function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage(), traverseAndExpandNetwork = (() => {}) as (paper: FeedRecord) => void } = {}) {
   const scope = {
     sessionSeenPapers: seen, activeUserId: ref(user), viewedIds, auth: { currentUser: user ? { uid: user } as { uid: string } | null : null },
     readSeenPaperIds: (userId: string | null) => readSeenPaperIds(userId, storage),
@@ -469,10 +469,10 @@ function viewing({ user = 'test-user' as string | null, seen = ref(new Set<strin
   const tracking = {
     markPaperViewed, user: user ? { uid: user } : null, IS_DEMO: true,
     boredomLevel: ref(0), profileSignals: ref(readProfileSignals(null)), temporalPreference: ref(0),
-    countEngagement: () => {}, recordProfileEvent: () => {}, scheduleReRank: () => {}, traverseAndExpandNetwork: () => {},
+    countEngagement: () => {}, recordProfileEvent: () => {}, scheduleReRank: () => {}, traverseAndExpandNetwork,
     dedupeInteractionPapers: <T>(papers: T[]) => papers,
   };
-  const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid'), tracking) as (paper: FeedRecord, seconds: number) => Promise<void>;
+  const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (paper: FeedRecord, seconds: number) => Promise<void>;
   const trackSkips = callbackIn(componentCallback('trackSkips', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (papers: FeedRecord[]) => Promise<void>;
   return { scope, markPaperViewed, carryViewedPapers, trackViewTime, trackSkips, stored: (userId = user) => [...readSeenPaperIds(userId, storage)] };
 }
@@ -486,6 +486,18 @@ test('a load remembers the papers it shows for this session, not in the reader\'
   assert.equal(state.papers.length, 15);
   assert.deepEqual(writes, [], 'no card nobody viewed is written to the list kept across loads');
   assert.ok(state.papers.every(paper => env.sessionSeenPapers.current.has(paper.id)), 'but this session does not offer it twice');
+});
+
+// Reading a card for ten seconds used to walk its citation network: an OpenAlex
+// call (and a Semantic Scholar one) for a reader who did nothing. On launch day
+// those walks were a tenth of the OpenAlex ceiling (PAP-86). A like, a save or
+// an opened PDF still expands the graph; a passive read only ranks.
+test('a ten-second read no longer walks the citation network', async () => {
+  const walked: string[] = [];
+  const { trackViewTime, stored } = viewing({ traverseAndExpandNetwork: (paper: FeedRecord) => { walked.push(paper.id); } });
+  await trackViewTime(paperRecord('read-for-a-while'), 12);
+  assert.deepEqual(walked, []);
+  assert.deepEqual(stored(), ['read-for-a-while'], 'the view itself still counts');
 });
 
 test('a card the reader views or skips joins the list kept across loads, a loaded one does not', async () => {
