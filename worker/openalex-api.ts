@@ -24,9 +24,11 @@ const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
 // click on an author of the same paper billed the same 404 again. An hour lets a
 // newly indexed work show up the same day.
 const OPENALEX_NOT_FOUND_CACHE_SECONDS = 60 * 60;
-// The edge cache above is per data centre. On launch day (2026-10-21) every
-// location asked OpenAlex the same questions again, and the day's ceiling ran
-// out of units while the key still had a quarter of its dollars. So an answer
+// The edge cache above is per data centre, so every location asks OpenAlex the
+// same questions again. On launch day (2026-10-21) the day's ceiling ran out of
+// units while two `/health/openalex` readings showed the key with a quarter of
+// its dollars left -- the inference from them, not a measurement of the relay,
+// is that the ledger refused before the money ran out (PAP-86). So an answer
 // is also kept in KV, which every location reads: a day for an answer, the
 // hour the edge keeps for a 404. The relay carries no identity -- an answer
 // depends only on the canonical upstream parameters -- so there is nothing
@@ -227,6 +229,15 @@ async function writeShared(env: WorkerEnv, key: string, status: number, body: st
   }
 }
 
+// What a miss is billed, read off the URL about to be sent: a search ten list
+// calls, a list one, an entity by id or DOI nothing (`OPENALEX_CALLS`). The
+// autocomplete endpoint's second segment names a type, not an entity.
+function openAlexCallsFor(target: URL) {
+  if (target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '')) return OPENALEX_CALLS.search;
+  const [entity, id] = target.pathname.slice(1).split('/');
+  return id && entity !== 'autocomplete' ? OPENALEX_CALLS.entity : OPENALEX_CALLS.relay;
+}
+
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
@@ -240,9 +251,11 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
     return { ...shared, headers };
   }
 
-  const searching = target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '');
-  const budget = await reserveOpenAlexBudget(env, '', searching ? OPENALEX_CALLS.search : OPENALEX_CALLS.relay);
-  if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
+  const calls = openAlexCallsFor(target);
+  if (calls > 0) {
+    const budget = await reserveOpenAlexBudget(env, '', calls);
+    if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
+  }
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
     headers: { accept: 'application/json' },
