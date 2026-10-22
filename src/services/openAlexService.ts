@@ -801,6 +801,9 @@ export async function searchAuthors(query: string, options: RequestOptions = {})
   try {
     const data = await openAlexJson<OpenAlexPage<OpenAlexAuthor>>(url, {
       timeoutMs: 7000,
+      // A search the relay reserves ten list calls for, on every miss: asked
+      // again after a 5xx it would reserve them again, for the same outage.
+      retries: 0,
       cacheTtlMs: 10 * 60 * 1000,
       staleIfError: true,
       persistentKey: `author-search:${normalizedQuery.toLowerCase()}`,

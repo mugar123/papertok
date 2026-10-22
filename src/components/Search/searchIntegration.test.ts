@@ -42,10 +42,25 @@ test('the search never announces itself as unavailable', () => {
 });
 
 test('both surfaces report analytics only after their search settles', () => {
-  assert.match(page, /await Promise\.all\(tasks\)/);
-  assert.match(paletteSources, /await Promise\.all\(SEARCH_SECTIONS\.map/);
-  assert.ok(paletteSearch.indexOf('await searchEntities(') < paletteSearch.indexOf("trackEvent('search_performed'"));
+  assert.ok(page.indexOf('await run.search.ask(') < page.indexOf("trackEvent('search_performed'"));
+  assert.match(page, /if \(run\.controller\.signal\.aborted\) return;/);
+  assert.ok(paletteSearch.indexOf('await search.ask(') < paletteSearch.indexOf("trackEvent('search_performed'"));
   assert.match(paletteSearch, /if \(controller\.signal\.aborted\) return;/);
+});
+
+// PAP-86: a search starts with the scope on screen and asks the running search
+// for another scope when the reader opens it. Neither surface fans out to every
+// section on every keystroke; entitySearchService.test.ts pins what one search
+// asks and when.
+test('both surfaces ask one search for the scope they show, and open a scope on the running search', () => {
+  assert.match(page, /searchEntities\(searchTerm, \{/);
+  assert.match(page, /run\.search\.ask\(scope\)/);
+  assert.match(page, /run\.search\.settled\(filterId\)/);
+  assert.match(paletteSearch, /search\.ask\(scope\)/);
+  assert.match(paletteSearch, /current\.search\.ask\(scope\)/);
+  for (const surface of SURFACES) {
+    assert.doesNotMatch(surface.code, /Promise\.all\(SEARCH_SECTIONS\.map/, `${surface.name}: no fan-out to every section`);
+  }
 });
 
 test('the palette hides stale queries while providers collect independent sections', () => {

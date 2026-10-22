@@ -11,11 +11,19 @@ import { withEnforcedDeadline } from '../utils/requestDeadline.ts';
 
 export interface SearchResults { papers: Paper[]; authors: OpenAlexAuthor[]; institutions: OpenAlexInstitution[]; topics: OpenAlexTopic[]; projects: Project[] }
 export type SearchSection = keyof SearchResults;
-export interface SearchIssue { section: SearchSection; reason: 'timeout' | 'error' }
+export type SearchScope = 'all' | SearchSection;
+// `error` is the failure itself, for what a reason cannot carry: the wait a
+// rate limit named, which the OpenAlex client parsed out of `Retry-After`.
+export interface SearchIssue { section: SearchSection; reason: 'timeout' | 'error'; error?: unknown }
 export interface SearchSnapshot { results: SearchResults; pending: SearchSection[]; issues: SearchIssue[] }
-type SearchProviders = { [K in SearchSection]: (query: string, signal: AbortSignal) => Promise<SearchResults[K]> };
+export type SearchProviders = { [K in SearchSection]: (query: string, signal: AbortSignal) => Promise<SearchResults[K]> };
 export const SEARCH_SECTIONS: SearchSection[] = ['papers', 'authors', 'institutions', 'topics', 'projects'];
 export const EMPTY_SEARCH: SearchSnapshot = { results: { papers: [], authors: [], institutions: [], topics: [], projects: [] }, pending: [], issues: [] };
+
+// The sections that ask OpenAlex a question of their own: the author search
+// is billed as ten list calls, the institution ranking and the topic
+// autocomplete as one each (worker/provider-runtime.ts).
+const ENTITY_SECTIONS: SearchSection[] = ['authors', 'institutions', 'topics'];
 
 // These include the services' own deadlines and enrichment. Expiry cancels
 // the underlying request as well as releasing the UI; late replies stay out.
@@ -31,10 +39,28 @@ const providers: SearchProviders = {
   projects: (query, signal) => searchProjects(query, 1, { signal, throwOnError: true }).then(result => result.projects),
 };
 
-/** Each section settles independently; display priority never gates another source. */
-export async function searchEntities(query: string, {
+export function sectionsShown(scope: SearchScope): SearchSection[] {
+  return scope === 'all' ? SEARCH_SECTIONS : [scope];
+}
+
+/** One query's search. A scope is asked for when it is shown, and each section runs once. */
+export interface EntitySearch {
+  /** Runs whatever `scope` shows that has not run yet; resolves once all of it has settled. */
+  ask(scope: SearchScope): Promise<SearchSnapshot>;
+  /** Whether everything `scope` shows has settled. */
+  settled(scope: SearchScope): boolean;
+}
+
+/**
+ * Each section settles independently; display priority never gates another
+ * source. Under All the papers go first and the entity sections follow once
+ * the papers have settled: every debounced term is a papers search, but a
+ * term the reader was still typing is never searched for authors, which
+ * costs as much again. Projects come from OpenAIRE and run beside the papers.
+ */
+export function searchEntities(query: string, {
   signal, onUpdate, knownPapers = [], sources = providers, timeouts = SECTION_TIMEOUTS,
-}: { signal: AbortSignal; knownPapers?: Paper[]; onUpdate: (snapshot: SearchSnapshot) => void; sources?: SearchProviders; timeouts?: typeof SECTION_TIMEOUTS }) {
+}: { signal: AbortSignal; knownPapers?: Paper[]; onUpdate: (snapshot: SearchSnapshot) => void; sources?: SearchProviders; timeouts?: typeof SECTION_TIMEOUTS }): EntitySearch {
   const localPapers = rankPaperSearchResults(query, knownPapers.filter(paper => scorePaperSearchMatch(query, paper) >= 80)).slice(0, 10);
   let snapshot: SearchSnapshot = { results: { ...EMPTY_SEARCH.results, papers: localPapers }, pending: [...SEARCH_SECTIONS], issues: [] };
   const publish = () => { if (!signal.aborted) onUpdate(snapshot); };
@@ -56,7 +82,7 @@ export async function searchEntities(query: string, {
     deadline.addEventListener('abort', abort, { once: true });
     Promise.resolve().then(() => sources[section](query, deadline)).then(
       items => finish(items),
-      error => finish(EMPTY_SEARCH.results[section], { section, reason: error?.name === 'TimeoutError' ? 'timeout' : 'error' }),
+      error => finish(EMPTY_SEARCH.results[section], { section, reason: error?.name === 'TimeoutError' ? 'timeout' : 'error', error }),
     );
   });
   const reveal = (outcome: Awaited<ReturnType<typeof search>>) => {
@@ -69,6 +95,28 @@ export async function searchEntities(query: string, {
     };
     publish();
   };
-  await Promise.all(SEARCH_SECTIONS.map(section => search(section).then(reveal)));
-  return snapshot;
+  const runs = new Map<SearchSection, Promise<void>>();
+  const run = (section: SearchSection) => {
+    let running = runs.get(section);
+    if (!running) {
+      running = search(section).then(reveal);
+      runs.set(section, running);
+    }
+    return running;
+  };
+
+  return {
+    settled: scope => sectionsShown(scope).every(section => !snapshot.pending.includes(section)),
+    async ask(scope) {
+      if (scope === 'all') {
+        await Promise.all([
+          run('papers').then(() => (signal.aborted ? undefined : Promise.all(ENTITY_SECTIONS.map(run)))),
+          run('projects'),
+        ]);
+      } else {
+        await run(scope);
+      }
+      return snapshot;
+    },
+  };
 }

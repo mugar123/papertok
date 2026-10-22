@@ -1,10 +1,8 @@
-import type { Dispatch, MouseEvent, PropsWithChildren, ReactElement, SetStateAction } from 'react';
+import type { MouseEvent, PropsWithChildren, ReactElement } from 'react';
 import type { Paper } from '../../models/Paper.ts';
 import type { FollowInput } from '../../utils/following.ts';
-import type { useEntitySearch } from '../../hooks/useEntitySearch.ts';
-type SearchResults = ReturnType<typeof useEntitySearch>['results'];
-interface SearchOutcome<T> { value: T; status: 'fulfilled' | 'timeout' | 'rejected'; error: unknown }
-import { Children, useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import type { EntitySearch, SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entitySearchService.ts';
+import { Children, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowClockwise,
   ArrowLeft,
@@ -28,11 +26,11 @@ import {
   searchAuthors,
   searchInstitutions,
   searchConcepts,
-  searchLocalTopics,
   enrichAuthorInstitutionLocalization,
 } from '../../services/openAlexService.ts';
 import { searchProjects } from '../../services/openAireService.ts';
 import { searchPapersAcrossSources } from '../../services/paperSearchService.ts';
+import { searchEntities } from '../../services/entitySearchService.ts';
 import { useFollowing } from '../../context/FollowingContext.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
 import useQuickSave from '../../hooks/useQuickSave.ts';
@@ -75,10 +73,51 @@ import {
 import './SearchPage.css';
 
 const SEARCH_DEBOUNCE_MS = 320;
-const SEARCH_TIMEOUT_MS = 6000;
 const SEARCH_MIN_LOADING_MS = 180;
+// The page's deadlines, the services' own and the author enrichment included.
+// The page waits for the slowest section it shows, so the sections a reader
+// looks at less often get less.
+const PAGE_SECTION_TIMEOUTS = { papers: 6000, authors: 5000, institutions: 4500, topics: 4500, projects: 6000 };
 
-const SEARCH_FILTER_OPTIONS = [
+type SearchRun = { controller: AbortController; search: EntitySearch };
+
+// What this page asks each source, where it differs from the palette's
+// (entitySearchService.ts): its author rows carry the ORCID and prominence
+// that OpenAlex's author entities have and work bylines do not, and its
+// topics fall back to the local taxonomy rather than fail.
+function pageSearchSources(language: string): SearchProviders {
+  return {
+    // OpenAlex and arXiv, merged and ranked by title match
+    // (paperSearchService.ts): OpenAlex alone could not answer "llama 2".
+    papers: (query, signal) => searchPapersAcrossSources(query, { signal }),
+    authors: (query, signal) => searchAuthors(query, { signal, throwOnError: true })
+      .then(results => filterRelevantSearchResults(
+        query,
+        // OpenAlex answers an organisation name with institution-as-author
+        // records: four of them are called "University of Salamanca". They
+        // score 100 and took the top of this section from the people who
+        // actually wrote something.
+        results.filter(author => !isOrganisationAuthorRecord(author)),
+        author => [author.display_name],
+        // Several exact matches all score 100; prominence decides which of
+        // them a reader was looking for.
+        { getWeight: authorProminenceWeight },
+      ))
+      .then(results => Promise.all(
+        results.map(author => enrichAuthorInstitutionLocalization(author, { timeoutMs: 1500 })),
+      )),
+    institutions: (query, signal) => searchInstitutions(query, { signal, throwOnError: true }),
+    topics: (query, signal) => searchConcepts(query, { language, limit: 8, signal }),
+    projects: (query, signal) => searchProjects(query, 1, { signal, throwOnError: true })
+      .then(result => filterRelevantSearchResults(
+        query,
+        result.projects || [],
+        project => [project.acronym, project.title, project.funder],
+      )),
+  };
+}
+
+const SEARCH_FILTER_OPTIONS: ReadonlyArray<{ id: SearchScopeId; label: string; Icon: typeof MagnifyingGlass }> = [
   { id: 'all', label: 'All', Icon: MagnifyingGlass },
   { id: 'papers', label: 'Papers', Icon: FileText },
   { id: 'institutions', label: 'Institutions', Icon: Buildings },
@@ -98,7 +137,7 @@ const SCOPE_OPTIONS = SEARCH_FILTER_OPTIONS.map(option => (
  * phone the field keeps its width for the query, so the scope collapses to its
  * icon and opens a bottom drawer of thumb-sized rows.
  */
-function SearchScope({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+function SearchScope({ value, onChange }: { value: SearchScopeId; onChange: (id: SearchScopeId) => void }) {
   const isPhone = useIsPhone();
   const current = SCOPE_OPTIONS.find(option => option.id === value) ?? SCOPE_OPTIONS[0];
   if (isPhone) {
@@ -134,7 +173,7 @@ function SearchScope({ value, onChange }: { value: string; onChange: (id: string
     <Select
       items={SCOPE_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
       value={value}
-      onValueChange={(next) => onChange(String(next))}
+      onValueChange={(next) => onChange(String(next) as SearchScopeId)}
     >
       <SelectTrigger size="sm" className="search-scope-trigger" aria-label={'Search in'}>
         <current.Icon size={15} aria-hidden="true" />
@@ -153,31 +192,6 @@ function SearchScope({ value, onChange }: { value: string; onChange: (id: string
 }
 
 const wait = (delayMs: number) => new Promise(resolve => setTimeout(resolve, delayMs));
-
-/**
- * Never rejects: a failed source resolves with its fallback and a status.
- *
- * The error object rides along now. It used to be dropped here
- * (`.catch(() => ...)`), and with it went the one thing that could tell a rate
- * limit from a timeout — `retryAfterMs`, which the OpenAlex client had already
- * parsed out of `Retry-After`.
- */
-function settleSearch<T>(promise: Promise<T[]>, fallback: T[] = [], timeoutMs = SEARCH_TIMEOUT_MS): Promise<SearchOutcome<T[]>> {
-  return new Promise<SearchOutcome<T[]>>((resolve) => {
-    let settled = false;
-    let timeoutId: number | null = null;
-    const finish = (value: T[], status: SearchOutcome<T[]>['status'], error: unknown = null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId!);
-      resolve({ value, status, error });
-    };
-    timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
-    Promise.resolve(promise)
-      .then(value => finish(value, 'fulfilled'))
-      .catch(error => finish(fallback, 'rejected', error));
-  });
-}
 
 /**
  * Ranks the sections by moving them in the DOM, so what a screen reader hears
@@ -253,7 +267,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState<string | null>(null);
-  const [activeSearchFilter, setActiveSearchFilter] = useState('all');
+  const [activeSearchFilter, setActiveSearchFilter] = useState<SearchScopeId>('all');
   const [searchIssue, setSearchIssue] = useState<ReturnType<typeof describeSearchOutage>>(null);
 
   const [paperResults, setPaperResults] = useState<SearchResults['papers']>([]);
@@ -293,8 +307,9 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
 
   
   const timeoutRef = useRef<number | null>(null);
-  const requestAbortRef = useRef<AbortController | null>(null);
-  const searchIdRef = useRef(0);
+  // The search of the current query. Aborting its controller is what ends it:
+  // every path that starts another one, or clears the query, aborts it first.
+  const requestRef = useRef<SearchRun | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -308,151 +323,87 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setProjectResults([]);
   }, []);
 
-  const performSearch = useCallback(async (searchTerm: string) => {
-    const searchStartedAt = Date.now();
-    const searchId = ++searchIdRef.current;
-    requestAbortRef.current?.abort();
-    const requestController = new AbortController();
-    requestAbortRef.current = requestController;
-    const localTopics = searchLocalTopics(searchTerm, 8);
+  const pageSources = useMemo(() => pageSearchSources(language), [language]);
 
-    setIsSearching(true);
-    setHasSearched(true);
-    setSearchIssue(null);
-
-    const sectionSetters: { [K in keyof SearchResults]: Dispatch<SetStateAction<SearchResults[K]>> } = {
-      papers: setPaperResults,
-      authors: setAuthorResults,
-      institutions: setInstitutionResults,
-      topics: setConceptResults,
-      projects: setProjectResults,
-    };
-    const isCurrentSearch = () => (
-      searchId === searchIdRef.current && !requestController.signal.aborted
-    );
-    // Only tags the outcome with its section. Painting used to happen here, one
-    // straggler at a time, which is what assembled the page on screen over
-    // several seconds; the whole search now lands in a single commit below.
-    const track = <K extends keyof SearchResults,>(section: K, promise: Promise<SearchOutcome<SearchResults[K]>>) => promise.then(outcome => ({ ...outcome, section }));
-
-    const tasks = [
-      // OpenAlex and arXiv, merged and ranked by title match
-      // (paperSearchService.js): OpenAlex alone could not answer "llama 2".
-      track('papers', settleSearch(
-        searchPapersAcrossSources(searchTerm, { signal: requestController.signal }),
-      )),
-      track('authors', settleSearch(
-        searchAuthors(searchTerm, {
-          signal: requestController.signal,
-          throwOnError: true,
-        }).then(results => filterRelevantSearchResults(
-          searchTerm,
-          // OpenAlex answers an organisation name with institution-as-author
-          // records: four of them are called "University of Salamanca". They
-          // score 100 and took the top of this section from the people who
-          // actually wrote something.
-          results.filter(author => !isOrganisationAuthorRecord(author)),
-          author => [author.display_name],
-          // Several exact matches all score 100; prominence decides which of
-          // them a reader was looking for.
-          { getWeight: authorProminenceWeight },
-        )).then(results => Promise.all(
-          results.map(author => enrichAuthorInstitutionLocalization(author, { timeoutMs: 1500 })),
-        )),
-        [],
-        5000,
-      )),
-      track('institutions', settleSearch(
-        searchInstitutions(searchTerm, {
-          signal: requestController.signal,
-          throwOnError: true,
-        }),
-        [],
-        4500,
-      )),
-      track('topics', settleSearch(
-        searchConcepts(searchTerm, {
-          language,
-          limit: 8,
-          signal: requestController.signal,
-        }),
-        localTopics,
-        4500,
-      )),
-      track('projects', settleSearch(
-        searchProjects(searchTerm, 1, {
-          signal: requestController.signal,
-          throwOnError: true,
-        })
-          .then(result => filterRelevantSearchResults(
-            searchTerm,
-            result.projects || [],
-            project => [project.acronym, project.title, project.funder],
-          )),
-      )),
-    ];
-
-    // One settle. Every source is bounded by its own deadline above, so this
-    // waits at most as long as the slowest deadline and then commits the whole
-    // page at once. The floor keeps an instant answer from flashing a skeleton.
-    const outcomes = await Promise.all(tasks);
-    const remainingMinimumDelay = Math.max(
-      0,
-      SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt),
-    );
-    if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
-    if (!isCurrentSearch()) return;
-
-    const resultCount = outcomes.reduce(
-      (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),
-      0,
-    );
-
-    const failedSections = outcomes
-      .filter(outcome => outcome.status !== 'fulfilled')
-      .map(outcome => outcome.section);
-
+  // Paints an answer: every section in one commit. Painting used to happen one
+  // straggler at a time, which is what assembled the page on screen over
+  // several seconds. A section the search was not asked for is empty, and the
+  // notice names only sections that were asked and failed.
+  const commit = useCallback((snapshot: SearchSnapshot) => {
+    const failedSections = snapshot.issues.map(issue => issue.section);
     // Only OpenAlex's own sections can testify about OpenAlex: a 429 from
     // OpenAIRE also satisfies `isOpenAlexRateLimitError`, which walks the cause
     // chain looking for that status.
-    const openAlexOutcomes = outcomes
-      .filter(outcome => SECTION_SOURCES[outcome.section] === 'openalex');
+    const openAlexIssues = snapshot.issues.filter(issue => SECTION_SOURCES[issue.section] === 'openalex');
     const health = getOpenAlexHealth();
     const rateLimited = health.rateLimited
-      || openAlexOutcomes.some(outcome => isOpenAlexRateLimitError(outcome.error));
+      || openAlexIssues.some(issue => isOpenAlexRateLimitError(issue.error));
     // Both sources of the figure, largest wins: the client zeroes
     // `rateLimitedUntil` as soon as any request succeeds, so health can read 0
     // while the error that just failed still carries what OpenAlex said.
     const retryAfterMs = Math.max(
       health.retryAfterMs || 0,
-      ...openAlexOutcomes.map(outcome => (
-        isOpenAlexRateLimitError(outcome.error) ? (outcome.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0 : 0
+      ...openAlexIssues.map(issue => (
+        isOpenAlexRateLimitError(issue.error) ? (issue.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0 : 0
       )),
     );
-    const issue = describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs });
-
-    outcomes.forEach(<K extends keyof SearchResults,>(outcome: SearchOutcome<SearchResults[K]> & { section: K }) => sectionSetters[outcome.section](outcome.value));
-    setSearchIssue(issue);
+    setPaperResults(snapshot.results.papers);
+    setAuthorResults(snapshot.results.authors);
+    setInstitutionResults(snapshot.results.institutions);
+    setConceptResults(snapshot.results.topics);
+    setProjectResults(snapshot.results.projects);
+    setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs }));
     setIsSearching(false);
-    if (requestAbortRef.current === requestController) {
-      requestAbortRef.current = null;
-    }
+    return Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
+  }, []);
+
+  const performSearch = useCallback(async (searchTerm: string, scope: SearchScopeId) => {
+    const searchStartedAt = Date.now();
+    requestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const run: SearchRun = {
+      controller,
+      // The page paints once, below, so the running snapshot goes unread.
+      search: searchEntities(searchTerm, {
+        signal: controller.signal, sources: pageSources, timeouts: PAGE_SECTION_TIMEOUTS, onUpdate: () => {},
+      }),
+    };
+    requestRef.current = run;
+
+    setIsSearching(true);
+    setHasSearched(true);
+    setSearchIssue(null);
+
+    // One settle, for what the scope shows. Every source is bounded by its own
+    // deadline, so this waits at most as long as the slowest and then commits
+    // the whole page at once. The floor keeps an instant answer from flashing
+    // a skeleton.
+    const snapshot = await run.search.ask(scope);
+    const remainingMinimumDelay = Math.max(
+      0,
+      SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt),
+    );
+    if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
+    if (run.controller.signal.aborted) return;
+    const resultCount = commit(snapshot);
 
     // After the commit, never before: with the whole page behind the pending
     // gate, anything that throws on the way to `setIsSearching(false)` no
     // longer leaves a stale spinner — it leaves a blank page.
     trackEvent('search_performed', {
-      search_type: 'all',
+      search_type: scope,
       result_count: resultCount,
       has_results: resultCount > 0,
       query: searchTerm,
     });
-  }, [language, trackEvent]);
+  }, [commit, pageSources, trackEvent]);
+
+  // The scope as it stands when the debounce fires, not when the query changed.
+  const startSearch = useEffectEvent((term: string) => performSearch(term, activeSearchFilter));
 
   useEffect(() => {
     if (!query.trim()) {
-      requestAbortRef.current?.abort();
-      searchIdRef.current += 1;
+      requestRef.current?.controller.abort();
       const resetStateTimeout = setTimeout(() => {
         clearResults();
         setIsSearching(false);
@@ -462,19 +413,18 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
       return () => clearTimeout(resetStateTimeout);
     }
 
-    requestAbortRef.current?.abort();
-    searchIdRef.current += 1;
+    requestRef.current?.controller.abort();
     if (timeoutRef.current) clearTimeout(timeoutRef.current!);
-    
+
     timeoutRef.current = setTimeout(() => {
-      performSearch(query.trim());
+      void startSearch(query.trim());
     }, SEARCH_DEBOUNCE_MS);
-    
+
     return () => {
       clearTimeout(timeoutRef.current!);
-      requestAbortRef.current?.abort();
+      requestRef.current?.controller.abort();
     };
-  }, [clearResults, query, performSearch]);
+  }, [clearResults, query]);
 
   const handleToggleFollow = async (e: MouseEvent, entity: FollowInput) => {
     e.stopPropagation();
@@ -667,7 +617,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const outageTitle = searchIssue?.rateLimited
     ? 'OpenAlex is temporarily unavailable'
     : `${outageSourceNames} did not respond`;
-  const suggestedQueries = [
+  const suggestedQueries: { label: string; icon: ReactElement; query: string; section: SearchScopeId }[] = [
     {
       label: 'Cosmology',
       icon: <Lightbulb size={14} />,
@@ -706,8 +656,8 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     },
   ];
 
-  const updateQuery = (nextQuery: string, intent: string | null = null, filter = activeSearchFilter) => {
-    requestAbortRef.current?.abort();
+  const updateQuery = (nextQuery: string, intent: string | null = null, filter: SearchScopeId = activeSearchFilter) => {
+    requestRef.current?.controller.abort();
     clearResults();
     setQuery(nextQuery);
     setSearchIntent(intent);
@@ -717,17 +667,26 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setIsSearching(Boolean(nextQuery.trim()));
   };
 
-  const handleSuggestedSearch = (suggestion: { query: string; section: string }) => {
+  const handleSuggestedSearch = (suggestion: { query: string; section: SearchScopeId }) => {
     updateQuery(suggestion.query, suggestion.section, suggestion.section);
   };
 
-  const handleSearchFilterChange = (filterId: string) => {
+  const handleSearchFilterChange = (filterId: SearchScopeId) => {
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
     // The notice belongs to the sections the previous view was showing. Kept
     // across a filter change it would reappear, unretried, over a view it never
     // described.
     setSearchIssue(null);
+    // A scope the search was not asked for is asked for now, so a reader who
+    // stays on Papers never pays for the author search. The skeleton covers the
+    // wait; a scope already answered paints from what it has.
+    const run = requestRef.current;
+    if (!run || run.controller.signal.aborted || run.search.settled(filterId)) return;
+    setIsSearching(true);
+    void run.search.ask(filterId).then(snapshot => {
+      if (!run.controller.signal.aborted) commit(snapshot);
+    });
   };
 
   const clearSearch = () => {
@@ -737,7 +696,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // Focus goes back to the field: the control that was pressed unmounts while
   // the search runs.
   const retrySearch = () => {
-    performSearch(query.trim());
+    void performSearch(query.trim(), activeSearchFilter);
     searchInputRef.current?.focus();
   };
 
