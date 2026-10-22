@@ -1,10 +1,12 @@
-import { DurableObject } from 'cloudflare:workers';
-import { instrumentDurableObjectWithSentry, withSentry } from '@sentry/cloudflare';
+import { DurableObject, WorkflowEntrypoint } from 'cloudflare:workers';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { instrumentDurableObjectWithSentry, instrumentWorkflowWithSentry, withSentry } from '@sentry/cloudflare';
 import type { WorkerEnv } from './env.ts';
 import handler from './index.ts';
 import { EmailDeliveryLedger as EmailLedger } from './email-delivery-ledger.ts';
 import { RequestQuotaLedger as QuotaLedger } from './request-quota-ledger.ts';
 import { PaperRewriteSession as RewriteSession } from './ai-rewrite-session.ts';
+import { runPaperHarvest } from './paper-harvest.ts';
 import { workerSentryOptions } from './error-tracking.ts';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.ts';
@@ -40,7 +42,12 @@ class InstrumentedRewriteSession extends DurableObject<WorkerEnv> {
   fetch(request: Request) { return this.session.fetch(request); }
 }
 
+class HarvestWorkflow extends WorkflowEntrypoint<WorkerEnv, { lanes?: string[] } | undefined> {
+  run(event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) { return runPaperHarvest(this.env, event, step); }
+}
+
 export const EmailDeliveryLedger = instrumentDurableObjectWithSentry(workerSentryOptions, InstrumentedEmailLedger);
 export const RequestQuotaLedger = instrumentDurableObjectWithSentry(workerSentryOptions, InstrumentedQuotaLedger);
 export const PaperRewriteSession = instrumentDurableObjectWithSentry(workerSentryOptions, InstrumentedRewriteSession);
+export const PaperHarvestWorkflow = instrumentWorkflowWithSentry(workerSentryOptions, HarvestWorkflow);
 export default withSentry(workerSentryOptions, handler);

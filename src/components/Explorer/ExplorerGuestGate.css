@@ -9,7 +9,7 @@
   padding: var(--space-6) var(--space-5) var(--space-6) var(--space-6);
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-default);
-  animation: explorerGateIn 0.42s var(--ease-out-expo) both;
+  animation: rise var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-guest-gate::before {
@@ -64,11 +64,6 @@
   color: var(--text-tertiary);
   font-size: var(--fs-xs);
   line-height: 1.4;
-}
-
-@keyframes explorerGateIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
 }
 
 /* On a phone the button takes the width it needs and the note drops under it,

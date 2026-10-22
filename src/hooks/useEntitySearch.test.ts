@@ -27,7 +27,8 @@ type View = {
 type Scope = 'all' | SearchSection;
 
 function setup() {
-  const calls: { query: string; signal: AbortSignal; onUpdate: (snapshot: SearchSnapshot) => void; finish: (snapshot: SearchSnapshot) => void }[] = [];
+  // One entry per ask: a search is started once, then asked for each scope it shows.
+  const calls: { query: string; scope: Scope; signal: AbortSignal; onUpdate: (snapshot: SearchSnapshot) => void; finish: (snapshot: SearchSnapshot) => void }[] = [];
   const events: unknown[] = [];
   const slots: unknown[] = [];
   const memo = new Map<number, { deps: unknown[]; value: unknown }>();
@@ -76,7 +77,9 @@ function setup() {
         pendingEffects.set(i, fn);
       }
     },
-    searchEntities: (query: string, options: { signal: AbortSignal; onUpdate: (snapshot: SearchSnapshot) => void }) => new Promise<SearchSnapshot>(finish => calls.push({ query, ...options, finish })),
+    searchEntities: (query: string, options: { signal: AbortSignal; onUpdate: (snapshot: SearchSnapshot) => void }) => ({
+      ask: (asked: Scope) => new Promise<SearchSnapshot>(finish => calls.push({ query, scope: asked, signal: options.signal, onUpdate: options.onUpdate, finish })),
+    }),
   }) as (enabled: boolean, papers: unknown[], scope: Scope) => View;
   function render() {
     let renders = 0;
@@ -119,7 +122,7 @@ test('All publishes only after every category settles, including an empty or fai
   h.calls[0].onUpdate({ ...complete, pending: ['projects'] });
   view = h.render();
   assert.equal(view.hasSearched, false);
-  h.calls[0].onUpdate({ ...complete, issues: [{ section: 'projects', reason: 'timeout' }] });
+  h.calls[0].onUpdate({ ...complete, issues: [{ section: 'projects', reason: 'timeout', failedAtMs: 0 }] });
   view = h.render();
   assert.equal(view.isPending, false);
   assert.equal(view.results.papers[0].title, 'Graph neural networks');
@@ -142,11 +145,11 @@ test('Papers waits for its final provider merge, then rows and counts stay fixed
   assert.equal(later.results, first.results);
   assert.equal(later.totalResults, first.totalResults);
   assert.equal(later.pendingSections, first.pendingSections, 'unknown tab counts do not change in the background');
-  assert.equal(h.calls.length, 1);
+  assert.ok(h.calls.every(call => call.signal === h.calls[0].signal), 'one search');
   h.close();
 });
 
-test('switching scope uses the same requests and exposes the newly selected complete view', t => {
+test('switching scope asks the same search for the type and exposes the newly selected complete view', t => {
   const h = start(t);
   h.calls[0].onUpdate(withPaper);
   assert.equal(h.scope('papers').isPending, false);
@@ -157,14 +160,15 @@ test('switching scope uses the same requests and exposes the newly selected comp
   assert.equal(h.scope('papers').results.papers[0].id, paper.id);
   h.calls[0].onUpdate(complete);
   assert.equal(h.scope('all').totalResults, 2);
-  assert.equal(h.calls.length, 1, 'tab changes never start a search');
+  assert.deepEqual(h.calls.map(call => call.scope), ['all', 'papers', 'institutions', 'all', 'papers', 'all']);
+  assert.ok(h.calls.every(call => call.signal === h.calls[0].signal), 'tab changes never start a search');
   h.close();
 });
 
 test('an empty type settles without waiting for unrelated sources, retaining their terminal metadata', t => {
   const h = start(t);
   h.scope('topics');
-  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'institutions', 'projects'], issues: [{ section: 'authors', reason: 'error' }] });
+  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'institutions', 'projects'], issues: [{ section: 'authors', reason: 'error', failedAtMs: 0 }] });
   const view = h.render();
   assert.equal(view.hasSearched, true);
   assert.equal(view.isPending, false);
@@ -176,7 +180,7 @@ test('an empty type settles without waiting for unrelated sources, retaining the
 test('a failed selected type publishes its failure without claiming a successful empty answer', t => {
   const h = start(t);
   h.scope('institutions');
-  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'authors', 'topics', 'projects'], issues: [{ section: 'institutions', reason: 'timeout' }] });
+  h.calls[0].onUpdate({ ...loading, pending: ['papers', 'authors', 'topics', 'projects'], issues: [{ section: 'institutions', reason: 'timeout', failedAtMs: 0 }] });
   const view = h.render();
   assert.equal(view.isPending, false);
   assert.equal(view.searchIssues[0].reason, 'timeout');
@@ -223,4 +227,29 @@ test('closing cancels the query and analytics ignores the cancelled search', asy
   await Promise.resolve();
   assert.equal(h.render().totalResults, 0);
   assert.equal(h.events.length, 0);
+});
+
+// PAP-86: the search starts with the type on screen and asks for another type
+// only when the reader opens it, so a reader who stays on Papers never pays for
+// the author search.
+test('a type opened on a running search is asked for then; one opened after the query changed waits for the new search', t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = setup();
+  h.render();
+  h.scope('papers');
+  h.type('hinton');
+  t.mock.timers.tick(320);
+  h.render();
+  assert.deepEqual(h.calls.map(call => call.scope), ['papers'], 'the search starts with the type on screen');
+  h.scope('authors');
+  assert.deepEqual(h.calls.map(call => call.scope), ['papers', 'authors']);
+  assert.equal(h.calls[1].signal, h.calls[0].signal, 'asked of the same search');
+  h.type('hinton geoffrey');
+  h.scope('topics');
+  assert.equal(h.calls.length, 2, 'a cancelled search is not asked for anything');
+  t.mock.timers.tick(320);
+  h.render();
+  assert.equal(h.calls.at(-1)?.scope, 'topics');
+  assert.notEqual(h.calls.at(-1)?.signal, h.calls[0].signal);
+  h.close();
 });

@@ -59,7 +59,7 @@ test('the entrance is withheld by the same class the stylesheet gates it on', as
   assert.match(withheld, /opacity: 0;/);
   assert.match(withheld, /animation: none;/);
   // And the entrance itself is still the thing being withheld.
-  assert.match(css, /animation:\s*\n?\s*figureClipIn var\(--fig-in-duration, 480ms\)/);
+  assert.match(css, /animation:\s*\n?\s*figureClipIn var\(--fig-in-duration, 300ms\)/);
 });
 
 /**
@@ -90,21 +90,22 @@ test('the clippings stagger by delay and all travel at the same speed', async ()
 test('the entrance spends its run moving, and holds only its first frame', async () => {
   const css = strip(await read('./PaperCard.css'));
   const figure = css.slice(css.indexOf('.pc-figure {'), css.indexOf('}', css.indexOf('.pc-figure {')));
-  assert.match(figure, /figureClipIn var\(--fig-in-duration, 480ms\) var\(--ease-out-quad\)\s*\n?\s*var\(--fig-in-delay, 0ms\) backwards/,
+  assert.match(figure, /figureClipIn var\(--fig-in-duration, 300ms\) var\(--ease-out-quad\)\s*\n?\s*var\(--fig-in-delay, 0ms\) backwards/,
     'quad, no expo: el expo-out hace el 80 % del viaje en el primer quinto');
   assert.doesNotMatch(figure, /figureClipIn[^,]*cubic-bezier\(0\.16/, 'y el expo no vuelve por la puerta de atrás');
   assert.doesNotMatch(figure, /forwards|both/,
     'nada de fill hacia adelante: dentro de content-visibility: auto una pose retenida es una figura congelada');
-  assert.match(figure, /figureClipDrift[\s\S]{0,140}calc\(var\(--fig-in-delay, 0ms\) \+ var\(--fig-in-duration, 480ms\) \+ 1\.1s\)/,
+  assert.match(figure, /figureClipDrift[\s\S]{0,140}calc\(var\(--fig-in-delay, 0ms\) \+ var\(--fig-in-duration, 300ms\) \+ 1\.1s\)/,
     'la deriva espera a la entrada ENTERA, retardo incluido, o empieza encima de ella');
   const keyframes = css.slice(css.indexOf('@keyframes figureClipIn'), css.indexOf('}', css.indexOf('@keyframes figureClipIn') + 60));
   assert.doesNotMatch(keyframes, /0%, 20%/,
     'el hueco del 20 % era el escalonado viejo; con retardo de verdad sólo es tiempo muerto dentro de la carrera');
   assert.match(keyframes, /0% \{/);
   assert.doesNotMatch(keyframes, /opacity:|rotate:/, 'the settle keeps the resting tilt and does not ease opacity');
-  assert.match(figure, /figureClipFade var\(--fig-in-duration, 480ms\) linear\s*var\(--fig-in-delay, 0ms\) backwards/,
+  assert.match(figure, /appear var\(--fig-in-duration, 300ms\) linear\s*var\(--fig-in-delay, 0ms\) backwards/,
     'the fade uses the same duration and delay, but progresses evenly');
-  assert.match(css, /@keyframes figureClipFade \{\s*from \{ opacity: 0; \}/);
+  const shared = await read('../../styles/variables.css');
+  assert.match(shared, /@keyframes appear \{\s*from \{ opacity: 0; \}\s*\}/);
   const reduced = css.split('@media (prefers-reduced-motion: reduce)').find((block: string, index: number) => index > 0 && block.includes('.pc-figure,'));
   assert.match(reduced!, /\.pc-figure,\s*\.pc-figure\.is-loaded\.is-resumed,[^{]*\{\s*animation: none;/,
     'reduced motion also overrides the more specific resumed-figure rule and stops its drift');
@@ -211,22 +212,23 @@ test('SOURCE: a clipping leaves before its page and resumes with it, never in on
     assert.match(css, new RegExp(`\\.page-transition\\[data-page-motion="${motion}"\\] \\.pc-figure\\.is-loaded`),
       `${motion} clears the clippings before the page arriving covers`);
   }
-  const out = css.match(/@keyframes figureClipOut \{([^}]*)\}/);
+  const shared = await readFile(new URL('../../styles/variables.css', import.meta.url), 'utf8');
+  const out = shared.match(/@keyframes vanish \{([^}]*)\}/);
   assert.ok(out, 'the clippings have a way out');
   assert.match(out[1], /to \{ opacity: 0;/);
   assert.doesNotMatch(out[1], /from/, 'no `from`: it leaves from wherever it is');
   const outRule = css.match(/\.page-transition\[data-page-motion="fade"\] \.pc-figure\.is-loaded \{([^}]*)\}/);
   assert.ok(outRule, 'the four leaving motions share one rule');
-  const outMs = Number(outRule[1].match(/figureClipOut (\d+)ms linear/)?.[1]);
+  const outMs = Number(outRule[1].match(/vanish (\d+)ms linear/)?.[1]);
   assert.ok(outMs > 0 && outMs <= 100, `gone inside the window the held page is visible for: ${outMs}ms`);
 
   // Coming back: a fade, not a jump and not an arrival.
   const resumed = css.match(/\.pc-figure\.is-loaded\.is-resumed \{([^}]*)\}/);
   assert.ok(resumed, 'the resumed pose has a rule of its own');
   assert.doesNotMatch(resumed[1], /figureClipIn/, 'the entrance is what a resumed clipping drops');
-  assert.match(resumed[1], /figureClipResume (\d+)ms linear/, 'and a plain fade is what it keeps');
+  assert.match(resumed[1], /appear var\(--motion-base\) linear/, 'and a plain fade is what it keeps');
   assert.match(resumed[1], /figureClipDrift/, 'the drift still takes over afterwards');
-  const resume = css.match(/@keyframes figureClipResume \{([^}]*)\}/);
+  const resume = shared.match(/@keyframes appear \{([^}]*)\}/);
   assert.ok(resume, 'the resumed fade is declared');
   assert.match(resume[1], /from \{ opacity: 0;/);
   assert.doesNotMatch(resume[1], /translate|scale|rotate/, 'a resume is a fade: the travel is what says "arriving"');

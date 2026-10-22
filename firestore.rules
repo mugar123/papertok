@@ -468,6 +468,54 @@ service cloud.firestore {
             || 'endParagraphIndex' in request.resource.data);
       }
 
+      // The reader's own plain-words summaries (src/services/savedSummaryService.ts):
+      // one per paper and level, keyed `<paperKey>.<level>`, written together
+      // with the history row below in one batch. The client writes them only
+      // for its own account and reads them back so that reopening a paper does
+      // not spend another AI use; nothing here is shared between accounts.
+      //
+      // The text is fetched one document at a time and never listed: a page of
+      // summaries would download whole papers' worth of text, and the history
+      // below is the list. The rules cannot walk the sections, so a section's
+      // own size is bounded only by Firestore's 1 MiB document limit; the count
+      // is capped at the client's ceiling (MAX_SECTIONS).
+      match /summaries/{summaryId} {
+        allow get, delete: if ownsUserTree(userId);
+        allow list: if false;
+        allow create, update: if ownsUserTree(userId)
+          && summaryId.size() <= 620
+          && summaryId.matches('^[A-Za-z0-9_-]+[.](beginner|university|researcher)$')
+          && request.resource.data.keys().hasOnly(['sections', 'model', 'sourceBasis', 'promptVersion'])
+          && request.resource.data.sections is list
+          && request.resource.data.sections.size() > 0
+          && request.resource.data.sections.size() <= 24
+          && validString(request.resource.data.model, 100)
+          && validString(request.resource.data.sourceBasis, 40)
+          && validString(request.resource.data.promptVersion, 40);
+      }
+
+      // One row per saved summary, which is all the history ever pages
+      // through: newest first, SUMMARY_HISTORY_PAGE_SIZE rows plus one that
+      // says whether another page exists. The id has to be the row's own paper
+      // key and level, so a row always names the summary it reopens.
+      match /summaryHistory/{summaryId} {
+        allow get, delete: if ownsUserTree(userId);
+        allow list: if ownsUserTree(userId) && request.query.limit <= 21;
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly([
+            'paperKey', 'paperId', 'level', 'title', 'pdfUrl', 'updatedAt'
+          ])
+          && validNonEmptyString(request.resource.data.paperKey, 600)
+          && request.resource.data.paperKey.matches('^[A-Za-z0-9_-]+$')
+          && request.resource.data.level in ['beginner', 'university', 'researcher']
+          && summaryId == request.resource.data.paperKey + '.' + request.resource.data.level
+          && validNonEmptyString(request.resource.data.paperId, 400)
+          && validNonEmptyString(request.resource.data.title, 1000)
+          && validString(request.resource.data.pdfUrl, 2000)
+          && request.resource.data.pdfUrl.matches('^https://.+')
+          && request.resource.data.updatedAt == request.time;
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }

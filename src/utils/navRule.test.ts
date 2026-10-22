@@ -51,6 +51,6 @@ test('SOURCE: the navbar rule travels on the route transition\'s clock and curve
   assert.equal(travel[2], 'var(--ease-out-cubic)', 'and they decelerate the same way');
   // A fade is not a travel: it goes in a straight line, like every other fade
   // in a route change (PageTransition.css says why).
-  assert.match(armed[1], /opacity 0\.16s linear/);
+  assert.match(armed[1], /opacity 0\.12s linear/);
   assert.doesNotMatch(armed[1], /cubic-bezier\(/, 'the curve is the token, not a literal');
 });

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { Paper } from '../models/Paper.ts';
 import { EMPTY_SEARCH, SEARCH_SECTIONS, searchEntities } from '../services/entitySearchService.ts';
-import type { SearchSection, SearchSnapshot } from '../services/entitySearchService.ts';
+import type { EntitySearch, SearchScope, SearchSnapshot } from '../services/entitySearchService.ts';
 import { useAnalyticsConsent } from '../context/AnalyticsContext.tsx';
 
 const SEARCH_DEBOUNCE_MS = 320;
-type SearchScope = 'all' | SearchSection;
 type SearchAnswer = { term: string; signal: AbortSignal; snapshot: SearchSnapshot };
+type SearchRequest = { controller: AbortController; search: EntitySearch };
 
 export function useEntitySearch(enabled: boolean, knownPapers: Paper[], section: SearchScope = 'all') {
   const { trackEvent } = useAnalyticsConsent();
@@ -15,46 +15,56 @@ export function useEntitySearch(enabled: boolean, knownPapers: Paper[], section:
   // The visible answer has its own lifetime: background replies may only enter
   // it when the user changes scope, edits the query or explicitly retries.
   const [published, setPublished] = useState<(SearchAnswer & { section: SearchScope }) | null>(null);
-  const request = useRef<AbortController | null>(null);
+  const request = useRef<SearchRequest | null>(null);
 
-  const performSearch = useCallback(async (term: string, papers: Paper[]) => {
-    request.current?.abort();
+  const performSearch = useCallback(async (term: string, papers: Paper[], scope: SearchScope) => {
+    request.current?.controller.abort();
     const controller = new AbortController();
-    request.current = controller;
     setAnswer({ term, signal: controller.signal, snapshot: { ...EMPTY_SEARCH, pending: SEARCH_SECTIONS } });
-    const snapshot = await searchEntities(term, {
+    const search = searchEntities(term, {
       signal: controller.signal, knownPapers: papers,
       onUpdate: snapshot => {
         if (!controller.signal.aborted) setAnswer({ term, signal: controller.signal, snapshot });
       },
     });
+    request.current = { controller, search };
+    const snapshot = await search.ask(scope);
     if (controller.signal.aborted) return;
     const count = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
-    trackEvent('search_performed', { search_type: 'all', result_count: count, has_results: count > 0, query: term });
+    trackEvent('search_performed', { search_type: scope, result_count: count, has_results: count > 0, query: term });
   }, [trackEvent]);
 
-  const startSearch = useEffectEvent((term: string) => performSearch(term, knownPapers));
+  const startSearch = useEffectEvent((term: string) => performSearch(term, knownPapers, section));
 
   useEffect(() => {
-    request.current?.abort();
+    request.current?.controller.abort();
     if (!enabled || !query.trim()) return;
     const timer = setTimeout(() => { void startSearch(query.trim()); }, SEARCH_DEBOUNCE_MS);
-    return () => { clearTimeout(timer); request.current?.abort(); };
+    return () => { clearTimeout(timer); request.current?.controller.abort(); };
   }, [enabled, query]);
+
+  // A type opened while its search is running is asked for then, so a reader
+  // who stays on Papers never pays for the other sections. One opened before
+  // the search starts is what the search starts with.
+  const openSection = useEffectEvent((scope: SearchScope) => {
+    const current = request.current;
+    if (current && !current.controller.signal.aborted) void current.search.ask(scope);
+  });
+  useEffect(() => { openSection(section); }, [section]);
 
   const setQuery = useCallback((term: string) => {
     if (term === query) return;
-    request.current?.abort();
+    request.current?.controller.abort();
     setTerm(term);
     setAnswer(null);
   }, [query]);
   const reset = useCallback(() => {
-    request.current?.abort();
+    request.current?.controller.abort();
     setTerm('');
     setAnswer(null);
     setPublished(null);
   }, []);
-  const retry = () => { if (query.trim()) void performSearch(query.trim(), knownPapers); };
+  const retry = () => { if (query.trim()) void performSearch(query.trim(), knownPapers, section); };
 
   const current = Boolean(query.trim()) && answer?.term === query.trim();
   const ready = current && (section === 'all' ? answer.snapshot.pending.length === 0 : !answer.snapshot.pending.includes(section));

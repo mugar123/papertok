@@ -31,6 +31,8 @@ import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
+import { PaperStoreError } from './paper-store.ts';
+import { handleCorpusFeed, handleStoreFeed } from './paper-feed.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
@@ -155,7 +157,7 @@ const DOMAIN_SOURCE_HANDLERS: Record<string, SourceHandler> = {
   '/resources/figures': handlePaperFigures,
 };
 
-export async function handleRequest(request: Request, env: WorkerEnv): Promise<Response> {
+export async function handleRequest(request: Request, env: WorkerEnv, context?: Pick<ExecutionContext, 'waitUntil'>): Promise<Response> {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (request.method === 'OPTIONS') {
@@ -381,6 +383,35 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       captureWorkerException(error);
       console.error('Personal recommendations failed', error);
       return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
+    }
+  }
+  // The feed's papers from the paper corpus (worker/paper-feed.ts): `/store/papers`,
+  // and `/store/feed` for bundles published before it. Asked with a body, so
+  // routed ahead of the GET-only gate below; personal, so they check the
+  // reader's identity first and are never cached.
+  if (url.pathname === '/store/papers' || url.pathname === '/store/feed') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    let identity: VerifiedIdentity;
+    try {
+      identity = await verifyFirebaseIdentity(request, env);
+    } catch (error) {
+      captureWorkerException(error);
+      return providerAuthFailure(error, origin, env);
+    }
+    const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
+    try {
+      const answer = url.pathname === '/store/papers'
+        ? await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined)
+        : await handleStoreFeed(request, env, identity);
+      return json(answer, 200, headers);
+    } catch (error) {
+      if (error instanceof PaperStoreError) {
+        return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+      }
+      captureWorkerException(error);
+      console.error('Paper store failed', error);
+      return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
     }
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));

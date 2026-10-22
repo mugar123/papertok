@@ -1,4 +1,5 @@
 import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/Paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
 export interface PaperCardProps {
@@ -120,7 +121,6 @@ import { getHuggingFaceResearchResources } from '../../services/huggingFaceServi
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation.ts';
 import { canRewritePaper } from '../../services/paperRewriteService.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.ts';
-import { CARD_DURATION_MS } from '../../utils/scrollTween.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
@@ -133,6 +133,8 @@ import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
  * A 420ms collapse keeps resetting this, so the reading lands once — after it.
  */
 const ABSTRACT_SETTLE_MS = 180;
+// The abstract's open and resize. PaperCard.css reads it as --abstract-motion.
+const ABSTRACT_MOTION_MS = 300;
 // The abstract ⇄ map swap: the slide and the slot's height (`.pc-slot--morphing`
 // in PaperCard.css) on one clock.
 const SLOT_MORPH_MS = 240;
@@ -188,22 +190,30 @@ function ClippedName({ name }: { name: string }) {
 // lazy routes.
 const PaperReader = lazy(() => import('../Reader/PaperReader.tsx'));
 
-// One quiet watermark per research area, engraved in the corner of
-// the sheet. It replaces the old animated icon constellation: the same visual
-// cue about the field, without the haze competing with the type.
-const AREA_WATERMARK_ICONS = {
-  physics: Planet,
-  cs: Cpu,
-  math: Sigma,
-  stat: ChartBar,
-  econ: TrendUp,
-  'q-fin': CurrencyCircleDollar,
-  eess: Lightning,
-  mech: Gear,
-  civil: Building,
-  chemeng: Flask,
-  med: Heartbeat,
-  bio: Dna,
+// One quiet watermark per research area, engraved in the head of the sheet.
+// It replaces the old animated icon constellation: the same visual cue about
+// the field, without the haze competing with the type.
+//
+// `ink` is the icon's own extent inside Phosphor's 256-unit box (the paths'
+// bounding box, read with getBBox on 2026-10-22), passed as the svg's viewBox:
+// every field then fills the same square, where the lightning's 176×240 of
+// ink and the trend arrow's 224×144 used to draw at the box's size and read as
+// two different sizes. Phosphor draws its maths symbols' fill weight on a
+// plate — Sigma, Pi, Function and Radical alike — while every other icon is
+// the thing's silhouette, so maths takes the bold weight, the Σ's own shape.
+const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: string; weight?: IconWeight }> = {
+  physics: { Icon: Planet, ink: '8 32 240 192' },
+  cs: { Icon: Cpu, ink: '16 16 224 224' },
+  math: { Icon: Sigma, ink: '52 36 152 184', weight: 'bold' },
+  stat: { Icon: ChartBar, ink: '24 32 208 184' },
+  econ: { Icon: TrendUp, ink: '16 48 224 144' },
+  'q-fin': { Icon: CurrencyCircleDollar, ink: '24 24 208 208' },
+  eess: { Icon: Lightning, ink: '40 8 176 240' },
+  mech: { Icon: Gear, ink: '23 23 210 210' },
+  civil: { Icon: Building, ink: '16 16 224 224' },
+  chemeng: { Icon: Flask, ink: '32 24 192 200' },
+  med: { Icon: Heartbeat, ink: '16 40 224 192' },
+  bio: { Icon: Dna, ink: '56 16 144 224' },
 };
 
 const RESOURCE_KIND_CONFIG = {
@@ -268,8 +278,8 @@ const FIGURE_DRIFT_MIN_MS = 4_000;
 const FIGURE_DRIFT_JITTER_MS = 2_000;
 /* Each clipping gets a gradual fade and a gentle settle on separate curves.
    A tighter stagger keeps the four arrivals connected: the last settles at
-   660ms, while each image has 480ms to become visible. */
-const FIGURE_ENTRANCE_MS = 480;
+   480ms, while each image has 300ms to become visible. */
+const FIGURE_ENTRANCE_MS = 300;
 const FIGURE_ENTRANCE_STAGGER_MS = 60;
 
 /** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
@@ -683,7 +693,7 @@ const PaperCard = memo(function PaperCard({
   // reader. It falls away when the card leaves — off screen, where nothing is
   // seen going — and comes back when the card does, and an element being given
   // an animation again is what restarts it. This is also what the rest of the
-  // card already does: `pcArrive` is on the pieces unconditionally and plays
+  // card already does: the `appear` arrival is on the pieces unconditionally and plays
   // every time they mount, rather than once per paper. The state itself is
   // declared with `figures`, where a new paper resets both.
   const markFigureLoaded = useCallback((url: string) => {
@@ -811,11 +821,11 @@ const PaperCard = memo(function PaperCard({
     // `overflowY: hidden` for the length of the travel: the open panel
     // scrolls (`overflow-y: auto`), and with its content taller than the box
     // mid-way a scrollbar would come and go and re-wrap the text.
-    animateSize(panel, 'maxHeight', from, CARD_DURATION_MS, EASE_OUT_EXPO, { overflowY: 'hidden' });
+    animateSize(panel, 'maxHeight', from, ABSTRACT_MOTION_MS, EASE_OUT_EXPO, { overflowY: 'hidden' });
   }, [expanded, prefersReducedMotion]);
 
   /* And the slot's height morphs from the face it had to the one it gets, on
-     a CSS transition (PaperCard.css, CARD_DURATION_MS) that a second press
+     a CSS transition (PaperCard.css, ABSTRACT_MOTION_MS) that a second press
      retargets from wherever it is. The target is read before the first
      frame: the arriving face as the column will finally hold it, squeezed on
      a short card. The face is laid out at that size from the start and the
@@ -1085,7 +1095,7 @@ const PaperCard = memo(function PaperCard({
     // `transitionend` below does the finishing. This only covers the case where
     // it never arrives — an interrupted transition fires nothing — because an
     // inline height left behind would pin the panel at that size for good.
-    backstop = setTimeout(settle, CARD_DURATION_MS + 120);
+    backstop = setTimeout(settle, ABSTRACT_MOTION_MS + 120);
     settleAbstractResize.current = settle;
   }, [expanded, prefersReducedMotion]);
 
@@ -1321,10 +1331,10 @@ const PaperCard = memo(function PaperCard({
    * atom. Resolved through the same chain as the accent ink now, so the mark
    * and the colour cannot disagree, and nothing is drawn at all when the branch
    * is genuinely unknown: a wrong field is worse than no field. */
-  const WatermarkIcon = useMemo(
-    () => AREA_WATERMARK_ICONS[areaKeyForPaper(paper) as keyof typeof AREA_WATERMARK_ICONS] || null,
-    [paper],
-  );
+  const watermark = useMemo(() => {
+    const area = areaKeyForPaper(paper);
+    return area ? { ...AREA_WATERMARK_ICONS[area], weight: AREA_WATERMARK_ICONS[area].weight ?? 'fill' } : null;
+  }, [paper]);
 
   // Only a tap on the card itself. The sheets, the related card and the
   // reader are portaled to the body, and React still bubbles their clicks
@@ -1874,14 +1884,17 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
-        {WatermarkIcon && (
+      <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper), '--abstract-motion': `${ABSTRACT_MOTION_MS}ms` }}>
+        <div className="pc-body">
+        {/* The head: lead, kicker, title and authors, parted from the abstract
+            by the authors' rule. The field's glyph lives in it (PaperCard.css,
+            `.pc-watermark`), standing on that rule. */}
+        <div className="pc-head">
+        {watermark && (
           <span className="pc-watermark" aria-hidden="true">
-            <WatermarkIcon size={220} weight="fill" />
+            <watermark.Icon size={220} weight={watermark.weight} viewBox={watermark.ink} />
           </span>
         )}
-
-        <div className="pc-body">
         <div className="pc-lead" aria-hidden="true">
           {figures[0] && (
             <img
@@ -2033,6 +2046,7 @@ const PaperCard = memo(function PaperCard({
               </ul>
             </div>
           )}
+        </div>
         </div>
 
         <div ref={slotRef} className={`pc-slot${abstractText ? '' : ' pc-slot--no-abstract'}`}>

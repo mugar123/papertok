@@ -39,6 +39,7 @@ import InstitutionDialog from '../Institution/InstitutionDialog.tsx';
 import InstitutionPill from '../Institution/InstitutionPill.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import EditInterestsModal from './EditInterestsModal.tsx';
+import SummaryHistory from './SummaryHistory.tsx';
 import { FollowingSheet } from './FollowingSettingsPage.tsx';
 import DeleteAccountDialog from './DeleteAccountDialog.tsx';
 import EmailNotificationModal from '../Following/EmailNotificationModal.tsx';
@@ -59,7 +60,7 @@ import './SettingsPage.css';
 const SETTINGS_PAGES = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
   { slug: 'discovery', label: 'Discovery', summary: 'Follows and scientific interests', Icon: Compass },
-  { slug: 'reading', label: 'Reading & AI', summary: 'Default level for AI explanations', Icon: Sparkle },
+  { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
 ];
@@ -466,7 +467,7 @@ function DiscoveryPage() {
 }
 
 function ReadingPage() {
-  const { readingPreferences, updateReadingPreferences } = useAuth();
+  const { user, readingPreferences, updateReadingPreferences } = useAuth();
   const [savingLevel, setSavingLevel] = useState<string | null>(null);
 
   const handleLevelChange = async (level: ReadingLevel) => {
@@ -483,40 +484,45 @@ function ReadingPage() {
   };
 
   return (
-    <section className="settings-section" aria-labelledby="settings-reading-heading">
-      <SectionHeading id="settings-reading-heading" title={copy.readingAi} description={copy.readingAiDescription} />
-      {/* A ruled list of the three levels, like the rows on the other pages. */}
-      <RadioGroup
-        className="settings-levels"
-        aria-label={copy.aiLevelLabel}
-        value={readingPreferences.aiExplanationLevel}
-        onValueChange={handleLevelChange}
-        // Busy, not disabled: disabling the radio that holds focus dropped a
-        // keyboard user onto <body>. handleLevelChange ignores a choice made
-        // while another is saving.
-        aria-busy={Boolean(savingLevel)}
-      >
-        {PAPER_REWRITE_LEVELS.map(({ id }) => {
-          const { label, description, Icon } = LEVEL_DETAILS[id as ReadingLevel];
-          const checked = readingPreferences.aiExplanationLevel === id;
-          return (
-            <RadioGroupItem
-              key={id}
-              value={id}
-              render={<button type="button" />}
-              nativeButton
-            >
-              <span className="settings-level-radio" aria-hidden="true" />
-              <Icon size={18} weight={checked ? 'fill' : 'regular'} aria-hidden="true" />
-              <span className="settings-level-copy">
-                <strong>{label}</strong>
-                <span>{description}</span>
-              </span>
-            </RadioGroupItem>
-          );
-        })}
-      </RadioGroup>
-    </section>
+    <>
+      <section className="settings-section" aria-labelledby="settings-reading-heading">
+        <SectionHeading id="settings-reading-heading" title={copy.readingAi} description={copy.readingAiDescription} />
+        {/* A ruled list of the three levels, like the rows on the other pages. */}
+        <RadioGroup
+          className="settings-levels"
+          aria-label={copy.aiLevelLabel}
+          value={readingPreferences.aiExplanationLevel}
+          onValueChange={handleLevelChange}
+          // Busy, not disabled: disabling the radio that holds focus dropped a
+          // keyboard user onto <body>. handleLevelChange ignores a choice made
+          // while another is saving.
+          aria-busy={Boolean(savingLevel)}
+        >
+          {PAPER_REWRITE_LEVELS.map(({ id }) => {
+            const { label, description, Icon } = LEVEL_DETAILS[id as ReadingLevel];
+            const checked = readingPreferences.aiExplanationLevel === id;
+            return (
+              <RadioGroupItem
+                key={id}
+                value={id}
+                render={<button type="button" />}
+                nativeButton
+              >
+                <span className="settings-level-radio" aria-hidden="true" />
+                <Icon size={18} weight={checked ? 'fill' : 'regular'} aria-hidden="true" />
+                <span className="settings-level-copy">
+                  <strong>{label}</strong>
+                  <span>{description}</span>
+                </span>
+              </RadioGroupItem>
+            );
+          })}
+        </RadioGroup>
+      </section>
+      {/* Keyed by account: another account starts from an empty list, and a
+          page still loading for the previous one is dropped with it. */}
+      {user && <SummaryHistory key={user.uid} uid={user.uid} />}
+    </>
   );
 }
 

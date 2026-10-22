@@ -109,7 +109,7 @@
 }
 
 .settings-spin {
-  animation: settingsSpin 0.85s linear infinite;
+  animation: spin 0.85s linear infinite;
 }
 
 /* ── Sections: a title, one line, then the panel ── */
@@ -210,6 +210,34 @@
 .settings-page button[data-disabled] {
   pointer-events: auto;
   cursor: not-allowed;
+}
+
+/* Plain-words summaries: the history's ruled rows (ListRow) in the page's
+   panel, with its loading, empty and failed states set as a quiet line. */
+.settings-summaries {
+  padding-block: var(--space-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* ListRow's hover is the panel's own sunken paper here. */
+  .settings-summaries .list-row:hover {
+    background: var(--bg-card);
+  }
+}
+
+.settings-summaries-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.settings-summaries-more {
+  margin-top: var(--space-3);
 }
 
 /* Tags sit on their own line under the row, in the text column only: they
@@ -429,10 +457,6 @@
   font-size: var(--fs-xs);
 }
 
-@keyframes settingsSpin {
-  to { transform: rotate(360deg); }
-}
-
 @media (max-width: 900px) {
   /* No room for a column beside the content: the pages become one line
      above it, scrolled sideways, each page the same icon and name. */
@@ -637,7 +661,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .settings-spin {
-    animation: none;
+    animation-duration: 2.4s;
   }
 
   .settings-index-list a,

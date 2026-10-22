@@ -618,6 +618,72 @@ export class PaperBuilder {
   }
 
   /**
+   * The keys two records of one paper share: its DOI, arXiv, PubMed,
+   * OpenReview, Scopus, ADS and INSPIRE ids, then its title with the first
+   * author's last name and, for a long title, with each token of that name.
+   * `deduplicate` groups by them; the Worker's paper store files works by them.
+   */
+  static identityKeys(paper: Partial<Paper>): string[] {
+    // 1. Determine stable deduplication keys before the title heuristic.
+    let doiKey = paper.doi ? paper.doi.toLowerCase().trim() : null;
+    if (doiKey && doiKey.startsWith('https://doi.org/')) {
+      doiKey = doiKey.replace('https://doi.org/', '');
+    }
+
+    // Heuristic key: Alphanumeric title + first author's last name
+    const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const firstAuthorName = paper.authors && paper.authors.length > 0
+      ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
+      : '';
+    const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
+    const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
+    // The same paper under two records of one provider, with the first
+    // author's name in two orders: OpenAlex carries HQ-SAM (arXiv
+    // 2306.01567) as a preprint by "Ke Jian Lei" and as a NeurIPS paper by
+    // "Lei Ke", each under its own DOI, so neither the DOI nor the last
+    // token of the name ("lei" / "ke") could join them, and the search
+    // showed the paper twice (2026-09-22). One key per token of the name is
+    // order-blind: any shared token on an identical title is a match, and
+    // the bridging below folds the groups. Only for a title long enough to
+    // be a fingerprint on its own -- "Editorial" or "Introduction" with a
+    // shared "Wei" is not the same paper -- and never for a lone initial.
+    const looseTitleKeys = cleanTitle.length >= HEURISTIC_LOOSE_TITLE_MIN_LENGTH
+      ? [...new Set(
+        firstAuthorName
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .split(/[^a-z]+/)
+          .filter(token => token.length >= 2),
+      )].map(token => `${cleanTitle}~${token}`)
+      : [];
+    const idValue = String(paper.id || '');
+    const normalizedArxivId = String(
+      paper.arxivId
+      || paper.huggingFaceId
+      || (idValue.toLowerCase().startsWith('arxiv:') ? idValue : ''),
+    )
+      .trim()
+      .replace(/^arxiv:/i, '')
+      .replace(/v\d+$/i, '')
+      .toLowerCase();
+    const stableKeys = [
+      doiKey,
+      normalizedArxivId ? `arxiv:${normalizedArxivId}` : null,
+      (paper.pmid || idValue.toLowerCase().startsWith('pmid:'))
+        ? `pmid:${String(paper.pmid || idValue).replace(/^pmid:/i, '')}`
+        : null,
+      (paper.openReviewId || idValue.toLowerCase().startsWith('openreview:'))
+        ? `openreview:${String(paper.openReviewId || idValue).replace(/^openreview:/i, '').toLowerCase()}`
+        : null,
+      paper.scopusId ? `scopus:${String(paper.scopusId).toLowerCase()}` : null,
+      paper.adsBibcode ? `ads:${String(paper.adsBibcode).toLowerCase()}` : null,
+      paper.inspireId ? `inspire:${String(paper.inspireId).toLowerCase()}` : null,
+    ].filter(Boolean);
+    return [...stableKeys, heuristicKey, ...looseTitleKeys].filter(Boolean) as string[];
+  }
+
+  /**
    * Deduplicates and merges an array of papers coming from different adapters.
    * Uses stable provider identifiers before Title + First Author as a fallback heuristic.
    * @param {Array<Partial<Paper> | null | undefined> | null | undefined} papers
@@ -631,63 +697,7 @@ export class PaperBuilder {
     for (const paper of papers) {
       if (!paper) continue;
 
-      // 1. Determine stable deduplication keys before the title heuristic.
-      let doiKey = paper.doi ? paper.doi.toLowerCase().trim() : null;
-      if (doiKey && doiKey.startsWith('https://doi.org/')) {
-        doiKey = doiKey.replace('https://doi.org/', '');
-      }
-
-      // Heuristic key: Alphanumeric title + first author's last name
-      const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const firstAuthorName = paper.authors && paper.authors.length > 0
-        ? String((paper.authors[0] as PaperAuthor)?.name ?? paper.authors[0] ?? '')
-        : '';
-      const firstAuthor = firstAuthorName.toLowerCase().split(' ').pop();
-      const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
-      // The same paper under two records of one provider, with the first
-      // author's name in two orders: OpenAlex carries HQ-SAM (arXiv
-      // 2306.01567) as a preprint by "Ke Jian Lei" and as a NeurIPS paper by
-      // "Lei Ke", each under its own DOI, so neither the DOI nor the last
-      // token of the name ("lei" / "ke") could join them, and the search
-      // showed the paper twice (2026-09-22). One key per token of the name is
-      // order-blind: any shared token on an identical title is a match, and
-      // the bridging below folds the groups. Only for a title long enough to
-      // be a fingerprint on its own -- "Editorial" or "Introduction" with a
-      // shared "Wei" is not the same paper -- and never for a lone initial.
-      const looseTitleKeys = cleanTitle.length >= HEURISTIC_LOOSE_TITLE_MIN_LENGTH
-        ? [...new Set(
-          firstAuthorName
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase()
-            .split(/[^a-z]+/)
-            .filter(token => token.length >= 2),
-        )].map(token => `${cleanTitle}~${token}`)
-        : [];
-      const idValue = String(paper.id || '');
-      const normalizedArxivId = String(
-        paper.arxivId
-        || paper.huggingFaceId
-        || (idValue.toLowerCase().startsWith('arxiv:') ? idValue : ''),
-      )
-        .trim()
-        .replace(/^arxiv:/i, '')
-        .replace(/v\d+$/i, '')
-        .toLowerCase();
-      const stableKeys = [
-        doiKey,
-        normalizedArxivId ? `arxiv:${normalizedArxivId}` : null,
-        (paper.pmid || idValue.toLowerCase().startsWith('pmid:'))
-          ? `pmid:${String(paper.pmid || idValue).replace(/^pmid:/i, '')}`
-          : null,
-        (paper.openReviewId || idValue.toLowerCase().startsWith('openreview:'))
-          ? `openreview:${String(paper.openReviewId || idValue).replace(/^openreview:/i, '').toLowerCase()}`
-          : null,
-        paper.scopusId ? `scopus:${String(paper.scopusId).toLowerCase()}` : null,
-        paper.adsBibcode ? `ads:${String(paper.adsBibcode).toLowerCase()}` : null,
-        paper.inspireId ? `inspire:${String(paper.inspireId).toLowerCase()}` : null,
-      ].filter(Boolean);
-      const allKeys = [...stableKeys, heuristicKey, ...looseTitleKeys].filter(Boolean);
+      const allKeys = this.identityKeys(paper);
 
       // 2. Every group any of our keys already points at.
       //
