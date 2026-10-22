@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { paperLegacyAdapter, readArxivId } from './Paper.ts';
 import { areaKeyForPaper, areaLabelForPaper } from '../utils/areaAccent.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { accessTagForPaper } from '../utils/paperStatus.ts';
 import { inTimeZone } from '../test-support/timeZone.ts';
 
 /**
@@ -46,6 +47,16 @@ test('a stored PubMed paper with a DOI keeps the id it was stored under and land
   assert.equal(paper.doi, '10.1000/abc');
   assert.equal(paper.arxivId, undefined);
   assert.equal(paper.landingPageUrl, 'https://doi.org/10.1000/abc');
+});
+
+// A saved paper's document keeps no access field (`buildSavedPaperPayload`), so
+// every list entry and shared copy came back "Open access", a closed paper
+// included: saving it changed what its card showed (PAP-92).
+test('a stored copy that does not say how it opens shows no access chip', () => {
+  const paper = paperLegacyAdapter({ id: 'pmid:31234567', title: 'T', doi: '10.1000/abc' });
+  assert.equal(paper.openAccess, undefined);
+  assert.equal(accessTagForPaper(paper), null);
+  assert.equal(paperLegacyAdapter({ id: 'pmid:1', title: 'T', openAccess: false }).openAccess, false);
 });
 
 test('an arXiv paper still derives its links, and keeps the id it was stored under', () => {

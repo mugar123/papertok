@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { PubmedAdapter, pubmedCategoryQuery } from './PubmedAdapter.ts';
 import { isFeedPublication } from '../feedPublicationService.ts';
 import { PaperBuilder } from '../PaperBuilder.ts';
-import { reviewStatusForPaper } from '../../utils/paperStatus.ts';
+import { accessTagForPaper, reviewStatusForPaper } from '../../utils/paperStatus.ts';
+import { mapOpenAlexEnrichmentWork } from '../openAlexService.ts';
 
 const adapter = new PubmedAdapter();
 
@@ -129,4 +130,39 @@ test('a PubMed article online by today shows its online date when its issue is p
     ['pmid:42900849', 2025, '2025 Oct'],
     ['pmid:3', undefined, ''],
   ]);
+});
+
+// PAP-92. Nothing in esummary says a paper is closed, only that a PMC copy
+// exists. The builder made every other record open (`openAccess: true` when
+// unset), and the feed builds every lane through `deduplicate`, so each
+// PubMed card without a PMC copy said "Open access" until OpenAlex answered.
+// The same `true` kept the card from asking for a free copy.
+function pubmedRecord(articleids: Array<{ idtype: string; value: string }> = []) {
+  return adapter.mapToStandard({
+    uid: '42900001',
+    title: 'A synthetic trial',
+    pubtype: ['Journal Article'],
+    source: 'J',
+    articleids: [{ idtype: 'doi', value: '10.5555/pap92' }, ...articleids],
+  });
+}
+const openAlexWork = (isOa: boolean) => mapOpenAlexEnrichmentWork({
+  id: 'https://openalex.org/W1',
+  doi: 'https://doi.org/10.5555/pap92',
+  open_access: { is_oa: isOa, oa_url: isOa ? 'https://example.org/pap92.pdf' : null },
+})!.enrichment;
+
+test('a PubMed record without a PMC copy keeps its access unknown, and shows no access chip', () => {
+  for (const paper of [PaperBuilder.create(pubmedRecord()), PaperBuilder.deduplicate([pubmedRecord()])[0]]) {
+    assert.equal(paper.openAccess, undefined);
+    assert.equal(accessTagForPaper(paper), null);
+  }
+});
+
+test('OpenAlex or a PMC copy decides the access of a PubMed record', () => {
+  const [unknown] = PaperBuilder.deduplicate([pubmedRecord()]);
+  assert.equal(accessTagForPaper(PaperBuilder.merge(unknown, openAlexWork(false), 'openalex'))!.label, 'Closed access');
+  assert.equal(accessTagForPaper(PaperBuilder.merge(unknown, openAlexWork(true), 'openalex'))!.label, 'Open access');
+  const [deposited] = PaperBuilder.deduplicate([pubmedRecord([{ idtype: 'pmc', value: 'PMC1' }])]);
+  assert.equal(accessTagForPaper(deposited)!.label, 'Open access');
 });
