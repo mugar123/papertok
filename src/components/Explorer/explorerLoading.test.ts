@@ -36,10 +36,6 @@ test('the sweep keeps its phase down the page, now on the pseudo-element', async
   };
 
   rising(
-    phasesOf(/\.explorer-skeleton \.ex-skel-strip \.ex-skel(?::nth-child\(\d\))?::after \{ animation-delay: ([\d.]+)s; \}/g),
-    'the identity strip',
-  );
-  rising(
     phasesOf(/\.explorer-skeleton \.ex-skel-row:nth-child\(\d\) \.ex-skel::after \{ animation-delay: ([\d.]+)s; \}/g),
     'the five waiting rows',
   );

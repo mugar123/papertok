@@ -75,7 +75,7 @@ export function explorerSkeletonShape(type: string|undefined) {
   const projectish = type === 'project';
   return {
     tabs: hasAuthorsTab(type) ? 2 : 1,
-    identity: institutionish ? 'credentials' : 'none',
+    identity: institutionish ? 'meta' : 'none',
     aside: projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
     // Whether the fourth cell is the recent-impact one, with a detail line

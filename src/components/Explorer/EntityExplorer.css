@@ -203,15 +203,6 @@
   color: var(--text-secondary);
 }
 
-.ehc-type--verified {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-color: var(--tint-blue-line);
-  background: var(--tint-blue-bg);
-  color: var(--tint-blue-fg);
-}
-
 .explorer-hero-content {
   display: flex;
   flex-direction: column;
@@ -1312,7 +1303,6 @@
   transition: transform 250ms var(--ease-in-out), width 250ms var(--ease-in-out);
 }
 
-
 @media (hover: hover) and (pointer: fine) {
   .ee-seg button:not([data-pressed]):hover {
     color: var(--text-primary);
@@ -1536,7 +1526,6 @@
 }
 
 
-
 .ee-author-card:focus-visible,
 .project-summary-box:focus-visible,
 .orcid-item-org--link:focus-visible,
@@ -1626,27 +1615,6 @@
    this one would stay inline and ignore both. */
 .ex-skel-stat-detail { display: block; width: 96px; height: 8px; margin-top: 2px; }
 
-/* ── The parts only one kind of page has ──
-   The skeleton is composed from the route, so these are worn by the live
-   containers — `.ehc-tags` and `.ehc-tag-row` —
-   rather than by copies of them. The gaps, the wrapping and the horizontal
-   scroll are therefore literally the ones the real strip uses, and cannot drift
-   from it the first time someone adjusts one and not the other. */
-/* No margin of its own: `.ehc-info` is a flex column with an 8px gap and the
-   live strips rely on it, so adding one here spaced the placeholders wider than
-   the strips they stand in for — 24px of it, on a hero that was otherwise
-   within 13. */
-.ex-skel-strip {
-  min-width: 0;
-}
-
-/* An author's subject chips and an institution's ROR credentials: the same
-   line box, since both are small inline labels in a wrapping row. */
-.ex-skel-chip {
-  height: 25px;
-  flex: 0 0 auto;
-}
-
 /* The follow button. Every entity the Explorer serves can be followed, so this
    is spine, not variant — and leaving it out was taking 32px out of the hero on
    all three kinds of page. */
@@ -1673,10 +1641,6 @@
 .explorer-skeleton .ehc-icon.ex-skel::after,
 .explorer-skeleton .ex-skel-name::after { animation-delay: 0.03s; }
 .explorer-skeleton .ehc-info .ex-skel-sub::after { animation-delay: 0.06s; }
-.explorer-skeleton .ex-skel-strip .ex-skel::after { animation-delay: 0.09s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(2)::after { animation-delay: 0.12s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(3)::after { animation-delay: 0.15s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.18s; }
 .explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
 .explorer-skeleton .ex-skel-follow::after { animation-delay: 0.24s; }
 .explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
@@ -1798,7 +1762,6 @@
   animation: staggerFadeUp var(--motion-base) var(--ease-out) both;
   animation-delay: calc(min(var(--i, 0), 4) * 40ms);
 }
-
 
 /* ─── Filter drawer ───
    A ui Sheet (Base UI Dialog pinned to the right edge). The primitive brings
@@ -2397,6 +2360,16 @@
   font-weight: var(--fw-medium);
   color: var(--text-primary);
   line-height: 1.3;
+}
+
+/* A long name keeps the card to two lines; the full name is in its tooltip
+   and the card's label. */
+.project-participants-grid .project-participant-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 
 .project-participant-country {
