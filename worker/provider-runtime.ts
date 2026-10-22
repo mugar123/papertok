@@ -108,7 +108,7 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
 // tell the Worker's own refusal of one request from OpenAlex refusing the key:
 // only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
 // the same name.
-export const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
+const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
 // One list call, the unit every OpenAlex ceiling here counts in.
 export const OPENALEX_UNIT_USD = 0.0001;
 // Units kept back from what OpenAlex reports is left. A reading is a little
@@ -600,6 +600,7 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
   }) };
 }
 
+// The most the ledger accepts as `remaining`.
 const MAX_OBSERVED_UNITS = 1_000_000;
 
 /**
@@ -633,6 +634,7 @@ export async function observeOpenAlexBudget(env: WorkerEnv, now: string, headers
 
 const OPENALEX_REPORTED_KINDS = ['search', 'list', 'graph', 'share'] as const;
 
+// Adds the units of the `tier.kind` names that `matches` accepts.
 function sumTally(counts: Record<string, number> | undefined, matches: (tier: string, kind: string) => boolean) {
   return Object.entries(counts || {}).reduce((total, [name, units]) => {
     const [tier, kind] = name.split('.');
@@ -667,15 +669,15 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
     return [tier, {
       percent,
       limit,
-      used: sumTally(reading.tally?.used, name => name === tier),
-      refused: sumTally(reading.tally?.refused, name => name === tier),
+      used: sumTally(reading.tally?.used, spentBy => spentBy === tier),
+      refused: sumTally(reading.tally?.refused, spentBy => spentBy === tier),
       // Whether a one-unit miss of this tier would be accepted now.
       open: used + 1 <= limit,
     }];
   }));
   const kinds = Object.fromEntries(OPENALEX_REPORTED_KINDS.map(kind => [kind, {
-    used: sumTally(reading.tally?.used, (_, name) => name === kind),
-    refused: sumTally(reading.tally?.refused, (_, name) => name === kind),
+    used: sumTally(reading.tally?.used, (_, spentOn) => spentOn === kind),
+    refused: sumTally(reading.tally?.refused, (_, spentOn) => spentOn === kind),
   }]));
   return {
     report: {

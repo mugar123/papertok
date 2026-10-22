@@ -290,8 +290,9 @@ export function peekRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | 
 }
 
 /**
- * Records what the provider reports is left (`remaining`). The day's ceiling
- * is the lower of that and `globalLimit` until the next reading.
+ * Records what the provider reports is left (`remaining`). Until the next
+ * reading, the global ceiling is the lower of `globalLimit` and the usage at
+ * this reading plus `remaining`.
  */
 export function observeRequestQuota(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER'] | null, options: QuotaRequest) {
   return callRequestQuotaLedger(namespace, 'observe', options);

@@ -769,11 +769,11 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
 
 /**
  * One page of the working-paper series (`openAlexWorkingPapersUrl`), newest
- * first, for a reader whose interests
- * include an economics or quantitative-finance category. Any other reader
- * costs no request. The answer does not depend on which of those categories
- * asked, so only the feed calls it, with the reader's own interests:
- * exploration and topic pages would fetch the same series again.
+ * first, for a reader whose interests include an economics or
+ * quantitative-finance category. Any other reader costs no request. The
+ * answer does not depend on which of those categories asked, so only the feed
+ * calls it, with the reader's own interests: exploration and topic pages would
+ * fetch the same series again.
  *
  * The cards come from the OpenAlex mapper, filed under the Economics area and
  * no subcategory: the series say a paper is economics, not which branch.
