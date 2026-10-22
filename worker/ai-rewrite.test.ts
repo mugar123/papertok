@@ -697,7 +697,7 @@ const SILENCE = Symbol('nothing reached the reader');
  * Silence is decided by order, not by a stopwatch: the stage has been reached,
  * the callbacks already queued have run (`setImmediate`), and the reader still
  * holds nothing. The 200 ms this used to allow measured the machine instead:
- * under load the first event took over 600 ms to arrive from a correct rewrite.
+ * under load, a correct rewrite's first event sometimes did not arrive within it.
  */
 async function firstEventBefore(reader: Promise<ReadableStreamDefaultReader>, stage: { reached: Promise<void> }) {
   const firstEvent = reader.then(async (open) => {
