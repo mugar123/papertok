@@ -149,66 +149,67 @@ test('the glyph is drawn at every width', async () => {
 });
 
 /**
- * On a phone the glyph is the card's picture, as big as the lead (#203). A
- * paper that brings its own picture needs no second one: seen 2026-10-22 on
- * every field at 393px, the picture-sized glyph stayed put under the plate
- * and the part of it below the plate read as a block behind the title. It
- * steps back to a mark beside the title once the lead figure has its image.
+ * The glyph stands on the authors' rule, the line that parts the head from
+ * the abstract, and is never taller than the head (asked 2026-10-22: no
+ * field's mark may touch that line). It used to hang from the sheet's top at
+ * a fixed size and ran over the rule on a short head, on a phone with a lead
+ * figure above all.
  */
-test('on a phone the glyph steps back once the lead figure has its picture', async () => {
+test('the glyph stands on the authors\' rule and stays inside the head', async () => {
   const css = await sheet;
 
-  const keyed = watermarkRules(css).filter(([selector]) => /\.pc-lead/.test(selector));
-  assert.ok(keyed.length >= 1, 'expected a rule that moves the glyph for the lead figure');
-  for (const [selector] of keyed) {
-    // The mutation guard: `.pc-lead` is always rendered and `.pc-lead-figure`
-    // mounts before its picture arrives, so keying on either would move the
-    // glyph for a picture nobody sees yet — the fault the desktop rule above
-    // was measured making.
-    assert.match(
-      selector,
-      /\.pc-sheet:has\(\s*\.pc-lead-figure\.is-loaded\s*\)\s+\.pc-watermark svg/,
-      `the glyph may only step back for a lead figure that has its picture: ${selector}`,
-    );
+  // The head's bottom edge is the rule only while the head, not the authors,
+  // owns the step down to the abstract: a bottom margin on `.pc-authors`
+  // would push the rule up inside the box the glyph is anchored to.
+  const authorsRules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selector]) => /\.pc-authors\s*$/.test(selector.trim()) || /\.pc-authors\s*\{/.test(selector));
+  for (const [, selector, body] of authorsRules) {
+    assert.doesNotMatch(body, /margin-bottom/, `the step under the rule belongs to .pc-head, not ${selector.trim()}`);
   }
+  assert.match(ruleBody(css, '.pc-head'), /margin-bottom:/, 'the head owns the step down to the abstract');
+  assert.match(ruleBody(css, '.pc-head'), /position:\s*relative/, 'the head is what the glyph is positioned in');
 
-  // The mark sits below the lead, by the column's edge, at a fixed size: it is
-  // no longer the picture, whose width is read off the lead.
-  const [, mark] = keyed.find(([, body]) => /width:/.test(body))!;
-  assert.match(mark, /top:\s*calc\(var\(--pc-lead\)/, 'the mark starts where the lead ends');
-  assert.match(mark, /width:\s*\d+px/, 'the mark has a size of its own, not the lead\'s');
-  assert.doesNotMatch(mark, /var\(--pc-lead\)\s*\+\s*9rem/, 'the mark is not the picture-sized glyph');
+  const box = ruleBody(css, '.pc-watermark');
+  // The head, plus the sheet's top padding, which a one-line title's glyph
+  // needs to reach its full size; the padding is read from the sheet's own
+  // property so the two cannot drift apart.
+  assert.match(box, /inset:\s*calc\(-1 \* var\(--pc-pad-top\)\) 0 0/, 'the glyph\'s box is the head and the padding above it');
+  assert.match(ruleBody(css, '.pc-sheet'), /--pc-pad-top:[^;]+;\s*padding:\s*var\(--pc-pad-top\) 0/, 'the sheet pads with the property the glyph reads');
+  assert.match(box, /z-index:\s*-1/, 'and sits behind the head\'s type');
+  // On a phone the head starts at the lead figure's top edge: the glyph stays
+  // under the plate rather than showing a corner above it.
+  const phone = watermarkRules(css).filter(([selector, body]) => /^\.pc-watermark$/.test(selector) && /top:\s*0/.test(body));
+  assert.equal(phone.length, 1, 'the phone keeps the glyph at the head\'s top');
+
+  // Every rule that sizes the svg bounds it by the head's height, with the
+  // step of ground above the rule taken off, and none sets a top: the glyph
+  // is anchored at its bottom.
+  const sized = watermarkRules(css).filter(([selector, body]) => /\.pc-watermark svg$/.test(selector) && /height:/.test(body));
+  assert.ok(sized.length >= 1, 'expected a rule that sizes the glyph');
+  for (const [selector, body] of sized) {
+    assert.match(body, /height:\s*min\([^;]*calc\(100% - var\(--space-2\)\)\)/, `${selector.trim()} bounds the glyph by the head`);
+    assert.doesNotMatch(body, /(^|[^-])top:/, `${selector.trim()} must not anchor the glyph at the top`);
+  }
+  assert.match(ruleBody(css, '.pc-watermark svg'), /bottom:\s*var\(--space-2\)/, 'the glyph stands a step above the rule');
 });
 
-test('the step back rides the lead figure\'s own development', async () => {
-  const css = await sheet;
-
-  // Read off the figure's rule rather than written twice: the glyph moves on
-  // the clock the picture develops in, and a literal here is how they come
-  // apart.
-  const develop = css.match(/\.pc-lead-figure\.is-loaded\s*\{[^}]*animation:\s*pcLeadDevelop\s+(\d+)ms/);
-  assert.ok(develop, 'expected the lead figure\'s development animation');
-  const clock = develop[1];
-
-  const svgRules = watermarkRules(css).filter(([selector, body]) => /^\.pc-watermark svg$/.test(selector) && /transition:/.test(body));
-  assert.equal(svgRules.length, 1, 'one rule should give the glyph its transition on a phone');
-  const [, body] = svgRules[0];
-  for (const property of ['top', 'right', 'width', 'translate']) {
-    assert.match(
-      body,
-      new RegExp(`transition:[^;]*\\b${property}\\s+${clock}ms`),
-      `${property} moves over the lead figure's development (${clock}ms)`,
-    );
+/**
+ * One size for every field: each icon's viewBox is its own ink, so the
+ * lightning and the trend arrow fill the same square as the planet.
+ */
+test('every field\'s icon fills the same square', async () => {
+  const jsx = await readFile(new URL('./PaperCard.tsx', import.meta.url), 'utf8');
+  const table = /const AREA_WATERMARK_ICONS[^=]*=\s*\{([\s\S]*?)\n\};/.exec(jsx);
+  assert.ok(table, 'expected the AREA_WATERMARK_ICONS table');
+  const entries = [...table[1].matchAll(/^\s*'?([\w-]+)'?:\s*\{([^}]*)\}/gm)];
+  assert.equal(entries.length, 12, 'one icon per research area');
+  for (const [, area, body] of entries) {
+    const ink = /ink:\s*'(\d+) (\d+) (\d+) (\d+)'/.exec(body);
+    assert.ok(ink, `${area} names its ink box`);
+    const [x, y, w, h] = ink.slice(1).map(Number);
+    assert.ok(w > 0 && h > 0 && x + w <= 256 && y + h <= 256, `${area}'s ink box lies inside Phosphor's 256-unit box`);
   }
-});
-
-test('with movement refused the step back is cut', async () => {
-  const css = await sheet;
-
-  const reduced = css.match(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g) || [];
-  const holding = reduced.find((block: string) => /\.pc-watermark\s*,/.test(block) && /transition:\s*none/.test(block));
-  assert.ok(holding, 'expected the reduced-motion block that stills the glyph');
-  assert.match(holding, /\.pc-watermark svg\s*,/, 'the glyph\'s move on a phone belongs in it too');
+  assert.match(jsx, /<watermark\.Icon[^>]*viewBox=\{watermark\.ink\}/, 'the ink box is the svg\'s viewBox');
 });
 
 test('the glyph keeps its place on a desktop card', async () => {

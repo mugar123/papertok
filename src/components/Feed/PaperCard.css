@@ -74,7 +74,10 @@
      on itself. */
   overflow-x: hidden;
   overflow-y: hidden;
-  padding: clamp(20px, 2.5vw, 32px) 0;
+  /* A property because the glyph in the head reads it: it may rise into this
+     padding on a short head (`.pc-watermark`). */
+  --pc-pad-top: clamp(20px, 2.5vw, 32px);
+  padding: var(--pc-pad-top) 0;
   /* Travel only. The sheet used to fade from 0 as well, over 0.42s, while the
      page it sits in was already fading in over 0.3s: measured, the page was at
      0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
@@ -358,10 +361,31 @@
   }
 }
 
+/* The head: lead, kicker, title and authors, ending at the authors' rule. It
+   owns the step between that rule and the abstract (it used to be the
+   authors' bottom margin) so that its own bottom edge IS the rule, which is
+   what the glyph below stands on. A flex column like the body, so the pieces
+   keep the margins they had as the body's items. */
+.pc-head {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-4);
+}
+
+/* The field's glyph stands on the authors' rule, a step of clear ground above
+   it, by the column's right edge, and is never taller than the head plus the
+   sheet's top padding: no field's mark crosses the line into the abstract (it
+   used to hang from the sheet's top at a fixed size and ran over the rule on
+   a short head). The padding is granted so that a one-line title still gets
+   the full-size glyph; the sheet clips at its padding edge, not its content
+   edge, so nothing is cut. Behind the head's type (z-index -1 inside the
+   head's own stacking context), on top of the sheet's ground. */
 .pc-watermark {
   position: absolute;
-  right: 16px;
-  top: 20px;
+  inset: calc(-1 * var(--pc-pad-top)) 0 0;
+  z-index: -1;
   color: var(--area-accent, var(--accent-primary));
   opacity: 0.14;
   pointer-events: none;
@@ -371,11 +395,15 @@
 }
 
 .pc-watermark svg {
-  display: block;
-  width: clamp(120px, 15vw, 190px);
-  height: auto;
+  position: absolute;
+  right: 0;
+  bottom: var(--space-2);
+  height: min(clamp(120px, 15vw, 190px), calc(100% - var(--space-2)));
+  width: auto;
   rotate: -6deg;
-  transform-origin: 100% 0;
+  /* Pivot on the corner that stands on the rule: turned about any other
+     point the lower edge would dip below it. */
+  transform-origin: 0 100%;
   -webkit-mask: repeating-linear-gradient(-45deg, #000 0 1.3px, transparent 1.3px 2.8px);
   mask: repeating-linear-gradient(-45deg, #000 0 1.3px, transparent 1.3px 2.8px);
 }
@@ -775,7 +803,6 @@ button.pc-topics-pop-item:focus-visible {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   max-width: 100%;
@@ -1370,8 +1397,11 @@ button.pc-topics-pop-item:focus-visible {
     margin-bottom: var(--space-2);
   }
 
-  .pc-sheet[data-connections] .pc-authors {
+  .pc-sheet[data-connections] .pc-head {
     margin-bottom: var(--space-2);
+  }
+
+  .pc-sheet[data-connections] .pc-authors {
     padding-bottom: var(--space-2);
   }
 
@@ -2747,8 +2777,11 @@ button.pc-topics-pop-item:focus-visible {
       margin-bottom: var(--space-2);
     }
 
-    .pc-authors {
+    .pc-head {
       margin-bottom: var(--space-2);
+    }
+
+    .pc-authors {
       padding-bottom: var(--space-2);
     }
 
@@ -2783,8 +2816,11 @@ button.pc-topics-pop-item:focus-visible {
     margin-bottom: var(--space-3);
   }
 
-  .pc-authors {
+  .pc-head {
     margin-bottom: var(--space-3);
+  }
+
+  .pc-authors {
     padding-bottom: var(--space-3);
   }
 
@@ -2869,52 +2905,21 @@ button.pc-topics-pop-item:focus-visible {
     animation: figureClipFade 200ms linear both;
   }
 
-  /* On a phone the field's glyph is the card's picture: it fills the lead and
-     runs on behind the title, about nine rem past the lead, no wider than the
-     column, and leans towards the rail until the screen's edge cuts it. The
-     box reaches that edge and clips there itself: overflowing the sheet would
-     leave the sheet (`overflow: hidden`, still scrollable from code) room to
-     slide sideways. The body sits above it (z-index 1), so the type stays on
-     top. The box spans the sheet and the glyph is placed inside it by its
-     right edge (centred, then leaning), so that stepping back below is a move
-     of the same properties rather than a change of alignment. */
+  /* On a phone the field's glyph is the card's picture: as tall as the lead
+     and about nine rem more, the head permitting, and no wider than the
+     column. It stands on the authors' rule like the desktop glyph, so on a
+     paper with a lead figure the plate covers its upper part and it shows
+     between the plate and the rule; without one it fills the lead. The head
+     starts at the plate's top edge, so the glyph gets none of the sheet's
+     padding here: a corner of it above the plate would read as a second
+     picture. */
   .pc-watermark {
-    top: var(--space-5);
-    left: var(--space-5);
-    right: 0;
-    bottom: 0;
-    overflow: clip;
+    top: 0;
   }
 
   .pc-watermark svg {
-    position: absolute;
-    top: 0;
-    right: 50%;
-    width: min(calc(100% - 66px), calc(var(--pc-lead) + 9rem));
-    height: auto;
-    transform-origin: 50% 50%;
-    translate: 64% 0;
-    transition:
-      top 360ms var(--ease-out-expo),
-      right 360ms var(--ease-out-expo),
-      width 360ms var(--ease-out-expo),
-      translate 360ms var(--ease-out-expo);
-  }
-
-  /* A paper that brings its own picture gets no second one. Once the lead
-     figure has its image (`.is-loaded`, set when the picture lands, the same
-     flag the desktop sheet recedes on) the glyph steps back to a mark beside
-     the title, flush with the column's edge under the rail, at the desktop
-     sheet's resting size. It moves on the clock the figure develops in
-     (`pcLeadDevelop`, 360ms), so the two read as one handover. Without this
-     the picture-sized glyph stayed where it was: half of it under the plate
-     and the rest peeking out below it as a block behind the title, on every
-     field (measured 2026-10-22 at 393px, all twelve). */
-  .pc-sheet:has(.pc-lead-figure.is-loaded) .pc-watermark svg {
-    top: calc(var(--pc-lead) + min(var(--space-3), var(--pc-lead)));
-    right: 72px;
-    width: 120px;
-    translate: 0 0;
+    height: min(calc(var(--pc-lead) + 9rem), calc(100% - var(--space-2)));
+    max-width: 100%;
   }
 
   /* The rail sits beside the abstract, not the actions: the two reading
@@ -2969,14 +2974,6 @@ button.pc-topics-pop-item:focus-visible {
     margin-right: calc(var(--space-4) - 66px);
   }
 
-  .pc-watermark {
-    top: var(--space-4);
-    left: var(--space-4);
-  }
-
-  .pc-sheet:has(.pc-lead-figure.is-loaded) .pc-watermark svg {
-    right: 66px;
-  }
 }
 
 /* The narrowest phones: "Fuente" and "Source" (the widest resting words) fit
@@ -3058,10 +3055,6 @@ button.pc-topics-pop-item:focus-visible {
      A 620ms cross-fade next to an instant arrival is the two coming apart
      again, which is the fault this pairing exists to close. */
   .pc-watermark,
-  /* And its step back on a phone: that one is movement, so it is cut. The
-     lead figure still fades in (`figureClipFade`, above) and the glyph is in
-     its corner from the fade's first frame. */
-  .pc-watermark svg,
   .pc-meta,
   .pc-title,
   .pc-authors,
