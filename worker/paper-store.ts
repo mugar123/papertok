@@ -275,7 +275,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     paper = storedPaper(paper);
     const published = publishedOf(paper);
     const keptUntil = [daysFromNow(CORPUS_DAYS, Date.parse(published)), keepUntil, ...ids.map(other => works.get(other)!.kept_until)].sort().at(-1)!;
-    rows.push({ id, paper: JSON.stringify(paper), published, keptUntil });
+    const json = JSON.stringify(paper);
+    // D1 bills rows written: a paper a source lists again unchanged is not rewritten.
+    const before = ids.length === 1 ? works.get(id)! : null;
+    if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
     for (const lane of new Set([...group.lanes, ...recordLanes(paper)])) laneRows.push({ lane, id, published });
   }
@@ -300,13 +303,13 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
         kept_until = max(works.kept_until, excluded.kept_until)`).bind(JSON.stringify(rows.slice(start, start + WRITE_CHUNK))));
   }
   for (let start = 0; start < keyRows.length; start += WRITE_CHUNK * 4) {
-    statements.push(db.prepare(`INSERT OR REPLACE INTO work_keys (key, work_id)
+    statements.push(db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
       SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
     statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published)
       SELECT value ->> 'lane', value ->> 'id', value ->> 'published' FROM json_each(?) WHERE true
-      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published WHERE published != excluded.published`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   return rows.length;
@@ -468,14 +471,14 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
 
 interface Candidate { workId: number; published: string; lanes: string[]; embedding: Int8Array | null }
 
-async function readCandidates(db: D1Database, lanes: string[], since: string) {
+async function readCandidates(db: D1Database, lanes: string[]) {
   const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
   const { results } = await db.prepare(`SELECT c.work_id, c.published, c.lanes, v.embedding FROM (
       SELECT work_id, MAX(published) AS published, group_concat(lane, ' ') AS lanes FROM (${lanes.map(() => `SELECT * FROM (
-        SELECT lane, work_id, published FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
+        SELECT lane, work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
       GROUP BY work_id
     ) c LEFT JOIN work_vectors v ON v.work_id = c.work_id`)
-    .bind(...lanes.flatMap(lane => [lane, since, share]))
+    .bind(...lanes.flatMap(lane => [lane, share]))
     .all<{ work_id: number; published: string; lanes: string; embedding: unknown }>();
   return results.map((row): Candidate => ({
     workId: row.work_id,
@@ -506,7 +509,6 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const db = database(env);
   const lanes = [...new Set([...query.categories, ...query.follows.map(follow => follow.lane)])];
   if (lanes.length === 0) return [];
-  const since = daysFromNow(-CORPUS_DAYS, now);
   let positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
   if (embedMissing) {
     await embedMissing(db, positiveWorks);
@@ -518,8 +520,9 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
     // and D1 bills rows read. A quiet lane keeps its share instead of being
-    // crowded out by a busy one. Only the candidates' vectors are read.
-    readCandidates(db, lanes, since),
+    // crowded out by a busy one. Only the candidates' vectors are read. The
+    // window is the corpus's own: what is past it has been evicted.
+    readCandidates(db, lanes),
     positiveIds.length
       ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
       : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),

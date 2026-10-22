@@ -250,7 +250,7 @@ export type SourceName =
 export interface LaneJob { source: SourceName; lane: string }
 
 interface PageRequest { lane: string; page: number; since: string }
-interface SourcePage { items: Harvested[]; oldest: string; full: boolean }
+interface SourcePage { items: Harvested[]; newest: string; full: boolean }
 interface SourceSpec {
   // Pages on a lane's first run, and on later ones (a later run also stops
   // once a page reaches what the previous run had).
@@ -261,14 +261,19 @@ interface SourceSpec {
   // Days re-read before the last run: sources that list papers days after
   // their date (OpenAlex's indexing) need more.
   overlapDays: number;
-  // Followed lanes keep their papers whatever their date.
-  followed?: boolean;
+  // Lanes whose papers stay whatever their date, while the source still lists
+  // them: a followed entity's, and the specialist sources', whose first pages
+  // the feed showed as they came (NASA's reports, CORE's repositories).
+  keepsOld?: boolean;
   fetchPage: (env: SourceEnv, request: PageRequest) => Promise<SourcePage>;
 }
 
+// A page's newest date says whether the source has gone past the last run:
+// its oldest says little where the order is the date a record was added
+// (PubMed lists a paper printed last year beside this week's).
 function pageOf(items: Harvested[], size: number): SourcePage {
   const dates = items.map(item => publishedOf(item.paper)).filter(Boolean).sort();
-  return { items, oldest: dates[0] || '', full: items.length >= size };
+  return { items, newest: dates.at(-1) || '', full: items.length >= size };
 }
 
 const filed = (papers: Array<Partial<Paper> | null>, lane: string) => (papers.filter(Boolean) as Partial<Paper>[]).map(paper => ({ paper, lanes: [lane] }));
@@ -352,7 +357,7 @@ function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] 
     const plan = getDomainSourcePlan([lane]);
     const eligible = getEligibleDomainSources(plan, { hasSession: true, scopusEnabled: false });
     const request = domainSourceRequests(plan, eligible, page, perPage, 'recent').find(candidate => candidate.source === source);
-    if (!request) return { items: [], oldest: '', full: false };
+    if (!request) return { items: [], newest: '', full: false };
     const response = await withShortWaits(() => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
     return pageOf(filed(request.read(await response.json()), lane), Math.min(Number(request.params.limit) || perPage, perPage));
   };
@@ -360,7 +365,7 @@ function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] 
 
 export const SOURCES: Record<SourceName, SourceSpec> = {
   'arxiv-search': {
-    firstPages: 4, dailyPages: 4, dated: true, overlapDays: 3,
+    firstPages: 4, dailyPages: 4, dated: true, overlapDays: 3, keepsOld: true,
     fetchPage: (env, { lane, page }) => (lane.startsWith('author-name:')
       ? arxivSearch(env, `au:"${lane.slice('author-name:'.length).replace(/"/g, '')}"`, page, lane)
       : arxivSearch(env, `all:"${quotedLabel(lane)}"`, page, lane)),
@@ -405,29 +410,30 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     }),
   },
   'openalex-follows': {
-    firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, followed: true,
+    firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, keepsOld: true,
     fetchPage: (env, { lane, page }) => {
       const [kind, value] = [lane.slice(0, lane.indexOf(':')), lane.slice(lane.indexOf(':') + 1)];
       if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value });
-      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value}`, { page, lane, perPage: 50 });
+      // None dated after today, which would sort first.
+      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50 });
     },
   },
   openaire: {
-    firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, followed: true,
+    firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true,
     fetchPage: async (env, { lane }) => {
       const dois = await openAireProjectDois(lane);
-      if (!dois.length) return { items: [], oldest: '', full: false };
+      if (!dois.length) return { items: [], newest: '', full: false };
       return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50 });
     },
   },
   biorxiv: { firstPages: 20, dailyPages: 20, dated: false, overlapDays: 2, fetchPage: bioRxivPage },
-  europepmc: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, fetchPage: domainSource('europepmc', 10) },
-  core: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, fetchPage: domainSource('core', 10) },
-  osti: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, fetchPage: domainSource('osti', 6) },
-  nasa: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, fetchPage: domainSource('nasa', 6) },
-  physics: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, fetchPage: domainSource('physics', 10) },
-  openreview: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, fetchPage: domainSource('openreview', 10) },
-  huggingface: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, fetchPage: domainSource('huggingface', 10) },
+  europepmc: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('europepmc', 10) },
+  core: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, keepsOld: true, fetchPage: domainSource('core', 10) },
+  osti: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('osti', 6) },
+  nasa: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('nasa', 6) },
+  physics: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('physics', 10) },
+  openreview: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, keepsOld: true, fetchPage: domainSource('openreview', 10) },
+  huggingface: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, keepsOld: true, fetchPage: domainSource('huggingface', 10) },
 };
 
 /** Every lane a source serves whatever readers follow: the app's categories it answers. */
@@ -457,13 +463,14 @@ export function followedLaneJob(lane: string): LaneJob | null {
   return null;
 }
 
-const FOLLOWED_KEEP_DAYS = 14;
+// How long a paper a lane kept whatever its date stays once its source no
+// longer lists it on the pages the harvest reads.
+const KEPT_LISTING_DAYS = 14;
 
 /**
  * Harvests one lane of one source: pages until the source has nothing newer
- * than the last run reached, or the run's page allowance. A followed lane's
- * papers stay whatever their date, for as long as readers follow it.
- * Records the lane's progress only once it completes.
+ * than the last run reached, or the run's page allowance. Records the lane's
+ * progress only once it completes.
  */
 export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
   const spec = SOURCES[source];
@@ -472,13 +479,13 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
     .first<{ harvested_through: string }>();
   const reached = state?.harvested_through || '';
   const since = reached ? daysFromNow(-spec.overlapDays, Date.parse(reached)) : daysFromNow(-CORPUS_DAYS, now);
-  const keepUntil = spec.followed ? daysFromNow(FOLLOWED_KEEP_DAYS, now) : '';
+  const keepUntil = spec.keepsOld ? daysFromNow(KEPT_LISTING_DAYS, now) : '';
   let stored = 0;
   const pages = reached ? spec.dailyPages : spec.firstPages;
   for (let page = 1; page <= pages; page += 1) {
     const result = await spec.fetchPage(env, { lane, page, since });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
-    if (!result.full || (spec.dated && result.oldest && result.oldest < since)) break;
+    if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
     ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, new Date(now).toISOString()).run();
