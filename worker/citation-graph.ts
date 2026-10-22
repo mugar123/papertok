@@ -313,7 +313,9 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
     };
   }, {
     identity,
-    openAlexCalls: OPENALEX_CALLS.citationGraph,
+    // Exploration: the graph is a reader looking further from a paper, and it
+    // spends six units where a feed page spends one.
+    openAlexBudget: { units: OPENALEX_CALLS.citationGraph, tier: 'exploration', kind: 'graph' },
     // The DOI reaching upstream is the normalized one -- lowercased, stripped of
     // its `doi.org` prefix and of trailing punctuation -- so keying on the raw one
     // made every capitalisation of the same DOI a separate miss worth up to six

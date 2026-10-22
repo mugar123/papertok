@@ -1,5 +1,5 @@
 import type { WorkerEnv } from './env.ts';
-import type { UpstreamError } from './provider-runtime.ts';
+import type { OpenAlexBudget, OpenAlexTier, UpstreamError } from './provider-runtime.ts';
 
 export type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 
@@ -229,13 +229,57 @@ async function writeShared(env: WorkerEnv, key: string, status: number, body: st
   }
 }
 
-// What a miss is billed, read off the URL about to be sent: a search ten list
-// calls, a list one, an entity by id or DOI nothing (`OPENALEX_CALLS`). The
-// autocomplete endpoint's second segment names a type, not an entity.
-function openAlexCallsFor(target: URL) {
-  if (target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '')) return OPENALEX_CALLS.search;
+// The filter keys that name works by identifier. A list filtered only by them
+// is a lookup of known papers, not a query.
+const IDENTIFIER_FILTER_KEYS = new Set(['doi', 'openalex', 'ids.openalex', 'locations.landing_page_url']);
+// The feed's own lanes: the topic lane (`primary_topic.id`) and the
+// working-paper series (`primary_location.source.id`). A negated value is not
+// a lane: the Explorer's reviewed-only lists exclude the series that way.
+const FEED_FILTER_KEYS = new Set(['primary_topic.id', 'primary_location.source.id']);
+
+function filterClauses(filter: string) {
+  return filter.split(',').filter(Boolean).map(clause => {
+    const separator = clause.indexOf(':');
+    return separator < 0
+      ? { key: clause, value: '' }
+      : { key: clause.slice(0, separator), value: clause.slice(separator + 1) };
+  });
+}
+
+/**
+ * What a miss is billed and which tier it spends, read off the URL about to be
+ * sent, the same URL the cache key is read from. Billing: a search is ten list
+ * calls, a list one, an entity by id or DOI nothing (`OPENALEX_CALLS`); the
+ * autocomplete endpoint's second segment names a type, not an entity. Tier:
+ * - essential: one work by identifier (`per-page=1`), a paper being opened;
+ * - enrichment: known works by identifier, the cards already on screen;
+ * - exploration: a graph expansion (`select=id,ids`), every search, and any
+ *   shape not listed here, so a request the rules do not know stops early
+ *   rather than spending late;
+ * - feed: the feed's topic lane and working-paper series.
+ * No header or parameter from the client is read, so a cached bundle gets its
+ * tier from what it asks for, and one URL always has one tier. A scripted
+ * caller can shape a URL to look essential: the ceiling is the frontier.
+ */
+export function openAlexCostFor(target: URL): OpenAlexBudget {
   const [entity, id] = target.pathname.slice(1).split('/');
-  return id && entity !== 'autocomplete' ? OPENALEX_CALLS.entity : OPENALEX_CALLS.relay;
+  if (id && entity !== 'autocomplete') return { units: OPENALEX_CALLS.entity, tier: 'essential', kind: 'entity' };
+  const filter = target.searchParams.get('filter') || '';
+  if (target.searchParams.has('search') || /\.search[.:]/.test(filter)) {
+    return { units: OPENALEX_CALLS.search, tier: 'exploration', kind: 'search' };
+  }
+  const list = (tier: OpenAlexTier): OpenAlexBudget => ({ units: OPENALEX_CALLS.relay, tier, kind: 'list' });
+  if (entity !== 'works') return list('exploration');
+  const clauses = filterClauses(filter);
+  const named = (keys: Set<string>, clause: { key: string; value: string }) => (
+    keys.has(clause.key) && clause.value !== '' && !clause.value.startsWith('!')
+  );
+  if (clauses.length > 0 && clauses.every(clause => named(IDENTIFIER_FILTER_KEYS, clause))) {
+    if (target.searchParams.get('select') === 'id,ids') return list('exploration');
+    const perPage = target.searchParams.get('per-page') ?? target.searchParams.get('per_page');
+    return list(perPage === '1' ? 'essential' : 'enrichment');
+  }
+  return list(clauses.some(clause => named(FEED_FILTER_KEYS, clause)) ? 'feed' : 'exploration');
 }
 
 // An edge miss: the shared store first, then -- and only then -- a reservation
@@ -251,9 +295,9 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
     return { ...shared, headers };
   }
 
-  const calls = openAlexCallsFor(target);
-  if (calls > 0) {
-    const budget = await reserveOpenAlexBudget(env, '', calls);
+  const cost = openAlexCostFor(target);
+  if (cost.units > 0) {
+    const budget = await reserveOpenAlexBudget(env, '', cost);
     if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
   }
 

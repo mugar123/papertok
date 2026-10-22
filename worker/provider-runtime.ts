@@ -15,10 +15,21 @@ export interface MinuteCeiling {
   paced?: boolean;
 }
 
+// What one OpenAlex miss may spend, and for what. `tier` decides how much of
+// the day's ceiling it may reach (`OPENALEX_TIER_PERCENT`); `kind` only names
+// the spend in the day's tally.
+export type OpenAlexTier = 'essential' | 'feed' | 'enrichment' | 'exploration';
+export type OpenAlexKind = 'entity' | 'search' | 'list' | 'graph' | 'share';
+export interface OpenAlexBudget {
+  units: number;
+  tier: OpenAlexTier;
+  kind: OpenAlexKind;
+}
+
 interface CacheOptions {
   identity?: Pick<VerifiedIdentity, 'uid'> | null;
   canonicalParams?: Record<string, unknown>;
-  openAlexCalls?: number;
+  openAlexBudget?: OpenAlexBudget;
   // The answer belongs to one reader: its key must name them, and the browser
   // is told not to store or share it.
   personal?: boolean;
@@ -74,6 +85,26 @@ export const OPENALEX_CALLS = Object.freeze({
   // (21 + 19 is two plus one): six billed calls.
   citationGraph: 6,
 });
+// How much of the day's ceiling each tier may reach, in percent. On launch day
+// the whole budget ran out at once, and a paper a reader had just opened
+// stopped with the searches (PAP-86). Exploration (searches, profile pages,
+// graph expansions, the citation graph) stops first, the enrichment of cards
+// already shown next, the feed's own lanes after that, and one paper being
+// opened only at the ceiling. The whole day's usage counts against each share,
+// so a tier is closed for everyone once the day passes it. Entity lookups cost
+// nothing and are never refused. Code rather than variables, because changing
+// a variable needs a Worker deploy all the same; retune from the day's tally.
+export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Object.freeze({
+  essential: 100,
+  feed: 95,
+  enrichment: 80,
+  exploration: 60,
+});
+// Names the tier on every refusal of the OpenAlex budget, so the client can
+// tell the Worker's own refusal of one request from OpenAlex refusing the key:
+// only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
+// the same name.
+export const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
@@ -274,7 +305,7 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
 // proposes the current second or a later one, so it would refuse to re-grant
 // one already elapsed. That is safe only because no gate runs after an
 // accepted beat today -- the paced routes, `/sources/s2`, `/related` and
-// `/recommendations`, never pass `openAlexCalls` -- but a route that combined both would leak
+// `/recommendations`, never pass `openAlexBudget` -- but a route that combined both would leak
 // this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;
@@ -330,8 +361,8 @@ async function reserveGates(origin: string, env: WorkerEnv, options: CacheOption
     if (identity.reservation) held.push(identity.reservation);
     const paceError = await awaitSharedPace(ceiling, env, origin);
     if (paceError) return paceError;
-    if (options.openAlexCalls) {
-      const budget = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
+    if (options.openAlexBudget) {
+      const budget = await reserveOpenAlexBudget(env, origin, options.openAlexBudget);
       if (budget.error) return budget.error;
       held.push(...budget.reservations);
     }
@@ -505,14 +536,23 @@ export function boundedText(value: unknown, maxLength: number) {
 // (with its own alarm and cleanup) created for every minute. What was taken
 // travels back to the caller, the same shape as every other gate, so whoever
 // owns the refund can name it.
-export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amount: number) {
-  const now = new Date().toISOString();
-  const ledgerRequest = {
+function openAlexLedgerRequest(env: WorkerEnv, now: string): QuotaRequest {
+  return {
     periodKey: `openalex:day:${now.slice(0, 10)}`,
     subject: `openalex:minute:${now.slice(0, 16)}`,
     subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
     globalLimit: boundedLimit(env.OPENALEX_GLOBAL_DAILY_LIMIT, DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT, 1_000_000),
-    amount,
+  };
+}
+
+// The tier's share of the ceiling travels with the reservation, so the share is
+// checked in the same transaction as the day and the minute.
+export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budget: OpenAlexBudget) {
+  const ledgerRequest = {
+    ...openAlexLedgerRequest(env, new Date().toISOString()),
+    amount: budget.units,
+    percent: OPENALEX_TIER_PERCENT[budget.tier],
+    tally: `${budget.tier}.${budget.kind}`,
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (reservation.accepted) return { reservations: [ledgerRequest] };
@@ -524,6 +564,12 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, amou
   }
   return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
     ...corsHeaders(origin, env),
+    // On every refusal, the minute's and the full ceiling's too: a refusal
+    // without it is OpenAlex's own, and the client closes OpenAlex for the tab.
+    // The relay reserves with no origin and puts the asker's on afterwards,
+    // keeping the names exposed here.
+    'access-control-expose-headers': `retry-after, ${OPENALEX_BUDGET_TIER_HEADER}`,
+    [OPENALEX_BUDGET_TIER_HEADER]: budget.tier,
     'cache-control': 'no-store',
     // The day's refusal is not the true seconds until UTC midnight: a
     // `retry-after` of several hours is a client that stops asking until someone

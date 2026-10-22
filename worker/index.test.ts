@@ -1,7 +1,7 @@
 import type { TestNamespace } from './test-types.ts';
 import type { QuotaReading } from './request-quota-ledger.ts';
 type MockProvider = (url: string, options?: RequestInit) => Response | Promise<Response>;
-type QuotaAction = { action: string; periodKey: string; subjectKey: string };
+type QuotaAction = { action: string; periodKey: string; subjectKey: string; amount?: number; tally?: string };
 type QuotaState = { reservations: number; releases?: number; periodKeys: string[] };
 type QuotaScriptState = { actions: QuotaAction[] };
 import type { TestGlobals } from './test-types.ts';
@@ -9,10 +9,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publicationStatus.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
-import { RequestQuotaLedger } from './request-quota-ledger.ts';
-import { fetchWithDeadline } from './provider-runtime.ts';
+import { RequestQuotaLedger, reserveRequestQuota } from './request-quota-ledger.ts';
+import { fetchWithDeadline, OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -1835,7 +1836,7 @@ test('a citing working paper from OpenAlex is not peer reviewed and is marked on
 // --- G5: billed spend reaches the ledger, with a daily ceiling --------------
 
 function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accepted: true })) {
-  const reservations: Array<{ periodKey: string; amount: number; limit: number }> = [];
+  const reservations: Array<{ periodKey: string; amount: number; limit: number; tally?: string; percent?: number }> = [];
   return {
     reservations,
     binding: {
@@ -1843,7 +1844,7 @@ function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accept
       get: (periodKey: unknown): Pick<DurableObjectStub, 'fetch'> => ({
         fetch: async (_url, options) => {
           const body = JSON.parse(options!.body as string);
-          reservations.push({ periodKey: periodKey as string, amount: body.amount, limit: body.globalLimit });
+          reservations.push({ periodKey: periodKey as string, amount: body.amount, limit: body.globalLimit, tally: body.tally, percent: body.percent });
           return new Response(JSON.stringify(answer(periodKey as string)));
         },
       }),
@@ -1909,12 +1910,14 @@ function inMemoryQuotaLedger() {
 }
 
 // Two misses in a row against ceilings of one: the second is refused by whichever
-// ceiling is spent, and each miss is one call to the ledger.
+// ceiling is spent, and each miss is one call to the ledger. One paper by DOI
+// is the request allowed the whole ceiling, so a ceiling of one is not already
+// spent by a smaller share of it (PAP-88).
 async function secondOpenAlexMiss(limits: Record<string, string>) {
   const ledger = inMemoryQuotaLedger();
   const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding, ...limits });
   const relay = (doi: string) => reportApi.fetch(new Request(
-    `https://papertok-report-api.example/openalex/works?filter=doi:${doi}`,
+    `https://papertok-report-api.example/openalex/works?filter=doi:${doi}&per-page=1`,
     { headers: BROWSER },
   ), env);
   const responses = await withWorkerFetchMock(
@@ -2817,7 +2820,7 @@ function scriptedQuotaLedger(state: QuotaScriptState, { refuse = () => false, un
       fetch: async (url, options) => {
         const action = String(url).split('/').pop()!;
         const body = JSON.parse(options!.body as string);
-        state.actions.push({ action, periodKey: lastName, subjectKey: body.subjectKey });
+        state.actions.push({ action, periodKey: lastName, subjectKey: body.subjectKey, amount: body.amount, tally: body.tally });
         if (action === 'release') return new Response(JSON.stringify({ released: true }));
         if (broken(lastName)) throw new Error(`ledger unreachable: ${lastName}`);
         if (unavailable(lastName)) return new Response('down', { status: 500 });
@@ -3754,4 +3757,141 @@ test('a PDF relay closes when there is no ledger to bound it', async () => {
 
   assert.equal(response.status, 503);
   assert.equal(calls.length, 0);
+});
+
+// --- PAP-88: the day's OpenAlex budget, spent in order of what matters ---------
+// On launch day every OpenAlex request stopped at once when the day's ceiling
+// ran out, the paper a reader had just opened included. Each miss now reserves
+// under a tier read from the URL the Worker is about to pay for, and a lower
+// tier stops at a smaller share of the ceiling, so the reads the feed and an
+// opened paper need keep working longest.
+
+const relayPath = (path: string) => `https://papertok-report-api.example/openalex/${path}`;
+
+test('each OpenAlex request shape reserves under its tier', async () => {
+  const tallied = async (path: string) => {
+    const ledger = recordingLedger();
+    await withWorkerFetchMock(
+      async () => Response.json({ results: [] }),
+      () => reportApi.fetch(new Request(relayPath(path), { headers: BROWSER }), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding })),
+    );
+    return ledger.reservations.map(entry => `${entry.tally} ${entry.amount}`);
+  };
+  const shapes: Array<[string, string[]]> = [
+    // One paper being opened: the public page's fallback by arXiv landing page.
+    ['works?filter=locations.landing_page_url:http://arxiv.org/abs/2601.00001|https://arxiv.org/abs/2601.00001&per_page=1', ['essential.list 1']],
+    // The feed's topic lane and working-paper series.
+    ['works?filter=primary_topic.id:T10604|T10878,type:article,from_publication_date:2026-07-23,to_publication_date:2026-10-21,has_abstract:true,is_retracted:false,primary_location.source.is_core:true&sort=publication_date:desc&page=1&per-page=25', ['feed.list 1']],
+    ['works?filter=primary_location.source.id:S2809516038|S4210171147,type:article|report,from_publication_date:2026-07-23&sort=publication_date:desc&page=2&per-page=6', ['feed.list 1']],
+    // Shown cards, by DOI, OpenAlex id or arXiv landing page.
+    ['works?filter=doi:10.1000/a|10.1000/b&per-page=50', ['enrichment.list 1']],
+    ['works?filter=openalex:W1|W2&per_page=50&select=id,doi,ids', ['enrichment.list 1']],
+    ['works?filter=locations.landing_page_url:http://arxiv.org/abs/2601.00001|https://arxiv.org/abs/2601.00001&per_page=50', ['enrichment.list 1']],
+    // A graph expansion, a profile's reviewed works (negated series are not
+    // the working-paper lane), a profile lookup by ORCID, a count probe.
+    ['works?filter=openalex:W1|W2&per-page=50&select=id,ids', ['exploration.list 1']],
+    [`works?filter=author.id:A1,primary_location.is_published:true,${OPENALEX_PEER_REVIEWED_FILTER}&per-page=25`, ['exploration.list 1']],
+    ['authors?filter=orcid:0000-0002-1825-0097&per-page=1', ['exploration.list 1']],
+    ['works?filter=institutions.ror:https://ror.org/05a28rw58&per-page=1&select=id', ['exploration.list 1']],
+    ['works?search=ultracold%20gas', ['exploration.search 10']],
+    ['autocomplete/authors?q=ada', ['exploration.list 1']],
+    // One entity by id is free and never asks the ledger.
+    ['works/W2741809807', []],
+  ];
+  for (const [path, expected] of shapes) {
+    assert.deepEqual(await tallied(path), expected, path);
+  }
+
+  const graph = recordingLedger();
+  await withCountedUpstream(citationGraphPage, () => withIdentityAndCacheStore(() => reportApi.fetch(
+    new Request(CITATION_GRAPH_URL, { headers: SIGNED_IN }),
+    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: graph.binding },
+  )));
+  assert.deepEqual(
+    graph.reservations.filter(entry => entry.periodKey.startsWith('openalex:')).map(entry => `${entry.tally} ${entry.amount}`),
+    ['exploration.graph 6'],
+  );
+});
+
+test('past the exploration share an exploration miss is refused with its tier named, while a feed miss at the same usage and a stored exploration answer are still served', async () => {
+  const ceiling = 1_000;
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({
+    REQUEST_QUOTA_LEDGER: ledger.binding,
+    NOTIFICATION_STORE: fakeOpenAlexStore(),
+    OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling),
+  });
+  const stored = relayPath('authors?filter=last_known_institutions.id:I1&per-page=25');
+  const explored = relayPath('authors?filter=last_known_institutions.id:I2&per-page=25');
+  const feed = relayPath('works?filter=primary_topic.id:T10604,type:article&per-page=25');
+  // A fresh edge cache for every request: another location, or a later hour.
+  const ask = (url: string) => withIdentityAndCacheStore(() => reportApi.fetch(new Request(url, { headers: BROWSER }), env));
+
+  const calls = await withCountedUpstream(async () => Response.json({ results: [] }), async () => {
+    assert.equal((await ask(stored)).status, 200);
+    // The rest of the day's usage up to the exploration share, spent elsewhere.
+    const share = Math.floor(ceiling * OPENALEX_TIER_PERCENT.exploration / 100);
+    await reserveRequestQuota(ledger.binding, {
+      periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`,
+      subject: 'elsewhere',
+      subjectLimit: ceiling,
+      globalLimit: ceiling,
+      amount: share - 1,
+    });
+
+    const refused = await ask(explored);
+    assert.equal(refused.status, 429);
+    assert.deepEqual(await refused.json(), { code: 'PROVIDER_RATE_LIMITED' });
+    assert.equal(refused.headers.get('retry-after'), '300');
+    assert.equal(refused.headers.get('x-papertok-budget-tier'), 'exploration');
+    assert.equal(refused.headers.get('access-control-allow-origin'), BROWSER.origin);
+    const exposed = refused.headers.get('access-control-expose-headers')!.split(',').map(name => name.trim());
+    assert.ok(exposed.includes('retry-after') && exposed.includes('x-papertok-budget-tier'), exposed.join());
+
+    assert.equal((await ask(feed)).status, 200, 'the feed still has its share');
+    assert.equal((await ask(stored)).status, 200, 'a stored answer needs no budget');
+  });
+  assert.equal(calls.length, 2, 'the first stored answer and the feed miss; nothing for the refusal or the stored read');
+});
+
+test('a refusal at the full ceiling and a minute refusal also name the tier', async () => {
+  const limits = [
+    { OPENALEX_GLOBAL_MINUTE_LIMIT: '1', OPENALEX_GLOBAL_DAILY_LIMIT: '100' },
+    { OPENALEX_GLOBAL_MINUTE_LIMIT: '100', OPENALEX_GLOBAL_DAILY_LIMIT: '1' },
+  ];
+  for (const limit of limits) {
+    const { responses } = await secondOpenAlexMiss(limit);
+    assert.equal(responses[1].status, 429, JSON.stringify(limit));
+    // Without it the client would close OpenAlex for the whole tab, entity
+    // reads that cost nothing included.
+    assert.equal(responses[1].headers.get('x-papertok-budget-tier'), 'essential', JSON.stringify(limit));
+  }
+});
+
+test('a share page for a DOI or a work reserves nothing; one for an arXiv id reserves enrichment.share', async () => {
+  const openAlexReservations = async (key: string | null) => {
+    const state: QuotaScriptState = { actions: [] };
+    await withWorkerFetchMock(
+      async (url) => {
+        const address = String(url);
+        if (address === 'https://papertok.app/index.html') {
+          return new Response(APP_SHELL, { status: 200, headers: { 'content-type': 'text/html' } });
+        }
+        if (address.startsWith('https://api.openalex.org/works/')) return Response.json(SHARED_WORK);
+        if (address.startsWith('https://api.openalex.org/works?')) return Response.json({ results: [] });
+        throw new Error(`unexpected upstream ${address}`);
+      },
+      () => reportApi.fetch(crawlerRequest(`/share/paper/${key}`), {
+        ...openAlexEnv(),
+        REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_ARXIV_PACE }),
+      }),
+    );
+    return state.actions
+      .filter(action => action.periodKey.startsWith('openalex:'))
+      .map(action => `${action.tally} ${action.amount}`);
+  };
+
+  assert.deepEqual(await openAlexReservations(SHARED_DOI_KEY), []);
+  assert.deepEqual(await openAlexReservations(encodePaperKey('openalex', 'W4304195660')), []);
+  assert.deepEqual(await openAlexReservations(encodePaperKey('arxiv', '2609.28470')), ['enrichment.share 1']);
 });
