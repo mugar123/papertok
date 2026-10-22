@@ -78,11 +78,12 @@ const SEARCH_MIN_LOADING_MS = 180;
 // The page waits for the slowest section it shows, so the sections a reader
 // looks at less often get less.
 const PAGE_SECTION_TIMEOUTS = { papers: 6000, authors: 5000, institutions: 4500, topics: 4500, projects: 6000 };
-// Why OpenAlex searches stopped while OpenAlex itself still answers (PAP-88),
-// and the latest they come back: the day's budget resets at 00:00 UTC. A new
+// When OpenAlex searches come back at the latest, then why they stopped while
+// OpenAlex itself still answers (PAP-88), in that order because the strip cuts
+// its end on a narrow screen. The day's budget resets at 00:00 UTC; a new
 // budget reading can reopen them sooner, so no countdown is given and Retry
 // stays.
-const OPENALEX_BUDGET_PAUSE_NOTE = "The pause keeps the day's OpenAlex budget for opening papers and the feed. Searches resume by 00:00 UTC at the latest.";
+const OPENALEX_BUDGET_PAUSE_NOTE = "Searches resume by 00:00 UTC at the latest. PaperTok keeps the rest of the day's OpenAlex budget for opening papers and the feed.";
 
 // `scope` is the one on screen, which the page changes when the reader opens
 // another; the search answers each scope it was asked for, and only the
@@ -639,7 +640,8 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const outageTitle = searchIssue?.rateLimited
     ? 'OpenAlex is temporarily unavailable'
     : searchIssue?.budgetPaused
-      ? 'PaperTok has paused OpenAlex searches'
+      // Short enough for the one-line strip on a 320 px screen.
+      ? 'OpenAlex searches paused'
       : `${outageSourceNames} did not respond`;
   const suggestedQueries: { label: string; icon: ReactElement; query: string; section: SearchScopeId }[] = [
     {
