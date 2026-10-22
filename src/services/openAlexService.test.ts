@@ -638,7 +638,7 @@ test('refuses to ask OpenAlex for an id that is not a work or a PubMed number', 
   const openAlexJson = async () => { throw new Error('must not be called'); };
   assert.equal(await fetchPaperByWorkId('openalex', 'A2741809807', { openAlexJson }), null);
   assert.equal(await fetchPaperByWorkId('pmid', '12a', { openAlexJson }), null);
-  assert.equal(await fetchPaperByWorkId('doi', '10.1/x', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('doi', 'not a doi', { openAlexJson }), null);
   assert.equal(await fetchPaperByWorkId('openalex', '', { openAlexJson }), null);
 });
 
@@ -1396,4 +1396,34 @@ test('the author search asks once when OpenAlex answers a 5xx', async () => {
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }
+});
+
+// PAP-88: a paper opened by DOI was a works list (`filter=doi:`), which
+// OpenAlex bills and the Worker files under enrichment, refused from 80 % of
+// the day. `works/doi:` is one entity: free, and never refused by the ledger.
+test('opening a paper by DOI asks for the work by DOI, which is free, and a 404 is not found', async () => {
+  const requested: string[] = [];
+  const openAlexJson = async (url: unknown) => { requested.push(String(url)); return WORK_FIXTURE; };
+
+  const paper = await fetchPaperByWorkId('doi', '10.7717/peerj.4375', { openAlexJson });
+  assert.deepEqual(requested, ['https://api.openalex.org/works/doi:10.7717/peerj.4375']);
+  // The same paper the DOI list made of this work.
+  const { slimWorksPage } = await import('./openAlexService.ts');
+  assert.deepEqual(paper, slimWorksPage({ results: [WORK_FIXTURE] }).papers[0]);
+
+  // A SICI DOI: parentheses, angle brackets, a colon and a semicolon. The relay
+  // takes an id of letters, digits and `._:%|,-/` only.
+  const sici = '10.1002/(sici)1097-4636(199905)45:2<84::aid-jbm2>3.0.co;2-#';
+  requested.length = 0;
+  await fetchPaperByWorkId('doi', sici, { openAlexJson });
+  const path = new URL(requested[0]).pathname;
+  assert.ok(path.startsWith('/works/doi:'), path);
+  const id = path.slice('/works/doi:'.length);
+  assert.match(id, /^[A-Za-z0-9._%/-]+$/);
+  assert.equal(decodeURIComponent(id), sici);
+
+  const notFound = Object.assign(new Error('OpenAlex API error: 404'), { status: 404 });
+  assert.equal(await fetchPaperByWorkId('doi', '10.1000/missing', { openAlexJson: async () => { throw notFound; } }), null);
+  const down = Object.assign(new Error('OpenAlex API error: 503'), { status: 503 });
+  await assert.rejects(fetchPaperByWorkId('doi', '10.1000/x', { openAlexJson: async () => { throw down; } }), down);
 });
