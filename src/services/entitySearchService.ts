@@ -58,8 +58,9 @@ export interface EntitySearch {
  * Each section settles independently; display priority never gates another
  * source. Under All the papers go first and the entity sections follow once
  * the papers have settled: every debounced term is a papers search, but a
- * term the reader was still typing is never searched for authors, which
- * costs as much again. Projects come from OpenAIRE and run beside the papers.
+ * term abandoned before its papers answer is never searched for authors,
+ * which costs as much again. Projects come from OpenAIRE and run beside the
+ * papers.
  */
 export function searchEntities(query: string, {
   signal, onUpdate, knownPapers = [], sources = providers, timeouts = SECTION_TIMEOUTS,

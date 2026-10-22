@@ -106,7 +106,7 @@ test('a loaded feed title is suggested before providers and survives their failu
 
 // PAP-86: every debounced term is a papers search, but the author search is
 // billed as ten list calls more, so it waits for the papers to settle and is
-// never made for a term the reader was still typing.
+// never made for a term abandoned before its papers answer.
 function countingSources(asked: SearchSection[], papers: SearchProviders['papers']): SearchProviders {
   return {
     papers: (query, signal) => { asked.push('papers'); return papers(query, signal); },
