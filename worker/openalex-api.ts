@@ -218,8 +218,16 @@ async function readShared(env: WorkerEnv, key: string) {
 }
 
 // The edge cache is not guaranteed outside a request to the zone, as in the
-// nightly prefetch, and a failed copy there is one more store read later, not
-// a failed answer.
+// nightly prefetch. A read that fails there is a miss, and a failed copy is
+// one more store read later; neither is a failed answer.
+async function matchAtEdge(cacheKey: Request) {
+  try {
+    return await caches.default.match(cacheKey);
+  } catch {
+    return undefined;
+  }
+}
+
 async function putAtEdge(cacheKey: Request, response: Response) {
   try {
     await caches.default.put(cacheKey, response);
@@ -351,7 +359,7 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   if (!target) return json({ code: 'INVALID_OPENALEX_REQUEST' }, 400, corsHeaders(origin, env));
 
   const cacheKey = canonicalCacheKey(request, Object.fromEntries(target.searchParams));
-  const cached = await caches.default.match(cacheKey);
+  const cached = await matchAtEdge(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
   let pending = inFlight.get(cacheKey.url);

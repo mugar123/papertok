@@ -171,3 +171,23 @@ test('the prefetch makes no retry, skips keys already stored and stops at the fi
   assert.deepEqual(againAsked, []);
   assert.deepEqual(again.calls, []);
 });
+
+// Whether the Cache API works in a cron context is not established. An edge
+// cache that throws on every call must cost the run its edge copies only, not
+// the pages it paid for.
+test('the prefetch stores every page when the edge cache throws', async t => {
+  t.mock.method(console, 'info', () => {});
+  isolate(t);
+  t.mock.timers.enable({ apis: ['Date'], now: PREFETCHED_AT });
+  const store = sharedStore();
+  (globalThis as TestGlobals).caches = {
+    default: {
+      match: async () => { throw new Error('no edge cache in a cron context'); },
+      put: async () => { throw new Error('no edge cache in a cron context'); },
+    },
+  };
+  const asked = withNetwork(() => Response.json({ results: [{ id: 'https://openalex.org/W1' }] }));
+  await runPrefetch({ OPENALEX_API_KEY: 'worker-key', NOTIFICATION_STORE: store, REQUEST_QUOTA_LEDGER: ledger().binding });
+  assert.ok(asked.length > 1, 'the run went past its first page');
+  assert.equal(store.entries.size, asked.length);
+});
