@@ -30,11 +30,10 @@ import NudgePanel from './NudgePanel.tsx';
 // The analytics consent ask comes first and owns the corner until it is
 // answered. It does not wait the minute: until then, detailed analytics is off.
 //
-// A change to the privacy policy is owed to every reader, so it takes the
-// visit's turn before any nudge, and it is the one thing guests are shown:
-// on a public page they are reading, never in the welcome, which is a sign-up
-// rather than reading. It comes back until it is dismissed, once per reader
-// and policy version (utils/nudges.ts).
+// A privacy policy change takes the visit's turn before any nudge, and it is
+// the only panel guests see: on a public page they are reading, never in the
+// welcome, which is a sign-up rather than reading. It returns on later visits
+// until it is dismissed; utils/nudges.ts decides who is owed it.
 const PRIVACY_NOTICE = 'privacy-change';
 
 const COPY = {

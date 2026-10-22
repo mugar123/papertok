@@ -93,9 +93,9 @@ test('App monta el host y ya no la alerta de analítica', async () => {
 });
 
 /**
- * The privacy policy change notice: owed to every reader, so it takes the
- * visit's turn before any nudge and is the only panel a guest sees, on the
- * public pages they read rather than in the welcome.
+ * The privacy policy change notice takes the visit's turn before any nudge and
+ * is the only panel a guest sees, on the public pages they read rather than in
+ * the welcome.
  */
 test('a policy change is told before any nudge, and to guests only on a public page', async () => {
   const jsx = await hostJsx;
