@@ -421,14 +421,19 @@ export async function handleStoreFeed(request: Request, env: StoreEnv & WorkerEn
 
   const db = database(env);
   if (positiveIds.length) await storeMissingPositives(env, positiveIds);
+  const since = daysAgo(FEED_WINDOW_DAYS);
   const [candidates, positives] = await Promise.all([
-    // The candidates are chosen from the category index first, so only their
-    // vectors are read: joining before the limit carried every vector in the window.
+    // Each category contributes its newest share of the candidates through its
+    // own index range, which stops at the share: one query over the whole window
+    // read every row of it (146k rows for five busy cs categories, 2026-10-22),
+    // and D1 bills rows read. A quiet category keeps its share instead of being
+    // crowded out by a busy one. Only the candidates' vectors are read.
     db.prepare(`SELECT c.arxiv_id, c.published, v.embedding FROM (
-        SELECT arxiv_id, MAX(published) AS published FROM paper_categories
-        WHERE category IN (${placeholders(categories.length)}) AND published >= ?
-        GROUP BY arxiv_id ORDER BY published DESC LIMIT ?
-      ) c LEFT JOIN paper_vectors v ON v.arxiv_id = c.arxiv_id`).bind(...categories, daysAgo(FEED_WINDOW_DAYS), FEED_CANDIDATE_LIMIT).all<CandidateRow>(),
+        SELECT arxiv_id, MAX(published) AS published FROM (${categories.map(() => `SELECT * FROM (
+          SELECT arxiv_id, published FROM paper_categories WHERE category = ? AND published >= ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
+        GROUP BY arxiv_id
+      ) c LEFT JOIN paper_vectors v ON v.arxiv_id = c.arxiv_id`)
+      .bind(...categories.flatMap(category => [category, since, Math.ceil(FEED_CANDIDATE_LIMIT / categories.length)])).all<CandidateRow>(),
     positiveIds.length
       ? db.prepare(`SELECT embedding FROM paper_vectors WHERE arxiv_id IN (${placeholders(positiveIds.length)})`).bind(...positiveIds).all<{ embedding: unknown }>()
       : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
