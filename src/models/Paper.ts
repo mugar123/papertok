@@ -22,11 +22,12 @@ export interface PaperSources {
   // not reviewed. A `true` that rests on an arXiv DOI alone then reads
   // unknown, whether it reached the row before that record or after it.
   deniedElsewhere?: true;
-  // Written and read only by `PaperBuilder.merge`: by normalized DOI, what a
-  // merged record said of itself under it, whatever the row's own answer and
-  // the DOI it shows: `true` on more than an arXiv DOI, or an outright
-  // `false`, which stands against any `true` under that DOI. A row under one
-  // of these DOIs that merges this one reads it as that record's answer.
+  // Written and read only by `PaperBuilder.merge`: by normalized publisher
+  // DOI, what a merged record said of itself under it, whatever the row's own
+  // answer and the DOI it shows: `true` on more than an arXiv DOI, or an
+  // outright `false`, which stands against any `true` under that DOI. A row
+  // under one of these DOIs that merges this one reads it as that record's
+  // answer.
   peerReviewedByDoi?: Record<string, boolean>;
 }
 
