@@ -1369,6 +1369,39 @@ test('a record\'s own `false` under the row\'s DOI stands against a merged row\'
     }
   }
 
+  // OpenAlex can keep its record of the eprint typed `preprint` under arXiv's
+  // DOI while listing the journal's copy, and that record reads `true`. With
+  // NASA ADS's non-refereed record of the article, which lists the same
+  // eprint, a row under arXiv's DOI reads `false` in one list. So does the
+  // followed feed's OpenAlex record of the eprint before a topic row that
+  // joined the two, and the feed's card for that eprint beside the ADS card
+  // that OpenAlex enriched, by its arXiv id, with the same record.
+  const eprint = (id: string, locations: OpenAlexLocation[]): OpenAlexWork => ({
+    ...article,
+    id: `https://openalex.org/${id}`,
+    doi: `https://doi.org/10.48550/arXiv.${arxivId}`,
+    type: 'preprint',
+    primary_location: arxivLocation,
+    locations,
+  });
+  const eprintOnly = eprint('W501', [arxivLocation]);
+  const eprintWithArticle = eprint('W503', [arxivLocation, article.primary_location!]);
+  for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+    for (const [flow, rows] of [
+      ['one list', PaperBuilder.deduplicate([map(eprintOnly), notRefereed(), map(eprintWithArticle)])],
+      ['followed', PaperBuilder.deduplicate([map(eprintOnly), ...PaperBuilder.deduplicate([notRefereed(), map(eprintWithArticle)])])],
+      ['enriched card', PaperBuilder.deduplicate([
+        map(eprintWithArticle), PaperBuilder.merge(notRefereed(), mapOpenAlexEnrichmentWork(eprintWithArticle)!.enrichment, 'openalex'),
+      ])],
+    ] as Array<[string, Paper[]]>) {
+      const where = `the eprint under arXiv's DOI beside ADS's non-refereed article, ${flow} (${mapper})`;
+      assert.equal(rows.length, 1, where);
+      assert.equal(rows[0].doi?.toLowerCase(), `10.48550/arxiv.${arxivId}`, where);
+      assert.equal(rows[0].peerReviewed, false, where);
+      assert.equal(peerReviewedOnly(rows).length, 0, where);
+    }
+  }
+
   // Semantic Scholar's record of the article names its venue and DOI but no
   // type, so `create` reads it as a preprint. That `false` is a gap, not a
   // denial: Crossref's record of the article stays reviewed before a

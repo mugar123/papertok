@@ -453,8 +453,11 @@ export class PaperBuilder {
     // SSRN entry, as an arXiv record listing a FEDS revision's DOI, or as the
     // conference version under its own DOI, with OpenAlex's journal article
     // in them, or with NASA ADS's non-refereed record of it. A row under this
-    // DOI already answers for it.
-    const baseDoiAnswer = baseDoi !== '' && enrichmentDoi !== baseDoi
+    // DOI already answers for it. A row showing arXiv's own DOI takes the
+    // answer of any row that shares its arXiv id (`sameRecord`), a denial
+    // under another DOI included. The map files that denial under the
+    // denier's DOI only, so a `true` filed under arXiv's DOI would outrank it.
+    const baseDoiAnswer = isPublisherDoi(baseDoi) && enrichmentDoi !== baseDoi
       ? enrichmentData.sources?.peerReviewedByDoi?.[baseDoi]
       : undefined;
     const confirmsBaseDoi = baseDoiAnswer === true;
