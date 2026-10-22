@@ -1,10 +1,11 @@
 import type { FormEvent } from 'react';
 type InstitutionLinkProps = {
-  idPrefix?: string; formId?: string; showSubmit?: boolean;
+  idPrefix?: string; formId?: string; showSubmit?: boolean; hideLabel?: boolean;
   onBusyChange?: (busy: boolean) => void; linkedNote?: string;
 } & ({ email: string; onEmailChange: (email: string) => void } | { email?: undefined; onEmailChange?: undefined });
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { Button } from '../ui/button.tsx';
@@ -18,7 +19,6 @@ import './Institution.css';
 const COPY = {
   email: 'University email',
   placeholder: 'name@university.edu',
-  hint: 'We will email a verification link. Open it in this browser while signed into this PaperTok account.',
   submit: 'Verify university email',
   submitting: 'Verifying…',
   linked: (name: string) => `Verified with ${name}.`,
@@ -37,6 +37,7 @@ export default function InstitutionLink({
   onEmailChange,
   onBusyChange,
   linkedNote,
+  hideLabel = false,
 }: InstitutionLinkProps) {
   const { institution, linkInstitution, unlinkInstitution } = useAuth();
   const [ownEmail, setOwnEmail] = useState('');
@@ -73,7 +74,6 @@ export default function InstitutionLink({
     pendingFocus.current = null;
   }, [institution]);
   const inputId = `${idPrefix}-email`;
-  const hintId = `${idPrefix}-hint`;
   const feedbackId = `${idPrefix}-feedback`;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -87,6 +87,7 @@ export default function InstitutionLink({
         await sendInstitutionVerification(email);
         setPending(pendingInstitutionVerification());
         setEmail!('');
+        toast.success('Verification email sent', { description: 'Open the link in this browser while signed into this PaperTok account.' });
         setFeedback({ tone: 'success', text: 'Check your university inbox. Continue in the tab opened by the email.' });
         pendingFocus.current = null;
       } else {
@@ -150,7 +151,7 @@ export default function InstitutionLink({
 
   return (
     <form id={formId} className="institution-link" onSubmit={handleSubmit} noValidate aria-busy={busy || undefined}>
-      <Label htmlFor={inputId}>{COPY.email}</Label>
+      <Label htmlFor={inputId} className={hideLabel ? 'visually-hidden' : undefined}>{COPY.email}</Label>
       <div className="institution-link-field">
         <Input
           ref={inputRef}
@@ -171,7 +172,7 @@ export default function InstitutionLink({
           required
           aria-required="true"
           aria-invalid={feedback?.tone === 'error' ? 'true' : undefined}
-          aria-describedby={feedback?.tone === 'error' ? `${hintId} ${feedbackId}` : hintId}
+          aria-describedby={feedback?.tone === 'error' ? feedbackId : undefined}
         />
         {showSubmit && (
           <Button
@@ -200,7 +201,6 @@ export default function InstitutionLink({
           </div>
         </div>
       )}
-      <p id={hintId} className="institution-link-hint">{COPY.hint}</p>
       {feedbackNode}
     </form>
   );
