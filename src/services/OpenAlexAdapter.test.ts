@@ -1,7 +1,8 @@
 import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPENALEX_SEARCH_TYPES, OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS } from '../utils/openAlexFeedLanes.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
 import { openAlexClient } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';

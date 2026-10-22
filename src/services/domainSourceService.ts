@@ -52,10 +52,10 @@ type SourceRequest<T> = { path: string; promise: Promise<T> };
 import { CATEGORIES, getCategoryArea } from '../data/categories.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
+import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { openAlexJson } from './openAlexClient.ts';
 import { isTechnicalClassification } from '../utils/scientificClassification.ts';
-import { openAlexTopicFilterForLeaves } from '../utils/areaAccent.ts';
+import { openAlexTopicLaneUrl, openAlexWorkingPapersUrl } from '../utils/openAlexFeedLanes.ts';
 import { mapOpenReviewNote } from './openReviewService.ts';
 import { mapHuggingFacePaper } from './huggingFaceService.ts';
 import { authenticatedWorkerFetch, hasWorkerSession, sourceResponseError } from './workerApiClient.ts';
@@ -767,36 +767,9 @@ export async function fetchDomainPapers(categories: readonly string[], page = 1,
   ).slice(0, safeLimit * 2);
 }
 
-// The series this feed requests, by OpenAlex source ID, each checked with a
-// keyless OpenAlex request on 2026-10-19 (PAP-53). The review rule in
-// publicationStatus.ts owns which sources are working-paper series. A test
-// checks that each ID here is on its list; one that is not would bring its
-// articles in as reviewed journal papers without the Working paper tag. That
-// list also holds FEDS Notes, short notes rather than working papers, and the
-// Kansas City Fed series, which the checks behind this request did not cover.
-// OpenAlex types NBER, CESifo, Banco de España and the New York and
-// Philadelphia Fed series as `report`, hence `type:article|report` below. World
-// Bank Policy Research Working Papers are not listed: OpenAlex files the recent
-// ones under the bank's general eBooks source (S4306464317), and its two PRWP
-// sources hold nothing from this window.
-const REQUESTED_SERIES_IDS = [
-  'S2809516038', // National Bureau of Economic Research
-  'S4210171147', // IMF Working Papers
-  'S7407053623', // CESifo Working Papers
-  'S4393913881', // Banco de España, Documentos de Trabajo
-  'S4393919745', // Federal Reserve Bank of New York, Staff Reports
-  'S4306510381', // Federal Reserve Bank of San Francisco, Working Paper Series
-  'S4210230366', // Federal Reserve Bank of Philadelphia, Working Papers
-  'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
-];
-// 672 works in the 90 days to 2026-10-19, or 112 pages.
-const WORKING_PAPER_WINDOW_DAYS = 90;
-// The per-request cap OSTI and NASA have.
-const WORKING_PAPER_PAGE_SIZE = 6;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 /**
- * One page of the series above, newest first, for a reader whose interests
+ * One page of the working-paper series (`openAlexWorkingPapersUrl`), newest
+ * first, for a reader whose interests
  * include an economics or quantitative-finance category. Any other reader
  * costs no request. The answer does not depend on which of those categories
  * asked, so only the feed calls it, with the reader's own interests:
@@ -818,20 +791,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export async function fetchWorkingPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
   if (!categories.some(category => ['econ', 'q-fin'].includes(getCategoryArea(category) ?? ''))) return [];
-  // A UTC date, so every reader on one day sends the same filter and shares
-  // the Worker's cache entry for each page.
-  const since = new Date(Date.now() - WORKING_PAPER_WINDOW_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const url = new URL('https://api.openalex.org/works');
-  url.searchParams.set('filter', [
-    `primary_location.source.id:${REQUESTED_SERIES_IDS.join('|')}`,
-    // The window also held one dataset.
-    'type:article|report',
-    `from_publication_date:${since}`,
-  ].join(','));
-  url.searchParams.set('sort', 'publication_date:desc');
-  url.searchParams.set('page', String(Math.max(1, Number(page) || 1)));
-  url.searchParams.set('per-page', String(WORKING_PAPER_PAGE_SIZE));
-  url.searchParams.set('select', OPENALEX_WORK_SEARCH_FIELDS.join(','));
+  const url = openAlexWorkingPapersUrl(page, Date.now());
   try {
     const data = await openAlexJson<{ results: OpenAlexWork[] }>(url, {
       timeoutMs: REQUEST_TIMEOUT_MS,
@@ -852,43 +812,18 @@ export async function fetchWorkingPapers(categories: readonly string[], page = 1
   }
 }
 
-// Each leaf with topics had 1,537 to 10,458 articles with an abstract in the
-// 90 days to 2026-10-21, so a longer window would not change the newest pages.
-const OPENALEX_TOPIC_WINDOW_DAYS = 90;
-const OPENALEX_TOPIC_PAGE_SIZE = 25;
-
 /**
  * One page of the newest articles OpenAlex files under the topics of the
- * reader's leaves (openAlexTopicFilterForLeaves), for leaves arXiv does not
- * serve; a reader without such a leaf costs no request. Core sources only:
- * that drops repository deposits, blogs and stubs, and put 74 % of results on
- * the leaf's field against 65 % without it. No language filter: OpenAlex
- * leaves `language` empty on 14-74 % of these works, mostly English ones.
+ * reader's leaves (`openAlexTopicLaneUrl`), for leaves arXiv does not serve; a
+ * reader without such a leaf costs no request.
  *
  * The cards keep OpenAlex's own topic, not the leaf that asked. A failure with
  * no cached copy rejects, with no retry and no wider second request, so the
  * feed counts a source that did not answer and fills the page from the others.
  */
 export async function fetchOpenAlexTopicPapers(categories: readonly string[], page = 1): Promise<Paper[]> {
-  const topicFilter = openAlexTopicFilterForLeaves(categories);
-  if (!topicFilter) return [];
-  const now = Date.now();
-  const day = (time: number) => new Date(time).toISOString().slice(0, 10);
-  const url = new URL('https://api.openalex.org/works');
-  url.searchParams.set('filter', [
-    topicFilter,
-    // UTC dates, so every reader on one day shares the Worker's cache entry,
-    // and none after today: a work dated ahead would sort first.
-    `from_publication_date:${day(now - OPENALEX_TOPIC_WINDOW_DAYS * DAY_MS)}`,
-    `to_publication_date:${day(now)}`,
-    'has_abstract:true',
-    'is_retracted:false',
-    'primary_location.source.is_core:true',
-  ].join(','));
-  url.searchParams.set('sort', 'publication_date:desc');
-  url.searchParams.set('page', String(Math.max(1, Number(page) || 1)));
-  url.searchParams.set('per-page', String(OPENALEX_TOPIC_PAGE_SIZE));
-  url.searchParams.set('select', OPENALEX_WORK_SEARCH_FIELDS.join(','));
+  const url = openAlexTopicLaneUrl(categories, page, Date.now());
+  if (!url) return [];
   try {
     const data = await openAlexJson<{ results: OpenAlexWork[] }>(url, {
       timeoutMs: REQUEST_TIMEOUT_MS,

@@ -22,7 +22,8 @@ import {
 } from './domainSourceService.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { isFeedPublication } from './feedPublicationService.ts';
-import { openAlexClient } from './openAlexClient.ts';
+import { identifyOpenAlexUrl, openAlexClient } from './openAlexClient.ts';
+import { openAlexTopicLaneUrl, openAlexWorkingPapersUrl } from '../utils/openAlexFeedLanes.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { reviewStatusForPaper } from '../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
@@ -759,4 +760,36 @@ test('a failed topic request rejects, so the feed counts a source that did not a
   openAlexClient.fetchImpl = async () => new Response('{}', { status: 503 });
   t.after(() => { openAlexClient.fetchImpl = realFetch; });
   await assert.rejects(fetchOpenAlexTopicPapers(['bio.mol'], 1));
+});
+
+// PAP-88: the Worker fetches the first pages of both lanes into its shared
+// cache once a day, just after 00:05 UTC, with the same builders. A reader who
+// asks later the same UTC day, with any other categories that have no topic
+// list, must ask for exactly those URLs, or the prefetched pages are never read.
+test('the topic lane and the working papers ask for exactly the URLs the Worker prefetches', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T23:30:00Z') });
+  const prefetchedAt = Date.parse('2026-10-22T00:05:00Z');
+  const realFetch = openAlexClient.fetchImpl;
+  const realBase = openAlexClient.apiBase;
+  const urls: string[] = [];
+  openAlexClient.clearMemoryCache();
+  openAlexClient.apiBase = 'https://api.papertok.app';
+  openAlexClient.fetchImpl = async (input) => {
+    urls.push(String(input));
+    return Response.json({ results: [] });
+  };
+  t.after(() => {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.apiBase = realBase;
+  });
+
+  await fetchOpenAlexTopicPapers(['cs.LG', 'bio.mol', 'med.gen'], 2);
+  await fetchWorkingPapers(['q-fin.ST', 'cs.AI'], 3);
+
+  const asked = (url: URL | null) => identifyOpenAlexUrl(url!, undefined, 'https://api.papertok.app');
+  assert.deepEqual(urls, [
+    asked(openAlexTopicLaneUrl(['bio.mol'], 2, prefetchedAt)),
+    asked(openAlexWorkingPapersUrl(3, prefetchedAt)),
+  ]);
+  assert.equal(openAlexTopicLaneUrl(['cs.LG', 'med.gen'], 1, prefetchedAt), null, 'no topic list, no lane');
 });

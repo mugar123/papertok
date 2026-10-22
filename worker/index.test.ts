@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publicationStatus.ts';
+import { openAlexTopicLaneUrl, openAlexWorkingPapersUrl } from '../src/utils/openAlexFeedLanes.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { RequestQuotaLedger, reserveRequestQuota } from './request-quota-ledger.ts';
@@ -3766,7 +3767,11 @@ test('a PDF relay closes when there is no ledger to bound it', async () => {
 // tier stops at a smaller share of the ceiling, so the reads the feed and an
 // opened paper need keep working longest.
 
-const relayPath = (path: string) => `https://papertok-report-api.example/openalex/${path}`;
+const relayPath = (path: string) => (path.startsWith('https://') ? path : `https://papertok-report-api.example/openalex/${path}`);
+// A browser-built OpenAlex URL as it reaches this Worker: `identifyOpenAlexUrl`
+// keeps the path and the parameters (that module needs the DOM, so it is not
+// imported here; domainSourceService.test.ts holds the browser side).
+const asReader = (url: URL) => `https://papertok-report-api.example/openalex${url.pathname}${url.search}`;
 
 test('each OpenAlex request shape reserves under its tier', async () => {
   const tallied = async (path: string) => {
@@ -3780,9 +3785,9 @@ test('each OpenAlex request shape reserves under its tier', async () => {
   const shapes: Array<[string, string[]]> = [
     // One paper being opened: the public page's fallback by arXiv landing page.
     ['works?filter=locations.landing_page_url:http://arxiv.org/abs/2601.00001|https://arxiv.org/abs/2601.00001&per_page=1', ['essential.list 1']],
-    // The feed's topic lane and working-paper series.
-    ['works?filter=primary_topic.id:T10604|T10878,type:article,from_publication_date:2026-07-23,to_publication_date:2026-10-21,has_abstract:true,is_retracted:false,primary_location.source.is_core:true&sort=publication_date:desc&page=1&per-page=25', ['feed.list 1']],
-    ['works?filter=primary_location.source.id:S2809516038|S4210171147,type:article|report,from_publication_date:2026-07-23&sort=publication_date:desc&page=2&per-page=6', ['feed.list 1']],
+    // The feed's topic lane and working-paper series, as the browser asks.
+    [asReader(openAlexTopicLaneUrl(['bio.mol', 'mech.aero'], 1, Date.now())!), ['feed.list 1']],
+    [asReader(openAlexWorkingPapersUrl(2, Date.now())), ['feed.list 1']],
     // Shown cards, by DOI, OpenAlex id or arXiv landing page.
     ['works?filter=doi:10.1000/a|10.1000/b&per-page=50', ['enrichment.list 1']],
     ['works?filter=openalex:W1|W2&per_page=50&select=id,doi,ids', ['enrichment.list 1']],
