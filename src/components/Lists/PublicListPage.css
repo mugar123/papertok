@@ -307,7 +307,7 @@
   border: 2px solid var(--border-default);
   border-top-color: var(--accent-primary);
   border-radius: 50%;
-  animation: public-list-spin 700ms linear infinite;
+  animation: spin 700ms linear infinite;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -350,8 +350,4 @@
 @media (prefers-reduced-motion: reduce) {
   .public-list-spinner { animation-duration: 1400ms; }
   .public-list-share-glyph { animation-name: fadeIn; }
-}
-
-@keyframes public-list-spin {
-  to { transform: rotate(360deg); }
 }

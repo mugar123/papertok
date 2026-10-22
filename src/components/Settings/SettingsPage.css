@@ -109,7 +109,7 @@
 }
 
 .settings-spin {
-  animation: settingsSpin 0.85s linear infinite;
+  animation: spin 0.85s linear infinite;
 }
 
 /* ── Sections: a title, one line, then the panel ── */
@@ -429,10 +429,6 @@
   font-size: var(--fs-xs);
 }
 
-@keyframes settingsSpin {
-  to { transform: rotate(360deg); }
-}
-
 @media (max-width: 900px) {
   /* No room for a column beside the content: the pages become one line
      above it, scrolled sideways, each page the same icon and name. */
@@ -637,7 +633,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .settings-spin {
-    animation: none;
+    animation-duration: 2.4s;
   }
 
   .settings-index-list a,

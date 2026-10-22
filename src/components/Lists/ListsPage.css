@@ -391,6 +391,11 @@
   animation: spin 0.8s linear infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .lists-loading-spinner,
+  .lists-badge-spinner { animation-duration: 2.4s; }
+}
+
 /* ─── The open list ─── */
 
 .lists-expanded-bar {
@@ -832,10 +837,6 @@
 }
 
 /* ─── Animations ─── */
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
 
 /* Press feedback. The light system took the hover lift off cards deliberately,
    but a control that acknowledges nothing on the way down feels slower than it

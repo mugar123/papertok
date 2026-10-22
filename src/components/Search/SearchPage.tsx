@@ -15,7 +15,6 @@ import {
   Lightbulb,
   MagnifyingGlass,
   Plus,
-  Sparkle,
   TrendUp,
   Users,
   WarningCircle,
@@ -805,12 +804,10 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 <div className="search-initial-hero">
                   <Petri pose="compass" className="search-initial-petri" />
                   <h2>{'Explore knowledge'}</h2>
-                  <p>{'Search papers, researchers, topics, institutions, and funded projects.'}</p>
                 </div>
                 
                 <div className="search-suggestions">
-                  <h3 className="search-suggestions-title"><Sparkle size={16} /> {'Suggested searches'}</h3>
-                  <div className="search-suggestions-grid">
+                  <div className="search-suggestions-grid" role="group" aria-label={'Suggested searches'}>
                     {suggestedQueries.map(item => (
                       <button
                         type="button"
@@ -1036,7 +1033,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
 
       {/* Paper Card Overlay */}
       <PaperOverlay
-        open={Boolean(selectedPaper && !pdfPaper)}
+        open={Boolean(selectedPaper)}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
        

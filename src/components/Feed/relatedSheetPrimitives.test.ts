@@ -121,7 +121,7 @@ test('the sheet\'s box carries the drawer\'s bleed, and a chosen paper settles t
   // never shows the page; a height written without it shows that much less.
   assert.match(sheet[1], /height: calc\(min\(68dvh, 610px\) \+ var\(--bleed\)\);/);
   assert.match(sheet[1], /padding-bottom: calc\(var\(--inset-bottom\) \+ var\(--bleed\)\);/);
-  assert.match(sheet[1], /transition: transform 400ms cubic-bezier\(0\.32, 0\.72, 0, 1\), height 0\.28s/);
+  assert.match(sheet[1], /transition: transform var\(--motion-sheet\) var\(--ease-drawer\), height 0\.28s/);
   assert.doesNotMatch(css.replace(/\/\*[\s\S]*?\*\//g, ''), /is-closing|relatedSheetIn|relatedSheetOut|relatedBackdropIn|relatedSheetToCard/);
   const select = css.match(/\.related-sheet\.is-selecting-paper\[data-ending-style\]\s*\{([^}]*)\}/);
   assert.ok(select, 'the hand-off pose is gone');

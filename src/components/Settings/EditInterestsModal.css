@@ -241,8 +241,8 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@media (prefers-reduced-motion: reduce) {
+  .eim-spinner { animation-duration: 2.4s; }
 }
 
 @media (max-width: 768px) {
