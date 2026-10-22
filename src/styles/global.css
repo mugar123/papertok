@@ -394,11 +394,9 @@ textarea:focus-visible,
   outline: none;
 }
 
-/* A page sliding in from the right must not widen the document. On a phone
-   that overflow grew the layout viewport, and the fixed navbar stretched with
-   it: the avatar went off screen and the tabs left centre until the slide
-   ended. `clip`, not `hidden`, so this is no scroll container and the window
-   keeps scrolling. */
+/* A page sliding in from the side must not widen the phone's layout viewport,
+   which the fixed navbar sizes to. `clip`, not `hidden`, so this is no scroll
+   container and the window keeps scrolling. */
 #main-content {
   overflow-x: clip;
 }

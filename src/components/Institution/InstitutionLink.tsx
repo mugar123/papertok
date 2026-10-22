@@ -19,6 +19,7 @@ import './Institution.css';
 const COPY = {
   email: 'University email',
   placeholder: 'name@university.edu',
+  inbox: 'Check your university inbox. Open the link in this browser while signed into this PaperTok account, then continue in the tab it opens.',
   submit: 'Verify university email',
   submitting: 'Verifying…',
   linked: (name: string) => `Verified with ${name}.`,
@@ -87,8 +88,8 @@ export default function InstitutionLink({
         await sendInstitutionVerification(email);
         setPending(pendingInstitutionVerification());
         setEmail!('');
-        toast.success('Verification email sent', { description: 'Open the link in this browser while signed into this PaperTok account.' });
-        setFeedback({ tone: 'success', text: 'Check your university inbox. Continue in the tab opened by the email.' });
+        toast.success('Verification email sent');
+        setFeedback({ tone: 'success', text: COPY.inbox });
         pendingFocus.current = null;
       } else {
         await linkInstitution(email);
@@ -121,7 +122,7 @@ export default function InstitutionLink({
     }
   };
 
-  const feedbackText = feedback?.text || (pending ? 'Check your university inbox. Continue in the tab opened by the email.' : '');
+  const feedbackText = feedback?.text || (pending ? COPY.inbox : '');
   // The region stays mounted so each message is announced; the keyed span
   // opens again whenever the message changes.
   const feedbackNode = (

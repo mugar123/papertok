@@ -117,9 +117,6 @@ button.rd-tag {
   min-width: 8.5rem;
 }
 
-/* The level stands in the middle of the bar; the other controls stay at its
-   right edge. The bar is its containing block, so the panel's overflow does
-   not clip it. */
 @media (min-width: 641px) {
   .rd-topbar .rd-level-select {
     position: absolute;

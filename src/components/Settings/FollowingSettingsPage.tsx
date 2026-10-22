@@ -183,6 +183,7 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
             {visibleEntities.map((entity) => {
               const pending = isFollowPending(entity);
               const displayName = getFollowDisplayName(entity);
+              const entityPath = getFollowedEntityPath(entity);
               return (
                 <motion.article
                   layout
@@ -194,9 +195,13 @@ function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; o
                   transition={{ duration: 0.24, ease: EASE_OUT }}
                 >
                   <Link
-                    to={getFollowedEntityPath(entity)}
+                    to={entityPath}
                     className="following-settings-link"
-                    onClick={onOpenEntity && ((event) => { event.preventDefault(); onOpenEntity(getFollowedEntityPath(entity)); })}
+                    onClick={onOpenEntity && ((event) => {
+                      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                      event.preventDefault();
+                      onOpenEntity(entityPath);
+                    })}
                   >
                     <span className={`following-settings-initials is-${entity.type}`} aria-hidden="true">
                       {getInitials(displayName)}
@@ -373,12 +378,11 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
   const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
   const returning = !unfollowOpen && unfollowing !== null;
-  // A page opened from the sheet waits for the sheet to close: navigating
-  // under an open sheet slid the new page in beneath it, and the sheet was
-  // cut off when the Settings page it belongs to left.
-  const [leavingTo, setLeavingTo] = useState<string | null>(null);
-  const leaveTo = (path: string) => {
-    setLeavingTo(path);
+  // A page opened from the sheet waits for the sheet to close; the sheet
+  // belongs to Settings and would be cut off when Settings leaves.
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const navigateAfterClose = (path: string) => {
+    setPendingPath(path);
     onOpenChange(false);
   };
 
@@ -387,9 +391,9 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
       open={open}
       onOpenChange={onOpenChange}
       onOpenChangeComplete={(isOpen) => {
-        if (isOpen || !leavingTo) return;
-        setLeavingTo(null);
-        navigate(leavingTo);
+        if (isOpen || !pendingPath) return;
+        setPendingPath(null);
+        navigate(pendingPath);
       }}
     >
       <DrawerContent className={`settings-sheet is-tall${returning ? ' is-returning' : ''}`} overlayClassName="settings-sheet-backdrop">
@@ -417,7 +421,7 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
           </Select>
         </div>
         <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
-          <FollowedList view={view} onExplore={() => leaveTo('/search')} onOpenEntity={leaveTo} />
+          <FollowedList view={view} onExplore={() => navigateAfterClose('/search')} onOpenEntity={navigateAfterClose} />
         </div>
         <UnfollowConfirm view={view} />
       </DrawerContent>
