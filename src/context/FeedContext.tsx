@@ -112,6 +112,7 @@ import {
   scheduleInteractionProfileFlush,
 } from '../services/interactionProfileStore.ts';
 import { fetchDomainPapers, fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
+import { fetchStoreFeed } from '../services/paperStoreService.ts';
 import {
   abstractsInFlight,
   cardsGivenTopic,
@@ -1414,7 +1415,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
           let arxivProm = Promise.resolve<Paper[]>([]);
           if (arxivCats.length > 0) {
-              arxivProm = fetchPapers(arxivCats, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode);
+              arxivProm = fetchStoreFeed(arxivCats, currentPage, PAGE_SIZE, queryMode, selectSemanticProfilePositiveIds(
+                curatedIds(interactionProfile.current, 'liked'),
+                curatedIds(interactionProfile.current, 'saved'),
+              ));
           }
 
           const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
@@ -1564,7 +1568,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const arxivNearby = nearbyCats.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!));
             let arxivProm = Promise.resolve<Paper[]>([]);
             if (arxivNearby.length > 0) {
-               arxivProm = fetchPapers(arxivNearby, randomStart, exploreCount, queryMode).catch(() => []);
+               arxivProm = fetchStoreFeed(arxivNearby, Math.floor(randomStart / exploreCount), exploreCount, queryMode, []).catch(() => []);
             }
             
             const pubmedNearby = nearbyCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
@@ -1620,7 +1624,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const arxivRandom = randomCats.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!));
             let arxivProm = Promise.resolve<Paper[]>([]);
             if (arxivRandom.length > 0) {
-                arxivProm = fetchPapers(arxivRandom, randomStart, 2, queryMode).catch(() => []);
+                arxivProm = fetchStoreFeed(arxivRandom, Math.floor(randomStart / 2), 2, queryMode, []).catch(() => []);
             }
             
             const pubmedRandom = randomCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!));
@@ -2391,8 +2395,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     // A long read moves the temporal preference. It no longer walks the
     // citation network: that was an OpenAlex call for a reader who did nothing,
-    // and on launch day those walks were a tenth of the day's ceiling (PAP-86).
-    // A like, a save or an opened PDF still expands the graph.
+    // and in the PAP-86 audit's model of a signed-in session those walks were
+    // about a tenth of its OpenAlex units (modelled, not measured). A like, a
+    // save or an opened PDF still expands the graph.
     if (timeInSeconds >= 10) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);

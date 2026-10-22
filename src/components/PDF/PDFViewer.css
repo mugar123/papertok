@@ -13,7 +13,7 @@
   border-radius: 0;
   box-shadow: none;
   /* No `backdrop-filter`: this overlay fades its own opacity in/out
-     (`pdfOverlayIn`/`pdfOverlayOut`), and animating opacity over a blurred
+     (`fadeIn`/`fadeOut`), and animating opacity over a blurred
      layer forces the blur to be re-resolved every frame — the worst case
      for a mobile GPU. The dark rgba veil is what actually reads as the
      backdrop; its 8px blur added nothing visible under it. */
@@ -35,11 +35,11 @@
    document until the closing animation has finished, and only then tells
    App.jsx to unmount the viewer. */
 .pdf-overlay[data-open] {
-  animation: pdfOverlayIn 280ms var(--ease-out);
+  animation: fadeIn 280ms var(--ease-out);
 }
 
 .pdf-overlay[data-closed] {
-  animation: pdfOverlayOut 180ms var(--ease-out) forwards;
+  animation: fadeOut 180ms var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -55,7 +55,7 @@
 }
 
 .pdf-overlay[data-closed] .pdf-viewer {
-  animation: pdfViewerOut 180ms var(--ease-out) forwards;
+  animation: fadeOut 180ms var(--ease-out) forwards;
 }
 
 /* On a touch screen the viewer leaves the way it came: back down the screen.
@@ -65,7 +65,7 @@
    popup's own animation, never unmounts the sheet mid-slide. */
 @media (pointer: coarse) {
   .pdf-overlay[data-closed] {
-    animation: pdfOverlayOut 220ms var(--ease-out) forwards;
+    animation: fadeOut 220ms var(--ease-out) forwards;
   }
 
   .pdf-overlay[data-closed] .pdf-viewer {
@@ -175,17 +175,21 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   color: var(--text-secondary);
+  /* On a card, like the fallback below: until the PDF paints, the page
+     behind the scrim shows through and the caption read over its text. */
+  padding: var(--space-5) var(--space-8);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--fs-sm);
 }
 
-.pdf-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid var(--border-default);
-  border-top-color: var(--accent-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+/* The PDF is already on its way: Petri is simply there, with no rise. */
+.pdf-loading .petri .onboarding-petri-body {
+  animation: none;
 }
 
 /* A card, not a caption: this message floats over the darkened page behind
@@ -261,32 +265,12 @@
   }
 }
 
-@keyframes pdfViewerOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes pdfOverlayIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes pdfOverlayOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
 /* With no animation to wait for, the primitive unmounts the viewer at once. */
 @media (prefers-reduced-motion: reduce) {
   .pdf-overlay[data-open],
   .pdf-overlay[data-closed],
   .pdf-overlay[data-open] .pdf-viewer,
-  .pdf-overlay[data-closed] .pdf-viewer,
-  .pdf-loading-spinner {
+  .pdf-overlay[data-closed] .pdf-viewer {
     animation: none;
   }
 

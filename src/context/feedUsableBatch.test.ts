@@ -66,6 +66,16 @@ function deferred() {
   return { promise, resolve };
 }
 
+// The feed's arXiv leg goes through the paper store, which asks for the same
+// page in the same shape; these tests stand it in with the scope's arXiv double.
+function withStoreStandIn<T extends { fetchPapers: unknown }>(scope: T) {
+  return {
+    ...scope,
+    fetchStoreFeed: (categories: string[], page: number, pageSize: number, queryMode: string) => (scope.fetchPapers as (...args: unknown[]) => Promise<FeedRecord[]>)(categories, page * pageSize, pageSize, queryMode),
+    selectSemanticProfilePositiveIds: () => [], curatedIds: () => [], interactionProfile: ref(null),
+  };
+}
+
 function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
@@ -117,7 +127,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   const withFollowUp = () => ({ ...env, followShownPapers: build(followCallback, env) });
   const run = (...args: unknown[]) => {
     Object.assign(env, { papers: state.papers, page: state.page, loading: state.loading });
-    return build(callback, withFollowUp())(...args);
+    return build(callback, withStoreStandIn(withFollowUp()))(...args);
   };
   const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }) => build(restoreCallback, withFollowUp())(snapshot, 'top', 'cs.AI');
   // Not interested in demo mode: nothing written to Firestore, no re-rank.
@@ -489,9 +499,10 @@ test('a load remembers the papers it shows for this session, not in the reader\'
 });
 
 // Reading a card for ten seconds used to walk its citation network: an OpenAlex
-// call (and a Semantic Scholar one) for a reader who did nothing. On launch day
-// those walks were a tenth of the OpenAlex ceiling (PAP-86). A like, a save or
-// an opened PDF still expands the graph; a passive read only ranks.
+// call (and a Semantic Scholar one) for a reader who did nothing. In the PAP-86
+// audit's model those walks were about a tenth of a signed-in session's
+// OpenAlex units; nothing was measured. A like, a save or an opened PDF still
+// expands the graph; a passive read only ranks.
 test('a ten-second read no longer walks the citation network', async () => {
   const walked: string[] = [];
   const { trackViewTime, stored } = viewing({ traverseAndExpandNetwork: (paper: FeedRecord) => { walked.push(paper.id); } });
@@ -711,7 +722,7 @@ const compile = (code: string, scope: object) => new Function(...Object.keys(sco
 type Loader = ReturnType<typeof feed>;
 function renders(state: Loader['state'], env: Loader['env'], sources: object) {
   return () => {
-    const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
+    const scope = withStoreStandIn({ ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore });
     const loadPapers = compile(callback, scope);
     return {
       loadPapers,

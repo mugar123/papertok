@@ -43,7 +43,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { authorDisplayName } from '../../utils/explorerPaths.ts';
-import { SOURCE_LABELS } from '../../utils/searchOutage.ts';
 import { readRecentSearches, updateRecentSearches } from './recentSearches.ts';
 import { Toggle } from '../ui/toggle.tsx';
 
@@ -485,7 +484,6 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
           <span><kbd>↵</kbd> Open</span>
           <span><kbd>Tab</kbd> Types</span>
           <span><kbd>Esc</kbd> Close</span>
-          <span className="sc-sources">{['openalex', 'arxiv', 'openaire'].map(source => SOURCE_LABELS[source]).join(' · ')}</span>
         </div>
       </Tabs>
     </CommandDialog>

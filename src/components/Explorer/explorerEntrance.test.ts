@@ -102,12 +102,13 @@ test('an entity already in the persistent cache is born resolved, like one hande
  */
 test('the blocks a project fills in rise in sequence instead of landing in one frame', async () => {
   const css = await read('./EntityExplorer.css');
+  const shared = await read('../../styles/variables.css');
 
   // From nothing, because these three land where there was nothing. 0.35 is
   // for a row resolving into a shape of its own size, which they are not.
   assert.match(
-    css,
-    /@keyframes projectBlockIn \{\s*from \{ opacity: 0; transform: translateY\(8px\); \}\s*to \{ opacity: 1; transform: translateY\(0\); \}\s*\}/,
+    shared,
+    /@keyframes rise \{\s*from \{ opacity: 0; transform: translateY\(8px\); \}\s*to \{ opacity: 1; transform: none; \}\s*\}/,
     'the entrance rises from nothing',
   );
 
@@ -117,7 +118,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   // an identity matrix, not `none`, whatever the last keyframe says — and that
   // makes `.project-participants` a containing block for the framer `layout`
   // grid inside it, whose projection measures against its ancestors.
-  assert.match(group, /animation: projectBlockIn 0\.32s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;/);
+  assert.match(group, /animation: rise var\(--motion-base\) var\(--ease-out\) backwards;/);
   assert.doesNotMatch(group, /\b(both|forwards)\b/, 'no forwards fill: it would strand a transform');
 
   // Staggered down the page. The claim is the ORDER, not the numbers: each
@@ -138,7 +139,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   // place from 0.35 rather than arriving from nothing.
   assert.match(
     css,
-    /\.project-summary-box \{[\s\S]*?animation: staggerFadeUp 0\.32s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;/,
+    /\.project-summary-box \{[\s\S]*?animation: staggerFadeUp var\(--motion-base\) var\(--ease-out\) backwards;/,
     'the reserved block resolves rather than arrives',
   );
 
@@ -147,7 +148,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   // header that never went away — they sharpen rather than arrive.
   assert.match(
     css,
-    /\.explorer-container--project \.ehc-stat-box,\s*\.project-links-menu \{\s*animation: statSettle 0\.32s cubic-bezier\(0\.4, 0, 0\.2, 1\) backwards;\s*\}/,
+    /\.explorer-container--project \.ehc-stat-box,\s*\.project-links-menu \{\s*animation: settle var\(--motion-base\) var\(--ease-out\) backwards;\s*\}/,
     'the header pieces fill in too',
   );
   // The hook they are scoped by. Without the type on the live container this

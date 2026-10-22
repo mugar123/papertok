@@ -1,6 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 
 import { runEmailNotificationSchedule } from './email-notifications.ts';
+import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
 import { handleRequest, routeForLog } from './router.ts';
 import { captureWorkerResponseFailure } from './error-tracking.ts';
 
@@ -30,7 +31,14 @@ export default {
       }
     }
   },
-  async scheduled(controller: Pick<ScheduledController, 'scheduledTime'>, env: WorkerEnv, context: Pick<ExecutionContext, 'waitUntil'>) {
+  async scheduled(controller: Pick<ScheduledController, 'scheduledTime'> & Partial<Pick<ScheduledController, 'cron'>>, env: WorkerEnv, context: Pick<ExecutionContext, 'waitUntil'>) {
+    if (controller.cron === PAPER_HARVEST_CRON) {
+      // One instance per UTC day: a repeated trigger finds the id taken.
+      const id = `harvest-${new Date(controller.scheduledTime).toISOString().slice(0, 10)}`;
+      if (env.PAPER_HARVEST) context.waitUntil(env.PAPER_HARVEST.create({ id }).then(() => undefined, (error: unknown) => console.error('Paper harvest did not start', error)));
+      else console.error('Paper harvest did not start: PAPER_HARVEST is not bound');
+      return;
+    }
     context.waitUntil(runEmailNotificationSchedule(env, controller.scheduledTime));
   },
 };

@@ -1378,3 +1378,22 @@ test('local and remote topic suggestions tolerate typos with one provider reques
   assert.ok(results.some(topic => topic.display_name === 'Machine Learning'));
   assert.ok(results.some(topic => topic.id === 'T123'));
 });
+
+// PAP-86: the search page's author search is a search, which the relay
+// reserves ten list calls for on every miss. It carried the client's default
+// of two more attempts after a 5xx, each of them a fresh reservation for the
+// same outage; the typeahead branch above already asks once.
+test('the author search asks once when OpenAlex answers a 5xx', async () => {
+  const realFetch = openAlexClient.fetchImpl;
+  let requests = 0;
+  openAlexClient.fetchImpl = async () => {
+    requests += 1;
+    return Response.json({ error: 'upstream' }, { status: 502 });
+  };
+  try {
+    await assert.rejects(searchAuthors('Ada Lovelace', { throwOnError: true }));
+    assert.equal(requests, 1);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
+});

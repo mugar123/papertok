@@ -15,7 +15,7 @@ import { readFile } from 'node:fs/promises';
  *
  * Measured 2026-09-07 on `.graph-chip`, the "This paper" label beside the
  * black centre dot of the citation map. It centres itself on the rule with
- * `transform: translateY(-50%)` and borrowed `relatedItemIn`, a keyframe
+ * `transform: translateY(-50%)` and borrowed `rise`, a keyframe
  * shared with three other rules that only slides 6px and knows nothing about
  * any centring. The label therefore sat 5.5px BELOW the dot for the whole
  * 280ms arrival and jumped up 5.5px in one frame the moment it ended.
@@ -39,14 +39,16 @@ const firstFunction = (value: string) => value.trim().match(/^[\w-]+\([^)]*\)/)?
 
 test('no rule keeps a base transform that its own animation would drop', async () => {
   const css = await readFile(CSS, 'utf8');
+  const shared = await readFile(new URL('../../styles/variables.css', import.meta.url), 'utf8');
 
   // Keyframes first: they are the only blocks here that nest, so they come
-  // out before the flat rules are matched.
+  // out before the flat rules are matched. The shared ones (`rise`, the
+  // fades) live in variables.css and count as this sheet's own.
   const keyframes = new Map();
-  for (const match of css.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g)) {
+  for (const match of (shared + css).matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g)) {
     keyframes.set(match[1], match[2]);
   }
-  assert.ok(keyframes.has('relatedItemIn'), 'the keyframes did not parse');
+  assert.ok(keyframes.has('rise'), 'the keyframes did not parse');
 
   const flat = css.replace(/@keyframes\s+[\w-]+\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '');
 

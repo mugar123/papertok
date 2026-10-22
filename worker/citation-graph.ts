@@ -316,7 +316,7 @@ export async function handleCitationGraph(request: Request, env: WorkerEnv, iden
     openAlexCalls: OPENALEX_CALLS.citationGraph,
     // The DOI reaching upstream is the normalized one -- lowercased, stripped of
     // its `doi.org` prefix and of trailing punctuation -- so keying on the raw one
-    // made every capitalisation of the same DOI a separate miss worth up to seven
+    // made every capitalisation of the same DOI a separate miss worth up to six
     // billed OpenAlex calls. Same for a `limit` that `getSafeLimit` clamps to ten.
     canonicalParams: { doi, limit: String(limit) },
   });

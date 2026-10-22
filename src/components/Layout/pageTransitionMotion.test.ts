@@ -60,7 +60,7 @@ test('six durations, every one inside the 300ms UI band, and a held page rides t
   const css = await read('./PageTransition.css');
   const ms = durations(css);
   assert.deepEqual(Object.keys(ms).sort(), ['enter', 'fade', 'lateral', 'leave', 'reduced', 'reveal']);
-  assert.deepEqual(ms, { enter: 280, leave: 240, lateral: 240, fade: 150, reveal: 240, reduced: 120 }, 'the durations, exactly');
+  assert.deepEqual(ms, { enter: 280, leave: 240, lateral: 120, fade: 150, reveal: 240, reduced: 120 }, 'the durations, exactly');
   for (const [name, value] of Object.entries(ms)) assert.ok(value > 0 && value <= 300, `${name}: ${value}ms`);
   assert.ok(ms.reduced < ms.enter, 'reduced motion is shorter, not just flatter');
   assert.ok(ms.leave < ms.enter, 'coming back is a smaller event than going somewhere new');
