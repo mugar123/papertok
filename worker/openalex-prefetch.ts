@@ -33,7 +33,7 @@ const PREFETCH_PAGES = 3;
  */
 export async function prefetchOpenAlexFeedLanes(env: WorkerEnv, scheduledTime: number) {
   if (!env.NOTIFICATION_STORE?.getWithMetadata) {
-    console.log(JSON.stringify({ job: 'openalex-prefetch', skipped: 'NO_SHARED_STORE' }));
+    console.info('OpenAlex prefetch', JSON.stringify({ skipped: 'NO_SHARED_STORE' }));
     return;
   }
   const pages = Array.from({ length: PREFETCH_PAGES }, (_, index) => index + 1);
@@ -57,5 +57,5 @@ export async function prefetchOpenAlexFeedLanes(env: WorkerEnv, scheduledTime: n
       break;
     }
   }
-  console.log(JSON.stringify({ job: 'openalex-prefetch', pages: urls.length, answered, stoppedAt }));
+  console.info('OpenAlex prefetch', JSON.stringify({ pages: urls.length, answered, stoppedAt }));
 }

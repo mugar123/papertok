@@ -90,7 +90,7 @@ async function runPrefetch(env: Partial<WorkerEnv>) {
 }
 
 test("the nightly prefetch stores the lanes where a reader's request finds them", async t => {
-  t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'info', () => {});
   isolate(t);
   // A reader's clock is not UTC; the lanes are dated by the UTC day.
   const realZone = process.env.TZ;
@@ -134,7 +134,7 @@ test("the nightly prefetch stores the lanes where a reader's request finds them"
 });
 
 test('the prefetch makes no retry, skips keys already stored and stops at the first refusal', async t => {
-  t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'info', () => {});
   isolate(t);
   t.mock.timers.enable({ apis: ['Date'], now: PREFETCHED_AT });
   const env = (store: KVNamespace, quota: ReturnType<typeof ledger>) => ({

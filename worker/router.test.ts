@@ -209,7 +209,7 @@ test('the scheduled entry point passes the event time and keeps the job alive wi
 // after the budget resets and before any digest window, and it must not run
 // the digest: an extra run would be recorded as a schedule run.
 test('the 00:05 trigger runs the prefetch and not the email schedule; any other trigger still runs the schedule', async t => {
-  t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'info', () => {});
   const saved: string[] = [];
   const env = {
     NOTIFICATION_STORE: { put: async (key: string) => { saved.push(key); } } as unknown as KVNamespace,
