@@ -1769,8 +1769,12 @@ export function slimAuthorsPage(data: OpenAlexPage<OpenAlexAuthor>) {
 }
 
 function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
-  const summary = usableOpenAlexAbstract(work) || 'Resumen no disponible.';
-  
+  // OpenAlex dates a work as a calendar day. The year is read from that text:
+  // as a Date it is midnight UTC, still the previous year west of Greenwich on
+  // 1 January, which is where OpenAlex files a work known only by its year.
+  const date = work.publication_date || '';
+  const published = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
   const institutions = [...new Map((work.authorships || [])
     .flatMap(authorship => authorship.institutions || [])
@@ -1787,10 +1791,11 @@ function formatOpenAlexWorkAsPaper(work: OpenAlexWork): Paper {
     id: openAlexId,
     sources: { primary: 'openalex', enrichedBy: [] },
     title: work.title || 'No Title',
-    abstract: summary || 'No summary available.',
+    abstract: usableOpenAlexAbstract(work),
     authors,
     institutions,
-    year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
+    year: Number(published.slice(0, 4)) || undefined,
+    published,
     publicationType: work.type || work.primary_location?.source?.type || 'journal',
     publicationStatus: openAlexPublicationStatus(work),
     peerReviewed: openAlexPeerReviewed(work),
