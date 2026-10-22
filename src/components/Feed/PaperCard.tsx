@@ -693,7 +693,7 @@ const PaperCard = memo(function PaperCard({
   // reader. It falls away when the card leaves — off screen, where nothing is
   // seen going — and comes back when the card does, and an element being given
   // an animation again is what restarts it. This is also what the rest of the
-  // card already does: the `rise` arrival is on the pieces unconditionally and plays
+  // card already does: the `appear` arrival is on the pieces unconditionally and plays
   // every time they mount, rather than once per paper. The state itself is
   // declared with `figures`, where a new paper resets both.
   const markFigureLoaded = useCallback((url: string) => {

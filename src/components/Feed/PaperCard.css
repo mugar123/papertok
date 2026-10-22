@@ -31,8 +31,8 @@
   background: var(--bg-secondary);
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  /* `translate`, not `transform`: `rise` and `cardSlideUp` animate
-     transform on the pieces inside, and the two compose instead of one
+  /* `translate`, not `transform`: `cardSlideUp` animates transform on
+     the sheet inside, and the two compose instead of one
      replacing the other. The only thing that moves a card from out here is
      the refresh sinking it, so the clock is the veil's own and this is the
      half of it that runs on the way back up (.feed-container--refreshing in
@@ -82,7 +82,7 @@
      page it sits in was already fading in over 0.3s: measured, the page was at
      0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
      after the frame had arrived — content appearing after its page. The fade
-     now belongs to the pieces (`rise` below), which start with the frame;
+     now belongs to the pieces (`appear` below), which start with the frame;
      the sheet only settles into place. */
   animation: cardSlideUp var(--motion-base) var(--ease-out) backwards;
 }
@@ -200,7 +200,7 @@
    running 450ms after the page had stopped — at the frame the page came to rest
    the four sat at 0.49, 0.33, 0.10 and 0.00 of their resting 0.62, the last
    finishing near 750ms, while the card's words were already exactly where they
-   had been left (`rise` is deliberately at rest on the way back).
+   had been left (`appear` is deliberately at rest on the way back).
 
    Dropping the entrance outright was tried and reverted the same night: the
    clippings then went 0.00 -> 0.62 in ONE frame, which trades a 450ms tail for
@@ -406,17 +406,16 @@
 }
 
 /* ── The arrival ──
-   A card's pieces rise in together when the card mounts (a step back or
-   between tabs keeps them at rest, below); no stagger, because the feed is
-   the screen the reader sees most. `backwards`
-   holds the first frame only during the run: once landed, no transform is
-   left. */
+   The sheet owns the movement (`cardSlideUp` above); its pieces only fade in
+   together when the card mounts, so nothing travels inside something that is
+   already travelling. A step back or between tabs keeps them at rest (below);
+   no stagger, because the feed is the screen the reader sees most. */
 .pc-meta,
 .pc-title,
 .pc-authors,
 .pc-abstract,
 .pc-side-actions {
-  animation: rise var(--motion-base) var(--ease-out) backwards;
+  animation: appear var(--motion-base) var(--ease-out) backwards;
 }
 
 /* Coming back is not arriving. A feed reached by the back arrow — from an
@@ -559,7 +558,7 @@ a.pc-citations {
    enrichment (OpenAlex, iCite, Europe PMC). A feed's first paint now waits
    for all three under a 1200ms ceiling (utils/feedCitationGate.js), so the
    chip is usually there from the start and this fade overlaps its row's
-   `rise`, which also starts at opacity 0: invisible and free.
+   `appear`, which also starts at opacity 0: invisible and free.
 
    It covers the case the ceiling lets through. Enrichment slower than 1200ms
    puts the chip into a row already on screen, and no gap can be reserved for
@@ -2680,7 +2679,7 @@ button.pc-topics-pop-item:focus-visible {
     right: var(--space-2);
     top: 50%;
     /* The individual `translate` property, not a `transform`: the arrival
-       (`rise`, above) animates `transform`, and while it ran the
+       (the sheet's `cardSlideUp`) animates `transform`, and while it ran the
        animation's value replaced this centring — the rail sat half its
        height too low for 0.55 s and jumped up when the property was
        released (measured on 390×844). `translate` composes with the

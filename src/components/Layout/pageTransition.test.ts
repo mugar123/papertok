@@ -172,7 +172,7 @@ test('a step between tabs resumes the cards at rest in both directions, like the
     assert.ok(pieces.includes(piece), `.pc-${piece} sits at rest too`);
   }
   // Every piece the arrival animates is in that list.
-  const arriving = css.match(/\n((?:\.pc-[\w-]+,\n)+\.pc-[\w-]+) \{\s*animation: rise /);
+  const arriving = css.match(/\n((?:\.pc-[\w-]+,\n)+\.pc-[\w-]+) \{\s*animation: appear /);
   assert.ok(arriving, 'the arrival rule is still one list of pieces');
   for (const m of arriving[1].matchAll(/\.pc-([\w-]+)/g)) {
     assert.ok(pieces.includes(m[1]), `.pc-${m[1]} arrives, so it must also know how to sit still`);
