@@ -216,16 +216,12 @@
   background: var(--tint-green-bg);
 }
 .email-notification-test.is-sent:disabled { opacity: 1; }
-.email-notification-test-spinner { animation: emailNotificationSpin 0.8s linear infinite; }
+.email-notification-test-spinner { animation: spin 0.8s linear infinite; }
 .email-notification-save { border: 1px solid var(--border-ink); color: var(--text-inverse); background: var(--accent-primary); }
 
-@keyframes emailNotificationSpin {
-  to { transform: rotate(360deg); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .email-notification-test,
-  .email-notification-test-spinner { animation: none; transition: none; }
+  .email-notification-test { animation: none; transition: none; }
+  .email-notification-test-spinner { animation-duration: 2.4s; }
 }
 
 /* On a phone the content sits in a settings sheet (SettingsSheet.css): the

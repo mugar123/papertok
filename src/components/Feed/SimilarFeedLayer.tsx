@@ -241,9 +241,8 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
           onPointerCancel={endDrag}
         >
           <span className="similar-grab" aria-hidden="true" />
-          <Button variant="outline" size="sm" className="similar-close" onClick={requestClose} aria-label="Close similar papers">
-            <X size={16} aria-hidden="true" />
-            <span className="similar-close-label">{'Close'}</span>
+          <Button variant="ghost" size="icon" className="similar-close" onClick={requestClose} aria-label="Close similar papers" title="Close">
+            <X size={18} aria-hidden="true" />
           </Button>
           <div className="similar-context">
             <span className="similar-kicker"><Intersect size={13} aria-hidden="true" />{'Similar to'}</span>
@@ -252,7 +251,6 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
             </span>
           </div>
           <span className="similar-status">{status}</span>
-          <kbd className="similar-esc" aria-hidden="true">{'Esc'}</kbd>
         </header>
         <div className="similar-body">{body}</div>
         {/* Mounted with the layer, so the wait and its end are both spoken;

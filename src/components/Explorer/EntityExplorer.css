@@ -43,7 +43,7 @@
    rejected (the tab strip snapped 515 → 451 in one frame). So the offset is not
    moved; it is given a clock.
 
-   The clock is the bar's own `navbarArrive` (Navbar.css), copied byte for byte,
+   The clock is the bar's own `fadeIn` (Navbar.css), copied byte for byte,
    because this is the same event: the bar fades in over exactly these 240ms, so
    the page clears the band on the frames the bar is filling it.
 
@@ -104,7 +104,7 @@
      different curve, on purpose: it is `.explorer-hero-content`'s own
      animation copied byte for byte, so the error resolves exactly like
      every other arrival in the hero instead of being its own special case. */
-  animation: slideUpFade 0.42s var(--ease-out-expo) both;
+  animation: settle var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-error h1 {
@@ -203,20 +203,11 @@
   color: var(--text-secondary);
 }
 
-.ehc-type--verified {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border-color: var(--tint-blue-line);
-  background: var(--tint-blue-bg);
-  color: var(--tint-blue-fg);
-}
-
 .explorer-hero-content {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  animation: slideUpFade 0.42s var(--ease-out-expo) forwards;
+  animation: settle var(--motion-base) var(--ease-out) forwards;
 }
 
 /* The settle (`useHeightSettle`) pins this box's height with a Web Animation.
@@ -479,7 +470,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .ehc-timeline-done {
-    animation: timelineDraw 0.4s var(--ease-out) backwards;
+    animation: timelineDraw var(--motion-base) var(--ease-out) backwards;
   }
 
   /* Today lands as the line reaches it, not before. */
@@ -524,7 +515,7 @@
 }
 
 .explorer-container--author .ehc-header {
-  animation: authorContentFade 0.24s linear backwards;
+  animation: settle var(--motion-base) linear backwards;
 }
 
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
@@ -873,7 +864,7 @@
 /* The chevron and the fold share the same gentle height curve in both
    directions, so opening a long career does not jump on the first frame. */
 .ehc-name-toggle > svg:last-child {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--motion-base) var(--ease-out);
 }
 
 .ehc-name-toggle.is-open > svg:last-child {
@@ -1102,12 +1093,7 @@
    or its absence, is known — never at mount, where the hero's own crossfade is
    already running. */
 .ehc-stat-value.is-settled {
-  animation: statSettle 0.3s ease-out both;
-}
-
-@keyframes statSettle {
-  from { opacity: 0.35; }
-  to { opacity: 1; }
+  animation: settle var(--motion-base) var(--ease-out) both;
 }
 
 /* Two lines from the first frame. "Calculating…" is one line; the settled
@@ -1313,11 +1299,9 @@
   box-shadow: var(--shadow-sm);
   pointer-events: none;
 }
-
 .ee-seg[data-ready] .ee-seg-pill {
   transition: transform 250ms var(--ease-in-out), width 250ms var(--ease-in-out);
 }
-
 
 @media (hover: hover) and (pointer: fine) {
   .ee-seg button:not([data-pressed]):hover {
@@ -1536,12 +1520,10 @@
   gap: 0;
   margin: 0;
 }
-
 .explorer-grid > .list-row:not(.ex-skel-row) {
   content-visibility: auto;
   contain-intrinsic-size: auto 100px;
 }
-
 
 
 .ee-author-card:focus-visible,
@@ -1633,27 +1615,6 @@
    this one would stay inline and ignore both. */
 .ex-skel-stat-detail { display: block; width: 96px; height: 8px; margin-top: 2px; }
 
-/* ── The parts only one kind of page has ──
-   The skeleton is composed from the route, so these are worn by the live
-   containers — `.ehc-tags` and `.ehc-tag-row` —
-   rather than by copies of them. The gaps, the wrapping and the horizontal
-   scroll are therefore literally the ones the real strip uses, and cannot drift
-   from it the first time someone adjusts one and not the other. */
-/* No margin of its own: `.ehc-info` is a flex column with an 8px gap and the
-   live strips rely on it, so adding one here spaced the placeholders wider than
-   the strips they stand in for — 24px of it, on a hero that was otherwise
-   within 13. */
-.ex-skel-strip {
-  min-width: 0;
-}
-
-/* An author's subject chips and an institution's ROR credentials: the same
-   line box, since both are small inline labels in a wrapping row. */
-.ex-skel-chip {
-  height: 25px;
-  flex: 0 0 auto;
-}
-
 /* The follow button. Every entity the Explorer serves can be followed, so this
    is spine, not variant — and leaving it out was taking 32px out of the hero on
    all three kinds of page. */
@@ -1680,10 +1641,6 @@
 .explorer-skeleton .ehc-icon.ex-skel::after,
 .explorer-skeleton .ex-skel-name::after { animation-delay: 0.03s; }
 .explorer-skeleton .ehc-info .ex-skel-sub::after { animation-delay: 0.06s; }
-.explorer-skeleton .ex-skel-strip .ex-skel::after { animation-delay: 0.09s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(2)::after { animation-delay: 0.12s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(3)::after { animation-delay: 0.15s; }
-.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4)::after { animation-delay: 0.18s; }
 .explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
 .explorer-skeleton .ex-skel-follow::after { animation-delay: 0.24s; }
 .explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
@@ -1726,12 +1683,9 @@
 
 
 
-
-
-
 .explorer-empty {
   margin-top: var(--space-6);
-  animation: slideUpFade 0.42s var(--ease-out-expo) both;
+  animation: settle var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-empty-link {
@@ -1772,7 +1726,6 @@
    moves when the words land. What is left is the crossfade, which is the only
    honest description of what actually happens. */
 /* It starts at 0.35, not at 0, and that is the whole trick.
-
    The skeleton and the content are separate branches of the component, so React
    swaps them in a single frame — and an entrance beginning at zero meant that
    frame was blank: shapes, nothing, then text fading up. The blank is what read
@@ -1784,7 +1737,7 @@
    It only works because the skeleton is always there first — `isLoadingEntity`
    starts true on every entity — so this never plays against an empty page,
    where starting at 0.35 would look like a pop. */
-@keyframes slideUpFade {
+@keyframes settle {
   from { opacity: 0.35; }
   to { opacity: 1; }
 }
@@ -1806,10 +1759,9 @@
    its share of the stagger was invisible, so the list blinked in from nothing
    one card after another. */
 .ee-author-card.staggerFadeUp {
-  animation: staggerFadeUp 0.42s var(--ease-out-expo) both;
-  animation-delay: calc(min(var(--i, 0), 8) * 0.035s);
+  animation: staggerFadeUp var(--motion-base) var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 4) * 40ms);
 }
-
 
 /* ─── Filter drawer ───
    A ui Sheet (Base UI Dialog pinned to the right edge). The primitive brings
@@ -2155,11 +2107,6 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 /* ─── Project detail ─── */
 .project-links-list {
   margin: 0;
@@ -2238,7 +2185,7 @@
    They rise from nothing rather than from the 0.35 `staggerFadeUp` starts at.
    That starting point is right for a row replacing a shape of its own size;
    these three land where there was nothing, and starting them half-visible is
-   the pop the comment on `slideUpFade` warns about. The summary box is the
+   the pop the comment on `settle` warns about. The summary box is the
    exception below: it DOES have a reservation to resolve into.
 
    `backwards`, not `both`. Only the delay needs covering — without a fill the
@@ -2262,13 +2209,8 @@
    blocks animate INSIDE the settling box, so they move on its clock and its
    curve. On the expo-out this was at 97% opacity by the halfway mark — the
    measurement that says "abrupt" before anyone looks at it. */
-@keyframes projectBlockIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .project-participants {
-  animation: projectBlockIn 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: rise var(--motion-base) var(--ease-out) backwards;
 }
 
 .project-participants { animation-delay: 0.18s; }
@@ -2280,11 +2222,11 @@
    header, which never went away — the cells replace two shimmering reserved
    ones and the menu joins a line that is already there — so they sharpen into
    place rather than arrive, and 8px of travel would read as the header row
-   itself moving. `statSettle` is the treatment this file already uses for a
+   itself moving. `settle` is the treatment this file already uses for a
    stat value whose number lands late. */
 .explorer-container--project .ehc-stat-box,
 .project-links-menu {
-  animation: statSettle 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: settle var(--motion-base) var(--ease-out) backwards;
 }
 
 /* Left to right across the row, tighter than the blocks below: these are small
@@ -2300,7 +2242,7 @@
      treatment: resolving in place from 0.35 rather than arriving from nothing.
      `backwards` holds it at that 0.35 through its delay, so the reserved box never
      blinks empty between the shimmer leaving and the words landing. */
-  animation: staggerFadeUp 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: staggerFadeUp var(--motion-base) var(--ease-out) backwards;
   animation-delay: 0.06s;
   border-radius: var(--radius-sm);
   cursor: default;
@@ -2420,6 +2362,16 @@
   line-height: 1.3;
 }
 
+/* A long name keeps the card to two lines; the full name is in its tooltip
+   and the card's label. */
+.project-participants-grid .project-participant-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 .project-participant-country {
   display: inline-flex;
   align-items: center;
@@ -2459,19 +2411,14 @@
    after the entrance, keeping text and interactive content at rest. */
 .orcid-career-section--animate > * {
   animation:
-    authorContentFade 0.36s linear backwards,
-    authorContentTravel 0.42s var(--ease-out-quad) backwards;
+    settle var(--motion-base) linear backwards,
+    authorContentTravel var(--motion-base) var(--ease-out) backwards;
 }
 
 /* The panel already fades as a whole. Its rows only travel, avoiding a second
    opacity ramp on the same text. Delays stop growing after the fifth row. */
 .ehc-experience-panel .orcid-timeline-item {
-  animation: authorContentTravel 0.42s var(--ease-out-quad) var(--author-row-delay, 0ms) backwards;
-}
-
-@keyframes authorContentFade {
-  from { opacity: 0.35; }
-  to { opacity: 1; }
+  animation: authorContentTravel var(--motion-base) var(--ease-out) var(--author-row-delay, 0ms) backwards;
 }
 
 @keyframes authorContentTravel {
@@ -2483,9 +2430,7 @@
 .orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.04s; }
 .orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.08s; }
 .orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.12s; }
-.orcid-career-section--animate > *:nth-child(5) { animation-delay: 0.16s; }
-.orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.2s; }
-.orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.24s; }
+.orcid-career-section--animate > *:nth-child(n + 5) { animation-delay: 0.16s; }
 
 .orcid-ext-link {
   display: inline-flex;
@@ -2718,6 +2663,16 @@
     flex: 1 1 0;
   }
 
+  @media (max-width: 480px) {
+    .explorer-toolbar {
+      gap: var(--space-2);
+    }
+
+    .explorer-search-box {
+      flex-basis: 100%;
+    }
+  }
+
   .explorer-filter-trigger {
     width: 40px;
     padding: 0;
@@ -2813,7 +2768,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The band lands instantly instead of opening. The bar's own `navbarArrive`
+  .ehc-name-toggle > svg:last-child {
+    transition: none;
+  }
+
+  .ee-author-card:hover .ee-author-arrow {
+    transform: none;
+  }
+
+  /* The band lands instantly instead of opening. The bar's own `fadeIn`
      is switched off under this same query (Navbar.css), so there is nothing
      left travelling for an instant band to be out of step with. These three
      repeat the compound selectors of the rules at the top of the file because
@@ -2822,7 +2785,7 @@
   .explorer--app .explorer-hero,
   .explorer--app .explorer-toolbar-wrapper,
   .explorer-hero-content,
-  /* The error screen's entrance (`slideUpFade`) goes with the rest. */
+  /* The error screen's entrance (`settle`) goes with the rest. */
   .explorer-error,
   .ehc-wiki-skeleton span::after,
   .project-summary-box,

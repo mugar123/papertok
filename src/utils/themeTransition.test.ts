@@ -23,7 +23,7 @@ test('con VT el cambio es un crossfade, en cualquier puntero', () => {
 
 test('SOURCE: el fundido dura 220 ms y el barrido ya no existe', async () => {
   const css = await readFile(new URL('../styles/global.css', import.meta.url), 'utf8');
-  assert.match(css, /animation: themePlainFade 220ms/);
+  assert.match(css, /animation: fadeIn 220ms/);
   assert.doesNotMatch(css, /themeSweep|--theme-sweep/);
   const js = await readFile(new URL('./themeTransition.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(js, /markSweepOrigin|'sweep'/);

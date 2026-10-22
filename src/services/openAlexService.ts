@@ -413,8 +413,10 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls: string[]) {
   
   if (toFetch.length === 0) return result;
   
-  // Randomize and limit to 40 candidates to avoid massive queries
-  const candidates = toFetch.sort(() => 0.5 - Math.random()).slice(0, 40);
+  // The first forty, in the order OpenAlex listed them. A random forty gave
+  // every reader of one paper a different URL, so the related works of a paper
+  // many had liked were fetched once per reader instead of once (PAP-86).
+  const candidates = toFetch.slice(0, 40);
   
   const url = `https://api.openalex.org/works?filter=${buildOpenAlexIdFilter(candidates)}&per-page=50&select=id,ids`;
   
@@ -799,6 +801,9 @@ export async function searchAuthors(query: string, options: RequestOptions = {})
   try {
     const data = await openAlexJson<OpenAlexPage<OpenAlexAuthor>>(url, {
       timeoutMs: 7000,
+      // A search the relay reserves ten list calls for, on every miss: asked
+      // again after a 5xx it would reserve them again, for the same outage.
+      retries: 0,
       cacheTtlMs: 10 * 60 * 1000,
       staleIfError: true,
       persistentKey: `author-search:${normalizedQuery.toLowerCase()}`,
@@ -832,7 +837,7 @@ const INSTITUTION_SEARCH_CANDIDATES = 20;
 const INSTITUTION_SEARCH_LIMIT = 5;
 
 // The same 1 500 ms this search path already allows `enrichAuthorInstitutionLocalization`,
-// for the same reason. `settleSearch` gives the institutions task 4 500 ms and
+// for the same reason. The search page gives the institutions section 4 500 ms and
 // ROR spends ~250 ms of it (measured against the live API, 2026-08-26), so a
 // second-and-a-half is affordable while still leaving the section time to
 // render. `retries: 0` is load-bearing: the client retries twice by default,

@@ -36,10 +36,6 @@ test('the sweep keeps its phase down the page, now on the pseudo-element', async
   };
 
   rising(
-    phasesOf(/\.explorer-skeleton \.ex-skel-strip \.ex-skel(?::nth-child\(\d\))?::after \{ animation-delay: ([\d.]+)s; \}/g),
-    'the identity strip',
-  );
-  rising(
     phasesOf(/\.explorer-skeleton \.ex-skel-row:nth-child\(\d\) \.ex-skel::after \{ animation-delay: ([\d.]+)s; \}/g),
     'the five waiting rows',
   );
@@ -87,25 +83,25 @@ test('an author card resolves from part-way visible, like a paper row', async ()
   const css = await read('./EntityExplorer.css');
   const rule = css.match(/\.ee-author-card\.staggerFadeUp \{[^}]*\}/)?.[0] || '';
   assert.doesNotMatch(rule, /opacity: 0;/);
-  assert.match(rule, /animation: staggerFadeUp 0\.42s var\(--ease-out-expo\) both;/);
+  assert.match(rule, /animation: staggerFadeUp var\(--motion-base\) var\(--ease-out\) both;/);
 });
 
 test('the ORCID card lands at the page\'s tempo, not over four seconds from nothing', async () => {
   const css = await read('./EntityExplorer.css');
   assert.doesNotMatch(css, /orcidPremiumReveal/);
   assert.doesNotMatch(css, /@keyframes orcidReveal/);
-  assert.match(css, /\.orcid-career-section--animate > \* \{\s*animation:\s*authorContentFade 0\.36s linear backwards,\s*authorContentTravel 0\.42s var\(--ease-out-quad\) backwards;\s*\}/);
+  assert.match(css, /\.orcid-career-section--animate > \* \{\s*animation:\s*settle var\(--motion-base\) linear backwards,\s*authorContentTravel var\(--motion-base\) var\(--ease-out\) backwards;\s*\}/);
   const reduced = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
   assert.match(reduced, /\.ehc-experience-panel \.orcid-timeline-item,/);
-  assert.match(css, /\.orcid-career-section--animate > \*:nth-child\(7\) \{ animation-delay: 0\.24s; \}/);
+  assert.match(css, /\.orcid-career-section--animate > \*:nth-child\(n \+ 5\) \{ animation-delay: 0\.16s; \}/);
 });
 
 test('the recent-impact score settles in place once it is known', async () => {
   const jsx = await read('./RecentImpactStat.tsx');
   assert.match(jsx, /className=\{`ehc-stat-value\$\{!isLoading && \(impact \|\| error\) \? ' is-settled' : ''\}`\}/);
   const css = await read('./EntityExplorer.css');
-  assert.match(css, /\.ehc-stat-value\.is-settled \{\s*animation: statSettle 0\.3s ease-out both;\s*\}/);
-  assert.match(css, /@keyframes statSettle \{\s*from \{ opacity: 0\.35; \}\s*to \{ opacity: 1; \}\s*\}/);
+  assert.match(css, /\.ehc-stat-value\.is-settled \{\s*animation: settle var\(--motion-base\) var\(--ease-out\) both;\s*\}/);
+  assert.match(css, /@keyframes settle \{\s*from \{ opacity: 0\.35; \}\s*to \{ opacity: 1; \}\s*\}/);
 });
 
 test('the experience panel grows into place when the ORCID record lands', async () => {

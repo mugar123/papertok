@@ -9,6 +9,12 @@ import {
   scorePaperForRecommendation,
   trimScoredCandidatePool,
 } from './recommendationEngine.ts';
+import {
+  createEmptyInteractionProfile,
+  readProfileSignals,
+  recordInteractionEvent,
+  serializeInteractionProfile,
+} from './interactionProfile.ts';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
 
@@ -452,4 +458,145 @@ test('trims the shuffle pool to a scored head instead of walking hundreds of ext
     random: () => 0,
   });
   assert.equal(shuffled.length, 12);
+});
+
+
+// Cards written for these tests (synthetic, not captured from a provider).
+// Every card is filed under cs.LG; what tells the two groups apart is only the
+// OpenAlex topic each card carries itself, as an OpenAlex card does on arrival.
+const RL_TOPIC = { id: 'https://openalex.org/T900001', display_name: 'Reinforcement learning', score: 0.95 };
+const VISION_TOPIC = { id: 'https://openalex.org/T900002', display_name: 'Computer vision', score: 0.95 };
+const makeCard = (id: string, primaryTopic: typeof RL_TOPIC) => ({
+  id,
+  title: `Paper ${id}`,
+  abstract: `A synthetic abstract for paper ${id}, long enough to count as one.`,
+  primaryCategory: 'cs.LG',
+  published: '2026-07-01T00:00:00Z',
+  primaryTopic,
+});
+const rlPool = ['rl-1', 'rl-2', 'rl-3', 'rl-4', 'rl-5', 'rl-6'].map(id => makeCard(id, RL_TOPIC));
+const visionPool = ['cv-1', 'cv-2', 'cv-3', 'cv-4', 'cv-5', 'cv-6'].map(id => makeCard(id, VISION_TOPIC));
+
+/** What the feed does on a like: the interaction profile learns it, the ranking reads it back. */
+function readerWhoLiked(liked: Array<Parameters<typeof paperAffinitySignals>[0] & { id: string; primaryCategory: string }>) {
+  const profile = createEmptyInteractionProfile();
+  liked.forEach(card => recordInteractionEvent(profile, {
+    paperId: card.id, kind: 'like', category: card.primaryCategory, timestamp: NOW, ...paperAffinitySignals(card),
+  }, NOW));
+  const signals = readProfileSignals(profile, NOW);
+  return {
+    now: NOW,
+    userPreferences: ['cs.LG'],
+    categoryAffinities: signals.categoryAffinities,
+    conceptAffinities: signals.conceptAffinities,
+    authorAffinities: signals.authorAffinities,
+    interactionCount: signals.interactionCount,
+  };
+}
+
+/** The ids a reader's feed would take first from the same pool. */
+function topIds(pool: ReturnType<typeof makeCard>[], context: ReturnType<typeof readerWhoLiked>, take: number) {
+  // Fresh copies: scoring writes onto the cards it scores.
+  return trimScoredCandidatePool(pool.map(card => ({ ...card })), {
+    cap: take,
+    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
+  }).map(paper => paper.id).sort();
+}
+
+test('a concept or topic the card carries itself counts like one under openAlex, once', () => {
+  const card = {
+    id: 'carried',
+    primaryCategory: 'cs.LG',
+    published: '2026-07-05T00:00:00Z',
+    abstract: 'We study how learned concepts reach the ranking from the card itself.',
+    concepts: [{ id: 'https://openalex.org/C154945302', display_name: 'Artificial intelligence', level: 1, score: 0.8 }],
+    primaryTopic: { id: 'https://openalex.org/T10320', display_name: 'Neural Networks and Applications', score: 0.9 },
+    openAlex: { concepts: [{ id: 'https://openalex.org/C154945302', score: 0.8 }] },
+  };
+
+  assert.deepEqual(paperAffinitySignals(card).concepts, [
+    { id: 'C154945302', score: 0.8 },
+    { id: 'T10320', score: 0.9 },
+  ]);
+
+  const learned = { now: NOW, conceptAffinities: { C154945302: 50, T10320: 20 } };
+  const score = scorePaperForRecommendation(card, learned);
+  // 0.8 * 0.5 + 0.9 * 0.2 of the semantic ceiling; a double count of the
+  // concept listed in both places would give 0.8 * 1.0 + 0.18.
+  assert.ok(Math.abs(score.semantic - (0.8 * 0.5 + 0.9 * 0.2) * 50) < 1e-9, `semantic ${score.semantic}`);
+});
+
+test('the keyword ids a provider makes up for one card teach the reader no concept', () => {
+  // Shaped like europePmcService (`epmc:<pmid>:<index>`) and the bioRxiv
+  // collection of domainSourceService; the PMIDs are made up.
+  const bioRxivCard = (id: string) => ({
+    id, primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z',
+    concepts: [{ id: 'biorxiv:neuroscience', display_name: 'Neuroscience', level: 2 }],
+  });
+  const europePmcCard = {
+    id: 'pubmed:1000001', primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z',
+    concepts: [
+      { id: 'epmc:1000001:0', display_name: 'Neurons', level: 2 },
+      { id: 'epmc:1000001:1', display_name: 'Hippocampus', level: 2 },
+    ],
+    primaryTopic: { id: 'https://openalex.org/T900003', display_name: 'Memory consolidation', score: 0.9 },
+  };
+
+  const reader = readerWhoLiked([bioRxivCard('biorxiv:1'), bioRxivCard('biorxiv:2'), europePmcCard]);
+
+  assert.deepEqual(Object.keys(reader.conceptAffinities), ['T900003']);
+  assert.equal(scorePaperForRecommendation(bioRxivCard('biorxiv:3'), reader).semantic, 0);
+});
+
+test('a card straight from OpenAlex teaches only the concepts it may show as subjects', () => {
+  // Shaped like formatOpenAlexWorkAsPaper, which keeps the work's concepts
+  // unfiltered: the database MEDLINE says where a work is indexed, and a
+  // concept scored 0.05 is barely about it.
+  const medline = { id: 'https://openalex.org/C2779473830', display_name: 'MEDLINE', level: 2, score: 0.45 };
+  const openAlexCard = (id: string) => ({
+    id, primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z',
+    concepts: [medline, { id: 'https://openalex.org/C900010', display_name: 'Biology', level: 0, score: 0.05 }],
+    primaryTopic: { id: 'https://openalex.org/T900004', display_name: 'Sleep and memory', score: 0.95 },
+  });
+  const sharesOnlyMedline = {
+    id: 'openalex:W4', primaryCategory: 'q-bio.NC', published: '2026-07-01T00:00:00Z', concepts: [medline],
+  };
+
+  const reader = readerWhoLiked([openAlexCard('openalex:W1'), openAlexCard('openalex:W2'), openAlexCard('openalex:W3')]);
+
+  assert.deepEqual(Object.keys(reader.conceptAffinities), ['T900004']);
+  assert.equal(scorePaperForRecommendation(sharesOnlyMedline, reader).semantic, 0);
+});
+
+test('liking a paper stores what it is about and none of its words', () => {
+  const card = {
+    id: 'liked', primaryCategory: 'cs.LG', published: '2026-07-01T00:00:00Z', primaryTopic: RL_TOPIC,
+    title: 'Offline reinforcement learning', abstract: 'A policy is learned from a fixed dataset of transitions.',
+  };
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, {
+    paperId: card.id, kind: 'like', category: card.primaryCategory, timestamp: NOW, ...paperAffinitySignals(card),
+  }, NOW);
+
+  const { affinities } = serializeInteractionProfile(profile);
+
+  assert.match(affinities, /T900001/);
+  assert.doesNotMatch(affinities, /offline|reinforcement|policy|dataset|transition/i);
+});
+
+test('two readers who picked the same category and liked different papers get different papers first from the same pool', () => {
+  const pool = [...rlPool.slice(3), ...visionPool.slice(3)];
+  const likedRl = readerWhoLiked(rlPool.slice(0, 3));
+  const likedVision = readerWhoLiked(visionPool.slice(0, 3));
+
+  assert.deepEqual(topIds(pool, likedRl, 3), ['rl-4', 'rl-5', 'rl-6']);
+  assert.deepEqual(topIds(pool, likedVision, 3), ['cv-4', 'cv-5', 'cv-6']);
+});
+
+test('a reader who has liked nothing yet ranks the cards as if they carried no topic', () => {
+  const pool = [...rlPool, ...visionPool];
+  const cold = readerWhoLiked([]);
+  const scoresOf = (cards: Array<Partial<ReturnType<typeof makeCard>>>) => cards.map(card => scorePaperForRecommendation(card, cold).total);
+
+  assert.deepEqual(scoresOf(pool), scoresOf(pool.map(card => ({ ...card, primaryTopic: undefined }))));
 });

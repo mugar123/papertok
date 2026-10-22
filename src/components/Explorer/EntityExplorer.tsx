@@ -1779,7 +1779,7 @@ export default function EntityExplorer({
                   {seedName
                     ? <h1 className="ehc-name" style={{ margin: 0 }}>{seedName}</h1>
                     : <div className="ex-skel ex-skel-name"></div>}
-                  <div className="ex-skel ex-skel-type"></div>
+                  {shape.identity !== 'meta' && <div className="ex-skel ex-skel-type"></div>}
                   {/* The metadata line every type puts under the name: an
                       author's institution, an institution's city, a project's
                       funder. It lives inside `.ehc-info` on the live page, and
@@ -1787,13 +1787,6 @@ export default function EntityExplorer({
                       it down here was counting the same line twice. */}
                   <div className="ex-skel ex-skel-sub ex-skel-sub--medium"></div>
 
-                  {/* The strip under the name: an institution's credentials. */}
-                  {shape.identity === 'credentials' && (
-                    <div className="ehc-tag-row ex-skel-strip">
-                      <span className="ex-skel ex-skel-chip" style={{ width: 104 }} />
-                      <span className="ex-skel ex-skel-chip" style={{ width: 72 }} />
-                    </div>
-                  )}
                   {shape.identity === 'none' && (
                     <div className="ex-skel ex-skel-sub ex-skel-sub--short"></div>
                   )}
@@ -2401,15 +2394,7 @@ export default function EntityExplorer({
                     <span key={i} className="ehc-type ehc-type--subject">{subject}</span>
                   ))}
                 </div>
-              ) : type === 'institution' && ((entity.rorVerified && safeRorUrl) || entity.established) ? (
-                <div className="ehc-tag-row">
-                  <span className="ehc-type">{entityTypeLabel}</span>
-                  {entity.rorVerified && safeRorUrl && (
-                    <span className="ehc-type ehc-type--verified"><SealCheck size={13} aria-hidden="true" /> {'ROR verified'}</span>
-                  )}
-                  {entity.established && <span className="ehc-type ehc-type--subject">{`Since ${entity.established}`}</span>}
-                </div>
-              ) : type !== 'author' && (
+              ) : type !== 'author' && type !== 'institution' && (
                 <span className="ehc-type">{entityTypeLabel}</span>
               )}
               {type === 'author' && authorInstitutionDisplayName && (
@@ -2980,7 +2965,7 @@ export default function EntityExplorer({
       {/* Paper Card Overlay — the shared takeover, so the explorer and search
           open a paper the same way. */}
       <PaperOverlay
-        open={Boolean(selectedPaper && !pdfPaperToView)}
+        open={Boolean(selectedPaper)}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
        

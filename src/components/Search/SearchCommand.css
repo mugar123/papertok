@@ -630,7 +630,7 @@
 }
 
 .sc-input { min-width: 0; flex: 1; }
-.sc-result-count, .sc-count, .sc-suggestion-type, .sc-sources {
+.sc-result-count, .sc-count, .sc-suggestion-type {
   font: var(--mono-label);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -671,7 +671,6 @@
 }
 .sc-panel { grid-column: 1 / -1; grid-row: 3; min-height: 0; }
 .sc-footer { grid-column: 1 / -1; grid-row: 4; flex-wrap: wrap; }
-.sc-footer .sc-sources { margin-left: auto; }
 
 .sc-sheet [cmdk-item] {
   display: grid;
