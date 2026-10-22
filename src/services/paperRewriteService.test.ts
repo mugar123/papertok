@@ -3,6 +3,8 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
+import { isTransientReadError, ReadTimedOutError } from '../utils/boundedRead.ts';
+import { toRewriteSection } from '../models/Rewrite.ts';
 import {
   canRewritePaper,
   createNdjsonParser,
@@ -14,15 +16,34 @@ import {
 } from './paperRewriteService.ts';
 import { WorkerApiAuthError } from './workerApiClient.ts';
 
-// Supply Vite's build value and the authenticated transport while exercising
-// the real client's parsing, completion checks and cache.
+// Supply Vite's build value, the authenticated transport and the account's
+// saved-summary store while exercising the real client's parsing, completion
+// checks and caches.
 const clientSource = stripTypeScriptTypes(readFileSync(new URL('./paperRewriteService.ts', import.meta.url), 'utf8'))
   .replace(/^import .*;\n/gm, '')
   .replace(/\bexport /g, '')
   .replaceAll('import.meta.env.VITE_PAPER_API_BASE_URL', "'https://api.papertok.app'");
-function streamingClient(events: object[], breakConnection = false) {
+type SavedCopy = { sections: object[]; model: string; sourceBasis: string; promptVersion: string };
+function streamingClient(events: object[], breakConnection = false, {
+  saved = null as SavedCopy | null,
+  // Reads reject with these, one per read, before the store answers again.
+  readFailures = [] as unknown[],
+} = {}) {
   let requests = 0;
   const bodies: Record<string, unknown>[] = [];
+  const reads: unknown[][] = [];
+  const saves: unknown[][] = [];
+  // Each account's own copies; `saved` stands for whatever an account not yet
+  // written to already holds.
+  const savedByAccount = new Map<unknown, SavedCopy>();
+  const store = {
+    getSavedSummary: async (...args: unknown[]) => {
+      reads.push(args);
+      if (readFailures.length > 0) throw readFailures.shift();
+      return savedByAccount.get(args[0]) ?? saved;
+    },
+    saveSummary: async (...args: unknown[]) => { saves.push(args); savedByAccount.set(args[0], args[3] as SavedCopy); return true; },
+  };
   const transport = async (_path: string, options: RequestInit) => {
     requests++;
     bodies.push(JSON.parse(String(options.body)));
@@ -35,12 +56,13 @@ function streamingClient(events: object[], breakConnection = false) {
       },
     }));
   };
-  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl',
-    `${clientSource}; return { rewritePaper, getCachedRewrite };`)(transport, isAIReadablePdfUrl) as {
+  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl', 'isTransientReadError', 'toRewriteSection', 'getSavedSummary', 'saveSummary',
+    `${clientSource}; return { rewritePaper, getCachedRewrite, clearRewriteCache };`)(transport, isAIReadablePdfUrl, isTransientReadError, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
       rewritePaper: typeof rewritePaper;
       getCachedRewrite: typeof import('./paperRewriteService.ts').getCachedRewrite;
+      clearRewriteCache: typeof import('./paperRewriteService.ts').clearRewriteCache;
     };
-  return { ...client, requests: () => requests, bodies };
+  return { ...client, requests: () => requests, bodies, reads, saves, savedByAccount };
 }
 const sectionEvent = { type: 'section', id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['First section.'], highlights: [] };
 const streamPaper = { id: 'stream-test', openAccessPdfUrl: 'https://arxiv.org/pdf/2610.23260' };
@@ -82,6 +104,212 @@ for (const done of [
     assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
   });
 }
+
+const savedCopy = {
+  sections: [{ id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['Saved section.'], highlights: [] }],
+  model: 'deepseek-v4-flash',
+  sourceBasis: 'full_text',
+  promptVersion: 'paper-rewrite-v3',
+};
+
+test('a summary saved in the account opens without asking the worker or spending a use', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }], false, { saved: savedCopy });
+  const shown: unknown[] = [];
+  let metaSeen: Record<string, unknown> | null = null;
+  let requested = 0;
+  const result = await client.rewritePaper(streamPaper, 'beginner', {
+    uid: 'reader-1',
+    onMeta: (meta) => { metaSeen = meta; },
+    onSection: (section) => shown.push(section.paragraphs),
+    onRequest: () => { requested += 1; },
+  });
+  assert.equal(client.requests(), 0);
+  assert.equal(requested, 0);
+  assert.deepEqual(shown, [['Saved section.']]);
+  assert.equal(result.incomplete, false);
+  assert.deepEqual(metaSeen, {
+    level: 'beginner', language: 'en', model: 'deepseek-v4-flash', sourceBasis: 'full_text', cached: true, remainingUses: null,
+  });
+  assert.deepEqual(client.reads[0].slice(0, 3), ['reader-1', streamPaper, 'beginner']);
+  assert.equal(client.saves.length, 0);
+});
+
+test('a finished rewrite is saved for the account that asked for it', async () => {
+  const client = streamingClient([
+    { type: 'meta', level: 'university', language: 'en', model: 'deepseek-v4-flash', sourceBasis: 'full_text', promptVersion: 'paper-rewrite-v3', remainingUses: 9 },
+    sectionEvent,
+    { type: 'done', sectionCount: 1 },
+  ]);
+  let requested = 0;
+  await client.rewritePaper(streamPaper, 'university', { uid: 'reader-1', onRequest: () => { requested += 1; } });
+  // The account answered that it holds no copy, so this one is written and kept.
+  assert.equal(client.reads.length, 1);
+  assert.equal(client.requests(), 1);
+  assert.equal(requested, 1);
+  assert.equal(client.saves.length, 1);
+  const [uid, paper, level, summary, pdfUrl] = client.saves[0];
+  assert.deepEqual([uid, paper, level, pdfUrl], ['reader-1', streamPaper, 'university', streamPaper.openAccessPdfUrl]);
+  assert.deepEqual(summary, {
+    sections: [{ id: 's0', kind: 'intro', heading: 'Introduction', originalHeading: '', paragraphs: ['First section.'], highlights: [] }],
+    model: 'deepseek-v4-flash',
+    sourceBasis: 'full_text',
+    promptVersion: 'paper-rewrite-v3',
+  });
+});
+
+test('an unfinished rewrite is not saved', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1, truncated: true }]);
+  await client.rewritePaper(streamPaper, 'university', { uid: 'reader-1' });
+  assert.equal(client.saves.length, 0);
+});
+
+test('regenerate skips the saved copy, asks the worker for a new one and replaces it', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }], false, { saved: savedCopy });
+  const result = await client.rewritePaper(streamPaper, 'university', { uid: 'reader-1', regenerate: true });
+  assert.equal(client.reads.length, 0);
+  assert.equal(client.requests(), 1);
+  assert.equal(client.bodies[0].regenerate, true);
+  assert.deepEqual(result.sections[0].paragraphs, ['First section.']);
+  assert.equal(client.saves.length, 1);
+  // The next open reads the replacement, still without a request.
+  const reopened = await client.rewritePaper({ ...streamPaper, id: 'another-object-same-paper' }, 'university', { uid: 'reader-1' });
+  assert.equal(client.requests(), 1);
+  assert.deepEqual(reopened.sections[0].paragraphs, ['First section.']);
+});
+
+for (const [name, events, breakConnection] of [
+  ['stops before the end', [sectionEvent, { type: 'done', sectionCount: 1, truncated: true }], false],
+  ['loses its connection', [sectionEvent], true],
+] as const) {
+  test(`a rewrite written again that ${name} leaves the saved copy in place`, async () => {
+    const client = streamingClient([...events], breakConnection, { saved: savedCopy });
+    const result = await client.rewritePaper(streamPaper, 'university', { uid: 'reader-1', regenerate: true });
+    assert.equal(result.incomplete, true);
+    assert.equal(client.requests(), 1);
+    assert.equal(client.saves.length, 0);
+    const reopened = await client.rewritePaper(streamPaper, 'university', { uid: 'reader-1' });
+    assert.deepEqual(reopened.sections[0].paragraphs, ['Saved section.']);
+    assert.equal(client.requests(), 1);
+  });
+}
+
+const finishedRewrite = [sectionEvent, { type: 'done', sectionCount: 1 }];
+test('a saved summary whose read times out is neither written again nor replaced', async () => {
+  const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [new ReadTimedOutError('saved summary')] });
+  let requested = 0;
+  const shown: unknown[] = [];
+  await assert.rejects(
+    client.rewritePaper(streamPaper, 'university', {
+      uid: 'reader-1',
+      onRequest: () => { requested += 1; },
+      onSection: (section) => shown.push(section),
+    }),
+    { code: 'AI_SAVED_SUMMARY_READ_FAILED' },
+  );
+  assert.equal(client.reads.length, 1);
+  // No Worker request, so no AI use, and no new copy to write over the saved one.
+  assert.equal(client.requests(), 0);
+  assert.equal(requested, 0);
+  assert.equal(client.saves.length, 0);
+  assert.deepEqual(shown, []);
+});
+
+/**
+ * A refusal does not change on a retry (utils/boundedRead.ts), so offering one
+ * would leave the reader without any summary: every signed-in reader between
+ * a frontend deploy and the rules that allow this read. The worker answers as
+ * it did before copies were kept, and the copy that was not read is not
+ * written over.
+ */
+test('a saved summary whose read is refused is written from the worker and not kept over the copy', async () => {
+  const refusal = Object.assign(new Error('Missing or insufficient permissions.'), { name: 'FirebaseError', code: 'permission-denied' });
+  const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [refusal] });
+  let requested = 0;
+  const shown: unknown[] = [];
+  const result = await client.rewritePaper(streamPaper, 'university', {
+    uid: 'reader-1',
+    onRequest: () => { requested += 1; },
+    onSection: (section) => shown.push(section.paragraphs),
+  });
+  assert.equal(client.reads.length, 1);
+  assert.equal(client.requests(), 1);
+  assert.equal(requested, 1);
+  assert.deepEqual(shown, [['First section.']]);
+  assert.equal(result.incomplete, false);
+  // An ordinary request: neither a retry of a failed rewrite nor a regeneration.
+  assert.equal(client.bodies[0].retryIncomplete, false);
+  assert.equal('regenerate' in client.bodies[0], false);
+  assert.equal(client.saves.length, 0);
+});
+
+test('trying again after a failed read looks the saved summary up again and shows it', async () => {
+  const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [new ReadTimedOutError('saved summary')] });
+  await assert.rejects(client.rewritePaper(streamPaper, 'university', { uid: 'reader-1' }), { code: 'AI_SAVED_SUMMARY_READ_FAILED' });
+  // The options the reader's retry sends after this failure (readerErrorCopy.test.ts).
+  const shown: unknown[] = [];
+  const result = await client.rewritePaper(streamPaper, 'university', {
+    uid: 'reader-1',
+    onSection: (section) => shown.push(section.paragraphs),
+  });
+  assert.equal(client.reads.length, 2);
+  assert.deepEqual(shown, [['Saved section.']]);
+  assert.equal(result.incomplete, false);
+  assert.equal(client.requests(), 0);
+  assert.equal(client.saves.length, 0);
+});
+
+test('a read that fails after the reader walked away is a cancellation, not a failed read', async () => {
+  const controller = new AbortController();
+  const client = streamingClient(finishedRewrite, false, { readFailures: [new ReadTimedOutError('saved summary')] });
+  await assert.rejects(
+    client.rewritePaper(streamPaper, 'university', {
+      uid: 'reader-1',
+      signal: controller.signal,
+      onProgress: ({ stage }) => { if (stage === 'saved') controller.abort(); },
+    }),
+    { code: 'AI_CANCELLED' },
+  );
+  assert.equal(client.requests(), 0);
+});
+
+test('after a change of account the next reader gets their own saved summary, not the last one in memory', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }]);
+  await client.rewritePaper(streamPaper, 'university', { uid: 'reader-a' });
+  assert.ok(client.getCachedRewrite(streamPaper, 'university'));
+
+  client.clearRewriteCache();
+  client.savedByAccount.set('reader-b', savedCopy);
+  const result = await client.rewritePaper(streamPaper, 'university', { uid: 'reader-b' });
+  assert.deepEqual(result.sections[0].paragraphs, ['Saved section.']);
+  assert.deepEqual(client.reads.map(read => read[0]), ['reader-a', 'reader-b']);
+  assert.equal(client.requests(), 1);
+});
+
+test('a rewrite that finishes after a change of account is not kept in memory for the next one', async () => {
+  let finish: () => void = () => {};
+  const finished = new Promise<void>(resolve => { finish = resolve; });
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }]);
+  const pending = client.rewritePaper(streamPaper, 'university', {
+    uid: 'reader-a',
+    // The account changes while the first section is still arriving.
+    onSection: () => { client.clearRewriteCache(); finish(); },
+  });
+  await finished;
+  const result = await pending;
+  assert.equal(result.incomplete, false);
+  assert.equal(client.getCachedRewrite(streamPaper, 'university'), null);
+  // The copy is still saved for the account that spent the use on it.
+  assert.deepEqual(client.saves.map(save => save[0]), ['reader-a']);
+});
+
+test('a guest neither reads nor saves summaries, as before', async () => {
+  const client = streamingClient([sectionEvent, { type: 'done', sectionCount: 1 }], false, { saved: savedCopy });
+  await client.rewritePaper(streamPaper, 'researcher');
+  assert.equal(client.reads.length, 0);
+  assert.equal(client.saves.length, 0);
+  assert.equal(client.requests(), 1);
+  assert.notEqual(client.bodies[0].regenerate, true);
+});
 
 test('a broken connection preserves received sections as incomplete', async () => {
   const client = streamingClient([sectionEvent], true);
