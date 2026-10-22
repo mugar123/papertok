@@ -211,3 +211,39 @@ test('a lane keeps the newest papers a page can rank from, and a paper left in n
   assert.equal(rows(db, 'SELECT id FROM works').length, 4_000, 'the three oldest, in no lane now, are gone');
   assert.equal(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.04002'").length, 0);
 });
+
+test("a vector keeps its leading dimensions, and a cut one compares like a whole one", () => {
+  const full = Array.from({ length: 1024 }, (_, index) => Math.sin(index + 1));
+  assert.equal(quantize(full).length, 256);
+  // What migration 0004 leaves of a vector stored whole: its first 256 bytes, no longer a unit vector.
+  const storedWhole = Int8Array.from(full, value => Math.round((value / Math.hypot(...full)) * 127)).slice(0, 256);
+  const close = full.map((value, index) => value + (index % 7 === 0 ? 0.05 : 0));
+  const far = full.map((value, index) => (index % 2 ? -value : value));
+  const rows = [
+    { id: 'far', embedding: quantize(far), published: '2026-10-20T00:00:00Z' },
+    { id: 'close', embedding: quantize(close), published: '2026-10-01T00:00:00Z' },
+  ];
+  const now = Date.parse('2026-10-22T00:00:00Z');
+  assert.deepEqual(rankBySimilarity(rows, [storedWhole], { now }).map(({ row }) => row.id), ['close', 'far']);
+  assert.deepEqual(rankBySimilarity(rows, [quantize(full)], { now }).map(({ row }) => row.id), ['close', 'far']);
+});
+
+test("a reader's later pages read the order the first page ranked, and only their own papers", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, Array.from({ length: 6 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.0010${index}`, arxivId: `2610.0010${index}`, title: `Paper ${index} on attention`, allCategories: [], categories: [], published: `2026-10-1${index}T00:00:00.000Z` },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const stored = new Map<string, unknown>();
+  const cache = {
+    get: async (key: string) => (stored.get(key) as never) ?? null,
+    put: async (key: string, ranking: unknown) => { stored.set(key, ranking); },
+  };
+  const first = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], pageSize: 2 }), { now: NOW, cache });
+  assert.deepEqual(first.map(paper => paper.id), ['2610.00105', '2610.00104']);
+  // Whatever the lanes hold now, the session's next page follows the order it was shown.
+  db.exec("DELETE FROM work_lanes");
+  const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
+  assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
+  assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});

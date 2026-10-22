@@ -180,7 +180,7 @@ function carryArxivVectors(db: D1Database) {
   return async () => {
     try {
       const result = await db.prepare(`INSERT OR IGNORE INTO work_vectors (work_id, embedding)
-        SELECT k.work_id, v.embedding FROM paper_vectors v JOIN work_keys k ON k.key = 'arxiv:' || lower(v.arxiv_id)`).run();
+        SELECT k.work_id, substr(v.embedding, 1, 256) FROM paper_vectors v JOIN work_keys k ON k.key = 'arxiv:' || lower(v.arxiv_id)`).run();
       return result.meta.changes;
     } catch (error) {
       if (/no such table/i.test(String((error as Error)?.message))) return 0;

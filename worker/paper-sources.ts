@@ -264,6 +264,9 @@ interface SourceSpec {
   // them: a followed entity's, and the specialist sources', whose first pages
   // the feed showed as they came (NASA's reports, CORE's repositories).
   keepsOld?: boolean;
+  // A pause before each request, for a source that limits its pace rather
+  // than its day (CORE allows a few requests every ten seconds).
+  gapMs?: number;
   fetchPage: (env: SourceEnv, request: PageRequest) => Promise<SourcePage>;
 }
 
@@ -447,7 +450,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   },
   biorxiv: { firstPages: 20, dailyPages: 20, dated: false, overlapDays: 2, fetchPage: bioRxivPage },
   europepmc: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('europepmc', 10) },
-  core: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, keepsOld: true, fetchPage: domainSource('core', 10) },
+  core: { firstPages: 2, dailyPages: 2, dated: false, overlapDays: 0, keepsOld: true, gapMs: 3_000, fetchPage: domainSource('core', 10) },
   osti: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('osti', 6) },
   nasa: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('nasa', 6) },
   physics: { firstPages: 5, dailyPages: 3, dated: true, overlapDays: 3, keepsOld: true, fetchPage: domainSource('physics', 10) },
@@ -502,6 +505,7 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
   let stored = 0;
   const pages = reached ? spec.dailyPages : spec.firstPages;
   for (let page = 1; page <= pages; page += 1) {
+    if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
     const result = await spec.fetchPage(env, { lane, page, since });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;

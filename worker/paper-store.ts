@@ -15,6 +15,10 @@ import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 export const EMBEDDING_MODEL = '@cf/qwen/qwen3-embedding-0.6b';
 export const EMBEDDING_DIMENSIONS = 1024;
+// The leading dimensions kept of each vector. The model is trained so a prefix
+// of its vector is an embedding of its own (Matryoshka), and a quarter of it
+// is a quarter of what a page reads from D1 and compares.
+export const STORED_DIMENSIONS = 256;
 export type EmbeddingEnv = {
   // Optional so test doubles of the binding that only convert PDFs still type-check.
   AI?: { run?: (model: string, input: { text: string[] }) => Promise<{ data?: number[][] }> };
@@ -73,10 +77,11 @@ export function database(env: Pick<StoreEnv, 'PAPER_STORE'>) {
   return env.PAPER_STORE;
 }
 
-/** The unit vector as int8 components scaled by 127, the stored form. */
+/** The vector's leading STORED_DIMENSIONS as a unit vector of int8 components scaled by 127, the stored form. */
 export function quantize(values: number[]) {
-  const norm = Math.hypot(...values) || 1;
-  return Int8Array.from(values, value => Math.round((value / norm) * 127));
+  const kept = values.slice(0, STORED_DIMENSIONS);
+  const norm = Math.hypot(...kept) || 1;
+  return Int8Array.from(kept, value => Math.round((value / norm) * 127));
 }
 
 export function readVector(value: unknown) {
@@ -85,10 +90,18 @@ export function readVector(value: unknown) {
   return Int8Array.from(value as number[], byte => (byte > 127 ? byte - 256 : byte));
 }
 
+// Normalized here rather than assumed: a vector cut to its leading dimensions
+// (migration 0004) is no longer a unit vector.
 function cosine(a: Int8Array, b: Int8Array) {
   let dot = 0;
-  for (let index = 0; index < a.length; index += 1) dot += a[index] * b[index];
-  return dot / (127 * 127);
+  let normA = 0;
+  let normB = 0;
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    dot += a[index] * b[index];
+    normA += a[index] * a[index];
+    normB += b[index] * b[index];
+  }
+  return normA && normB ? dot / Math.sqrt(normA * normB) : 0;
 }
 
 // ─── Identity ───
@@ -585,11 +598,53 @@ export interface FeedQuery {
  * first without any. Each paper says which asked categories it was found in
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
-export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now() }: { now?: number } = {}) {
+/** A reader's ranked candidates, kept for the pages after the first. */
+export interface RankedCandidate { workId: number; lanes: string[] }
+export interface RankingCache {
+  get(key: string): Promise<RankedCandidate[] | null>;
+  put(key: string, ranking: RankedCandidate[]): Promise<void>;
+}
+
+/**
+ * A page of corpus papers in the asked categories and followed entities,
+ * ordered by the closest of the reader's liked or saved papers, or newest
+ * first without any. Each paper says which asked categories it was found in
+ * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
+ *
+ * The first page ranks every candidate and leaves the order in `cache`; a
+ * later page of the same request reads only its own papers from it, and ranks
+ * again only when the order is gone.
+ */
+export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
   const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
   const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
   if (lanes.length === 0) return [];
+  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), order: query.order });
+  let ranking = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  if (!ranking) {
+    ranking = await rankCandidates(db, lanes, query, now);
+    await cache?.put(cacheKey, ranking).catch(error => console.warn('Feed ranking not cached', error));
+  }
+  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize);
+  if (ranked.length === 0) return [];
+  const works = await readWorks(db, ranked.map(candidate => candidate.workId));
+  const categories = new Set(query.categories);
+  return ranked.flatMap(candidate => {
+    const row = works.get(candidate.workId);
+    if (!row) return [];
+    const paper = JSON.parse(row.paper) as Paper;
+    const fetchedFor = candidate.lanes.filter(lane => categories.has(lane));
+    const follows = query.follows.filter(follow => candidate.lanes.includes(follow.lane));
+    return [{
+      ...paper,
+      ...(fetchedFor.length ? { _fetchedFor: fetchedFor } : {}),
+      ...(follows.length ? { _followedEntityMatches: follows.map(({ type, canonicalId, displayName }) => ({ type, canonicalId, displayName: displayName || canonicalId })) } : {}),
+    }];
+  });
+}
+
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<RankedCandidate[]> {
   const positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
   const positiveIds = [...new Set(positiveWorks.values())];
   const [candidates, positives] = await Promise.all([
@@ -611,24 +666,8 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
       .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
   }
   const liked = new Set(positiveIds);
-  const ranked = rankBySimilarity(candidates.filter(candidate => !liked.has(candidate.workId)), positives.results.map(row => readVector(row.embedding)), { now, order: query.order })
-    .slice(query.page * query.pageSize, (query.page + 1) * query.pageSize)
-    .map(({ row }) => row);
-  if (ranked.length === 0) return [];
-  const works = await readWorks(db, ranked.map(candidate => candidate.workId));
-  const categories = new Set(query.categories);
-  return ranked.flatMap(candidate => {
-    const row = works.get(candidate.workId);
-    if (!row) return [];
-    const paper = JSON.parse(row.paper) as Paper;
-    const fetchedFor = candidate.lanes.filter(lane => categories.has(lane));
-    const follows = query.follows.filter(follow => candidate.lanes.includes(follow.lane));
-    return [{
-      ...paper,
-      ...(fetchedFor.length ? { _fetchedFor: fetchedFor } : {}),
-      ...(follows.length ? { _followedEntityMatches: follows.map(({ type, canonicalId, displayName }) => ({ type, canonicalId, displayName: displayName || canonicalId })) } : {}),
-    }];
-  });
+  return rankBySimilarity(candidates.filter(candidate => !liked.has(candidate.workId)), positives.results.map(row => readVector(row.embedding)), { now, order: query.order })
+    .map(({ row }) => ({ workId: row.workId, lanes: row.lanes }));
 }
 
 // ─── Requests ───

@@ -1,7 +1,7 @@
 import type { Paper } from '../src/models/Paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
-import type { FeedRequestBody, StoreEnv } from './paper-store.ts';
+import type { FeedRequestBody, RankedCandidate, RankingCache, StoreEnv } from './paper-store.ts';
 
 import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
@@ -86,6 +86,34 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
   }
 }
 
+// How long a reader's ranked candidates serve the pages after the first: about
+// a reading session. A like changes the request, and so the ranking.
+const RANKING_CACHE_SECONDS = 15 * 60;
+
+/**
+ * The reader's ranking in this location's cache, under a key built from the
+ * verified uid and the request: one reader's order is never another's.
+ */
+function rankingCache(uid: string): RankingCache | undefined {
+  if (typeof caches === 'undefined') return undefined;
+  const keyFor = async (key: string) => {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${uid}\n${key}`));
+    const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    return new Request(`https://papertok.internal/cache/store-ranking/${hex}`);
+  };
+  return {
+    async get(key) {
+      const cached = await caches.default.match(await keyFor(key));
+      return cached ? cached.json<RankedCandidate[]>() : null;
+    },
+    async put(key, ranking) {
+      await caches.default.put(await keyFor(key), new Response(JSON.stringify(ranking), {
+        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${RANKING_CACHE_SECONDS}` },
+      }));
+    },
+  };
+}
+
 const LOOKUP_MAX_IDS = 30;
 
 function readBody<T>(request: Request) {
@@ -126,7 +154,7 @@ export async function handleCorpusFeed(
   }
   await reserveFeedRequest(env, identity.uid);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
-  const papers = await readFeedPage(env, query);
+  const papers = await readFeedPage(env, query, { cache: rankingCache(identity.uid) });
   // After the page, not before it: a lookup of liked papers can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
   // Only a first page of categories looks them up: the follows asked beside
