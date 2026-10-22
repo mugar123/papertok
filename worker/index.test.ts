@@ -1975,9 +1975,9 @@ test('an OpenAlex search reserves the ten list calls it is billed as', async () 
 
 // PAP-86: one entity by id or DOI is "Free" on OpenAlex's price list
 // (help.openalex.org/access/example-costs/), and the relay reserved a list call
-// for it: every card opened and every author clicked took a unit of the ceiling
-// that refused the day's searches. The autocomplete endpoint is not on that
-// list, and a `filter=doi:` batch is a list, so both still reserve one.
+// for it: every card opened and every author clicked took a unit of the day's
+// ceiling. The autocomplete endpoint is not on that list, and a `filter=doi:`
+// batch is a list, so both still reserve one.
 test('an OpenAlex entity by id or DOI reserves nothing and is still fetched', async () => {
   const reservedFor = async (path: string) => {
     const ledger = recordingLedger();

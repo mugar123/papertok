@@ -39,7 +39,7 @@ const providers: SearchProviders = {
   projects: (query, signal) => searchProjects(query, 1, { signal, throwOnError: true }).then(result => result.projects),
 };
 
-export function sectionsShown(scope: SearchScope): SearchSection[] {
+function sectionsShown(scope: SearchScope): SearchSection[] {
   return scope === 'all' ? SEARCH_SECTIONS : [scope];
 }
 

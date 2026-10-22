@@ -837,7 +837,7 @@ const INSTITUTION_SEARCH_CANDIDATES = 20;
 const INSTITUTION_SEARCH_LIMIT = 5;
 
 // The same 1 500 ms this search path already allows `enrichAuthorInstitutionLocalization`,
-// for the same reason. `settleSearch` gives the institutions task 4 500 ms and
+// for the same reason. The search page gives the institutions section 4 500 ms and
 // ROR spends ~250 ms of it (measured against the live API, 2026-08-26), so a
 // second-and-a-half is affordable while still leaving the section time to
 // render. `retries: 0` is load-bearing: the client retries twice by default,

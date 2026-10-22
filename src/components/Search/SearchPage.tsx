@@ -492,7 +492,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
    * That '' in between is what lets two searches that land on the exact same
    * count still both be heard. It only works because `searchPending` flips
    * true and back to false around real network I/O (`performSearch`'s
-   * `await Promise.all(tasks)`): that is a genuine elapsed period, so React
+   * `await run.search.ask(scope)`): that is a genuine elapsed period, so React
    * commits (and paints) the '' on its own before the eventual count ever
    * gets computed, rather than the two collapsing into one batched update.
    * Clearing and setting in the very same tick would not be enough on its
