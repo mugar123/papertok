@@ -534,21 +534,37 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
 
 interface Candidate { workId: number; published: string; lanes: string[]; embedding: Int8Array | null }
 
+// One statement per lane, in one batch: D1 refuses a compound SELECT of more
+// than a few terms ("too many terms in compound SELECT"), and a reader asks
+// for up to a dozen categories and twenty follows.
 async function readCandidates(db: D1Database, lanes: string[]) {
   const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
-  const { results } = await db.prepare(`SELECT c.work_id, c.published, c.lanes, v.embedding FROM (
-      SELECT work_id, MAX(published) AS published, group_concat(lane, char(31)) AS lanes FROM (${lanes.map(() => `SELECT * FROM (
-        SELECT lane, work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?)`).join(' UNION ALL ')})
-      GROUP BY work_id
-    ) c LEFT JOIN work_vectors v ON v.work_id = c.work_id`)
-    .bind(...lanes.flatMap(lane => [lane, share]))
-    .all<{ work_id: number; published: string; lanes: string; embedding: unknown }>();
-  return results.map((row): Candidate => ({
-    workId: row.work_id,
-    published: row.published,
-    // Unit-separated: a followed search's lane holds spaces.
-    lanes: row.lanes.split('\u001f'),
-    embedding: row.embedding == null ? null : readVector(row.embedding),
+  const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
+    'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
+  ).bind(lane, share)));
+  const byWork = new Map<number, { published: string; lanes: string[] }>();
+  perLane.forEach(({ results }, index) => {
+    for (const row of results) {
+      const candidate = byWork.get(row.work_id);
+      if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]] });
+      else {
+        candidate.lanes.push(lanes[index]);
+        if (row.published > candidate.published) candidate.published = row.published;
+      }
+    }
+  });
+  const vectors = new Map<number, Int8Array>();
+  const ids = [...byWork.keys()];
+  for (let start = 0; start < ids.length; start += 2_000) {
+    const { results } = await db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(ids.slice(start, start + 2_000))).all<{ work_id: number; embedding: unknown }>();
+    results.forEach(row => vectors.set(row.work_id, readVector(row.embedding)));
+  }
+  return [...byWork].map(([workId, candidate]): Candidate => ({
+    workId,
+    published: candidate.published,
+    lanes: candidate.lanes,
+    embedding: vectors.get(workId) ?? null,
   }));
 }
 

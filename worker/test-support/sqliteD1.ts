@@ -57,7 +57,10 @@ export function testD1() {
     async batch(statements: Statement[]) {
       db.exec('BEGIN');
       try {
-        const results = statements.map(statement => ({ success: true, meta: { changes: Number(statement.runNow().changes) } }));
+        // A read in a batch answers its rows, as D1's does.
+        const results = statements.map(statement => (/^\s*SELECT/i.test(statement.sql)
+          ? { success: true, results: statement.db.prepare(statement.sql).all(...statement.params), meta: {} }
+          : { success: true, meta: { changes: Number(statement.runNow().changes) } }));
         db.exec('COMMIT');
         return results;
       } catch (error) {
