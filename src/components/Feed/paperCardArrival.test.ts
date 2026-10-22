@@ -24,8 +24,10 @@ test('the mobile side rail is centred with `translate`, so the arrival animation
   assert.match(rule, /translate: 0 -50%;/, 'centred by translate');
   assert.doesNotMatch(css, /--rail-shift/, 'the rail keeps one position whatever the slot shows');
   assert.doesNotMatch(rule, /transform:/);
-  // The arrival still animates `transform`, which is why the two must not share it.
-  assert.match(css, /@keyframes pcArrive \{\s*0% \{ opacity: 0; transform: translateY\(8px\); \}/);
+  // The arrival still animates `transform` (the sheet's slide), which is why
+  // the two must not share it.
+  assert.match(css, /animation: cardSlideUp /);
+  assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/);
 });
 
 /**

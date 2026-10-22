@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useImperativeHandle, useMemo, useState, useR
 import { useFeed } from '../../context/FeedContext.tsx';
 import { ArrowSquareOut, X } from '@phosphor-icons/react';
 import { Dialog, DialogClose, DialogContent } from '../ui/dialog.tsx';
+import Petri from '../Onboarding/Petri.tsx';
 import './PDFViewer.css';
 import { safeDoiUrl } from '../../utils/externalUrl.ts';
 import { pdfLinksForPaper, pdfRelayUrl } from '../../utils/paperOpenTargets.ts';
@@ -143,8 +144,8 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
 
           {/* Loading indicator */}
           {canEmbed && !iframeLoaded && !showFallback && (
-            <div className="pdf-loading">
-              <div className="pdf-loading-spinner" />
+            <div className="pdf-loading" role="status">
+              <Petri pose="download" className="petri-loader" />
               <p>{'Loading PDF...'}</p>
             </div>
           )}
@@ -152,8 +153,8 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
           {/* Touch: the pages, drawn here */}
           {drawsPages && (
             <Suspense fallback={(
-              <div className="pdf-loading">
-                <div className="pdf-loading-spinner" />
+              <div className="pdf-loading" role="status">
+                <Petri pose="download" className="petri-loader" />
                 <p>{'Loading PDF...'}</p>
               </div>
             )}>

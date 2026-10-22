@@ -1,3 +1,4 @@
+import { INSTITUTION_VERIFICATION_PATH, handleInstitutionVerificationRequest } from './institution-verification.ts';
 import { captureWorkerException } from './error-tracking.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
@@ -24,12 +25,13 @@ import { ACCOUNT_DELETE_PATH, AccountDeletionError, handleAccountDeletionRequest
 import { INSTITUTION_PATHS, InstitutionLinkError, handleInstitutionLinkRequest } from './institution-link.ts';
 import { INSTITUTION_ACCESS_PATH, InstitutionAccessError, handleInstitutionAccess } from './institution-access.ts';
 import { INSTITUTION_SERVICES_PATH, handleInstitutionServices } from './institution-services.ts';
-import { isServiceAccountConfigured } from './firestore-admin.ts';
+import { isServiceAccountConfigured } from './firebase-service-account.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
+import { PaperStoreError, handleStoreFeed } from './paper-store.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
 import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
@@ -241,12 +243,14 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       });
     }
   }
-  if (INSTITUTION_PATHS.has(url.pathname)) {
+  if (INSTITUTION_PATHS.has(url.pathname) || url.pathname === INSTITUTION_VERIFICATION_PATH) {
     if (!origin || !allowedOrigins(env).has(origin)) {
       return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
     }
     try {
-      const payload = await handleInstitutionLinkRequest(request, env);
+      const payload = url.pathname === INSTITUTION_VERIFICATION_PATH
+        ? await handleInstitutionVerificationRequest(request, env)
+        : await handleInstitutionLinkRequest(request, env);
       return json(payload, 200, { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' });
     } catch (error) {
       captureWorkerException(error);
@@ -378,6 +382,31 @@ export async function handleRequest(request: Request, env: WorkerEnv): Promise<R
       captureWorkerException(error);
       console.error('Personal recommendations failed', error);
       return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
+    }
+  }
+  // The feed's arXiv leg from the paper store (worker/paper-store.ts). Asked
+  // with a body, so routed ahead of the GET-only gate below; personal, so it
+  // checks the reader's identity first and is never cached.
+  if (url.pathname === '/store/feed') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+    if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+    let identity: VerifiedIdentity;
+    try {
+      identity = await verifyFirebaseIdentity(request, env);
+    } catch (error) {
+      captureWorkerException(error);
+      return providerAuthFailure(error, origin, env);
+    }
+    const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
+    try {
+      return json(await handleStoreFeed(request, env, identity), 200, headers);
+    } catch (error) {
+      if (error instanceof PaperStoreError) {
+        return json({ code: error.code }, error.status, error.status === 429 ? { ...headers, 'retry-after': '60' } : headers);
+      }
+      captureWorkerException(error);
+      console.error('Paper store failed', error);
+      return json({ code: 'PAPER_STORE_FAILED' }, 502, headers);
     }
   }
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));

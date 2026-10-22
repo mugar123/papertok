@@ -42,10 +42,25 @@ test('the search never announces itself as unavailable', () => {
 });
 
 test('both surfaces report analytics only after their search settles', () => {
-  assert.match(page, /await Promise\.all\(tasks\)/);
-  assert.match(paletteSources, /await Promise\.all\(SEARCH_SECTIONS\.map/);
-  assert.ok(paletteSearch.indexOf('await searchEntities(') < paletteSearch.indexOf("trackEvent('search_performed'"));
+  assert.ok(page.indexOf('await run.search.ask(') < page.indexOf("trackEvent('search_performed'"));
+  assert.match(page, /if \(run\.controller\.signal\.aborted\) return;/);
+  assert.ok(paletteSearch.indexOf('await search.ask(') < paletteSearch.indexOf("trackEvent('search_performed'"));
   assert.match(paletteSearch, /if \(controller\.signal\.aborted\) return;/);
+});
+
+// PAP-86: a search starts with the scope on screen and asks the running search
+// for another scope when the reader opens it. Neither surface fans out to every
+// section on every keystroke; entitySearchService.test.ts pins what one search
+// asks and when.
+test('both surfaces ask one search for the scope they show, and open a scope on the running search', () => {
+  assert.match(page, /searchEntities\(searchTerm, \{/);
+  assert.match(page, /run\.search\.ask\(scope\)/);
+  assert.match(page, /run\.search\.settled\(filterId\)/);
+  assert.match(paletteSearch, /search\.ask\(scope\)/);
+  assert.match(paletteSearch, /current\.search\.ask\(scope\)/);
+  for (const surface of SURFACES) {
+    assert.doesNotMatch(surface.code, /Promise\.all\(SEARCH_SECTIONS\.map/, `${surface.name}: no fan-out to every section`);
+  }
 });
 
 test('the palette hides stale queries while providers collect independent sections', () => {
@@ -552,4 +567,171 @@ test('typing preserves the selected type and the type strip is available before 
   assert.doesNotMatch(changeQuery, /setActiveSection/);
   const aboveStrip = componentSource.slice(componentSource.indexOf('</CommandInput>'), componentSource.indexOf('<TabsList'));
   assert.doesNotMatch(aboveStrip, /hasQuery/);
+});
+
+/**
+ * The page paints the scope on screen, and only that one.
+ *
+ * `performSearch` awaits the ask for the scope at debounce time, and
+ * `handleSearchFilterChange` asks the running search for the scope the reader
+ * opens; whichever answered first used to paint. Open All while a Papers
+ * search runs and the Papers answer, its entity sections still pending,
+ * painted under All: the empty state, "No results found" in the live region,
+ * then a repaint and a second announcement when the All answer landed. The
+ * page's two commit sites run here against the real search, with the hooks
+ * they call stubbed, so a scope can be opened while the search is running.
+ */
+import { searchEntities } from '../../services/entitySearchService.ts';
+import type { SearchProviders } from '../../services/entitySearchService.ts';
+import { SECTION_SOURCES, describeSearchOutage } from '../../utils/searchOutage.ts';
+import { OpenAlexRequestError, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+
+/** The page's code between two anchors, which must both exist. */
+function pageSlice(from: string, to: string) {
+  const start = page.indexOf(from);
+  const end = page.indexOf(to);
+  assert.ok(start >= 0 && end > start, `SearchPage.tsx no longer has "${from}" before "${to}"; update this test alongside it`);
+  return page.slice(start, end);
+}
+const pageSearchCode = ts.transpileModule(`(function () {
+  ${pageSlice('  const commit = useCallback(', '  const startSearch = useEffectEvent(')}
+  ${pageSlice('  const handleSearchFilterChange = ', '  const clearSearch = ')}
+  return { performSearch, handleSearchFilterChange };
+})()`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+
+const searchPaper = { id: 'openalex:W1', title: 'Cosmology', authors: [], abstract: '', sources: { primary: 'openalex' as const, enrichedBy: [] } };
+const searchAuthor = { id: 'https://openalex.org/A1', display_name: 'Someone' };
+const searchInstitution = { id: 'https://ror.org/02f40zc51', display_name: 'University of Salamanca' };
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+/** The page's search over `sources`, recording each paint of a section, of the notice (its failed sections and the end of its wait) and of the searching status. */
+function pageSearch(sources: Partial<SearchProviders>) {
+  const painted = {
+    papers: [] as unknown[], authors: [] as unknown[], institutions: [] as unknown[],
+    notices: [] as (string[] | null)[], retryAts: [] as (number | null)[], searching: [] as boolean[],
+  };
+  const run = vm.runInNewContext(pageSearchCode, {
+    AbortController, setTimeout, Date,
+    useCallback: (fn: unknown) => fn,
+    requestRef: { current: null },
+    searchEntities, SECTION_SOURCES, describeSearchOutage,
+    getOpenAlexHealth: () => ({ rateLimited: false, retryAfterMs: 0 }),
+    isOpenAlexRateLimitError,
+    pageSources: {
+      papers: async () => [searchPaper], authors: async () => [], institutions: async () => [], topics: async () => [], projects: async () => [],
+      ...sources,
+    },
+    PAGE_SECTION_TIMEOUTS: { papers: 1000, authors: 1000, institutions: 1000, topics: 1000, projects: 1000 },
+    SEARCH_MIN_LOADING_MS: 0,
+    wait: settle,
+    setIsSearching: (value: boolean) => painted.searching.push(value),
+    setPaperResults: (items: unknown) => painted.papers.push(items),
+    setAuthorResults: (items: unknown) => painted.authors.push(items),
+    setInstitutionResults: (items: unknown) => painted.institutions.push(items),
+    setConceptResults() {}, setProjectResults() {},
+    setSearchIssue: (issue: { sections: string[]; retryAtMs: number | null } | null) => {
+      painted.notices.push(issue?.sections ?? null);
+      painted.retryAts.push(issue?.retryAtMs ?? null);
+    },
+    setHasSearched() {}, setActiveSearchFilter() {}, setSearchIntent() {},
+    trackEvent() {},
+  }) as { performSearch: (term: string, scope: string) => Promise<void>; handleSearchFilterChange: (scope: string) => void };
+  return { ...run, painted };
+}
+
+test('a scope opened while the search runs is painted by its own answer, not by the one it replaced', async () => {
+  let resolveAuthors!: (items: typeof searchAuthor[]) => void;
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    authors: () => new Promise(resolve => { resolveAuthors = resolve; }),
+  });
+  const papersSearch = performSearch('cosmology', 'papers');
+  handleSearchFilterChange('all');
+  await papersSearch;
+  await settle();
+  assert.deepEqual(painted.authors, [], 'the Papers answer, with the authors still pending, painted under All');
+  assert.deepEqual(painted.searching, [true, true], 'the page stopped searching before the scope on screen had answered');
+  resolveAuthors([searchAuthor]);
+  await settle();
+  assert.deepEqual(painted.authors, [[searchAuthor]]);
+  assert.deepEqual(painted.searching, [true, true, false]);
+});
+
+test('a scope that has already settled paints at once from what the search has, the notice included', async () => {
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    institutions: async () => { throw new Error('ROR failed'); },
+  });
+  await performSearch('cosmology', 'all');
+  assert.deepEqual(painted.papers, [[searchPaper]]);
+  handleSearchFilterChange('papers');
+  await settle();
+  assert.deepEqual(painted.papers, [[searchPaper], [searchPaper]], 'opening a settled scope painted nothing');
+  assert.deepEqual(painted.searching, [true, false, false], 'a settled scope has no wait to cover');
+  // Repainted, not removed and put back: the strip is a status region, and
+  // `outageAffectsFilter` already decides which scopes it is shown on.
+  assert.deepEqual(painted.notices, [null, ['institutions'], ['institutions']], 'the notice was cleared on the way to a scope it still describes');
+});
+
+// A paint one task after the scope change let React render the new scope
+// with the previous paint first: open Papers while the authors run, let them
+// land, open Authors, and "No authors found" reached the DOM and its live
+// region before the authors did.
+test('a scope that settled after the last paint paints with the scope change', async () => {
+  let resolveAuthors!: (items: typeof searchAuthor[]) => void;
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    authors: () => new Promise(resolve => { resolveAuthors = resolve; }),
+  });
+  const allSearch = performSearch('nebula', 'all');
+  await settle();
+  handleSearchFilterChange('papers');
+  await settle();
+  assert.deepEqual(painted.authors, [[]], 'Papers painted while the authors were still running');
+  resolveAuthors([searchAuthor]);
+  await allSearch;
+  handleSearchFilterChange('authors');
+  assert.deepEqual(painted.authors, [[], [searchAuthor]], 'Authors rendered the Papers paint before its own');
+});
+
+test('between two scope changes only the scope on screen paints', async () => {
+  let resolveAuthors!: (items: typeof searchAuthor[]) => void;
+  let resolveInstitutions!: (items: typeof searchInstitution[]) => void;
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    authors: () => new Promise(resolve => { resolveAuthors = resolve; }),
+    institutions: () => new Promise(resolve => { resolveInstitutions = resolve; }),
+  });
+  const allSearch = performSearch('cosmology', 'all');
+  handleSearchFilterChange('authors');
+  handleSearchFilterChange('institutions');
+  await settle();
+  resolveAuthors([searchAuthor]);
+  await settle();
+  assert.deepEqual(painted.institutions, [], 'the Authors answer painted the Institutions scope empty');
+  assert.deepEqual(painted.searching, [true, true, true]);
+  resolveInstitutions([searchInstitution]);
+  await settle();
+  await allSearch;
+  assert.deepEqual(painted.institutions, [[searchInstitution]], 'painted once, by the Institutions answer');
+  assert.deepEqual(painted.searching, [true, true, true, false]);
+});
+
+// OpenAlex's Retry-After counts from the refusal. Opening a scope repaints the
+// answer the search already has; a wait restarted on each repaint kept Retry
+// hidden for as long as the reader kept switching, after OpenAlex was back.
+test('opening a settled scope keeps the wait a rate limit named, counted from the refusal', async t => {
+  let clock = 1_000_000;
+  t.mock.method(Date, 'now', () => clock);
+  const { performSearch, handleSearchFilterChange, painted } = pageSearch({
+    authors: async () => { throw new OpenAlexRequestError('OpenAlex rate limit reached', { code: 'rate_limited', status: 429, retryAfterMs: 300_000 }); },
+  });
+  await performSearch('nebula', 'all');
+  assert.deepEqual(painted.retryAts, [null, 1_300_000]);
+  clock += 100_000;
+  handleSearchFilterChange('papers');
+  await settle();
+  assert.deepEqual(painted.notices.at(-1), ['authors']);
+  assert.equal(painted.retryAts.at(-1), 1_300_000, 'opening Papers restarted the wait');
+  clock += 250_000;
+  handleSearchFilterChange('all');
+  await settle();
+  assert.deepEqual(painted.notices.at(-1), ['authors']);
+  assert.equal(painted.retryAts.at(-1), null, 'a wait that had ended started again');
 });

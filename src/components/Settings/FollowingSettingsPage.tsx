@@ -159,7 +159,7 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 }
 
 /** The follows of the type on show, or its loading or empty state. */
-function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () => void }) {
+function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
   const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
   return (
     <>
@@ -183,6 +183,7 @@ function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () =
             {visibleEntities.map((entity) => {
               const pending = isFollowPending(entity);
               const displayName = getFollowDisplayName(entity);
+              const entityPath = getFollowedEntityPath(entity);
               return (
                 <motion.article
                   layout
@@ -193,7 +194,15 @@ function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () =
                   exit={{ opacity: 0, transform: 'translateX(32px)' }}
                   transition={{ duration: 0.24, ease: EASE_OUT }}
                 >
-                  <Link to={getFollowedEntityPath(entity)} className="following-settings-link">
+                  <Link
+                    to={entityPath}
+                    className="following-settings-link"
+                    onClick={onOpenEntity && ((event) => {
+                      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                      event.preventDefault();
+                      onOpenEntity(entityPath);
+                    })}
+                  >
                     <span className={`following-settings-initials is-${entity.type}`} aria-hidden="true">
                       {getInitials(displayName)}
                     </span>
@@ -369,9 +378,24 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
   const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
   const returning = !unfollowOpen && unfollowing !== null;
+  // A page opened from the sheet waits for the sheet to close; the sheet
+  // belongs to Settings and would be cut off when Settings leaves.
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const navigateAfterClose = (path: string) => {
+    setPendingPath(path);
+    onOpenChange(false);
+  };
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={(isOpen) => {
+        if (isOpen || !pendingPath) return;
+        setPendingPath(null);
+        navigate(pendingPath);
+      }}
+    >
       <DrawerContent className={`settings-sheet is-tall${returning ? ' is-returning' : ''}`} overlayClassName="settings-sheet-backdrop">
         <DrawerHandle />
         <div className="settings-sheet-head">
@@ -397,7 +421,7 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
           </Select>
         </div>
         <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
-          <FollowedList view={view} onExplore={() => navigate('/search')} />
+          <FollowedList view={view} onExplore={() => navigateAfterClose('/search')} onOpenEntity={navigateAfterClose} />
         </div>
         <UnfollowConfirm view={view} />
       </DrawerContent>

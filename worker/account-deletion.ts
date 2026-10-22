@@ -1,3 +1,4 @@
+import { isServiceAccountConfigured, FirebaseServiceAccountError } from './firebase-service-account.ts';
 import type { WorkerEnv } from './env.ts';
 import type { FirestoreAdmin, FirestoreWrite } from './firestore-admin.ts';
 
@@ -25,7 +26,6 @@ import {
   createFirestoreAdmin,
   deleteWrite,
   FirestoreAdminError,
-  isServiceAccountConfigured,
 } from './firestore-admin.ts';
 import { purgeEmailSubscription } from './email-notifications.ts';
 
@@ -345,7 +345,7 @@ export async function handleAccountDeletionRequest(request: Request, env: Worker
     });
   } catch (error) {
     if (error instanceof AccountDeletionError || error instanceof WorkerAuthError) throw error;
-    if (error instanceof FirestoreAdminError) {
+    if (error instanceof FirestoreAdminError || error instanceof FirebaseServiceAccountError) {
       throw new AccountDeletionError(
         error.status === 409 ? 'ACCOUNT_DELETION_CONFLICT' : 'ACCOUNT_DELETION_FAILED',
         error.status === 409 ? 409 : 502,

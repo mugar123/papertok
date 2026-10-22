@@ -17,10 +17,10 @@ test('SOURCE: the abstract travels between its measured heights on the card cloc
   const jsx = await read('./PaperCard.tsx');
   assert.match(jsx, /if \(!panel \|\| from == null \|\| prefersReducedMotion\) return;/, 'reduced motion keeps the jump');
   assert.match(jsx, /animateSize\(panel, 'maxHeight', from, [^)]*\{ overflowY: 'hidden' \}\)/, 'no scrollbar while it travels');
-  // On the card's own clock: the travel reads the shared constants rather than
-  // a duration and curve of its own.
+  // On the abstract's own clock: the travel reads the named constants rather
+  // than a literal duration and curve.
   const travel = jsx.slice(jsx.indexOf('animateSize(panel'), jsx.indexOf('}, [expanded, prefersReducedMotion]);'));
-  assert.ok(travel.includes('CARD_DURATION_MS') && travel.includes('EASE_OUT_EXPO'), 'the height travels on the card clock');
+  assert.ok(travel.includes('ABSTRACT_MOTION_MS') && travel.includes('EASE_OUT_EXPO'), 'the height travels on the abstract clock');
 });
 
 test('SOURCE: closing the abstract is instant: no height travel, no scroll back, no fade transition', async () => {

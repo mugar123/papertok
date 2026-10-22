@@ -10,7 +10,8 @@ import { fulfilledPaperLists, resolveWithin, settleSourcesForFirstPaint } from '
 import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
-import { createEmptyInteractionProfile, readProfileSignals, recordInteractionEvent } from '../utils/interactionProfile.ts';
+import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interactionProfile.ts';
+import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
@@ -65,6 +66,16 @@ function deferred() {
   return { promise, resolve };
 }
 
+// The feed's arXiv leg goes through the paper store, which asks for the same
+// page in the same shape; these tests stand it in with the scope's arXiv double.
+function withStoreStandIn<T extends { fetchPapers: unknown }>(scope: T) {
+  return {
+    ...scope,
+    fetchStoreFeed: (categories: string[], page: number, pageSize: number, queryMode: string) => (scope.fetchPapers as (...args: unknown[]) => Promise<FeedRecord[]>)(categories, page * pageSize, pageSize, queryMode),
+    selectSemanticProfilePositiveIds: () => [], curatedIds: () => [], interactionProfile: ref(null),
+  };
+}
+
 function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
   const env = {
@@ -116,7 +127,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
   const withFollowUp = () => ({ ...env, followShownPapers: build(followCallback, env) });
   const run = (...args: unknown[]) => {
     Object.assign(env, { papers: state.papers, page: state.page, loading: state.loading });
-    return build(callback, withFollowUp())(...args);
+    return build(callback, withStoreStandIn(withFollowUp()))(...args);
   };
   const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }) => build(restoreCallback, withFollowUp())(snapshot, 'top', 'cs.AI');
   // Not interested in demo mode: nothing written to Firestore, no re-rank.
@@ -441,6 +452,214 @@ test('a reload whose start page has unseen papers asks for no other page', async
   assert.deepEqual(state.continuations, []);
 });
 
+// What "seen" means once it follows the reader. A card counts only after it
+// was on screen (a view or a skip writes its interaction document); a card a
+// load merely brought in is remembered in memory, so this session does not
+// offer it twice, and is forgotten by the next load.
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: (key: string) => { values.delete(key); },
+    key: (index: number) => [...values.keys()][index] ?? null, get length() { return values.size; },
+  };
+}
+const callbackIn = (code: string, scope: object) => new Function(...Object.keys(scope), `return (${code});`)(...Object.values(scope));
+const paperRecord = (id: string): FeedRecord => ({ id, title: `${id} scientific research`, authors: [], primaryCategory: 'cs.AI' });
+const viewedEvent = (paperId: string, kind = 'viewTime') => ({ paperId, kind, category: 'cs.AI', viewTime: 4 });
+// The real callbacks over one browser's storage; `user` is the signed-in account
+// and `seen` the feed's in-memory set. `auth` is Firebase's own current user.
+function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage(), traverseAndExpandNetwork = (() => {}) as (paper: FeedRecord) => void } = {}) {
+  const scope = {
+    sessionSeenPapers: seen, activeUserId: ref(user), viewedIds, auth: { currentUser: user ? { uid: user } as { uid: string } | null : null },
+    readSeenPaperIds: (userId: string | null) => readSeenPaperIds(userId, storage),
+    saveSeenPaperIds: (userId: string | null, ids: Iterable<string>) => saveSeenPaperIds(userId, ids, storage),
+  };
+  const markPaperViewed = callbackIn(componentCallback('markPaperViewed', ''), scope) as (paperId: string, viewerId: string | null | undefined) => void;
+  const carryViewedPapers = callbackIn(componentCallback('carryViewedPapers', ''), scope) as (profile: ReturnType<typeof createEmptyInteractionProfile>) => void;
+  const tracking = {
+    markPaperViewed, user: user ? { uid: user } : null, IS_DEMO: true,
+    boredomLevel: ref(0), profileSignals: ref(readProfileSignals(null)), temporalPreference: ref(0),
+    countEngagement: () => {}, recordProfileEvent: () => {}, scheduleReRank: () => {}, traverseAndExpandNetwork,
+    dedupeInteractionPapers: <T>(papers: T[]) => papers,
+  };
+  const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (paper: FeedRecord, seconds: number) => Promise<void>;
+  const trackSkips = callbackIn(componentCallback('trackSkips', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (papers: FeedRecord[]) => Promise<void>;
+  return { scope, markPaperViewed, carryViewedPapers, trackViewTime, trackSkips, stored: (userId = user) => [...readSeenPaperIds(userId, storage)] };
+}
+
+test('a load remembers the papers it shows for this session, not in the reader\'s viewed list', async t => {
+  t.mock.method(console, 'log', () => {});
+  const { state, env, run } = feed();
+  const writes: unknown[][] = [];
+  env.saveSeenPaperIds = (...args: unknown[]) => { writes.push(args); };
+  await run(true);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(writes, [], 'no card nobody viewed is written to the list kept across loads');
+  assert.ok(state.papers.every(paper => env.sessionSeenPapers.current.has(paper.id)), 'but this session does not offer it twice');
+});
+
+// Reading a card for ten seconds used to walk its citation network: an OpenAlex
+// call (and a Semantic Scholar one) for a reader who did nothing. In the PAP-86
+// audit's model those walks were about a tenth of a signed-in session's
+// OpenAlex units; nothing was measured. A like, a save or an opened PDF still
+// expands the graph; a passive read only ranks.
+test('a ten-second read no longer walks the citation network', async () => {
+  const walked: string[] = [];
+  const { trackViewTime, stored } = viewing({ traverseAndExpandNetwork: (paper: FeedRecord) => { walked.push(paper.id); } });
+  await trackViewTime(paperRecord('read-for-a-while'), 12);
+  assert.deepEqual(walked, []);
+  assert.deepEqual(stored(), ['read-for-a-while'], 'the view itself still counts');
+});
+
+test('a card the reader views or skips joins the list kept across loads, a loaded one does not', async () => {
+  const { markPaperViewed, trackViewTime, trackSkips, stored } = viewing({ seen: ref(new Set(['loaded-only'])) });
+  await trackViewTime(paperRecord('viewed'), 4);
+  await trackViewTime(paperRecord('glanced-under-1s'), 0.5);
+  await trackSkips([paperRecord('skip-1'), paperRecord('skip-2')]);
+  assert.deepEqual(stored(), ['viewed', 'skip-1', 'skip-2']);
+  // Viewing again moves the paper to the end instead of repeating it.
+  markPaperViewed('viewed', 'test-user');
+  assert.deepEqual(stored(), ['skip-1', 'skip-2', 'viewed']);
+});
+
+test('the viewed list is the signed-in account\'s own, and keeps the last 500', () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  for (let index = 0; index < 520; index += 1) accountA.markPaperViewed(`paper-${index}`, 'account-a');
+  const accountB = viewing({ user: 'account-b', storage });
+  accountB.markPaperViewed('b-paper', 'account-b');
+
+  assert.equal(accountA.stored().length, 500);
+  assert.equal(accountA.stored()[0], 'paper-20');
+  assert.deepEqual(accountB.stored(), ['b-paper']);
+  // A guest has no list to write to.
+  const guest = viewing({ user: null, storage });
+  guest.markPaperViewed('guest-paper', undefined);
+  assert.deepEqual(guest.stored(), []);
+});
+
+test('a card that reports after the account changed was not viewed by the new account', async () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  await accountA.trackViewTime(paperRecord('before'), 4);
+  // The feed switches to B while A's last card is still reporting.
+  accountA.scope.activeUserId.current = 'account-b';
+  await accountA.trackViewTime(paperRecord('late-card'), 4);
+  await accountA.trackSkips([paperRecord('late-skip')]);
+
+  assert.deepEqual(accountA.stored('account-a'), ['before']);
+  assert.deepEqual(accountA.stored('account-b'), []);
+  assert.equal(accountA.scope.sessionSeenPapers.current.has('late-card'), false);
+});
+
+// Signing out: AuthContext sweeps the account's storage once Firebase has
+// signed out, and React commits the signed-out state later. The card on screen
+// reports from its cleanup before the feed's own account effect resets
+// activeUserId, so the report still names the account that signed out.
+test('a card that reports while signing out does not write the swept viewed list back', async () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  await accountA.trackViewTime(paperRecord('before'), 4);
+  assert.deepEqual(accountA.stored(), ['before']);
+  accountA.scope.auth.currentUser = null;
+  clearUserScopedStorage('account-a', storage);
+  await accountA.trackViewTime(paperRecord('card-on-screen-at-sign-out'), 4);
+  await accountA.trackSkips([paperRecord('skipped-at-sign-out')]);
+
+  assert.equal(storage.getItem('papertok_viewedIds:account-a'), null, 'nothing is written back after the sweep');
+});
+
+// Device A's reader went through every paper of page 1 and nothing else; the
+// browser of device B has nothing of its own, only the aggregate B reads.
+function deviceBReadingAGroup(papers: FeedRecord[]) {
+  const deviceA = createEmptyInteractionProfile();
+  papers.forEach(paper => recordInteractionEvent(deviceA, viewedEvent(paper.id)));
+  return deserializeInteractionProfile(serializeInteractionProfile(deviceA))!;
+}
+
+test('what the reader viewed on another device is not shown again here, even on the first screen', async t => {
+  const deviceB = deviceBReadingAGroup(records('page-1'));
+  const { state, env, run, starts } = reloadOnPageOne(t);
+  viewing({ seen: env.sessionSeenPapers }).carryViewedPapers(deviceB);
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(1).includes(id)), [], 'nothing A viewed comes back');
+  assert.deepEqual(starts, [15, 90], 'the reload skipped past A\'s page');
+});
+
+test('a short pool the other device viewed whole still gives a feed', async t => {
+  const pool = records('page-1', 6);
+  const deviceB = deviceBReadingAGroup(pool);
+  const { state, env, run } = reloadOnPageOne(t, { page: start => start === 15 ? pool : [] });
+  viewing({ seen: env.sessionSeenPapers }).carryViewedPapers(deviceB);
+  env.loadPapersRef.current = run;
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.deepEqual(state.papers.map(paper => paper.id), pool.map(paper => paper.id), 'the feed is not empty: the viewed pool is shown again');
+  assert.equal(state.hasMore, true);
+});
+
+// After a browser reload the snapshot's cards are on screen again, but the
+// reader's viewed list names only the ones that reported a view: the card on
+// screen when the tab closed never ran its cleanup.
+test('a refresh after a reload does not offer the restored cards again', async t => {
+  const { state, env, run, restore, starts } = reloadOnPageOne(t);
+  env.loadPapersRef.current = run;
+  const restored = records('page-1').map(paper => ({ ...paper, abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } }));
+  restore({ papers: restored, page: 1, hasMore: true });
+  await run(true, null, true);
+  assert.equal(state.error, null);
+  assert.equal(state.papers.length, 15);
+  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(1).includes(id)), [], 'no restored card comes back');
+  assert.deepEqual(starts, [15, 90], 'the refresh skipped past the restored page');
+});
+
+// The start of the effect that runs when the signed-in account changes, up to
+// where a guest returns: it replaces the seen set and resets the aggregate.
+const accountSwitchStart = source.indexOf('    removeLegacySeenPaperIds(null, userId);\n    activeUserId.current = userId;\n    sessionSeenPapers.current');
+const accountSwitch = stripTypeScriptTypes(source.slice(accountSwitchStart, source.indexOf('\n    if (!userId) {', accountSwitchStart)));
+function switchAccount(viewer: ReturnType<typeof viewing>, storage: ReturnType<typeof memoryStorage>, interactionProfile: { current: ReturnType<typeof createEmptyInteractionProfile> }, userId: string) {
+  const noop = () => {};
+  const scope = {
+    ...viewer.scope, interactionProfile, createEmptyInteractionProfile, readProfileSignals, emptyEngagementWindow: () => null,
+    removeLegacySeenPaperIds: (_storage: null, id: string) => removeLegacySeenPaperIds(storage, id), loadedProfileUserId: ref<string | null>(viewer.scope.activeUserId.current),
+    setLikedPaperIds: noop, setNotInterestedIds: noop, setSavedPaperIds: noop, setReadPaperIds: noop, setPersonalLibrary: noop,
+    profileSignals: ref(null), relatedCandidates: ref([]), personalCandidates: ref([]), engagementWindow: ref(null),
+    interactionProfileHydrated: ref(true), personalLibraryStatus: ref(null),
+  };
+  assert.ok(accountSwitchStart >= 0, 'the account-change effect must exist');
+  new Function(...Object.keys(scope), 'userId', accountSwitch)(...Object.values(scope), userId);
+}
+
+test("switching accounts forgets what the previous account viewed, in memory, and keeps each account's list apart", () => {
+  const storage = memoryStorage();
+  const accountA = viewing({ user: 'account-a', storage });
+  accountA.markPaperViewed('a-viewed-here', 'account-a');
+  const aggregateA = deviceBReadingAGroup([paperRecord('a-viewed-elsewhere')]);
+  accountA.carryViewedPapers(aggregateA);
+  const interactionProfile = ref(aggregateA);
+  switchAccount(accountA, storage, interactionProfile, 'account-b');
+
+  assert.deepEqual([...accountA.scope.sessionSeenPapers.current], [], 'B does not skip what A viewed');
+  assert.deepEqual(viewedIds(interactionProfile.current), [], "B's aggregate does not carry A's ring");
+  assert.deepEqual(accountA.stored('account-a'), ['a-viewed-here'], 'A finds its list when it signs back in');
+  assert.deepEqual(accountA.stored('account-b'), []);
+});
+
+// The list this browser kept before the release named every paper a load
+// showed, including every paper the reader viewed.
+test("an account's first load after the release skips what this browser had kept for it", () => {
+  const storage = memoryStorage();
+  storage.setItem('papertok_seenIds:account-b', JSON.stringify(['b-viewed-before-release']));
+  const guest = viewing({ user: null, storage });
+  switchAccount(guest, storage, ref(createEmptyInteractionProfile()), 'account-b');
+
+  assert.deepEqual([...guest.scope.sessionSeenPapers.current], ['b-viewed-before-release']);
+  assert.deepEqual(guest.stored('account-b'), ['b-viewed-before-release']);
+});
+
 test('a short screen schedules its next page and preserves papers when it fills', async () => {
   const { state, env, run } = feed({ fast: records('fast', 2) });
   await run(true);
@@ -503,7 +722,7 @@ const compile = (code: string, scope: object) => new Function(...Object.keys(sco
 type Loader = ReturnType<typeof feed>;
 function renders(state: Loader['state'], env: Loader['env'], sources: object) {
   return () => {
-    const scope = { ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore };
+    const scope = withStoreStandIn({ ...env, ...sources, followShownPapers: compile(followCallback, env), loading: state.loading, papers: state.papers, page: state.page, hasMore: state.hasMore });
     const loadPapers = compile(callback, scope);
     return {
       loadPapers,

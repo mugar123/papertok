@@ -85,6 +85,7 @@ test('every section of the Spanish policy survives the translation', () => {
     'You can use PaperTok without an account',
     'What is collected if you create an account',
     'What is public and what is not',
+    'University email verification',
     'Email updates',
     'Analytics',
     'Scientific sources and AI features',

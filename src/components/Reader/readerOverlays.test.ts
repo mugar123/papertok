@@ -73,7 +73,7 @@ test('the reader stylesheets draw the arrival on Base UI\'s own attributes', asy
   assert.match(reader, /\.rd\[data-closed\]\s*\{[^}]*animation:\s*rdShellOut/);
   // Reduced motion still arrives and leaves, by opacity alone.
   const still = reader.slice(reader.indexOf('@media (prefers-reduced-motion: reduce)'));
-  assert.match(still, /\.rd\[data-open\]\s*\{[^}]*animation:\s*rdRevealStill/);
+  assert.match(still, /\.rd\[data-open\]\s*\{[^}]*animation:\s*fadeIn/);
 
   // The popup takes focus when a keyboard opens it; the global ring is the
   // indicator, so the menu must not switch it off.

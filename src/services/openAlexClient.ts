@@ -35,7 +35,6 @@ const DEFAULT_MAILTO = 'app@papertok.io';
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
-const MAX_AUTO_RETRY_DELAY_MS = 5000;
 const STORAGE_KEY = 'papertok_openalex_cache_v1';
 const MAX_PERSISTENT_ENTRIES = 200;
 /**
@@ -529,12 +528,10 @@ export class OpenAlexClient {
         const retryAfterMs = getOpenAlexRateLimitDelay(response, this.now());
         if (retryAfterMs > 0) {
           this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.now() + retryAfterMs);
-
-          if (attempt < retries && retryAfterMs <= MAX_AUTO_RETRY_DELAY_MS) {
-            await this.sleep(this.withJitter(retryAfterMs));
-            continue;
-          }
-
+          // Not asked again, however short the wait: every ask is a miss the
+          // Worker reserves against the day's OpenAlex ceiling, and a refusal
+          // says that budget is what is short. The caller fills the page from
+          // the other sources and asks again once the wait has passed.
           throw new OpenAlexRequestError('OpenAlex rate limit reached', {
             code: 'rate_limited',
             status: 429,
