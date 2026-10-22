@@ -1,73 +1,72 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { Paper } from '../models/Paper.ts';
-import { fetchStoreFeed } from './paperStoreService.ts';
+import type { FollowEntity } from '../utils/following.ts';
+import { fetchCorpusPage, fetchCorpusPapers } from './paperStoreService.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 
-// Synthetic, in the shape /store/feed answers (worker/paper-store.ts).
+// Synthetic, in the shape /store/papers answers (worker/paper-feed.ts): the
+// app's papers, with the categories and follows each was found under.
 const STORED = {
-  arxivId: '2610.29600',
-  title: 'Demand Estimation for Rationally Inattentive Consumers',
-  abstract: 'We estimate demand when consumers pay attention at a cost.',
-  authors: ['Ana Pérez'],
-  categories: ['econ.EM', 'stat.ME'],
-  doi: null,
-  journalRef: null,
-  comments: '30 pages',
-  published: '2026-10-21T17:59:56.000Z',
+  id: 'pmid:41000001',
+  pmid: '41000001',
+  sources: { primary: 'pubmed', enrichedBy: ['openalex', 'icite'] },
+  title: 'Cardiac fibrosis after myocardial infarction',
+  abstract: 'We follow fibrosis in 400 patients.',
+  authors: [{ name: 'Ana Pérez' }],
+  primaryCategory: 'med.cardio',
+  citationCount: 3,
+  citationCountKnown: true,
+  _fetchedFor: ['med.cardio'],
 };
 
-function harness({ store }: { store: () => Promise<Response> }) {
-  const live: Array<{ categories: string[]; start: number }> = [];
+function harness(answer: () => Promise<Response>) {
   const asked: Array<{ url: string; body: unknown }> = [];
   const options = {
     apiBase: WORKER,
-    hasSession: () => true,
     fetchWorker: async (url: string, init: RequestInit) => {
       asked.push({ url, body: JSON.parse(String(init.body)) });
-      return store();
+      return answer();
     },
-    fetchLive: (async (categories: string[], start = 0) => {
-      live.push({ categories, start });
-      return [{ id: `live:${categories.join('+')}` } as Paper];
-    }) as never,
   };
-  return { live, asked, options };
+  return { asked, options };
 }
 
 const answered = (papers: unknown[]) => async () => new Response(JSON.stringify({ papers }), { status: 200 });
 
-test('a stored page becomes arXiv papers, and only arXiv categories reach the store', async () => {
-  const { live, asked, options } = harness({ store: answered([STORED]) });
-  const papers = await fetchStoreFeed(['econ.EM', 'mech.fluid'], 2, 15, 'recent', ['2610.00001'], options);
+test('a page asks the corpus for the categories, follows and likes, and returns its papers as they are', async () => {
+  const { asked, options } = harness(answered([STORED]));
+  const follow = {
+    type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', followKey: 'author:A5023888391',
+    metadata: { source: 'openalex', labelEn: 'Ana Pérez' },
+  } as FollowEntity;
+  const papers = await fetchCorpusPage({
+    categories: ['med.cardio', 'cs.LG'], follows: [follow], positiveIds: ['2610.00001'], page: 2, pageSize: 30, order: 'recent',
+  }, options);
   assert.deepEqual(asked, [{
-    url: `${WORKER}/store/feed`,
-    body: { categories: ['econ.EM'], page: 2, pageSize: 15, positiveIds: ['2610.00001'] },
+    url: `${WORKER}/store/papers`,
+    body: {
+      categories: ['med.cardio', 'cs.LG'],
+      // Only what decides the lane travels; the rest of the stored follow stays.
+      follows: [{ type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', metadata: {} }],
+      positiveIds: ['2610.00001'],
+      page: 2,
+      pageSize: 30,
+      order: 'recent',
+    },
   }]);
-  // The engineering leaf has no arXiv category, so arXiv's text search keeps it.
-  assert.deepEqual(live, [{ categories: ['mech.fluid'], start: 30 }]);
-  assert.equal(papers[0].id, '2610.29600');
-  assert.equal(papers[0].primaryCategory, 'econ.EM');
-  assert.equal(papers[0].landingPageUrl, 'https://arxiv.org/abs/2610.29600');
-  assert.equal(papers[0].publicationStatus, 'preprint');
-  assert.equal(papers[1].id, 'live:mech.fluid');
+  assert.deepEqual(papers, [STORED]);
 });
 
-test('a store that fails or has nothing for the page leaves the page to arXiv', async () => {
-  for (const store of [async () => new Response('{}', { status: 503 }), answered([]), async () => { throw new TypeError('offline'); }]) {
-    const { live, options } = harness({ store });
-    const papers = await fetchStoreFeed(['econ.EM'], 0, 15, 'recent', [], options);
-    assert.deepEqual(live, [{ categories: ['econ.EM'], start: 0 }]);
-    assert.deepEqual(papers.map(paper => paper.id), ['live:econ.EM']);
+test('a store that fails rejects, so the feed can say so and offer a retry', async () => {
+  for (const answer of [async () => new Response('{}', { status: 503 }), async () => { throw new TypeError('offline'); }]) {
+    const { options } = harness(answer);
+    await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options));
   }
 });
 
-test('relevance order and a reader without a session ask arXiv without the store', async () => {
-  for (const [queryMode, session] of [['relevance', true], ['recent', false]] as const) {
-    const { live, asked, options } = harness({ store: answered([STORED]) });
-    await fetchStoreFeed(['econ.EM'], 1, 15, queryMode, [], { ...options, hasSession: () => session });
-    assert.deepEqual(asked, []);
-    assert.deepEqual(live, [{ categories: ['econ.EM'], start: 15 }]);
-  }
+test("the corpus's copies of papers are asked for by the app's ids", async () => {
+  const { asked, options } = harness(answered([STORED]));
+  assert.deepEqual(await fetchCorpusPapers(['pmid:41000001', 'W4391234567'], options), [STORED]);
+  assert.deepEqual(asked.map(entry => entry.body), [{ ids: ['pmid:41000001', 'W4391234567'] }]);
 });

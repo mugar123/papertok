@@ -1,11 +1,9 @@
 import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
 import type { WorkerEnv } from './env.ts';
-import type { VerifiedIdentity } from './firebase-auth.ts';
 
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
-import { readBoundedJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
@@ -579,7 +577,7 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
   return type === 'author' ? `author-name:${query}` : type === 'topic' ? `query:${query}` : '';
 }
 
-interface FeedRequestBody {
+export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
 }
 
@@ -608,16 +606,15 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
   };
 }
 
-/** Reads a feed request's body, checks the reader's minute allowance and parses it. */
-export async function acceptFeedRequest(request: Request, env: StoreEnv & WorkerEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
-  const body = await readBoundedJson<FeedRequestBody>(request, 16_384, {
-    tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
-    invalid: () => new PaperStoreError('INVALID_JSON', 400),
+/** The stored papers these app ids name, in the order asked; ids the corpus lacks are left out. */
+export async function readPapersByIds(env: StoreEnv, paperIds: string[]) {
+  const db = database(env);
+  const workByPaperId = await findWorks(db, paperIds);
+  const works = await readWorks(db, [...new Set(workByPaperId.values())]);
+  return paperIds.flatMap(id => {
+    const row = works.get(workByPaperId.get(id)!);
+    return row ? [JSON.parse(row.paper) as Paper] : [];
   });
-  const query = parseFeedRequest(body);
-  if (query.categories.length === 0 && query.follows.length === 0) throw new PaperStoreError('LANES_REQUIRED', 400);
-  await reserveFeedRequest(env, identity.uid);
-  return query;
 }
 
 export const FEED_LAST_PAGE = FEED_MAX_PAGE;

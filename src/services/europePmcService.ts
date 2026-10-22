@@ -1,4 +1,3 @@
-import type { Paper } from '../models/Paper.ts';
 import type { EuropePmcRecord } from '../utils/europePmcRecord.ts';
 type Enrichment = EuropePmcEnrichment;
 interface CacheEntry { value: Enrichment | null; timestamp: number; ttl: number; }

@@ -3,7 +3,8 @@ import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { StoreEnv } from './paper-store.ts';
 
-import { FEED_LAST_PAGE, PaperStoreError, acceptFeedRequest, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage, reserveFeedRequest } from './paper-store.ts';
+import type { FeedRequestBody } from './paper-store.ts';
+import { FEED_LAST_PAGE, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage, readPapersByIds, reserveFeedRequest } from './paper-store.ts';
 import { ingestPaperIds } from './paper-sources.ts';
 import { readBoundedJson } from './bounded-body.ts';
 
@@ -66,9 +67,35 @@ async function registerFollowedLanes(env: FeedEnv, lanes: string[], now = Date.n
   }
 }
 
-/** `POST /store/papers`: a page of corpus papers for the reader's categories, follows and likes. */
+const LOOKUP_MAX_IDS = 30;
+
+function readBody<T>(request: Request) {
+  return readBoundedJson<T>(request, 16_384, {
+    tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
+    invalid: () => new PaperStoreError('INVALID_JSON', 400),
+  });
+}
+
+/**
+ * `POST /store/papers`: a page of corpus papers for the reader's categories,
+ * follows and likes, or with `ids`, the corpus's copies of those papers.
+ */
 export async function handleCorpusFeed(request: Request, env: FeedEnv, identity: Pick<VerifiedIdentity, 'uid'>): Promise<{ papers: Paper[] }> {
-  const query = await acceptFeedRequest(request, env, identity);
+  const body = await readBody<FeedRequestBody & { ids?: unknown }>(request);
+  if (Array.isArray(body?.ids)) {
+    const ids = [...new Set(body.ids.map(id => String(id ?? '').trim().slice(0, 300)).filter(Boolean))].slice(0, LOOKUP_MAX_IDS);
+    if (ids.length === 0) throw new PaperStoreError('IDS_REQUIRED', 400);
+    await reserveFeedRequest(env, identity.uid);
+    const found = await findWorks(database(env), ids);
+    const absent = ids.filter(id => !found.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
+    if (absent.length) {
+      await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) }).catch(error => console.warn('Paper store could not add asked papers', error));
+    }
+    return { papers: await readPapersByIds(env, ids) };
+  }
+  const query = parseFeedRequest(body);
+  if (query.categories.length === 0 && query.follows.length === 0) throw new PaperStoreError('LANES_REQUIRED', 400);
+  await reserveFeedRequest(env, identity.uid);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
   await registerFollowedLanes(env, query.follows.map(follow => follow.lane));
   return { papers: await readFeedPage(env, query, { embedMissing: embedMissingPositives(env, query.positiveIds) }) };
@@ -80,10 +107,7 @@ export async function handleCorpusFeed(request: Request, env: FeedEnv, identity:
  * Remove once those bundles have updated themselves.
  */
 export async function handleStoreFeed(request: Request, env: FeedEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
-  const body = await readBoundedJson<{ categories?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown }>(request, 16_384, {
-    tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
-    invalid: () => new PaperStoreError('INVALID_JSON', 400),
-  });
+  const body = await readBody<FeedRequestBody>(request);
   const query = parseFeedRequest({ categories: body?.categories, positiveIds: body?.positiveIds, page: body?.page, pageSize: body?.pageSize });
   if (query.categories.length === 0) throw new PaperStoreError('CATEGORIES_REQUIRED', 400);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };

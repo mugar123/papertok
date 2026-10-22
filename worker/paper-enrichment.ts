@@ -22,11 +22,8 @@ import { database, rewriteWorks } from './paper-store.ts';
 
 const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
 const DAY_MS = 86_400_000;
-// OpenAlex lists a new arXiv paper days after arXiv does; asked sooner it
-// answers nothing and the paper waits for a retry.
-const ENRICH_AFTER_DAYS = 2;
-// A paper OpenAlex did not know is asked again after this many days per miss,
-// three times at most.
+// OpenAlex lists a new arXiv paper days after arXiv does. A paper it did not
+// know yet is asked again after this many days per miss, three times at most.
 const RETRY_DAYS_PER_MISS = 3;
 const MAX_MISSES = 3;
 // 25 arXiv ids are 50 landing-page values, the most one OpenAlex filter takes.
@@ -128,9 +125,8 @@ async function crossrefTypes(dois: string[]) {
 }
 
 async function pendingRows(db: D1Database, limit: number, now: number) {
-  const ready = new Date(now - ENRICH_AFTER_DAYS * DAY_MS).toISOString();
   const { results: fresh } = await db.prepare(`SELECT id, paper, enrich_misses FROM works
-    WHERE enriched_at IS NULL AND published <= ? ORDER BY published DESC LIMIT ?`).bind(ready, limit).all<Row>();
+    WHERE enriched_at IS NULL ORDER BY published DESC LIMIT ?`).bind(limit).all<Row>();
   if (fresh.length >= limit) return fresh;
   // Each miss waits RETRY_DAYS_PER_MISS days longer than the one before.
   const { results: retries } = await db.prepare(`SELECT id, paper, enrich_misses, enriched_at FROM works

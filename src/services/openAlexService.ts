@@ -38,7 +38,7 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entityMetadata.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
-import { OPENALEX_ENRICHMENT_SELECT, extractArxivId, getArxivIdFromWork, mapOpenAlexEnrichmentWork, normalizeDoi } from '../utils/openAlexWork.ts';
+import { OPENALEX_ENRICHMENT_SELECT, getArxivIdFromWork, mapOpenAlexEnrichmentWork } from '../utils/openAlexWork.ts';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -66,7 +66,6 @@ import {
 } from '../utils/searchRelevance.ts';
 
 const CACHE = new Map<string, Enrichment>();
-const GRAPH_CACHE = new Map<string, string | null>(); // caches W... to arxivId mappings
 const RECENT_IMPACT_CACHE = new Map<string, { data: RecentImpact; savedAt: number }>();
 const ENTITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ENTITY_STALE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -262,56 +261,6 @@ export async function enrichPapersBatch(arxivIds: string[], options: RequestOpti
 
   await Promise.all(chunkRequests);
 
-  return result;
-}
-
-/**
- * Given a list of OpenAlex Work URLs (https://openalex.org/W...), fetch their metadata to get their arXiv IDs.
- * This is used for Capa 2 (Graph exploration).
- */
-export async function getArxivIdsForOpenAlexWorks(openAlexUrls: string[]) {
-  if (!openAlexUrls || openAlexUrls.length === 0) return [];
-  const validUrls = openAlexUrls.filter(url => url && typeof url === 'string' && url.includes('/'));
-  
-  const result: string[] = [];
-  const toFetch: string[] = [];
-  
-  validUrls.forEach(url => {
-    const wId = url.split('/').pop()!;
-    if (GRAPH_CACHE.has(wId)) {
-      const cached = GRAPH_CACHE.get(wId);
-      if (cached) result.push(cached);
-    } else {
-      toFetch.push(wId);
-    }
-  });
-  
-  if (toFetch.length === 0) return result;
-  
-  // The first forty, in the order OpenAlex listed them. A random forty gave
-  // every reader of one paper a different URL, so the related works of a paper
-  // many had liked were fetched once per reader instead of once (PAP-86).
-  const candidates = toFetch.slice(0, 40);
-  
-  const url = `https://api.openalex.org/works?filter=${buildOpenAlexIdFilter(candidates)}&per-page=50&select=id,ids`;
-  
-  try {
-     const response = await fetchWithTimeout(url, 10000);
-     if (response.ok) {
-        const data = await response.json() as OpenAlexPage<OpenAlexWork>;
-        data.results!.forEach(work => {
-           const wId = work.id!.split('/').pop()!;
-           let arxivId = null;
-           if (work.ids && work.ids.arxiv) {
-              arxivId = work.ids.arxiv.split('/').pop()!.replace(/v\d+$/, '');
-              result.push(arxivId);
-           }
-           GRAPH_CACHE.set(wId, arxivId); // Cache even if null to avoid re-fetching non-arxiv works
-        });
-     }
-  } catch {
-    // Related works fetch failed
-  }
   return result;
 }
 

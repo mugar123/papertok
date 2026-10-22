@@ -28,7 +28,6 @@ import {
   fetchRecentImpactWorks,
   fetchPaperByWorkId,
   fetchPapersByDois,
-  getArxivIdsForOpenAlexWorks,
   getAuthorProfileExact,
   getLocalTopicEntity,
   getWorksByEntity,
@@ -778,29 +777,6 @@ test('an Explorer works page persisted before the review rule is fetched again',
     openAlexClient.fetchImpl = realFetch;
     openAlexClient.storage = previousStorage;
     openAlexClient.persistentStore = previousStore;
-  }
-});
-
-// The related works of a liked paper were fetched once per reader: the forty
-// asked about were picked at random, so no two readers built the same URL and
-// the Worker's shared cache never matched (PAP-86). The first forty OpenAlex
-// listed, in its order, are one URL for everyone.
-test('the same related works ask the same URL every time', async () => {
-  const realFetch = openAlexClient.fetchImpl;
-  const urls: string[] = [];
-  openAlexClient.fetchImpl = async (url) => {
-    urls.push(String(url));
-    return Response.json({ results: [] });
-  };
-  const works = Array.from({ length: 12 }, (_, index) => `https://openalex.org/W${900 - index}`);
-  try {
-    await getArxivIdsForOpenAlexWorks(works);
-    await getArxivIdsForOpenAlexWorks(works);
-    assert.equal(new Set(urls).size, 1, urls.join('\n'));
-    const filter = new URL(urls[0]).searchParams.get('filter');
-    assert.equal(filter, `openalex:${works.map(url => url.split('/').pop()).join('|')}`);
-  } finally {
-    openAlexClient.fetchImpl = realFetch;
   }
 });
 

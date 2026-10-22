@@ -79,11 +79,11 @@ export type OpenAlexEnrichment = Partial<Paper> & { related_works?: string[] };
  */
 export const MAX_ENRICHMENT_AUTHORS = 50;
 
-export function normalizeDoi(value: unknown) {
+function normalizeDoi(value: unknown) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
 }
 
-export function extractArxivId(value: unknown) {
+function extractArxivId(value: unknown) {
   const text = String(value || '');
   const match = text.match(/(?:arxiv\.org\/(?:abs|pdf)\/|10\.48550\/arxiv\.|arxiv:)(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?/i);
   return match?.[1] || '';

@@ -8,11 +8,9 @@ type ArxivFetchError = Error & { status?: number; retryAfterMs?: number };
  */
 
 const isDev = import.meta.env?.DEV === true;
-import { PaperBuilder } from './PaperBuilder.ts';
 import CATEGORIES from '../data/categories.ts';
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
 import { arxivPaper, isArxivCategory } from './arxivRecords.ts';
-export { ARXIV_FEED_AREAS } from './arxivRecords.ts';
 import { createArxivRequestQueue } from './arxivRequestQueue.ts';
 
 const ARXIV_DEV = '/api/arxiv';
