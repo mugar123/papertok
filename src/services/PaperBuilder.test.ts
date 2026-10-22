@@ -1307,14 +1307,14 @@ test('a record\'s own `false` under the row\'s DOI stands against a merged row\'
   const ssrn = work('W513', '10.2139/ssrn.4400000', 'preprint', {
     id: 'https://openalex.org/S4210172589', display_name: 'SSRN Electronic Journal', type: 'repository', host_organization_name: 'RELX Group',
   }, false);
-  // As `arxivService` maps an entry with the journal's DOI and no journal reference.
-  const arxivRecord = () => PaperBuilder.create({
+  // As `arxivService` maps an entry with a DOI and no journal reference.
+  const arxivRecord = (doi = journalDoi) => PaperBuilder.create({
     id: arxivId,
     arxivId,
     sources: { primary: 'arxiv', enrichedBy: [] },
     title,
     authors: [{ name: 'Ana Economist' }],
-    doi: journalDoi,
+    doi,
     publicationType: 'article',
     publicationStatus: 'published',
   });
@@ -1367,6 +1367,38 @@ test('a record\'s own `false` under the row\'s DOI stands against a merged row\'
         }
       }
     }
+  }
+
+  // Semantic Scholar's record of the article names its venue and DOI but no
+  // type, so `create` reads it as a preprint. That `false` is a gap, not a
+  // denial: Crossref's record of the article stays reviewed before a
+  // followed row that put an arXiv record listing the SSRN DOI before a
+  // topic row that began as Semantic Scholar's record.
+  const crossrefArticle = () => mapCrossrefInstitutionWork({
+    DOI: journalDoi,
+    title: [title],
+    type: 'journal-article',
+    author: [{ given: 'Ana', family: 'Economist' }],
+    'container-title': ['Journal of International Economics'],
+    publisher: 'Elsevier',
+  })!;
+  const semanticScholarArticle = () => new SemanticScholarAdapter().mapToStandard({
+    paperId: 'e'.repeat(40),
+    title,
+    authors: [{ name: 'Ana Economist', authorId: '1' }],
+    venue: 'Journal of International Economics',
+    year: 2026,
+    externalIds: { DOI: journalDoi, ArXiv: arxivId },
+  });
+  for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+    const where = `Crossref's article before a followed row holding Semantic Scholar's untyped record (${mapper})`;
+    const rows = PaperBuilder.deduplicate([crossrefArticle(), ...PaperBuilder.deduplicate([
+      arxivRecord('10.2139/ssrn.4400000'), ...PaperBuilder.deduplicate([semanticScholarArticle(), map(ssrn)]),
+    ])]);
+    assert.equal(rows.length, 1, where);
+    assert.equal(rows[0].doi, journalDoi, where);
+    assert.equal(rows[0].peerReviewed, true, where);
+    assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
   }
 });
 

@@ -76,9 +76,10 @@ function ownAnswer(record: Pick<Partial<Paper>, 'peerReviewed' | 'publicationSta
 }
 
 // What a record that has merged no other says of itself under its DOI: a
-// published record's outright `false`, the base's as `create` wrote it or
-// the incoming record's own (a preprint's is open to a later `true`, as in
-// `merge`), or a `true` on more than an arXiv DOI. A merged row's answer can come
+// published record's outright `false` (a preprint's is open to a later
+// `true`, as in `merge`, and the `false` that `create` derives for a record
+// without a type, Semantic Scholar's, is a gap rather than an answer), or a
+// `true` on more than an arXiv DOI. A merged row's answer can come
 // from one record and its DOI from another: OpenAlex's journal record without
 // a DOI beside the paper's SSRN entry. An untyped Semantic Scholar record
 // reads as a preprint by itself, though a row's type can make it read
@@ -86,7 +87,9 @@ function ownAnswer(record: Pick<Partial<Paper>, 'peerReviewed' | 'publicationSta
 function ownPeerReviewedByDoi(record: Partial<Paper>, sourceName?: string): NonNullable<PaperSources['peerReviewedByDoi']> {
   const doi = normalizeDoi(record.doi);
   if (doi === '' || hasMerged(record)) return {};
-  if (record.peerReviewed === false) return readsAsPublished(record) ? { [doi]: false } : {};
+  if (record.peerReviewed === false) {
+    return readsAsPublished(record) && !readsAsPreprint(record) ? { [doi]: false } : {};
+  }
   return ownAnswer(record, sourceName) === true && !restsOnArxivDoi(record) ? { [doi]: true } : {};
 }
 
@@ -550,8 +553,9 @@ export class PaperBuilder {
     // DOI rests on it too, whatever record it began as: a topic with an
     // OpenAlex id lists OpenAlex's record of the eprint under arXiv's DOI
     // before the arXiv record. A record under the row's DOI that a merged row
-    // holds answers for it too, whatever that row's own answer.
-    const stillArxivDoiOnly = baseDoiAnswer === undefined
+    // holds backs it too, whatever that row's own answer; a denial the row
+    // does not take leaves the `true` resting where it was.
+    const stillArxivDoiOnly = !confirmsBaseDoi
       && ((arxivDoiOnly && (enrichmentReview !== true || otherDoiTrue || bothRestOnArxivDoi))
         || (rereads && restsOnArxivDoi(enrichmentData)));
     // After this merge's own answer, which may be such a `true`.
