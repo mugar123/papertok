@@ -4104,17 +4104,40 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
   });
 });
 
-test('/health/openalex/budget is unavailable, and not cached, without a ledger to read', async () => {
-  await withIdentityAndCacheStore(async stored => {
-    const response = await reportApi.fetch(
-      new Request('https://papertok-report-api.example/health/openalex/budget', { headers: BROWSER }),
-      { OPENALEX_API_KEY: 'worker-key' },
-    );
+// A failing ledger is kept at the edge briefly, so a dashboard or a script
+// polling the route during an outage is not one more request each time to the
+// object that is already failing.
+test('/health/openalex/budget is unavailable without a ledger to read, and asks a failing ledger once however often it is polled', async () => {
+  const budgetUrl = 'https://papertok-report-api.example/health/openalex/budget';
+  await withIdentityAndCacheStore(async () => {
+    const response = await reportApi.fetch(new Request(budgetUrl, { headers: BROWSER }), { OPENALEX_API_KEY: 'worker-key' });
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), { code: 'PROVIDER_QUOTA_NOT_CONFIGURED' });
-    assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.equal(stored.size, 0);
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=0, s-maxage=10');
   });
+
+  let peeks = 0;
+  const failing = {
+    idFromName: (name: string): unknown => name,
+    get: (): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async () => {
+        peeks += 1;
+        return new Response('overloaded', { status: 500 });
+      },
+    }),
+  } as unknown as Env['REQUEST_QUOTA_LEDGER'];
+  await withIdentityAndCacheStore(async () => {
+    for (let poll = 0; poll < 5; poll += 1) {
+      const response = await reportApi.fetch(
+        new Request(`${budgetUrl}?poll=${poll}`, { headers: BROWSER }),
+        { OPENALEX_API_KEY: 'worker-key', REQUEST_QUOTA_LEDGER: failing },
+      );
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { code: 'QUOTA_LEDGER_UNAVAILABLE' });
+      assert.equal(response.headers.get('access-control-allow-origin'), BROWSER.origin);
+    }
+  });
+  assert.equal(peeks, 1);
 });
 
 // The units are spent once OpenAlex has answered; the shared store is what

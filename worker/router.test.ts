@@ -153,6 +153,8 @@ test('the logged route keeps only the fixed part of the path', () => {
     '/sources/s2': '/sources/s2',
     '/citation-graph': '/citation-graph',
     '/health': '/health',
+    '/health/openalex': '/health/openalex',
+    '/health/openalex/budget': '/health/openalex/budget',
     '/10.1038/nature12373': '/',
     '/203.0.113.7': '/',
   };

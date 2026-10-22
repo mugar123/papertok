@@ -128,6 +128,9 @@ async function authenticateProtectedProviderRequest(request: Request, env: Worke
 // segment that is not a lowercase route word ends the route, so a DOI, a
 // token or an address never reaches Workers Logs.
 export function routeForLog(pathname: string) {
+  // The one fixed route three segments deep. Cut to two, its failures would
+  // read as those of `/health/openalex`, the probe that costs an OpenAlex call.
+  if (pathname === '/health/openalex/budget') return pathname;
   const segments = pathname.split('/').slice(1, 3);
   if (segments[0] === 'share') return '/share';
   const fixed: string[] = [];
