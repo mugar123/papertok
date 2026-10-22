@@ -2389,14 +2389,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       category: paper.primaryCategory,
       viewTime: timeInSeconds,
     }, paper);
-    // Update temporal preference and expand graph on high dwell time
+    // A long read moves the temporal preference. It no longer walks the
+    // citation network: that was an OpenAlex call for a reader who did nothing,
+    // and on launch day those walks were a tenth of the day's ceiling (PAP-86).
+    // A like, a save or an opened PDF still expands the graph.
     if (timeInSeconds >= 10) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.05);
-      
-      // Expand network via OpenAlex
-      traverseAndExpandNetwork(paper);
     }
     if (timeInSeconds >= 3.0) {
       // Off the snap path: the reader is settled on this card, not watching
@@ -2416,7 +2416,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         console.error('Error tracking view time:', err);
       }
     }
-  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid]);
+  }, [markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid]);
 
   const trackPdfOpened = useCallback(async (paper: Paper) => {
     const userId = user?.uid;

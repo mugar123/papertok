@@ -413,8 +413,10 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls: string[]) {
   
   if (toFetch.length === 0) return result;
   
-  // Randomize and limit to 40 candidates to avoid massive queries
-  const candidates = toFetch.sort(() => 0.5 - Math.random()).slice(0, 40);
+  // The first forty, in the order OpenAlex listed them. A random forty gave
+  // every reader of one paper a different URL, so the related works of a paper
+  // many had liked were fetched once per reader instead of once (PAP-86).
+  const candidates = toFetch.slice(0, 40);
   
   const url = `https://api.openalex.org/works?filter=${buildOpenAlexIdFilter(candidates)}&per-page=50&select=id,ids`;
   
