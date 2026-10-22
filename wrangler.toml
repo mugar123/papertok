@@ -73,6 +73,9 @@ OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
 
+# Also holds the OpenAlex relay's shared answers under the `openalex:v1:` prefix
+# (worker/openalex-api.ts), global where the edge cache is per location, and the
+# rewrite cache under `rewrite:` (below).
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"
 id = "45c1519982dd48f8a0ea08403c159ae1"
