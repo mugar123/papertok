@@ -6,7 +6,7 @@ export const DEFAULT_READING_PREFERENCES = Object.freeze({
   languagePreferenceSet: false,
 });
 
-const AI_EXPLANATION_LEVEL_IDS = new Set<unknown>(['beginner', 'university', 'researcher']);
+export const AI_EXPLANATION_LEVEL_IDS = new Set<unknown>(['beginner', 'university', 'researcher']);
 
 export function normalizeReadingPreferences(value: { aiExplanationLevel?: unknown; languagePreferenceSet?: unknown } | null = {}) {
   const aiExplanationLevel = AI_EXPLANATION_LEVEL_IDS.has(value?.aiExplanationLevel)

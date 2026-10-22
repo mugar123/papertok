@@ -73,6 +73,7 @@ import { documentIsAuthoritative } from '../utils/cacheAuthority.ts';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage.ts';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.ts';
 import { forgetOwnLists } from '../utils/profileSessionCaches.ts';
+import { clearRewriteCache } from '../services/paperRewriteService.ts';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.ts';
 import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.ts';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.ts';
@@ -137,6 +138,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     let disposed = false;
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       const changeId = ++authChangeId;
+      // Here rather than in signOut: another tab can end this session too.
+      clearRewriteCache();
       setLoading(true);
       setProfileLoadError(null);
       setUser(currentUser);

@@ -42,8 +42,8 @@ class InstrumentedRewriteSession extends DurableObject<WorkerEnv> {
   fetch(request: Request) { return this.session.fetch(request); }
 }
 
-class HarvestWorkflow extends WorkflowEntrypoint<WorkerEnv> {
-  run(event: Readonly<WorkflowEvent<unknown>>, step: WorkflowStep) { return runPaperHarvest(this.env, event, step); }
+class HarvestWorkflow extends WorkflowEntrypoint<WorkerEnv, { lanes?: string[] } | undefined> {
+  run(event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) { return runPaperHarvest(this.env, event, step); }
 }
 
 export const EmailDeliveryLedger = instrumentDurableObjectWithSentry(workerSentryOptions, InstrumentedEmailLedger);

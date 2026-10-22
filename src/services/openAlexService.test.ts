@@ -4,17 +4,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
-import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcService.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcRecords.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
 import { filterAndSortEntityPapers } from '../utils/entityExplorer.ts';
 import { openAlexPeerReviewed } from '../utils/publicationStatus.ts';
 import { reviewTagForPaper } from '../utils/paperStatus.ts';
+import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 import {
   dribblingFetch,
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadlineHarness.ts';
+import { inTimeZone } from '../test-support/timeZone.ts';
 import {
   buildOpenAlexIdFilter,
   buildRorIdFilter,
@@ -25,13 +27,11 @@ import {
   enrichPapersBatch,
   fetchRecentImpactWorks,
   fetchPaperByWorkId,
-  getArxivIdsForOpenAlexWorks,
+  fetchPapersByDois,
   getAuthorProfileExact,
   getLocalTopicEntity,
   getWorksByEntity,
   isOpenAlexEnrichmentId,
-  MAX_ENRICHMENT_AUTHORS,
-  mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
   peekEntity,
   searchAuthors,
@@ -40,6 +40,7 @@ import {
   searchLocalTopics,
   slimWorksPage,
 } from './openAlexService.ts';
+import { MAX_ENRICHMENT_AUTHORS, mapOpenAlexEnrichmentWork } from '../utils/openAlexWork.ts';
 
 test('names local topic entities without changing their canonical category identity', () => {
   const topic = getLocalTopicEntity('gr-qc');
@@ -654,6 +655,66 @@ test('a work OpenAlex does not have is not found; a provider failure is an error
   );
 });
 
+// The personal lane's cards arrive by DOI. A synthetic work shaped like the
+// `/works?filter=doi:` results: OpenAlex dates a work as a calendar day, and
+// files a work known only by its year under 1 January.
+const doiWork = (doi: string, fields: Partial<OpenAlexWork> = {}): OpenAlexWork => ({
+  ...WORK_FIXTURE,
+  id: `https://openalex.org/W${doi.replace(/\D/g, '')}`,
+  doi: `https://doi.org/${doi}`,
+  ...fields,
+});
+
+async function fetchDoiCard(t: import('node:test').TestContext, work: OpenAlexWork) {
+  t.mock.method(openAlexClient, 'fetch', async () => Response.json({ meta: { count: 1 }, results: [work] }));
+  const papers = await fetchPapersByDois([work.doi!]);
+  assert.equal(papers.length, 1);
+  return papers[0];
+}
+
+test('a DOI card keeps the date, abstract and metadata OpenAlex gave it', async t => {
+  const paper = await fetchDoiCard(t, doiWork('10.7717/peerj.4375'));
+
+  assert.equal(paper.title, 'The state of OA');
+  assert.equal(paper.doi, '10.7717/peerj.4375');
+  assert.deepEqual(paper.authors.map(author => (author as PaperAuthor).name), ['Heather Piwowar']);
+  assert.equal(paper.abstract, 'Open access to research articles keeps growing every year');
+  assert.equal(paper.summary, 'Open access to research articles keeps growing every year');
+  assert.equal(paper.year, 2018);
+  assert.equal(paper.published, '2018-02-13');
+  assert.equal(paper.journal, 'PeerJ');
+  assert.equal(paper.citationCount, 12);
+  assert.equal(paper.pdfUrl, 'https://peerj.com/articles/4375.pdf');
+});
+
+// Los Angeles is eight hours behind UTC on 1 January: midnight UTC on that day
+// is still 31 December there.
+test('a DOI card dated 1 January keeps its year in a time zone behind UTC', async t => {
+  const paper = await inTimeZone('America/Los_Angeles', () => {
+    assert.equal(new Date('2026-01-01').getDate(), 31, 'the clock reads Los Angeles time');
+    return fetchDoiCard(t, doiWork('10.1000/new-year', { publication_date: '2026-01-01' }));
+  });
+
+  assert.equal(paper.year, 2026);
+  assert.equal(paper.published, '2026-01-01');
+});
+
+test('a DOI card OpenAlex gives no date has no year and no publication date', async t => {
+  const paper = await fetchDoiCard(t, doiWork('10.1000/undated', { publication_date: undefined }));
+
+  assert.equal(paper.year, undefined);
+  assert.ok(!paper.published, `published is ${JSON.stringify(paper.published)}`);
+});
+
+test('a DOI card without an abstract offers none, in English or any other words', async t => {
+  const paper = await fetchDoiCard(t, doiWork('10.1000/no-abstract', { abstract_inverted_index: undefined }));
+
+  assert.equal(hasUsableAIAbstract(paper.abstract), false);
+  // The summary is what a like, a save and a reference export store as the abstract.
+  assert.equal(paper.summary, '');
+  assert.doesNotMatch(JSON.stringify(paper), /resumen|disponible/i);
+});
+
 test('a works page and an authors page persist as what the Explorer shows, not as raw OpenAlex objects', async () => {
   const { slimWorksPage, slimAuthorsPage } = await import('./openAlexService.ts');
   const work = {
@@ -716,29 +777,6 @@ test('an Explorer works page persisted before the review rule is fetched again',
     openAlexClient.fetchImpl = realFetch;
     openAlexClient.storage = previousStorage;
     openAlexClient.persistentStore = previousStore;
-  }
-});
-
-// The related works of a liked paper were fetched once per reader: the forty
-// asked about were picked at random, so no two readers built the same URL and
-// the Worker's shared cache never matched (PAP-86). The first forty OpenAlex
-// listed, in its order, are one URL for everyone.
-test('the same related works ask the same URL every time', async () => {
-  const realFetch = openAlexClient.fetchImpl;
-  const urls: string[] = [];
-  openAlexClient.fetchImpl = async (url) => {
-    urls.push(String(url));
-    return Response.json({ results: [] });
-  };
-  const works = Array.from({ length: 12 }, (_, index) => `https://openalex.org/W${900 - index}`);
-  try {
-    await getArxivIdsForOpenAlexWorks(works);
-    await getArxivIdsForOpenAlexWorks(works);
-    assert.equal(new Set(urls).size, 1, urls.join('\n'));
-    const filter = new URL(urls[0]).searchParams.get('filter');
-    assert.equal(filter, `openalex:${works.map(url => url.split('/').pop()).join('|')}`);
-  } finally {
-    openAlexClient.fetchImpl = realFetch;
   }
 });
 
@@ -960,7 +998,7 @@ test('SOURCE: the enrichment request asks OpenAlex for the authorships', async (
   // Without this field the ids never reach the browser at all, and the card
   // has to send the reader through the name door. OpenAlex refuses subfield
   // selection (`authorships.author.id` answers 400), so it is all or nothing.
-  const source = (await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8'))
+  const source = (await readFile(new URL('../utils/openAlexWork.ts', import.meta.url), 'utf8'))
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
   const select = source.match(/const OPENALEX_ENRICHMENT_SELECT = \[([\s\S]*?)\]\.join/);

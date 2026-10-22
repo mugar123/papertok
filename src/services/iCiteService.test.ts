@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapICitePublication, mergeICiteEnrichment } from './iCiteService.ts';
+import { mapICitePublication, mergeICiteEnrichment } from './iCiteRecords.ts';
 
 test('maps confirmed NIH iCite zero citations separately from unknown metadata', () => {
   const metrics = mapICitePublication({

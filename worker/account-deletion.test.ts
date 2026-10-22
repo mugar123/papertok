@@ -191,6 +191,8 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     [`users/${UID}/profileStash/pins`]: { pinnedLists: [] },
     [`users/${UID}/aggregates/interactions`]: { schemaVersion: 1 },
     [`users/${UID}/rateLimits/comments`]: { count: 1 },
+    [`users/${UID}/summaries/key.university`]: { sections: [{ kind: 'intro', paragraphs: ['Plain words.'] }] },
+    [`users/${UID}/summaryHistory/key.university`]: { title: 'A paper', level: 'university' },
     [`users/${UID}`]: { onboardingComplete: true },
   });
   const store = kvStore({
@@ -234,6 +236,8 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
     assert.equal(admin.documents[`users/${UID}`], undefined);
     assert.equal(admin.documents[`users/${UID}/lists/list-1`], undefined);
     assert.equal(admin.documents[`users/${UID}/rateLimits/comments`], undefined);
+    assert.equal(admin.documents[`users/${UID}/summaries/key.university`], undefined);
+    assert.equal(admin.documents[`users/${UID}/summaryHistory/key.university`], undefined);
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
     assert.equal(store.data.has('notification:unsubscribe:tok-1'), false);
   } finally {
@@ -259,6 +263,25 @@ test('a full comment page stops the slice so the next POST can continue', async 
     Object.keys(admin.documents).filter(key => key.startsWith(`papers/${PAPER_KEY}/comments/`)).length,
     0,
   );
+});
+
+test('saved summaries are swept a page at a time, by name, without reading their text', async () => {
+  const seed: Record<string, FirestoreData> = {};
+  for (let i = 0; i < 81; i += 1) {
+    seed[`users/${UID}/summaries/k${i}.university`] = { sections: [{ kind: 'intro', paragraphs: ['Plain words.'] }] };
+  }
+  const admin = memoryAdmin(seed);
+  const asked: QueryOptions[] = [];
+  const runQuery = admin.runQuery;
+  admin.runQuery = (async (options: QueryOptions) => {
+    asked.push(options);
+    return runQuery(options);
+  }) as typeof admin.runQuery;
+
+  const first = await runAccountDeletionSlice(admin, UID, {}, { idToken: 'x' });
+  assert.deepEqual(first, { complete: false, stage: 'userTree' });
+  assert.equal(Object.keys(admin.documents).filter(key => key.includes('/summaries/')).length, 1);
+  assert.deepEqual(asked.find(options => options.collectionId === 'summaries')?.select, ['__name__']);
 });
 
 test('a profile pointing at somebody else\'s handle does not free that handle', async () => {

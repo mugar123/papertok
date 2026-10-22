@@ -13,7 +13,7 @@ import {
   readGuestInterests,
   saveGuestInterests,
 } from './guestInterests.ts';
-import { getDomainSourcePlan } from '../services/domainSourceService.ts';
+import { getDomainSourcePlan } from '../services/domainSourceRecords.ts';
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));

@@ -9,14 +9,27 @@ type RewriteEvent = ({ type: 'meta' } & ClientRewriteMeta) | ({ type: 'section' 
   | { type: 'ping'; stage?: string } | { type: 'done'; sectionCount?: number; truncated?: boolean };
 interface RewriteOptions {
   language?: string;
+  /**
+   * Retry a rewrite that failed: skips the copies kept in memory and in the
+   * account, and lets the worker replace a cached one that stopped early.
+   */
   force?: boolean;
+  /** Write the paper again although a copy exists, replacing the saved one. */
+  regenerate?: boolean;
+  /** Whose saved summaries to read and add to; a guest has none. */
+  uid?: string | null;
   signal?: AbortSignal;
+  /** Called once, just before the request that reaches the worker. */
+  onRequest?: () => void;
   onMeta?: (meta: ClientRewriteMeta) => void;
   onSection?: (section: RewriteSection, index: number) => void;
   onProgress?: (progress: { stage: string }) => void;
 }
 
+import { toRewriteSection } from '../models/Rewrite.ts';
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
+import { isTransientReadError } from '../utils/boundedRead.ts';
+import { getSavedSummary, saveSummary } from './savedSummaryService.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
 /**
@@ -28,10 +41,24 @@ import { authenticatedWorkerFetch } from './workerApiClient.ts';
  * settles when the stream ends.
  *
  * Completed rewrites are also kept in memory per (paper, level, language), so
- * flipping between levels a second time is instant.
+ * flipping between levels a second time is instant, and, for a signed-in
+ * reader, in their account (savedSummaryService), so opening the paper again
+ * another day neither calls the worker nor spends a use.
  */
 
 const rewriteCache = new Map<string, RewriteResult>();
+// Moves on with every change of account, so a rewrite still streaming for the
+// previous one cannot land in the memory the next one reads.
+let rewriteCacheAccount = 0;
+
+/**
+ * Forgets the rewrites held in memory. They are the signed-in account's, and
+ * would otherwise stand in front of the next account's own saved summaries.
+ */
+export function clearRewriteCache() {
+  rewriteCache.clear();
+  rewriteCacheAccount += 1;
+}
 
 /**
  * No bytes for this long means the stream is dead, not slow. The worker sends a
@@ -216,10 +243,13 @@ export function toRewriteError(error: unknown, { cancelled = false } = {}) {
 
 export async function rewritePaper(paper: RewritePaperInput, level = 'university', {
   force = false,
+  regenerate = false,
+  uid = null,
   signal,
   onMeta,
   onSection,
   onProgress,
+  onRequest,
 }: RewriteOptions = {}) {
   if (!PAPER_REWRITE_LEVELS.some(item => item.id === level)) {
     throw new PaperRewriteError('AI_INVALID_LEVEL');
@@ -232,12 +262,42 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
   if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
   const rewriteLanguage = 'en';
   const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
+  const cacheAccount = rewriteCacheAccount;
+  const reuse = !force && !regenerate;
+  // A complete rewrite is kept in the account unless its copies could not be
+  // read: a copy that was never read must not be written over.
+  let keepInAccount = Boolean(uid);
 
-  if (!force && rewriteCache.has(cacheKey)) {
+  if (reuse && rewriteCache.has(cacheKey)) {
     const cached = rewriteCache.get(cacheKey)!;
     onMeta?.({ ...cached.meta, cached: true, remainingUses: null });
     cached.sections.forEach((section, index) => onSection?.(section, index));
     return cached;
+  }
+
+  if (reuse && uid) {
+    onProgress?.({ stage: 'saved' });
+    const saved = await getSavedSummary(uid, paper, level, { signal }).catch((error: unknown) => {
+      if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
+      console.warn('Could not read the saved summary', error);
+      // Unknown is not absent. Asking the worker now could spend a use and
+      // write a different copy over the saved one, for a reader who only
+      // opened it, so the reader is offered this lookup again instead.
+      if (isTransientReadError(error)) throw new PaperRewriteError('AI_SAVED_SUMMARY_READ_FAILED');
+      // A refusal does not change on a retry, so offering one would leave the
+      // reader without any summary: every signed-in reader between a frontend
+      // deploy and the rules that allow this read. The worker answers as it
+      // did before copies were kept, and this one is not kept either.
+      keepInAccount = false;
+      return null;
+    });
+    if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
+    if (saved) {
+      const meta = { level, language: rewriteLanguage, model: saved.model, sourceBasis: saved.sourceBasis };
+      onMeta?.({ ...meta, cached: true, remainingUses: null });
+      saved.sections.forEach((section, index) => onSection?.(section, index));
+      return { meta, sections: saved.sections, incomplete: false };
+    }
   }
 
   if (!canRewritePaper(paper)) throw new PaperRewriteError('AI_REWRITE_NEEDS_FULL_TEXT');
@@ -263,6 +323,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
 
   try {
     resetStallTimer();
+    onRequest?.();
     const response = await authenticatedWorkerFetch(`${apiBase}/ai/rewrite`, {
       method: 'POST',
       signal: controller.signal,
@@ -272,6 +333,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
         level,
         language: rewriteLanguage,
         retryIncomplete: force,
+        ...(regenerate ? { regenerate: true } : {}),
       }),
     });
 
@@ -295,14 +357,10 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
         return;
       }
       if (event.type === 'section') {
-        const section = {
-          id: event.id,
-          kind: event.kind,
-          heading: event.heading,
-          originalHeading: event.originalHeading,
-          paragraphs: Array.isArray(event.paragraphs) ? event.paragraphs : [],
-          highlights: Array.isArray(event.highlights) ? event.highlights : [],
-        };
+        const section = toRewriteSection(event);
+        // A section the reader cannot lay out is not counted, so the `done`
+        // count no longer matches and the rewrite reads as incomplete.
+        if (!section) return;
         onSection?.(section, sections.length);
         sections.push(section);
         onProgress?.({ stage: 'writing' });
@@ -342,13 +400,23 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
     if (streamError && sections.length === 0) throw streamError;
     if (sections.length === 0) throw new PaperRewriteError('AI_INVALID_RESPONSE');
 
-    const result = { meta: meta || { level, language: rewriteLanguage }, sections };
+    const result: RewriteResult = { meta: meta || { level, language: rewriteLanguage }, sections };
     // A stream cut short is still worth showing, but must not be cached as if
     // it were the whole paper.
     const terminal = completion as Extract<RewriteEvent, { type: 'done' }> | null;
     const incomplete = Boolean(streamError) || !terminal
       || terminal.sectionCount !== sections.length || terminal.truncated === true;
-    if (!incomplete) rewriteCache.set(cacheKey, result);
+    if (!incomplete) {
+      if (cacheAccount === rewriteCacheAccount) rewriteCache.set(cacheKey, result);
+      if (keepInAccount) {
+        void saveSummary(uid, paper, level, {
+          sections,
+          model: result.meta.model || '',
+          sourceBasis: result.meta.sourceBasis || '',
+          promptVersion: result.meta.promptVersion || '',
+        }, getRewritablePdfUrl(paper));
+      }
+    }
     return { ...result, incomplete };
   } catch (error) {
     const failure = toRewriteError(error, { cancelled: Boolean(signal?.aborted) });
