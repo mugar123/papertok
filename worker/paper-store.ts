@@ -214,8 +214,8 @@ async function readWorks(db: D1Database, ids: number[]) {
  * Files what sources returned: records of one paper merge (PaperBuilder.merge,
  * the rule the browser applied to every page) into the row any of their
  * identifiers already names, or start a new one. A record that bridges two
- * rows folds the younger into the older, which keeps its id. A merge that
- * changes the title or abstract drops the vector for the embedding pass.
+ * rows folds them into the lower-numbered one, whose paper id stays. A merge
+ * that changes the title or abstract drops the vector for the embedding pass.
  * Returns how many rows were written.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
