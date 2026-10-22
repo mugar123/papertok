@@ -1101,12 +1101,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // document, while the page is only as tall as the list leaving, and the
   // position would be clamped. `preventScroll` stops focus from scrolling the
   // page again, which `html { scroll-behavior: smooth }` would animate.
+  // The position fits the layout the reader left; a window resized or a phone
+  // turned while the list was open can leave the name off screen there, so it
+  // is brought into sight, below the navbar (its `scroll-margin`). With the
+  // layout unchanged the name is already in sight and nothing moves.
   const returnToIndex = useCallback((node: HTMLDivElement | null) => {
     const back = indexReturn.current;
     if (!node || !back) return;
     indexReturn.current = null;
     window.scrollTo({ top: back.top, behavior: 'instant' });
-    node.querySelector<HTMLElement>(`[data-list-id="${CSS.escape(back.listId)}"]`)?.focus({ preventScroll: true });
+    const name = node.querySelector<HTMLElement>(`[data-list-id="${CSS.escape(back.listId)}"]`);
+    name?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    name?.focus({ preventScroll: true });
   }, []);
 
   const closeExpandedList = () => {

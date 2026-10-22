@@ -914,7 +914,9 @@
 }
 
 /* The card titles are the real (keyboard-reachable) openers; the card's own
-   onClick is pointer redundancy. Inherit everything from the heading. */
+   onClick is pointer redundancy. Inherit everything from the heading.
+   The scroll margin keeps a title scrolled into view (closing a list returns
+   focus here) clear of the fixed navbar and with room for the focus ring. */
 .list-card-name-btn {
   font: inherit;
   color: inherit;
@@ -922,4 +924,5 @@
   text-align: left;
   display: block;
   width: 100%;
+  scroll-margin-block: calc(var(--nav-total) + var(--space-2)) var(--space-2);
 }
