@@ -9,7 +9,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .auth-spinner {
-    animation: none;
+    animation-duration: 2.4s;
   }
 }
 

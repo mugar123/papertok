@@ -266,8 +266,8 @@ const handleActivationKey = (event: KeyboardEvent, action: () => void) => {
 
 const ROR_RELATION_LABELS = {
   en: {
-    parent: '',
-    child: '',
+    parent: 'Part of',
+    child: 'Includes',
     related: 'Related',
     predecessor: 'Predecessor',
     successor: 'Successor',
@@ -2146,19 +2146,18 @@ export default function EntityExplorer({
       <h4 className="project-section-title"><Buildings size={14} /> {'Related institutions'}</h4>
       <div className="project-participants-grid">
         {entity.relationships!.slice(0, 4).map((relationship) => {
-          // A parent or child institution needs no label: just its name.
-          const label = ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] ?? ROR_RELATION_LABELS[language].related;
+          const label = ROR_RELATION_LABELS[language][relationship.type as keyof typeof ROR_RELATION_LABELS.en] || ROR_RELATION_LABELS[language].related;
           return (
             <button
               key={`${relationship.type}-${relationship.rorId}`}
               type="button"
               className="project-participant-card"
               onClick={() => navigateToEntity('institution', relationship.rorId)}
-              aria-label={label ? `${label}: ${relationship.label}` : relationship.label}
+              aria-label={`${label}: ${relationship.label}`}
             >
               <span className="project-participant-info">
                 <ParticipantName name={relationship.label || ''} />
-                {label && <span className="project-participant-country">{label}</span>}
+                <span className="project-participant-country">{label}</span>
               </span>
               <CaretRight size={15} className="project-participant-arrow" aria-hidden="true" />
             </button>

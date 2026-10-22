@@ -546,7 +546,7 @@
    fading it in made that corner flash navy, paper, navy. */
 .save-modal-discard p,
 .save-modal-discard-actions > :first-child {
-  animation: rise 180ms var(--ease-out-expo);
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .save-modal-discard p {

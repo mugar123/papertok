@@ -187,14 +187,14 @@
   font-size: var(--fs-sm);
 }
 
-/* A card, not a caption: this message floats over the darkened page behind
-   the overlay, and without its own surface it read as broken text bleeding
-   through (seen on a real iPhone, 2026-08-29). */
 /* The PDF is already on its way: Petri is simply there, with no rise. */
 .pdf-loading .petri .onboarding-petri-body {
   animation: none;
 }
 
+/* A card, not a caption: this message floats over the darkened page behind
+   the overlay, and without its own surface it read as broken text bleeding
+   through (seen on a real iPhone, 2026-08-29). */
 .pdf-fallback {
   position: absolute;
   top: 50%;

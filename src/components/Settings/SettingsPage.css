@@ -633,7 +633,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .settings-spin {
-    animation: none;
+    animation-duration: 2.4s;
   }
 
   .settings-index-list a,

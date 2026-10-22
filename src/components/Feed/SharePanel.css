@@ -185,7 +185,7 @@
 .pc-menu-stage[data-enter] > .pc-menu-view > * {
   animation:
     pcMenuTravel 320ms var(--ease-out-expo) calc(var(--step, 0) * 45ms) backwards,
-    appear 180ms linear calc(var(--step, 0) * 45ms) backwards;
+    appear var(--motion-base) linear calc(var(--step, 0) * 45ms) backwards;
 }
 
 /* Coming in from the right, the pieces start past the surface's edge and
@@ -211,7 +211,7 @@
 @media (prefers-reduced-motion: reduce) {
   .pc-menu-stage[data-enter] > .pc-menu-head,
   .pc-menu-stage[data-enter] > .pc-menu-view > * {
-    animation: appear 180ms linear backwards;
+    animation: appear var(--motion-base) linear backwards;
   }
 }
 

@@ -161,7 +161,7 @@
    does not add it back and replay the card's entrance. */
 .feed-snap-item--returning > .pc {
   animation:
-    cardSlideUp 0.36s var(--ease-out-expo) backwards,
+    cardSlideUp var(--motion-base) var(--ease-out) backwards,
     feedSkipReturn 320ms var(--ease-out-cubic) backwards;
 }
 
@@ -221,7 +221,7 @@
     .feed-snap-item--read:not(.feed-snap-item--leaving, .feed-snap-item--returning) > .pc {
       transform-origin: 50% 100%;
       animation:
-        cardSlideUp 0.36s var(--ease-out-expo) backwards,
+        cardSlideUp var(--motion-base) var(--ease-out) backwards,
         feedReadFile linear both;
       animation-timeline: auto, view();
       animation-range: normal, exit 0% exit 100%;

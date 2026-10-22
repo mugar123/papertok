@@ -277,7 +277,7 @@
 .institution-service-titles > li {
   animation:
     institution-piece-travel 280ms var(--ease-out-expo) backwards,
-    appear 200ms linear backwards;
+    appear var(--motion-base) linear backwards;
   animation-delay: calc(var(--title-index, 0) * 28ms + 60ms);
 }
 .institution-service-titles > li + li { border-top: 1px solid var(--border-subtle); }
@@ -326,7 +326,7 @@
   .institution-services-message,
   .institution-services-retry,
   .institution-services-count,
-  .institution-services-pending > li { animation: appear 200ms linear backwards; }
+  .institution-services-pending > li { animation: appear var(--motion-base) linear backwards; }
   .institution-services-pending > li { animation-delay: 320ms; }
   .institution-services-message[data-state='loading'] {
     -webkit-mask-image: none;
@@ -426,7 +426,7 @@
 .institution-services-count {
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    appear 200ms linear backwards;
+    appear var(--motion-base) linear backwards;
 }
 
 .institution-services-retry { animation-delay: 90ms; }
@@ -440,7 +440,7 @@
   mask-size: 300% 100%;
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    appear 200ms linear backwards,
+    appear var(--motion-base) linear backwards,
     checkingSweep 1400ms linear infinite;
 }
 
@@ -452,7 +452,7 @@
 .institution-services-pending > li {
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    appear 200ms linear backwards;
+    appear var(--motion-base) linear backwards;
   animation-delay: calc(320ms + var(--service-delay, 0ms));
 }
 

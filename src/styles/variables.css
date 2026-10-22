@@ -254,7 +254,7 @@
   --transition-base: 200ms ease;
   --transition-slow: 320ms ease;
   --transition-spring: 500ms cubic-bezier(0.16, 1, 0.3, 1);
-  /* The arrival curve the app already runs on — rise, slideUpFade, the
+  /* The arrival curve the app already runs on — rise, settle, the
      explorer's error — as a token, so the route transition names it instead
      of adding one more copy of the literal. */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -284,10 +284,8 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --press-scale: 0.97;
-  /* Motion durations. UI motion stays under 300ms; keyboard-opened UI and
-     content seen many times a session take the shortest or none. */
-  --motion-press: 120ms;
-  --motion-fast: 150ms;
+  /* Motion durations: content arriving, and sheets or drawers moving. UI
+     motion stays under 300ms. */
   --motion-base: 200ms;
   --motion-sheet: 300ms;
   /* Unfolding in place (rows 0fr → 1fr): the card's author list opens and

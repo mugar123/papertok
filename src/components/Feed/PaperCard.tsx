@@ -133,7 +133,7 @@ import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
  * A 420ms collapse keeps resetting this, so the reading lands once — after it.
  */
 const ABSTRACT_SETTLE_MS = 180;
-// The abstract's open and resize, as --motion-sheet in PaperCard.css.
+// The abstract's open and resize. PaperCard.css reads it as --abstract-motion.
 const ABSTRACT_MOTION_MS = 300;
 // The abstract ⇄ map swap: the slide and the slot's height (`.pc-slot--morphing`
 // in PaperCard.css) on one clock.
@@ -278,7 +278,7 @@ const FIGURE_DRIFT_MIN_MS = 4_000;
 const FIGURE_DRIFT_JITTER_MS = 2_000;
 /* Each clipping gets a gradual fade and a gentle settle on separate curves.
    A tighter stagger keeps the four arrivals connected: the last settles at
-   660ms, while each image has 480ms to become visible. */
+   480ms, while each image has 300ms to become visible. */
 const FIGURE_ENTRANCE_MS = 300;
 const FIGURE_ENTRANCE_STAGGER_MS = 60;
 
@@ -1884,7 +1884,7 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
+      <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper), '--abstract-motion': `${ABSTRACT_MOTION_MS}ms` }}>
         <div className="pc-body">
         {/* The head: lead, kicker, title and authors, parted from the abstract
             by the authors' rule. The field's glyph lives in it (PaperCard.css,

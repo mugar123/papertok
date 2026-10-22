@@ -82,7 +82,7 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
   return (
     <div ref={setScroller} className="pdf-pages" tabIndex={0} role="document" aria-label={`PDF: ${title}`} aria-busy={!doc}>
       {!doc && (
-        <div className="pdf-loading">
+        <div className="pdf-loading" role="status">
           <Petri pose="download" className="petri-loader" />
           <p>{'Loading PDF...'}</p>
         </div>

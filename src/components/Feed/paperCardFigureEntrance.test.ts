@@ -226,7 +226,7 @@ test('SOURCE: a clipping leaves before its page and resumes with it, never in on
   const resumed = css.match(/\.pc-figure\.is-loaded\.is-resumed \{([^}]*)\}/);
   assert.ok(resumed, 'the resumed pose has a rule of its own');
   assert.doesNotMatch(resumed[1], /figureClipIn/, 'the entrance is what a resumed clipping drops');
-  assert.match(resumed[1], /appear (\d+)ms linear/, 'and a plain fade is what it keeps');
+  assert.match(resumed[1], /appear var\(--motion-base\) linear/, 'and a plain fade is what it keeps');
   assert.match(resumed[1], /figureClipDrift/, 'the drift still takes over afterwards');
   const resume = shared.match(/@keyframes appear \{([^}]*)\}/);
   assert.ok(resume, 'the resumed fade is declared');

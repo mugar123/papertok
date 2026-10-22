@@ -498,7 +498,7 @@ button.rd-tag {
   /* Replayed on every change of stage: the element is keyed by `stage` in the
      JSX, so React remounts it and the animation starts again. Downloading does
      not jump into reading. */
-  animation: rise 280ms var(--ease-out-expo);
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .rd-ghost-head small {
@@ -646,7 +646,7 @@ button.rd-tag {
 
 .rd-section[data-reveal] .rd-section-head,
 .rd-section[data-reveal] .rd-section-title {
-  animation: rise 320ms var(--ease-out-expo);
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .rd-section[data-reveal] .rd-p {
@@ -684,7 +684,7 @@ button.rd-tag {
   font-size: var(--fs-sm);
   /* It arrives at the end of a stream that stopped early, under text the reader
      is already reading. Appearing outright reads as a layout error. */
-  animation: rise 320ms var(--ease-out-expo);
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .rd-error-state {

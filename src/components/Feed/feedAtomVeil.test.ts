@@ -92,6 +92,8 @@ test('the navbar fades in on its first mount of the session, and only then', asy
   assert.match(jsx, /if \(event\.target !== event\.currentTarget\) return;/);
   const css = await read('../Layout/Navbar.css');
   assert.match(css, /\.navbar--arriving \{\s*animation: fadeIn 0\.24s ease-out both;\s*\}/);
+  const shared = await read('../../styles/variables.css');
+  assert.match(shared, /@keyframes fadeIn \{\s*from \{ opacity: 0; \}\s*to \{ opacity: 1; \}\s*\}/);
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
   assert.ok(reduced.some((block) => /\.navbar--arriving[\s\S]*?animation: none;/.test(block)), 'reduced motion drops the arrival');
 });

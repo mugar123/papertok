@@ -104,7 +104,7 @@
      different curve, on purpose: it is `.explorer-hero-content`'s own
      animation copied byte for byte, so the error resolves exactly like
      every other arrival in the hero instead of being its own special case. */
-  animation: slideUpFade var(--motion-base) var(--ease-out) both;
+  animation: settle var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-error h1 {
@@ -207,7 +207,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  animation: slideUpFade var(--motion-base) var(--ease-out) forwards;
+  animation: settle var(--motion-base) var(--ease-out) forwards;
 }
 
 /* The settle (`useHeightSettle`) pins this box's height with a Web Animation.
@@ -515,7 +515,7 @@
 }
 
 .explorer-container--author .ehc-header {
-  animation: slideUpFade 0.24s linear backwards;
+  animation: settle var(--motion-base) linear backwards;
 }
 
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
@@ -1093,7 +1093,7 @@
    or its absence, is known — never at mount, where the hero's own crossfade is
    already running. */
 .ehc-stat-value.is-settled {
-  animation: slideUpFade 0.3s ease-out both;
+  animation: settle var(--motion-base) var(--ease-out) both;
 }
 
 /* Two lines from the first frame. "Calculating…" is one line; the settled
@@ -1685,7 +1685,7 @@
 
 .explorer-empty {
   margin-top: var(--space-6);
-  animation: slideUpFade var(--motion-base) var(--ease-out) both;
+  animation: settle var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-empty-link {
@@ -1737,7 +1737,7 @@
    It only works because the skeleton is always there first — `isLoadingEntity`
    starts true on every entity — so this never plays against an empty page,
    where starting at 0.35 would look like a pop. */
-@keyframes slideUpFade {
+@keyframes settle {
   from { opacity: 0.35; }
   to { opacity: 1; }
 }
@@ -2185,7 +2185,7 @@
    They rise from nothing rather than from the 0.35 `staggerFadeUp` starts at.
    That starting point is right for a row replacing a shape of its own size;
    these three land where there was nothing, and starting them half-visible is
-   the pop the comment on `slideUpFade` warns about. The summary box is the
+   the pop the comment on `settle` warns about. The summary box is the
    exception below: it DOES have a reservation to resolve into.
 
    `backwards`, not `both`. Only the delay needs covering — without a fill the
@@ -2222,11 +2222,11 @@
    header, which never went away — the cells replace two shimmering reserved
    ones and the menu joins a line that is already there — so they sharpen into
    place rather than arrive, and 8px of travel would read as the header row
-   itself moving. `slideUpFade` is the treatment this file already uses for a
+   itself moving. `settle` is the treatment this file already uses for a
    stat value whose number lands late. */
 .explorer-container--project .ehc-stat-box,
 .project-links-menu {
-  animation: slideUpFade var(--motion-base) var(--ease-out) backwards;
+  animation: settle var(--motion-base) var(--ease-out) backwards;
 }
 
 /* Left to right across the row, tighter than the blocks below: these are small
@@ -2411,7 +2411,7 @@
    after the entrance, keeping text and interactive content at rest. */
 .orcid-career-section--animate > * {
   animation:
-    slideUpFade var(--motion-base) linear backwards,
+    settle var(--motion-base) linear backwards,
     authorContentTravel var(--motion-base) var(--ease-out) backwards;
 }
 
@@ -2785,7 +2785,7 @@
   .explorer--app .explorer-hero,
   .explorer--app .explorer-toolbar-wrapper,
   .explorer-hero-content,
-  /* The error screen's entrance (`slideUpFade`) goes with the rest. */
+  /* The error screen's entrance (`settle`) goes with the rest. */
   .explorer-error,
   .ehc-wiki-skeleton span::after,
   .project-summary-box,

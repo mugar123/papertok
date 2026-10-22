@@ -403,10 +403,13 @@
 @media (prefers-reduced-motion: reduce) {
   .following-settings-tabs button,
   .following-settings-item,
-  .following-settings-unfollow,
-  .following-settings-unfollow:disabled svg,
-  .following-settings-loading svg {
+  .following-settings-unfollow {
     animation: none;
     transition: none;
+  }
+
+  .following-settings-unfollow:disabled svg,
+  .following-settings-loading svg {
+    animation-duration: 2.4s;
   }
 }

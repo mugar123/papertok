@@ -25,7 +25,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .route-fallback::after {
-    animation: none;
-    border-top-color: var(--border-strong);
+    animation-duration: 2.4s;
   }
 }

@@ -89,6 +89,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .delete-account-spinner {
-    animation: none;
+    animation-duration: 2.4s;
   }
 }

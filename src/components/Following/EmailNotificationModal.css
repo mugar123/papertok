@@ -220,8 +220,8 @@
 .email-notification-save { border: 1px solid var(--border-ink); color: var(--text-inverse); background: var(--accent-primary); }
 
 @media (prefers-reduced-motion: reduce) {
-  .email-notification-test,
-  .email-notification-test-spinner { animation: none; transition: none; }
+  .email-notification-test { animation: none; transition: none; }
+  .email-notification-test-spinner { animation-duration: 2.4s; }
 }
 
 /* On a phone the content sits in a settings sheet (SettingsSheet.css): the

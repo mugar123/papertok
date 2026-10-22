@@ -80,7 +80,7 @@ test('SOURCE: a late citation chip fades in, and so does its separator', async (
   const rule = bounded(css, '.pc-citations,\n.pc-meta-dot--citations {', '}', 'the citation fade', 5);
 
   assert.match(rule, /\.pc-meta-dot--citations/, 'the dot in front of the chip fades with it');
-  assert.match(rule, /animation:\s*appear\s+220ms\s+linear/, 'a plain 220ms fade');
+  assert.match(rule, /animation:\s*appear\s+var\(--motion-base\)\s+linear/, 'a plain fade on the shared content duration');
   // An expo over an opacity is not a fade, it is a flash with a tail. Measured
   // twice on this project; it must not come back through this rule.
   assert.doesNotMatch(rule, /cubic-bezier|--ease-out-expo|ease-in-out/,

@@ -148,7 +148,7 @@ test('the blocks a project fills in rise in sequence instead of landing in one f
   // header that never went away — they sharpen rather than arrive.
   assert.match(
     css,
-    /\.explorer-container--project \.ehc-stat-box,\s*\.project-links-menu \{\s*animation: slideUpFade var\(--motion-base\) var\(--ease-out\) backwards;\s*\}/,
+    /\.explorer-container--project \.ehc-stat-box,\s*\.project-links-menu \{\s*animation: settle var\(--motion-base\) var\(--ease-out\) backwards;\s*\}/,
     'the header pieces fill in too',
   );
   // The hook they are scoped by. Without the type on the live container this

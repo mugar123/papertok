@@ -84,7 +84,7 @@
      after the frame had arrived — content appearing after its page. The fade
      now belongs to the pieces (`rise` below), which start with the frame;
      the sheet only settles into place. */
-  animation: cardSlideUp 0.36s var(--ease-out-expo) backwards;
+  animation: cardSlideUp var(--motion-base) var(--ease-out) backwards;
 }
 
 /* ── Figure cards ──
@@ -213,7 +213,7 @@
    still plays its entrance in full. */
 .pc-figure.is-loaded.is-resumed {
   animation:
-    appear 220ms linear,
+    appear var(--motion-base) linear,
     figureClipDrift var(--fig-drift-duration, 5s) ease-in-out 1.32s infinite;
 }
 
@@ -406,8 +406,9 @@
 }
 
 /* ── The arrival ──
-   A card's pieces rise in together on the first cards of a session; no
-   stagger, because the feed is the screen the reader sees most. `backwards`
+   A card's pieces rise in together when the card mounts (a step back or
+   between tabs keeps them at rest, below); no stagger, because the feed is
+   the screen the reader sees most. `backwards`
    holds the first frame only during the run: once landed, no transform is
    left. */
 .pc-meta,
@@ -552,32 +553,29 @@ a.pc-citations {
   }
 }
 
-/* ── Las citas, cuando llegan tarde ──
+/* ── Citations that arrive late ──
 
-   El chip `N Citas` sale de `citationCountKnown`, que llega con el
-   enriquecimiento (OpenAlex, iCite, Europe PMC). El primer pintado de un feed
-   espera ahora a los tres bajo un techo de 1200ms (utils/feedCitationGate.js),
-   así que lo normal es que el chip esté desde el principio y este fundido
-   corra solapado con el `rise` de su fila, que también arranca en opacidad
-   0: no se ve y no cuesta nada.
+   The `N citations` chip comes from `citationCountKnown`, which arrives with
+   enrichment (OpenAlex, iCite, Europe PMC). A feed's first paint now waits
+   for all three under a 1200ms ceiling (utils/feedCitationGate.js), so the
+   chip is usually there from the start and this fade overlaps its row's
+   `rise`, which also starts at opacity 0: invisible and free.
 
-   Lo que cubre es el caso que el techo deja pasar. Un enriquecimiento de más
-   de 1200ms mete el chip en una fila que ya está en pantalla, y no se le puede
-   reservar el hueco: el ancho depende de un número que todavía no tenemos, y
-   un hueco fijo desplazaría la fila igual, sólo que antes. Así que lo que hace
-   este fundido es que ese aterrizaje se LEA en vez de encajarse en un
-   fotograma.
+   It covers the case the ceiling lets through. Enrichment slower than 1200ms
+   puts the chip into a row already on screen, and no gap can be reserved for
+   it: its width depends on a number we do not have yet, and a fixed gap would
+   shift the row all the same, only earlier. So this fade makes that landing
+   read as one instead of snapping in a single frame.
 
-   220ms lisos, que es el fundido común con el que acabó la entrada de los
-   recortes. Lineal a propósito: una expo sobre una opacidad no es un fundido,
-   es un destello con cola.
+   The shared content duration, linear on purpose: an expo curve over opacity
+   is not a fade, it is a flash with a tail.
 
-   Va también en el punto que lo precede, que monta en el mismo fragmento del
-   JSX. Un chip que se funde al lado de un `·` que aparece de golpe deja el
-   parpadeo entero en el separador. */
+   It also runs on the dot before the chip, which mounts in the same JSX
+   fragment. A chip fading in beside a `·` that appears at once leaves the
+   whole flicker on the separator. */
 .pc-citations,
 .pc-meta-dot--citations {
-  animation: appear 220ms linear;
+  animation: appear var(--motion-base) linear;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -859,10 +857,10 @@ button.pc-topics-pop-item:focus-visible {
 
 .pc-abstract--resizing {
   transition:
-    height var(--motion-sheet) var(--ease-out-expo),
-    max-height var(--motion-sheet) var(--ease-out-expo),
-    -webkit-mask-size var(--motion-sheet) var(--ease-out-expo),
-    mask-size var(--motion-sheet) var(--ease-out-expo);
+    height var(--abstract-motion) var(--ease-out-expo),
+    max-height var(--abstract-motion) var(--ease-out-expo),
+    -webkit-mask-size var(--abstract-motion) var(--ease-out-expo),
+    mask-size var(--abstract-motion) var(--ease-out-expo);
 }
 
 .pc-abstract > p {
@@ -929,9 +927,9 @@ button.pc-topics-pop-item:focus-visible {
    measured heights instead. */
 .pc-abstract--open {
   transition:
-    max-height var(--motion-sheet) var(--ease-out-expo),
-    -webkit-mask-size var(--motion-sheet) var(--ease-out-expo),
-    mask-size var(--motion-sheet) var(--ease-out-expo);
+    max-height var(--abstract-motion) var(--ease-out-expo),
+    -webkit-mask-size var(--abstract-motion) var(--ease-out-expo),
+    mask-size var(--abstract-motion) var(--ease-out-expo);
   flex: 1 1 auto;
   max-height: 100%;
   overflow-y: auto;
@@ -1597,7 +1595,7 @@ button.pc-topics-pop-item:focus-visible {
   top: 0;
   translate: var(--mark-x, 0) var(--mark-y, 0);
   transition: translate 0.28s var(--ease-out-quad);
-  animation: rise 0.28s var(--ease-out-expo) 0.14s backwards;
+  animation: rise var(--motion-base) var(--ease-out) 0.14s backwards;
 }
 
 .graph-plot[data-resizing] :is(.graph-mark, .graph-chip) {
@@ -1657,7 +1655,7 @@ button.pc-topics-pop-item:focus-visible {
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
   white-space: nowrap;
-  animation: rise 0.28s var(--ease-out-expo) 0.14s backwards;
+  animation: rise var(--motion-base) var(--ease-out) 0.14s backwards;
 }
 
 .graph-chip.is-gone {
@@ -1779,7 +1777,7 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .graph-node.is-entering {
-  animation: rise 0.28s var(--ease-out-expo) backwards;
+  animation: rise var(--motion-base) var(--ease-out) backwards;
   animation-delay: var(--node-delay, 0ms);
 }
 
@@ -2002,7 +2000,7 @@ button.pc-topics-pop-item:focus-visible {
   border: 1px solid var(--border-ink);
   border-radius: var(--radius-md);
   background: var(--bg-card);
-  animation: rise 0.24s var(--ease-out-expo);
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .graph-peek.is-leaving {
@@ -2089,7 +2087,7 @@ button.pc-topics-pop-item:focus-visible {
    the same height and switching Graph and Similar does not move Petri or
    the title. Petri stands still, like the empty abstract's. */
 .graph-empty {
-  animation: appear 220ms var(--ease-out);
+  animation: appear var(--motion-base) var(--ease-out);
   flex: 1;
   justify-content: center;
   /* Last resort on a very short card: the state scrolls inside the panel
@@ -2206,7 +2204,7 @@ button.pc-topics-pop-item:focus-visible {
   overscroll-behavior: contain;
   padding: 6px 0;
   scroll-behavior: smooth;
-  animation: rise 0.22s ease-out both;
+  animation: rise var(--motion-base) var(--ease-out) both;
 }
 
 /* In the card the list runs from the header's rule to the panel's own
@@ -2392,7 +2390,7 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .related-card-content.is-ready {
-  animation: rise 0.2s ease-out both;
+  animation: rise var(--motion-base) var(--ease-out) both;
 }
 
 .related-card-loading {
@@ -2840,7 +2838,7 @@ button.pc-topics-pop-item:focus-visible {
   }
 
   .pc-lead-figure.is-loaded.is-resumed {
-    animation: appear 200ms linear both;
+    animation: appear var(--motion-base) linear both;
   }
 
   /* On a phone the field's glyph is the card's picture: as tall as the lead
@@ -2965,7 +2963,7 @@ button.pc-topics-pop-item:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .pc-lead-figure.is-loaded {
-    animation: appear 200ms linear both;
+    animation: appear var(--motion-base) linear both;
   }
 
   /* The press keeps its colour and its dip; the squeeze is movement. */
