@@ -1400,6 +1400,44 @@ test('a record\'s own `false` under the row\'s DOI stands against a merged row\'
     assert.equal(rows[0].peerReviewed, true, where);
     assert.deepEqual(peerReviewedOnly(rows).map(row => row.doi), [journalDoi], where);
   }
+
+  // A denial the row takes from a merged record rests on that record, not
+  // on an arXiv DOI the merged row rests on. The FEDS paper that joined an
+  // arXiv record listing the SSRN DOI with Crossref's report under the FEDS
+  // DOI reads `false`, and the author's arXiv record under the journal DOI
+  // before it stays unknown, as it does in one list.
+  const fedsDoi = '10.17016/FEDS.2026.007';
+  const feds = work('W500', fedsDoi, 'article', {
+    id: 'https://openalex.org/S4210212089',
+    display_name: 'Finance and Economics Discussion Series',
+    type: 'journal',
+    host_organization_name: 'Board of Governors of the Federal Reserve System',
+  });
+  const crossrefReport = () => mapCrossrefInstitutionWork({
+    DOI: fedsDoi,
+    title: [title],
+    type: 'report',
+    author: [{ given: 'Ana', family: 'Economist' }],
+    'container-title': ['Finance and Economics Discussion Series'],
+    publisher: 'Federal Reserve Board',
+  })!;
+  for (const [mapper, map] of [['search', search], ['Explorer', explorer]] as const) {
+    const where = `an arXiv record under the journal DOI before the FEDS paper's row (${mapper})`;
+    const workingPaper = PaperBuilder.deduplicate([
+      map(feds), ...PaperBuilder.deduplicate([arxivRecord('10.2139/ssrn.4400000'), crossrefReport()]),
+    ]);
+    assert.equal(workingPaper.length, 1, where);
+    assert.equal(workingPaper[0].peerReviewed, false, where);
+    for (const [flow, rows] of [
+      ['followed', PaperBuilder.deduplicate([arxivRecord(), ...workingPaper])],
+      ['one list', PaperBuilder.deduplicate([arxivRecord(), map(feds), arxivRecord('10.2139/ssrn.4400000'), crossrefReport()])],
+    ] as Array<[string, Paper[]]>) {
+      assert.equal(rows.length, 1, `${where}, ${flow}`);
+      assert.equal(rows[0].doi, journalDoi, `${where}, ${flow}`);
+      assert.equal(rows[0].peerReviewed, undefined, `${where}, ${flow}`);
+      assert.equal(peerReviewedOnly(rows).length, 0, `${where}, ${flow}`);
+    }
+  }
 });
 
 test('a report from a journal\'s registrant does not unreview the journal article', () => {

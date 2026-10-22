@@ -553,11 +553,13 @@ export class PaperBuilder {
     // DOI rests on it too, whatever record it began as: a topic with an
     // OpenAlex id lists OpenAlex's record of the eprint under arXiv's DOI
     // before the arXiv record. A record under the row's DOI that a merged row
-    // holds backs it too, whatever that row's own answer; a denial the row
-    // does not take leaves the `true` resting where it was.
+    // holds backs it too, whatever that row's own answer, and a denial taken
+    // from one rests on that record rather than on an arXiv DOI the merged
+    // row rests on; a denial the row does not take leaves its `true` resting
+    // where it was.
     const stillArxivDoiOnly = !confirmsBaseDoi
       && ((arxivDoiOnly && (enrichmentReview !== true || otherDoiTrue || bothRestOnArxivDoi))
-        || (rereads && restsOnArxivDoi(enrichmentData)));
+        || (rereads && !deniesBaseDoi && restsOnArxivDoi(enrichmentData)));
     // After this merge's own answer, which may be such a `true`.
     if (deniedElsewhere && stillArxivDoiOnly && merged.peerReviewed === true) merged.peerReviewed = undefined;
     if (stillArxivDoiOnly !== (merged.sources.arxivDoiOnly === true)) {
