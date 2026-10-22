@@ -2395,8 +2395,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     // A long read moves the temporal preference. It no longer walks the
     // citation network: that was an OpenAlex call for a reader who did nothing,
-    // and on launch day those walks were a tenth of the day's ceiling (PAP-86).
-    // A like, a save or an opened PDF still expands the graph.
+    // and in the PAP-86 audit's model of a signed-in session those walks were
+    // about a tenth of its OpenAlex units (modelled, not measured). A like, a
+    // save or an opened PDF still expands the graph.
     if (timeInSeconds >= 10) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
