@@ -26,11 +26,6 @@
   margin-top: var(--space-3);
 }
 
-.institution-link-field {
-  position: relative;
-}
-
-.institution-link-hint,
 .institution-link-feedback {
   margin: 0;
   color: var(--text-tertiary);
@@ -76,13 +71,8 @@
   flex-direction: column;
   gap: var(--space-3);
   width: min(460px, calc(100vw - 2 * var(--space-4)));
-  /* Hung from the top rather than centred (the primitive's `top: 50%` and
-     two-axis translate): the platform list arrives after the window opens,
-     and a centred window jumped up by half of what it added. */
-  top: 12dvh;
-  translate: -50% 0;
   /* A long platform list must not push the window past a short screen. */
-  max-height: calc(88dvh - var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
   overflow-y: auto;
   padding: var(--space-6);
 }
@@ -95,47 +85,31 @@
   outline: none;
 }
 
+/* One short form under the lede: no rule between them, as in the dialog, and
+   as much room under the field as above it. */
+.institution-sheet .settings-sheet-body {
+  padding-top: 0;
+  padding-bottom: var(--space-6);
+  border-top: 0;
+}
+
+.institution-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.institution-title > .onboarding-petri-stamp {
+  position: static;
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  animation-delay: 200ms;
+}
+
 .institution-dialog-lede {
   margin: 0;
   padding-right: var(--space-6);
-}
-
-/* The window hangs from the top, so it drops a little and grows down from
-   there; it is opaque within a few frames while it still moves, because
-   fading it with its content let the page behind read through the text.
-   Its pieces then compose onto the opaque sheet in reading order, 45 ms
-   apart, as a card's pieces arrive (PaperCard.css, "The arrival"): heading,
-   lede, then each piece of the form or the linked row. They start from
-   nothing rather than a ghost of themselves, so the window never shows all
-   of its text at once half-drawn. Travel rides the expo; opacity runs on its
-   own short linear clock, because an expo fade is nearly whole in its first
-   frames. The pieces replay when the form and the linked row replace each
-   other: each is a new node under an open window. `:where` keeps the pill's
-   pin and the reveals their own animation. */
-.institution-dialog { transform-origin: 50% 0; }
-
-@media (prefers-reduced-motion: no-preference) {
-  .institution-dialog[data-open] { animation: institution-dialog-in 320ms var(--ease-out-expo); }
-
-  .institution-dialog[data-open] > :where(h2, p),
-  .institution-dialog[data-open] :where(.institution-link > :not(.institution-link-reveal)) {
-    animation:
-      institution-piece-travel 380ms var(--ease-out-expo) backwards,
-      institution-piece-fade 200ms linear backwards;
-  }
-
-  .institution-dialog[data-open] > h2 { animation-delay: 70ms; }
-  .institution-dialog[data-open] > p { animation-delay: 115ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(1):not(.institution-link-reveal)) { animation-delay: 160ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(2):not(.institution-link-reveal)) { animation-delay: 205ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(3):not(.institution-link-reveal)) { animation-delay: 250ms; }
-  .institution-dialog[data-open] :where(.institution-link > :nth-child(n + 4):not(.institution-link-reveal)) { animation-delay: 295ms; }
-}
-
-/* `translate` keeps the -50% that centres the window across. */
-@keyframes institution-dialog-in {
-  0% { opacity: 0; scale: 0.96; translate: -50% -12px; }
-  30% { opacity: 1; }
 }
 
 /* Something added under the field (Cancel, a message) opens its own height,
@@ -166,16 +140,19 @@
   to { clip-path: inset(-8px -8px 0 -8px); }
 }
 
-/* The submit sits inside the field, at its right edge, and the field's text
-   stops short of it. */
-.institution-link-field:has(.institution-link-submit) > .institution-link-input {
-  padding-right: calc(32px + var(--space-2));
+.institution-link-field {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.institution-link-input::placeholder {
+  font-size: var(--fs-sm);
 }
 
 .institution-link-submit {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+  flex: none;
+  width: 40px;
+  height: 40px;
 }
 
 /* Keep the submit width steady while verification runs. */
