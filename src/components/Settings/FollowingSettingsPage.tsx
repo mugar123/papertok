@@ -159,7 +159,7 @@ function followSummary({ loading, followedEntities }: FollowedView) {
 }
 
 /** The follows of the type on show, or its loading or empty state. */
-function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () => void }) {
+function FollowedList({ view, onExplore, onOpenEntity }: { view: FollowedView; onExplore: () => void; onOpenEntity?: (path: string) => void }) {
   const { activeType, activeTab, language, loading, followedEntities, visibleEntities, isFollowPending, askUnfollow, actionError } = view;
   return (
     <>
@@ -193,7 +193,11 @@ function FollowedList({ view, onExplore }: { view: FollowedView; onExplore: () =
                   exit={{ opacity: 0, transform: 'translateX(32px)' }}
                   transition={{ duration: 0.24, ease: EASE_OUT }}
                 >
-                  <Link to={getFollowedEntityPath(entity)} className="following-settings-link">
+                  <Link
+                    to={getFollowedEntityPath(entity)}
+                    className="following-settings-link"
+                    onClick={onOpenEntity && ((event) => { event.preventDefault(); onOpenEntity(getFollowedEntityPath(entity)); })}
+                  >
                     <span className={`following-settings-initials is-${entity.type}`} aria-hidden="true">
                       {getInitials(displayName)}
                     </span>
@@ -369,9 +373,25 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
   const { language, followedByType, activeType, activeTab, setSelectedType, unfollowOpen, unfollowing } = view;
   const countOf = (type: string) => followedByType[type]?.length || 0;
   const returning = !unfollowOpen && unfollowing !== null;
+  // A page opened from the sheet waits for the sheet to close: navigating
+  // under an open sheet slid the new page in beneath it, and the sheet was
+  // cut off when the Settings page it belongs to left.
+  const [leavingTo, setLeavingTo] = useState<string | null>(null);
+  const leaveTo = (path: string) => {
+    setLeavingTo(path);
+    onOpenChange(false);
+  };
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={(isOpen) => {
+        if (isOpen || !leavingTo) return;
+        setLeavingTo(null);
+        navigate(leavingTo);
+      }}
+    >
       <DrawerContent className={`settings-sheet is-tall${returning ? ' is-returning' : ''}`} overlayClassName="settings-sheet-backdrop">
         <DrawerHandle />
         <div className="settings-sheet-head">
@@ -397,7 +417,7 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
           </Select>
         </div>
         <div className="settings-sheet-body" data-base-ui-swipe-ignore="">
-          <FollowedList view={view} onExplore={() => navigate('/search')} />
+          <FollowedList view={view} onExplore={() => leaveTo('/search')} onOpenEntity={leaveTo} />
         </div>
         <UnfollowConfirm view={view} />
       </DrawerContent>
