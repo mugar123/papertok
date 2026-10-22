@@ -286,3 +286,14 @@ test("a reader's later pages read the order the first page ranked, and only thei
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
 });
+
+test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {
+  const { env, db } = corpus();
+  const issue = { ...arxivRecord, id: 'pmid:42900001', arxivId: undefined, pmid: '42900001', title: 'An article in December’s print issue', published: '2026-12-01T00:00:00.000Z' };
+  await ingestPapers(env, [{ paper: issue, lanes: ['med.cardio'] }], { now: NOW });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+  db.prepare("INSERT INTO works (id, paper, published, kept_until) VALUES (1, '{}', '2026-12-01T00:00:00.000Z', '2027-03-01T00:00:00.000Z')").run();
+  db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
+  await evictExpired(env, NOW);
+  assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+});

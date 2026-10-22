@@ -186,11 +186,16 @@ export function recordLanes(paper: Partial<Paper>) {
 
 // ─── Writing ───
 
-/** The date a paper is windowed and ordered by, or '' when it has none. */
-export function publishedOf(paper: Partial<Paper>) {
+/**
+ * The date a paper is windowed and ordered by, or '' when it has none. A date
+ * past tomorrow is a print issue's, not the day the paper appeared (PubMed's
+ * "2026 Dec", an OSTI report dated next year): it is no date at all, or it
+ * would sort first in its lanes until it came.
+ */
+export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
   for (const value of [paper.published, paper.publishedDate, paper.publicationDate]) {
     const time = Date.parse(text(value));
-    if (Number.isFinite(time)) return new Date(time).toISOString();
+    if (Number.isFinite(time) && time <= now + DAY_MS) return new Date(time).toISOString();
   }
   return '';
 }
@@ -259,7 +264,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const groupOfKey = new Map<string, Group>();
   for (const item of items) {
     if (!item?.paper?.title || !item.paper.id || !isFeedPublication(item.paper)) continue;
-    const published = publishedOf(item.paper);
+    const published = publishedOf(item.paper, now);
     if (!published || (published < since && !keepUntil)) continue;
     const paper = PaperBuilder.create(item.paper);
     const keys = workKeys(paper);
@@ -308,7 +313,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
     paper = storedPaper(paper);
-    const published = publishedOf(paper);
+    // The merged record can carry another source's print date; the incoming one had a usable date.
+    const published = publishedOf(paper, now) || publishedOf(group.paper, now);
     const keptUntil = [daysFromNow(CORPUS_DAYS, Date.parse(published)), keepUntil, ...ids.map(other => works.get(other)!.kept_until)].sort().at(-1)!;
     const json = JSON.stringify(paper);
     // D1 bills rows written: a paper a source lists again unchanged is not rewritten.
@@ -406,13 +412,15 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
   const trims = crowded.map(({ lane }) => db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
     SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT -1 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT));
   for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
+  // Rows filed before publishedOf refused dates ahead leave too.
+  const ahead = new Date(now + DAY_MS).toISOString();
   const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
-    AND (w.kept_until < ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id)))`;
+    AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id)))`;
   await db.batch([
-    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff),
-    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff),
-    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff),
-    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff),
+    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
+    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
+    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
+    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff, ahead),
   ]);
 }
 
