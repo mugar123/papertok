@@ -2718,6 +2718,18 @@
     flex: 1 1 0;
   }
 
+  /* On a phone the switch left the field a few characters; the field takes
+     its own row under it, full width. */
+  @media (max-width: 480px) {
+    .explorer-toolbar {
+      gap: var(--space-2);
+    }
+
+    .explorer-search-box {
+      flex-basis: 100%;
+    }
+  }
+
   .explorer-filter-trigger {
     width: 40px;
     padding: 0;
