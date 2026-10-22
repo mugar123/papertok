@@ -1,5 +1,6 @@
 import { markAppForcedReload, PRELOAD_RELOAD_KEY } from '../utils/appReload.ts';
 import { getPublicPaperPath } from '../utils/publicNavigation.ts';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -195,7 +196,6 @@ test('maps unknown and malformed routes to a fixed analytics path', () => {
 });
 
 test('a paper page is recorded under the path the privacy policy names for it', async () => {
-  const { readFile } = await import('node:fs/promises');
   const policy = await readFile(new URL('../../privacy.html', import.meta.url), 'utf8');
   const promised = policy.match(/Reading a specific paper is recorded as <code>([^<]+)<\/code>/)?.[1];
   assert.ok(promised, 'the policy no longer says how a paper is recorded');
