@@ -100,14 +100,16 @@ id = "a6b32a20ed4748139e828f1cbeff5b93"
 # binding = "AI_REWRITE_STORE"
 # id = "<id from wrangler kv namespace create>"
 
-# Workers AI, for toMarkdown only: it turns a paper's PDF into the text NaN
-# reads in /ai/rewrite (worker/paper-text.ts). No model runs on it.
+# Workers AI: toMarkdown turns a paper's PDF into the text NaN reads in
+# /ai/rewrite (worker/paper-text.ts), and the paper store embeds papers with
+# EMBEDDING_MODEL (worker/paper-store.ts).
 [ai]
 binding = "AI"
 
-# The paper store (worker/paper-store.ts): arXiv papers and their vectors,
-# filled by the harvest Workflow and read by /store/feed. Apply migrations with
-# `npx wrangler d1 migrations apply PAPER_STORE --remote` before deploying.
+# The paper store (worker/paper-store.ts): every feed source's papers, their
+# lanes and vectors, filled by the harvest Workflow and read by /store/papers.
+# Apply migrations with `npx wrangler d1 migrations apply PAPER_STORE --remote`
+# before deploying.
 [[d1_databases]]
 binding = "PAPER_STORE"
 database_name = "papertok-paper-store"
