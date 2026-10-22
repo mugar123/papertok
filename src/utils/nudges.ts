@@ -59,6 +59,46 @@ export function rememberNudgeDismissal<T>(id: T, storage?: NudgeStorage | null) 
   return next;
 }
 
+const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
+
+// Unlike the nudges above, kept per reader: each account that signs in on this
+// device, and a visitor without one, has to be told separately. It is not
+// swept at sign-out, so signing in again does not repeat a notice already
+// dismissed.
+function privacyNoticeKey(uid: string | null | undefined) {
+  return uid ? `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}` : PRIVACY_NOTICE_KEY;
+}
+
+/** The policy version this reader last dismissed on this device, if any. */
+export function readPrivacyNoticeAck(uid: string | null | undefined, storage?: NudgeStorage | null) {
+  try {
+    return resolveStorage(storage)?.getItem(privacyNoticeKey(uid)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPrivacyNotice(uid: string | null | undefined, version: string, storage?: NudgeStorage | null) {
+  try {
+    resolveStorage(storage)?.setItem(privacyNoticeKey(uid), version);
+  } catch {
+    // The host still closes the notice for this visit; it returns next time.
+  }
+}
+
+/**
+ * Whether a reader still has to hear about policy `version`. An account
+ * created after the day of the change started under the policy as it is and
+ * has nothing to be told. A visitor without an account, or an account whose
+ * creation date is unknown, is told, since nothing shows they arrived later.
+ */
+export function privacyNoticeOwed({ version, acknowledged, accountCreated }: { version: string; acknowledged: string | null; accountCreated?: string | null }) {
+  if (acknowledged === version) return false;
+  const created = accountCreated ? new Date(accountCreated) : null;
+  if (!created || Number.isNaN(created.getTime())) return true;
+  return created.toISOString().slice(0, 10) <= version.slice(0, 10);
+}
+
 /** One of the pending ones, at random, or nothing at all. */
 export function pickNudge({ eligible = [], dismissed = [], random = Math.random }: { eligible?: string[]; dismissed?: string[]; random?: () => number } = {}) {
   const pending = eligible.filter(id => !dismissed.includes(id));

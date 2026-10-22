@@ -24,6 +24,13 @@ export const PUBLIC_ENTITY_TYPES = Object.freeze([
 
 const PUBLIC_ENTITY_TYPE_SET = new Set(PUBLIC_ENTITY_TYPES);
 
+// The standalone routes a guest can reach without a session.
+const PUBLIC_ROUTE_PREFIXES = [`${PUBLIC_ROUTE_PREFIX}/`, '/explorer/'];
+
+export function isPublicRoute(path: string) {
+  return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix));
+}
+
 function cleanText(value: unknown) {
   if (value === null || value === undefined) return '';
   const text = String(value).trim();

@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
@@ -107,4 +108,14 @@ test('the build knows the second page and keeps the app entry named index', () =
   // boot set without the app in it while workbox only warns (vite.config.ts).
   assert.match(input, /\bindex:\s*fileURLToPath\(new URL\('\.\/index\.html'/);
   assert.match(input, /\bprivacy:\s*fileURLToPath\(new URL\('\.\/privacy\.html'/);
+});
+
+test('the in-app notice announces the version this page is dated', () => {
+  const html = stripHtmlComments(read('privacy.html'));
+  const shown = html.match(/<p class="lp-updated">Last updated ([^<]+)\.<\/p>/)?.[1];
+  assert.ok(shown, 'a "Last updated" date');
+  assert.match(PRIVACY_POLICY_VERSION, /^\d{4}-\d{2}-\d{2}(\.\d+)?$/);
+  const day = new Date(`${PRIVACY_POLICY_VERSION.slice(0, 10)}T00:00:00Z`);
+  const dated = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(day);
+  assert.equal(dated, shown, 'a dated change to this page bumps PRIVACY_POLICY_VERSION and its summary in src/legal/privacyPolicy.ts');
 });

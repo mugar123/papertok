@@ -81,7 +81,7 @@ test('nadie es interrumpido antes de tiempo, ni sin sesión, ni fuera del feed',
 
 test('uno por visita, y el descarte se recuerda para siempre', async () => {
   const jsx = await hostJsx;
-  assert.match(jsx, /if \(openable && !choiceMade\) \{\s*setChoiceMade\(true\);/, 'la elección se hace una sola vez');
+  assert.match(jsx, /if \(\(openable \|\| guestOpenable\) && !choiceMade\) \{\s*setChoiceMade\(true\);/, 'la elección se hace una sola vez');
   assert.match(jsx, /setDismissed\(rememberNudgeDismissal\(id\)\)/, 'cerrar tiene que persistir');
   assert.ok(!/sessionStorage/.test(jsx), 'la memoria del descarte no puede morir con la pestaña');
 });
@@ -90,4 +90,31 @@ test('App monta el host y ya no la alerta de analítica', async () => {
   const app = await appJsx;
   assert.match(app, /<NudgeHost \/>/, 'el host no está montado');
   assert.ok(!/AnalyticsConsentBanner/.test(app), 'la alerta de analítica sigue montada: desde el 17-09 no se pide permiso');
+});
+
+/**
+ * The privacy policy change notice: owed to every reader, so it takes the
+ * visit's turn before any nudge and is the only panel a guest sees, on the
+ * public pages they read rather than in the welcome.
+ */
+test('a policy change is told before any nudge, and to guests only on a public page', async () => {
+  const jsx = await hostJsx;
+  assert.match(jsx, /const guestReading = !user && !authLoading && isPublicRoute\(location\.pathname\);/);
+  assert.match(jsx, /if \(!\(signedIn \|\| guestReading\) \|\| dwellDone\) return undefined;/, 'guests wait the minute too');
+  assert.match(jsx, /const guestOpenable = dwellDone && guestReading;/);
+  assert.match(
+    jsx,
+    /acknowledged: readPrivacyNoticeAck\(user\?\.uid\),\s*accountCreated: user\?\.metadata\?\.creationTime,/,
+    'read for this reader: the account, or the device without one',
+  );
+  assert.match(jsx, /const id = privacyOwed \? PRIVACY_NOTICE : openable && pickNudge\(/, 'guests get no other nudge');
+});
+
+test('the notice is announced politely and dismissed for this reader and version', async () => {
+  const jsx = await hostJsx;
+  const status = jsx.indexOf('<p className="visually-hidden" role="status">');
+  assert.ok(status !== -1 && status < jsx.indexOf('<AnimatePresence>'), 'the live region is mounted outside the panel, before it');
+  assert.match(jsx, /\{privacyShown \? `\$\{copy\.privacy\.title\}\. \$\{PRIVACY_POLICY_CHANGE\}` : ''\}/);
+  assert.match(jsx, /rememberPrivacyNotice\(uid, PRIVACY_POLICY_VERSION\);\s*setPicked\(null\);/);
+  assert.match(jsx, /<a href="\/privacy\.html" target="_blank" rel="noopener noreferrer">\s*\{copy\.privacy\.policy\}/);
 });
