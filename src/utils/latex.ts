@@ -283,6 +283,22 @@ const TEXT_SYMBOLS: Record<string, string> = {
 };
 const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![a-zA-Z])(?:\\{\\})?`, 'g');
 
+// Authors bold and italicize in the abstract (`\textbf{H}arness`, `\emph{…}`)
+// and providers relay the source as written. The card paints plain prose, so
+// only the wrapper goes. One brace level of argument, as ENSUREMATH; the caller
+// repeats the pass to unwrap nesting.
+const TEXT_FORMATTING = /\\(?:textbf|textit|textsl|textsc|textrm|textsf|textup|texttt|emph)\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})*)\}/g;
+
+function unwrapTextFormatting(value: string) {
+  let text = value;
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(TEXT_FORMATTING, '$1');
+  } while (text !== previous);
+  return text;
+}
+
 /**
  * Applies one transform to the prose and another inside every formula, using
  * the same delimiter walk `splitLatexText` does, so "inside a formula" means
@@ -332,7 +348,7 @@ function normalizeMathRun(value: string) {
  * in `\( \)` so a stray `$` in the prose cannot pair with it.
  */
 function normalizeProseRun(value: string) {
-  return value
+  return unwrapTextFormatting(value)
     .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
     .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
     .replace(IFMMODE, (match, mathBranch) => `\\(${mathBranch.trim()}\\)`)
