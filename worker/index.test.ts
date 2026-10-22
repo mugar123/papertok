@@ -1864,11 +1864,12 @@ test('a cold citation graph reserves both OpenAlex ceilings in one call for what
   });
 
   // The `openalex:*` ceiling used to cover only `/openalex/*`. A miss here can
-  // spend seven billed calls -- one `works/doi:` lookup, then up to three
-  // batches for references and three for citations -- and the route reserves
-  // all seven before the work starts, minute and day together.
+  // make seven calls -- one `works/doi:` lookup, then up to three batches for
+  // references and three for citations -- of which OpenAlex bills the six
+  // batches, and the route reserves those six before the work starts, minute
+  // and day together.
   const openAlex = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
-  assert.deepEqual(openAlex.map(entry => entry.amount), [7]);
+  assert.deepEqual(openAlex.map(entry => entry.amount), [6]);
   assert.match(openAlex[0].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
   assert.equal(openAlex[0].limit, 8_000);
 });
@@ -1949,7 +1950,8 @@ test('the costliest cold citation graph spends exactly what it reserves', async 
   const reserved = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
   const spent = calls.filter(address => address.startsWith('https://api.openalex.org/')).length;
   assert.equal(spent, 7);
-  assert.deepEqual(reserved.map(entry => entry.amount), [spent]);
+  // Six of the seven are billed: the `works/doi:` lookup is one entity, free.
+  assert.deepEqual(reserved.map(entry => entry.amount), [spent - 1]);
 });
 
 test('an OpenAlex search reserves the ten list calls it is billed as', async () => {
@@ -1969,6 +1971,38 @@ test('an OpenAlex search reserves the ten list calls it is billed as', async () 
   assert.deepEqual(await reserved('filter=title_and_abstract.search:ultracold,type:article'), [10]);
   assert.deepEqual(await reserved('filter=raw_author_name.search:Ada%20Lovelace'), [10]);
   assert.deepEqual(await reserved('filter=publication_year:2019,type:article'), [1]);
+});
+
+// PAP-86: one entity by id or DOI is "Free" on OpenAlex's price list
+// (help.openalex.org/access/example-costs/), and the relay reserved a list call
+// for it: every card opened and every author clicked took a unit of the ceiling
+// that refused the day's searches. The autocomplete endpoint is not on that
+// list, and a `filter=doi:` batch is a list, so both still reserve one.
+test('an OpenAlex entity by id or DOI reserves nothing and is still fetched', async () => {
+  const reservedFor = async (path: string) => {
+    const ledger = recordingLedger();
+    let upstream = '';
+    const response = await withWorkerFetchMock(
+      async (url) => {
+        upstream = String(url);
+        return Response.json({ id: 'https://openalex.org/W1' });
+      },
+      () => withIdentityAndCacheStore(() => reportApi.fetch(new Request(
+        `https://papertok-report-api.example/openalex/${path}`,
+        { headers: BROWSER },
+      ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding }))),
+    );
+    return { amounts: ledger.reservations.map(entry => entry.amount), status: response.status, upstream };
+  };
+
+  const work = await reservedFor('works/W2741809807');
+  assert.deepEqual(work.amounts, []);
+  assert.equal(work.status, 200);
+  assert.match(work.upstream, /^https:\/\/api\.openalex\.org\/works\/W2741809807\?/);
+  assert.deepEqual((await reservedFor('works/doi:10.1000/xyz123')).amounts, []);
+  assert.deepEqual((await reservedFor('authors/A5023888391')).amounts, []);
+  assert.deepEqual((await reservedFor('autocomplete/topics?q=quantum')).amounts, [1]);
+  assert.deepEqual((await reservedFor('works?filter=doi:10.1000/a|10.1000/b')).amounts, [1]);
 });
 
 test('the per-minute OpenAlex ceiling refuses within the day and asks for a minute', async () => {

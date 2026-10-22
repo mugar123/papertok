@@ -62,10 +62,17 @@ export const OPENALEX_CALLS = Object.freeze({
   // $0.001, a list $0.0001, a single work nothing. Counted as one, the feed's
   // searches could spend eight dollars under an eight-thousand-call ceiling.
   search: 10,
-  // One `works/doi:` lookup, then batches of twenty for references and the same
-  // for citations. Each relation's two filters share its 40 candidates, so they
-  // need at most three batches between them (21 + 19 is two plus one).
-  citationGraph: 7,
+  // One entity by id or DOI is "Free" on OpenAlex's price list
+  // (help.openalex.org/access/example-costs/, read 2026-10-21), which is what
+  // the measurement above saw. Reserved as one, every card opened and every
+  // author clicked took a unit of the ceiling that refused the day's searches
+  // (PAP-86). The autocomplete endpoint is not on that list, so it stays a list.
+  entity: 0,
+  // One `works/doi:` lookup, free as above, then batches of twenty for
+  // references and the same for citations. Each relation's two filters share
+  // its 40 candidates, so they need at most three batches between them
+  // (21 + 19 is two plus one): six billed calls.
+  citationGraph: 6,
 });
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,

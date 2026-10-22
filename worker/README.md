@@ -317,8 +317,8 @@ only after an edge-cache miss and for as many calls as the route is about to spe
 is not one of them and should not be counted as one: a request with no `Origin` header has nothing
 to check, and one is trivially forged, so the ceiling is the frontier. The day matters because the
 budget is daily and a per-minute ceiling does not bound it — 3000/min is 4.320.000/day. Every route
-that spends the budget reserves against both, in list calls ($0.0001 each): `/openalex/*` for one call, or ten for a search (`search=` or a `.search` filter, billed $0.001, measured 2026-10-20),
-and `/citation-graph` for up to seven, so a caller who cannot be identified still cannot outspend the
+that spends the budget reserves against both, in list calls ($0.0001 each): `/openalex/*` for one call, or ten for a search (`search=` or a `.search` filter, billed $0.001, measured 2026-10-20), or nothing for one entity by id or DOI ("Free" on OpenAlex's price list, help.openalex.org/access/example-costs/, read 2026-10-21; the autocomplete endpoint is not on that list and stays one call),
+and `/citation-graph` for up to six (its `works/doi:` lookup is one such entity), so a caller who cannot be identified still cannot outspend the
 day. A
 refusal is relayed with its own status and `retry-after` rather than flattened into a 502 (a stall past the deadline answers `504 UPSTREAM_TIMEOUT`, which the client does not retry, since OpenAlex received and billed the call), and the
 rate-limit headers are named in `access-control-expose-headers` so the browser can actually read

@@ -229,6 +229,15 @@ async function writeShared(env: WorkerEnv, key: string, status: number, body: st
   }
 }
 
+// What a miss is billed, read off the URL about to be sent: a search ten list
+// calls, a list one, an entity by id or DOI nothing (`OPENALEX_CALLS`). The
+// autocomplete endpoint's second segment names a type, not an entity.
+function openAlexCallsFor(target: URL) {
+  if (target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '')) return OPENALEX_CALLS.search;
+  const [entity, id] = target.pathname.slice(1).split('/');
+  return id && entity !== 'autocomplete' ? OPENALEX_CALLS.entity : OPENALEX_CALLS.relay;
+}
+
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
@@ -242,9 +251,11 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
     return { ...shared, headers };
   }
 
-  const searching = target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '');
-  const budget = await reserveOpenAlexBudget(env, '', searching ? OPENALEX_CALLS.search : OPENALEX_CALLS.relay);
-  if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
+  const calls = openAlexCallsFor(target);
+  if (calls > 0) {
+    const budget = await reserveOpenAlexBudget(env, '', calls);
+    if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
+  }
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
     headers: { accept: 'application/json' },
