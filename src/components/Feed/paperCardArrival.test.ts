@@ -25,7 +25,9 @@ test('the mobile side rail is centred with `translate`, so the arrival animation
   assert.doesNotMatch(css, /--rail-shift/, 'the rail keeps one position whatever the slot shows');
   assert.doesNotMatch(rule, /transform:/);
   // The arrival still animates `transform`, which is why the two must not share it.
-  assert.match(css, /@keyframes pcArrive \{\s*0% \{ opacity: 0; transform: translateY\(8px\); \}/);
+  assert.match(css, /animation: rise /);
+  const shared = await read('../../styles/variables.css');
+  assert.match(shared, /@keyframes rise \{\s*from \{ opacity: 0; transform: translateY\(8px\); \}/);
 });
 
 /**

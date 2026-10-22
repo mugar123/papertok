@@ -4,11 +4,7 @@
   border: 2px solid var(--border-default);
   border-top-color: var(--text-primary);
   border-radius: var(--radius-full);
-  animation: authSpin 0.7s linear infinite;
-}
-
-@keyframes authSpin {
-  to { transform: rotate(360deg); }
+  animation: spin 0.7s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

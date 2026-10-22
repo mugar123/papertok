@@ -402,7 +402,7 @@ button.rd-tag {
   background-image: linear-gradient(105deg, transparent 35%, var(--arrive-sweep) 50%, transparent 65%);
   background-size: 300% 100%;
   background-repeat: no-repeat;
-  animation: rdMarkArrive 600ms var(--ease-in-out) both;
+  animation: rdMarkArrive var(--motion-sheet) var(--ease-in-out) both;
 }
 
 :root[data-theme='dark'] .rd-mark[data-arrived] {
@@ -498,7 +498,7 @@ button.rd-tag {
   /* Replayed on every change of stage: the element is keyed by `stage` in the
      JSX, so React remounts it and the animation starts again. Downloading does
      not jump into reading. */
-  animation: rdStageIn 280ms var(--ease-out-expo);
+  animation: rise 280ms var(--ease-out-expo);
 }
 
 .rd-ghost-head small {
@@ -556,11 +556,6 @@ button.rd-tag {
    the rest of it blank while the model was still reading. */
 .rd-ghost-lines i:nth-child(n + 6) {
   display: none;
-}
-
-@keyframes rdStageIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
 }
 
 /* ── Skeleton to text: the line writes itself ──
@@ -636,11 +631,11 @@ button.rd-tag {
   /* Still arrives and leaves — a surface that snaps in and out reads as a
      glitch — but by opacity alone, and shorter. */
   .rd[data-open] {
-    animation: rdRevealStill 120ms linear both;
+    animation: fadeIn 120ms linear both;
   }
 
   .rd[data-closed] {
-    animation: rdShellStillOut 120ms linear both;
+    animation: fadeOut 120ms linear both;
   }
 
   .rd[data-open] .rd-topbar,
@@ -649,14 +644,9 @@ button.rd-tag {
   }
 }
 
-@keyframes rdShellStillOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
 .rd-section[data-reveal] .rd-section-head,
 .rd-section[data-reveal] .rd-section-title {
-  animation: rdRevealHead 320ms var(--ease-out-expo);
+  animation: rise 320ms var(--ease-out-expo);
 }
 
 .rd-section[data-reveal] .rd-p {
@@ -671,18 +661,13 @@ button.rd-tag {
   /* `backwards`, not `both`: the fill has to cover the stagger delay, and the
      resting state after the sweep is the base rule above — an unmasked
      paragraph — which is exactly where the animation ends anyway. */
-  animation: rdWriteIn 620ms var(--ease-out-expo) backwards;
-  animation-delay: calc((var(--i, 0) + 1) * 70ms);
+  animation: rdWriteIn var(--motion-sheet) var(--ease-out) backwards;
+  animation-delay: calc((min(var(--i, 0), 4) + 1) * 40ms);
 }
 
 @keyframes rdWriteIn {
   from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
   to { -webkit-mask-position: 0 0; mask-position: 0 0; }
-}
-
-@keyframes rdRevealHead {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
 }
 
 .rd-notice {
@@ -699,11 +684,11 @@ button.rd-tag {
   font-size: var(--fs-sm);
   /* It arrives at the end of a stream that stopped early, under text the reader
      is already reading. Appearing outright reads as a layout error. */
-  animation: rdErrorIn 320ms var(--ease-out-expo);
+  animation: rise 320ms var(--ease-out-expo);
 }
 
 .rd-error-state {
-  animation: rdErrorIn 360ms var(--ease-out-expo);
+  animation: rise var(--motion-base) var(--ease-out);
 }
 
 .rd-error-code {
@@ -711,11 +696,6 @@ button.rd-tag {
   margin-top: var(--space-2);
   font: 400 0.6875rem/1.5 var(--font-mono);
   color: var(--text-tertiary);
-}
-
-@keyframes rdErrorIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
 }
 
 /* ── Responsive ── */
@@ -840,13 +820,13 @@ button.rd-tag {
   .rd-section[data-reveal] .rd-p {
     -webkit-mask-image: none;
     mask-image: none;
-    animation: rdRevealStill 120ms;
+    animation: fadeIn 120ms;
     animation-delay: 0s;
   }
 
   .rd-section[data-reveal] .rd-section-head,
   .rd-section[data-reveal] .rd-section-title {
-    animation: rdRevealStill 120ms;
+    animation: fadeIn 120ms;
   }
 
   .rd-ghost-stage {
@@ -867,11 +847,6 @@ button.rd-tag {
   .rd-mark {
     transition: none;
   }
-}
-
-@keyframes rdRevealStill {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 /* ── While the reader is open, the page behind it is not a page ──

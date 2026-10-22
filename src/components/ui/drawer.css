@@ -23,7 +23,7 @@
   min-height: 100dvh;
   background: rgb(17, 19, 24);
   opacity: calc(var(--backdrop-opacity) * (1 - var(--drawer-swipe-progress)));
-  transition: opacity var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, var(--ease-drawer));
+  transition: opacity var(--drawer-enter-ms, var(--motion-sheet)) var(--drawer-enter-ease, var(--ease-drawer));
 }
 
 .ui-drawer-backdrop[data-starting-style],
@@ -36,7 +36,7 @@
 }
 
 .ui-drawer-backdrop[data-ending-style] {
-  transition-duration: calc(var(--drawer-swipe-strength, 1) * 360ms);
+  transition-duration: calc(var(--drawer-swipe-strength, 1) * 240ms);
 }
 
 .ui-drawer-viewport {
@@ -83,7 +83,7 @@
   overscroll-behavior: contain;
   will-change: transform;
   transform: translateY(var(--drawer-swipe-movement-y));
-  transition: transform var(--drawer-enter-ms, 400ms) var(--drawer-enter-ease, var(--ease-drawer));
+  transition: transform var(--drawer-enter-ms, var(--motion-sheet)) var(--drawer-enter-ease, var(--ease-drawer));
 }
 
 .ui-drawer-popup[data-starting-style],
@@ -97,7 +97,7 @@
 }
 
 .ui-drawer-popup[data-ending-style] {
-  transition-duration: calc(var(--drawer-swipe-strength, 1) * 360ms);
+  transition-duration: calc(var(--drawer-swipe-strength, 1) * 240ms);
 }
 
 /* A drawer opened from inside another stacks on it, without a second

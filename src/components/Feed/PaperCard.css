@@ -31,7 +31,7 @@
   background: var(--bg-secondary);
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  /* `translate`, not `transform`: `pcArrive` and `cardSlideUp` animate
+  /* `translate`, not `transform`: `rise` and `cardSlideUp` animate
      transform on the pieces inside, and the two compose instead of one
      replacing the other. The only thing that moves a card from out here is
      the refresh sinking it, so the clock is the veil's own and this is the
@@ -82,7 +82,7 @@
      page it sits in was already fading in over 0.3s: measured, the page was at
      0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
      after the frame had arrived — content appearing after its page. The fade
-     now belongs to the pieces (`pcArrive` below), which start with the frame;
+     now belongs to the pieces (`rise` below), which start with the frame;
      the sheet only settles into place. */
   animation: cardSlideUp 0.36s var(--ease-out-expo) backwards;
 }
@@ -143,12 +143,12 @@
      finished and then twitched. 1.1s hands over while the entrance is still
      the thing you are watching. */
   animation:
-    figureClipIn var(--fig-in-duration, 480ms) var(--ease-out-quad)
+    figureClipIn var(--fig-in-duration, 300ms) var(--ease-out-quad)
       var(--fig-in-delay, 0ms) backwards,
-    figureClipFade var(--fig-in-duration, 480ms) linear
+    appear var(--fig-in-duration, 300ms) linear
       var(--fig-in-delay, 0ms) backwards,
     figureClipDrift var(--fig-drift-duration, 5s) ease-in-out
-      calc(var(--fig-in-delay, 0ms) + var(--fig-in-duration, 480ms) + 1.1s) infinite;
+      calc(var(--fig-in-delay, 0ms) + var(--fig-in-duration, 300ms) + 1.1s) infinite;
 }
 
 /* Until the bytes are actually here, the clipping is not.
@@ -182,7 +182,7 @@
    not loaded is already invisible. Without it this ties with
    `.pc-figure.is-loaded.is-resumed` below (three classes each) and loses on
    source order — measured 2026-09-12 with `getComputedStyle().animationName`,
-   which answered `figureClipResume, figureClipDrift` on a held page while the
+   which answered `fadeIn, figureClipDrift` on a held page while the
    selector itself matched. A card that has been resumed once keeps the class
    for as long as it is on screen, so the tie is the normal case, not the edge:
    open a topic, come back, open it again, and the second opening is the one
@@ -191,11 +191,7 @@
 .page-transition[data-page-motion="hold-lateral"] .pc-figure.is-loaded,
 .page-transition[data-page-motion="leave"] .pc-figure.is-loaded,
 .page-transition[data-page-motion="fade"] .pc-figure.is-loaded {
-  animation: figureClipOut 50ms linear both;
-}
-
-@keyframes figureClipOut {
-  to { opacity: 0; }
+  animation: vanish 50ms linear both;
 }
 
 /* And it comes back WITH its page, not on a clock of its own and not in one
@@ -204,7 +200,7 @@
    running 450ms after the page had stopped — at the frame the page came to rest
    the four sat at 0.49, 0.33, 0.10 and 0.00 of their resting 0.62, the last
    finishing near 750ms, while the card's words were already exactly where they
-   had been left (`pcArrive` is deliberately at rest on the way back).
+   had been left (`rise` is deliberately at rest on the way back).
 
    Dropping the entrance outright was tried and reverted the same night: the
    clippings then went 0.00 -> 0.62 in ONE frame, which trades a 450ms tail for
@@ -217,12 +213,8 @@
    still plays its entrance in full. */
 .pc-figure.is-loaded.is-resumed {
   animation:
-    figureClipResume 220ms linear,
+    appear 220ms linear,
     figureClipDrift var(--fig-drift-duration, 5s) ease-in-out 1.32s infinite;
-}
-
-@keyframes figureClipResume {
-  from { opacity: 0; }
 }
 
 .pc-figure:not(.is-loaded) {
@@ -239,10 +231,6 @@
     translate: var(--fig-shift-x, 0px) calc(var(--fig-shift-y, 0px) + 16px);
     scale: 0.985;
   }
-}
-
-@keyframes figureClipFade {
-  from { opacity: 0; }
 }
 
 /* One keyframe, at the top of the arc: the browser synthesises both ends from
@@ -391,7 +379,7 @@
   pointer-events: none;
   /* Match the clipping's linear fade, rather than its movement curve, so the
      glyph gives way at the same pace as the picture becomes visible. */
-  transition: opacity 480ms linear;
+  transition: opacity 300ms linear;
 }
 
 .pc-watermark svg {
@@ -418,24 +406,16 @@
 }
 
 /* ── The arrival ──
-   A card composes in rather than popping in: the title first, then the
-   kicker, the authors, the abstract, and last the actions. Each step is 45 ms behind the one before on the same short settle. The
-   order is an explicit `--arrive` step per piece rather than `nth-child`,
-   because half of these pieces are optional and the sequence must not shift
-   when one is absent. `backwards` holds the first frame during the delay and
-   nothing after the run: once each piece has landed, no transform is left. */
-.pc-title { --arrive: 0; }
-.pc-meta { --arrive: 1; }
-.pc-authors { --arrive: 2; }
-.pc-abstract { --arrive: 3; }
-.pc-side-actions { --arrive: 5; }
-
+   A card's pieces rise in together on the first cards of a session; no
+   stagger, because the feed is the screen the reader sees most. `backwards`
+   holds the first frame only during the run: once landed, no transform is
+   left. */
 .pc-meta,
 .pc-title,
 .pc-authors,
 .pc-abstract,
 .pc-side-actions {
-  animation: pcArrive 0.32s var(--ease-out-expo) calc(var(--arrive, 0) * 45ms) backwards;
+  animation: rise var(--motion-base) var(--ease-out) backwards;
 }
 
 /* Coming back is not arriving. A feed reached by the back arrow — from an
@@ -463,11 +443,6 @@
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-abstract,
 :is([data-nav-direction="-1"], [data-nav-lateral="true"]) .pc-side-actions {
   animation: none;
-}
-
-@keyframes pcArrive {
-  0% { opacity: 0; transform: translateY(8px); }
-  100% { opacity: 1; transform: none; }
 }
 
 .pc-body {
@@ -583,7 +558,7 @@ a.pc-citations {
    enriquecimiento (OpenAlex, iCite, Europe PMC). El primer pintado de un feed
    espera ahora a los tres bajo un techo de 1200ms (utils/feedCitationGate.js),
    así que lo normal es que el chip esté desde el principio y este fundido
-   corra solapado con el `pcArrive` de su fila, que también arranca en opacidad
+   corra solapado con el `rise` de su fila, que también arranca en opacidad
    0: no se ve y no cuesta nada.
 
    Lo que cubre es el caso que el techo deja pasar. Un enriquecimiento de más
@@ -602,11 +577,7 @@ a.pc-citations {
    parpadeo entero en el separador. */
 .pc-citations,
 .pc-meta-dot--citations {
-  animation: pcCitationsIn 220ms linear;
-}
-
-@keyframes pcCitationsIn {
-  from { opacity: 0; }
+  animation: appear 220ms linear;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -888,10 +859,10 @@ button.pc-topics-pop-item:focus-visible {
 
 .pc-abstract--resizing {
   transition:
-    height 0.42s var(--ease-out-expo),
-    max-height 0.42s var(--ease-out-expo),
-    -webkit-mask-size 0.42s var(--ease-out-expo),
-    mask-size 0.42s var(--ease-out-expo);
+    height var(--motion-sheet) var(--ease-out-expo),
+    max-height var(--motion-sheet) var(--ease-out-expo),
+    -webkit-mask-size var(--motion-sheet) var(--ease-out-expo),
+    mask-size var(--motion-sheet) var(--ease-out-expo);
 }
 
 .pc-abstract > p {
@@ -958,9 +929,9 @@ button.pc-topics-pop-item:focus-visible {
    measured heights instead. */
 .pc-abstract--open {
   transition:
-    max-height 0.42s var(--ease-out-expo),
-    -webkit-mask-size 0.42s var(--ease-out-expo),
-    mask-size 0.42s var(--ease-out-expo);
+    max-height var(--motion-sheet) var(--ease-out-expo),
+    -webkit-mask-size var(--motion-sheet) var(--ease-out-expo),
+    mask-size var(--motion-sheet) var(--ease-out-expo);
   flex: 1 1 auto;
   max-height: 100%;
   overflow-y: auto;
@@ -1224,7 +1195,7 @@ button.pc-topics-pop-item:focus-visible {
   z-index: 10;
   pointer-events: none;
   color: var(--accent-like);
-  animation: heartPop 0.8s var(--ease-out-expo) forwards;
+  animation: heartPop 0.5s var(--ease-out-expo) forwards;
 }
 
 @keyframes heartPop {
@@ -1244,7 +1215,7 @@ button.pc-topics-pop-item:focus-visible {
   border: 2px solid currentColor;
   transform: translate(-50%, -50%) scale(0.5);
   opacity: 0;
-  animation: ringExpand 0.8s ease-out forwards;
+  animation: ringExpand 0.5s var(--ease-out) forwards;
 }
 
 @keyframes ringExpand {
@@ -1271,7 +1242,7 @@ button.pc-topics-pop-item:focus-visible {
      Nobody is still watching a scroll hint after 10 seconds on the first
      card — an infinite loop kept it animating for the entire session, one
      of the two animations still running on a feed nobody is touching. */
-  animation: scrollNudge 2.4s cubic-bezier(0.25, 1, 0.5, 1) 4 forwards;
+  animation: scrollNudge 2.4s cubic-bezier(0.25, 1, 0.5, 1) 2 forwards;
 }
 
 .pc-scroll-hint-label {
@@ -1328,7 +1299,7 @@ button.pc-topics-pop-item:focus-visible {
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   box-shadow: var(--shadow-xl);
-  transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1), height 0.28s var(--ease-out-expo);
+  transition: transform var(--motion-sheet) var(--ease-drawer), height 0.28s var(--ease-out-expo);
   will-change: transform, opacity;
   -webkit-tap-highlight-color: transparent;
 }
@@ -1533,7 +1504,7 @@ button.pc-topics-pop-item:focus-visible {
   /* Dashed at rest: a link to look along. Hovered or selected, it closes into
      a solid line in its paper's ink. */
   stroke-dasharray: 3 4;
-  animation: graphEdgeIn 0.22s var(--ease-out) backwards;
+  animation: fadeIn 0.22s var(--ease-out) backwards;
   animation-delay: var(--edge-delay, 0ms);
   transition: stroke var(--transition-fast), stroke-width var(--transition-fast);
 }
@@ -1573,7 +1544,7 @@ button.pc-topics-pop-item:focus-visible {
 .graph-now {
   stroke: var(--accent-primary);
   stroke-width: 1;
-  animation: graphEdgeIn 0.22s var(--ease-out) 0.12s backwards;
+  animation: fadeIn 0.22s var(--ease-out) 0.12s backwards;
 }
 
 /* The citation scale, labelled up the left edge of the plot, its name at the
@@ -1604,7 +1575,7 @@ button.pc-topics-pop-item:focus-visible {
 
 /* The centre's column is carried by `--mark-x` on the NATIVE `translate`
    property, never by `left`. Two reasons, both learned here: `translate`
-   composes with the `transform` that `relatedItemIn` animates instead of
+   composes with the `transform` that `rise` animates instead of
    being replaced by it, and it moves the dot without laying the plot out
    again. The transition is what turns the recompute into a move — see
    `.graph-chip` for the whole story. */
@@ -1626,7 +1597,7 @@ button.pc-topics-pop-item:focus-visible {
   top: 0;
   translate: var(--mark-x, 0) var(--mark-y, 0);
   transition: translate 0.28s var(--ease-out-quad);
-  animation: relatedItemIn 0.28s var(--ease-out-expo) 0.14s backwards;
+  animation: rise 0.28s var(--ease-out-expo) 0.14s backwards;
 }
 
 .graph-plot[data-resizing] :is(.graph-mark, .graph-chip) {
@@ -1648,7 +1619,7 @@ button.pc-topics-pop-item:focus-visible {
 /* The label is placed by the NATIVE `translate` property, not by `transform`
    and not by `left`/`right`. Three things ride on that one choice:
 
-   1. The centring. `relatedItemIn` below is a shared keyframe that writes
+   1. The centring. `rise` below is a shared keyframe that writes
       `transform`, and a keyframe replaces the rule's own for as long as it
       runs. Written as `transform: translateY(-50%)` the centring was dropped
       for the whole 280ms arrival and handed back in a single frame at the end
@@ -1686,7 +1657,7 @@ button.pc-topics-pop-item:focus-visible {
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
   white-space: nowrap;
-  animation: relatedItemIn 0.28s var(--ease-out-expo) 0.14s backwards;
+  animation: rise 0.28s var(--ease-out-expo) 0.14s backwards;
 }
 
 .graph-chip.is-gone {
@@ -1808,7 +1779,7 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .graph-node.is-entering {
-  animation: relatedItemIn 0.28s var(--ease-out-expo) backwards;
+  animation: rise 0.28s var(--ease-out-expo) backwards;
   animation-delay: var(--node-delay, 0ms);
 }
 
@@ -2031,7 +2002,7 @@ button.pc-topics-pop-item:focus-visible {
   border: 1px solid var(--border-ink);
   border-radius: var(--radius-md);
   background: var(--bg-card);
-  animation: graphPeekIn 0.24s var(--ease-out-expo);
+  animation: rise 0.24s var(--ease-out-expo);
 }
 
 .graph-peek.is-leaving {
@@ -2118,7 +2089,7 @@ button.pc-topics-pop-item:focus-visible {
    the same height and switching Graph and Similar does not move Petri or
    the title. Petri stands still, like the empty abstract's. */
 .graph-empty {
-  animation: graphEmptyIn 220ms var(--ease-out);
+  animation: appear 220ms var(--ease-out);
   flex: 1;
   justify-content: center;
   /* Last resort on a very short card: the state scrolls inside the panel
@@ -2235,7 +2206,7 @@ button.pc-topics-pop-item:focus-visible {
   overscroll-behavior: contain;
   padding: 6px 0;
   scroll-behavior: smooth;
-  animation: relatedContentIn 0.22s ease-out both;
+  animation: rise 0.22s ease-out both;
 }
 
 /* In the card the list runs from the header's rule to the panel's own
@@ -2421,7 +2392,7 @@ button.pc-topics-pop-item:focus-visible {
 }
 
 .related-card-content.is-ready {
-  animation: relatedCardContentIn 0.2s ease-out both;
+  animation: rise 0.2s ease-out both;
 }
 
 .related-card-loading {
@@ -2504,29 +2475,6 @@ button.pc-topics-pop-item:focus-visible {
   transition: transform 0.21s cubic-bezier(0.4, 0, 1, 1), opacity 0.21s cubic-bezier(0.4, 0, 1, 1);
 }
 
-@keyframes relatedItemIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes relatedContentIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ── The map's own frames ──
-   Everything else the map does reuses a frame the sheet already had. The
-   edges and the year line only fade in, and a node that arrives from the
-   centre lands rather than appears. */
-@keyframes graphEmptyIn {
-  from { opacity: 0; }
-}
-
-@keyframes graphEdgeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @keyframes graphArrivingUp {
   from { transform: translateY(30px) scale(1.4); }
   to { transform: none; }
@@ -2535,11 +2483,6 @@ button.pc-topics-pop-item:focus-visible {
 @keyframes graphArrivingDown {
   from { transform: translateY(-30px) scale(1.4); }
   to { transform: none; }
-}
-
-@keyframes graphPeekIn {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: none; }
 }
 
 @keyframes graphPeekOut {
@@ -2561,11 +2504,6 @@ button.pc-topics-pop-item:focus-visible {
 @keyframes relatedCardIn {
   from { opacity: 0; transform: translateY(14px) scale(0.99); }
   to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes relatedCardContentIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes relatedCardOut {
@@ -2744,7 +2682,7 @@ button.pc-topics-pop-item:focus-visible {
     right: var(--space-2);
     top: 50%;
     /* The individual `translate` property, not a `transform`: the arrival
-       (`pcArrive`, above) animates `transform`, and while it ran the
+       (`rise`, above) animates `transform`, and while it ran the
        animation's value replaced this centring — the rail sat half its
        height too low for 0.55 s and jumped up when the property was
        released (measured on 390×844). `translate` composes with the
@@ -2898,11 +2836,11 @@ button.pc-topics-pop-item:focus-visible {
 
   .pc-lead-figure.is-loaded {
     opacity: 1;
-    animation: pcLeadDevelop 360ms var(--ease-out-expo) both;
+    animation: pcLeadDevelop var(--motion-sheet) var(--ease-out-expo) both;
   }
 
   .pc-lead-figure.is-loaded.is-resumed {
-    animation: figureClipFade 200ms linear both;
+    animation: appear 200ms linear both;
   }
 
   /* On a phone the field's glyph is the card's picture: as tall as the lead
@@ -3027,7 +2965,7 @@ button.pc-topics-pop-item:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .pc-lead-figure.is-loaded {
-    animation: figureClipFade 200ms linear both;
+    animation: appear 200ms linear both;
   }
 
   /* The press keeps its colour and its dip; the squeeze is movement. */

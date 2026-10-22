@@ -10,7 +10,7 @@
   place-items: center;
   background: var(--bg-primary);
   opacity: 0;
-  animation: route-fallback-reveal 200ms ease-out 320ms forwards;
+  animation: fadeIn 200ms ease-out 320ms forwards;
 }
 
 .route-fallback::after {
@@ -20,15 +20,7 @@
   border-radius: 50%;
   border: 2px solid var(--border-default);
   border-top-color: var(--accent-primary);
-  animation: route-fallback-spin 800ms linear infinite;
-}
-
-@keyframes route-fallback-reveal {
-  to { opacity: 1; }
-}
-
-@keyframes route-fallback-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 800ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -983,7 +983,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
    *
    * What does hold, and keeps this safe: the card no longer receives
    * `activeIndex` in any form. Nothing visual depends on it (clips enter
-   * through an IntersectionObserver at 15% and `pcArrive` has no condition),
+   * through an IntersectionObserver at 15% and the `rise` arrival has no condition),
    * so a value that lands a frame or two late makes nothing flicker.
    * feedScrollPriority.test.ts pins that the card takes no active flag.
    *

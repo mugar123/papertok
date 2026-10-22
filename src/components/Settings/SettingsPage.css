@@ -109,7 +109,7 @@
 }
 
 .settings-spin {
-  animation: settingsSpin 0.85s linear infinite;
+  animation: spin 0.85s linear infinite;
 }
 
 /* ── Sections: a title, one line, then the panel ── */
@@ -427,10 +427,6 @@
 .profile-switch-hint {
   color: var(--text-tertiary);
   font-size: var(--fs-xs);
-}
-
-@keyframes settingsSpin {
-  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 900px) {

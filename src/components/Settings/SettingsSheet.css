@@ -21,7 +21,7 @@
    two arrive together. */
 .settings-sheet,
 .settings-sheet-backdrop {
-  --drawer-enter-ms: 480ms;
+  --drawer-enter-ms: var(--motion-sheet);
   --drawer-enter-ease: cubic-bezier(0.25, 0.85, 0.3, 1);
 }
 

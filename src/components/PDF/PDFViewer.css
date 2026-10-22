@@ -13,7 +13,7 @@
   border-radius: 0;
   box-shadow: none;
   /* No `backdrop-filter`: this overlay fades its own opacity in/out
-     (`pdfOverlayIn`/`pdfOverlayOut`), and animating opacity over a blurred
+     (`fadeIn`/`fadeOut`), and animating opacity over a blurred
      layer forces the blur to be re-resolved every frame — the worst case
      for a mobile GPU. The dark rgba veil is what actually reads as the
      backdrop; its 8px blur added nothing visible under it. */
@@ -35,11 +35,11 @@
    document until the closing animation has finished, and only then tells
    App.jsx to unmount the viewer. */
 .pdf-overlay[data-open] {
-  animation: pdfOverlayIn 280ms var(--ease-out);
+  animation: fadeIn 280ms var(--ease-out);
 }
 
 .pdf-overlay[data-closed] {
-  animation: pdfOverlayOut 180ms var(--ease-out) forwards;
+  animation: fadeOut 180ms var(--ease-out) forwards;
   pointer-events: none;
 }
 
@@ -55,7 +55,7 @@
 }
 
 .pdf-overlay[data-closed] .pdf-viewer {
-  animation: pdfViewerOut 180ms var(--ease-out) forwards;
+  animation: fadeOut 180ms var(--ease-out) forwards;
 }
 
 /* On a touch screen the viewer leaves the way it came: back down the screen.
@@ -65,7 +65,7 @@
    popup's own animation, never unmounts the sheet mid-slide. */
 @media (pointer: coarse) {
   .pdf-overlay[data-closed] {
-    animation: pdfOverlayOut 220ms var(--ease-out) forwards;
+    animation: fadeOut 220ms var(--ease-out) forwards;
   }
 
   .pdf-overlay[data-closed] .pdf-viewer {
@@ -259,25 +259,6 @@
   to {
     transform: translateY(100%);
   }
-}
-
-@keyframes pdfViewerOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes pdfOverlayIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes pdfOverlayOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
 }
 
 /* With no animation to wait for, the primitive unmounts the viewer at once. */

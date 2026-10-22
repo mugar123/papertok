@@ -72,7 +72,7 @@ test('the reading actions sit in two fixed slots and do not arrive with the card
   const phone = css.slice(css.indexOf('@media (max-width: 640px) {'));
   assert.match(phone, /\.pc-action-primary \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
 
-  const arriving = css.match(/([^{}]*)\{\s*animation: pcArrive /)?.[1] || '';
+  const arriving = css.match(/([^{}]*)\{\s*animation: rise /)?.[1] || '';
   assert.ok(arriving.includes('.pc-abstract'), 'the arrival rule is the one found');
   assert.ok(!arriving.includes('.pc-action-bar'), 'the action row is in place from the first frame');
 

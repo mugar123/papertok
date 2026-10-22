@@ -15,7 +15,7 @@
      card at 60% over a Research page already at rest. */
   --page-enter-ms: 280ms;
   --page-leave-ms: 240ms;
-  --page-lateral-ms: 240ms;
+  --page-lateral-ms: 120ms;
   --page-fade-ms: 150ms;
   --page-reveal-ms: 240ms;
   --page-reduced-ms: 120ms;

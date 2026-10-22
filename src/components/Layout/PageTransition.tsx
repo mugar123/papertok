@@ -90,7 +90,7 @@ export default function PageTransition({ children }: PropsWithChildren) {
   // the way out `direction` is the navigation that ejects the page, and the
   // held feed's cards took that flip as a new arrival: `PaperCard.css` keeps
   // them at rest under `[data-nav-direction="-1"]`, the attribute became "1"
-  // in the commit that made the page `hold`, and `pcArrive` replayed from
+  // in the commit that made the page `hold`, and `rise` replayed from
   // opacity 0 under an entity page still near-transparent. State, so a page
   // re-entered while leaving takes the new arrival's direction.
   const [arrivedWith, setArrivedWith] = useState(direction);
@@ -235,7 +235,7 @@ export default function PageTransition({ children }: PropsWithChildren) {
   // says the same of a step between tabs, in either direction. The leaving page
   // keeps the direction it ARRIVED with, not the one that ejects it — `arrivedWith`
   // and `arrivedLateral`, frozen above — or its own cards would read the eject
-  // as a fresh arrival and replay `pcArrive` under the page covering them. `inert` takes the
+  // as a fresh arrival and replay `rise` under the page covering them. `inert` takes the
   // leaving page — two `<main>` landmarks and a duplicate heading for up to
   // 220ms otherwise — out of the accessibility tree and the tab order, the
   // way `pointer-events: none` (PageTransition.css) already takes it out of

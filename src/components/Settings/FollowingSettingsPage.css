@@ -213,7 +213,7 @@
 
 .following-settings-unfollow:disabled svg,
 .following-settings-loading svg {
-  animation: followingSettingsSpin 0.85s linear infinite;
+  animation: spin 0.85s linear infinite;
 }
 
 .following-settings-loading {
@@ -234,10 +234,6 @@
 
 .petri.following-settings-empty-petri .onboarding-petri-body {
   animation: none;
-}
-
-@keyframes followingSettingsSpin {
-  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 900px) {

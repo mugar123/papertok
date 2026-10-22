@@ -131,10 +131,6 @@
   from { translate: 0 12px; }
 }
 
-@keyframes institution-piece-fade {
-  from { opacity: 0; }
-}
-
 @keyframes institution-reveal {
   from { grid-template-rows: 0fr; opacity: 0; clip-path: inset(-8px -8px 0 -8px); }
   to { clip-path: inset(-8px -8px 0 -8px); }
@@ -163,11 +159,7 @@
   border: 2px solid var(--border-strong);
   border-top-color: var(--text-primary);
   border-radius: var(--radius-full);
-  animation: institution-spin 0.8s linear infinite;
-}
-
-@keyframes institution-spin {
-  to { transform: rotate(360deg); }
+  animation: spin 0.8s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -215,7 +207,7 @@
 
 .institution-services-list > li {
   border-bottom: 1px solid var(--border-default);
-  animation: institution-source-arrive 360ms cubic-bezier(0.16, 1, 0.3, 1) var(--service-delay, 0ms) backwards;
+  animation: rise var(--motion-base) var(--ease-out) var(--service-delay, 0ms) backwards;
 }
 
 .institution-service-summary {
@@ -285,7 +277,7 @@
 .institution-service-titles > li {
   animation:
     institution-piece-travel 280ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards;
+    appear 200ms linear backwards;
   animation-delay: calc(var(--title-index, 0) * 28ms + 60ms);
 }
 .institution-service-titles > li + li { border-top: 1px solid var(--border-subtle); }
@@ -327,16 +319,6 @@
   a.institution-service-title-link:hover .institution-service-title-name { text-decoration: underline; text-underline-offset: 3px; }
 }
 
-@keyframes institution-source-arrive {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes institution-titles-arrive {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .institution-link-reveal,
   .is-just-linked > .institution-pill,
@@ -344,7 +326,7 @@
   .institution-services-message,
   .institution-services-retry,
   .institution-services-count,
-  .institution-services-pending > li { animation: institution-piece-fade 200ms linear backwards; }
+  .institution-services-pending > li { animation: appear 200ms linear backwards; }
   .institution-services-pending > li { animation-delay: 320ms; }
   .institution-services-message[data-state='loading'] {
     -webkit-mask-image: none;
@@ -352,7 +334,7 @@
   }
   .institution-placeholder-plate,
   .institution-placeholder-lines > span { animation: none; }
-  .institution-services-list > li { animation: institution-titles-arrive 100ms ease-out; }
+  .institution-services-list > li { animation: fadeIn 100ms ease-out; }
   .institution-service-chevron, .institution-service-panel { transition: none; }
   .institution-service-details { transition: opacity 100ms ease-out; }
 }
@@ -444,7 +426,7 @@
 .institution-services-count {
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards;
+    appear 200ms linear backwards;
 }
 
 .institution-services-retry { animation-delay: 90ms; }
@@ -458,7 +440,7 @@
   mask-size: 300% 100%;
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards,
+    appear 200ms linear backwards,
     checkingSweep 1400ms linear infinite;
 }
 
@@ -470,7 +452,7 @@
 .institution-services-pending > li {
   animation:
     institution-piece-travel 380ms var(--ease-out-expo) backwards,
-    institution-piece-fade 200ms linear backwards;
+    appear 200ms linear backwards;
   animation-delay: calc(320ms + var(--service-delay, 0ms));
 }
 

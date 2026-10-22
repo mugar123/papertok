@@ -121,7 +121,6 @@ import { getHuggingFaceResearchResources } from '../../services/huggingFaceServi
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation.ts';
 import { canRewritePaper } from '../../services/paperRewriteService.ts';
 import { getPaperFigures, peekPaperFigures } from '../../services/paperFigureService.ts';
-import { CARD_DURATION_MS } from '../../utils/scrollTween.ts';
 import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.ts';
 import { accessStatusForPaper, accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.ts';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.ts';
@@ -134,6 +133,8 @@ import { buildPaperTopicTags } from '../../utils/paperTopicTags.ts';
  * A 420ms collapse keeps resetting this, so the reading lands once — after it.
  */
 const ABSTRACT_SETTLE_MS = 180;
+// The abstract's open and resize, as --motion-sheet in PaperCard.css.
+const ABSTRACT_MOTION_MS = 300;
 // The abstract ⇄ map swap: the slide and the slot's height (`.pc-slot--morphing`
 // in PaperCard.css) on one clock.
 const SLOT_MORPH_MS = 240;
@@ -278,7 +279,7 @@ const FIGURE_DRIFT_JITTER_MS = 2_000;
 /* Each clipping gets a gradual fade and a gentle settle on separate curves.
    A tighter stagger keeps the four arrivals connected: the last settles at
    660ms, while each image has 480ms to become visible. */
-const FIGURE_ENTRANCE_MS = 480;
+const FIGURE_ENTRANCE_MS = 300;
 const FIGURE_ENTRANCE_STAGGER_MS = 60;
 
 /** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
@@ -692,7 +693,7 @@ const PaperCard = memo(function PaperCard({
   // reader. It falls away when the card leaves — off screen, where nothing is
   // seen going — and comes back when the card does, and an element being given
   // an animation again is what restarts it. This is also what the rest of the
-  // card already does: `pcArrive` is on the pieces unconditionally and plays
+  // card already does: the `rise` arrival is on the pieces unconditionally and plays
   // every time they mount, rather than once per paper. The state itself is
   // declared with `figures`, where a new paper resets both.
   const markFigureLoaded = useCallback((url: string) => {
@@ -820,11 +821,11 @@ const PaperCard = memo(function PaperCard({
     // `overflowY: hidden` for the length of the travel: the open panel
     // scrolls (`overflow-y: auto`), and with its content taller than the box
     // mid-way a scrollbar would come and go and re-wrap the text.
-    animateSize(panel, 'maxHeight', from, CARD_DURATION_MS, EASE_OUT_EXPO, { overflowY: 'hidden' });
+    animateSize(panel, 'maxHeight', from, ABSTRACT_MOTION_MS, EASE_OUT_EXPO, { overflowY: 'hidden' });
   }, [expanded, prefersReducedMotion]);
 
   /* And the slot's height morphs from the face it had to the one it gets, on
-     a CSS transition (PaperCard.css, CARD_DURATION_MS) that a second press
+     a CSS transition (PaperCard.css, ABSTRACT_MOTION_MS) that a second press
      retargets from wherever it is. The target is read before the first
      frame: the arriving face as the column will finally hold it, squeezed on
      a short card. The face is laid out at that size from the start and the
@@ -1094,7 +1095,7 @@ const PaperCard = memo(function PaperCard({
     // `transitionend` below does the finishing. This only covers the case where
     // it never arrives — an interrupted transition fires nothing — because an
     // inline height left behind would pin the panel at that size for good.
-    backstop = setTimeout(settle, CARD_DURATION_MS + 120);
+    backstop = setTimeout(settle, ABSTRACT_MOTION_MS + 120);
     settleAbstractResize.current = settle;
   }, [expanded, prefersReducedMotion]);
 

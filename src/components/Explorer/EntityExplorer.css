@@ -43,7 +43,7 @@
    rejected (the tab strip snapped 515 → 451 in one frame). So the offset is not
    moved; it is given a clock.
 
-   The clock is the bar's own `navbarArrive` (Navbar.css), copied byte for byte,
+   The clock is the bar's own `fadeIn` (Navbar.css), copied byte for byte,
    because this is the same event: the bar fades in over exactly these 240ms, so
    the page clears the band on the frames the bar is filling it.
 
@@ -104,7 +104,7 @@
      different curve, on purpose: it is `.explorer-hero-content`'s own
      animation copied byte for byte, so the error resolves exactly like
      every other arrival in the hero instead of being its own special case. */
-  animation: slideUpFade 0.42s var(--ease-out-expo) both;
+  animation: slideUpFade var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-error h1 {
@@ -216,7 +216,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  animation: slideUpFade 0.42s var(--ease-out-expo) forwards;
+  animation: slideUpFade var(--motion-base) var(--ease-out) forwards;
 }
 
 /* The settle (`useHeightSettle`) pins this box's height with a Web Animation.
@@ -479,7 +479,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .ehc-timeline-done {
-    animation: timelineDraw 0.4s var(--ease-out) backwards;
+    animation: timelineDraw var(--motion-base) var(--ease-out) backwards;
   }
 
   /* Today lands as the line reaches it, not before. */
@@ -524,7 +524,7 @@
 }
 
 .explorer-container--author .ehc-header {
-  animation: authorContentFade 0.24s linear backwards;
+  animation: slideUpFade 0.24s linear backwards;
 }
 
 :is(.explorer-container--author, .explorer-skeleton--author) .ehc-header {
@@ -873,7 +873,7 @@
 /* The chevron and the fold share the same gentle height curve in both
    directions, so opening a long career does not jump on the first frame. */
 .ehc-name-toggle > svg:last-child {
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--motion-base) var(--ease-out);
 }
 
 .ehc-name-toggle.is-open > svg:last-child {
@@ -1102,12 +1102,7 @@
    or its absence, is known — never at mount, where the hero's own crossfade is
    already running. */
 .ehc-stat-value.is-settled {
-  animation: statSettle 0.3s ease-out both;
-}
-
-@keyframes statSettle {
-  from { opacity: 0.35; }
-  to { opacity: 1; }
+  animation: slideUpFade 0.3s ease-out both;
 }
 
 /* Two lines from the first frame. "Calculating…" is one line; the settled
@@ -1313,7 +1308,6 @@
   box-shadow: var(--shadow-sm);
   pointer-events: none;
 }
-
 .ee-seg[data-ready] .ee-seg-pill {
   transition: transform 250ms var(--ease-in-out), width 250ms var(--ease-in-out);
 }
@@ -1536,7 +1530,6 @@
   gap: 0;
   margin: 0;
 }
-
 .explorer-grid > .list-row:not(.ex-skel-row) {
   content-visibility: auto;
   contain-intrinsic-size: auto 100px;
@@ -1726,12 +1719,9 @@
 
 
 
-
-
-
 .explorer-empty {
   margin-top: var(--space-6);
-  animation: slideUpFade 0.42s var(--ease-out-expo) both;
+  animation: slideUpFade var(--motion-base) var(--ease-out) both;
 }
 
 .explorer-empty-link {
@@ -1772,7 +1762,6 @@
    moves when the words land. What is left is the crossfade, which is the only
    honest description of what actually happens. */
 /* It starts at 0.35, not at 0, and that is the whole trick.
-
    The skeleton and the content are separate branches of the component, so React
    swaps them in a single frame — and an entrance beginning at zero meant that
    frame was blank: shapes, nothing, then text fading up. The blank is what read
@@ -1806,8 +1795,8 @@
    its share of the stagger was invisible, so the list blinked in from nothing
    one card after another. */
 .ee-author-card.staggerFadeUp {
-  animation: staggerFadeUp 0.42s var(--ease-out-expo) both;
-  animation-delay: calc(min(var(--i, 0), 8) * 0.035s);
+  animation: staggerFadeUp var(--motion-base) var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 4) * 40ms);
 }
 
 
@@ -2155,11 +2144,6 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 /* ─── Project detail ─── */
 .project-links-list {
   margin: 0;
@@ -2262,13 +2246,8 @@
    blocks animate INSIDE the settling box, so they move on its clock and its
    curve. On the expo-out this was at 97% opacity by the halfway mark — the
    measurement that says "abrupt" before anyone looks at it. */
-@keyframes projectBlockIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 .project-participants {
-  animation: projectBlockIn 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: rise var(--motion-base) var(--ease-out) backwards;
 }
 
 .project-participants { animation-delay: 0.18s; }
@@ -2280,11 +2259,11 @@
    header, which never went away — the cells replace two shimmering reserved
    ones and the menu joins a line that is already there — so they sharpen into
    place rather than arrive, and 8px of travel would read as the header row
-   itself moving. `statSettle` is the treatment this file already uses for a
+   itself moving. `slideUpFade` is the treatment this file already uses for a
    stat value whose number lands late. */
 .explorer-container--project .ehc-stat-box,
 .project-links-menu {
-  animation: statSettle 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: slideUpFade var(--motion-base) var(--ease-out) backwards;
 }
 
 /* Left to right across the row, tighter than the blocks below: these are small
@@ -2300,7 +2279,7 @@
      treatment: resolving in place from 0.35 rather than arriving from nothing.
      `backwards` holds it at that 0.35 through its delay, so the reserved box never
      blinks empty between the shimmer leaving and the words landing. */
-  animation: staggerFadeUp 0.32s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+  animation: staggerFadeUp var(--motion-base) var(--ease-out) backwards;
   animation-delay: 0.06s;
   border-radius: var(--radius-sm);
   cursor: default;
@@ -2459,19 +2438,14 @@
    after the entrance, keeping text and interactive content at rest. */
 .orcid-career-section--animate > * {
   animation:
-    authorContentFade 0.36s linear backwards,
-    authorContentTravel 0.42s var(--ease-out-quad) backwards;
+    slideUpFade var(--motion-base) linear backwards,
+    authorContentTravel var(--motion-base) var(--ease-out) backwards;
 }
 
 /* The panel already fades as a whole. Its rows only travel, avoiding a second
    opacity ramp on the same text. Delays stop growing after the fifth row. */
 .ehc-experience-panel .orcid-timeline-item {
-  animation: authorContentTravel 0.42s var(--ease-out-quad) var(--author-row-delay, 0ms) backwards;
-}
-
-@keyframes authorContentFade {
-  from { opacity: 0.35; }
-  to { opacity: 1; }
+  animation: authorContentTravel var(--motion-base) var(--ease-out) var(--author-row-delay, 0ms) backwards;
 }
 
 @keyframes authorContentTravel {
@@ -2483,9 +2457,7 @@
 .orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.04s; }
 .orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.08s; }
 .orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.12s; }
-.orcid-career-section--animate > *:nth-child(5) { animation-delay: 0.16s; }
-.orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.2s; }
-.orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.24s; }
+.orcid-career-section--animate > *:nth-child(n + 5) { animation-delay: 0.16s; }
 
 .orcid-ext-link {
   display: inline-flex;
@@ -2823,7 +2795,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The band lands instantly instead of opening. The bar's own `navbarArrive`
+  .ehc-name-toggle > svg:last-child {
+    transition: none;
+  }
+
+  .ee-author-card:hover .ee-author-arrow {
+    transform: none;
+  }
+
+  /* The band lands instantly instead of opening. The bar's own `fadeIn`
      is switched off under this same query (Navbar.css), so there is nothing
      left travelling for an instant band to be out of step with. These three
      repeat the compound selectors of the rules at the top of the file because

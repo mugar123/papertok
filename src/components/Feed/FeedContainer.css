@@ -453,7 +453,7 @@
      card the veil's clock, one value per direction.
 
    Coming back is slower than going: the feed arrives rather than snapping on,
-   and the cards' own entrance (`cardSlideUp`, `pcArrive`) runs inside it. */
+   and the cards' own entrance (`cardSlideUp`, `rise`) runs inside it. */
 .feed-container {
   transition: opacity 340ms 80ms var(--ease-out-quad);
 }
@@ -534,7 +534,7 @@
 /* The loading slot at the end of the feed (FeedContainer.jsx): a full snap
    item like a card, holding the first load's atom at a smaller size. Centred
    in the slot on its own ground, so it reads the same at every width; the
-   card that replaces it brings its own arrival (`pcArrive`). */
+   card that replaces it brings its own arrival (`rise`). */
 .feed-tail {
   height: 100%;
   display: flex;
