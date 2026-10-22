@@ -368,8 +368,9 @@ holds the sections, model, source basis and prompt version, and
 `users/{uid}/summaryHistory` holds the row the Settings history pages through (paper
 key and id, level, title, PDF URL and the server time of the write). Reopening a paper
 reads that copy before calling `/ai/rewrite`, so it reserves no use. A read that times
-out or is refused is not taken as a missing copy: the reader does not call `/ai/rewrite`,
-and its Try again reads the copy again. Writing it again
+out is not taken as a missing copy: the reader does not call `/ai/rewrite`, and its Try
+again reads the copy again. A read the rules refuse goes to `/ai/rewrite` as before copies
+were kept, and the result is not saved over the copy that was not read. Writing it again
 sends `regenerate: true`, which skips the shared cache read and reserves a use like any
 generation. Only a complete result replaces the cache entry and the browser's own copy;
 a regenerate cut short leaves both as they were. Missing, false or non-boolean

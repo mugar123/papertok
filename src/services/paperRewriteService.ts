@@ -28,6 +28,7 @@ interface RewriteOptions {
 
 import { toRewriteSection } from '../models/Rewrite.ts';
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
+import { isTransientReadError } from '../utils/boundedRead.ts';
 import { getSavedSummary, saveSummary } from './savedSummaryService.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
@@ -263,6 +264,9 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
   const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
   const cacheAccount = rewriteCacheAccount;
   const reuse = !force && !regenerate;
+  // A complete rewrite is kept in the account unless its copies could not be
+  // read: a copy that was never read must not be written over.
+  let keepInAccount = Boolean(uid);
 
   if (reuse && rewriteCache.has(cacheKey)) {
     const cached = rewriteCache.get(cacheKey)!;
@@ -275,11 +279,17 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
     onProgress?.({ stage: 'saved' });
     const saved = await getSavedSummary(uid, paper, level, { signal }).catch((error: unknown) => {
       if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
+      console.warn('Could not read the saved summary', error);
       // Unknown is not absent. Asking the worker now could spend a use and
       // write a different copy over the saved one, for a reader who only
       // opened it, so the reader is offered this lookup again instead.
-      console.warn('Could not read the saved summary', error);
-      throw new PaperRewriteError('AI_SAVED_SUMMARY_READ_FAILED');
+      if (isTransientReadError(error)) throw new PaperRewriteError('AI_SAVED_SUMMARY_READ_FAILED');
+      // A refusal does not change on a retry, so offering one would leave the
+      // reader without any summary: every signed-in reader between a frontend
+      // deploy and the rules that allow this read. The worker answers as it
+      // did before copies were kept, and this one is not kept either.
+      keepInAccount = false;
+      return null;
     });
     if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
     if (saved) {
@@ -398,7 +408,7 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
       || terminal.sectionCount !== sections.length || terminal.truncated === true;
     if (!incomplete) {
       if (cacheAccount === rewriteCacheAccount) rewriteCache.set(cacheKey, result);
-      if (uid) {
+      if (keepInAccount) {
         void saveSummary(uid, paper, level, {
           sections,
           model: result.meta.model || '',

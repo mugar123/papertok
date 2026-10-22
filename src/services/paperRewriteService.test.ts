@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
-import { ReadTimedOutError } from '../utils/boundedRead.ts';
+import { isTransientReadError, ReadTimedOutError } from '../utils/boundedRead.ts';
 import { toRewriteSection } from '../models/Rewrite.ts';
 import {
   canRewritePaper,
@@ -56,8 +56,8 @@ function streamingClient(events: object[], breakConnection = false, {
       },
     }));
   };
-  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl', 'toRewriteSection', 'getSavedSummary', 'saveSummary',
-    `${clientSource}; return { rewritePaper, getCachedRewrite, clearRewriteCache };`)(transport, isAIReadablePdfUrl, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
+  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl', 'isTransientReadError', 'toRewriteSection', 'getSavedSummary', 'saveSummary',
+    `${clientSource}; return { rewritePaper, getCachedRewrite, clearRewriteCache };`)(transport, isAIReadablePdfUrl, isTransientReadError, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
       rewritePaper: typeof rewritePaper;
       getCachedRewrite: typeof import('./paperRewriteService.ts').getCachedRewrite;
       clearRewriteCache: typeof import('./paperRewriteService.ts').clearRewriteCache;
@@ -194,30 +194,53 @@ for (const [name, events, breakConnection] of [
 }
 
 const finishedRewrite = [sectionEvent, { type: 'done', sectionCount: 1 }];
-for (const [name, failure] of [
-  ['times out', new ReadTimedOutError('saved summary')],
-  ['is refused', Object.assign(new Error('Missing or insufficient permissions.'), { name: 'FirebaseError', code: 'permission-denied' })],
-] as const) {
-  test(`a saved summary whose read ${name} is neither written again nor replaced`, async () => {
-    const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [failure] });
-    let requested = 0;
-    const shown: unknown[] = [];
-    await assert.rejects(
-      client.rewritePaper(streamPaper, 'university', {
-        uid: 'reader-1',
-        onRequest: () => { requested += 1; },
-        onSection: (section) => shown.push(section),
-      }),
-      { code: 'AI_SAVED_SUMMARY_READ_FAILED' },
-    );
-    assert.equal(client.reads.length, 1);
-    // No Worker request, so no AI use, and no new copy to write over the saved one.
-    assert.equal(client.requests(), 0);
-    assert.equal(requested, 0);
-    assert.equal(client.saves.length, 0);
-    assert.deepEqual(shown, []);
+test('a saved summary whose read times out is neither written again nor replaced', async () => {
+  const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [new ReadTimedOutError('saved summary')] });
+  let requested = 0;
+  const shown: unknown[] = [];
+  await assert.rejects(
+    client.rewritePaper(streamPaper, 'university', {
+      uid: 'reader-1',
+      onRequest: () => { requested += 1; },
+      onSection: (section) => shown.push(section),
+    }),
+    { code: 'AI_SAVED_SUMMARY_READ_FAILED' },
+  );
+  assert.equal(client.reads.length, 1);
+  // No Worker request, so no AI use, and no new copy to write over the saved one.
+  assert.equal(client.requests(), 0);
+  assert.equal(requested, 0);
+  assert.equal(client.saves.length, 0);
+  assert.deepEqual(shown, []);
+});
+
+/**
+ * A refusal does not change on a retry (utils/boundedRead.ts), so offering one
+ * would leave the reader without any summary: every signed-in reader between
+ * a frontend deploy and the rules that allow this read. The worker answers as
+ * it did before copies were kept, and the copy that was not read is not
+ * written over.
+ */
+test('a saved summary whose read is refused is written from the worker and not kept over the copy', async () => {
+  const refusal = Object.assign(new Error('Missing or insufficient permissions.'), { name: 'FirebaseError', code: 'permission-denied' });
+  const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [refusal] });
+  let requested = 0;
+  const shown: unknown[] = [];
+  const result = await client.rewritePaper(streamPaper, 'university', {
+    uid: 'reader-1',
+    onRequest: () => { requested += 1; },
+    onSection: (section) => shown.push(section.paragraphs),
   });
-}
+  assert.equal(client.reads.length, 1);
+  assert.equal(client.requests(), 1);
+  assert.equal(requested, 1);
+  assert.deepEqual(shown, [['First section.']]);
+  assert.equal(result.incomplete, false);
+  // An ordinary request: neither a retry of a failed rewrite nor a regeneration.
+  assert.equal(client.bodies[0].retryIncomplete, false);
+  assert.equal('regenerate' in client.bodies[0], false);
+  assert.equal(client.saves.length, 0);
+});
 
 test('trying again after a failed read looks the saved summary up again and shows it', async () => {
   const client = streamingClient(finishedRewrite, false, { saved: savedCopy, readFailures: [new ReadTimedOutError('saved summary')] });
