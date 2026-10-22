@@ -29,6 +29,7 @@ interface RewriteOptions {
 import { toRewriteSection } from '../models/Rewrite.ts';
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
 import { isTransientReadError } from '../utils/boundedRead.ts';
+import { accessStatusForPaper } from '../utils/paperStatus.ts';
 import { getSavedSummary, saveSummary } from './savedSummaryService.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
@@ -105,7 +106,10 @@ export function getRewritablePdfUrl(paper: RewritePaperInput | null | undefined)
     const arxivId = String(paper.arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
     candidates.push(`https://arxiv.org/pdf/${arxivId}.pdf`);
   }
-  if (paper?.openAccess && paper?.pdfUrl) candidates.push(paper.pdfUrl);
+  // The access chip's rule (`accessStatusForPaper`). A stored copy keeps its
+  // open PDF as `pdfUrl` but no access field, and must not read "Open access"
+  // while the rewrite refuses that PDF.
+  if (paper?.pdfUrl && accessStatusForPaper(paper) === 'open') candidates.push(paper.pdfUrl);
   // Europe PMC rather than PMC itself: `pmc.ncbi.nlm.nih.gov/articles/<id>/pdf/`
   // answers anything without a browser with a 1.8 KB HTML interstitial, so the
   // worker downloaded a "preparing to download" page and reported every PubMed
