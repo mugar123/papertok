@@ -2980,7 +2980,7 @@ export default function EntityExplorer({
       {/* Paper Card Overlay — the shared takeover, so the explorer and search
           open a paper the same way. */}
       <PaperOverlay
-        open={Boolean(selectedPaper && !pdfPaperToView)}
+        open={Boolean(selectedPaper)}
         onClose={closeSelectedPaper}
         onExitComplete={() => setShownPaper(null)}
        
