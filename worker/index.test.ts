@@ -11,7 +11,7 @@ import test from 'node:test';
 import { encodePaperKey } from '../src/utils/publicNavigation.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
-import { RequestQuotaLedger } from './request-quota-ledger.ts';
+import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
@@ -1876,38 +1876,6 @@ test('a cold citation graph reserves both OpenAlex ceilings in one call for what
 
 // The ledger itself behind every period key, so the ceilings are checked the way
 // the Durable Object checks them, and every call to it is counted.
-function inMemoryQuotaLedger() {
-  const objects = new Map<string, RequestQuotaLedger>();
-  const calls: string[] = [];
-  const binding = {
-    idFromName: (name: string): unknown => name,
-    get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => {
-      const key = String(name);
-      if (!objects.has(key)) {
-        const values = new Map<string, unknown>();
-        let alarm: number | null = null;
-        objects.set(key, new RequestQuotaLedger({ storage: {
-          transaction: callback => callback({
-            get: <T>(item: string) => values.get(item) as T | undefined,
-            put: (item: string, value: unknown) => { values.set(item, value); },
-            delete: (item: string) => values.delete(item),
-          }),
-          getAlarm: async () => alarm,
-          setAlarm: async (value: number | Date) => { alarm = Number(value); },
-          deleteAll: async () => values.clear(),
-        } as RequestQuotaLedger['state']['storage'] }));
-      }
-      return {
-        fetch: async (url, init) => {
-          calls.push(key);
-          return objects.get(key)!.fetch(new Request(String(url), init));
-        },
-      };
-    },
-  } as Env['REQUEST_QUOTA_LEDGER'];
-  return { binding, calls };
-}
-
 // Two misses in a row against ceilings of one: the second is refused by whichever
 // ceiling is spent, and each miss is one call to the ledger.
 async function secondOpenAlexMiss(limits: Record<string, string>) {
