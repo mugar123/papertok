@@ -117,6 +117,14 @@ button.rd-tag {
   min-width: 8.5rem;
 }
 
+@media (min-width: 641px) {
+  .rd-topbar .rd-level-select {
+    position: absolute;
+    left: 50%;
+    translate: -50% 0;
+  }
+}
+
 .rd-panel .rd-topbar-switch[data-pressed] {
   border-color: var(--tint-green-line);
   background: var(--tint-green-bg);

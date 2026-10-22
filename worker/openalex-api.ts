@@ -3,6 +3,7 @@ import type { UpstreamError } from './provider-runtime.ts';
 
 export type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 
+import { sha256 } from './ai-explanation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import {
   boundedText,
@@ -23,6 +24,16 @@ const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
 // click on an author of the same paper billed the same 404 again. An hour lets a
 // newly indexed work show up the same day.
 const OPENALEX_NOT_FOUND_CACHE_SECONDS = 60 * 60;
+// The edge cache above is per data centre. On launch day (2026-10-21) every
+// location asked OpenAlex the same questions again, and the day's ceiling ran
+// out of units while the key still had a quarter of its dollars. So an answer
+// is also kept in KV, which every location reads: a day for an answer, the
+// hour the edge keeps for a 404. The relay carries no identity -- an answer
+// depends only on the canonical upstream parameters -- so there is nothing
+// personal to keep apart. The store is NOTIFICATION_STORE under a prefix, as
+// `ai-rewrite.ts` does, because no namespace of its own exists yet.
+const OPENALEX_SHARED_CACHE_SECONDS = 24 * 60 * 60;
+const OPENALEX_SHARED_PREFIX = 'openalex:v1:';
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
 // asks for; the URL is rebuilt from them rather than forwarded.
@@ -64,6 +75,18 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
   'x-ratelimit-limit-usd',
   'x-ratelimit-remaining-usd',
 ];
+
+// What a miss resolved to, before the asking origin is put on it. Identical
+// misses in flight in this isolate share one of these (see `inFlight`), and a
+// shared `Response` would have one body for several readers.
+type RelayedAnswer = { status: number; body: string; headers: Headers };
+
+// A launch burst asks the same question from many tabs within the second it
+// takes OpenAlex to answer the first. Each of those used to miss the edge,
+// reserve its own units and make its own call. Keyed by the canonical cache
+// URL; an entry leaves when its miss settles, so a failure is not shared with
+// anyone who asks after it.
+const inFlight = new Map<string, Promise<RelayedAnswer>>();
 
 export function addOpenAlexCredentials(url: URL, env: WorkerEnv) {
   url.searchParams.set('mailto', 'app@papertok.io');
@@ -127,16 +150,16 @@ function openAlexTargetUrl(pathname: string, searchParams: URLSearchParams) {
   return url;
 }
 
-function openAlexResponseHeaders(upstream: Response, origin: string, env: WorkerEnv) {
+// The headers every relayed answer carries, before the asking origin is known.
+function relayHeaders(upstream?: Pick<Response, 'headers'>) {
   const headers = new Headers({
     'content-type': 'application/json; charset=utf-8',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
-    ...corsHeaders(origin, env),
   });
   const exposed = [];
   for (const name of OPENALEX_RATE_LIMIT_HEADERS) {
-    const value = upstream.headers.get(name);
+    const value = upstream?.headers.get(name);
     if (value) {
       headers.set(name, value);
       exposed.push(name);
@@ -144,6 +167,101 @@ function openAlexResponseHeaders(upstream: Response, origin: string, env: Worker
   }
   if (exposed.length > 0) headers.set('access-control-expose-headers', exposed.join(', '));
   return headers;
+}
+
+function cacheControl(status: number) {
+  return status === 404
+    ? `public, max-age=300, s-maxage=${OPENALEX_NOT_FOUND_CACHE_SECONDS}`
+    : `public, max-age=300, s-maxage=${OPENALEX_CACHE_SECONDS}, stale-while-revalidate=86400`;
+}
+
+// The one origin-dependent header, put on for whoever is asking now, the way
+// `serveCached` does for an edge hit -- except that the relayed rate-limit
+// headers stay exposed beside `retry-after`, which `corsHeaders` alone would
+// replace.
+function forOrigin(answer: RelayedAnswer, origin: string, env: WorkerEnv) {
+  const headers = new Headers(answer.headers);
+  const exposed = headers.get('access-control-expose-headers');
+  for (const [name, value] of Object.entries(corsHeaders(origin, env))) headers.set(name, value);
+  if (exposed && headers.has('access-control-allow-origin')) {
+    headers.set('access-control-expose-headers', [...new Set(['retry-after', ...exposed.split(',').map(name => name.trim())])].join(', '));
+  }
+  return new Response(answer.body, { status: answer.status, headers });
+}
+
+function openAlexStore(env: WorkerEnv) {
+  return env.NOTIFICATION_STORE?.getWithMetadata ? env.NOTIFICATION_STORE : null;
+}
+
+// A raw filter of fifty topics or forty arXiv URLs is longer than KV's
+// 512-byte key limit, so the canonical URL is hashed.
+async function sharedKey(cacheKey: Request) {
+  return `${OPENALEX_SHARED_PREFIX}${await sha256(cacheKey.url)}`;
+}
+
+// A store that cannot be read is a miss, not an outage: the relay still has
+// OpenAlex to ask.
+async function readShared(env: WorkerEnv, key: string) {
+  const store = openAlexStore(env);
+  if (!store) return null;
+  try {
+    const stored = await store.getWithMetadata<{ status?: unknown }>(key, { type: 'text' });
+    const status = Number(stored.metadata?.status);
+    if (stored.value === null || (status !== 200 && status !== 404)) return null;
+    return { status, body: stored.value };
+  } catch {
+    return null;
+  }
+}
+
+async function writeShared(env: WorkerEnv, key: string, status: number, body: string) {
+  const store = openAlexStore(env);
+  if (!store) return;
+  try {
+    await store.put(key, body, {
+      expirationTtl: status === 404 ? OPENALEX_NOT_FOUND_CACHE_SECONDS : OPENALEX_SHARED_CACHE_SECONDS,
+      metadata: { status },
+    });
+  } catch {
+    // A missed write costs one future call.
+  }
+}
+
+// An edge miss: the shared store first, then -- and only then -- a reservation
+// and the call. Resolves without an origin so that everyone waiting on the
+// same miss can put their own on.
+async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promise<RelayedAnswer> {
+  const key = await sharedKey(cacheKey);
+  const shared = await readShared(env, key);
+  if (shared) {
+    const headers = relayHeaders();
+    headers.set('cache-control', cacheControl(shared.status));
+    await caches.default.put(cacheKey, new Response(shared.body, { status: shared.status, headers }));
+    return { ...shared, headers };
+  }
+
+  const searching = target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '');
+  const budget = await reserveOpenAlexBudget(env, '', searching ? OPENALEX_CALLS.search : OPENALEX_CALLS.relay);
+  if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
+
+  const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
+    headers: { accept: 'application/json' },
+  });
+  const body = await upstream.text();
+  const headers = relayHeaders(upstream);
+
+  // A refusal is relayed with its own status and its own `retry-after`, because
+  // flattening it into a 502 would leave the client guessing how long to wait --
+  // and since February 2026 that wait can be most of a day.
+  if (!upstream.ok && upstream.status !== 404) {
+    headers.set('cache-control', 'no-store');
+    return { status: upstream.status, body, headers };
+  }
+
+  headers.set('cache-control', cacheControl(upstream.status));
+  await caches.default.put(cacheKey, new Response(body, { status: upstream.status, headers }));
+  await writeShared(env, key, upstream.status, body);
+  return { status: upstream.status, body, headers };
 }
 
 export async function handleOpenAlex(request: Request, env: WorkerEnv) {
@@ -158,34 +276,12 @@ export async function handleOpenAlex(request: Request, env: WorkerEnv) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  const searching = target.searchParams.has('search') || /\.search[.:]/.test(target.searchParams.get('filter') || '');
-  const budget = await reserveOpenAlexBudget(env, origin, searching ? OPENALEX_CALLS.search : OPENALEX_CALLS.relay);
-  if (budget.error) return budget.error;
-
-  const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
-    headers: { accept: 'application/json' },
-  });
-  const body = await upstream.text();
-  const headers = openAlexResponseHeaders(upstream, origin, env);
-
-  // A refusal is relayed with its own status and its own `retry-after`, because
-  // flattening it into a 502 would leave the client guessing how long to wait --
-  // and since February 2026 that wait can be most of a day.
-  if (upstream.status === 404) {
-    headers.set('cache-control', `public, max-age=300, s-maxage=${OPENALEX_NOT_FOUND_CACHE_SECONDS}`);
-    const response = new Response(body, { status: 404, headers });
-    await caches.default.put(cacheKey, response.clone());
-    return response;
+  let pending = inFlight.get(cacheKey.url);
+  if (!pending) {
+    pending = relayMiss(target, cacheKey, env).finally(() => inFlight.delete(cacheKey.url));
+    inFlight.set(cacheKey.url, pending);
   }
-  if (!upstream.ok) {
-    headers.set('cache-control', 'no-store');
-    return new Response(body, { status: upstream.status, headers });
-  }
-
-  headers.set('cache-control', `public, max-age=300, s-maxage=${OPENALEX_CACHE_SECONDS}, stale-while-revalidate=86400`);
-  const response = new Response(body, { status: 200, headers });
-  await caches.default.put(cacheKey, response.clone());
-  return response;
+  return forOrigin(await pending, origin, env);
 }
 
 // OpenAlex reports the remaining daily budget on every response. With the quota

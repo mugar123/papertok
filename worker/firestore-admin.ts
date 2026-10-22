@@ -1,3 +1,4 @@
+import { getAccessToken, readServiceAccount, invalidateAccessToken } from './firebase-service-account.ts';
 import type { WorkerEnv } from './env.ts';
 
 import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
@@ -33,32 +34,6 @@ export interface FirestoreWrite {
 type DocumentResult<T, Meta extends boolean> = Meta extends true ? { data: T; updateTime?: string } : T;
 export type FirestoreAdmin = ReturnType<typeof createFirestoreAdmin>;
 
-/**
- * Firestore with the Worker's own service identity (P18/P10).
- *
- * Everything the app writes goes through `firestore.rules` from the browser,
- * which is right for user-owned documents. Public list documents are the
- * exception: validating them needs more expressions than the rules engine will
- * evaluate in one request (1000), so `publicLists` is closed to clients and
- * written here instead, after validation in real code.
- *
- * The access token is an OAuth2 token minted from the service account key by
- * signing a JWT with RS256 — there is no Google SDK in a Worker, so the grant
- * is built by hand with WebCrypto. Tokens last an hour and are cached in the
- * isolate, so a cold start pays one signature and one token exchange and every
- * request after that pays neither.
- *
- * Scope is `datastore` only, and the service account is expected to hold
- * `roles/datastore.user`: it reads and writes documents and can do nothing
- * else — not IAM, not Auth, not the rules themselves.
- */
-
-const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const SCOPE = 'https://www.googleapis.com/auth/datastore';
-const JWT_LIFETIME_SECONDS = 3600;
-/** Mint a new token this long before the old one lapses. */
-const TOKEN_REFRESH_MARGIN_SECONDS = 300;
-
 export class FirestoreAdminError extends Error {
   declare code: string;
   declare status: number;
@@ -69,121 +44,6 @@ export class FirestoreAdminError extends Error {
     this.code = code;
     this.status = status;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Credentials.
-// ---------------------------------------------------------------------------
-
-/**
- * The private key arrives as a Wrangler secret, and how it arrives depends on
- * how it was pasted: straight from the JSON key file it carries literal
- * backslash-n, piped from a PEM it carries real newlines. Both are accepted so
- * loading the secret cannot fail in a way that only shows up at the first
- * publish.
- */
-export function normalizePrivateKey(value: unknown) {
-  return String(value || '').replace(/\\n/g, '\n').trim();
-}
-
-function base64UrlEncode(bytes: string | ArrayBuffer) {
-  const binary = typeof bytes === 'string'
-    ? bytes
-    : String.fromCharCode(...new Uint8Array(bytes));
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function pemToArrayBuffer(pem: string) {
-  const body = pem
-    .replace(/-----BEGIN [^-]+-----/, '')
-    .replace(/-----END [^-]+-----/, '')
-    .replace(/\s+/g, '');
-  if (!body) throw new FirestoreAdminError('SERVICE_ACCOUNT_KEY_INVALID', 503);
-  const binary = atob(body);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-export function readServiceAccount(env: WorkerEnv) {
-  const email = String(env.FIREBASE_SERVICE_ACCOUNT_EMAIL || '').trim();
-  const privateKey = normalizePrivateKey(env.FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY);
-  const projectId = String(env.FIREBASE_PROJECT_ID || '').trim();
-  if (!email || !privateKey || !projectId) {
-    throw new FirestoreAdminError('SERVICE_ACCOUNT_NOT_CONFIGURED', 503);
-  }
-  return { email, privateKey, projectId };
-}
-
-export function isServiceAccountConfigured(env: WorkerEnv) {
-  try {
-    readServiceAccount(env);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Token minting, cached per isolate.
-// ---------------------------------------------------------------------------
-
-const tokenCache = new Map<string, { token: string; expiresAt: number }>();
-
-/** Test seam: drops the cached token so a test can observe a fresh mint. */
-export function resetAccessTokenCache() {
-  tokenCache.clear();
-}
-
-export async function buildAssertion(account: Pick<ReturnType<typeof readServiceAccount>, 'email' | 'privateKey'>, nowSeconds: number) {
-  const header = base64UrlEncode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claims = base64UrlEncode(JSON.stringify({
-    iss: account.email,
-    scope: SCOPE,
-    aud: TOKEN_ENDPOINT,
-    iat: nowSeconds,
-    exp: nowSeconds + JWT_LIFETIME_SECONDS,
-  }));
-  const signingInput = `${header}.${claims}`;
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToArrayBuffer(account.privateKey),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    key,
-    new TextEncoder().encode(signingInput),
-  );
-  return `${signingInput}.${base64UrlEncode(signature)}`;
-}
-
-export async function getAccessToken(env: WorkerEnv, { fetchImpl = fetch, now = () => Date.now() } = {}) {
-  const account = readServiceAccount(env);
-  const nowSeconds = Math.floor(now() / 1000);
-  const cached = tokenCache.get(account.email);
-  if (cached && cached.expiresAt - TOKEN_REFRESH_MARGIN_SECONDS > nowSeconds) return cached.token;
-
-  const assertion = await buildAssertion(account, nowSeconds);
-  const response = await fetchImpl(TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion,
-    }).toString(),
-  });
-  const payload = await response.json<{ access_token?: string; expires_in?: unknown; error?: string }>().catch(() => ({} as { access_token?: string; expires_in?: unknown; error?: string }));
-  if (!response.ok || !payload?.access_token) {
-    throw new FirestoreAdminError('SERVICE_TOKEN_REFUSED', 502, payload?.error || '');
-  }
-  tokenCache.set(account.email, {
-    token: payload.access_token,
-    expiresAt: nowSeconds + (Number(payload.expires_in) || JWT_LIFETIME_SECONDS),
-  });
-  return payload.access_token;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,7 +156,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
     };
     const response = await send();
     if (response.status !== 401) return response;
-    tokenCache.delete(email);
+    invalidateAccessToken(email);
     return send();
   }
 

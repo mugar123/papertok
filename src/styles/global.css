@@ -394,6 +394,13 @@ textarea:focus-visible,
   outline: none;
 }
 
+/* A page sliding in from the side must not widen the phone's layout viewport,
+   which the fixed navbar sizes to. `clip`, not `hidden`, so this is no scroll
+   container and the window keeps scrolling. */
+#main-content {
+  overflow-x: clip;
+}
+
 /* `html { scroll-behavior: smooth }` above is its own movement — every
    anchor jump and every `scrollTo({ behavior: 'smooth' })` call in the app
    inherits it — and the view-transition block above does not reach it. */
