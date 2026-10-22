@@ -13,7 +13,7 @@ import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publicationStatus.ts
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { RequestQuotaLedger, reserveRequestQuota } from './request-quota-ledger.ts';
-import { fetchWithDeadline, OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
+import { fetchWithDeadline, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -3894,4 +3894,75 @@ test('a share page for a DOI or a work reserves nothing; one for an arXiv id res
   assert.deepEqual(await openAlexReservations(SHARED_DOI_KEY), []);
   assert.deepEqual(await openAlexReservations(encodePaperKey('openalex', 'W4304195660')), []);
   assert.deepEqual(await openAlexReservations(encodePaperKey('arxiv', '2609.28470')), ['enrichment.share 1']);
+});
+
+// OpenAlex reports what is left of the key's day on its answers. On launch day
+// the ledger refused at its configured 8000 while the key still had 2,460
+// calls (PAP-86); the ceiling now follows the key, less a margin, whenever a
+// reading for today arrives.
+const budgetHeaders = (units: number, resetSeconds: number) => ({
+  'x-ratelimit-remaining-usd': (units * OPENALEX_UNIT_USD).toFixed(4),
+  'x-ratelimit-reset': String(resetSeconds),
+});
+
+test("a remaining budget OpenAlex reports for today closes billed misses at the margin; a reading from yesterday's counter does not; a work by id is still relayed", async t => {
+  // Half a minute past midnight UTC: OpenAlex's counter for the day before may
+  // still be answering.
+  const now = Date.parse('2026-10-22T00:00:30Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const untilTomorrow = (Date.parse('2026-10-23T00:00:00Z') - now) / 1000;
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+  const answers: Record<string, Record<string, string>> = {
+    // Yesterday's counter, five seconds from its reset, nothing left.
+    '/works/W1': budgetHeaders(0, 5),
+    '/works': budgetHeaders(0, 5),
+    // Today's counter, with exactly the margin left.
+    '/works/W2': budgetHeaders(OPENALEX_OBSERVATION_MARGIN, untilTomorrow),
+    '/works/W3': budgetHeaders(OPENALEX_OBSERVATION_MARGIN, untilTomorrow),
+  };
+  const relay = (path: string) => reportApi.fetch(new Request(relayPath(path), { headers: BROWSER }), env);
+  const upstream: string[] = [];
+  const statuses = await withWorkerFetchMock(async (url) => {
+    const { pathname } = new URL(String(url));
+    upstream.push(pathname);
+    return Response.json({ id: 'https://openalex.org/W1', results: [] }, { headers: answers[pathname] });
+  }, async () => [
+    (await relay('works/W1')).status,
+    (await relay('works?filter=doi:10.1000/a&per-page=1')).status,
+    (await relay('works/W2')).status,
+    await relay('works?filter=doi:10.1000/b&per-page=1'),
+    (await relay('works/W3')).status,
+  ]);
+
+  const [first, afterStale, second, refused, third] = statuses as [number, number, number, Response, number];
+  assert.deepEqual([first, afterStale, second, third], [200, 200, 200, 200]);
+  assert.equal(refused.status, 429);
+  assert.deepEqual(await refused.json(), { code: 'PROVIDER_RATE_LIMITED' });
+  assert.equal(refused.headers.get('x-papertok-budget-tier'), 'essential');
+  assert.deepEqual(upstream, ['/works/W1', '/works', '/works/W2', '/works/W3'], 'the refused miss asked OpenAlex nothing');
+});
+
+test("OpenAlex's own refusal reporting an empty key closes billed misses at once", async t => {
+  const now = Date.parse('2026-10-22T15:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const ledger = inMemoryQuotaLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+  let calls = 0;
+  const responses = await withWorkerFetchMock(async () => {
+    calls += 1;
+    return Response.json({ error: 'Rate limit exceeded' }, {
+      status: 429,
+      headers: { ...budgetHeaders(0, (Date.parse('2026-10-23T00:00:00Z') - now) / 1000), 'retry-after': '32400' },
+    });
+  }, async () => [
+    await reportApi.fetch(new Request(relayPath('works?filter=doi:10.1000/a&per-page=1'), { headers: BROWSER }), env),
+    await reportApi.fetch(new Request(relayPath('works?filter=doi:10.1000/b&per-page=1'), { headers: BROWSER }), env),
+  ]);
+
+  assert.equal(responses[0].status, 429);
+  assert.equal(responses[0].headers.get('x-papertok-budget-tier'), null, "OpenAlex's refusal is relayed as its own");
+  assert.equal(responses[1].status, 429);
+  assert.equal(responses[1].headers.get('x-papertok-budget-tier'), 'essential');
+  assert.equal(calls, 1);
 });

@@ -11,6 +11,7 @@ import {
   fetchJsonWithTimeout,
   fetchWithDeadline,
   numberOrNull,
+  observeOpenAlexBudget,
   OPENALEX_CALLS,
   reserveOpenAlexBudget,
   serveCached,
@@ -295,9 +296,12 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
     return { ...shared, headers };
   }
 
+  // One instant for the reservation and the reading this answer brings, so
+  // both name the same day's ledger even when the call crosses midnight.
+  const now = new Date().toISOString();
   const cost = openAlexCostFor(target);
   if (cost.units > 0) {
-    const budget = await reserveOpenAlexBudget(env, '', cost);
+    const budget = await reserveOpenAlexBudget(env, '', cost, now);
     if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
   }
 
@@ -306,18 +310,22 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv): Promis
   });
   const body = await upstream.text();
   const headers = relayHeaders(upstream);
+  // Every answer reports the key's day, a free lookup's and a refusal's too:
+  // a refusal reporting nothing left closes the ledger at once.
+  const observed = observeOpenAlexBudget(env, now, upstream.headers);
 
   // A refusal is relayed with its own status and its own `retry-after`, because
   // flattening it into a 502 would leave the client guessing how long to wait --
   // and since February 2026 that wait can be most of a day.
   if (!upstream.ok && upstream.status !== 404) {
     headers.set('cache-control', 'no-store');
+    await observed;
     return { status: upstream.status, body, headers };
   }
 
   headers.set('cache-control', cacheControl(upstream.status));
   await caches.default.put(cacheKey, new Response(body, { status: upstream.status, headers }));
-  await writeShared(env, key, upstream.status, body);
+  await Promise.all([writeShared(env, key, upstream.status, body), observed]);
   return { status: upstream.status, body, headers };
 }
 

@@ -38,7 +38,7 @@ interface CacheOptions {
 type QuotaGate = { error?: Response; reservation?: QuotaRequest };
 
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
+import { observeRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 
 // The default upstream deadlines for the provider modules; some modules set their
@@ -61,6 +61,9 @@ const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 3_000;
 // digest cron -- which spends outside this ledger -- and the health probe. Both
 // ceilings count list calls, $0.0001 each; a search is reserved as ten of them,
 // so the minute's 3000 is the 300 searches it allowed when every call was one.
+// The daily one is a cap and a fallback: OpenAlex's own reading of the key
+// lowers the day's ceiling below it (`observeOpenAlexBudget`), and without a
+// reading for the day it is the ceiling.
 const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
 // What a cold answer costs OpenAlex, per route, worst case. Reserved in one go
 // before the work starts: a route that spends seven calls and reserves one is a
@@ -105,6 +108,22 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
 // only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
 // the same name.
 export const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
+// One list call, the unit every OpenAlex ceiling here counts in.
+export const OPENALEX_UNIT_USD = 0.0001;
+// Units kept back from what OpenAlex reports is left. A reading is a little
+// stale by the time it is stored: misses already reserved but not yet billed
+// when OpenAlex wrote the header, and reservations made before the reading is
+// written, are still to be billed. Two hundred units is about twenty searches
+// in flight. It is an estimate, not a measurement. It also keeps the Worker
+// from driving the key to $0, where whether OpenAlex still serves free lookups
+// is unverified.
+export const OPENALEX_OBSERVATION_MARGIN = 200;
+// How far the end of a reading's day may be from the end of the UTC day it is
+// filed under, so that a reading from yesterday's counter arriving just after
+// midnight does not close the new day. Measured 2026-10-21: the counter resets
+// at 00:00 UTC (`x-ratelimit-reset` 1020 at 23:43:00Z).
+const OPENALEX_RESET_TOLERANCE_MS = 120_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
@@ -546,10 +565,11 @@ function openAlexLedgerRequest(env: WorkerEnv, now: string): QuotaRequest {
 }
 
 // The tier's share of the ceiling travels with the reservation, so the share is
-// checked in the same transaction as the day and the minute.
-export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budget: OpenAlexBudget) {
+// checked in the same transaction as the day and the minute. `now` names the
+// day's object; the relay passes the instant its reading will name too.
+export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budget: OpenAlexBudget, now = new Date().toISOString()) {
   const ledgerRequest = {
-    ...openAlexLedgerRequest(env, new Date().toISOString()),
+    ...openAlexLedgerRequest(env, now),
     amount: budget.units,
     percent: OPENALEX_TIER_PERCENT[budget.tier],
     tally: `${budget.tier}.${budget.kind}`,
@@ -577,4 +597,35 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
     // state.
     'retry-after': reservation.scope === 'global' ? '300' : '60',
   }) };
+}
+
+const MAX_OBSERVED_UNITS = 1_000_000;
+
+/**
+ * Files what OpenAlex reports is left of the key's day
+ * (`x-ratelimit-remaining-usd`, less `OPENALEX_OBSERVATION_MARGIN`) as the
+ * ceiling of the day `now` names. Spend the ledger never sees (the digest, the
+ * health probe) and units reserved but never billed stop distorting the
+ * ceiling at the next reading, and credit added mid-day reopens it without a
+ * deploy. No reading is filed when either header is missing or unusable, or
+ * when `x-ratelimit-reset` does not end that UTC day: the cap then stands, and
+ * an unknown budget stays unknown. A reading that cannot be filed is dropped;
+ * the answer it came with is still served.
+ */
+export async function observeOpenAlexBudget(env: WorkerEnv, now: string, headers: Pick<Headers, 'get'>) {
+  const remainingUsd = numberOrNull(headers.get('x-ratelimit-remaining-usd'));
+  const resetSeconds = numberOrNull(headers.get('x-ratelimit-reset'));
+  if (remainingUsd === null || remainingUsd < 0 || resetSeconds === null) return;
+  const dayEnds = Date.parse(`${now.slice(0, 10)}T00:00:00.000Z`) + DAY_MS;
+  if (Math.abs(Date.now() + resetSeconds * 1000 - dayEnds) > OPENALEX_RESET_TOLERANCE_MS) return;
+  // In millionths of a dollar first, so 0.0246 is 246 units and not 245.99….
+  const units = Math.floor(Math.round(remainingUsd * 1e6) / Math.round(OPENALEX_UNIT_USD * 1e6));
+  try {
+    await observeRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+      ...openAlexLedgerRequest(env, now),
+      remaining: Math.min(MAX_OBSERVED_UNITS, Math.max(0, units - OPENALEX_OBSERVATION_MARGIN)),
+    });
+  } catch {
+    // The previous reading, or the cap, stands.
+  }
 }
