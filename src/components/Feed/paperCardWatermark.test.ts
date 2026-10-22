@@ -148,6 +148,69 @@ test('the glyph is drawn at every width', async () => {
   );
 });
 
+/**
+ * On a phone the glyph is the card's picture, as big as the lead (#203). A
+ * paper that brings its own picture needs no second one: seen 2026-10-22 on
+ * every field at 393px, the picture-sized glyph stayed put under the plate
+ * and the part of it below the plate read as a block behind the title. It
+ * steps back to a mark beside the title once the lead figure has its image.
+ */
+test('on a phone the glyph steps back once the lead figure has its picture', async () => {
+  const css = await sheet;
+
+  const keyed = watermarkRules(css).filter(([selector]) => /\.pc-lead/.test(selector));
+  assert.ok(keyed.length >= 1, 'expected a rule that moves the glyph for the lead figure');
+  for (const [selector] of keyed) {
+    // The mutation guard: `.pc-lead` is always rendered and `.pc-lead-figure`
+    // mounts before its picture arrives, so keying on either would move the
+    // glyph for a picture nobody sees yet — the fault the desktop rule above
+    // was measured making.
+    assert.match(
+      selector,
+      /\.pc-sheet:has\(\s*\.pc-lead-figure\.is-loaded\s*\)\s+\.pc-watermark svg/,
+      `the glyph may only step back for a lead figure that has its picture: ${selector}`,
+    );
+  }
+
+  // The mark sits below the lead, by the column's edge, at a fixed size: it is
+  // no longer the picture, whose width is read off the lead.
+  const [, mark] = keyed.find(([, body]) => /width:/.test(body))!;
+  assert.match(mark, /top:\s*calc\(var\(--pc-lead\)/, 'the mark starts where the lead ends');
+  assert.match(mark, /width:\s*\d+px/, 'the mark has a size of its own, not the lead\'s');
+  assert.doesNotMatch(mark, /var\(--pc-lead\)\s*\+\s*9rem/, 'the mark is not the picture-sized glyph');
+});
+
+test('the step back rides the lead figure\'s own development', async () => {
+  const css = await sheet;
+
+  // Read off the figure's rule rather than written twice: the glyph moves on
+  // the clock the picture develops in, and a literal here is how they come
+  // apart.
+  const develop = css.match(/\.pc-lead-figure\.is-loaded\s*\{[^}]*animation:\s*pcLeadDevelop\s+(\d+)ms/);
+  assert.ok(develop, 'expected the lead figure\'s development animation');
+  const clock = develop[1];
+
+  const svgRules = watermarkRules(css).filter(([selector, body]) => /^\.pc-watermark svg$/.test(selector) && /transition:/.test(body));
+  assert.equal(svgRules.length, 1, 'one rule should give the glyph its transition on a phone');
+  const [, body] = svgRules[0];
+  for (const property of ['top', 'right', 'width', 'translate']) {
+    assert.match(
+      body,
+      new RegExp(`transition:[^;]*\\b${property}\\s+${clock}ms`),
+      `${property} moves over the lead figure's development (${clock}ms)`,
+    );
+  }
+});
+
+test('with movement refused the step back is cut', async () => {
+  const css = await sheet;
+
+  const reduced = css.match(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g) || [];
+  const holding = reduced.find((block: string) => /\.pc-watermark\s*,/.test(block) && /transition:\s*none/.test(block));
+  assert.ok(holding, 'expected the reduced-motion block that stills the glyph');
+  assert.match(holding, /\.pc-watermark svg\s*,/, 'the glyph\'s move on a phone belongs in it too');
+});
+
 test('the glyph keeps its place on a desktop card', async () => {
   const css = await sheet;
 

@@ -2875,21 +2875,46 @@ button.pc-topics-pop-item:focus-visible {
      box reaches that edge and clips there itself: overflowing the sheet would
      leave the sheet (`overflow: hidden`, still scrollable from code) room to
      slide sideways. The body sits above it (z-index 1), so the type stays on
-     top. */
+     top. The box spans the sheet and the glyph is placed inside it by its
+     right edge (centred, then leaning), so that stepping back below is a move
+     of the same properties rather than a change of alignment. */
   .pc-watermark {
     top: var(--space-5);
     left: var(--space-5);
     right: 0;
-    display: grid;
-    justify-items: center;
+    bottom: 0;
     overflow: clip;
   }
 
   .pc-watermark svg {
+    position: absolute;
+    top: 0;
+    right: 50%;
     width: min(calc(100% - 66px), calc(var(--pc-lead) + 9rem));
     height: auto;
     transform-origin: 50% 50%;
-    translate: 14% 0;
+    translate: 64% 0;
+    transition:
+      top 360ms var(--ease-out-expo),
+      right 360ms var(--ease-out-expo),
+      width 360ms var(--ease-out-expo),
+      translate 360ms var(--ease-out-expo);
+  }
+
+  /* A paper that brings its own picture gets no second one. Once the lead
+     figure has its image (`.is-loaded`, set when the picture lands, the same
+     flag the desktop sheet recedes on) the glyph steps back to a mark beside
+     the title, flush with the column's edge under the rail, at the desktop
+     sheet's resting size. It moves on the clock the figure develops in
+     (`pcLeadDevelop`, 360ms), so the two read as one handover. Without this
+     the picture-sized glyph stayed where it was: half of it under the plate
+     and the rest peeking out below it as a block behind the title, on every
+     field (measured 2026-10-22 at 393px, all twelve). */
+  .pc-sheet:has(.pc-lead-figure.is-loaded) .pc-watermark svg {
+    top: calc(var(--pc-lead) + min(var(--space-3), var(--pc-lead)));
+    right: 72px;
+    width: 120px;
+    translate: 0 0;
   }
 
   /* The rail sits beside the abstract, not the actions: the two reading
@@ -2947,6 +2972,10 @@ button.pc-topics-pop-item:focus-visible {
   .pc-watermark {
     top: var(--space-4);
     left: var(--space-4);
+  }
+
+  .pc-sheet:has(.pc-lead-figure.is-loaded) .pc-watermark svg {
+    right: 66px;
   }
 }
 
@@ -3029,6 +3058,10 @@ button.pc-topics-pop-item:focus-visible {
      A 620ms cross-fade next to an instant arrival is the two coming apart
      again, which is the fault this pairing exists to close. */
   .pc-watermark,
+  /* And its step back on a phone: that one is movement, so it is cut. The
+     lead figure still fades in (`figureClipFade`, above) and the glyph is in
+     its corner from the fade's first frame. */
+  .pc-watermark svg,
   .pc-meta,
   .pc-title,
   .pc-authors,

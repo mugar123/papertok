@@ -1,4 +1,5 @@
 import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/Paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
 export interface PaperCardProps {
@@ -204,6 +205,15 @@ const AREA_WATERMARK_ICONS = {
   chemeng: Flask,
   med: Heartbeat,
   bio: Dna,
+};
+// Phosphor draws its maths symbols' fill weight on a plate — Sigma, Pi,
+// Function and Radical alike — while every other field's icon is the thing's
+// own silhouette. Engraved at the glyph's size the plate read as a solid
+// block beside the planet's or the helix's open shape (seen 2026-10-22). The
+// bold weight is the Σ's own silhouette, so maths carries the weight the
+// other fields do.
+const AREA_WATERMARK_WEIGHTS: Partial<Record<keyof typeof AREA_WATERMARK_ICONS, IconWeight>> = {
+  math: 'bold',
 };
 
 const RESOURCE_KIND_CONFIG = {
@@ -1321,10 +1331,10 @@ const PaperCard = memo(function PaperCard({
    * atom. Resolved through the same chain as the accent ink now, so the mark
    * and the colour cannot disagree, and nothing is drawn at all when the branch
    * is genuinely unknown: a wrong field is worse than no field. */
-  const WatermarkIcon = useMemo(
-    () => AREA_WATERMARK_ICONS[areaKeyForPaper(paper) as keyof typeof AREA_WATERMARK_ICONS] || null,
-    [paper],
-  );
+  const watermark = useMemo(() => {
+    const area = areaKeyForPaper(paper) as keyof typeof AREA_WATERMARK_ICONS | null;
+    return area ? { Icon: AREA_WATERMARK_ICONS[area], weight: AREA_WATERMARK_WEIGHTS[area] ?? 'fill' } : null;
+  }, [paper]);
 
   // Only a tap on the card itself. The sheets, the related card and the
   // reader are portaled to the body, and React still bubbles their clicks
@@ -1875,9 +1885,9 @@ const PaperCard = memo(function PaperCard({
       )}
 
       <article ref={sheetRef} className="pc-sheet" data-connections={relatedInline || undefined} style={{ '--area-accent': areaAccentForPaper(paper) }}>
-        {WatermarkIcon && (
+        {watermark && (
           <span className="pc-watermark" aria-hidden="true">
-            <WatermarkIcon size={220} weight="fill" />
+            <watermark.Icon size={220} weight={watermark.weight} />
           </span>
         )}
 
