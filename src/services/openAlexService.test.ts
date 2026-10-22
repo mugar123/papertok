@@ -1427,3 +1427,35 @@ test('opening a paper by DOI asks for the work by DOI, which is free, and a 404 
   const down = Object.assign(new Error('OpenAlex API error: 503'), { status: 503 });
   await assert.rejects(fetchPaperByWorkId('doi', '10.1000/x', { openAlexJson: async () => { throw down; } }), down);
 });
+
+// The client hands the URL to `new URL()`, which resolves a `.` or `..`
+// segment before the relay sees the path: `10.1234/../w2741809807` opened
+// another work, and `10.1234/../../authors` a billed list of authors. The
+// relay also refuses an id containing `..` or longer than 240 characters. Such
+// a DOI is asked for as the one-work list instead, where it is a query value.
+test('a DOI that cannot travel as a path is asked for as a one-work DOI list', async () => {
+  const requested: URL[] = [];
+  const openAlexJson = async (url: unknown) => {
+    requested.push(new URL(String(url)));
+    return { results: [WORK_FIXTURE] };
+  };
+  const { slimWorksPage } = await import('./openAlexService.ts');
+  const unpathable = [
+    '10.1234/../w2741809807',
+    '10.1234/../../authors',
+    '10.1234/./x',
+    '10.1234/a..b',
+    `10.1234/${'x'.repeat(240)}`,
+  ];
+  for (const doi of unpathable) {
+    requested.length = 0;
+    const paper = await fetchPaperByWorkId('doi', doi, { openAlexJson });
+    assert.equal(requested.length, 1, doi);
+    assert.equal(requested[0].pathname, '/works', doi);
+    assert.equal(requested[0].searchParams.get('filter'), `doi:${doi}`, doi);
+    assert.equal(requested[0].searchParams.get('per-page'), '1', doi);
+    assert.deepEqual(paper, slimWorksPage({ results: [WORK_FIXTURE] }).papers[0], doi);
+  }
+
+  assert.equal(await fetchPaperByWorkId('doi', '10.1234/a..b', { openAlexJson: async () => ({ results: [] }) }), null);
+});

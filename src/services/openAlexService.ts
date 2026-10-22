@@ -9,6 +9,8 @@ type InstitutionProminence = Pick<OpenAlexInstitution, 'ror' | 'works_count' | '
 type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<InstitutionProminence>>) => Promise<OpenAlexPage<InstitutionProminence>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
 type ImpactPeriod = ReturnType<typeof getRecentImpactPeriod>;
+// One work by id, or the one-work list a DOI with no path id is asked for as.
+type OpenAlexWorkOrPage = OpenAlexWork | OpenAlexPage<OpenAlexWork>;
 export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact>> & {
   available: boolean; sampleSize: number; minimumSampleSize: number;
   entityType?: string; openAlexId?: string; period: ImpactPeriod; source: string; sampled?: boolean;
@@ -1843,13 +1845,18 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeout
   }
 }
 
-// The Worker relay accepts a path id of letters, digits and `._:%|,-/` only.
-// `encodeURIComponent` leaves `!'()*~` as they are, and SICI DOIs carry
-// parentheses; the slash after the DOI prefix stays a slash.
-function encodeDoiPath(doi: string) {
-  return encodeURIComponent(doi)
+// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
+// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
+// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
+// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
+// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
+// sent: the URL parser resolves it first, into another path. A DOI the relay
+// would refuse, or the parser rewrite, has no path id ('').
+function doiPathId(doi: string) {
+  const id = `doi:${encodeURIComponent(doi)
     .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/%2F/gi, '/');
+    .replace(/%2F/gi, '/')}`;
+  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
 }
 
 /**
@@ -1861,7 +1868,9 @@ function encodeDoiPath(doi: string) {
  * had no DOI or arXiv id stored beside it, so its row on the profile could not
  * link anywhere — and how it opens a paper by DOI: one work by id is free on
  * OpenAlex and never refused by the Worker's budget, where the `filter=doi:`
- * list it used is billed (PAP-88).
+ * list it used is billed (PAP-88). A DOI with no path id (`doiPathId`) is
+ * still asked for as that list, one work long, which the Worker bills one
+ * unit as a paper being opened.
  *
  * The returned paper carries the id the feed would have given it
  * (`openalex:W…` / `pmid:…`), so a like made on the page lands on the same
@@ -1872,7 +1881,7 @@ function encodeDoiPath(doi: string) {
  * `globalThis.fetch` when the module loads, so swapping the global would not
  * reach it.
  */
-export async function fetchPaperByWorkId(type: unknown, value: unknown, options: { timeoutMs?: number; openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexWork>) => Promise<OpenAlexWork> } = {}) {
+export async function fetchPaperByWorkId(type: unknown, value: unknown, options: { timeoutMs?: number; openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexWorkOrPage>) => Promise<OpenAlexWorkOrPage> } = {}) {
   const kind = String(type || '').toLowerCase();
   const clean = String(value || '').trim();
   const doi = kind === 'doi' ? normalizePublicDoi(clean) : '';
@@ -1882,13 +1891,19 @@ export async function fetchPaperByWorkId(type: unknown, value: unknown, options:
   if (!lookup && !doi) return null;
   const feedId = kind === 'openalex' ? `openalex:${lookup}` : lookup;
 
-  const requestJson: (url: string, options: OpenAlexJsonOptions<OpenAlexWork>) => Promise<OpenAlexWork> = options.openAlexJson || openAlexJson;
+  const doiPath = doi ? doiPathId(doi) : '';
+  const url = doi && !doiPath
+    ? `https://api.openalex.org/works?filter=doi:${encodeURIComponent(doi)}&per-page=1`
+    : `https://api.openalex.org/works/${doiPath || encodeURIComponent(lookup)}`;
+
+  const requestJson: (url: string, options: OpenAlexJsonOptions<OpenAlexWorkOrPage>) => Promise<OpenAlexWorkOrPage> = options.openAlexJson || openAlexJson;
   try {
-    const work = await requestJson(`https://api.openalex.org/works/${doi ? `doi:${encodeDoiPath(doi)}` : encodeURIComponent(lookup)}`, {
+    const answer = await requestJson(url, {
       timeoutMs: options.timeoutMs ?? 8000,
       retries: 0,
       cacheTtlMs: 5 * 60 * 1000,
     });
+    const work = answer && 'results' in answer ? answer.results?.[0] : answer as OpenAlexWork | null;
     if (!work?.id) return null;
     const paper = formatOpenAlexWorkAsPaper(work);
     return doi ? paper : { ...paper, id: feedId };
