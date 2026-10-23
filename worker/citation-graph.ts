@@ -94,7 +94,6 @@ function mapOpenCitationsMetaWork(work: Record<string, string> | null): Paper | 
     publicationType,
     publicationStatus: publicationType === 'preprint' ? 'preprint' : 'published',
     peerReviewed: publicationType !== 'preprint',
-    openAccess: false,
     landingPageUrl: `https://doi.org/${doi}`,
     citationCount: 0,
     citationCountKnown: false,
