@@ -36,6 +36,17 @@ function bindable(value: unknown): Value {
   return (value ?? null) as Value;
 }
 
+// What one D1 call may carry, as D1 refuses it.
+const CALL_LIMIT_BYTES = 32 * 1024 * 1024;
+
+function withinCallLimit(statements: Statement[]) {
+  const bytes = statements.reduce<number>((sum, statement) => sum + statement.params
+    .reduce<number>((size, param) => size + (typeof param === 'string' ? Buffer.byteLength(param) : param instanceof Uint8Array ? param.byteLength : 8), 0), 0);
+  if (bytes > CALL_LIMIT_BYTES) {
+    throw new Error(`D1_ERROR: Serialized RPC arguments or return values are limited to 32MiB, but the size of this value was: ${bytes} bytes.`);
+  }
+}
+
 class Statement {
   db: DatabaseSync;
   sql: string;
@@ -85,6 +96,7 @@ export function testD1() {
   const binding = {
     prepare: (sql: string) => new Statement(db, sql),
     async batch(statements: Statement[]) {
+      withinCallLimit(statements);
       db.exec('BEGIN');
       try {
         // A read in a batch answers its rows, as D1's does.

@@ -203,13 +203,19 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
 /**
  * The arXiv-only store of 0001 embedded its papers already: their vectors move
  * to the corpus rows the same papers now have, rather than being bought again.
- * A no-op once a later migration drops the old tables.
+ * Only while a row keeps the text that was embedded: a new version drops the
+ * row's vector, and the old one must not come back. A no-op once a later
+ * migration drops the old tables.
  */
-function carryArxivVectors(db: D1Database) {
+export function carryArxivVectors(db: D1Database) {
   return async () => {
     try {
       const result = await db.prepare(`INSERT OR IGNORE INTO work_vectors (work_id, embedding)
-        SELECT k.work_id, substr(v.embedding, 1, 256) FROM paper_vectors v JOIN work_keys k ON k.key = 'arxiv:' || lower(v.arxiv_id)`).run();
+        SELECT k.work_id, substr(v.embedding, 1, 256) FROM paper_vectors v
+        JOIN papers p ON p.arxiv_id = v.arxiv_id
+        JOIN work_keys k ON k.key = 'arxiv:' || lower(v.arxiv_id)
+        JOIN works w ON w.id = k.work_id
+        WHERE w.paper ->> 'title' = p.title AND w.paper ->> 'abstract' = p.abstract`).run();
       return result.meta.changes;
     } catch (error) {
       if (/no such table/i.test(String((error as Error)?.message))) return 0;
