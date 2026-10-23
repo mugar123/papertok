@@ -734,7 +734,7 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
 }
 
 export interface FeedRequestBody {
-  categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
+  categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown; waitForLikes?: unknown;
 }
 
 export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {

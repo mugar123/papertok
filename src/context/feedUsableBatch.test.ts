@@ -18,6 +18,7 @@ import { mergeFreshFeedPage } from '../utils/feedReRankSplit.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
+import { fetchCorpusPage } from '../services/paperStoreService.ts';
 
 // Execute the actual loader callback with provider and React-state boundaries
 // injected. Source-pattern tests cannot catch an excluded page ending the feed.
@@ -865,6 +866,23 @@ test('a page asks the corpus for the ranked categories with the likes, and a lat
     // A later page adds the reader's area's other category: five papers.
     assert.deepEqual(asked, page === 0 ? [main] : [main, { categories: ['cs.LG'], page: 0, pageSize: 5, order: 'recent' }]);
   }
+});
+
+// A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).
+// The corpus may not have embedded that paper yet: the request says to wait
+// for it, which the feed's own pages never do.
+test('More like this asks the Worker to rank by the paper just liked once the corpus has it', async () => {
+  const bodies: unknown[] = [];
+  const fetchWorker = async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ papers: [] }), { status: 200 });
+  };
+  const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
+    feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
+    fetchCorpusPage: (request: Parameters<typeof fetchCorpusPage>[0]) => fetchCorpusPage(request, { fetchWorker, apiBase: 'https://api.example' }),
+  }) as (paper: FeedRecord) => Promise<void>;
+  await expand({ ...paperRecord('2610.00001'), primaryCategory: 'cs.LG' });
+  assert.deepEqual(bodies, [{ categories: ['cs.LG', 'cs.AI'], follows: [], positiveIds: ['2610.00001'], page: 0, pageSize: 15, order: 'recent', waitForLikes: true }]);
 });
 
 const followedAuthor = { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' };

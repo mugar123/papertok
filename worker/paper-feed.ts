@@ -161,11 +161,12 @@ export async function handleCorpusFeed(
   // Only a first page of categories looks up liked papers: the follows asked
   // beside it, and later pages, would repeat the same lookup.
   const looksUp = query.page === 0 && query.follows.length === 0 && query.positiveIds.length > 0;
-  // More like this ranks by the one paper just liked, which the corpus may not
+  // More like this ranks by the paper just liked, which the corpus may not
   // have embedded yet: ranked before the lookup, its page would be newest
-  // first. That request is not the feed's first paint, so it waits for the
-  // lookup, which has its own deadline (ingestPaperIds).
-  const looksUpFirst = looksUp && query.positiveIds.length === 1;
+  // first. That request is not the feed's first paint and says so
+  // (`waitForLikes`), so it waits for the lookup, which has its own deadline
+  // (ingestPaperIds). A reader's first page never does, one like or many.
+  const looksUpFirst = looksUp && body?.waitForLikes === true;
   if (looksUpFirst) await addMissingPositives(env, query.positiveIds);
   const cache = rankingCache(identity.uid);
   let ranked: Parameters<RankingCache['put']> | null = null;

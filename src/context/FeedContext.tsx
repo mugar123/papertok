@@ -874,10 +874,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     isTraversingNetwork.current = true;
     try {
       // The corpus papers closest to this one, within the reader's interests
-      // and the paper's own category: the corpus ranks by likeness to it alone.
+      // and the paper's own category: the corpus ranks by likeness to it alone,
+      // once it has embedded it.
       const categories = [...new Set([paper.primaryCategory, ...(userPreferences || [])].filter(Boolean) as string[])].slice(0, MAIN_CATEGORIES);
       const related = categories.length > 0
-        ? await fetchCorpusPage({ categories, positiveIds: [paper.id], page: 0, pageSize: 15 }).catch(() => [])
+        ? await fetchCorpusPage({ categories, positiveIds: [paper.id], page: 0, pageSize: 15, waitForLikes: true }).catch(() => [])
         : [];
       if (sessionId !== feedSessionId.current) return;
 

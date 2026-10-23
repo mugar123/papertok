@@ -148,9 +148,13 @@ test('a first page whose likes the lookup embeds keeps no order, and the next fi
   assert.equal(entries.size, 1, 'nothing left to look up: this order is kept');
 });
 
-test('More like this ranks by the paper just liked, even before the corpus had its vector', async () => {
+// A liked paper the corpus holds without a vector, beside one paper like it and
+// a newer one unlike it. `embedded` counts the texts sent to Workers AI.
+async function likedWithoutVector() {
   const { env, db, ask } = store();
-  Object.assign(env, { AI: embeddingModel() });
+  const embedded: string[] = [];
+  const model = embeddingModel();
+  Object.assign(env, { AI: { run: async (name: string, input: { text: string[] }) => { embedded.push(...input.text); return model.run(name, input); } } });
   await ingestPapers(env, [
     { paper: paper('2610.30001', 'The paper just liked', 10), lanes: [] },
     { paper: paper('2610.30003', 'Like it, older', 5), lanes: [] },
@@ -158,7 +162,24 @@ test('More like this ranks by the paper just liked, even before the corpus had i
   ]);
   embed(db, '2610.30003', [1, 0]);
   embed(db, '2610.30004', [0, 1]);
+  return { ask, embedded };
+}
+
+test('More like this ranks by the paper just liked, even before the corpus had its vector', async () => {
+  const { ask } = await likedWithoutVector();
   // What the feed asks when a paper is liked (FeedContext's traverseAndExpandNetwork).
-  const { papers } = await ask({ categories: ['cs.CL'], positiveIds: ['2610.30001'], page: 0, pageSize: 1 });
+  const { papers } = await ask({ categories: ['cs.CL'], positiveIds: ['2610.30001'], page: 0, pageSize: 1, waitForLikes: true });
   assert.deepEqual(papers.map(item => item.id), ['2610.30003']);
+});
+
+// A reader's only like is still one like: their first page is the feed's first
+// paint, and a lookup can take seconds (arXiv's pace).
+test("a reader's first page with a single like answers without waiting for the lookup, which runs after it", async () => {
+  const { ask, embedded } = await likedWithoutVector();
+  const after: Array<Promise<unknown>> = [];
+  const { papers } = await ask({ categories: ['cs.CL'], positiveIds: ['2610.30001'], page: 0, pageSize: 1 }, 'reader-1', work => { after.push(work); });
+  assert.deepEqual(papers.map(item => item.id), ['2610.30004'], 'newest first: the like has no vector yet');
+  assert.deepEqual(embedded, [], 'nothing embedded before the answer');
+  await Promise.all(after);
+  assert.equal(embedded.length, 1, 'the lookup embeds the like after it');
 });
