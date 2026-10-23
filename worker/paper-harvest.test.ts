@@ -198,6 +198,54 @@ test("one account registering 40 broad followed searches a day does not keep ano
   assert.ok(refreshed.every((done, night) => done || refreshed[night - 1]), `refreshed on nights ${refreshed.join(', ')}`);
 });
 
+// Every live lane due before another reader's waits ahead of it, and asking
+// for a lane again keeps it followed for 14 more days. Were every search an
+// account asks for again kept, one that follows 40 new searches a day and asks
+// again for all of them daily would put 40 more lanes a day ahead of the other
+// reader's, without end.
+test("one account following 40 new searches a day and asking again daily for all of them still leaves another reader's lane refreshed at least once a week", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-19T12:00:00Z') });
+  // Every search answers empty: ten units each, 70 of the nightly 700.
+  providers(t);
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  // A minute apart, inside the route's requests a minute.
+  let clock = Date.parse('2026-10-19T12:00:00Z');
+  const follow = async (uid: string, queries: string[]) => {
+    t.mock.timers.setTime(clock += 60_000);
+    await handleCorpusFeed(new Request('https://papertok.internal/store/papers', {
+      method: 'POST',
+      body: JSON.stringify({ follows: queries.map(query => ({ type: 'topic', canonicalId: `query-${query}`, displayName: query, metadata: { query } })) }),
+    }), env, { uid });
+  };
+  const narrowLane = () => (db.prepare("SELECT harvested_through FROM lane_state WHERE source = 'openalex-follows' AND lane = 'query:a narrow topic'")
+    .get() as { harvested_through: string } | undefined)?.harvested_through;
+
+  await follow('reader-b', ['a narrow topic']);
+  t.mock.timers.setTime(Date.parse('2026-10-20T02:30:00Z'));
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  const followed: string[] = [];
+  const refreshed: boolean[] = [];
+  // 24 nights: were the account's searches all kept, the lane would go 7 nights in a row without a refresh by the 21st.
+  for (let day = 0; day < 24; day += 1) {
+    const night = Date.parse('2026-10-21T02:30:00Z') + day * 86_400_000;
+    // From 03:30 the day before.
+    clock = night - 23 * 3_600_000;
+    const searches = Array.from({ length: 40 }, (_, index) => `broad ${day}-${index}`);
+    const asked = [...searches, ...followed];
+    // 20 follows a request, the most the route reads.
+    for (let from = 0; from < asked.length; from += 20) await follow('reader-a', asked.slice(from, from + 20));
+    followed.push(...searches);
+    await follow('reader-b', ['a narrow topic']);
+    const before = narrowLane();
+    t.mock.timers.setTime(night);
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    refreshed.push(narrowLane() !== before);
+  }
+  const nightsWithout = refreshed.reduce((nights, done) => [...nights, done ? 0 : nights.at(-1)! + 1], [0]);
+  assert.ok(Math.max(...nightsWithout) < 7, `refreshed on nights ${refreshed.map(done => (done ? 'Y' : '.')).join('')}`);
+});
+
 test('a lane step that fails past its retries passes over its lanes, not the rest of the run', async t => {
   providers(t);
   const { env, db } = corpus();

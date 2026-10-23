@@ -36,13 +36,16 @@ const FOLLOW_REFRESH_MS = 86_400_000;
 // nightly run harvests it.
 const NEW_LANES_HARVESTED_PER_READER = 20;
 const NEW_LANES_HARVESTED_PER_DAY = 2_000;
-// New followed lanes a reader may register a day, and the whole app's. A new
-// lane waits for the nightly refresh behind the lanes due before it
-// (paper-harvest.ts), but each one lengthens every lane's wait for its turn,
-// so one account must not fill followed_lanes with its own. Past them a new
-// follow is served from what the corpus has.
-const NEW_LANES_REGISTERED_PER_READER = 40;
-const NEW_LANES_REGISTERED_PER_DAY = 4_000;
+// Followed lanes a reader may write a day, new or asked for again, and the
+// whole app's. Every live lane due before another reader's waits ahead of it
+// in the nightly refresh (paper-harvest.ts), and a lane stays live for 14 days
+// after it was last written, so this bounds the lanes one account keeps live,
+// and the wait they add, to about 14 days' worth. A request reads at most 20
+// follows and a lane is written at most once a day, so a reader asking for
+// their own follows still has 20 for new ones. Past it a new follow is served
+// from what the corpus has, and a lane asked for again keeps its last write.
+const LANES_WRITTEN_PER_READER = 40;
+const LANES_WRITTEN_PER_DAY = 4_000;
 
 /**
  * Liked papers the corpus cannot rank against yet, fetched and embedded, for
@@ -90,7 +93,7 @@ async function reserveLanes(env: FeedEnv, allowance: Omit<QuotaRequest, 'amount'
  * Notes the followed lanes a reader asked for, so the daily harvest keeps them
  * served, and starts a harvest of the ones nobody had asked for yet: their
  * papers arrive for the reader's next page rather than tomorrow's. Both stay
- * within the reader's new lanes for the day.
+ * within the reader's lanes for the day.
  */
 async function registerFollowedLanes(env: FeedEnv, uid: string, asked: string[], now = Date.now()) {
   // Two follows can name one lane, such as two authors known by the same name.
@@ -100,22 +103,20 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, asked: string[],
   const { results } = await db.prepare('SELECT lane, requested_at FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
     .bind(JSON.stringify(lanes)).all<{ lane: string; requested_at: string }>();
   const known = new Map(results.map(row => [row.lane, row.requested_at]));
-  const due = lanes.filter(lane => known.has(lane) && Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
-  let fresh = lanes.filter(lane => !known.has(lane));
+  const unwritten = lanes.filter(lane => !known.has(lane) || Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
+  if (unwritten.length === 0) return;
   const day = new Date(now).toISOString().slice(0, 10);
-  if (fresh.length) {
-    fresh = await reserveLanes(env, {
-      periodKey: `followed-lanes:day:${day}`,
-      subject: `uid:${uid}`,
-      subjectLimit: NEW_LANES_REGISTERED_PER_READER,
-      globalLimit: NEW_LANES_REGISTERED_PER_DAY,
-    }, fresh);
-  }
-  const written = [...due, ...fresh];
+  const written = await reserveLanes(env, {
+    periodKey: `followed-lanes:day:${day}`,
+    subject: `uid:${uid}`,
+    subjectLimit: LANES_WRITTEN_PER_READER,
+    globalLimit: LANES_WRITTEN_PER_DAY,
+  }, unwritten);
   if (written.length === 0) return;
   const at = new Date(now).toISOString();
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at, registered_at) SELECT value, ?, ? FROM json_each(?) WHERE true
     ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(at, at, JSON.stringify(written)).run();
+  const fresh = written.filter(lane => !known.has(lane));
   if (fresh.length === 0 || !env.PAPER_HARVEST) return;
   const harvested = await reserveLanes(env, {
     periodKey: `follow-run-lanes:day:${day}`,

@@ -61,7 +61,8 @@ test("a reader's new follows are harvested at once up to 20 a day, however many 
   assert.deepEqual(Object.keys(lanes[0]).sort(), ['lane', 'registered_at', 'requested_at']);
 });
 
-test('a reader adds at most 40 new followed lanes a day; past them a new follow is served from what the corpus has and is not registered', async () => {
+test('a reader writes at most 40 followed lanes a day, new or asked for again; past them a new follow is served from what the corpus has and is not registered', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T12:00:00Z') });
   const { db, ask } = store();
   const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
     type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
@@ -75,6 +76,14 @@ test('a reader adds at most 40 new followed lanes a day; past them a new follow 
   // Another reader's new follow is still registered.
   await ask({ follows: searches(40, 1) }, 'reader-2');
   assert.equal(registered(), 41);
+
+  // The next day, 20 of the reader's lanes asked for again leave them 20 new ones.
+  t.mock.timers.setTime(Date.parse('2026-10-23T12:00:01Z'));
+  await ask({ follows: searches(0, 20) });
+  await ask({ follows: searches(41, 20) });
+  assert.deepEqual(await ask({ follows: searches(61, 1) }), { papers: [] });
+  assert.equal(registered(), 61);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-23T12:00:01.000Z'").get() as { n: number }).n, 40);
 });
 
 // The app sends every follow with each page, so new lanes the allowance refused

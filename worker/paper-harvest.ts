@@ -32,7 +32,8 @@ const FOLLOWED_LANES_PER_RUN = 400;
 // about 125): a lane that has started finishes within the step.
 const LANE_STEP_BUDGET_MS = 3 * 60_000;
 const LANES_PER_STEP = 5;
-// A followed lane nobody asked for in this long is no longer harvested.
+// A followed lane no request has written in this long (paper-feed.ts) is no
+// longer harvested.
 const FOLLOWED_LANE_DAYS = 14;
 const PAGE_STEP = { retries: { limit: 5, delay: '1 minute', backoff: 'exponential' }, timeout: '5 minutes' } as const;
 // An arXiv OAI page that fails three times is an outage, not a blip (2026-10-22:
@@ -127,7 +128,7 @@ async function phase(name: string, work: () => Promise<unknown>) {
 }
 
 /**
- * The lanes no reader has asked for in FOLLOWED_LANE_DAYS leave the harvest,
+ * The lanes no request has written in FOLLOWED_LANE_DAYS leave the harvest,
  * and the corpus forgets which papers they named and how far they got: a
  * followed search's text is gone with them.
  */
