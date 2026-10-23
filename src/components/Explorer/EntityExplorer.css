@@ -614,6 +614,7 @@
   color: var(--text-tertiary);
 }
 
+.ehc-activity-counts,
 .ehc-activity-bars,
 .ehc-activity-years {
   display: grid;
@@ -625,7 +626,7 @@
   flex: 1;
   align-items: end;
   min-height: 96px;
-  margin: 12px 0 6px;
+  margin: 4px 0 6px;
 }
 
 .ehc-activity-bars span {
@@ -653,10 +654,16 @@
   from { transform: scaleY(0.05); }
 }
 
+.ehc-activity-counts,
 .ehc-activity-years {
   font: 500 0.625rem/1 var(--font-mono);
   color: var(--text-tertiary);
   text-align: center;
+}
+
+.ehc-activity-counts {
+  margin-top: 12px;
+  color: var(--text-secondary);
 }
 
 @media (max-width: 860px) {

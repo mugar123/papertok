@@ -182,13 +182,15 @@ function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count:
         <span>{'Papers per year'}</span>
         <span>{`${years[0]}–${lastYear}`}</span>
       </div>
+      <div className="ehc-activity-counts" aria-hidden="true">
+        {values.map((value, i) => <span key={years[i]}>{value}</span>)}
+      </div>
       <div className="ehc-activity-bars" aria-hidden="true">
         {values.map((value, i) => (
           <span
             key={years[i]}
             className={years[i] === currentYear ? 'is-running' : undefined}
             style={{ '--v': value / max, '--i': i }}
-            title={`${years[i]}: ${value} ${value === 1 ? 'paper' : 'papers'}`}
           />
         ))}
       </div>
