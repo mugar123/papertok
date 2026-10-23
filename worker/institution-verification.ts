@@ -47,7 +47,10 @@ export async function handleInstitutionVerificationRequest(request: Request, env
   const origin = request.headers.get('origin');
   if (!origin || !allowedOrigins(env).has(origin)) throw new InstitutionLinkError('ORIGIN_NOT_ALLOWED', 403);
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: false });
-  if (!identity.emailVerified) throw new InstitutionLinkError('INSTITUTION_ACCOUNT_NOT_VERIFIED', 403);
+  // The requester has to be a proven owner of an address, so an account minted
+  // against the public API key cannot have university inboxes mailed. Firebase
+  // flags no GitHub sign-in as verified, so the flag alone is not that test.
+  if (!identity.ownsEmail) throw new InstitutionLinkError('INSTITUTION_ACCOUNT_NOT_VERIFIED', 403);
   const body = await readBoundedJson<{ email?: unknown; nonce?: unknown }>(request, 2_048, {
     tooLarge: () => new InstitutionLinkError('BODY_TOO_LARGE', 413),
     invalid: () => new InstitutionLinkError('INVALID_BODY', 400),
