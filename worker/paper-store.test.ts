@@ -583,3 +583,19 @@ test("a page reads vectors only to rank by a like, and the candidates' in one ro
   assert.deepEqual((await page(['2610.02201'])).map(paper => paper.id), ['2610.02200']);
   assert.equal(vectorReads(), 3, "the like's vector, then every candidate's in one round trip");
 });
+
+test("an enrichment step's papers are written back however long their text, within what one D1 call carries", async () => {
+  const { env, db } = corpus();
+  // 500 papers, an enrichment step's, with abstracts as long as the longest stored.
+  const papers = Array.from({ length: 500 }, (_, index) => ({
+    ...arxivRecord,
+    id: `2610.${String(index).padStart(5, '0')}`,
+    arxivId: `2610.${String(index).padStart(5, '0')}`,
+    title: `Paper number ${index} with a long abstract`,
+    abstract: 'A long abstract. '.repeat(1_000),
+  }));
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cs.LG'] })), { now: NOW });
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, citationCount: 7, citationCountKnown: true } })));
+  assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'citationCount' = 7").length, 500);
+});
