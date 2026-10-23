@@ -28,6 +28,7 @@ function harness(t: TestContext) {
   let recipient = 'reader@example.org';
   let uid = 'primary';
   let verified = true;
+  let providers: { providerId: string; email?: string }[] = [];
   let brevoStatus = 201;
   let generationStatus = 200;
   let timeout = false;
@@ -72,7 +73,7 @@ function harness(t: TestContext) {
   t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('accounts:lookup')) {
-      return Response.json({ users: [{ localId: uid, email: recipient, emailVerified: verified }] });
+      return Response.json({ users: [{ localId: uid, email: recipient, emailVerified: verified, providerUserInfo: providers }] });
     }
     if (url === 'https://oauth2.googleapis.com/token') {
       const claims = JSON.parse(Buffer.from(new URLSearchParams(init!.body as string).get('assertion')!.split('.')[1], 'base64url').toString());
@@ -100,6 +101,7 @@ function harness(t: TestContext) {
     env, generated, messages, ledger: () => ledger,
     setLedger: (value: DeliveryLedgerState) => { ledger = value; },
     setVerified: (value: boolean) => { verified = value; },
+    setProviders: (value: { providerId: string; email?: string }[]) => { providers = value; },
     setIdentity: (value: string) => { uid = value; recipient = `${value}@example.org`; },
     rejectBrevo: (status: number) => { brevoStatus = status; },
     rejectGeneration: () => { generationStatus = 403; },
@@ -152,6 +154,28 @@ test('origin, method, authentication, verified account and input gates prevent s
   await assert.rejects(handleInstitutionVerificationRequest(request(), h.env), { code: 'INSTITUTION_ACCOUNT_NOT_VERIFIED' });
   assert.equal(h.generated.length, 0);
   assert.equal(h.messages.length, 0);
+});
+
+test('an account that signed in with GitHub can request a link although Firebase never flags it as verified', async t => {
+  // Issue #267: Firebase sets `emailVerified` only for providers that verify the
+  // address themselves, so a GitHub account was refused with an instruction the
+  // app has no screen for. The provider that vouched for the same address is
+  // the proof, as it already is for the digest.
+  const h = harness(t);
+  h.setVerified(false);
+  h.setProviders([{ providerId: 'github.com', email: 'Reader@example.org' }]);
+  const response = await worker.fetch(request(), h.env);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { sent: true });
+  assert.equal(h.messages.length, 1);
+  // A provider record for another address proves nothing about this one.
+  h.setIdentity('second');
+  h.setProviders([{ providerId: 'google.com', email: 'someone-else@example.org' }]);
+  await assert.rejects(
+    handleInstitutionVerificationRequest(request({ email: 'other@comunidadunir.net', nonce: crypto.randomUUID() }), h.env),
+    { code: 'INSTITUTION_ACCOUNT_NOT_VERIFIED', status: 403 },
+  );
+  assert.equal(h.messages.length, 1);
 });
 
 test('per-account and per-recipient limits survive different nonces and accounts', async t => {

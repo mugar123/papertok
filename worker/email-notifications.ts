@@ -1,4 +1,5 @@
 import { captureWorkerException } from './error-tracking.ts';
+import { accountOwnsEmail } from './firebase-auth.ts';
 import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
@@ -817,24 +818,6 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
     });
     return parseArxivDigestFeed(await response.text(), follows);
   });
-}
-
-const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
-
-/**
- * FIREBASE_WEB_API_KEY is public, so the Worker cannot assume the console only
- * offers Google and GitHub: any sign-up method that hands over an unverified
- * address would otherwise subscribe a stranger's inbox to the digest.
- * Firebase does not always flag federated sign-ins as verified, so an identity
- * provider that vouched for the same address counts as proof of possession.
- */
-function accountOwnsEmail(account: EmailAccount) {
-  if (account?.emailVerified === true) return true;
-  const email = cleanText(account?.email, 320).toLowerCase();
-  return (account?.providerUserInfo || []).some(provider => (
-    TRUSTED_EMAIL_PROVIDERS.has(cleanText(provider?.providerId, 40).toLowerCase())
-    && cleanText(provider?.email, 320).toLowerCase() === email
-  ));
 }
 
 async function verifyFirebaseIdentity(request: Request, env: WorkerEnv) {
