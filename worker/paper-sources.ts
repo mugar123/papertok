@@ -203,17 +203,24 @@ async function askRoute(handler: RouteHandler, path: string, params: Record<stri
   return response;
 }
 
-// A refusal that names a short wait is waited out, twice at most: a minute's
-// ceiling (PubMed's, 60 s) as well as a pace beat. A longer one (OpenAlex's
-// spent day) ends the lane for this run.
-const SHORT_WAIT_SECONDS = 60;
+// A refusal that names a short wait is waited out, twice at most a page, and
+// for LANE_WAIT_SECONDS at most a lane: one minute's ceiling (PubMed's, 60 s)
+// and the pace beats around it. Two minutes a page would let a ten-page lane
+// outlast the step it must finish in (paper-harvest.ts). A longer refusal
+// (OpenAlex's spent day), or one past the lane's allowance, ends the lane for
+// this run.
+const LANE_WAIT_SECONDS = 90;
 
-async function withShortWaits<T>(attempt: () => Promise<T>) {
+/** The seconds a lane may still spend waiting out refusals, shared by its pages. */
+interface LaneWaits { seconds: number }
+
+async function withShortWaits<T>(waits: LaneWaits, attempt: () => Promise<T>) {
   for (let tries = 0; ; tries += 1) {
     try {
       return await attempt();
     } catch (error) {
-      if (!(error instanceof SourceRefused) || error.retryAfterSeconds > SHORT_WAIT_SECONDS || tries >= 2) throw error;
+      if (!(error instanceof SourceRefused) || error.retryAfterSeconds > waits.seconds || tries >= 2) throw error;
+      waits.seconds -= error.retryAfterSeconds;
       await new Promise(resolve => setTimeout(resolve, error.retryAfterSeconds * 1000));
     }
   }
@@ -251,7 +258,7 @@ export type SourceName =
 
 export interface LaneJob { source: SourceName; lane: string }
 
-interface PageRequest { lane: string; page: number; since: string }
+interface PageRequest { lane: string; page: number; since: string; waits: LaneWaits }
 interface SourcePage { items: Harvested[]; newest: string; full: boolean }
 interface SourceSpec {
   // Pages on a lane's first run, and on later ones (a later run also stops
@@ -283,9 +290,9 @@ function pageOf(items: Harvested[], size: number): SourcePage {
 
 const filed = (papers: Array<Partial<Paper> | null>, lane: string) => (papers.filter(Boolean) as Partial<Paper>[]).map(paper => ({ paper, lanes: [lane] }));
 
-async function arxivSearch(env: SourceEnv, query: string, page: number, lane: string) {
+async function arxivSearch(env: SourceEnv, query: string, { page, lane, waits }: PageRequest) {
   const size = 50;
-  const response = await withShortWaits(() => askRoute(handleArxiv, '/arxiv', {
+  const response = await withShortWaits(waits, () => askRoute(handleArxiv, '/arxiv', {
     search_query: query, start: (page - 1) * size, max_results: size, sortBy: 'submittedDate', sortOrder: 'descending',
   }, env));
   return pageOf(filed(parseArxivAtom(await response.text()).map(arxivRecordPaper), lane), size);
@@ -387,12 +394,12 @@ const DOMAIN_ROUTES: Record<string, RouteHandler> = {
 
 // The page of one specialist source the browser asked for the same category.
 function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] {
-  return async (env, { lane, page }) => {
+  return async (env, { lane, page, waits }) => {
     const plan = getDomainSourcePlan([lane]);
     const eligible = getEligibleDomainSources(plan, { hasSession: true, scopusEnabled: false });
     const request = domainSourceRequests(plan, eligible, page, perPage, 'recent').find(candidate => candidate.source === source);
     if (!request) return { items: [], newest: '', full: false };
-    const response = await withShortWaits(() => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
+    const response = await withShortWaits(waits, () => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
     return pageOf(filed(request.read(await response.json()), lane), Math.min(Number(request.params.limit) || perPage, perPage));
   };
 }
@@ -400,14 +407,14 @@ function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] 
 export const SOURCES: Record<SourceName, SourceSpec> = {
   'arxiv-search': {
     firstPages: 4, dailyPages: 4, dated: true, overlapDays: 3, keepsOld: true,
-    fetchPage: (env, { lane, page }) => (lane.startsWith('author-name:')
-      ? arxivSearch(env, `au:"${lane.slice('author-name:'.length).replace(/"/g, '')}"`, page, lane)
-      : arxivSearch(env, `all:"${quotedLabel(lane)}"`, page, lane)),
+    fetchPage: (env, request) => (request.lane.startsWith('author-name:')
+      ? arxivSearch(env, `au:"${request.lane.slice('author-name:'.length).replace(/"/g, '')}"`, request)
+      : arxivSearch(env, `all:"${quotedLabel(request.lane)}"`, request)),
   },
   pubmed: {
     firstPages: 10, dailyPages: 10, dated: true, overlapDays: 3,
-    fetchPage: async (env, { lane, page }) => {
-      const response = await withShortWaits(() => askRoute(handlePubmed, '/sources/pubmed', {
+    fetchPage: async (env, { lane, page, waits }) => {
+      const response = await withShortWaits(waits, () => askRoute(handlePubmed, '/sources/pubmed', {
         q: `(${pubmedCategoryQuery([lane])}) AND hasabstract`, page, limit: 50,
       }, env));
       const payload = await response.json() as Parameters<typeof readPubmedPayload>[0];
@@ -516,9 +523,10 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
   const keepUntil = spec.keepsOld ? daysFromNow(KEPT_LISTING_DAYS, now) : '';
   let stored = 0;
   const pages = reached ? spec.dailyPages : spec.firstPages;
+  const waits = { seconds: LANE_WAIT_SECONDS };
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
-    const result = await spec.fetchPage(env, { lane, page, since });
+    const result = await spec.fetchPage(env, { lane, page, since, waits });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
   }

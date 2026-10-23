@@ -51,8 +51,9 @@ export async function harvestStart(db: D1Database, set: string, now = Date.now()
  * Harvests lanes in order until the step's budget is spent, and returns how
  * many it went through. A lane that fails is logged and passed over: the
  * other lanes, and every other source, stay served. A source that refuses
- * for longer than a short wait (a spent daily budget) is passed over for the
- * rest of the run.
+ * for longer than a lane may wait (a spent daily budget, a minute's ceiling
+ * still full after the lane waited one out) is passed over for the rest of
+ * the step.
  */
 export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], budgetMs = LANE_STEP_BUDGET_MS, started = Date.now()) {
   const refused = new Set<string>();
