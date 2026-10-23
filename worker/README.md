@@ -83,7 +83,7 @@ The `30 2 * * *` cron starts one `PaperHarvestWorkflow` instance per UTC day (`w
 
 A new or emptied database needs a harvest before a frontend that reads it is published: apply the migrations, deploy the Worker, start a run with `npx wrangler workflows trigger papertok-paper-harvest`, and wait for its lanes to fill. Until then the feed answers an empty first page with its error and retry.
 
-Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
+Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. The source a row was built from replaces its title and abstract when it lists the paper again, as arXiv does with a new version; other sources only fill a missing abstract. A change to the title or abstract drops the vector for the next embedding pass. After the arXiv sets, each run copies the vectors of the arXiv-only store (migration 0001) to rows that have none, but only while a row keeps the title and abstract that vector was computed from. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
 
 ```bash
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying
