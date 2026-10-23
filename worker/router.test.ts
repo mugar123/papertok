@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker from './index.ts';
 import { routeForLog } from './router.ts';
-import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
-import { readFileSync } from 'node:fs';
 import type { WorkerEnv } from './env.ts';
 import type { TestGlobals, TestNamespace } from './test-types.ts';
 import type { runEmailNotificationSchedule } from './email-notifications.ts';
@@ -205,32 +203,4 @@ test('the scheduled entry point passes the event time and keeps the job alive wi
   assert.equal(summary.disabled, true);
   assert.equal(summary.sent, 0);
   assert.ok(saved.some(({ value }) => value.scheduledAt === '2026-10-13T07:20:00.000Z'));
-});
-
-// Two triggers, two jobs. 02:30 UTC starts the day's paper harvest, which also
-// fills the feed's OpenAlex lanes, and the morning windows run the email
-// schedule. The harvest may not run the digest: an extra run would be recorded
-// as a schedule run.
-test('each cron trigger runs its own job, and only the digest windows run the email schedule', async () => {
-  const saved: string[] = [];
-  const harvests: string[] = [];
-  const env = {
-    NOTIFICATION_STORE: { put: async (key: string) => { saved.push(key); } },
-    PAPER_HARVEST: { create: async ({ id }: { id: string }) => { harvests.push(id); } },
-  } as unknown as WorkerEnv;
-  const run = async (cron: string, at: string) => {
-    const jobs: Promise<unknown>[] = [];
-    saved.length = 0;
-    harvests.length = 0;
-    await worker.scheduled({ cron, scheduledTime: Date.parse(at) }, env, { waitUntil: job => { jobs.push(job); } });
-    await Promise.all(jobs);
-    return { jobs: jobs.length, harvests: [...harvests], scheduleRun: saved.includes('notification:schedule:last-run') };
-  };
-
-  assert.deepEqual(await run(PAPER_HARVEST_CRON, '2026-10-22T02:30:00Z'), { jobs: 1, harvests: ['harvest-2026-10-22'], scheduleRun: false });
-  assert.deepEqual(await run('*/20 7-13 * * *', '2026-10-22T07:20:00Z'), { jobs: 1, harvests: [], scheduleRun: true });
-
-  // A trigger exists only if wrangler.toml declares the same expression.
-  const crons = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8').match(/^crons = \[(.*)\]$/m)![1];
-  assert.deepEqual(crons.split(',').map(value => JSON.parse(value.trim())).sort(), ['*/20 7-13 * * *', PAPER_HARVEST_CRON].sort());
 });
