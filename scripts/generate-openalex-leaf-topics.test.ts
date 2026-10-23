@@ -172,7 +172,7 @@ test('a doubted call can leave out the label when the labeller leaned neither wa
   const result = run();
   assert.equal(result.status, 0, result.stderr);
   const row = coverage().find(row => row.leaf === 'cs.AI')!;
-  assert.deepEqual([row.status, row.onTarget, row.byTopic], ['passed', 10, { [topicIds[0]]: '10/15' }]);
+  assert.deepEqual([row.status, row.precision, row.byTopic], ['passed', 10 / 15, { [topicIds[0]]: '10/15' }]);
   writeFileSync(reviews, JSON.stringify({ 'cs.AI': { ...review, labels: labels({}) } }));
   assert.notEqual(run().status, 0, 'a call without doubt names its label');
 });
