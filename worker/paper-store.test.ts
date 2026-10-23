@@ -64,6 +64,18 @@ const arxivRecord = arxivRecordPaper({
   published: '2026-10-10T12:00:00.000Z',
   updated: '2026-10-10T12:00:00.000Z',
 });
+const arxivRevision = arxivRecordPaper({
+  arxivId: '2610.11111',
+  title: 'Sparse attention for long documents and code',
+  abstract: 'We make attention sparse, and prove that it converges.',
+  authors: ['Ana Pérez', 'Li Wei'],
+  categories: ['cs.CL', 'cs.LG'],
+  doi: null,
+  journalRef: null,
+  comments: null,
+  published: '2026-10-10T12:00:00.000Z',
+  updated: '2026-10-20T08:00:00.000Z',
+});
 const huggingFaceRecord = mapHuggingFacePaper({
   paper: { id: '2610.11111', title: 'Sparse attention for long documents', summary: 'We make attention sparse.', publishedAt: '2026-10-10T12:00:00.000Z', upvotes: 31, authors: [{ name: 'Ana Pérez' }] },
 }, ['cs.CV'])!;
@@ -93,31 +105,32 @@ test("the source a row came from replaces its title and abstract when it lists t
   const { env, db } = corpus();
   await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
   db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
-  const revision = arxivRecordPaper({
-    arxivId: '2610.11111',
-    title: 'Sparse attention for long documents and code',
-    abstract: 'We make attention sparse, and prove that it converges.',
-    authors: ['Ana Pérez', 'Li Wei'],
-    categories: ['cs.CL', 'cs.LG'],
-    doi: null,
-    journalRef: null,
-    comments: null,
-    published: '2026-10-10T12:00:00.000Z',
-    updated: '2026-10-20T08:00:00.000Z',
-  });
-  await ingestPapers(env, [{ paper: revision, lanes: [] }], { now: NOW });
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
   const stored = (id: string) => JSON.parse(String(rows(db, `SELECT w.paper FROM works w JOIN work_keys k ON k.work_id = w.id WHERE k.key = 'id:${id}'`)[0].paper));
-  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [revision.title, revision.abstract, revision.abstract]);
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [arxivRevision.title, arxivRevision.abstract, arxivRevision.abstract]);
   assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the new text is embedded again');
   // Hugging Face still lists the first version's text.
   await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: [] }], { now: NOW });
-  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [revision.title, revision.abstract]);
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [arxivRevision.title, arxivRevision.abstract]);
 
   // esummary has no abstract: a listing without efetch's keeps the stored one.
   const article = { ...mapPubmedSummary({ uid: '42900003', title: 'A cardiology trial', source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] }), abstract: 'We randomised 400 patients.' };
   await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
   await ingestPapers(env, [{ paper: { ...article, title: 'A cardiology trial (corrected)', abstract: '' }, lanes: ['med.cardio'] }], { now: NOW });
   assert.deepEqual([stored('pmid:42900003').title, stored('pmid:42900003').abstract], ['A cardiology trial (corrected)', 'We randomised 400 patients.']);
+});
+
+// Hugging Face lists arXiv papers with the title and abstract it copied from
+// arXiv. A night whose arXiv sets fail still runs the Hugging Face lane, so
+// that lane can start a row, which then never took a new arXiv version.
+test("a row Hugging Face started takes arXiv's new version, and Hugging Face's copy does not undo it", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: ['cs.CV'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper));
+  assert.deepEqual([stored().id, stored().title, stored().abstract], ['arxiv:2610.11111', arxivRevision.title, arxivRevision.abstract]);
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: ['cs.CV'] }], { now: NOW });
+  assert.deepEqual([stored().title, stored().abstract], [arxivRevision.title, arxivRevision.abstract]);
 });
 
 test('a record that names two stored papers folds them into one, keeping one id and every lane', async () => {

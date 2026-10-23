@@ -85,7 +85,7 @@ A new or emptied database needs a harvest before a frontend that reads it is pub
 
 Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
 
-When the source a row was built from lists the paper again, as arXiv does with a new version, its title and abstract replace the stored ones; other sources only fill a missing abstract. That change drops the vector too. After the arXiv sets, each run copies the vectors of the arXiv-only store (migration 0001) to rows that have none, but only while a row keeps the title and abstract that vector was computed from.
+When the source a row was built from lists the paper again, as arXiv does with a new version, its title and abstract replace the stored ones; other sources only fill a missing abstract. Hugging Face copies arXiv's title and abstract, so a row it started takes arXiv's new versions and not its own copy. That change drops the vector too. After the arXiv sets, each run copies the vectors of the arXiv-only store (migration 0001) to rows that have none, but only while a row keeps the title and abstract that vector was computed from.
 
 ```bash
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying
