@@ -307,6 +307,31 @@ test("one reader's lookups embed a small share of the day, and the harvest and o
   assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
 });
 
+test("runs for new follows embed within their own share of the day, and the daily run keeps the rest", async () => {
+  const { binding } = testD1();
+  const { AI } = embeddingModel();
+  // 3M estimated tokens a day; each paper below is about 670, 2M in all.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '3000000' } as Parameters<typeof embedPending>[0];
+  const followed = Array.from({ length: 3_000 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.2${String(index).padStart(4, '0')}`, arxivId: `2610.2${String(index).padStart(4, '0')}`,
+      title: `Followed paper ${index}`, abstract: `A long abstract of followed paper ${index}. `.repeat(60), allCategories: [], categories: [],
+    },
+    lanes: [`query:search ${index % 20}`],
+  }));
+  await ingestPapers(env, followed, { now: NOW });
+  // Twenty readers' new follows, each run embedding its own lane until it is refused.
+  let followRuns = 0;
+  for (let lane = 0; lane < 20; lane += 1) {
+    for (let embedded = -1; embedded !== 0;) {
+      embedded = await embedPending(env, 256, { lanes: [`query:search ${lane}`] });
+      followRuns += embedded;
+    }
+  }
+  assert.ok(followRuns > 0 && followRuns < 3_000, `follow runs embedded ${followRuns} of 3,000`);
+  assert.equal(await embedPending(env, 256), 256, 'the daily run still embeds');
+});
+
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {
   const { env, db } = corpus();
   const issue = { ...arxivRecord, id: 'pmid:42900001', arxivId: undefined, pmid: '42900001', title: 'An article in December’s print issue', published: '2026-12-01T00:00:00.000Z' };

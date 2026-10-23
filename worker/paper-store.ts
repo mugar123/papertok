@@ -47,10 +47,14 @@ const STORED_AUTHORS = 50;
 // store inside the free allocation with room for the PDF conversions.
 const DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT = 7_500_000;
 const EMBEDDING_TOKENS_PER_UNIT = 1_000;
-// What one reader's lookups of liked papers may embed a day (paper-feed.ts),
-// within the day's limit: seven lookups of ten long papers. On the harvest's
-// subject, one account spent the whole 60M-token day in 143 minutes.
+// Shares of the day's limit for what readers start, so the daily run keeps the
+// rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
+// ten long papers; on the harvest's subject, one account spent the whole
+// 60M-token day in 143 minutes. The runs new follows start, together: no reader
+// is recorded with them, and each of 20 new follows a reader may add a day can
+// bring a few hundred papers; what they leave waits for the daily run.
 const READER_EMBEDDING_DAILY_TOKENS = 50_000;
+const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // Similarity orders the page; recency only separates near ties, so a reader
 // with likes still sees this week's papers ahead of last month's lookalikes.
 // Relevance order is for a reader whose views lean older: no recency at all.
@@ -432,17 +436,20 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
 
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);
 
+/** A share of the day's embedding limit: a ledger subject, and the most it may reserve. */
+interface EmbeddingShare { subject: string; tokens: number }
+
 /**
- * Reserves the embedding tokens for today before spending them, a reader's
- * (`uid`) within their own daily share. Workers AI bills past the free
- * allocation, so a ledger that cannot answer refuses.
+ * Reserves the embedding tokens for today before spending them, within
+ * `share` when given and the day's limit always. Workers AI bills past the
+ * free allocation, so a ledger that cannot answer refuses.
  */
-async function reserveEmbeddingTokens(env: StoreEnv, tokens: number, uid?: string) {
+async function reserveEmbeddingTokens(env: StoreEnv, tokens: number, share?: EmbeddingShare) {
   const limit = Math.floor((Number(env.EMBEDDING_DAILY_TOKEN_LIMIT) || DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT) / EMBEDDING_TOKENS_PER_UNIT);
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
     periodKey: `embedding:day:${new Date().toISOString().slice(0, 10)}`,
-    subject: uid ? `uid:${uid}` : 'embedding:all',
-    subjectLimit: uid ? Math.min(limit, READER_EMBEDDING_DAILY_TOKENS / EMBEDDING_TOKENS_PER_UNIT) : limit,
+    subject: share?.subject ?? 'embedding:all',
+    subjectLimit: share ? Math.min(limit, share.tokens / EMBEDDING_TOKENS_PER_UNIT) : limit,
     globalLimit: limit,
     amount: Math.max(1, Math.ceil(tokens / EMBEDDING_TOKENS_PER_UNIT)),
   });
@@ -476,15 +483,15 @@ async function embedTexts(env: StoreEnv, texts: string[]) {
 }
 
 /**
- * Embeds the rows' title and abstract within today's budget, a reader's
- * (`uid`) share of it for their lookup, and stores the vectors. Returns how
- * many were embedded: 0 when the budget is spent.
+ * Embeds the rows' title and abstract within today's budget, and `share` of it
+ * when given, and stores the vectors. Returns how many were embedded: 0 when
+ * the budget is spent.
  */
-async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>, uid?: string) {
+async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>, share?: EmbeddingShare) {
   if (rows.length === 0) return 0;
   const db = database(env);
   const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
-  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts), uid))) {
+  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts), share))) {
     // Not embedded: another pass, or another reader with budget left, may.
     await db.prepare('UPDATE works SET embedding_claimed_until = NULL WHERE id IN (SELECT value FROM json_each(?))')
       .bind(JSON.stringify(rows.map(row => row.id))).run();
@@ -527,20 +534,21 @@ async function claimUnembedded(db: D1Database, scope: string, params: unknown[],
 }
 
 /**
- * The newest stored papers without a vector, of these lanes only when given,
- * embedded. 0 once none are left or today's budget is spent.
+ * The newest stored papers without a vector, embedded. 0 once none are left or
+ * today's budget is spent. With `lanes`, a run for new follows: only those
+ * lanes' papers, within the follow runs' share of the day.
  */
 export async function embedPending(env: StoreEnv, limit: number, { lanes }: { lanes?: string[] } = {}) {
-  const rows = lanes
-    ? await claimUnembedded(database(env), 'w.id IN (SELECT work_id FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)))', [JSON.stringify(lanes)], limit)
-    : await claimUnembedded(database(env), 'true', [], limit);
-  return embedRows(env, rows);
+  if (!lanes) return embedRows(env, await claimUnembedded(database(env), 'true', [], limit));
+  const rows = await claimUnembedded(database(env), 'w.id IN (SELECT work_id FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)))', [JSON.stringify(lanes)], limit);
+  return embedRows(env, rows, { subject: 'embedding:follows', tokens: FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS });
 }
 
 /** The given works that have no vector yet, embedded within the reader's share of today's budget. */
 export async function embedWorks(env: StoreEnv, workIds: number[], uid: string) {
   if (workIds.length === 0) return 0;
-  return embedRows(env, await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length), uid);
+  const rows = await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length);
+  return embedRows(env, rows, { subject: `uid:${uid}`, tokens: READER_EMBEDDING_DAILY_TOKENS });
 }
 
 // ─── Reading ───
