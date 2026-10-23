@@ -33,6 +33,7 @@ interface InstitutionLinkOptions {
 import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { verifyFirebaseIdentity, verifyIdToken, WorkerAuthError } from './firebase-auth.ts';
+import { isEntityId } from './institution-access.ts';
 import {
   clearFieldsWrite,
   createFirestoreAdmin,
@@ -213,7 +214,9 @@ async function lookupRor(domain: string, fetchImpl: typeof fetch, budget: AbortS
  * The identity provider's entityID, which is how GetFTR and the publishers'
  * sign-in pages name an institution. Optional: an institution outside the
  * federation, or a metadata service that is down, leaves it null rather than
- * blocking the link. Null here means "not found now", not "has none".
+ * blocking the link. Null here means "not found now", not "has none". An
+ * entityID in a form the access routes refuse (`isEntityId`) is null too:
+ * stored, it would fail every later `/access` request of the account.
  */
 async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: AbortSignal) {
   // Optional, so a budget already spent on the registry is not spent again.
@@ -224,21 +227,22 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: A
       .split(',')
       .map(scope => scope.trim().toLowerCase())
       .includes(domain));
-    return typeof entry?.entityID === 'string' && entry.entityID ? entry.entityID : null;
+    return typeof entry?.entityID === 'string' && isEntityId(entry.entityID) ? entry.entityID : null;
   } catch {
     return null;
   }
 }
 
-// The cache's fourth generation: the first could hold a record that does not
+// The cache's fifth generation: the first could hold a record that does not
 // own its domain (neu.edu resolved to Shenyang until 2026-10-19), the second
-// one linked through a parent domain (alumni.cmu.edu to CMU), and the third
-// the research unit ROR listed first for a university's domain (until
-// 2026-10-20). A hand-checked domain's key also names what its entry asks
+// one linked through a parent domain (alumni.cmu.edu to CMU), the third the
+// research unit ROR listed first for a university's domain (until
+// 2026-10-20), and the fourth an entityID the access routes refuse (until
+// 2026-10-22). A hand-checked domain's key also names what its entry asks
 // ROR, so the answer cached before an entry was added, changed or removed is
 // not served for another week.
 function cacheRequest(domain: string) {
-  const url = new URL(`https://papertok.internal/institution/v4/${encodeURIComponent(domain)}`);
+  const url = new URL(`https://papertok.internal/institution/v5/${encodeURIComponent(domain)}`);
   const checked = CHECKED_MAIL_DOMAINS[domain];
   if (checked && 'rorId' in checked) url.searchParams.set('rorId', checked.rorId);
   else if (checked) url.searchParams.set('rorDomain', checked.rorDomain);

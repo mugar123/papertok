@@ -133,6 +133,7 @@ const ROR_ID_PATTERN = /^https:\/\/ror\.org\/0[a-z0-9]{6}\d{2}$/;
 // SAML entity IDs include URN assigned names (USC) and HTTP URIs (Manitoba).
 // These are opaque identifiers, never URLs to fetch or reading links.
 const ENTITY_URN_PATTERN = /^urn:[a-z0-9][a-z0-9-]{0,30}[a-z0-9]:(?!\/)(?:[a-z0-9._~!$&'()*+,;=:@/-]|%[0-9a-f]{2})+$/i;
+const ENTITY_ID_MAX_LENGTH = 300;
 const ISSN_PATTERN = /^\d{4}-\d{3}[\dX]$/;
 
 export class InstitutionAccessError extends Error {
@@ -155,7 +156,15 @@ function httpsUrl(value: string | null | undefined) {
   }
 }
 
-function isEntityId(value: string) {
+/**
+ * Whether a value is a SAML entityID this Worker takes: a URN assigned name
+ * or an HTTP(S) URI, up to 300 characters. One rule for what a query may
+ * name and for what `/institution/link` may store, so a link never saves an
+ * identifier that the access routes then refuse on every request
+ * (SeamlessAccess listed `https.//idp.seha.ae/openathens`, PAP-68).
+ */
+export function isEntityId(value: string) {
+  if (value.length > ENTITY_ID_MAX_LENGTH) return false;
   if (ENTITY_URN_PATTERN.test(value)) return true;
   if (!/^https?:\/\//i.test(value) || /\s/.test(value)) return false;
   try {
@@ -179,8 +188,7 @@ export function readInstitutionQuery(searchParams: URLSearchParams) {
   if (!domain) throw new InstitutionAccessError('INVALID_DOMAIN', 400);
   const entityId = (searchParams.get('entityId') || '').trim();
   const rorId = (searchParams.get('rorId') || '').trim().toLowerCase();
-  if ((entityId && (entityId.length > 300 || !isEntityId(entityId)))
-    || (rorId && !ROR_ID_PATTERN.test(rorId))) {
+  if ((entityId && !isEntityId(entityId)) || (rorId && !ROR_ID_PATTERN.test(rorId))) {
     throw new InstitutionAccessError('INVALID_INSTITUTION_ID', 400);
   }
   return { domain, entityId: entityId || null, rorId: rorId || null };

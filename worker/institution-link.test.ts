@@ -12,7 +12,7 @@ import {
 } from './institution-link.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/requestDeadline.ts';
-import { findResolver } from './institution-access.ts';
+import { InstitutionAccessError, findResolver, readInstitutionQuery } from './institution-access.ts';
 
 const UID = 'alice-uid';
 const PROJECT_ID = 'papertok-168df';
@@ -249,6 +249,70 @@ test('the federation metadata being down leaves the entityID unknown but still l
     assert.equal(payload.institution!.entityId, null);
   } finally {
     upstream.restore();
+  }
+});
+
+// The first is what SeamlessAccess listed under seha.ae (PAP-68). Stored, any
+// of these would make every later `/access` and `/institution/services`
+// request of the account a 400, since both routes refuse them.
+const MALFORMED_ENTITY_IDS = [
+  'https.//idp.seha.ae/openathens',
+  'urn:mace:',
+  'javascript:alert(1)',
+  'ftp://idp.example.edu',
+  'http://bad host/idp',
+  `https://idp.usal.es/${'x'.repeat(281)}`,
+];
+
+test('an entityID the access routes refuse is left unknown, and the link still completes', async () => {
+  for (const entityID of MALFORMED_ENTITY_IDS) {
+    assert.throws(() => readInstitutionQuery(new URLSearchParams({ domain: 'usal.es', entityId: entityID })),
+      (error) => error instanceof InstitutionAccessError && error.code === 'INVALID_INSTITUTION_ID', entityID);
+    const upstream = stubUpstreams({
+      users: { [SESSION_TOKEN]: SESSION_USAL },
+      mdq: () => Response.json([{ title: 'Universidad de Salamanca', entityID, scope: 'usal.es' }]),
+    });
+    const admin = memoryAdmin();
+    try {
+      const { institution } = await handleInstitutionLinkRequest(linkRequest({}), SERVICE, { admin });
+      assert.equal(institution!.rorId, 'https://ror.org/02f40zc51', entityID);
+      assert.equal(institution!.entityId, null, entityID);
+      assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
+      // What was stored is a query both routes take.
+      assert.deepEqual(readInstitutionQuery(new URLSearchParams({ domain: institution!.domain, rorId: institution!.rorId })),
+        { domain: 'usal.es', entityId: null, rorId: 'https://ror.org/02f40zc51' });
+    } finally {
+      upstream.restore();
+    }
+  }
+});
+
+// ROR's records for Manitoba (asked for by id: umanitoba.ca is hand-checked)
+// and USC (found by domain), cut to what the link reads.
+const ROR_UMANITOBA = { id: 'https://ror.org/02gfys938', domains: ['umanitoba.ca'], types: ['education'], names: [{ value: 'University of Manitoba', types: ['ror_display', 'label'] }] };
+const ROR_USC = { id: 'https://ror.org/03taz7m60', domains: ['usc.edu'], types: ['education'], names: [{ value: 'University of Southern California', types: ['ror_display', 'label'] }] };
+
+test('the entityIDs the access routes take are stored as the federation lists them: HTTPS, HTTP and a URN', async () => {
+  for (const [domain, entityID, rorId] of [
+    ['usal.es', 'https://idp.usal.es/entity', 'https://ror.org/02f40zc51'],
+    ['umanitoba.ca', 'http://CAF.AD.UMANITOBA.CA/adfs/services/trust', 'https://ror.org/02gfys938'],
+    ['usc.edu', 'urn:mace:incommon:usc.edu', 'https://ror.org/03taz7m60'],
+    // 300 characters, the most `/access` documents taking.
+    ['usal.es', `https://idp.usal.es/${'x'.repeat(280)}`, 'https://ror.org/02f40zc51'],
+  ]) {
+    const upstream = stubUpstreams({
+      ror: (url) => Response.json(url.endsWith('/organizations/02gfys938') ? ROR_UMANITOBA
+        : { items: [new URL(url).searchParams.get('query.advanced') === 'domains:usc.edu' ? ROR_USC : ROR_USAL.items[0]] }),
+      mdq: (url) => Response.json(new URL(url).searchParams.get('q') === domain ? [{ entityID, scope: domain }] : []),
+    });
+    try {
+      const institution = await resolveInstitution(domain, { cache: null });
+      assert.equal(institution.rorId, rorId, domain);
+      assert.equal(institution.entityId, entityID, domain);
+      assert.deepEqual(readInstitutionQuery(new URLSearchParams({ domain, rorId, entityId: entityID })), { domain, entityId: entityID, rorId });
+    } finally {
+      upstream.restore();
+    }
   }
 });
 
@@ -978,7 +1042,7 @@ for (const entry of [
     const id = entry.rorId.split('/').pop()!;
     const store = new Map<string, Response>();
     if (entry.wrongId) {
-      store.set(`https://papertok.internal/institution/v4/${entry.domain}`, Response.json({
+      store.set(`https://papertok.internal/institution/v5/${entry.domain}`, Response.json({
         domain: entry.domain, rorId: entry.wrongId, name: 'Research unit', acronym: null, entityId: null,
       }));
     }
