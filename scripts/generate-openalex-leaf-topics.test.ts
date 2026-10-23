@@ -37,7 +37,7 @@ function setup(t: import('node:test').TestContext) {
   const coverage = () => JSON.parse(readFileSync(report, 'utf8')) as Array<{
     leaf: string; status: string; topicIds: string[]; candidateHash: string; sampleSize?: number; precision?: number;
   }>;
-  return { directory, reviews, output, run, coverage };
+  return { directory, reviews, output, report, run, coverage };
 }
 
 function evidence(topic: string, candidateHash: string, relevant = 12) {
@@ -50,7 +50,7 @@ function evidence(topic: string, candidateHash: string, relevant = 12) {
   const query = new URL('https://api.openalex.org/works');
   query.searchParams.set('filter', `primary_topic.id:${topic},type:article,from_publication_date:2026-07-24,to_publication_date:2026-10-22,has_abstract:true,is_retracted:false,primary_location.source.is_core:true`);
   query.searchParams.set('sort', 'publication_date:desc');
-  query.searchParams.set('per-page', '25');
+  query.searchParams.set('per-page', '15');
   query.searchParams.set('page', '1');
   query.searchParams.set('mailto', 'app@papertok.io');
   return {
@@ -115,12 +115,13 @@ test('stale candidates, duplicate labels and non-feed samples fail without overw
   assert.equal(run().status, 0);
   const before = readFileSync(output, 'utf8');
   const { topicIds, candidateHash } = coverage().find(row => row.leaf === 'cs.AI')!;
-  for (const change of ['hash', 'duplicate-label', 'missing-label', 'text-query', 'old-paper', 'missing-abstract', 'wrong-topic']) {
+  for (const change of ['hash', 'duplicate-label', 'missing-label', 'text-query', 'long-page', 'old-paper', 'missing-abstract', 'wrong-topic']) {
     const review = evidence(topicIds[0], candidateHash);
     if (change === 'hash') review.candidateHash = 'stale';
     if (change === 'duplicate-label') review.labels[1] = review.labels[0];
     if (change === 'missing-label') review.labels.pop();
     if (change === 'text-query') review.query = 'https://api.openalex.org/works?search=Artificial+Intelligence';
+    if (change === 'long-page') review.query = review.query.replace('per-page=15', 'per-page=25');
     if (change === 'old-paper') review.works[0].publication_date = '2001-01-01';
     if (change === 'missing-abstract') review.works[0].abstract_inverted_index = {};
     if (change === 'wrong-topic') review.works[0].primary_topic.id = 'https://openalex.org/T99999';
@@ -131,13 +132,17 @@ test('stale candidates, duplicate labels and non-feed samples fail without overw
   }
 });
 
-test('--check detects a stale generated file', t => {
-  const { run, output } = setup(t);
+test('--check detects a stale generated map or coverage report', t => {
+  const { run, output, report } = setup(t);
   assert.equal(run().status, 0);
   assert.equal(run('--check').status, 0);
   writeFileSync(output, '// stale output\n');
   assert.notEqual(run('--check').status, 0);
   assert.equal(readFileSync(output, 'utf8'), '// stale output\n');
+  assert.equal(run().status, 0);
+  writeFileSync(report, '[]\n');
+  assert.notEqual(run('--check').status, 0, 'a stale coverage report fails the check');
+  assert.equal(readFileSync(report, 'utf8'), '[]\n');
 });
 
 test('generation can reconstruct a missing output from taxonomy inputs', t => {

@@ -23,6 +23,8 @@ interface Review {
 }
 
 const leaves = getAllLeafCategories();
+// The sample is one page of the 15 newest articles (PAP-99); a leaf with fewer
+// in the feed's window cannot pass.
 const minimumSample = 15;
 // PR #236's lowest accepted profile was 66.0%; use the next exact fraction.
 const minimumPrecision = 2 / 3;
@@ -101,11 +103,11 @@ function checkReview(leaf: string, topicIds: string[], candidateHash: string, va
     || query.username || query.password || !query.searchParams.get('mailto')
     || [...query.searchParams.keys()].some(key => !allowedParams.has(key) || query.searchParams.getAll(key).length !== 1)
     || query.searchParams.get('sort') !== 'publication_date:desc'
-    || query.searchParams.get('page') !== '1' || query.searchParams.get('per-page') !== '25'
+    || query.searchParams.get('page') !== '1' || query.searchParams.get('per-page') !== String(minimumSample)
     || filters.length !== required.length || required.some(filter => !filters.includes(filter))) {
     invalid('sample must use the anonymous, newest-first feed query, not text or subfield search');
   }
-  if (!Array.isArray(review!.works) || review!.works.length > 25 || !Array.isArray(review!.labels)) invalid('invalid sample or labels');
+  if (!Array.isArray(review!.works) || review!.works.length > minimumSample || !Array.isArray(review!.labels)) invalid('invalid sample or labels');
   const workIds = new Set<string>();
   let previousDate = lastDay;
   for (const work of review!.works) {
@@ -138,7 +140,7 @@ function checkReview(leaf: string, topicIds: string[], candidateHash: string, va
 const { values } = parseArgs({ options: {
   catalogue: { type: 'string', default: fileURLToPath(new URL('./data/openalex-topic-catalogue.json', import.meta.url)) },
   reviews: { type: 'string', default: fileURLToPath(new URL('./data/openalex-topic-reviews.json', import.meta.url)) },
-  report: { type: 'string' },
+  report: { type: 'string', default: fileURLToPath(new URL('./data/openalex-leaf-topics-coverage.json', import.meta.url)) },
   out: { type: 'string', default: fileURLToPath(new URL('../src/data/openAlexLeafTopics.generated.ts', import.meta.url)) },
   check: { type: 'boolean', default: false },
 } });
@@ -166,11 +168,9 @@ const output = [
   ...Object.keys(active).sort().map(leaf => `  '${leaf}': [${active[leaf].map(id => `'${id}'`).join(', ')}],`),
   '});', '',
 ].join('\n');
-const outputPath = resolve(values.out!);
-if (values.check) {
-  if (readFileSync(outputPath, 'utf8') !== output) throw new Error('Generated topic map is stale; regenerate with the same catalogue and reviews');
-} else {
-  writeFileSync(outputPath, output);
+const files = [[resolve(values.out!), output], [resolve(values.report!), `${JSON.stringify(report, null, 2)}\n`]];
+for (const [path, text] of files) {
+  if (!values.check) writeFileSync(path, text);
+  else if (readFileSync(path, 'utf8') !== text) throw new Error(`${path} is stale; regenerate with the same catalogue and reviews`);
 }
-if (values.report) writeFileSync(resolve(values.report), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${Object.keys(active).length}/${leaves.length} leaves enabled; ${report.filter(row => row.status === 'passed').length} newly passed\n`);

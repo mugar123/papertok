@@ -81,25 +81,34 @@ function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
   return areaKeyForOpenAlexField(topic?.field);
 }
 
-// Candidate generation and precision checks live in the generator. Unchecked
-// leaves stay out of this map and cost no feed request.
+/*
+ * OPENALEX_LEAF_TOPICS holds the OpenAlex topics that stand for a leaf arXiv
+ * does not serve, for the feed's OpenAlex lane (PAP-73). Topics, not
+ * subfields: in a blind check on 2026-10-21, newest-first articles from core
+ * sources were on the leaf's field in 74 % of 172 results by topic and 53 % of
+ * 190 by subfield, because subfields such as 2202 (aerospace) also hold whole
+ * neighbouring disciplines. Only leaves checked against returned papers are
+ * listed; any other leaf sends no request, as an unchecked list could bring
+ * back another field's papers. scripts/generate-openalex-leaf-topics.ts writes
+ * the map and admits a new leaf only when its labelled sample passes.
+ */
 // OpenAlex takes at most 50 values for one filter key.
 const MAX_OPENALEX_FILTER_VALUES = 50;
 
 /**
- * The OpenAlex works filter for the reader's leaves, in canonical order: their
+ * The OpenAlex works filter for the reader's leaves, in preference order: their
  * topic IDs taken in turn from each leaf, so every leaf is represented when the
  * lists hold more than one filter takes, and the work types. Aerospace adds
  * conference papers, 19 of 20 of them on the field in that check (structural
  * engineering: 0 of 2). Null when no leaf has a topic list.
  */
 export function openAlexTopicFilterForLeaves(leaves: readonly string[]) {
-  const lists = [...new Set(leaves)].sort().map(leaf => OPENALEX_LEAF_TOPICS[leaf]).filter(Boolean);
+  const lists = leaves.map(leaf => OPENALEX_LEAF_TOPICS[leaf]).filter(Boolean);
   const longest = Math.max(0, ...lists.map(list => list.length));
-  const interleaved = Array.from({ length: longest }, (_, index) => lists.map(list => list[index]))
+  const topics = Array.from({ length: longest }, (_, index) => lists.map(list => list[index]))
     .flat()
-    .filter(Boolean);
-  const topics = [...new Set(interleaved)].slice(0, MAX_OPENALEX_FILTER_VALUES).sort();
+    .filter(Boolean)
+    .slice(0, MAX_OPENALEX_FILTER_VALUES);
   if (!topics.length) return null;
   const types = leaves.includes('mech.aero') ? 'article|conference-paper' : 'article';
   return `primary_topic.id:${topics.join('|')},type:${types}`;
