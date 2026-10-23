@@ -21,7 +21,7 @@ import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
+import { CORPUS_DAYS, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, notableSince, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -266,6 +266,10 @@ interface SourceSpec {
   // them: a followed entity's, and the specialist sources', whose first pages
   // the feed showed as they came (NASA's reports, CORE's repositories).
   keepsOld?: boolean;
+  // Lanes whose listing is OpenAlex's current record of each paper it keeps
+  // (the notable lanes' weekly one): it brings their counts, so the
+  // enrichment's refresh (paper-enrichment.ts REFRESH_DAYS) passes over them.
+  renewsEnrichment?: boolean;
   // A pause before each request, for a source that limits its pace rather
   // than its day (CORE allows a few requests every ten seconds).
   gapMs?: number;
@@ -329,14 +333,13 @@ async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPag
 }
 
 // Notable papers (Pablo, 2026-10-23): each admitted leaf's most-cited articles
-// published from 1 January NOTABLE_YEARS years before the current year, asked
-// once a week. One page of NOTABLE_PER_LANE is one list call a lane a week,
-// reserved from the harvest's OpenAlex share.
-const NOTABLE_YEARS = 10;
+// of the notable window (paper-store.ts `notableSince`), asked once a week.
+// One page of NOTABLE_PER_LANE is one list call a lane a week, reserved from
+// the harvest's OpenAlex share.
 const NOTABLE_PER_LANE = 100;
 const NOTABLE_LANE_DAYS = 7;
 
-const notableWindowFilter = (now = Date.now()) => `from_publication_date:${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01,to_publication_date:${day(new Date(now).toISOString())}`;
+const notableWindowFilter = (now = Date.now()) => `from_publication_date:${notableSince(now)},to_publication_date:${day(new Date(now).toISOString())}`;
 
 // Followed OpenAlex entities, by the filter that names their works.
 const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id' };
@@ -429,7 +432,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // Kept whatever their age (`keepsOld`): each week's listing renews them
   // before KEPT_LISTING_DAYS run out, and one that drops out of the list leaves.
   'openalex-notable': {
-    firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true,
+    firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
       notableWindowFilter(),
@@ -546,6 +549,13 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
     const result = await spec.fetchPage(env, { lane, page, since });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
+  }
+  // The papers this listing kept (their keeping date is its own) now carry
+  // OpenAlex's counts of today. One never enriched still gets its first
+  // enrichment, which also asks Crossref its type.
+  if (spec.renewsEnrichment) {
+    await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0 AND kept_until >= ?
+      AND id IN (SELECT work_id FROM work_lanes WHERE lane = ?)`).bind(new Date(now).toISOString(), keepUntil, lane).run();
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
     ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, new Date(now).toISOString()).run();

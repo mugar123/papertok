@@ -887,7 +887,7 @@ test('a page asks the corpus for the ranked categories with the likes, and a lat
   }
 });
 
-test("a page shows the corpus's one notable card in fifteen, last, and a seen one is not among the papers a feed falls back to", async () => {
+test("the feed's fifteenth card is the corpus's notable one, counted from the cards already shown, and a seen one is not among the papers a feed falls back to", async () => {
   const corpusPage = records('corpus', 30).map((paper, index) => ({ ...paper, _notable: index === 14 || index === 29 }));
   const shown = feed({ seen: ['viewed-yesterday'] });
   const asked: Array<{ seen?: Set<string> }> = [];
@@ -897,6 +897,21 @@ test("a page shows the corpus's one notable card in fifteen, last, and a seen on
   assert.equal(shown.state.papers.length, 15);
   assert.deepEqual(shown.state.papers.filter(paper => paper._notable).map(paper => paper.id), ['corpus-14']);
   assert.equal(shown.state.papers[14].id, 'corpus-14');
+
+  // Ten cards on screen: the next page's fifth card is the feed's fifteenth.
+  const later = feed({ papers: records('shown', 10), page: 1 });
+  Object.assign(later.env, { fetchCorpusPage: async () => corpusPage });
+  await later.run(false);
+  assert.equal(later.state.papers.length, 25);
+  assert.deepEqual(later.state.papers.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : [])), [[14, 'corpus-14']]);
+
+  // A refresh that keeps the reader's place counts from the cards it keeps,
+  // through the visible one: the next notable card is fifteen after theirs.
+  const kept = feed({ papers: records('shown', 20).map((paper, index) => ({ ...paper, _notable: index === 14 })) });
+  kept.env.visiblePaperIdRef.current = 'shown-16';
+  Object.assign(kept.env, { fetchCorpusPage: async () => corpusPage });
+  await kept.run(true, 'top', false, undefined, { keepThroughVisible: true });
+  assert.deepEqual(kept.state.papers.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : [])), [[14, 'shown-14'], [29, 'corpus-14']]);
 
   // Every card seen: the papers shown again while later pages are tried leave the notable ones out.
   const allSeen = feed({ seen: corpusPage.map(paper => paper.id) });

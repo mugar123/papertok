@@ -5,6 +5,7 @@ import type { WorkerEnv } from './env.ts';
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
+import { NOTABLE_EVERY } from '../src/utils/feedEnrichment.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seenPaperFilter.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -156,12 +157,15 @@ const LEAF_IDS = new Set(LEAVES.map(leaf => leaf.id));
 // the series say a paper is economics, not which branch.
 export const WORKING_PAPERS_LANE = 'series:working-papers';
 const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
-// The most-cited papers of a category's last ten years (paper-sources.ts),
-// filed under `notable:<category>`. A page that says what the reader has seen
-// gives one card in every NOTABLE_EVERY to one of them the reader has not
-// (Pablo, 2026-10-23).
+// The most-cited papers of a category published from 1 January NOTABLE_YEARS
+// years before the current UTC year (paper-sources.ts), filed under
+// `notable:<category>`. A page that says what the reader has seen gives one
+// card in every NOTABLE_EVERY (src/utils/feedEnrichment.ts, the rate the app
+// shows) to one of them the reader has not (Pablo, 2026-10-23).
 export const NOTABLE_LANE_PREFIX = 'notable:';
-const NOTABLE_EVERY = 15;
+const NOTABLE_YEARS = 10;
+/** The first day of the notable window: the listing asks from it, and a page reads none older. */
+export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
 // A notable lane holds about 100 papers, and a reader asks for up to 12 categories.
 const NOTABLE_CANDIDATE_LIMIT = 1_200;
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
@@ -568,11 +572,11 @@ interface Candidate { workId: number; published: string; lanes: string[]; embedd
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
 // for up to a dozen categories and twenty follows.
-async function readCandidates(db: D1Database, lanes: string[], limit = FEED_CANDIDATE_LIMIT) {
+async function readCandidates(db: D1Database, lanes: string[], { limit = FEED_CANDIDATE_LIMIT, since = '' } = {}) {
   const share = Math.ceil(limit / lanes.length);
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
-    'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
-  ).bind(lane, share)));
+    'SELECT work_id, published FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY published DESC LIMIT ?',
+  ).bind(lane, since, share)));
   const byWork = new Map<number, { published: string; lanes: string[] }>();
   perLane.forEach(({ results }, index) => {
     for (const row of results) {
@@ -694,7 +698,9 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // crowded out by a busy one. Only the candidates' vectors are read. The
     // window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
-    notableLanes.length ? readCandidates(db, notableLanes, NOTABLE_CANDIDATE_LIMIT) : Promise.resolve([]),
+    // A notable lane keeps a paper two weeks past its last listing; from
+    // 1 January, the year that left the window is not read.
+    notableLanes.length ? readCandidates(db, notableLanes, { limit: NOTABLE_CANDIDATE_LIMIT, since: notableSince(now) }) : Promise.resolve([]),
     positiveIds.length
       ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
       : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
@@ -718,14 +724,18 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   const notable = await unseenNotable(db, closest, query.seen, Math.floor(ranked.length / (NOTABLE_EVERY - 1)));
   const ranking: RankedCandidate[] = [];
   let next = 0;
+  // The last card of every NOTABLE_EVERY, while an unseen notable paper is left.
+  const fillNotablePlace = () => {
+    if (ranking.length % NOTABLE_EVERY !== NOTABLE_EVERY - 1 || next >= notable.length) return;
+    const { workId, lanes } = notable[next++];
+    ranking.push({ workId, lanes: lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), notable: true });
+  };
   for (const candidate of ranked) {
-    // The last card of every NOTABLE_EVERY, while an unseen notable paper is left.
-    if (ranking.length % NOTABLE_EVERY === NOTABLE_EVERY - 1 && next < notable.length) {
-      const { workId, lanes } = notable[next++];
-      ranking.push({ workId, lanes: lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), notable: true });
-    }
+    fillNotablePlace();
     ranking.push(candidate);
   }
+  // The place after the last paper too: fourteen and a notable one fill fifteen.
+  fillNotablePlace();
   return ranking;
 }
 

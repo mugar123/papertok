@@ -1223,8 +1223,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     try {
       let newPapers: Paper[] = [];
-      // The share of the corpus page the Worker gave to notable cards.
-      let notableShare = 0;
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
@@ -1290,7 +1288,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           mainFailed = true;
         }
         mainPapers.forEach(p => { p._type = 'exploit'; });
-        notableShare = mainPapers.length ? mainPapers.filter(p => p._notable).length / mainPapers.length : 0;
 
         // ─── STEP 4: Followed topics, authors, institutions and projects ───
         const followedPapers = await followedCandidatesPromise;
@@ -1452,7 +1449,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           initialPapers: reset && !keepThroughVisible ? [] : papers,
         });
       }
-      filtered = takeFeedPage(filtered, PAGE_SIZE, notableShare);
+      // The cards this page follows: those through the visible one when a
+      // refresh keeps the reader's place, none on a plain reset.
+      const cardsBefore = !reset ? papers
+        : keepThroughVisible ? mergeFreshFeedPage(papers, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
+      filtered = takeFeedPage(filtered, PAGE_SIZE, cardsBefore);
 
       // The corpus enriched these papers when it stored them: the page is
       // shown as it arrived.

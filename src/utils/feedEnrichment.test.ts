@@ -42,20 +42,37 @@ test('caps every visible feed page before OpenAlex enrichment', () => {
   assert.equal(page[14].id, '2607.00014');
 });
 
-test("a page keeps the corpus's share of notable cards, last, whatever order the ranking left them in", () => {
-  // The corpus answered 30 cards, two of them notable (one in 15); the
-  // reader's ranking moved one past the fifteen shown.
+test("the fifteenth card of a new feed is the batch's first notable card, whatever order the ranking left it in", () => {
+  // The corpus answered 30 cards, two of them notable; the reader's ranking
+  // moved one past the fifteen shown.
   const ranked = Array.from({ length: 31 }, (_, index) => ({ id: `card-${index}`, _notable: index === 3 || index === 20 }));
-  const page = takeFeedPage(ranked, 15, 2 / 30);
+  const page = takeFeedPage(ranked, 15, []);
   assert.equal(page.length, 15);
   assert.deepEqual(page.filter(paper => paper._notable).map(paper => paper.id), ['card-3']);
   assert.equal(page[14].id, 'card-3');
   assert.deepEqual(page.slice(0, 14).map(paper => paper.id), ['card-0', 'card-1', 'card-2', ...Array.from({ length: 11 }, (_, index) => `card-${index + 4}`)]);
 
-  // A notable card the corpus did not reserve for this page (an exploration
-  // batch's) is not shown, nor is one when every notable card was filtered out.
-  assert.ok(!takeFeedPage(ranked, 15, 0).some(paper => paper._notable));
-  assert.equal(takeFeedPage(ranked.filter(paper => !paper._notable), 15, 2 / 30).length, 15);
+  // With no notable card left, its place takes the next paper; a notable card
+  // never takes another place, even when the other papers run out first.
+  assert.equal(takeFeedPage(ranked.filter(paper => !paper._notable), 15, []).length, 15);
+  assert.deepEqual(takeFeedPage(ranked.slice(0, 4), 15, []).map(paper => paper.id), ['card-0', 'card-1', 'card-2']);
+});
+
+test('one card in fifteen is notable whatever size the pages are: the fifteenth, the thirtieth and so on', () => {
+  // Each batch holds more notable cards than a page needs (one in four).
+  const batch = (page: number) => Array.from({ length: 40 }, (_, index) => ({ id: `page${page}-${index}`, _notable: index % 4 === 1 }));
+  for (const pageSize of [7, 10, 15, 20, 32]) {
+    const feed: Array<{ id: string; _notable: boolean }> = [];
+    for (let page = 0; feed.length < 75; page += 1) feed.push(...takeFeedPage(batch(page), pageSize, feed));
+    const places = feed.flatMap((paper, index) => (paper._notable ? [index + 1] : []));
+    assert.deepEqual(places, Array.from({ length: Math.floor(feed.length / 15) }, (_, index) => 15 * (index + 1)), `pages of ${pageSize}`);
+  }
+
+  // A card dismissed before the notable one moved it up to fourteenth: the
+  // next notable card is still fifteen cards after it, not the next one.
+  const shown = Array.from({ length: 14 }, (_, index) => ({ id: `shown-${index}`, _notable: index === 13 }));
+  const next = takeFeedPage(batch(9), 15, shown);
+  assert.deepEqual(next.flatMap((paper, index) => (paper._notable ? [index] : [])), [14]);
 });
 
 test('merges OpenAlex metadata before a feed batch is displayed', () => {

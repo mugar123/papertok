@@ -99,16 +99,32 @@ export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined
   return sources.primary !== 'openalex' && !(sources.enrichedBy || []).includes('openalex');
 }
 
+// One feed card in NOTABLE_EVERY is a notable paper the reader has not seen,
+// when one is left (Pablo, 2026-10-23): the last card of every NOTABLE_EVERY.
+// The corpus spaces them so in its ranking (worker/paper-store.ts), and the
+// page shown places them by the same count, whatever its size.
+export const NOTABLE_EVERY = 15;
+
 /**
- * The page shown from a ranked batch. The corpus gave `notableShare` of its own
- * page to notable cards (`_notable`, worker/paper-store.ts); the page keeps
- * that share of them, as its last cards, and no other notable card.
+ * The page shown from a ranked batch, after the feed's `cardsBefore`. Every
+ * NOTABLE_EVERY-th card since the last notable one (or since the feed began)
+ * is the batch's next notable card (`_notable`), or the next other card when
+ * none is left; no other place takes a notable card.
  */
-export function takeFeedPage<T extends Partial<Paper>>(papers: T[] | null | undefined, pageSize = 15, notableShare = 0) {
+export function takeFeedPage<T extends Partial<Paper>>(papers: T[] | null | undefined, pageSize = 15, cardsBefore: ReadonlyArray<Partial<Paper>> = []) {
   const safeSize = Number.isFinite(pageSize) ? Math.max(0, Math.floor(pageSize)) : 15;
   const list = Array.isArray(papers) ? papers : [];
-  const notable = list.filter(paper => paper?._notable).slice(0, Math.round(safeSize * notableShare));
-  return [...list.filter(paper => !paper?._notable).slice(0, safeSize - notable.length), ...notable];
+  const notable = list.filter(paper => paper?._notable);
+  const others = list.filter(paper => !paper?._notable);
+  const sinceNotable = cardsBefore.length - 1 - cardsBefore.findLastIndex(paper => paper?._notable);
+  const page: T[] = [];
+  while (page.length < safeSize) {
+    const notablePlace = (sinceNotable + page.length + 1) % NOTABLE_EVERY === 0;
+    const next = (notablePlace && notable.shift()) || others.shift();
+    if (!next) break;
+    page.push(next);
+  }
+  return page;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

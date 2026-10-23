@@ -7,6 +7,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { SOURCES, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { evictExpired } from './paper-store.ts';
+import { enrichPending } from './paper-enrichment.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -450,6 +451,37 @@ test('a notable lane is one OpenAlex call a week, and its papers stay whatever t
   assert.equal(count(), 100, 'the next weekly listing comes before they lapse');
   await evictExpired(store, now + 15 * 86_400_000);
   assert.equal(count(), 0, 'two weeks unlisted, they leave');
+});
+
+test("a notable lane's weekly listing renews its papers' counts, so the enrichment's refresh asks OpenAlex only for one it no longer lists", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const dropped = { ...plsiWork, id: 'https://openalex.org/W1000000001', doi: 'https://doi.org/10.5555/left-the-hundred', title: 'An article that has left the most-cited hundred' };
+  const newcomer = { ...plsiWork, id: 'https://openalex.org/W1000000002', doi: 'https://doi.org/10.5555/joined-the-hundred', title: 'An article that has joined the most-cited hundred' };
+  let listing: unknown[] = [plsiWork, dropped];
+  const { urls, env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.LG' }, first);
+  // That night's enrichment.
+  db.prepare('UPDATE works SET enriched_at = ?').run(new Date(first).toISOString());
+
+  // A week on, the listing names one of them again, cited more, and a new one.
+  t.mock.timers.setTime(first + 7 * DAY);
+  listing = [{ ...plsiWork, cited_by_count: 4100 }, newcomer];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.LG' }, first + 7 * DAY);
+  const counts = (db.prepare('SELECT paper FROM works').all() as Array<{ paper: string }>).map(row => JSON.parse(row.paper)).map(paper => [paper.id, paper.citationCount]);
+  assert.deepEqual(counts.sort(), [['openalex:W1000000001', 3988], ['openalex:W1000000002', 3988], ['openalex:W2107743791', 4100]]);
+
+  // Fourteen days after that first night, the counts it stored come due.
+  t.mock.timers.setTime(first + 14 * DAY + 3_600_000);
+  urls.length = 0;
+  await enrichPending(store, 50, first + 14 * DAY + 3_600_000);
+  assert.deepEqual(urls.filter(url => url.hostname === 'api.openalex.org').map(url => url.searchParams.get('filter')), ['openalex:W1000000001']);
+  // The new paper still gets its first enrichment: Crossref's type for its DOI.
+  const typed = urls.filter(url => url.hostname === 'api.crossref.org').flatMap(url => url.searchParams.get('filter')!.split(','));
+  assert.deepEqual(typed.sort(), ['doi:10.5555/joined-the-hundred', 'doi:10.5555/left-the-hundred']);
 });
 
 test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {

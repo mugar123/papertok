@@ -7,6 +7,7 @@ import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { feedSeenFilter } from '../src/utils/seenPaperFilter.ts';
+import { takeFeedPage } from '../src/utils/feedEnrichment.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
@@ -270,13 +271,15 @@ const NOTABLE = [
   notableWork('W2107743791', 'Probabilistic Latent Semantic Indexing', '2017-08-02', 3988, false),
 ];
 
+// `count` recent cs.LG papers, an hour apart before `now`.
+const recentPapers = (count: number, now = NOW) => Array.from({ length: count }, (_, index) => ({
+  paper: { ...arxivRecord, id: `2610.${String(index).padStart(5, '0')}`, arxivId: `2610.${String(index).padStart(5, '0')}`, title: `Recent paper ${index} on learning`, allCategories: [], categories: [], published: new Date(now - (index + 1) * 3_600_000).toISOString() },
+  lanes: ['cs.LG'],
+}));
+
 async function notableCorpus() {
   const { env, db } = corpus();
-  const recent = Array.from({ length: 40 }, (_, index) => ({
-    paper: { ...arxivRecord, id: `2610.${String(index).padStart(5, '0')}`, arxivId: `2610.${String(index).padStart(5, '0')}`, title: `Recent paper ${index} on learning`, allCategories: [], categories: [], published: new Date(NOW - (index + 1) * 3_600_000).toISOString() },
-    lanes: ['cs.LG'],
-  }));
-  await ingestPapers(env, recent, { now: NOW });
+  await ingestPapers(env, recentPapers(40), { now: NOW });
   await ingestPapers(env, NOTABLE.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
   return { env, db };
 }
@@ -322,6 +325,52 @@ test('a reader who has seen every notable paper, or a request that does not say 
   assert.equal(first.filter(paper => paper._notable).length, 2);
   const later = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 10 }), { now: NOW, cache });
   assert.ok(!later.some(paper => paper._notable));
+});
+
+test('fourteen papers and an unseen notable one fill a page of fifteen, the notable one last', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, recentPapers(14), { now: NOW });
+  await ingestPapers(env, [{ paper: NOTABLE[1], lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]) }), { now: NOW });
+  assert.equal(page.length, 15);
+  assert.deepEqual(page.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : [])), [[14, 'openalex:W2493916176']]);
+});
+
+test("the app shows one card in fifteen notable whatever size its pages are, from corpus pages of twice that size", async () => {
+  const { env } = corpus();
+  await ingestPapers(env, recentPapers(160), { now: NOW });
+  const notable = Array.from({ length: 12 }, (_, index) => notableWork(`W90000000${index}`, `Highly cited study ${index} of representation learning`, '2019-05-01', 5000 - index, true));
+  await ingestPapers(env, notable.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  for (const pageSize of [8, 10, 15]) {
+    // Later pages read the order the first one ranked, as the Worker's cache keeps it.
+    const orders = new Map<string, unknown>();
+    const cache = { get: async (key: string) => (orders.get(key) as never) ?? null, put: async (key: string, ranking: unknown) => { orders.set(key, ranking); } };
+    const feed: Array<{ id: string; _notable?: boolean }> = [];
+    for (let page = 0; page < 4; page += 1) {
+      const corpusPage = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page, pageSize: pageSize * 2, seen: feedSeenFilter(feed.map(paper => paper.id)) }), { now: NOW, cache });
+      feed.push(...takeFeedPage(corpusPage, pageSize, feed));
+    }
+    assert.equal(feed.length, pageSize * 4);
+    const places = feed.flatMap((paper, index) => (paper._notable ? [index + 1] : []));
+    assert.deepEqual(places, Array.from({ length: Math.floor(feed.length / 15) }, (_, index) => 15 * (index + 1)), `pages of ${pageSize}`);
+  }
+});
+
+test('in January the year that left the ten-year window gives no notable card, while its papers wait in the lane for their listing to lapse', async () => {
+  const { env, db } = corpus();
+  // Listed by the last weekly run of 2026, and kept two weeks from then.
+  const listed = Date.parse('2026-12-30T03:00:00Z');
+  await ingestPapers(env, [
+    { paper: notableWork('W2016000001', 'A highly cited article from the first year of the window', '2016-03-01', 9000, true), lanes: ['notable:cs.LG'] },
+    { paper: notableWork('W2017000001', 'A highly cited article from the second year of the window', '2017-02-01', 7000, true), lanes: ['notable:cs.LG'] },
+  ], { now: listed, keepUntil: '2027-01-13T03:00:00.000Z' });
+  const january = Date.parse('2027-01-10T03:00:00Z');
+  await ingestPapers(env, recentPapers(30, january), { now: january });
+  await evictExpired(env, january);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'notable:cs.LG'").length, 2);
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]) }), { now: january });
+  assert.deepEqual(page.filter(paper => paper._notable).map(paper => [paper.id, paper.year]), [['openalex:W2017000001', 2017]]);
+  assert.ok(!page.some(paper => paper.id === 'openalex:W2016000001'));
 });
 
 test('a seen-paper filter the app did not write is refused', () => {
