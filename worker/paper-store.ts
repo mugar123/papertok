@@ -482,11 +482,16 @@ async function embedTexts(env: StoreEnv, texts: string[]) {
  */
 async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>, uid?: string) {
   if (rows.length === 0) return 0;
+  const db = database(env);
   const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
-  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts), uid))) return 0;
+  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts), uid))) {
+    // Not embedded: another pass, or another reader with budget left, may.
+    await db.prepare('UPDATE works SET embedding_claimed_until = NULL WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(rows.map(row => row.id))).run();
+    return 0;
+  }
   const vectors = await embedTexts(env, texts);
   const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index]! }] : []));
-  const db = database(env);
   // Two parameters a row, under D1's hundred per statement.
   const statements = [];
   for (let start = 0; start < embedded.length; start += 50) {

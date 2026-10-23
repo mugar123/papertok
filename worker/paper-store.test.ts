@@ -292,13 +292,18 @@ test("one reader's lookups embed a small share of the day, and the harvest and o
   const ids = (db.prepare('SELECT id FROM works ORDER BY id').all() as Array<{ id: number }>).map(row => row.id);
   // A lookup embeds at most ten liked papers; this reader keeps asking with new ones.
   let readerEmbedded = 0;
+  let refused: number[] = [];
   for (let lookup = 0; lookup < 30; lookup += 1) {
-    const embedded = await embedWorks(env, ids.slice(lookup * 10, lookup * 10 + 10), 'reader-1');
-    if (embedded === 0) break;
+    const asked = ids.slice(lookup * 10, lookup * 10 + 10);
+    const embedded = await embedWorks(env, asked, 'reader-1');
+    if (embedded === 0) {
+      refused = asked;
+      break;
+    }
     readerEmbedded += embedded;
   }
   assert.ok(readerEmbedded > 0 && readerEmbedded <= 100, `one reader embedded ${readerEmbedded}`);
-  assert.equal(await embedWorks(env, ids.slice(390), 'reader-2'), 10, "another reader's lookup is still embedded");
+  assert.equal(await embedWorks(env, refused, 'reader-2'), 10, "another reader's lookup of the same papers is embedded");
   assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
 });
 
