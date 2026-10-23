@@ -99,11 +99,6 @@ export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined
   return sources.primary !== 'openalex' && !(sources.enrichedBy || []).includes('openalex');
 }
 
-export function takeFeedPage<T>(papers: T[] | null | undefined, pageSize = 15) {
-  const safeSize = Number.isFinite(pageSize) ? Math.max(0, Math.floor(pageSize)) : 15;
-  return (Array.isArray(papers) ? papers : []).slice(0, safeSize);
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);

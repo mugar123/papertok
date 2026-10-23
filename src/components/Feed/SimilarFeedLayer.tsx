@@ -250,7 +250,8 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
               <ScientificText>{anchor.title}</ScientificText>
             </span>
           </div>
-          <span className="similar-status">{status}</span>
+          {/* Keyed by phase, so each step of the wait arrives as a new word. */}
+          <span key={phase} className="similar-status" data-pending={phase === 'finding' || phase === 'classifying' || undefined}>{status}</span>
         </header>
         <div className="similar-body">{body}</div>
         {/* Mounted with the layer, so the wait and its end are both spoken;
