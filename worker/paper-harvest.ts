@@ -80,9 +80,9 @@ async function followedJobs(db: D1Database, now: number) {
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
 }
 
-async function embedAll(env: WorkerEnv, step: WorkflowStep, label = 'embed') {
+async function embedAll(env: WorkerEnv, step: WorkflowStep, lanes?: string[]) {
   for (let batch = 0; ; batch += 1) {
-    const embedded = await step.do(`${label} ${batch}`, PAGE_STEP, () => embedPending(env, EMBED_STEP_PAPERS));
+    const embedded = await step.do(`embed ${batch}`, PAGE_STEP, () => embedPending(env, EMBED_STEP_PAPERS, { lanes }));
     if (embedded === 0) break;
   }
 }
@@ -122,7 +122,8 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
  * set harvested from where it last finished, every other source's lanes, the
  * lanes readers follow, the papers past their keeping date removed, then
  * enrichment and embedding of what arrived within the day's budgets. A run for
- * newly followed lanes (`payload.lanes`) harvests and embeds only those.
+ * newly followed lanes (`payload.lanes`) harvests those and embeds only their
+ * papers: the rest of the corpus is the daily run's to embed.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
@@ -132,7 +133,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   const followed = event.payload?.lanes;
   if (followed?.length) {
     await runLaneJobs(env, step, 'followed', followed.map(followedLaneJob).filter(Boolean) as LaneJob[]);
-    await phase('embed', () => embedAll(env, step));
+    await phase('embed', () => embedAll(env, step, followed));
     return;
   }
 

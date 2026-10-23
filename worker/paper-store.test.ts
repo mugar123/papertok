@@ -2,11 +2,12 @@ import type { PaperFollowMatch } from '../src/models/Paper.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
+import { arxivIdOf, embedPending, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
+import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
   assert.equal(arxivIdOf('arxiv:2610.01234v2'), '2610.01234');
@@ -246,6 +247,34 @@ test("a reader's later pages read the order the first page ranked, and only thei
   const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});
+
+// Workers AI, as the store calls it: one vector of the model's size per text.
+function embeddingModel() {
+  const texts: string[] = [];
+  const AI = {
+    run: async (_model: string, { text }: { text: string[] }) => {
+      texts.push(...text);
+      await new Promise(resolve => setImmediate(resolve));
+      return { data: text.map((_, index) => Array.from({ length: 1024 }, (__, dimension) => Math.sin(index + dimension + 1))) };
+    },
+  };
+  return { AI, texts };
+}
+
+test('two embedding passes at once embed each paper once', async () => {
+  const { binding } = testD1();
+  const { AI, texts } = embeddingModel();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 64 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.002${String(index).padStart(2, '0')}`, arxivId: `2610.002${String(index).padStart(2, '0')}`, title: `Paper ${index} waiting for its vector`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  // The daily run's pass, and a followed lanes' run started beside it.
+  const embedded = await Promise.all([embedPending(env, 256), embedPending(env, 256)]);
+  assert.equal(embedded[0] + embedded[1], 64);
+  assert.equal(texts.length, 64);
+  assert.equal(new Set(texts).size, 64);
 });
 
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {

@@ -492,21 +492,44 @@ async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string 
   return embedded.length;
 }
 
-/** The newest stored papers without a vector, embedded. 0 once none are left or today's budget is spent. */
-export async function embedPending(env: StoreEnv, limit: number) {
-  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
-    WHERE NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
-    ORDER BY w.published DESC LIMIT ?`).bind(limit).all<{ id: number; paper: string }>();
-  return embedRows(env, results);
+// How long a pass holds the papers it embeds: longer than the harvest step that
+// runs it may take (5 minutes), so no other pass embeds them meanwhile. A pass
+// that failed leaves them to the next one after this.
+const EMBEDDING_CLAIM_MS = 10 * 60_000;
+
+/**
+ * Claims the newest works `scope` names (a condition on `w`, and its
+ * parameters) that have no vector and that no other pass holds, in one
+ * statement: passes that overlap, such as the daily run beside a followed
+ * lanes' run or a reader's lookup, get different works.
+ */
+async function claimUnembedded(db: D1Database, scope: string, params: unknown[], limit: number, now = Date.now()) {
+  const { results } = await db.prepare(`UPDATE works SET embedding_claimed_until = ? WHERE id IN (
+      SELECT w.id FROM works w WHERE ${scope}
+        AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
+        AND (w.embedding_claimed_until IS NULL OR w.embedding_claimed_until < ?)
+      ORDER BY w.published DESC LIMIT ?)
+    RETURNING id, paper`)
+    .bind(new Date(now + EMBEDDING_CLAIM_MS).toISOString(), ...params, new Date(now).toISOString(), limit)
+    .all<{ id: number; paper: string }>();
+  return results;
+}
+
+/**
+ * The newest stored papers without a vector, of these lanes only when given,
+ * embedded. 0 once none are left or today's budget is spent.
+ */
+export async function embedPending(env: StoreEnv, limit: number, { lanes }: { lanes?: string[] } = {}) {
+  const rows = lanes
+    ? await claimUnembedded(database(env), 'w.id IN (SELECT work_id FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)))', [JSON.stringify(lanes)], limit)
+    : await claimUnembedded(database(env), 'true', [], limit);
+  return embedRows(env, rows);
 }
 
 /** The given works that have no vector yet, embedded within today's budget. */
 export async function embedWorks(env: StoreEnv, workIds: number[]) {
   if (workIds.length === 0) return 0;
-  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
-    WHERE w.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)`)
-    .bind(JSON.stringify(workIds)).all<{ id: number; paper: string }>();
-  return embedRows(env, results);
+  return embedRows(env, await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length));
 }
 
 // ─── Reading ───
