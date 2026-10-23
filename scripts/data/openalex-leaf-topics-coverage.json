@@ -16,8 +16,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "cond-mat.supr-con",
@@ -59,8 +59,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "cond-mat.mes-hall",
@@ -99,10 +99,10 @@
       "T10425",
       "T11993"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 10,
-    "precision": 0.6666666666666666
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "hep-th",
@@ -147,8 +147,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 1,
-    "precision": 0.06666666666666667
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "astro-ph.CO",
@@ -192,8 +192,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 13,
-    "precision": 0.8666666666666667
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "astro-ph.EP",
@@ -228,8 +228,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 1,
-    "precision": 0.06666666666666667
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "nucl-th",
@@ -276,10 +276,10 @@
       "T13126",
       "T13493"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 13,
-    "precision": 0.8666666666666667
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "physics.atom-ph",
@@ -325,10 +325,10 @@
       "T12077",
       "T13769"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 13,
-    "precision": 0.8666666666666667
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "physics.bio-ph",
@@ -371,8 +371,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 2,
-    "precision": 0.13333333333333333
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "cs.LG",
@@ -482,8 +482,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 1,
-    "precision": 0.06666666666666667
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "cs.DB",
@@ -525,8 +525,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 9,
-    "precision": 0.6
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "cs.IR",
@@ -573,8 +573,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "cs.GT",
@@ -616,8 +616,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 15,
-    "precision": 1
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "cs.GR",
@@ -659,8 +659,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 1,
-    "precision": 0.06666666666666667
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "cs.SY",
@@ -711,8 +711,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 14,
-    "precision": 0.9333333333333333
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "math.NT",
@@ -759,10 +759,10 @@
       "T13500",
       "T13797"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 10,
-    "precision": 0.6666666666666666
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "math.DG",
@@ -810,8 +810,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 3,
-    "precision": 0.2
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "math.OC",
@@ -865,8 +865,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 15,
-    "precision": 1
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "math.CA",
@@ -924,8 +924,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "stat.AP",
@@ -1044,8 +1044,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 7,
-    "precision": 0.4666666666666667
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "q-fin.MF",
@@ -1103,10 +1103,10 @@
       "T13816",
       "T14420"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 13,
-    "precision": 0.8666666666666667
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "eess.IV",
@@ -1155,8 +1155,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 3,
-    "precision": 0.2
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "eess.electro",
@@ -1205,8 +1205,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 5,
-    "precision": 0.3333333333333333
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "mech.fluid",
@@ -1281,8 +1281,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 12,
-    "precision": 0.8
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "mech.cad",
@@ -1387,10 +1387,10 @@
       "T13601",
       "T14445"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 10,
-    "precision": 0.6666666666666666
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "civil.quake",
@@ -1453,8 +1453,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 2,
-    "precision": 0.13333333333333333
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "chemeng.process",
@@ -1499,8 +1499,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 6,
-    "precision": 0.4
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "chemeng.energy",
@@ -1565,8 +1565,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 1,
-    "precision": 0.06666666666666667
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "med.onco",
@@ -1667,10 +1667,10 @@
       "T13037",
       "T13202"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 12,
-    "precision": 0.8
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "med.tox",
@@ -1725,10 +1725,10 @@
       "T11322",
       "T11377"
     ],
-    "status": "passed",
+    "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 12,
-    "precision": 0.8
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "med.immuno",
@@ -1796,8 +1796,8 @@
     ],
     "status": "rejected",
     "sampleSize": 15,
-    "onTarget": 9,
-    "precision": 0.6
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "med.derma",
@@ -1941,8 +1941,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 15,
-    "precision": 1
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "bio.micro",
@@ -2026,8 +2026,8 @@
     ],
     "status": "passed",
     "sampleSize": 15,
-    "onTarget": 15,
-    "precision": 1
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "bio.biotech",

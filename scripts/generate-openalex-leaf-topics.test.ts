@@ -129,6 +129,23 @@ test('low precision or too few papers cannot enable a leaf', t => {
   assert.ok(!readFileSync(output, 'utf8').includes("'cs.AI':"));
 });
 
+test('a call the labeller marked uncertain counts as a miss', t => {
+  const { run, reviews, output, coverage } = setup(t);
+  assert.equal(run().status, 0);
+  const { topicIds } = coverage().find(row => row.leaf === 'cs.AI')!;
+  // 12 of 15 labelled on target, 3 of them doubted: 9 of 15 is under two thirds.
+  const review = evidence(topicIds[0]);
+  for (const label of review.labels.slice(0, 3)) Object.assign(label, { uncertain: true });
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': review }));
+  assert.equal(run().status, 0);
+  const row = coverage().find(row => row.leaf === 'cs.AI')!;
+  assert.deepEqual([row.status, row.sampleSize, row.precision], ['rejected', 15, 9 / 15]);
+  assert.ok(!readFileSync(output, 'utf8').includes("'cs.AI':"));
+  Object.assign(review.labels[0], { uncertain: 'maybe' });
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': review }));
+  assert.notEqual(run().status, 0, 'a doubt is recorded as true or not at all');
+});
+
 test('unsorted topics, duplicate labels and non-feed samples fail without overwriting output', t => {
   const { run, reviews, output, coverage } = setup(t);
   assert.equal(run().status, 0);

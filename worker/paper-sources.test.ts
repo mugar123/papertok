@@ -296,7 +296,8 @@ test('a leaf the gate did not admit sends no topic request, and every lane is an
   const coverage = gateFile('openalex-leaf-topics-coverage.json') as Array<{ leaf: string; status: string; sampleSize?: number }>;
   const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf)!;
   // Too few on target in a full sample, or too few recent core articles to judge.
-  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample']]) {
+  // physics.plasm-ph had 13 of 15 on target, 6 of them calls its labeller doubted.
+  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample']]) {
     assert.equal(statusOf(leaf).status, status, leaf);
     assert.equal(typeof statusOf(leaf).sampleSize, 'number', `${leaf} records its sample`);
     assert.equal(openAlexTopicFilterForLeaves([leaf]), null, leaf);

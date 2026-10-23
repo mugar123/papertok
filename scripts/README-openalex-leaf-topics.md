@@ -24,7 +24,7 @@ The Worker's nightly harvest gives every leaf in the generated map its own
 which asks for the leaf's topic IDs in sorted order, as the sample did. Each
 lane reads up to 5 pages of 200 a night from the harvest's share of 4,000
 OpenAlex list calls (`HARVEST_OPENALEX_DAILY_CALLS`), so every admitted leaf adds
-up to 5 calls a night. The 54 leaves in the map take at most 270.
+up to 5 calls a night. The 46 leaves in the map take at most 230.
 
 ## Propose candidates
 
@@ -76,8 +76,9 @@ the feed and its samples may not.
 Keep the entire returned page while labelling. Prepare a separate, shuffled
 review sheet with only the target leaf, opaque row IDs, titles and decoded
 abstracts. Hide topic IDs, query, venue, access and the proposed mapping while
-labelling. Record `on-target` or `off-target` for every row; uncertain results
-count as misses. Join the labels back to work IDs only after finishing the
+labelling. Record `on-target` or `off-target` for every row, and add
+`"uncertain": true` to any call you doubt: the gate counts it as a miss whatever
+its label. Join the labels back to work IDs only after finishing the
 blind labels. Blindness is a review procedure: the generator cannot prove that
 an annotator did not inspect the hidden data.
 
@@ -88,14 +89,14 @@ The reviews JSON is keyed by leaf ID. Each value contains:
 | `capturedAt` | UTC capture timestamp |
 | `query` | The works URL as sent; a `mailto` may be left out, as it does not change the results. Its sorted `primary_topic.id` values are the reviewed topics |
 | `works` | Every returned work, newest first, with only `id`, `type`, `title`, `publication_date` and `primary_topic.id` |
-| `labels` | One `{ "workId": "https://openalex.org/W…", "label": "on-target" }` or `off-target` per work |
+| `labels` | One `{ "workId": "https://openalex.org/W…", "label": "on-target" }` or `off-target` per work, with `"uncertain": true` on a doubted call |
 
 The abstracts stay out of the repository: the query's `has_abstract:true`, which
 the gate requires, shows that every work had one, and the work IDs lead back to
 the full records.
 
 Admission requires a full page of 15 unique recent articles, complete labels,
-and at least two thirds (10 of 15) on target. PR #236 reports 74.1% overall
+and at least two thirds (10 of 15) on target without doubt. PR #236 reports 74.1% overall
 and a lowest accepted profile of 66.0%, but does not state a formal per-leaf
 threshold. Two thirds is a conservative rounding of that observed floor; PAP-99
 adopted it as the rule. The original 14 lists retain their existing acceptance.
@@ -123,8 +124,8 @@ answered 200 at 1 credit each. The coverage report records each leaf's
 
 | Decision | Leaves |
 | --- | --- |
-| `passed` (10 or more of 15 on target) | 40 |
-| `rejected` | 64 |
+| `passed` (10 or more of 15 on target without doubt) | 32 |
+| `rejected` | 72 |
 | `insufficient-sample` | 3: `math.OC` (0 articles), `med.endo` (12), `chemeng.metal` (13) |
 | `no-candidates` | 22 |
 | `inherited` | 14 |
@@ -137,3 +138,16 @@ rather than shuffled, opaque rows. Each row showed the venue, the year and
 OpenAlex's access flag beside the title and the first 300 characters of the
 abstract. The labellers report judging from the title, the abstract and the
 venue. Topic IDs, the query and the proposed mapping were hidden.
+
+The first labeller marked 122 of their 525 calls as borderline, defined as
+calls a second labeller could reasonably flip. The reviews record them as
+`uncertain`. Eight leaves passed only on such calls and are rejected:
+`cond-mat.quant-gas`, `physics.optics`, `physics.plasm-ph`, `math.ST`,
+`eess.SP`, `civil.trans`, `med.pharma` and `med.surg`. The other two labellers
+marked no call as uncertain, so every call they made counts as recorded.
+
+Seven leaves passed at exactly 10 of 15, where one changed call would reject
+them: `astro-ph.SR`, `cs.LG`, `cs.SY`, `math.CO`, `math.GT`, `q-fin.GN` and
+`mech.mfg`. A second labeller working blind, as the procedure above describes,
+could confirm these seven and re-examine the eight rejected leaves; a new
+review replaces the leaf's entry.
