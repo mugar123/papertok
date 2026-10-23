@@ -172,8 +172,8 @@ export async function handleCorpusFeed(
   const papers = await readFeedPage(env, query, { cache: cache && { get: key => cache.get(key), put: async (...entry) => { ranked = entry; } } });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
-  // The order serves the next pages only if this work changed nothing it
-  // reads: a new follow's harvest is under way, or a like has a vector now.
+  // The order serves the next pages only if this work leaves the ranking as
+  // it was: a new follow's harvest, or a like stored or embedded, changes it.
   await later(Promise.all([
     registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
     looksUp && !looksUpFirst ? addMissingPositives(env, query.positiveIds) : false,

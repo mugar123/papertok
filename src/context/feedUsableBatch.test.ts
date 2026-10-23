@@ -164,6 +164,7 @@ test('session-seen papers also do not satisfy the first-page readiness threshold
   const { state, run } = feed({ slow: records('fresh'), seen: records('fast', 13).map(paper => paper.id) });
   await run(true);
   assert.equal(state.error, null);
+  // The two fast papers not seen, and the fifteen fresh ones.
   assert.equal(state.papers.length, 17);
   assert.ok(state.papers.every(paper => !paper.id.startsWith('fast-') || Number(paper.id.split('-')[1]) >= 13));
 });
@@ -884,6 +885,7 @@ test("a page shows every paper it asked the corpus for: the reader's fifteen and
 });
 
 test("a pull to refresh asks for the corpus's first page, the follows' first page too", async t => {
+  // Whatever Math.random draws: a refresh is no lottery over the first pages.
   t.mock.method(Math, 'random', () => 0.5);
   const asked: string[] = [];
   const { state, env, refresh } = feed();

@@ -1401,9 +1401,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // everything was seen.
         const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? { page: currentPage, papers: bypassSeen } : undefined);
         if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
-          // One page on, not more: the corpus ranks the same papers first on
-          // every load, so the page after the shown ones holds the next of
-          // them, and a longer move would leave some never shown.
+          // One page on, not more: the corpus ranks the same way on every
+          // load, so a longer move would pass over papers not yet shown.
           const nextPageToFetch = currentPage + 1;
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
