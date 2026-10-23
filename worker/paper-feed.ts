@@ -36,9 +36,10 @@ const FOLLOW_REFRESH_MS = 86_400_000;
 const NEW_LANES_HARVESTED_PER_READER = 20;
 const NEW_LANES_HARVESTED_PER_DAY = 2_000;
 // New followed lanes a reader may register a day, and the whole app's. The
-// nightly run harvests the 400 lanes asked for most recently, so one account
-// must not fill them, or followed_lanes, with its own new lanes. Past them a
-// new follow is served from what the corpus has.
+// nightly run harvests at most 400 followed lanes, the ones never harvested
+// first (paper-harvest.ts), so one account must not fill them, or
+// followed_lanes, with its own new lanes. Past them a new follow is served
+// from what the corpus has.
 const NEW_LANES_REGISTERED_PER_READER = 40;
 const NEW_LANES_REGISTERED_PER_DAY = 4_000;
 

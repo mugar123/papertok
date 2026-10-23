@@ -3,7 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, evictExpired } from './paper-store.ts';
-import { ARXIV_HARVEST_SETS, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 
 // arXiv announces at 20:00 US Eastern; by 02:30 UTC the day's records are listed.
@@ -16,10 +16,14 @@ const EMBED_STEP_PAPERS = 256;
 // day (OPENALEX_HARVEST_DAILY_UNITS). A larger backlog drains over the next runs.
 const ENRICH_STEP_PAPERS = 500;
 const ENRICH_STEPS = 150;
-// Followed lanes harvested a run, most recently asked first. A followed search
-// costs ten calls, an entity one, of the 700 a day the nightly refresh of
-// followed lanes may spend (paper-sources.ts); once they are spent, the run's
-// other OpenAlex followed lanes are skipped.
+// Followed lanes harvested a run: the ones harvested longest ago first, a lane
+// never harvested before any, and the most recently asked first among lanes
+// harvested at the same time. A followed search costs ten units, an entity
+// one, of the 700 a day the nightly refresh of followed lanes may spend
+// (paper-sources.ts); once they are spent, the run's other OpenAlex followed
+// lanes wait, and they are first the next night. Asking for a harvested lane
+// again does not move it ahead of one harvested earlier, so one account asking
+// for its own lanes before the run cannot keep other readers' from a refresh.
 const FOLLOWED_LANES_PER_RUN = 400;
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
@@ -89,8 +93,12 @@ async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jo
 }
 
 async function followedJobs(db: D1Database, now: number) {
-  const { results } = await db.prepare('SELECT lane FROM followed_lanes WHERE requested_at >= ? ORDER BY requested_at DESC LIMIT ?')
-    .bind(daysFromNow(-FOLLOWED_LANE_DAYS, now), FOLLOWED_LANES_PER_RUN).all<{ lane: string }>();
+  // lane_state's key starts with the source: naming the followed lanes'
+  // sources lets each lane's row be read by key. SQLite sorts a NULL first.
+  const { results } = await db.prepare(`SELECT f.lane FROM followed_lanes f
+    LEFT JOIN lane_state s ON s.source IN (SELECT value FROM json_each(?)) AND s.lane = f.lane
+    WHERE f.requested_at >= ? ORDER BY s.harvested_through, f.requested_at DESC LIMIT ?`)
+    .bind(JSON.stringify(FOLLOWED_SOURCES), daysFromNow(-FOLLOWED_LANE_DAYS, now), FOLLOWED_LANES_PER_RUN).all<{ lane: string }>();
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
 }
 

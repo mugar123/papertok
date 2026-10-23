@@ -524,12 +524,20 @@ export function categoryLaneJobs(): LaneJob[] {
   return jobs;
 }
 
-/** The source that serves a followed lane (paper-store.ts `followLane`). */
+// The source that serves each kind of followed lane (paper-store.ts `followLane`).
+const FOLLOWED_LANE_SOURCES: Array<[RegExp, SourceName]> = [
+  [/^author-name:/, 'arxiv-search'],
+  [/^project:/, 'openaire'],
+  [/^(author|institution|topic|concept|query):/, 'openalex-follows'],
+];
+
+/** The sources followed lanes are harvested from, as `lane_state` names them. */
+export const FOLLOWED_SOURCES = [...new Set(FOLLOWED_LANE_SOURCES.map(([, source]) => source))];
+
+/** The source that serves a followed lane. */
 export function followedLaneJob(lane: string): LaneJob | null {
-  if (lane.startsWith('author-name:')) return { source: 'arxiv-search', lane };
-  if (lane.startsWith('project:')) return { source: 'openaire', lane };
-  if (/^(author|institution|topic|concept|query):/.test(lane)) return { source: 'openalex-follows', lane };
-  return null;
+  const source = FOLLOWED_LANE_SOURCES.find(([kind]) => kind.test(lane))?.[1];
+  return source ? { source, lane } : null;
 }
 
 // How long a paper a lane kept whatever its date stays once its source no

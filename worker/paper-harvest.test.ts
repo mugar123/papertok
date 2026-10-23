@@ -110,6 +110,35 @@ test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, an
   assert.equal(searches() - 30, 70);
 });
 
+// The nightly refresh's 700 units do not reach every followed lane on a busy
+// night. An account that asks for its own followed searches again just before
+// the run must not take them every night from the lanes other readers follow.
+test('the nightly refresh starts with the followed lanes harvested longest ago, however recently another lane was asked for', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T02:30:00Z') });
+  providers(t);
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  // One account's 70 searches, ten units each: harvested last night, asked again a minute ago.
+  const searches = Array.from({ length: 70 }, (_, index) => `query:search ${index}`);
+  // Other readers' authors, one unit each, asked yesterday: five never harvested, five two nights ago.
+  const authors = Array.from({ length: 10 }, (_, index) => `author:A${index + 1}`);
+  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)');
+  const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', ?, ?)");
+  for (const lane of searches) {
+    follow.run(lane, '2026-10-23T02:29:00.000Z');
+    harvested.run(lane, '2026-10-22T02:40:00.000Z');
+  }
+  for (const lane of authors) follow.run(lane, '2026-10-22T15:00:00.000Z');
+  for (const lane of authors.slice(5)) harvested.run(lane, '2026-10-21T02:40:00.000Z');
+
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  const refreshed = db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-follows' AND harvested_through = '2026-10-23T02:30:00.000Z'")
+    .all().map(row => (row as { lane: string }).lane);
+  assert.deepEqual(authors.filter(lane => !refreshed.includes(lane)), [], 'every author is refreshed');
+  // The rest of the 700 units: 69 of the account's searches.
+  assert.equal(refreshed.filter(lane => lane.startsWith('query:')).length, 69);
+});
+
 test('a lane step that fails past its retries passes over its lanes, not the rest of the run', async t => {
   providers(t);
   const { env, db } = corpus();
