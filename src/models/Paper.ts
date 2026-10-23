@@ -397,7 +397,7 @@ export function paperLegacyAdapter(legacyPaper: StoredPaperInput): Paper | Store
     publicationType: legacyPaper.publicationType || 'preprint',
     publicationStatus: legacyPaper.publicationStatus || 'preprint',
     peerReviewed: legacyPaper.peerReviewed || (journal ? true : false),
-    openAccess: legacyPaper.openAccess !== undefined ? legacyPaper.openAccess : true,
+    openAccess: legacyPaper.openAccess,
     pdfUrl,
     landingPageUrl,
     citationCount: legacyPaper.citationCount || openAlexData.cited_by_count || 0,
