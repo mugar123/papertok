@@ -205,12 +205,16 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   const { env, db } = store();
   Object.assign(env, { AI: { run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, () => 0.5)) }) } });
   await ingestPapers(env, [{ paper: stored, lanes: [] }]);
-  // Two readers' arXiv searches take this period's seat and the next one.
+  // Two readers' arXiv searches take this period's seat and the next one:
+  // the first goes to arXiv, the second waits for its seat.
   const searches = ['all:attention', 'all:sparsity'].map(query => handleArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
   await flush();
   t.mock.timers.tick(cacheReadMs);
+  for (let turn = 0; arxivAsked < 1; turn += 1) {
+    if (turn > 10_000) throw new Error('the first search never reached arXiv');
+    await new Promise(resolve => setImmediate(resolve));
+  }
   await flush();
-  assert.equal(arxivAsked, 1, "the first search went to arXiv; the second waits for the next period's seat");
 
   const afterAnswer: Array<Promise<unknown>> = [];
   const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });

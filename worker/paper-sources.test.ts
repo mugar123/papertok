@@ -302,9 +302,10 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   const harvest = harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'med.cardio' })
     .then(() => null, (error: unknown) => error)
     .finally(() => { settled = true; });
-  // The lane step's timeout (paper-harvest.ts) is ten minutes; run the clock past it.
+  // The lane step's timeout (paper-harvest.ts) is ten minutes; run the clock
+  // past it, letting the ledger answer within each second.
   for (let second = 0; !settled && second < 15 * 60; second += 1) {
-    await new Promise(resolve => setImmediate(resolve));
+    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
     t.mock.timers.tick(1_000);
   }
   const refusal = await harvest;
