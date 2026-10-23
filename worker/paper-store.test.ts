@@ -145,8 +145,8 @@ test('a row stored before merges kept review evidence does not read reviewed on 
   // answers its records gave under each DOI (stripped here, as that code
   // never wrote them), so it lacks NASA ADS's non-refereed record of the
   // journal article. A row built from scratch keeps that denial. Records
-  // merged since must not confirm review on the article's `true` alone: the
-  // row reads unknown, as that code read it.
+  // merged since must not make the row read reviewed where that code did
+  // not: it reads unknown, as that code read it.
   const journalDoi = '10.1016/j.jinteco.2026.103900';
   const title = 'Bank capital and the transmission of monetary policy';
   const arxivLocation: OpenAlexLocation = {
@@ -229,11 +229,12 @@ test('a row stored before merges kept review evidence does not read reviewed on 
     assert.equal(served.length, 1, stored);
     assert.equal(served[0].doi, journalDoi, stored);
     assert.equal(served[0].peerReviewed, legacy ? undefined : false, stored);
-    // A row that began as the reviewed conference version keeps its `true`
-    // when the eprint's records arrive, on the code that kept the evidence.
-    // Behind OpenAlex's record of the journal DOI without a source, that row
-    // answers for the journal DOI with NASA ADS's `false`; a row stored
-    // before lacks it and must not lend that DOI the conference's `true`.
+    // A row built from scratch that began as the reviewed conference version
+    // keeps its `true` when the eprint's records arrive; one stored before
+    // reads unknown there, as that code read it. Behind OpenAlex's record of
+    // the journal DOI without a source, the row built from scratch answers
+    // for that DOI with NASA ADS's `false`; the one stored before lacks it
+    // and must not lend that DOI the conference version's `true`.
     const conference = await harvest([conferenceVersion, notRefereed], [eprint, arxivListingJournal], legacy);
     assert.equal(conference.length, 1, stored);
     assert.equal(conference[0].doi, conferenceDoi, stored);
