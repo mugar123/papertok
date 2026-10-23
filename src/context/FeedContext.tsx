@@ -26,7 +26,7 @@ export interface FeedContextValue {
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
   feedMode: string; setFeedMode: (mode: string) => void;
   /** `seenFallback`: a page of papers shown before, carried by a load that skipped past it. */
-  loadPapers: (reset?: boolean, mode?: string | null, randomizeStart?: boolean, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] } }) => Promise<void>;
+  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] } }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -113,7 +113,6 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   preserveFeedAbstracts,
-  takeFeedPage,
 } from '../utils/feedEnrichment.ts';
 import { resolveWithin, settleWithin } from '../utils/asyncTiming.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
@@ -134,8 +133,6 @@ const loadTopicRetrieval = () => import('../services/topicRetrievalService.ts');
 const PAGE_SIZE = 15;
 // How many of the reader's ranked categories a page asks the corpus for.
 const MAIN_CATEGORIES = 10;
-// A reload starts on a random one of the first pages, for variety.
-const RESET_START_PAGES = 5;
 // How long exploration and the follows may hold a page: past it, the page is
 // shown without them.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
@@ -1177,7 +1174,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, randomizeStart = false, pageOverride?: number, { keepThroughVisible = false, seenFallback }: Parameters<FeedContextValue['loadPapers']>[4] = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1191,7 +1188,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // that page.
     if (!reset && loading) {
       loadAfterCommit.current = {
-        args: [reset, mode, randomizeStart, pageOverride, { keepThroughVisible, seenFallback }],
+        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback }],
         requestId: feedRequestId.current,
         sessionId: feedSessionId.current,
       };
@@ -1206,10 +1203,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setLoading(true);
     setError(null);
     
-    let currentPage = pageOverride ?? (reset ? 0 : page);
-    if (randomizeStart) {
-      currentPage = Math.floor(Math.random() * RESET_START_PAGES);
-    }
+    // A fresh load starts on the corpus's first page, the follows' included:
+    // the ranking puts the reader's closest papers there.
+    const currentPage = pageOverride ?? (reset ? 0 : page);
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1256,8 +1252,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
         // One request stands for every source the feed reads: the Worker
         // harvests, merges and enriches them once a day (worker/paper-store.ts)
-        // and ranks the page by the reader's liked and saved papers. It asks for
-        // two pages' worth so the ranking below still chooses the fifteen shown.
+        // and ranks the page by the reader's liked and saved papers. It asks
+        // for the fifteen the page shows: the next page starts after them, so
+        // a paper asked for and left out would never come back.
         // The follows are optional: they join the page if they answer in time.
         const followedCandidatesPromise = followedEntities.length > 0
           ? resolveWithin(
@@ -1278,7 +1275,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
             positiveIds,
             page: currentPage,
-            pageSize: PAGE_SIZE * 2,
+            pageSize: PAGE_SIZE,
             order: queryMode,
           });
         } catch (e) {
@@ -1328,7 +1325,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           const papers = await resolveWithin(fetchCorpusPage({
             categories: categories.slice(0, MAIN_CATEGORIES),
             page: Math.floor(Math.random() * 30 / count),
-            pageSize: count * 2,
+            pageSize: count,
             order: queryMode,
           }).catch((e) => {
             console.error('Error fetching explore papers:', e);
@@ -1351,7 +1348,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
-          if (randomCats.length > 0) explorationPapers.push(...(await explore(randomCats, 2)).slice(0, 2));
+          if (randomCats.length > 0) explorationPapers.push(...await explore(randomCats, 2));
         }
 
         // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
@@ -1373,12 +1370,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const corePapers = Array.from(uniqueMap.values());
         newPapers = corePapers;
 
-        // An empty first page is not the end of the feed. A reload's random
-        // start page can lie past what the corpus holds for these interests,
-        // and a corpus with nothing for them is not ready: that is an error
-        // with a retry, not an empty feed.
+        // An empty first page is not the end of the feed: a corpus with nothing
+        // for these interests is not ready, which is an error with a retry.
         if (reset && newPapers.length === 0 && !seenFallback) {
-          if (currentPage > 0) return loadPapersRef.current?.(reset, activeMode, false, 0, { keepThroughVisible });
           throw new Error('The paper store has no papers for these interests yet.');
         }
       } else {
@@ -1407,17 +1401,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // everything was seen.
         const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? { page: currentPage, papers: bypassSeen } : undefined);
         if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
-          // A reload starts on one of the first RESET_START_PAGES pages and
-          // the reader scrolls on from there, so after a few reloads all of
-          // them have been shown (browser check 2026-10-21). A seen page
-          // moves the next try RESET_START_PAGES pages on, past every reload
-          // start; the ceiling above allows two such moves. A page of papers
-          // the reader acted on moves one page.
-          const nextPageToFetch = currentPage + (bypassSeen.length > 0 ? RESET_START_PAGES : 1);
+          // One page on, not more: the corpus ranks the same papers first on
+          // every load, so the page after the shown ones holds the next of
+          // them, and a longer move would leave some never shown.
+          const nextPageToFetch = currentPage + 1;
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, false, nextPageToFetch, { keepThroughVisible, seenFallback: shownBefore });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: shownBefore });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1437,7 +1428,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }
       }
 
-      // The corpus answers two pages' worth; the reader's ranking chooses the page.
+      // The page shows every paper it asked for, in the reader's order: the
+      // corpus's fifteen, the follows' and exploration's.
       if (activeMode === 'top' || activeMode === null) {
         filtered = diversifiedWeightedShuffle(filtered, {
           scorePaper: calculateAndAttachScore,
@@ -1445,7 +1437,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           initialPapers: reset && !keepThroughVisible ? [] : papers,
         });
       }
-      filtered = takeFeedPage(filtered, PAGE_SIZE);
 
       // The corpus enriched these papers when it stored them: the page is
       // shown as it arrived.
@@ -1520,7 +1511,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       if (addPage(papers).length < PAGE_SIZE && newPapers.length > 0 && currentPage < 10) {
         setTimeout(() => {
           if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-            loadPapersRef.current?.(false, activeMode, false, nextPage);
+            loadPapersRef.current?.(false, activeMode, nextPage);
           }
         }, 0);
       }
@@ -1535,7 +1526,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           autoRetryUsedRef.current = true;
           setTimeout(() => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              loadPapersRef.current?.(true, activeMode, false, undefined, { keepThroughVisible });
+              loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
             }
           }, 2500);
         }
@@ -1654,7 +1645,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-      loadPapers(true, null, true);
+      loadPapers(true, null);
     }, 0);
     return () => clearTimeout(refreshTimer);
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
@@ -1702,7 +1693,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // race, documented in STATE.md's 2026-09-07 entry; keepThroughVisible
       // makes both outcomes safe, so it's not dead code.
       const refreshTimer = setTimeout(
-        () => loadPapers(true, null, true, undefined, { keepThroughVisible: true }),
+        () => loadPapers(true, null, undefined, { keepThroughVisible: true }),
         0,
       );
       return () => clearTimeout(refreshTimer);
@@ -1773,10 +1764,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // Force a minimum visual delay of 800ms so the UI has time to show the spinner
     try {
       await Promise.all([
-        // reset=true, mode=null, randomizeStart=true. FeedContainer jumps to
-        // the top for a refresh, and its scroll event can arrive before the
-        // new cards and name an old one: the reader is on the first card.
-        loadPapersRef.current?.(true, null, true)?.then(() => { visiblePaperIdRef.current = null; }),
+        // reset=true, mode=null. FeedContainer jumps to the top for a
+        // refresh, and its scroll event can arrive before the new cards and
+        // name an old one: the reader is on the first card.
+        loadPapersRef.current?.(true, null)?.then(() => { visiblePaperIdRef.current = null; }),
         new Promise((resolve) => setTimeout(resolve, 800))
       ]);
     } finally {

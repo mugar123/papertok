@@ -30,7 +30,7 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
   assert.match(code, /import \{ mergeFreshFeedPage, splitFeedForReRank \} from '\.\.\/utils\/feedReRankSplit\.ts';/);
   assert.match(
     code,
-    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, randomizeStart = false, pageOverride\?: number, \{ keepThroughVisible = false, seenFallback \}: Parameters<FeedContextValue\['loadPapers'\]>\[4\] = \{\}\) => \{/,
+    /const loadPapers = useCallback(?:<[^;\n]+>)?\(async \(reset = false, mode\?: string \| null, pageOverride\?: number, \{ keepThroughVisible = false, seenFallback \}: Parameters<FeedContextValue\['loadPapers'\]>\[3\] = \{\}\) => \{/,
     'the option is an explicit parameter, not a ref the effect has to set',
   );
   const resetBranch = bounded(code, 'const addPage = (shown: Paper[]) => {', 'const nextHasMore =', 'the reset branch of loadPapers', 20);
@@ -44,7 +44,7 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
 test('SOURCE: the automatic retry after a failed reset keeps the option', async () => {
   const code = stripComments(await read('./FeedContext.tsx'));
   const retry = bounded(code, 'if (reset && !autoRetryUsedRef.current) {', '}, 2500);', 'the automatic retry', 8);
-  assert.match(retry, /loadPapersRef\.current\?\.\(true, activeMode, false, undefined, \{ keepThroughVisible \}\);/);
+  assert.match(retry, /loadPapersRef\.current\?\.\(true, activeMode, undefined, \{ keepThroughVisible \}\);/);
 });
 
 test('SOURCE: the following effect records nothing off the feed route and compares against the last applied signature', async () => {
@@ -66,7 +66,7 @@ test('SOURCE: the following effect records nothing off the feed route and compar
   assert.ok(gateAt < compareAt && gateAt < recordAt && gateAt < appliedRecordAt, 'off the feed route nothing is compared nor recorded: a follow and its undo cost nothing');
   assert.match(
     effect,
-    /setTimeout\(\s*\(\) => loadPapers\(true, null, true, undefined, \{ keepThroughVisible: true \}\),\s*0,?\s*\)/,
+    /setTimeout\(\s*\(\) => loadPapers\(true, null, undefined, \{ keepThroughVisible: true \}\),\s*0,?\s*\)/,
     'the refresh keeps the reader on their card',
   );
   assert.match(effect, /reRankFeed\(\);/, 'the visible cards are still re-ranked, anchored, before the fresh page arrives');
