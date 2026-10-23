@@ -79,7 +79,8 @@ review sheet with only the target leaf, opaque row IDs, titles and decoded
 abstracts. Hide topic IDs, query, venue, access and the proposed mapping while
 labelling. Record `on-target` or `off-target` for every row, and add
 `"uncertain": true` to any call you doubt: the gate counts it as a miss
-whatever its label. Join the labels back to work IDs only after finishing the
+whatever its label. A doubted call that leans neither way has no label.
+Join the labels back to work IDs only after finishing the
 blind labels. Blindness is a review procedure: the generator cannot prove that
 an annotator did not inspect the hidden data.
 
@@ -90,7 +91,7 @@ The reviews JSON is keyed by leaf ID. Each value contains:
 | `capturedAt` | UTC capture timestamp |
 | `query` | The works URL as sent; a `mailto` may be left out, as it does not change the results. Its sorted `primary_topic.id` values are the reviewed topics |
 | `works` | Every returned work, newest first, with only `id`, `type`, `title`, `publication_date` and `primary_topic.id` |
-| `labels` | One `{ "workId": "https://openalex.org/W…", "label": "on-target" }` or `off-target` per work, with `"uncertain": true` on a doubted call |
+| `labels` | One `{ "workId": "https://openalex.org/W…", "label": "on-target" }` or `off-target` per work, with `"uncertain": true` on a doubted call, which has no `label` when it leans neither way |
 
 The abstracts stay out of the repository: the query's `has_abstract:true`, which
 the gate requires, shows that every work had one, and the work IDs lead back to

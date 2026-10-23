@@ -15,8 +15,9 @@ interface Review {
   // Only the fields checked below; the query's has_abstract:true proves the
   // abstracts, and the work IDs lead back to the full records.
   works: Array<{ id: string; title: string; type: string; publication_date: string; primary_topic: { id: string } }>;
-  // `uncertain` marks a call the labeller doubted; it counts as a miss.
-  labels: Array<{ workId: string; label: 'on-target' | 'off-target'; uncertain?: true }>;
+  // `uncertain` marks a call the labeller doubted; it counts as a miss. A
+  // doubted call has no label when the labeller leaned neither way.
+  labels: Array<{ workId: string; label?: 'on-target' | 'off-target'; uncertain?: true }>;
 }
 
 const leaves = getAllLeafCategories();
@@ -124,8 +125,10 @@ function checkReview(leaf: string, value: unknown) {
   const labels = new Set<string>();
   for (const label of review!.labels) {
     const id = topicKey(label?.workId);
-    if (!workIds.has(id) || labels.has(id) || !['on-target', 'off-target'].includes(label.label)
-      || ![undefined, true].includes(label.uncertain)) invalid(`invalid or duplicate label: ${id}`);
+    if (!workIds.has(id) || labels.has(id) || ![undefined, true].includes(label.uncertain)
+      || (label.label === undefined ? !label.uncertain : !['on-target', 'off-target'].includes(label.label))) {
+      invalid(`invalid or duplicate label: ${id}`);
+    }
     labels.add(id);
   }
   if (labels.size !== workIds.size) invalid('label every sampled article; do not omit misses');
