@@ -339,6 +339,7 @@ test('fourteen papers and an unseen notable one fill a page of fifteen, the nota
 test("the app shows one card in fifteen notable whatever size its pages are, from corpus pages of twice that size", async () => {
   const { env } = corpus();
   await ingestPapers(env, recentPapers(160), { now: NOW });
+  // Synthetic works in the recorded shape.
   const notable = Array.from({ length: 12 }, (_, index) => notableWork(`W90000000${index}`, `Highly cited study ${index} of representation learning`, '2019-05-01', 5000 - index, true));
   await ingestPapers(env, notable.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
   for (const pageSize of [8, 10, 15]) {
@@ -358,7 +359,8 @@ test("the app shows one card in fifteen notable whatever size its pages are, fro
 
 test('in January the year that left the ten-year window gives no notable card, while its papers wait in the lane for their listing to lapse', async () => {
   const { env, db } = corpus();
-  // Listed by the last weekly run of 2026, and kept two weeks from then.
+  // Synthetic works in the recorded shape, listed by the last weekly run of
+  // 2026 and kept two weeks from then.
   const listed = Date.parse('2026-12-30T03:00:00Z');
   await ingestPapers(env, [
     { paper: notableWork('W2016000001', 'A highly cited article from the first year of the window', '2016-03-01', 9000, true), lanes: ['notable:cs.LG'] },

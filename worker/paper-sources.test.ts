@@ -457,6 +457,7 @@ test("a notable lane's weekly listing renews its papers' counts, so the enrichme
   const DAY = 86_400_000;
   const first = Date.parse('2026-10-23T03:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: first });
+  // Synthetic variants of the recorded work.
   const dropped = { ...plsiWork, id: 'https://openalex.org/W1000000001', doi: 'https://doi.org/10.5555/left-the-hundred', title: 'An article that has left the most-cited hundred' };
   const newcomer = { ...plsiWork, id: 'https://openalex.org/W1000000002', doi: 'https://doi.org/10.5555/joined-the-hundred', title: 'An article that has joined the most-cited hundred' };
   let listing: unknown[] = [plsiWork, dropped];
