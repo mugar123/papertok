@@ -28,7 +28,7 @@ export const LEAF_FILING_RULES: Readonly<Record<string, FilingRule>> = Object.fr
 // under it: a quiet category's few papers would make a centroid of a handful
 // of topics. The newest 500 bound what the busiest categories read each night.
 const CENTROID_PAPERS = 500;
-export const MIN_CENTROID_PAPERS = 50;
+const MIN_CENTROID_PAPERS = 50;
 // Leaves read per D1 call: each answers up to CENTROID_PAPERS vectors.
 const CENTROID_LEAVES_PER_CALL = 10;
 
