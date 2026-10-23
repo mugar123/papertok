@@ -55,6 +55,21 @@ test('SOURCE: a late citation chip fades in, and so does its separator', async (
     'reduced motion gives up the fade');
 });
 
+test('SOURCE: a notable card says why it is shown, "Highly cited", then its own year and a count grouped in English', async () => {
+  const code = stripComments(await read('./PaperCard.tsx'));
+  const masthead = bounded(code, '<div className="pc-meta">', '<TitleTag', 'the masthead', 90);
+  const label = bounded(masthead, '{paper._notable && (', '</>', 'the notable label', 8);
+  assert.match(label, />\s*\{'Highly cited'\}\s*</, 'visible text, read as it is shown');
+  const [labelAt, yearAt, countAt] = ['{paper._notable && (', 'className="pc-date"', 'className="pc-citations"'].map(mark => masthead.indexOf(mark));
+  assert.ok(labelAt >= 0 && labelAt < yearAt && yearAt < countAt, 'Highly cited · 2016 · 12,400 citations');
+  // The year and the count are the paper's own, and the count still needs a
+  // known or positive number (the chip's guard above): an unknown is no number.
+  assert.match(masthead, /\{paper\.year\}/);
+  const counts = [...masthead.matchAll(/\{paper\.citationCount!?\.toLocaleString\('en-US'\)\}/g)];
+  assert.equal(counts.length, 3, 'the Scopus link, its name and the plain chip group thousands alike');
+  assert.doesNotMatch(masthead, /\{paper\.citationCount\} /, 'no ungrouped count is left');
+});
+
 test('SOURCE: the dot before the chip is the one that carries the modifier', async () => {
   const code = stripComments(await read('./PaperCard.tsx'));
   const chip = bounded(code, '{(paper.citationCountKnown || paper.citationCount! > 0) && (', 'pc-citations', 'the citation chip', 8);

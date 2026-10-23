@@ -880,10 +880,31 @@ test('a page asks the corpus for the ranked categories with the likes, and a lat
     });
     await run(page === 0);
     assert.equal(state.error, null);
-    const main = { categories: ['cs.AI'], positiveIds: ['2610.00001', 'pmid:41000001'], page, pageSize: 30, order: 'recent' };
+    // The main page says what the reader has seen, so the corpus can offer notable papers they have not.
+    const main = { categories: ['cs.AI'], positiveIds: ['2610.00001', 'pmid:41000001'], page, pageSize: 30, order: 'recent', seen: env.sessionSeenPapers.current };
     // A later page adds the reader's area's other category: five papers' worth, twice over.
     assert.deepEqual(asked, page === 0 ? [main] : [main, { categories: ['cs.LG'], page: 0, pageSize: 10, order: 'recent' }]);
   }
+});
+
+test("a page shows the corpus's one notable card in fifteen, last, and a seen one is not among the papers a feed falls back to", async () => {
+  const corpusPage = records('corpus', 30).map((paper, index) => ({ ...paper, _notable: index === 14 || index === 29 }));
+  const shown = feed({ seen: ['viewed-yesterday'] });
+  const asked: Array<{ seen?: Set<string> }> = [];
+  Object.assign(shown.env, { fetchCorpusPage: async (request: { seen?: Set<string> }) => { asked.push(request); return corpusPage; } });
+  await shown.run(true);
+  assert.equal(asked[0].seen?.has('viewed-yesterday'), true);
+  assert.equal(shown.state.papers.length, 15);
+  assert.deepEqual(shown.state.papers.filter(paper => paper._notable).map(paper => paper.id), ['corpus-14']);
+  assert.equal(shown.state.papers[14].id, 'corpus-14');
+
+  // Every card seen: the papers shown again while later pages are tried leave the notable ones out.
+  const allSeen = feed({ seen: corpusPage.map(paper => paper.id) });
+  Object.assign(allSeen.env, { fetchCorpusPage: async () => corpusPage });
+  await allSeen.run(true);
+  const [[, , , , { seenFallback }]] = allSeen.state.continuations as Array<[unknown, unknown, unknown, unknown, { seenFallback: { papers: FeedRecord[] } }]>;
+  assert.equal(seenFallback.papers.length, 28);
+  assert.ok(!seenFallback.papers.some(paper => paper._notable));
 });
 
 // The follows the feed asks the corpus for, built from the stored follows.

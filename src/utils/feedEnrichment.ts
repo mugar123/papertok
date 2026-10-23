@@ -99,9 +99,16 @@ export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined
   return sources.primary !== 'openalex' && !(sources.enrichedBy || []).includes('openalex');
 }
 
-export function takeFeedPage<T>(papers: T[] | null | undefined, pageSize = 15) {
+/**
+ * The page shown from a ranked batch. The corpus gave `notableShare` of its own
+ * page to notable cards (`_notable`, worker/paper-store.ts); the page keeps
+ * that share of them, as its last cards, and no other notable card.
+ */
+export function takeFeedPage<T extends Partial<Paper>>(papers: T[] | null | undefined, pageSize = 15, notableShare = 0) {
   const safeSize = Number.isFinite(pageSize) ? Math.max(0, Math.floor(pageSize)) : 15;
-  return (Array.isArray(papers) ? papers : []).slice(0, safeSize);
+  const list = Array.isArray(papers) ? papers : [];
+  const notable = list.filter(paper => paper?._notable).slice(0, Math.round(safeSize * notableShare));
+  return [...list.filter(paper => !paper?._notable).slice(0, safeSize - notable.length), ...notable];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

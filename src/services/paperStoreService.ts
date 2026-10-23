@@ -2,6 +2,7 @@ import type { Paper } from '../models/Paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 
 import { authenticatedWorkerFetch, workerSourceUrl } from './workerApiClient.ts';
+import { feedSeenFilter } from '../utils/seenPaperFilter.ts';
 
 // Inside the feed's 4 s first-paint budget, with room for the response.
 const STORE_TIMEOUT_MS = 3_500;
@@ -13,6 +14,9 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
+  // The papers the reader has seen. Only a page that says gets notable papers
+  // of its categories, and only ones the reader has not seen.
+  seen?: Iterable<string>;
 }
 
 interface StoreOptions {
@@ -38,9 +42,9 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * by the reader's liked and saved papers. Categories are the app's; follows
  * are sent as they are stored, and the Worker decides how each is served.
  * Each paper says which asked categories (`_fetchedFor`) and follows
- * (`_followedEntityMatches`) it was found under.
+ * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent' }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', seen }: CorpusPageRequest, options: StoreOptions = {}) {
   return askStore({
     categories,
     follows: follows.map(({ type, canonicalId, displayName, metadata }) => ({
@@ -53,6 +57,7 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
+    ...(seen ? { seen: feedSeenFilter(seen) } : {}),
   }, options);
 }
 

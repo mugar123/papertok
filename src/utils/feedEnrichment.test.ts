@@ -42,6 +42,22 @@ test('caps every visible feed page before OpenAlex enrichment', () => {
   assert.equal(page[14].id, '2607.00014');
 });
 
+test("a page keeps the corpus's share of notable cards, last, whatever order the ranking left them in", () => {
+  // The corpus answered 30 cards, two of them notable (one in 15); the
+  // reader's ranking moved one past the fifteen shown.
+  const ranked = Array.from({ length: 31 }, (_, index) => ({ id: `card-${index}`, _notable: index === 3 || index === 20 }));
+  const page = takeFeedPage(ranked, 15, 2 / 30);
+  assert.equal(page.length, 15);
+  assert.deepEqual(page.filter(paper => paper._notable).map(paper => paper.id), ['card-3']);
+  assert.equal(page[14].id, 'card-3');
+  assert.deepEqual(page.slice(0, 14).map(paper => paper.id), ['card-0', 'card-1', 'card-2', ...Array.from({ length: 11 }, (_, index) => `card-${index + 4}`)]);
+
+  // A notable card the corpus did not reserve for this page (an exploration
+  // batch's) is not shown, nor is one when every notable card was filtered out.
+  assert.ok(!takeFeedPage(ranked, 15, 0).some(paper => paper._notable));
+  assert.equal(takeFeedPage(ranked.filter(paper => !paper._notable), 15, 2 / 30).length, 15);
+});
+
 test('merges OpenAlex metadata before a feed batch is displayed', () => {
   const papers = [{
     id: 'arxiv:2607.12345v1',

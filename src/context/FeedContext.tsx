@@ -1223,6 +1223,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     try {
       let newPapers: Paper[] = [];
+      // The share of the corpus page the Worker gave to notable cards.
+      let notableShare = 0;
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
@@ -1280,12 +1282,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             page: currentPage,
             pageSize: PAGE_SIZE * 2,
             order: queryMode,
+            // Its notable cards are papers the reader has not seen.
+            seen: sessionSeenPapers.current,
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
           mainFailed = true;
         }
         mainPapers.forEach(p => { p._type = 'exploit'; });
+        notableShare = mainPapers.length ? mainPapers.filter(p => p._notable).length / mainPapers.length : 0;
 
         // ─── STEP 4: Followed topics, authors, institutions and projects ───
         const followedPapers = await followedCandidatesPromise;
@@ -1393,9 +1398,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // No paper on this page can be shown: try a later page before showing
       // seen papers again.
       if (filtered.length === 0) {
-        // Shown before, but never liked, saved, read or dismissed.
-        const bypassSeen = newPapers.filter((p) => 
+        // Shown before, but never liked, saved, read or dismissed. A notable
+        // card is never shown twice.
+        const bypassSeen = newPapers.filter((p) =>
           isFeedPublication(p) &&
+          !p._notable &&
           !notInterestedIdsRef.current.has(p.id) && 
           !readPaperIdsRef.current.has(p.id) &&
           !likedPaperIdsRef.current.has(p.id) &&
@@ -1445,7 +1452,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           initialPapers: reset && !keepThroughVisible ? [] : papers,
         });
       }
-      filtered = takeFeedPage(filtered, PAGE_SIZE);
+      filtered = takeFeedPage(filtered, PAGE_SIZE, notableShare);
 
       // The corpus enriched these papers when it stored them: the page is
       // shown as it arrived.
