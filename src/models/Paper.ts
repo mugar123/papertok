@@ -29,6 +29,12 @@ export interface PaperSources {
   // under one of these DOIs that merges this one reads it as that record's
   // answer.
   peerReviewedByDoi?: Record<string, boolean>;
+  // Written and read only by `PaperBuilder.merge`: `peerReviewedByDoi` holds
+  // the answer of every record merged into the row. A merged row without it,
+  // such as one merged before the map existed, can lack a record's `false`,
+  // so no `true` in its map, or in the map of a row that merges it, confirms
+  // review.
+  peerReviewedByDoiComplete?: true;
 }
 
 export interface PaperSubjectReference {

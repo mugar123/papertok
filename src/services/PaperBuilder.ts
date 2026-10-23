@@ -94,6 +94,16 @@ function ownPeerReviewedByDoi(record: Partial<Paper>, sourceName?: string): NonN
   return ownAnswer(record, sourceName) === true && !restsOnArxivDoi(record) ? { [doi]: true } : {};
 }
 
+// Whether a record's `sources.peerReviewedByDoi` holds the answer of every
+// record merged into it. A record that has merged none answers for itself
+// (`ownPeerReviewedByDoi`), and `merge` marks a row it builds from such
+// records and rows (`sources.peerReviewedByDoiComplete`). A row merged before
+// the map existed lacks its records' answers: a corpus row stored then, or a
+// card an older bundle merged.
+function holdsEveryAnswer(record: Pick<Partial<Paper>, 'sources'>) {
+  return !hasMerged(record) || record.sources?.peerReviewedByDoiComplete === true;
+}
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -457,10 +467,15 @@ export class PaperBuilder {
     // DOI already answers for it. The map holds publisher DOIs only: a row
     // showing arXiv's own DOI takes the answer of any row that shares its
     // arXiv id (`sameRecord`), a denial under another DOI included, which a
-    // `true` filed under arXiv's DOI would outrank.
-    const baseDoiAnswer = baseDoi !== '' && enrichmentDoi !== baseDoi
+    // `true` filed under arXiv's DOI would outrank. Beside a map that lacks a
+    // record's answer, on either side (`holdsEveryAnswer`), a `true` may be
+    // one that record's `false` under the DOI would have stood against, so it
+    // confirms nothing. A `false` stands whatever else is missing.
+    const everyAnswer = holdsEveryAnswer(existingPaper) && holdsEveryAnswer(enrichmentData);
+    const baseDoiEntry = baseDoi !== '' && enrichmentDoi !== baseDoi
       ? enrichmentData.sources?.peerReviewedByDoi?.[baseDoi]
       : undefined;
+    const baseDoiAnswer = baseDoiEntry === false || everyAnswer ? baseDoiEntry : undefined;
     const confirmsBaseDoi = baseDoiAnswer === true;
     const deniesBaseDoi = baseDoiAnswer === false;
     const incomingAnswer = baseDoiAnswer ?? enrichmentData.peerReviewed;
@@ -517,9 +532,10 @@ export class PaperBuilder {
     // `preprint` reopens that answer: OpenAlex's record of the eprint listing
     // a published copy, or a preprint row that Semantic Scholar's untyped
     // record made read published. OpenAlex's record of the journal DOI
-    // without a source then reads unknown.
+    // without a source then reads unknown. A map that lacks a record's answer
+    // confirms nothing here either.
     const rowPeerReviewedByDoi = existingPaper.sources.peerReviewedByDoi ?? ownPeerReviewedByDoi(existingPaper);
-    const keepsConfirmed = merged.peerReviewed === true && enrichmentReview === undefined
+    const keepsConfirmed = everyAnswer && merged.peerReviewed === true && enrichmentReview === undefined
       && rowPeerReviewedByDoi[baseDoi] === true;
     const rereads = !repeatsTrue && !keepsConfirmed && !bothRestOnArxivDoi && !otherDoiTrue && shouldUpgradePublication
       && (reviewOpen || reviewDenied) && (incomingAnswer !== false || sameRecord || deniesBaseDoi);
@@ -591,6 +607,12 @@ export class PaperBuilder {
     }
     if (Object.entries(peerReviewedByDoi).some(([doi, answer]) => existingPaper.sources.peerReviewedByDoi?.[doi] !== answer)) {
       merged.sources = { ...merged.sources, peerReviewedByDoi };
+    }
+    // A merged row holds every answer only when both sides did, so a merge
+    // that adds what records say since never restores what a row lost: only a
+    // row built again from its records does. Written only when it changes.
+    if (hasMerged(merged) && everyAnswer !== (merged.sources.peerReviewedByDoiComplete === true)) {
+      merged.sources = { ...merged.sources, peerReviewedByDoiComplete: everyAnswer || undefined };
     }
 
     // Open Access logic
