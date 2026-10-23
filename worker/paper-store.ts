@@ -408,8 +408,12 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  * - a lane keeps its newest FEED_CANDIDATE_LIMIT papers, the most a page can
  *   ever rank from it, so a busy category does not pile up papers no reader
  *   reaches;
- * - a paper past its keeping date, or left in no lane, goes, unless readers
- *   still rank their feed by it (`liked_until`).
+ * - a paper past its keeping date, or in no category, working-paper or
+ *   followed lane, goes, unless readers still rank their feed by it
+ *   (`liked_until`). The lane of an OpenAlex entity nobody follows keeps
+ *   nothing: nearly every enriched paper names an author, so it would keep
+ *   every paper its category trimmed. A later follow of that entity starts
+ *   without those papers, until its own harvest lists them.
  */
 export async function evictExpired(env: StoreEnv, now = Date.now()) {
   const db = database(env);
@@ -421,13 +425,15 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
   for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
   // Rows filed before publishedOf refused dates ahead leave too.
   const ahead = new Date(now + DAY_MS).toISOString();
+  const keeping = JSON.stringify([...LEAF_IDS, WORKING_PAPERS_LANE]);
   const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
-    AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id)))`;
+    AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id
+      AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes)))))`;
   await db.batch([
-    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff, ahead),
+    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
+    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
+    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
+    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
   ]);
 }
 

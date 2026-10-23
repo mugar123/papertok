@@ -301,6 +301,22 @@ test("an enrichment that names an old paper's topic does not file it under that 
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
 });
 
+test('a paper only an unfollowed entity names leaves; a category, the working-paper series or a follow keeps it', async () => {
+  const { env, db } = corpus();
+  const paper = (id: string, title: string) => ({ ...arxivRecord, id, arxivId: id, title, allCategories: [], categories: [] });
+  await ingestPapers(env, [
+    // As a paper its category's lane trimmed is: nearly every enriched paper names an author.
+    { paper: paper('2610.00041', 'Named by an author nobody follows'), lanes: ['author:A9'] },
+    { paper: paper('2610.00042', 'Listed for an author a reader follows'), lanes: ['author:A10'] },
+    { paper: paper('2610.00043', 'In a category, named by an author'), lanes: ['cs.LG', 'author:A9'] },
+    { paper: paper('2610.00044', 'In the working-paper series'), lanes: ['series:working-papers'] },
+  ], { now: NOW });
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
+  await evictExpired(env, NOW);
+  assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key LIKE 'arxiv:%' ORDER BY key").map(row => row.key), ['arxiv:2610.00042', 'arxiv:2610.00043', 'arxiv:2610.00044']);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 1, 'the author lane still names the paper its category keeps');
+});
+
 // Each D1 round trip a request makes, as the statements it sent.
 function roundTrips(t: TestContext, binding: D1Database) {
   const trips: string[][] = [];
