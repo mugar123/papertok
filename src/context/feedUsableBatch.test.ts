@@ -7,7 +7,7 @@ import { PaperBuilder } from '../services/PaperBuilder.ts';
 import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 import { resolveWithin } from '../utils/asyncTiming.ts';
 import { abstractsInFlight, takeFeedPage, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
-import { createEmptyInteractionProfile, deserializeInteractionProfile, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interactionProfile.ts';
+import { createEmptyInteractionProfile, deserializeInteractionProfile, MAX_VIEWED_IDS, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds, type InteractionEvent } from '../utils/interactionProfile.ts';
 import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
 import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
@@ -326,7 +326,7 @@ const paperRecord = (id: string): FeedRecord => ({ id, title: `${id} scientific 
 const viewedEvent = (paperId: string, kind = 'viewTime') => ({ paperId, kind, category: 'cs.AI', viewTime: 4 });
 // The real callbacks over one browser's storage; `user` is the signed-in account
 // and `seen` the feed's in-memory set. `auth` is Firebase's own current user.
-function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage(), traverseAndExpandNetwork = (() => {}) as (paper: FeedRecord) => void } = {}) {
+function viewing({ user = 'test-user' as string | null, seen = ref(new Set<string>()), storage = memoryStorage(), traverseAndExpandNetwork = (() => {}) as (paper: FeedRecord) => void, recordProfileEvent = (() => {}) as (event: InteractionEvent) => void } = {}) {
   const scope = {
     sessionSeenPapers: seen, activeUserId: ref(user), viewedIds, auth: { currentUser: user ? { uid: user } as { uid: string } | null : null },
     readSeenPaperIds: (userId: string | null) => readSeenPaperIds(userId, storage),
@@ -337,7 +337,7 @@ function viewing({ user = 'test-user' as string | null, seen = ref(new Set<strin
   const tracking = {
     markPaperViewed, user: user ? { uid: user } : null, IS_DEMO: true,
     boredomLevel: ref(0), profileSignals: ref(readProfileSignals(null)), temporalPreference: ref(0),
-    countEngagement: () => {}, recordProfileEvent: () => {}, scheduleReRank: () => {}, traverseAndExpandNetwork,
+    countEngagement: () => {}, recordProfileEvent, scheduleReRank: () => {}, traverseAndExpandNetwork,
     dedupeInteractionPapers: <T>(papers: T[]) => papers,
   };
   const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), tracking) as (paper: FeedRecord, seconds: number) => Promise<void>;
@@ -935,6 +935,30 @@ test("the feed's fifteenth card is the corpus's notable one, counted from the ca
   const [[, , , , { seenFallback }]] = allSeen.state.continuations as Array<[unknown, unknown, unknown, unknown, { seenFallback: { papers: FeedRecord[] } }]>;
   assert.equal(seenFallback.papers.length, 28);
   assert.ok(!seenFallback.papers.some(paper => paper._notable));
+});
+
+// The corpus offers a reader's unseen notable papers in one fixed order. Had
+// a viewed notable card left `seen` with the 500-id viewed ring, the corpus
+// would offer it again before any the reader never saw: in the re-review's
+// probe, 100 notable places showed 34 distinct papers.
+test('a notable card the reader viewed is not offered again, however many cards they viewed after it', async t => {
+  t.mock.method(console, 'log', () => {});
+  const storage = memoryStorage();
+  const aggregate = createEmptyInteractionProfile();
+  const deviceA = viewing({ storage, recordProfileEvent: event => { recordInteractionEvent(aggregate, event); } });
+  await deviceA.trackViewTime({ ...paperRecord('notable-viewed'), _notable: true }, 4);
+  await deviceA.trackSkips(Array.from({ length: MAX_VIEWED_IDS }, (_, index) => paperRecord(`viewed-after-${index}`)));
+
+  // The next load: what this browser kept and the account's aggregate as stored.
+  const { state, env, run } = feed({ seen: deviceA.stored() });
+  viewing({ seen: env.sessionSeenPapers }).carryViewedPapers(deserializeInteractionProfile(serializeInteractionProfile(aggregate))!);
+  const asked: Array<{ seen?: Set<string> }> = [];
+  const corpusPage = [...records('corpus', 14), { ...paperRecord('notable-viewed'), _notable: true }, ...records('more', 15)];
+  Object.assign(env, { fetchCorpusPage: async (request: { seen?: Set<string> }) => { asked.push(request); return corpusPage; } });
+  await run(true);
+  assert.equal(asked[0].seen?.has('notable-viewed'), true, 'the corpus is told the reader saw it');
+  assert.equal(state.papers.length, 15);
+  assert.ok(!state.papers.some(paper => paper.id === 'notable-viewed'), 'and the feed does not show it');
 });
 
 // The follows the feed asks the corpus for, built from the stored follows.

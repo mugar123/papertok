@@ -19,6 +19,10 @@ export interface InteractionProfile {
   // The papers this account really viewed, newest first. Not a curated set: it
   // is never known to the feed and never reaches the seen filter.
   viewed: string[];
+  // The notable cards (`_notable`) among them, newest first and kept longer.
+  // The interaction documents do not say which views those were, so a
+  // rebuild starts it empty.
+  viewedNotable: string[];
   seenFilter: BloomFilter | null;
   counters: { interactions: number; evicted: number }; countedPapers: Set<string>;
   sourceDocCount: number; truncated: boolean;
@@ -26,6 +30,8 @@ export interface InteractionProfile {
 export interface InteractionEvent {
   paperId: string; kind: string; category?: string; timestamp?: number | string; viewTime?: number; value?: boolean;
   concepts?: WeightedConcept[]; authorIds?: string[];
+  // A view or a skip of a notable card.
+  notable?: boolean;
 }
 export interface ProfileSignals {
   categoryAffinities: Record<string, number>;
@@ -163,6 +169,12 @@ export const CURATED_ID_CAPS = Object.freeze({
 // The ring of viewed papers a second device skips on load. About 13 kB inside
 // `curated`, and the first thing the curated budget gives up.
 export const MAX_VIEWED_IDS = 500;
+// The viewed notable cards the feed passes over as well. The corpus offers a
+// reader's unseen notable papers in one order, so one that only the ring
+// remembered would come back, once the ring forgot it, before any the reader
+// never saw. As many as one page reads (NOTABLE_CANDIDATE_LIMIT in
+// worker/paper-store.ts); about 30 kB inside `curated`, given up after the ring.
+export const MAX_VIEWED_NOTABLE_IDS = 1_200;
 
 export const MAX_CURATED_JSON_BYTES = 320000;
 export const MAX_AFFINITY_JSON_BYTES = 120000;
@@ -202,6 +214,7 @@ export function createEmptyInteractionProfile(): InteractionProfile {
     session: new Map(),
     curated: new Map(CURATED_SETS.map(name => [name, { order: [], members: new Set() }])),
     viewed: [],
+    viewedNotable: [],
     seenFilter: null,
     counters: { interactions: 0, evicted: 0 },
     // Papers already counted towards sourceDocCount in this session. In memory
@@ -513,20 +526,26 @@ function addCurated(profile: InteractionProfile, name: CuratedSetName, paperId: 
   }
 }
 
+function addNewest(ids: string[], paperId: string, cap: number) {
+  const position = ids.indexOf(paperId);
+  if (position === 0) return;
+  if (position > 0) ids.splice(position, 1);
+  ids.unshift(paperId);
+  if (ids.length > cap) ids.length = cap;
+}
+
 // A view and a skip both mean the card was on screen. Unlike a curated set, the
 // oldest id simply falls off: the feed may show a paper again, it must only not
 // do so right after the reader saw it.
-function addViewed(profile: InteractionProfile, paperId: string) {
+function addViewed(profile: InteractionProfile, paperId: string, notable = false) {
   if (typeof paperId !== 'string' || !paperId) return;
-  const position = profile.viewed.indexOf(paperId);
-  if (position === 0) return;
-  if (position > 0) profile.viewed.splice(position, 1);
-  profile.viewed.unshift(paperId);
-  if (profile.viewed.length > MAX_VIEWED_IDS) profile.viewed.length = MAX_VIEWED_IDS;
+  addNewest(profile.viewed, paperId, MAX_VIEWED_IDS);
+  if (notable) addNewest(profile.viewedNotable, paperId, MAX_VIEWED_NOTABLE_IDS);
 }
 
+/** The viewed papers the feed passes over: the ring and the notable cards. */
 export function viewedIds(profile: InteractionProfile | null | undefined) {
-  return profile ? [...profile.viewed] : [];
+  return profile ? [...new Set([...profile.viewed, ...profile.viewedNotable])] : [];
 }
 
 function removeCurated(profile: InteractionProfile, name: CuratedSetName, paperId: string) {
@@ -652,14 +671,14 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
       impact = IMPACT_PDF_BOUNCE;
       break;
     case 'skip':
-      addViewed(profile, event.paperId);
+      addViewed(profile, event.paperId, event.notable === true);
       recordExposure(profile, category, false);
       impact = IMPACT_SKIP;
       break;
     case 'viewTime': {
       const seconds = Number(event.viewTime);
       if (!Number.isFinite(seconds) || seconds <= 0) return profile;
-      addViewed(profile, event.paperId);
+      addViewed(profile, event.paperId, event.notable === true);
       // Judged against the median as it stood before this view moved it.
       const median = profile.dwell.median;
       impact = viewTimeImpact(seconds, median);
@@ -848,17 +867,20 @@ function serializeAffinities(profile: InteractionProfile) {
   return serialized;
 }
 
-type CuratedPayload = Record<CuratedSetName, string[]> & { viewed?: string[] };
+type CuratedPayload = Record<CuratedSetName, string[]> & { viewed?: string[]; viewedNotable?: string[] };
 
 function trimCuratedToBudget(payload: CuratedPayload) {
   let serialized = JSON.stringify(payload);
-  // The ring only spares a device one skip, so it goes before any set that
-  // keeps a paper out of the feed. What it drops is not sent to the filter.
-  while (serialized.length > MAX_CURATED_JSON_BYTES && payload.viewed) {
-    const kept = payload.viewed.slice(0, Math.floor(payload.viewed.length * 0.75));
-    if (kept.length > 0) payload.viewed = kept;
-    else delete payload.viewed;
-    serialized = JSON.stringify(payload);
+  // The ring only spares a device one skip, and the notable cards one notable
+  // card shown again, so they go before any set that keeps a paper out of the
+  // feed, the ring first. What they drop is not sent to the filter.
+  for (const list of ['viewed', 'viewedNotable'] as const) {
+    while (serialized.length > MAX_CURATED_JSON_BYTES && payload[list]) {
+      const kept = payload[list].slice(0, Math.floor(payload[list].length * 0.75));
+      if (kept.length > 0) payload[list] = kept;
+      else delete payload[list];
+      serialized = JSON.stringify(payload);
+    }
   }
   while (serialized.length > MAX_CURATED_JSON_BYTES) {
     const largest = CURATED_SETS
@@ -881,7 +903,8 @@ export function serializeInteractionProfile(profile: InteractionProfile): Stored
   CURATED_SETS.forEach((name) => {
     curatedPayload[name] = curatedIds(profile, name);
   });
-  if (profile.viewed.length > 0) curatedPayload.viewed = viewedIds(profile);
+  if (profile.viewed.length > 0) curatedPayload.viewed = [...profile.viewed];
+  if (profile.viewedNotable.length > 0) curatedPayload.viewedNotable = [...profile.viewedNotable];
 
   const curatedJson = trimCuratedToBudget(curatedPayload);
   // Everything the budget trimmer dropped has to reach the Bloom filter too.
@@ -968,7 +991,7 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
       profile.dwell.median = clamp(median, DWELL_MEDIAN_MIN_SECONDS, DWELL_MEDIAN_MAX_SECONDS);
     }
 
-    const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName | 'viewed', unknown[]>>;
+    const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName | 'viewed' | 'viewedNotable', unknown[]>>;
     CURATED_SETS.forEach((name) => {
       const ids = Array.isArray(curated[name]) ? curated[name]! : [];
       const set = curatedSet(profile, name);
@@ -979,10 +1002,11 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
       });
     });
 
-    if (Array.isArray(curated.viewed)) {
-      profile.viewed = [...new Set(curated.viewed.filter((paperId): paperId is string => typeof paperId === 'string' && paperId.length > 0))]
-        .slice(0, MAX_VIEWED_IDS);
-    }
+    const storedIds = (ids: unknown[] | undefined, cap: number) => (Array.isArray(ids)
+      ? [...new Set(ids.filter((paperId): paperId is string => typeof paperId === 'string' && paperId.length > 0))].slice(0, cap)
+      : []);
+    profile.viewed = storedIds(curated.viewed, MAX_VIEWED_IDS);
+    profile.viewedNotable = storedIds(curated.viewedNotable, MAX_VIEWED_NOTABLE_IDS);
 
     if (Array.isArray(affinities.positives)) {
       profile.positives = affinities.positives

@@ -10,6 +10,7 @@ import {
   MAX_AFFINITY_JSON_BYTES,
   MAX_CURATED_JSON_BYTES,
   MAX_VIEWED_IDS,
+  MAX_VIEWED_NOTABLE_IDS,
   buildProfileFromInteractionDocuments,
   createEmptyInteractionProfile,
   curatedIds,
@@ -733,4 +734,61 @@ test('a ring on top of curated sets already past the budget is dropped before th
   assert.ok(stored.curated.length <= MAX_CURATED_JSON_BYTES);
   assert.equal(curated.viewed, undefined, 'the ring went first');
   assert.equal(isPaperKnown(deserializeInteractionProfile(stored), ringId(0)), false, 'the dropped ring is not in the filter');
+});
+
+// A notable card (`_notable`) the reader viewed. The corpus offers a reader's
+// unseen notable papers in one order, so one that only the ring remembered
+// would come back, once the ring forgot it, before any they never saw.
+const notableView = (paperId: string, kind = 'viewTime') => ({ ...viewEvent(paperId, kind), notable: true });
+
+test('a viewed notable card is still carried over after the ring forgot it, on another device too, and is not known', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, notableView('notable-read'), NOW);
+  recordInteractionEvent(profile, notableView('notable-skipped', 'skip'), NOW);
+  for (let view = 0; view < MAX_VIEWED_IDS; view += 1) recordInteractionEvent(profile, viewEvent(ringId(view)), NOW);
+
+  const deviceB = deserializeInteractionProfile(serializeInteractionProfile(profile))!;
+  const carried = viewedIds(deviceB);
+  assert.equal(carried.length, MAX_VIEWED_IDS + 2);
+  assert.ok(carried.includes('notable-read') && carried.includes('notable-skipped'));
+  assert.equal(isPaperKnown(deviceB, 'notable-read'), false, 'it is passed over, not hidden for good');
+});
+
+test('the viewed notable cards keep the newest MAX_VIEWED_NOTABLE_IDS', () => {
+  const profile = createEmptyInteractionProfile();
+  const total = MAX_VIEWED_NOTABLE_IDS + 10;
+  for (let view = 0; view < total; view += 1) recordInteractionEvent(profile, notableView(ringId(view)), NOW);
+
+  const carried = new Set(viewedIds(deserializeInteractionProfile(serializeInteractionProfile(profile))));
+  assert.equal(carried.size, MAX_VIEWED_NOTABLE_IDS);
+  assert.equal(carried.has(ringId(total - 1)), true);
+  assert.equal(carried.has(ringId(total - MAX_VIEWED_NOTABLE_IDS)), true);
+  assert.equal(carried.has(ringId(total - MAX_VIEWED_NOTABLE_IDS - 1)), false);
+});
+
+test('over the curated budget the viewed notable cards go after the ring and before any curated set', () => {
+  const profile = createEmptyInteractionProfile();
+  const kinds = { liked: 'like', saved: 'save', read: 'read' } as const;
+  Object.entries(kinds).forEach(([name, kind]) => {
+    for (let index = 0; index < CURATED_ID_CAPS[name as keyof typeof kinds]; index += 1) {
+      recordInteractionEvent(profile, { paperId: `${name}:${ringId(index)}`, kind, category: 'cs.AI' }, NOW);
+    }
+  });
+  const curatedBytes = () => JSON.stringify(Object.fromEntries(CURATED_NAMES.map(name => [name, curatedIds(profile, name)]))).length;
+  // Leave 8 kB: 600 notable views need about 16 kB, and the ring holds 500 of them again.
+  let index = 0;
+  while (curatedBytes() < MAX_CURATED_JSON_BYTES - 8000) {
+    recordInteractionEvent(profile, { paperId: `notInterested:${ringId(index)}`, kind: 'notInterested', category: 'cs.AI' }, NOW);
+    index += 1;
+  }
+  const before = CURATED_NAMES.map(name => curatedIds(profile, name).length);
+  for (let view = 0; view < 600; view += 1) recordInteractionEvent(profile, notableView(ringId(view)), NOW);
+
+  const stored = serializeInteractionProfile(profile);
+  const curated = JSON.parse(stored.curated);
+  assert.ok(stored.curated.length <= MAX_CURATED_JSON_BYTES);
+  assert.deepEqual(CURATED_NAMES.map(name => curated[name].length), before, 'no curated set lost an id');
+  assert.equal(curated.viewed, undefined, 'the ring went first');
+  assert.ok(curated.viewedNotable.length > 0 && curated.viewedNotable.length < 600, `the notable cards were trimmed to ${curated.viewedNotable.length}`);
+  assert.equal(curated.viewedNotable[0], ringId(599), 'the newest are the ones kept');
 });

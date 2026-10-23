@@ -28,9 +28,10 @@ export const SEEN_FILTER_HASHES = Math.ceil((Math.LN2 * SEEN_FILTER_BITS) / SEEN
 
 // The papers a feed request says the reader has seen, so the corpus can offer
 // notable papers they have not (worker/paper-store.ts). Sized for 2,000 ids at
-// 1%: 19,200 bits, 7 hashes, 3,200 base64 characters whatever it holds. More
-// ids only raise the false positives, which pass over an unseen paper and
-// never offer a seen one.
+// 1% (the last 500 viewed, up to 1,200 viewed notable cards and the session's
+// pages): 19,200 bits, 7 hashes, 3,200 base64 characters whatever it holds.
+// More ids only raise the false positives, which pass over an unseen paper
+// and never offer a seen one.
 const FEED_SEEN_CAPACITY = 2000;
 const FEED_SEEN_BITS = bitsFor(FEED_SEEN_CAPACITY);
 const FEED_SEEN_HASHES = Math.ceil((Math.LN2 * FEED_SEEN_BITS) / FEED_SEEN_CAPACITY);

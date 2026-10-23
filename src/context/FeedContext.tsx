@@ -2016,6 +2016,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       kind: 'viewTime',
       category: paper.primaryCategory,
       viewTime: timeInSeconds,
+      notable: paper._notable,
     }, paper);
     // A long read moves the temporal preference. It no longer walks the
     // citation network: that was an OpenAlex call for a reader who did nothing,
@@ -2093,6 +2094,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         kind: 'skip',
         category: paper.primaryCategory,
         timestamp,
+        notable: paper._notable,
       }, paper);
     });
     // Off the snap path, same as trackViewTime: a fling across several cards
