@@ -51,24 +51,35 @@ async function addMissingPositives(env: FeedEnv, positiveIds: string[]) {
   }
 }
 
+interface FollowedLane { lane: string; requested_at: string; harvested: number }
+
 /**
- * Notes the followed lanes a reader asked for, so the daily harvest keeps them
- * served, and starts a harvest of the ones nobody had asked for yet: their
- * papers arrive for the reader's next page rather than tomorrow's. Returns
- * whether one of them, whoever asked for it first, has not finished its first
- * harvest yet: until it has, its papers can still arrive.
+ * The asked lanes some reader already follows, and whether each has finished
+ * its first harvest: a lane's harvest records how far it got (`lane_state`)
+ * once it has filed its papers.
  */
-async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], now = Date.now()) {
-  if (lanes.length === 0 || !env.PAPER_STORE) return false;
-  const db = env.PAPER_STORE;
-  // A lane's harvest records how far it got (`lane_state`) once it completes.
-  const { results } = await db.prepare(`SELECT f.lane, f.requested_at, s.lane IS NOT NULL AS harvested FROM json_each(?) j
+async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<FollowedLane[]> {
+  if (lanes.length === 0) return [];
+  const { results } = await database(env).prepare(`SELECT f.lane, f.requested_at, s.lane IS NOT NULL AS harvested FROM json_each(?) j
     JOIN followed_lanes f ON f.lane = json_extract(j.value, '$[0]')
     LEFT JOIN lane_state s ON s.source = json_extract(j.value, '$[1]') AND s.lane = f.lane`)
     .bind(JSON.stringify(lanes.map(lane => [lane, followedLaneJob(lane)?.source ?? null])))
-    .all<{ lane: string; requested_at: string; harvested: number }>();
-  const known = new Map(results.map(row => [row.lane, row.requested_at]));
-  const waiting = results.some(row => !row.harvested);
+    .all<FollowedLane>();
+  return results;
+}
+
+/**
+ * Notes the followed lanes a reader asked for, so the daily harvest keeps them
+ * served, and starts a harvest of the ones nobody had asked for yet: their
+ * papers arrive for the reader's next page rather than tomorrow's. `followed`
+ * is what readFollowedLanes found before the page read its candidates.
+ * Returns whether one of the lanes, whoever asked for it first, had not
+ * finished its first harvest then: its papers can have arrived since.
+ */
+async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], followed: FollowedLane[], now = Date.now()) {
+  if (lanes.length === 0) return false;
+  const known = new Map(followed.map(row => [row.lane, row.requested_at]));
+  const waiting = followed.some(row => !row.harvested);
   const due = lanes.filter(lane => known.has(lane) && Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
   let fresh = lanes.filter(lane => !known.has(lane));
   if (fresh.length) {
@@ -84,7 +95,7 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
   }
   const written = [...due, ...fresh];
   if (written.length === 0) return waiting;
-  await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
+  await database(env).prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
     ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(written)).run();
   if (fresh.length === 0) return waiting;
   // A lane whose harvest does not start now waits for the daily one.
@@ -180,7 +191,11 @@ export async function handleCorpusFeed(
     if (Array.isArray(body?.follows) && body.follows.length > 0) return { papers: [] };
     throw new PaperStoreError('LANES_REQUIRED', 400);
   }
-  await reserveFeedRequest(env, identity.uid);
+  const lanes = query.follows.map(follow => follow.lane);
+  // Read before the page reads its candidates: read after, a first harvest
+  // that ended in between would look finished, though the page was ranked
+  // without its papers. Beside the reservation, so it adds no round trip.
+  const [, followed] = await Promise.all([reserveFeedRequest(env, identity.uid), readFollowedLanes(env, lanes)]);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
   // Only a first page of categories looks up liked papers: the follows asked
   // beside it, and later pages, would repeat the same lookup.
@@ -212,10 +227,10 @@ export async function handleCorpusFeed(
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
   if (looksUp && !waitsForLikes) lookup = addMissingPositives(env, query.positiveIds);
   // The whole order serves the next pages only if this work leaves the
-  // ranking as it was: a followed lane still waiting for its first harvest,
-  // or a like stored or embedded, changes it.
+  // ranking as it was: a followed lane that was waiting for its first harvest
+  // when the page began, or a like stored or embedded, changes it.
   await later(Promise.all([
-    registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
+    registerFollowedLanes(env, identity.uid, lanes, followed),
     lookup ?? false,
   ]).then(async ([waiting, added]) => {
     if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);

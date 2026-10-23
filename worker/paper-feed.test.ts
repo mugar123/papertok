@@ -186,6 +186,38 @@ test("a follow's papers reach the next page of every reader who asked for it bef
   assert.deepEqual(ids((await ask(request(2), 'reader-2')).papers), ['2610.50003']);
 });
 
+test("a follow's papers reach the next page when its first harvest ends while a page ranks", async t => {
+  rankingCaches(t);
+  const { env, db, runs, ask } = store();
+  await ingestPapers(env, [
+    { paper: paper('2610.70001', 'Category paper, 2 days', 2), lanes: [] },
+    { paper: paper('2610.70002', 'Category paper, 3 days', 3), lanes: [] },
+    { paper: paper('2610.70003', 'Category paper, 4 days', 4), lanes: [] },
+  ]);
+  const request = (page: number) => ({ categories: ['cs.CL'], follows: [followedAuthor], page, pageSize: 1 });
+  assert.deepEqual(ids((await ask(request(0))).papers), ['2610.70001']);
+  assert.equal(runs.length, 1);
+  // The harvest files the author's paper and records that it finished right
+  // after the next page has read its candidates, in one batch.
+  const binding = env.PAPER_STORE!;
+  let harvesting = true;
+  env.PAPER_STORE = {
+    prepare: (sql: string) => binding.prepare(sql),
+    async batch(statements: D1PreparedStatement[]) {
+      const results = await binding.batch(statements);
+      if (harvesting) {
+        harvesting = false;
+        await ingestPapers(env, [{ paper: paper('2610.70009', "The followed author's paper", 0.5), lanes: ['author:A77'] }]);
+        db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A77', ?)").run(new Date().toISOString());
+      }
+      return results;
+    },
+  } as unknown as D1Database;
+  assert.deepEqual(ids((await ask(request(1))).papers), ['2610.70002'], 'ranked before the harvest filed anything');
+  assert.deepEqual(ids((await ask(request(2))).papers), ['2610.70009']);
+  assert.deepEqual(ids((await ask(request(3))).papers), ['2610.70003']);
+});
+
 test("a page after one whose likes the lookup embedded goes on by them, and the next first page ranks by them", async t => {
   rankingCaches(t);
   const { env, db, ask } = store();
