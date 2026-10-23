@@ -6,7 +6,7 @@ import type { WorkerEnv } from './env.ts';
 import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
+import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { handlePubmed } from './source-api.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
@@ -365,6 +365,35 @@ test("followed searches stop at their part of the harvest's OpenAlex day, and ca
   const enrich = () => handleHarvestOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=50'), env);
   for (let call = 0; call < 3_299; call += 1) assert.equal((await enrich()).status, 200);
   assert.equal((await enrich()).status, 429);
+});
+
+// The nightly run harvests every category lane before its followed lanes, and
+// the topic lanes alone can ask for more than the harvest's 4,000 units.
+test("category lanes stop at 3,000 of the harvest's OpenAlex units, so the followed lanes' 1,000 is left for the followed phase", async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  // The relay's own ceilings, out of the way: the harvest's share and its parts are under test.
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const openAlexCalls = () => urls.filter(url => url.hostname === 'api.openalex.org').length;
+  const request = { page: 1, since: '', waits: { seconds: 0 } };
+  const topics = () => SOURCES['openalex-topics'].fetchPage(env as never, { ...request, lane: 'bio.mol' });
+  const series = () => SOURCES['openalex-series'].fetchPage(env as never, { ...request, lane: 'series:working-papers' });
+
+  for (let call = 0; call < 2_999; call += 1) await topics();
+  await series();
+  await assert.rejects(topics(), SourceRefused);
+  await assert.rejects(series(), SourceRefused);
+  assert.equal(openAlexCalls(), 3_000);
+
+  // The nightly refresh's 700 and the new follows' 300, ten units a search.
+  const followedSearch = (newFollow: boolean) => SOURCES['openalex-follows'].fetchPage(env as never, { ...request, lane: 'query:graph neural networks', newFollow });
+  for (let call = 0; call < 70; call += 1) await followedSearch(false);
+  for (let call = 0; call < 30; call += 1) await followedSearch(true);
+  assert.equal(openAlexCalls(), 3_100);
+
+  // The share is spent, and the budget route says so.
+  const { report } = await readOpenAlexBudget(env);
+  assert.equal(report!.tiers.feed.used, 4_000);
+  assert.equal(report!.tiers.feed.open, false);
 });
 
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's

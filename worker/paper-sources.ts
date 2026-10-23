@@ -340,22 +340,25 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // the day's ceiling; enrichment spends the share alone. A spent share or part
 // is a refusal that ends the source for this step. Followed lanes may spend
 // 1,000 units, in two parts. Readers choose how many there are, and 400
-// followed searches spent the whole share before a paper was enriched:
-// category lanes and enrichment keep the rest. The runs new follows start
-// spend from 00:00 UTC, before the nightly run reaches its followed lanes, so
-// they have a part of their own and never spend the nightly refresh's.
-type HarvestPart = 'nightly' | 'new';
+// followed searches spent the whole share before a paper was enriched. The
+// runs new follows start spend from 00:00 UTC, before the nightly run reaches
+// its followed lanes, so they have a part of their own and never spend the
+// nightly refresh's. Category lanes run before the followed lanes every night,
+// so they stop at the other 3,000 and leave the followed lanes theirs;
+// enrichment runs last and spends what is left of the share.
+type HarvestPart = 'categories' | 'nightly' | 'new';
 const HARVEST_OPENALEX_PARTS: Record<HarvestPart, QuotaPart> = {
+  categories: { subject: 'openalex:harvest:categories', limit: 3_000 },
   nightly: { subject: 'openalex:harvest:follows', limit: 700 },
   new: { subject: 'openalex:harvest:new-follows', limit: 300 },
 };
 
-async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', part }: { page: number; perPage: number; search?: string; part?: HarvestPart }) {
+async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', part }: { page: number; perPage: number; search?: string; part: HarvestPart }) {
   const params: Record<string, string | number> = {
     filter, sort: 'publication_date:desc', page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
   if (search) params.search = search;
-  const harvest = (request: Request, routeEnv: WorkerEnv) => handleHarvestOpenAlex(request, routeEnv, part && HARVEST_OPENALEX_PARTS[part]);
+  const harvest = (request: Request, routeEnv: WorkerEnv) => handleHarvestOpenAlex(request, routeEnv, HARVEST_OPENALEX_PARTS[part]);
   const response = await askRoute(harvest, '/openalex/works', params, env);
   return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
 }
@@ -363,7 +366,7 @@ async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, se
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
 async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
-  page: number; lane: string; perPage: number; search?: string; part?: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
+  page: number; lane: string; perPage: number; search?: string; part: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
   const works = await openAlexWorks(env, filter, { page, perPage, search, part });
   return pageOf(filed(works.map(map), lane), perPage);
@@ -455,7 +458,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
-    ].join(','), { page, lane, perPage: 200 }),
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   'openalex-series': {
     firstPages: 4, dailyPages: 2, dated: true, overlapDays: 14,
@@ -465,7 +468,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'type:article|report',
       windowFilter(),
     ].join(','), {
-      page, lane, perPage: 200,
+      page, lane, perPage: 200, part: 'categories',
       // The area's own key, which the label and accent lookups read as
       // Economics: the series say a paper is economics, not which branch.
       map: work => {
