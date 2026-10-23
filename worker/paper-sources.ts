@@ -59,6 +59,8 @@ const XML = new XMLParser({
   removeNSPrefix: true,
   parseTagValue: false,
   trimValues: true,
+  // Without it only XML's five named references are read; arXiv writes `&#39;`.
+  htmlEntities: true,
   isArray: name => ['record', 'version', 'entry', 'author', 'category'].includes(name),
 });
 
@@ -69,11 +71,30 @@ const isoDate = (value: unknown) => {
 };
 const versionless = (value: unknown) => text(value).replace(/^.*\/abs\//, '').replace(/v\d+$/, '');
 
+// arXivRaw writes names in TeX: Gon\c{c}alves, {\"O}zt{\"u}rk, \L{}ukasz. An
+// accent command becomes its combining mark and a special letter its letter;
+// grouping braces go, except inside a formula, which stays as written.
+const TEX_ACCENTS: Record<string, string> = {
+  '`': '̀', "'": '́', '^': '̂', '~': '̃', '=': '̄', '.': '̇', '"': '̈',
+  u: '̆', r: '̊', H: '̋', v: '̌', d: '̣', c: '̧', k: '̨', b: '̱',
+};
+const TEX_ACCENT = /\\(?:([`'^~=."])|([urHvdckb])(?![a-zA-Z]))\s*(?:\{\s*(\\[ij]|[a-zA-Z])\s*\}|(\\[ij](?![a-zA-Z])|[a-zA-Z]))/g;
+const TEX_LETTERS: Record<string, string> = { i: 'ı', j: 'ȷ', o: 'ø', O: 'Ø', l: 'ł', L: 'Ł', ss: 'ß', aa: 'å', AA: 'Å', ae: 'æ', AE: 'Æ', oe: 'œ', OE: 'Œ' };
+// A control word ends at the spaces after it: "Bj\o rn" is Bjørn.
+const TEX_LETTER = /\\(ss|aa|AA|ae|AE|oe|OE|[ijoOlL])(?![a-zA-Z])(?:\{\}|\s*)/g;
+
+function texNameText(value: string) {
+  return value.split(/(\$[^$]*\$)/).map((part, index) => (index % 2 ? part : part
+    .replace(TEX_ACCENT, (match, symbol, letter, braced, bare) => `${(braced || bare).replace('\\', '')}${TEX_ACCENTS[symbol || letter]}`)
+    .replace(TEX_LETTER, (match, name) => TEX_LETTERS[name])
+    .replace(/[{}]/g, ''))).join('').normalize('NFC');
+}
+
 // arXivRaw lists authors as one string: "A, B (MIT) and C".
 export function splitRawAuthors(value: unknown) {
   let names = text(value);
   while (/\([^()]*\)/.test(names)) names = names.replace(/\([^()]*\)/g, '');
-  return names.split(/,|\s+and\s+/).map(text).filter(Boolean);
+  return texNameText(names).split(/,|\s+and\s+/).map(text).filter(Boolean);
 }
 
 /** The records of one OAI-PMH `ListRecords` page in arXivRaw, and the token for the next. */
