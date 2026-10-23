@@ -229,6 +229,36 @@ test('More like this ranks by the paper just liked, even before the corpus had i
   assert.deepEqual(papers.map(item => item.id), ['2610.30003']);
 });
 
+test('More like this answers before the app gives up when the embedding is slow, and the lookup finishes after the answer', async () => {
+  const { env, db, ask } = store();
+  let embeddedAt = 0;
+  const model = embeddingModel();
+  Object.assign(env, { AI: { run: async (name: string, input: { text: string[] }) => {
+    await new Promise(resolve => setTimeout(resolve, 4_000));
+    embeddedAt = Date.now();
+    return model.run(name, input);
+  } } });
+  await ingestPapers(env, [
+    { paper: paper('2610.30001', 'The paper just liked', 10), lanes: [] },
+    { paper: paper('2610.30003', 'Like it, older', 5), lanes: [] },
+    { paper: paper('2610.30004', 'Unlike it, newest', 1), lanes: [] },
+  ]);
+  embed(db, '2610.30003', [1, 0]);
+  embed(db, '2610.30004', [0, 1]);
+  // As in production (ctx.waitUntil), the answer does not wait for the work handed to `later`.
+  const after: Array<Promise<unknown>> = [];
+  const started = Date.now();
+  const { papers } = await ask({ categories: ['cs.CL'], positiveIds: ['2610.30001'], page: 0, pageSize: 1, waitForLikes: true }, 'reader-1', work => { after.push(work); });
+  const elapsed = Date.now() - started;
+  assert.equal(embeddedAt, 0, 'answered before Workers AI did');
+  // The app's STORE_TIMEOUT_MS.
+  assert.ok(elapsed < 3_500, `answered after ${elapsed} ms`);
+  assert.deepEqual(ids(papers), ['2610.30004'], 'newest first: the like has no vector yet');
+  await Promise.all(after);
+  assert.ok(embeddedAt > 0, 'the lookup went on after the answer');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM work_vectors v JOIN work_keys k ON k.work_id = v.work_id WHERE k.key = 'arxiv:2610.30001'").get()?.n, 1);
+});
+
 // A reader's only like is still one like: their first page is the feed's first
 // paint, and a lookup can take seconds (arXiv's pace).
 test("a reader's first page with a single like answers without waiting for the lookup, which runs after it", async () => {

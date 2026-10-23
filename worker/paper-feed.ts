@@ -124,6 +124,24 @@ function rankingCache(uid: string): RankingCache | undefined {
   };
 }
 
+// How long More like this waits for the lookup of the paper just liked. The
+// app gives up on the request at 3.5 s (STORE_TIMEOUT_MS), and the page is
+// ranked after the wait.
+const LIKES_WAIT_MS = 1_500;
+
+/** Whether `work` settles within `ms`. It goes on either way. */
+async function settlesWithin(work: Promise<unknown>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work.then(() => true, () => true),
+      new Promise<false>(resolve => { timer = setTimeout(resolve, ms, false); }),
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 const LOOKUP_MAX_IDS = 30;
 
 function readBody<T>(request: Request) {
@@ -170,10 +188,13 @@ export async function handleCorpusFeed(
   // More like this ranks by the paper just liked, which the corpus may not
   // have embedded yet: ranked before the lookup, its page would be newest
   // first. That request is not the feed's first paint and says so
-  // (`waitForLikes`), so it waits for the lookup, which has its own deadline
-  // (ingestPaperIds). A reader's first page never does, one like or many.
-  const looksUpFirst = looksUp && body?.waitForLikes === true;
-  if (looksUpFirst) await addMissingPositives(env, query.positiveIds);
+  // (`waitForLikes`), so it waits for the lookup, up to LIKES_WAIT_MS; a
+  // lookup still running then goes on after the answer. A reader's first
+  // page never waits, one like or many.
+  const waitsForLikes = looksUp && body?.waitForLikes === true;
+  let lookup = waitsForLikes ? addMissingPositives(env, query.positiveIds) : null;
+  // Finished in time: the ranking below reads what it stored.
+  if (lookup && await settlesWithin(lookup, LIKES_WAIT_MS)) lookup = null;
   const cache = rankingCache(identity.uid);
   let kept: [string, KeptRanking] | null = null;
   const papers = await readFeedPage(env, query, {
@@ -189,12 +210,13 @@ export async function handleCorpusFeed(
   });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
+  if (looksUp && !waitsForLikes) lookup = addMissingPositives(env, query.positiveIds);
   // The whole order serves the next pages only if this work leaves the
   // ranking as it was: a followed lane still waiting for its first harvest,
   // or a like stored or embedded, changes it.
   await later(Promise.all([
     registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
-    looksUp && !looksUpFirst ? addMissingPositives(env, query.positiveIds) : false,
+    lookup ?? false,
   ]).then(async ([waiting, added]) => {
     if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
