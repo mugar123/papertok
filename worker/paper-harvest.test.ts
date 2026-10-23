@@ -5,6 +5,7 @@ import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { carryArxivVectors, runPaperHarvest } from './paper-harvest.ts';
+import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
@@ -105,7 +106,8 @@ test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, an
   }
   assert.equal(searches(), 30);
   // Every lane asked for since, refreshed by the nightly run on the same day.
-  db.prepare('INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?)').run(new Date().toISOString(), JSON.stringify(lanes));
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) SELECT value, ?, ? FROM json_each(?)').run(now, now, JSON.stringify(lanes));
   await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
   assert.equal(searches() - 30, 70);
 });
@@ -113,23 +115,27 @@ test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, an
 // The nightly refresh's 700 units do not reach every followed lane on a busy
 // night. An account that asks for its own followed searches again just before
 // the run must not take them every night from the lanes other readers follow.
-test('the nightly refresh starts with the followed lanes harvested longest ago, however recently another lane was asked for', async t => {
+test('the nightly refresh starts with the followed lanes due longest ago, however recently another lane was asked for', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T02:30:00Z') });
   providers(t);
   const { env, db } = corpus();
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
   // One account's 70 searches, ten units each: harvested last night, asked again a minute ago.
   const searches = Array.from({ length: 70 }, (_, index) => `query:search ${index}`);
-  // Other readers' authors, one unit each, asked yesterday: five never harvested, five two nights ago.
+  // Other readers' authors, one unit each, asked yesterday: five followed
+  // before last night's run, which did not reach them, five harvested two nights ago.
   const authors = Array.from({ length: 10 }, (_, index) => `author:A${index + 1}`);
-  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)');
+  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
   const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', ?, ?)");
   for (const lane of searches) {
-    follow.run(lane, '2026-10-23T02:29:00.000Z');
+    follow.run(lane, '2026-10-23T02:29:00.000Z', '2026-10-20T12:00:00.000Z');
     harvested.run(lane, '2026-10-22T02:40:00.000Z');
   }
-  for (const lane of authors) follow.run(lane, '2026-10-22T15:00:00.000Z');
-  for (const lane of authors.slice(5)) harvested.run(lane, '2026-10-21T02:40:00.000Z');
+  for (const lane of authors.slice(0, 5)) follow.run(lane, '2026-10-22T15:00:00.000Z', '2026-10-22T01:00:00.000Z');
+  for (const lane of authors.slice(5)) {
+    follow.run(lane, '2026-10-22T15:00:00.000Z', '2026-10-19T12:00:00.000Z');
+    harvested.run(lane, '2026-10-21T02:40:00.000Z');
+  }
 
   await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
   const refreshed = db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-follows' AND harvested_through = '2026-10-23T02:30:00.000Z'")
@@ -137,6 +143,59 @@ test('the nightly refresh starts with the followed lanes harvested longest ago, 
   assert.deepEqual(authors.filter(lane => !refreshed.includes(lane)), [], 'every author is refreshed');
   // The rest of the 700 units: 69 of the account's searches.
   assert.equal(refreshed.filter(lane => lane.startsWith('query:')).length, 69);
+});
+
+// Synthetic, in the shape the relay's `select` returns.
+const openAlexWork = (index: number) => ({
+  id: `https://openalex.org/W${9_000 + index}`,
+  doi: `https://doi.org/10.1/w${9_000 + index}`,
+  title: `A paper a broad search finds, number ${index}`,
+  type: 'article',
+  publication_date: '2026-10-15',
+  publication_year: 2026,
+  authorships: [{ author: { id: `https://openalex.org/A${9_000 + index}`, display_name: 'Ana Pérez' }, institutions: [] }],
+  abstract_inverted_index: { A: [0], broad: [1], result: [2] },
+  primary_location: { landing_page_url: null, is_published: true, version: 'publishedVersion', source: { id: 'https://openalex.org/S1', display_name: 'A journal', type: 'journal' } },
+  locations: [],
+  open_access: { is_oa: false, oa_url: null },
+  cited_by_count: 0,
+});
+
+// A followed search's first harvest reads a second page when the first is
+// full: 20 of the nightly refresh's 700 units, so one account's 40 new
+// searches a day ask for 800. With no run for new follows (their 300 spent),
+// all of them wait for the nightly refresh.
+test("one account registering 40 broad followed searches a day does not keep another reader's lane from its nightly refresh", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-19T12:00:00Z') });
+  const fullPage = Array.from({ length: 50 }, (_, index) => openAlexWork(index));
+  providers(t, url => (url.hostname === 'api.openalex.org' && url.searchParams.get('search')?.startsWith('broad ')
+    ? Response.json({ results: fullPage })
+    : undefined));
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const follow = (uid: string, queries: string[]) => handleCorpusFeed(new Request('https://papertok.internal/store/papers', {
+    method: 'POST',
+    body: JSON.stringify({ follows: queries.map(query => ({ type: 'topic', canonicalId: `query-${query}`, displayName: query, metadata: { query } })) }),
+  }), env, { uid });
+  const refreshedTonight = async (night: string) => {
+    t.mock.timers.setTime(Date.parse(`${night}T02:30:00Z`));
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    const row = db.prepare("SELECT harvested_through FROM lane_state WHERE source = 'openalex-follows' AND lane = 'query:a narrow topic'").get() as { harvested_through: string } | undefined;
+    return row?.harvested_through === new Date().toISOString();
+  };
+
+  await follow('reader-b', ['a narrow topic']);
+  assert.equal(await refreshedTonight('2026-10-20'), true);
+  const refreshed = [];
+  for (const [day, night] of ['2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24'].entries()) {
+    t.mock.timers.setTime(Date.parse(`${night}T12:00:00Z`) - 86_400_000);
+    const searches = Array.from({ length: 40 }, (_, index) => `broad ${day}-${index}`);
+    await follow('reader-a', searches.slice(0, 20));
+    await follow('reader-a', searches.slice(20));
+    refreshed.push(await refreshedTonight(night));
+  }
+  // The searches registered since the lane's last refresh wait behind it.
+  assert.ok(refreshed.every((done, night) => done || refreshed[night - 1]), `refreshed on nights ${refreshed.join(', ')}`);
 });
 
 test('a lane step that fails past its retries passes over its lanes, not the rest of the run', async t => {

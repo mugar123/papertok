@@ -36,11 +36,11 @@ const FOLLOW_REFRESH_MS = 86_400_000;
 // nightly run harvests it.
 const NEW_LANES_HARVESTED_PER_READER = 20;
 const NEW_LANES_HARVESTED_PER_DAY = 2_000;
-// New followed lanes a reader may register a day, and the whole app's. The
-// nightly run harvests at most 400 followed lanes, the ones never harvested
-// first (paper-harvest.ts), so one account must not fill them, or
-// followed_lanes, with its own new lanes. Past them a new follow is served
-// from what the corpus has.
+// New followed lanes a reader may register a day, and the whole app's. A new
+// lane waits for the nightly refresh behind the lanes due before it
+// (paper-harvest.ts), but each one lengthens every lane's wait for its turn,
+// so one account must not fill followed_lanes with its own. Past them a new
+// follow is served from what the corpus has.
 const NEW_LANES_REGISTERED_PER_READER = 40;
 const NEW_LANES_REGISTERED_PER_DAY = 4_000;
 
@@ -113,8 +113,9 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, asked: string[],
   }
   const written = [...due, ...fresh];
   if (written.length === 0) return;
-  await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
-    ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(written)).run();
+  const at = new Date(now).toISOString();
+  await db.prepare(`INSERT INTO followed_lanes (lane, requested_at, registered_at) SELECT value, ?, ? FROM json_each(?) WHERE true
+    ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(at, at, JSON.stringify(written)).run();
   if (fresh.length === 0 || !env.PAPER_HARVEST) return;
   const harvested = await reserveLanes(env, {
     periodKey: `follow-run-lanes:day:${day}`,

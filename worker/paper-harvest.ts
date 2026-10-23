@@ -16,14 +16,15 @@ const EMBED_STEP_PAPERS = 256;
 // day (OPENALEX_HARVEST_DAILY_UNITS). A larger backlog drains over the next runs.
 const ENRICH_STEP_PAPERS = 500;
 const ENRICH_STEPS = 150;
-// Followed lanes harvested a run: the ones harvested longest ago first, a lane
-// never harvested before any, and the most recently asked first among lanes
-// harvested at the same time. A followed search costs ten units, an entity
-// one, of the 700 a day the nightly refresh of followed lanes may spend
-// (paper-sources.ts); once they are spent, the run's other OpenAlex followed
-// lanes wait, and they are first the next night. Asking for a harvested lane
-// again does not move it ahead of one harvested earlier, so one account asking
-// for its own lanes before the run cannot keep other readers' from a refresh.
+// Followed lanes harvested a run, the longest due first: a lane is due from
+// its last harvest or, never harvested, from when it was first followed, and
+// the most recently asked comes first among lanes due from the same time. A
+// followed search costs ten units, an entity one, of the 700 a day the
+// nightly refresh of followed lanes may spend (paper-sources.ts); once they
+// are spent, the run's other OpenAlex followed lanes wait and keep their turn.
+// Neither asking for a lane again nor following new ones moves a lane ahead of
+// one due earlier, so lanes one account follows after another reader's lane
+// was refreshed, however many, wait behind it.
 const FOLLOWED_LANES_PER_RUN = 400;
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
@@ -94,10 +95,10 @@ async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jo
 
 async function followedJobs(db: D1Database, now: number) {
   // lane_state's key starts with the source: naming the followed lanes'
-  // sources lets each lane's row be read by key. SQLite sorts a NULL first.
+  // sources lets each lane's row be read by key.
   const { results } = await db.prepare(`SELECT f.lane FROM followed_lanes f
     LEFT JOIN lane_state s ON s.source IN (SELECT value FROM json_each(?)) AND s.lane = f.lane
-    WHERE f.requested_at >= ? ORDER BY s.harvested_through, f.requested_at DESC LIMIT ?`)
+    WHERE f.requested_at >= ? ORDER BY COALESCE(s.harvested_through, f.registered_at), f.requested_at DESC LIMIT ?`)
     .bind(JSON.stringify(FOLLOWED_SOURCES), daysFromNow(-FOLLOWED_LANE_DAYS, now), FOLLOWED_LANES_PER_RUN).all<{ lane: string }>();
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
 }

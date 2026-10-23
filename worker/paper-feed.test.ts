@@ -58,7 +58,7 @@ test("a reader's new follows are harvested at once up to 20 a day, however many 
   const lanes = db.prepare('SELECT * FROM followed_lanes').all() as Array<Record<string, unknown>>;
   assert.equal(lanes.length, 22);
   assert.ok(lanes.some(row => row.lane === 'author-name:author 20'));
-  assert.deepEqual(Object.keys(lanes[0]).sort(), ['lane', 'requested_at']);
+  assert.deepEqual(Object.keys(lanes[0]).sort(), ['lane', 'registered_at', 'requested_at']);
 });
 
 test('a reader adds at most 40 new followed lanes a day; past them a new follow is served from what the corpus has and is not registered', async () => {
