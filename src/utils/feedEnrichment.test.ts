@@ -6,7 +6,6 @@ import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
-  takeFeedPage,
   preserveFeedAbstracts,
 } from './feedEnrichment.ts';
 
@@ -32,14 +31,6 @@ test('does not request duplicate enrichment for native OpenAlex papers', () => {
     sources: { primary: 'arxiv', enrichedBy: ['openalex'] },
   }), false);
   assert.equal(needsOpenAlexEnrichment({ id: 'pmid:12345' }), false);
-});
-
-test('caps every visible feed page before OpenAlex enrichment', () => {
-  const candidates = Array.from({ length: 47 }, (_, index) => ({ id: `2607.${String(index).padStart(5, '0')}` }));
-  const page = takeFeedPage(candidates, 15);
-
-  assert.equal(page.length, 15);
-  assert.equal(page[14].id, '2607.00014');
 });
 
 test('merges OpenAlex metadata before a feed batch is displayed', () => {

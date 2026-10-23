@@ -1,9 +1,13 @@
 import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
 import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector, rewriteWorks } from './paper-store.ts';
+import {
+  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  readFeedPage, readVector, rewriteWorks,
+} from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { mapAdsPaper } from '../src/services/domainSourceRecords.ts';
@@ -49,6 +53,19 @@ test('a stored vector reads back the same whether D1 returns bytes or numbers', 
   const unsignedBytes = [...new Uint8Array(stored.buffer)];
   assert.deepEqual([...readVector(unsignedBytes)], [76, -102]);
   assert.deepEqual([...readVector(stored.buffer)], [76, -102]);
+});
+
+// D1 answers a BLOB as an array of its unsigned bytes, and a ranked page
+// decodes up to 4,000 of them: 50 to 170 ms of Worker CPU in the #272 review.
+test("a page's vectors decode in a few milliseconds from the numbers D1 returns", () => {
+  const vectors = Array.from({ length: 4_000 }, (_, row) => Array.from({ length: 256 }, (_, index) => (row * 31 + index * 17) & 255));
+  let fastest = Infinity;
+  for (let run = 0; run < 5; run += 1) {
+    const started = performance.now();
+    vectors.forEach(readVector);
+    fastest = Math.min(fastest, performance.now() - started);
+  }
+  assert.ok(fastest < 15, `4,000 vectors took ${fastest.toFixed(1)} ms`);
 });
 
 // ─── The corpus in D1 (migrations applied to an in-memory SQLite) ───
@@ -558,6 +575,97 @@ test("a paper dated past tomorrow is not filed, and one filed before that rule l
   db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
   await evictExpired(env, NOW);
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+});
+
+// Other readers share a category's lane, and an author's or a topic's; a paper
+// a reader liked enters the corpus whatever its age, to rank their feed by.
+const liked2019 = { ...arxivRecord, id: '1905.00001', arxivId: '1905.00001', title: 'A liked paper from 2019 on attention', published: '2019-05-01T00:00:00.000Z' };
+
+test('a looked-up paper older than the corpus window enters none of the lanes its own record names', async () => {
+  const { env, db } = corpus();
+  const keepUntil = daysFromNow(30, NOW);
+  await ingestPapers(env, [{ paper: liked2019, lanes: [] }], { now: NOW, keepUntil });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'stored for its reader');
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes'), []);
+  // A recent one is filed under its categories, as the harvest would file it.
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW, keepUntil });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG']);
+});
+
+test("an enrichment that names an old paper's topic does not file it under that topic", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: liked2019, lanes: [] }, { paper: arxivRecord, lanes: [] }], { now: NOW, keepUntil: daysFromNow(30, NOW) });
+  const topic = { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' };
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, primaryTopic: topic } })), NOW);
+  const recent = stored.find(work => work.before.id === arxivRecord.id)!;
+  assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
+});
+
+test('a paper only an unfollowed entity names leaves; a category, the working-paper series or a follow keeps it', async () => {
+  const { env, db } = corpus();
+  const paper = (id: string, title: string) => ({ ...arxivRecord, id, arxivId: id, title, allCategories: [], categories: [] });
+  await ingestPapers(env, [
+    // As a paper its category's lane trimmed is: nearly every enriched paper names an author.
+    { paper: paper('2610.00041', 'Named by an author nobody follows'), lanes: ['author:A9'] },
+    { paper: paper('2610.00042', 'Listed for an author a reader follows'), lanes: ['author:A10'] },
+    { paper: paper('2610.00043', 'In a category, named by an author'), lanes: ['cs.LG', 'author:A9'] },
+    { paper: paper('2610.00044', 'In the working-paper series'), lanes: ['series:working-papers'] },
+  ], { now: NOW });
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
+  await evictExpired(env, NOW);
+  assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key LIKE 'arxiv:%' ORDER BY key").map(row => row.key), ['arxiv:2610.00042', 'arxiv:2610.00043', 'arxiv:2610.00044']);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 1, 'the author lane still names the paper its category keeps');
+});
+
+// Each D1 round trip a request makes, as the statements it sent.
+function roundTrips(t: TestContext, binding: D1Database) {
+  const trips: string[][] = [];
+  const statement = Object.getPrototypeOf(binding.prepare('SELECT 1')) as Record<'all' | 'first' | 'run', (...args: unknown[]) => unknown>;
+  for (const name of ['all', 'first', 'run'] as const) {
+    const send = statement[name];
+    t.mock.method(statement, name, function (this: { sql: string }, ...args: unknown[]) {
+      trips.push([this.sql]);
+      return send.apply(this, args);
+    });
+  }
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', (statements: D1PreparedStatement[]) => {
+    trips.push(statements.map(sent => (sent as unknown as { sql: string }).sql));
+    return batch(statements);
+  });
+  return trips;
+}
+
+test("a page reads vectors only to rank by a like, and the candidates' in one round trip", async t => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  // 2,200 candidates in two lanes, a minute apart. Two liked papers in no
+  // lane: 2610.02201 with a vector like the oldest candidate's only, and
+  // 2610.02202 without one.
+  db.exec('BEGIN');
+  for (let id = 1; id <= 2_202; id += 1) {
+    const arxivId = `2610.${String(id).padStart(5, '0')}`;
+    const published = new Date(NOW - id * 60_000).toISOString();
+    insertWork.run(id, JSON.stringify({ id: arxivId, arxivId, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertKey.run(`arxiv:${arxivId}`, id);
+    if (id <= 2_200) insertLane.run(id % 2 ? 'cs.CL' : 'cs.LG', id, published);
+    if (id <= 2_201) insertVector.run(id, Buffer.from(quantize(id >= 2_200 ? [1, 0] : [0, 1]).buffer));
+  }
+  db.exec('COMMIT');
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const vectorReads = () => trips.filter(trip => trip.some(sql => /^\s*SELECT\b[\s\S]*\bwork_vectors\b/i.test(sql))).length;
+  const page = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['cs.CL', 'cs.LG'], positiveIds, pageSize: 1 }), { now: NOW });
+
+  assert.deepEqual((await page([])).map(paper => paper.id), ['2610.00001']);
+  assert.equal(vectorReads(), 0, 'newest first reads no vector');
+  assert.deepEqual((await page(['2610.02202'])).map(paper => paper.id), ['2610.00001']);
+  assert.equal(vectorReads(), 1, "a like without a vector: only its own is looked for");
+  assert.deepEqual((await page(['2610.02201'])).map(paper => paper.id), ['2610.02200']);
+  assert.equal(vectorReads(), 3, "the like's vector, then every candidate's in one round trip");
 });
 
 test("an enrichment step's papers are written back however long their text, within what one D1 call carries", async () => {

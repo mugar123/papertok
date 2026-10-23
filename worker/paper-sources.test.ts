@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
@@ -406,6 +407,19 @@ test("category lanes stop at 3,000 of the harvest's OpenAlex units, so the follo
   const { report } = await readOpenAlexBudget(env);
   assert.equal(report!.tiers.feed.used, 4_000);
   assert.equal(report!.tiers.feed.open, false);
+});
+
+test('a paper a reader liked, looked up by id, stays for them whatever its age, in no lane other readers share', async t => {
+  const { urls, env } = relay(t, () => ({ ...splicingWork, publication_date: '2019-05-02', publication_year: 2019 }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as WorkerEnv;
+  const now = Date.now();
+  await ingestPaperIds(store, ['W7222916812'], { keepUntil: daysFromNow(KEEP_LIKED_DAYS, now), now });
+  assert.equal(urls.length, 1);
+  assert.equal(db.prepare('SELECT id FROM works').all().length, 1);
+  assert.deepEqual(db.prepare('SELECT lane FROM work_lanes').all(), [], "neither its author's nor its topic's readers are offered it");
+  await evictExpired(store, now + 86_400_000);
+  assert.equal(db.prepare('SELECT id FROM works').all().length, 1, 'the next eviction keeps it');
 });
 
 // PAP-88: readers' searches and profile lists stop at 60 % of the day's
