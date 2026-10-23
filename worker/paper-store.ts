@@ -408,21 +408,27 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
     .map(({ id, before, after }) => {
       const paper = storedPaper(after);
       return {
-        id,
-        paper: JSON.stringify(paper),
-        published: publishedOf(paper) || publishedOf(before),
-        textChanged: embeddingText(paper) !== embeddingText(before),
-        // A book or book review the enrichment revealed leaves every lane.
-        offered: isFeedPublication(paper),
-        keys: workKeys(paper),
-        lanes: recordLanes(paper),
+        text: { id, paper: JSON.stringify(paper) },
+        filing: {
+          id,
+          published: publishedOf(paper) || publishedOf(before),
+          textChanged: embeddingText(paper) !== embeddingText(before),
+          // A book or book review the enrichment revealed leaves every lane.
+          offered: isFeedPublication(paper),
+          keys: workKeys(paper),
+          lanes: recordLanes(paper),
+        },
       };
     });
-  const statements: D1PreparedStatement[] = [];
+  // A D1 call carries at most 32 MiB: each chunk is its own batch, and only
+  // the first statement is sent the papers' text (2026-10-23: 500 enriched
+  // papers bound five times over came to 33.6 MB).
   for (let start = 0; start < changed.length; start += WRITE_CHUNK) {
-    const chunk = JSON.stringify(changed.slice(start, start + WRITE_CHUNK));
-    statements.push(
-      db.prepare(`UPDATE works SET paper = j.value ->> 'paper' FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
+    const slice = changed.slice(start, start + WRITE_CHUNK);
+    const chunk = JSON.stringify(slice.map(change => change.filing));
+    await db.batch([
+      db.prepare(`UPDATE works SET paper = j.value ->> 'paper' FROM json_each(?) j WHERE works.id = j.value ->> 'id'`)
+        .bind(JSON.stringify(slice.map(change => change.text))),
       db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`).bind(chunk),
@@ -430,9 +436,8 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
         SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l
         WHERE j.value ->> 'offered'`).bind(chunk),
       db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
-    );
+    ]);
   }
-  for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   return changed.length;
 }
 

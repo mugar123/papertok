@@ -3,7 +3,7 @@ import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
+import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector, rewriteWorks } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { mapAdsPaper } from '../src/services/domainSourceRecords.ts';
@@ -607,4 +607,20 @@ test("a paper dated past tomorrow is not filed, and one filed before that rule l
   db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
   await evictExpired(env, NOW);
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+});
+
+test("an enrichment step's papers are written back however long their text, within what one D1 call carries", async () => {
+  const { env, db } = corpus();
+  // 500 papers, an enrichment step's, with abstracts as long as the longest stored.
+  const papers = Array.from({ length: 500 }, (_, index) => ({
+    ...arxivRecord,
+    id: `2610.${String(index).padStart(5, '0')}`,
+    arxivId: `2610.${String(index).padStart(5, '0')}`,
+    title: `Paper number ${index} with a long abstract`,
+    abstract: 'A long abstract. '.repeat(1_000),
+  }));
+  await ingestPapers(env, papers.map(paper => ({ paper, lanes: ['cs.LG'] })), { now: NOW });
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, citationCount: 7, citationCountKnown: true } })));
+  assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'citationCount' = 7").length, 500);
 });
