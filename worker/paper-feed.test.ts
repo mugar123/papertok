@@ -94,43 +94,75 @@ const embeddingModel = () => ({
   run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))) }),
 });
 
-test('a first page keeps its order only once the work after the answer has run', async t => {
-  const entries = rankingCaches(t);
+const ids = (papers: Array<{ id: string }>) => papers.map(item => item.id);
+
+test('a next page asked while the lookup after the first still runs goes on after the ranks the first served', async t => {
+  rankingCaches(t);
   const { env, ask } = store();
-  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  // Workers AI answers only once let.
+  let answer = () => {};
+  const model = embeddingModel();
+  Object.assign(env, { AI: { run: async (name: string, input: { text: string[] }) => {
+    await new Promise<void>(resolve => { answer = resolve; });
+    return model.run(name, input);
+  } } });
+  await ingestPapers(env, [
+    { paper: paper('2610.30001', 'The paper liked, not embedded yet', 10), lanes: [] },
+    { paper: paper('2610.20001', 'Newer paper', 1), lanes: [] },
+    { paper: paper('2610.20002', 'Older paper', 2), lanes: [] },
+  ]);
+  const request = (page: number) => ({ categories: ['cs.CL'], positiveIds: ['2610.30001'], page, pageSize: 1 });
   const after: Array<Promise<unknown>> = [];
-  const { papers } = await ask({ categories: ['cs.CL'] }, 'reader-1', work => { after.push(work); });
-  assert.deepEqual(papers.map(item => item.id), ['2610.11111']);
-  assert.equal(entries.size, 0, 'not while that work can still change it');
+  assert.deepEqual(ids((await ask(request(0), 'reader-1', work => { after.push(work); })).papers), ['2610.20001']);
+  // A paper the harvest files while that lookup waits for Workers AI.
+  await ingestPapers(env, [{ paper: paper('2610.20003', 'Newest paper', 0.5), lanes: [] }]);
+  assert.deepEqual(ids((await ask(request(1))).papers), ['2610.20003']);
+  assert.deepEqual(ids((await ask(request(2))).papers), ['2610.20002']);
+  answer();
   await Promise.all(after);
-  assert.equal(entries.size, 1);
 });
 
-test('an empty first page keeps no order, so papers that arrive after it reach the next page', async t => {
-  const entries = rankingCaches(t);
+test('an empty first page keeps no order, so papers that arrive after it start on the next page', async t => {
+  rankingCaches(t);
   const { env, ask } = store();
   assert.deepEqual((await ask({ categories: ['cs.CL'], pageSize: 1 })).papers, []);
-  assert.equal(entries.size, 0);
   await ingestPapers(env, [{ paper: paper('2610.20001', 'Newer paper', 1), lanes: [] }, { paper: paper('2610.20002', 'Older paper', 2), lanes: [] }]);
-  assert.deepEqual((await ask({ categories: ['cs.CL'], page: 1, pageSize: 1 })).papers.map(item => item.id), ['2610.20002']);
+  assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 1, pageSize: 1 })).papers), ['2610.20001']);
+  assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 2, pageSize: 1 })).papers), ['2610.20002']);
 });
 
-test("a first page that starts a new follow's harvest keeps no order, so the next page has the follow's papers", async t => {
-  const entries = rankingCaches(t);
+const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
+
+test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {
+  rankingCaches(t);
   const { env, runs, ask } = store();
   await ingestPapers(env, [{ paper: paper('2610.20001', 'Newest in the category', 1), lanes: [] }, { paper: paper('2610.20002', 'Oldest in the category', 5), lanes: [] }]);
-  const request = (page: number) => ({ categories: ['cs.CL'], follows: [{ type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' }], page, pageSize: 1 });
-  assert.deepEqual((await ask(request(0))).papers.map(item => item.id), ['2610.20001']);
+  const request = (page: number) => ({ categories: ['cs.CL'], follows: [followedAuthor], page, pageSize: 1 });
+  assert.deepEqual(ids((await ask(request(0))).papers), ['2610.20001']);
   assert.equal(runs.length, 1, 'the follow is harvested at once');
-  assert.equal(entries.size, 0);
-  // What that harvest files for the author.
-  await ingestPapers(env, [{ paper: paper('2610.20003', "The followed author's paper", 3), lanes: ['author:A77'] }]);
+  // What that harvest files for the author: newer than anything the first page had.
+  await ingestPapers(env, [{ paper: paper('2610.20003', "The followed author's paper", 0.5), lanes: ['author:A77'] }]);
   const next = (await ask(request(1))).papers;
   assert.deepEqual(next.map(item => [item.id, item._followedEntityMatches?.map(match => (match as PaperFollowMatch).canonicalId)]), [['2610.20003', ['https://openalex.org/A77']]]);
+  assert.deepEqual(ids((await ask(request(2))).papers), ['2610.20002']);
+  assert.deepEqual((await ask(request(3))).papers, []);
 });
 
-test('a first page whose likes the lookup embeds keeps no order, and the next first page ranks by them', async t => {
-  const entries = rankingCaches(t);
+test("a reader who just followed an author gets the author's newest papers from the next follows page on", async t => {
+  rankingCaches(t);
+  const { env, runs, ask } = store();
+  // What the feed asks beside its main page (FeedContext's fetchFollowedEntityCandidates).
+  const followsPage = (page: number) => ({ categories: [], follows: [followedAuthor], positiveIds: [], page, pageSize: 6, order: 'recent' });
+  assert.deepEqual((await ask(followsPage(0))).papers, []);
+  assert.equal(runs.length, 1);
+  const filed = Array.from({ length: 8 }, (_, index) => `2610.4000${index + 1}`);
+  await ingestPapers(env, filed.map((arxivId, index) => ({ paper: paper(arxivId, `Followed author paper ${index + 1}`, index + 1), lanes: ['author:A77'] })));
+  assert.deepEqual(ids((await ask(followsPage(1))).papers), filed.slice(0, 6));
+  assert.deepEqual(ids((await ask(followsPage(2))).papers), filed.slice(6));
+});
+
+test("a page after one whose likes the lookup embedded goes on by them, and the next first page ranks by them", async t => {
+  rankingCaches(t);
   const { env, db, ask } = store();
   Object.assign(env, { AI: embeddingModel() });
   await ingestPapers(env, [
@@ -141,11 +173,11 @@ test('a first page whose likes the lookup embeds keeps no order, and the next fi
   ]);
   embed(db, '2610.30003', [1, 0]);
   embed(db, '2610.30004', [0, 1]);
-  const request = { categories: ['cs.CL'], positiveIds: ['2610.30001', '2610.30002'], pageSize: 1 };
-  assert.deepEqual((await ask(request)).papers.map(item => item.id), ['2610.30004'], 'ranked before the likes had vectors');
-  assert.equal(entries.size, 0, 'that order is not kept');
-  assert.deepEqual((await ask(request)).papers.map(item => item.id), ['2610.30003']);
-  assert.equal(entries.size, 1, 'nothing left to look up: this order is kept');
+  const request = (page: number) => ({ categories: ['cs.CL'], positiveIds: ['2610.30001', '2610.30002'], page, pageSize: 1 });
+  assert.deepEqual(ids((await ask(request(0))).papers), ['2610.30004'], 'ranked before the likes had vectors');
+  assert.deepEqual(ids((await ask(request(1))).papers), ['2610.30003']);
+  assert.deepEqual((await ask(request(2))).papers, []);
+  assert.deepEqual(ids((await ask(request(0))).papers), ['2610.30003']);
 });
 
 // A liked paper the corpus holds without a vector, beside one paper like it and

@@ -1,7 +1,7 @@
 import type { Paper } from '../src/models/Paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
-import type { FeedRequestBody, RankedCandidate, RankingCache, StoreEnv } from './paper-store.ts';
+import type { FeedRequestBody, KeptRanking, RankingCache, StoreEnv } from './paper-store.ts';
 
 import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
@@ -108,7 +108,7 @@ function rankingCache(uid: string): RankingCache | undefined {
   return {
     async get(key) {
       const cached = await caches.default.match(await keyFor(key));
-      return cached ? cached.json<RankedCandidate[]>() : null;
+      return cached ? cached.json<KeptRanking>() : null;
     },
     async put(key, ranking) {
       await caches.default.put(await keyFor(key), new Response(JSON.stringify(ranking), {
@@ -169,17 +169,28 @@ export async function handleCorpusFeed(
   const looksUpFirst = looksUp && body?.waitForLikes === true;
   if (looksUpFirst) await addMissingPositives(env, query.positiveIds);
   const cache = rankingCache(identity.uid);
-  let ranked: Parameters<RankingCache['put']> | null = null;
-  const papers = await readFeedPage(env, query, { cache: cache && { get: key => cache.get(key), put: async (...entry) => { ranked = entry; } } });
+  let kept: [string, KeptRanking] | null = null;
+  const papers = await readFeedPage(env, query, {
+    cache: cache && {
+      get: key => cache.get(key),
+      // At once, so that a next page asked before the work below ends goes on
+      // after this one's ranks.
+      put: async (key, ranking) => {
+        kept = [key, ranking];
+        await cache.put(key, { ...ranking, final: false });
+      },
+    },
+  });
   // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
-  // The order serves the next pages only if this work leaves the ranking as
-  // it was: a new follow's harvest, or a like stored or embedded, changes it.
+  // The whole order serves the next pages only if this work leaves the
+  // ranking as it was: a new follow's harvest, or a like stored or embedded,
+  // changes it.
   await later(Promise.all([
     registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
     looksUp && !looksUpFirst ? addMissingPositives(env, query.positiveIds) : false,
   ]).then(async ([harvesting, added]) => {
-    if (ranked && cache && !harvesting && !added) await cache.put(...ranked);
+    if (kept?.[1].final && cache && !harvesting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
   return { papers };
 }

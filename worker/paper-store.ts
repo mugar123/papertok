@@ -632,9 +632,16 @@ export interface FeedQuery {
  */
 /** A reader's ranked candidates, kept for the pages after the first. */
 export interface RankedCandidate { workId: number; lanes: string[] }
+/**
+ * The order a reader's pages were served from. `served` counts the ranks
+ * pages have covered, a short page's empty ones included (null when the
+ * order ran out). A `final` order serves the next pages as it is; otherwise a
+ * next page keeps only the ranks served and ranks the rest again.
+ */
+export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean }
 export interface RankingCache {
-  get(key: string): Promise<RankedCandidate[] | null>;
-  put(key: string, ranking: RankedCandidate[]): Promise<void>;
+  get(key: string): Promise<KeptRanking | null>;
+  put(key: string, ranking: KeptRanking): Promise<void>;
 }
 
 /**
@@ -644,9 +651,11 @@ export interface RankingCache {
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  *
  * The first page ranks every candidate and leaves the order in `cache`; a
- * later page of the same request reads only its own papers from it, and ranks
- * again only when the order is gone. An empty order is not left: the lanes
- * may be about to fill.
+ * later page of the same request reads only its own papers from a final
+ * order. Otherwise it ranks again, after the ranks already served: a paper
+ * that arrived since starts on this page, and none served comes back. An
+ * order with nothing left to serve is not final: the lanes may be about to
+ * fill.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
@@ -654,12 +663,16 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
   if (lanes.length === 0) return [];
   const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), order: query.order });
-  let ranking = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  let ranking = kept?.final ? kept.ranks : null;
   if (!ranking) {
-    ranking = await rankCandidates(db, lanes, query, now);
-    if (ranking.length) await cache?.put(cacheKey, ranking).catch(error => console.warn('Feed ranking not cached', error));
+    const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
+    const shown = new Set(served.map(candidate => candidate?.workId));
+    ranking = [...served, ...(await rankCandidates(db, lanes, query, now)).filter(candidate => !shown.has(candidate.workId))];
+    const through = (query.page + 1) * query.pageSize;
+    await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through }).catch(error => console.warn('Feed ranking not cached', error));
   }
-  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize);
+  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   if (ranked.length === 0) return [];
   const works = await readWorks(db, ranked.map(candidate => candidate.workId));
   const categories = new Set(query.categories);
