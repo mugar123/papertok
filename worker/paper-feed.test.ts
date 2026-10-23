@@ -99,7 +99,7 @@ const ids = (papers: Array<{ id: string }>) => papers.map(item => item.id);
 test('a next page asked while the lookup after the first still runs goes on after the ranks the first served', async t => {
   rankingCaches(t);
   const { env, ask } = store();
-  // Workers AI answers only once let.
+  // Workers AI answers only when the test lets it.
   let answer = () => {};
   const model = embeddingModel();
   Object.assign(env, { AI: { run: async (name: string, input: { text: string[] }) => {

@@ -634,9 +634,10 @@ export interface FeedQuery {
 export interface RankedCandidate { workId: number; lanes: string[] }
 /**
  * The order a reader's pages were served from. `served` counts the ranks
- * pages have covered, a short page's empty ones included (null when the
- * order ran out). A `final` order serves the next pages as it is; otherwise a
- * next page keeps only the ranks served and ranks the rest again.
+ * pages have covered, including the empty ones of a page the order ran out
+ * on, which `ranks` holds as null. A `final` order serves the next pages as
+ * it is; otherwise a next page keeps only the ranks served and ranks the rest
+ * again.
  */
 export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean }
 export interface RankingCache {
