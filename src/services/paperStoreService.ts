@@ -13,6 +13,11 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
+  /**
+   * Rank by the likes only once the corpus has fetched and embedded the ones
+   * it lacks, which can take seconds: for More like this, never a feed page.
+   */
+  waitForLikes?: boolean;
 }
 
 interface StoreOptions {
@@ -40,7 +45,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent' }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   return askStore({
     categories,
     follows: follows.map(({ type, canonicalId, displayName, metadata }) => ({
@@ -53,6 +58,7 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
+    ...(waitForLikes ? { waitForLikes } : {}),
   }, options);
 }
 
