@@ -85,18 +85,20 @@ A new or emptied database needs a harvest before a frontend that reads it is pub
 
 Records of one paper from several sources merge with `PaperBuilder.merge` into the row any of their identifiers names; the row keeps the id readers already hold. A merge that changes the title or abstract drops the vector for the next embedding pass. The stored row is the base of every later harvest's and enrichment's merge, so it keeps what `merge` records in `sources` about the records it merged (`arxivDoiOnly`, `deniedElsewhere`, `peerReviewedByDoi`, `peerReviewedByDoiComplete`). A row merged before `peerReviewedByDoi` existed lacks its earlier records' entries and has no `peerReviewedByDoiComplete`; nothing is backfilled. Later harvests add their records' entries to such a row. A `false` among them counts, but no `true` among them confirms review, and a merge with such a row does not keep a `true` the way a merge of complete rows does (`repeatsTrue`, `keepsConfirmed`), whether the store merges the row or a browser merges the served copy. Only a row built again from all its records holds every answer; the store never rebuilds a row in place, so such a row stays incomplete until eviction removes it. The first run backfills 90 days of arXiv and each lane's first pages; embedding the backlog takes several daily runs.
 
-A Worker version from before `peerReviewedByDoiComplete` keeps that mark on a row it merges but files none of the merged record's answers in `peerReviewedByDoi`. A marked row it merges can then lack a record's `false` and read reviewed against it once current code merges the row again, in the store or in a browser it was served to. After rolling the Worker back to such a version, remove the mark from every row before deploying current code again; each row then reads as one merged before the map existed:
-
-```bash
-npx wrangler d1 execute PAPER_STORE --remote --command "UPDATE works SET paper = json_remove(paper, '$.sources.peerReviewedByDoiComplete') WHERE json_extract(paper, '$.sources.peerReviewedByDoiComplete') IS NOT NULL"
-```
-
 ```bash
 npx wrangler d1 migrations apply PAPER_STORE --local        # or --remote before deploying
 npx wrangler dev --port 8787 --test-scheduled
 curl "http://localhost:8787/__scheduled?cron=30+2+*+*+*"    # starts a harvest on local D1; embeddings use the remote AI binding
 npx wrangler workflows instances list papertok-paper-harvest  # production runs
 ```
+
+A Worker version from before `peerReviewedByDoiComplete` keeps that mark on a row it merges but files none of the merged record's answers in `peerReviewedByDoi`. A marked row it merges can then lack a record's `false` and read reviewed against it once current code merges the row again. The store does that after current code is deployed again, but browsers do it at once: a Worker rollback leaves the frontend on current code, which merges the rows that Worker serves with other records in search results, followed lanes and OpenAlex enrichment. So remove the mark from every row right after rolling the Worker back to such a version:
+
+```bash
+npx wrangler d1 execute PAPER_STORE --remote --command "UPDATE works SET paper = json_remove(paper, '$.sources.peerReviewedByDoiComplete') WHERE json_extract(paper, '$.sources.peerReviewedByDoiComplete') IS NOT NULL"
+```
+
+Each row then reads as one merged before the map existed. The older version adds no mark to the rows it merges later, so this one update also covers the next deploy of current code. A harvest that was running at the rollback can still write the mark: if `npx wrangler workflows instances list papertok-paper-harvest` shows one running, run the update again when it ends. A card served before the update can still show from a browser's feed snapshot for up to 15 minutes.
 
 ## Deployment
 
