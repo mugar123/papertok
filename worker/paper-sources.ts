@@ -16,10 +16,9 @@ import {
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
 import { handleArxiv } from './arxiv-api.ts';
-import { handleOpenAlex } from './openalex-api.ts';
+import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
-import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { CORPUS_DAYS, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, notableSince, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
@@ -329,30 +328,15 @@ async function arxivSearch(env: SourceEnv, query: string, page: number, lane: st
 
 const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?.label || leafId.replace(/\./g, ' ');
 
-// The share of OpenAlex's day the harvest may spend, enrichment included, in
-// list calls (a search is ten). The rest of the day's ledger stays for readers'
-// searches and pages; the shared ledger still counts every call.
-const HARVEST_OPENALEX_DAILY_CALLS = 4_000;
-
-/** Reserves harvest calls against its own daily share before the shared ledger sees them. */
-export async function reserveHarvestOpenAlex(env: Pick<WorkerEnv, 'REQUEST_QUOTA_LEDGER'>, calls: number) {
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
-    periodKey: `harvest-openalex:day:${new Date().toISOString().slice(0, 10)}`,
-    subject: 'harvest',
-    subjectLimit: HARVEST_OPENALEX_DAILY_CALLS,
-    globalLimit: HARVEST_OPENALEX_DAILY_CALLS,
-    amount: calls,
-  });
-  if (!reservation.accepted) throw new SourceRefused('/openalex (harvest share)', 3_600);
-}
-
+// A billed miss spends the harvest's own share of OpenAlex's day
+// (`OPENALEX_HARVEST_DAILY_UNITS`), enrichment included; a spent share is a
+// refusal that ends the source for this run.
 async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', sort = 'publication_date:desc' }: { page: number; perPage: number; search?: string; sort?: string }) {
-  await reserveHarvestOpenAlex(env, search ? 10 : 1);
   const params: Record<string, string | number> = {
     filter, sort, page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
   if (search) params.search = search;
-  const response = await askRoute(handleOpenAlex, '/openalex/works', params, env);
+  const response = await askRoute(handleHarvestOpenAlex, '/openalex/works', params, env);
   return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
 }
 

@@ -5,7 +5,6 @@ import {
   enrichPapersBatch,
   fetchPaperByArxivIdViaOpenAlex,
   fetchPaperByWorkId,
-  fetchPapersByDois,
 } from './openAlexService.ts';
 import {
   getOpenAlexEnrichmentId,
@@ -18,16 +17,12 @@ import {
  * such paper; a provider failure rejects, so a page can offer a retry.
  */
 export async function loadPaperByIdentity(identity: NonNullable<ReturnType<typeof parsePaperKey>>) {
-  if (identity.type === 'doi') {
-    const papers = await fetchPapersByDois([identity.value], { throwOnProviderError: true });
-    return papers[0] || null;
-  }
-
-  // Papers the feed keys by provider id — an OpenAlex work, a PubMed record —
-  // and remembered that way in Liked and Saved. OpenAlex resolves both ids
-  // directly, abstract included; a failure here rejects so the page can
-  // offer a retry rather than declare the paper missing.
-  if (identity.type === 'openalex' || identity.type === 'pmid') {
+  // A DOI, and the papers the feed keys by provider id — an OpenAlex work, a
+  // PubMed record — and remembers that way in Liked and Saved. OpenAlex
+  // resolves all three as one work, abstract included, at no cost to the
+  // day's budget; a failure here rejects so the page can offer a retry rather
+  // than declare the paper missing.
+  if (identity.type === 'doi' || identity.type === 'openalex' || identity.type === 'pmid') {
     return fetchPaperByWorkId(identity.type, identity.value);
   }
 

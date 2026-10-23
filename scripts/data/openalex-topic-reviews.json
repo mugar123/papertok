@@ -138,7 +138,7 @@
       {"workId":"https://openalex.org/W7202257069","label":"on-target"},
       {"workId":"https://openalex.org/W7223169948","label":"off-target"},
       {"workId":"https://openalex.org/W7223175341","label":"on-target"},
-      {"workId":"https://openalex.org/W7223176699","label":"on-target"},
+      {"workId":"https://openalex.org/W7223176699","uncertain":true},
       {"workId":"https://openalex.org/W7223177336","label":"on-target"},
       {"workId":"https://openalex.org/W7223181574","label":"off-target"},
       {"workId":"https://openalex.org/W7223183028","label":"on-target"},
@@ -147,7 +147,7 @@
       {"workId":"https://openalex.org/W7167235434","label":"on-target"},
       {"workId":"https://openalex.org/W7168187897","label":"off-target"},
       {"workId":"https://openalex.org/W7169817517","label":"off-target"},
-      {"workId":"https://openalex.org/W7171694582","label":"on-target"},
+      {"workId":"https://openalex.org/W7171694582","uncertain":true},
       {"workId":"https://openalex.org/W7203467269","label":"off-target"}
     ]
   },
@@ -589,14 +589,14 @@
       {"workId":"https://openalex.org/W7223118037","label":"on-target"},
       {"workId":"https://openalex.org/W7223172425","label":"off-target"},
       {"workId":"https://openalex.org/W7223172788","label":"on-target"},
-      {"workId":"https://openalex.org/W7223184647","label":"on-target"},
+      {"workId":"https://openalex.org/W7223184647","uncertain":true},
       {"workId":"https://openalex.org/W7222994522","label":"on-target"},
-      {"workId":"https://openalex.org/W7223082719","label":"off-target"},
+      {"workId":"https://openalex.org/W7223082719","uncertain":true},
       {"workId":"https://openalex.org/W7223085691","label":"on-target"},
       {"workId":"https://openalex.org/W7223091560","label":"on-target"},
-      {"workId":"https://openalex.org/W7223109842","label":"off-target"},
+      {"workId":"https://openalex.org/W7223109842","uncertain":true},
       {"workId":"https://openalex.org/W7223116065","label":"on-target"},
-      {"workId":"https://openalex.org/W7223116291","label":"off-target"},
+      {"workId":"https://openalex.org/W7223116291","uncertain":true},
       {"workId":"https://openalex.org/W7223123110","label":"on-target"},
       {"workId":"https://openalex.org/W7223125917","label":"on-target"},
       {"workId":"https://openalex.org/W7223128041","label":"on-target"},
@@ -662,21 +662,21 @@
       {"id":"https://openalex.org/W7110617278","type":"article","title":"Predicting Dust Palliative Effectiveness on Unpaved Roads Using a Simple Laboratory Procedure","publication_date":"2026-10-17","primary_topic":{"id":"https://openalex.org/T13236"}}
     ],
     "labels": [
-      {"workId":"https://openalex.org/W7223171631","label":"on-target"},
+      {"workId":"https://openalex.org/W7223171631","uncertain":true},
       {"workId":"https://openalex.org/W7223183940","label":"on-target"},
       {"workId":"https://openalex.org/W7223106446","label":"off-target"},
       {"workId":"https://openalex.org/W7223176201","label":"on-target"},
-      {"workId":"https://openalex.org/W7223177107","label":"on-target"},
+      {"workId":"https://openalex.org/W7223177107","uncertain":true},
       {"workId":"https://openalex.org/W7223036010","label":"on-target"},
       {"workId":"https://openalex.org/W7223054132","label":"off-target"},
       {"workId":"https://openalex.org/W7222928686","label":"on-target"},
       {"workId":"https://openalex.org/W7222930591","label":"on-target"},
       {"workId":"https://openalex.org/W7222939546","label":"off-target"},
-      {"workId":"https://openalex.org/W7222949148","label":"on-target"},
+      {"workId":"https://openalex.org/W7222949148","uncertain":true},
       {"workId":"https://openalex.org/W7222883864","label":"on-target"},
       {"workId":"https://openalex.org/W7222885193","label":"on-target"},
       {"workId":"https://openalex.org/W7222902804","label":"off-target"},
-      {"workId":"https://openalex.org/W7110617278","label":"on-target"}
+      {"workId":"https://openalex.org/W7110617278","uncertain":true}
     ]
   },
   "civil.quake": {
@@ -1422,21 +1422,21 @@
       {"id":"https://openalex.org/W7223131185","type":"article","title":"SPARE-RAG: Evidence Repair and Verification-Guided Sequential Neural Pruning for Multi-Hop RAG","publication_date":"2026-10-21","primary_topic":{"id":"https://openalex.org/T10028"}}
     ],
     "labels": [
-      {"workId":"https://openalex.org/W7223100088","label":"on-target"},
+      {"workId":"https://openalex.org/W7223100088","uncertain":true},
       {"workId":"https://openalex.org/W7223170277","label":"on-target"},
-      {"workId":"https://openalex.org/W7223172499","label":"on-target"},
-      {"workId":"https://openalex.org/W7223176153","label":"on-target"},
+      {"workId":"https://openalex.org/W7223172499","uncertain":true},
+      {"workId":"https://openalex.org/W7223176153","uncertain":true},
       {"workId":"https://openalex.org/W7223179077","label":"on-target"},
       {"workId":"https://openalex.org/W4394866661","label":"on-target"},
-      {"workId":"https://openalex.org/W7223094068","label":"on-target"},
+      {"workId":"https://openalex.org/W7223094068","uncertain":true},
       {"workId":"https://openalex.org/W7223097196","label":"off-target"},
       {"workId":"https://openalex.org/W7223099603","label":"off-target"},
       {"workId":"https://openalex.org/W7223106809","label":"off-target"},
       {"workId":"https://openalex.org/W7223106974","label":"off-target"},
-      {"workId":"https://openalex.org/W7223109391","label":"on-target"},
+      {"workId":"https://openalex.org/W7223109391","uncertain":true},
       {"workId":"https://openalex.org/W7223127670","label":"off-target"},
-      {"workId":"https://openalex.org/W7223129913","label":"on-target"},
-      {"workId":"https://openalex.org/W7223131185","label":"on-target"}
+      {"workId":"https://openalex.org/W7223129913","uncertain":true},
+      {"workId":"https://openalex.org/W7223131185","uncertain":true}
     ]
   },
   "cs.MM": {
@@ -1777,8 +1777,8 @@
       {"workId":"https://openalex.org/W7223052178","label":"off-target"},
       {"workId":"https://openalex.org/W7223058228","label":"on-target"},
       {"workId":"https://openalex.org/W7222946152","label":"on-target"},
-      {"workId":"https://openalex.org/W7222954880","label":"off-target"},
-      {"workId":"https://openalex.org/W7222977374","label":"on-target"}
+      {"workId":"https://openalex.org/W7222954880","uncertain":true},
+      {"workId":"https://openalex.org/W7222977374","uncertain":true}
     ]
   },
   "econ.EM": {
@@ -1992,21 +1992,21 @@
       {"id":"https://openalex.org/W7223127178","type":"article","title":"Evaluation of global structural load responses in wind turbines providing grid frequency support","publication_date":"2026-10-21","primary_topic":{"id":"https://openalex.org/T10740"}}
     ],
     "labels": [
-      {"workId":"https://openalex.org/W7223177605","label":"on-target"},
+      {"workId":"https://openalex.org/W7223177605","label":"off-target"},
       {"workId":"https://openalex.org/W7223186070","label":"on-target"},
       {"workId":"https://openalex.org/W7223187299","label":"on-target"},
       {"workId":"https://openalex.org/W7223083325","label":"on-target"},
-      {"workId":"https://openalex.org/W7223091204","label":"off-target"},
+      {"workId":"https://openalex.org/W7223091204","uncertain":true},
       {"workId":"https://openalex.org/W7223102025","label":"off-target"},
       {"workId":"https://openalex.org/W7223104877","label":"on-target"},
       {"workId":"https://openalex.org/W7223110349","label":"on-target"},
       {"workId":"https://openalex.org/W7223111585","label":"on-target"},
-      {"workId":"https://openalex.org/W7223117041","label":"off-target"},
+      {"workId":"https://openalex.org/W7223117041","uncertain":true},
       {"workId":"https://openalex.org/W7223118073","label":"on-target"},
-      {"workId":"https://openalex.org/W7223123015","label":"on-target"},
+      {"workId":"https://openalex.org/W7223123015","uncertain":true},
       {"workId":"https://openalex.org/W7223123638","label":"off-target"},
       {"workId":"https://openalex.org/W7223125363","label":"on-target"},
-      {"workId":"https://openalex.org/W7223127178","label":"on-target"}
+      {"workId":"https://openalex.org/W7223127178","uncertain":true}
     ]
   },
   "eess.optics": {
@@ -2069,12 +2069,12 @@
     ],
     "labels": [
       {"workId":"https://openalex.org/W7223172339","label":"off-target"},
-      {"workId":"https://openalex.org/W7223172829","label":"off-target"},
+      {"workId":"https://openalex.org/W7223172829","uncertain":true},
       {"workId":"https://openalex.org/W7223180107","label":"on-target"},
       {"workId":"https://openalex.org/W7223182050","label":"on-target"},
       {"workId":"https://openalex.org/W7223186630","label":"on-target"},
       {"workId":"https://openalex.org/W7223081887","label":"on-target"},
-      {"workId":"https://openalex.org/W7223091701","label":"on-target"},
+      {"workId":"https://openalex.org/W7223091701","uncertain":true},
       {"workId":"https://openalex.org/W7223094037","label":"on-target"},
       {"workId":"https://openalex.org/W7223098599","label":"on-target"},
       {"workId":"https://openalex.org/W7223109003","label":"on-target"},
@@ -2526,15 +2526,15 @@
     "labels": [
       {"workId":"https://openalex.org/W4403966615","label":"on-target"},
       {"workId":"https://openalex.org/W7223113353","label":"on-target"},
-      {"workId":"https://openalex.org/W3198663384","label":"on-target"},
+      {"workId":"https://openalex.org/W3198663384","uncertain":true},
       {"workId":"https://openalex.org/W7223088498","label":"on-target"},
       {"workId":"https://openalex.org/W4403318832","label":"on-target"},
       {"workId":"https://openalex.org/W7222960512","label":"off-target"},
       {"workId":"https://openalex.org/W7222649676","label":"off-target"},
-      {"workId":"https://openalex.org/W7160321790","label":"on-target"},
+      {"workId":"https://openalex.org/W7160321790","uncertain":true},
       {"workId":"https://openalex.org/W7222734674","label":"on-target"},
       {"workId":"https://openalex.org/W7222759319","label":"off-target"},
-      {"workId":"https://openalex.org/W4280585961","label":"off-target"},
+      {"workId":"https://openalex.org/W4280585961","uncertain":true},
       {"workId":"https://openalex.org/W4416068434","label":"on-target"},
       {"workId":"https://openalex.org/W7222352289","label":"off-target"},
       {"workId":"https://openalex.org/W7222662181","label":"on-target"},
@@ -3398,20 +3398,20 @@
       {"id":"https://openalex.org/W7222878130","type":"article","title":"Machine Learning Algorithms for Predicting Psychostimulant Intoxication in Emergency Department Patients: A Multicenter Study","publication_date":"2026-10-18","primary_topic":{"id":"https://openalex.org/T10800"}}
     ],
     "labels": [
-      {"workId":"https://openalex.org/W7223182491","label":"on-target"},
+      {"workId":"https://openalex.org/W7223182491","uncertain":true},
       {"workId":"https://openalex.org/W7223185186","label":"on-target"},
       {"workId":"https://openalex.org/W7223098614","label":"on-target"},
       {"workId":"https://openalex.org/W7223125189","label":"off-target"},
       {"workId":"https://openalex.org/W7223182646","label":"off-target"},
       {"workId":"https://openalex.org/W7126156827","label":"on-target"},
       {"workId":"https://openalex.org/W7223001002","label":"on-target"},
-      {"workId":"https://openalex.org/W7223015891","label":"on-target"},
+      {"workId":"https://openalex.org/W7223015891","uncertain":true},
       {"workId":"https://openalex.org/W7223139348","label":"on-target"},
-      {"workId":"https://openalex.org/W7222921593","label":"on-target"},
-      {"workId":"https://openalex.org/W7222965048","label":"on-target"},
+      {"workId":"https://openalex.org/W7222921593","uncertain":true},
+      {"workId":"https://openalex.org/W7222965048","uncertain":true},
       {"workId":"https://openalex.org/W7222966224","label":"on-target"},
       {"workId":"https://openalex.org/W7222968468","label":"off-target"},
-      {"workId":"https://openalex.org/W7222975605","label":"off-target"},
+      {"workId":"https://openalex.org/W7222975605","uncertain":true},
       {"workId":"https://openalex.org/W7222878130","label":"on-target"}
     ]
   },
@@ -3740,13 +3740,13 @@
       {"id":"https://openalex.org/W7223185580","type":"article","title":"Public Finance: Facilitating Climate Transition under Fundamental Uncertainty Increasing Risk","publication_date":"2026-10-21","primary_topic":{"id":"https://openalex.org/T13146"}}
     ],
     "labels": [
-      {"workId":"https://openalex.org/W7223090841","label":"off-target"},
+      {"workId":"https://openalex.org/W7223090841","uncertain":true},
       {"workId":"https://openalex.org/W7223183626","label":"on-target"},
       {"workId":"https://openalex.org/W7215005986","label":"on-target"},
       {"workId":"https://openalex.org/W7222996937","label":"on-target"},
       {"workId":"https://openalex.org/W7223085368","label":"on-target"},
       {"workId":"https://openalex.org/W7223086297","label":"on-target"},
-      {"workId":"https://openalex.org/W7223100114","label":"off-target"},
+      {"workId":"https://openalex.org/W7223100114","uncertain":true},
       {"workId":"https://openalex.org/W7223102700","label":"off-target"},
       {"workId":"https://openalex.org/W7223110705","label":"on-target"},
       {"workId":"https://openalex.org/W7223116914","label":"off-target"},

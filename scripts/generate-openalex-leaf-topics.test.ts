@@ -161,6 +161,22 @@ test('a call the labeller marked uncertain counts as a miss', t => {
   assert.notEqual(run().status, 0, 'a doubt is recorded as true or not at all');
 });
 
+test('a doubted call can leave out the label when the labeller leaned neither way', t => {
+  const { run, reviews, coverage } = setup(t);
+  assert.equal(run().status, 0);
+  const { topicIds } = coverage().find(row => row.leaf === 'cs.AI')!;
+  // 12 of 15 on target, then two of them recorded as doubt with no lean: 10 of 15.
+  const review = evidence(topicIds[0]);
+  const labels = (doubted: object) => review.labels.map((label, index) => index < 10 || index > 11 ? label : { workId: label.workId, ...doubted });
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': { ...review, labels: labels({ uncertain: true }) } }));
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  const row = coverage().find(row => row.leaf === 'cs.AI')!;
+  assert.deepEqual([row.status, row.precision, row.byTopic], ['passed', 10 / 15, { [topicIds[0]]: '10/15' }]);
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': { ...review, labels: labels({}) } }));
+  assert.notEqual(run().status, 0, 'a call without doubt names its label');
+});
+
 test('unsorted topics, duplicate labels and non-feed samples fail without overwriting output', t => {
   const { run, reviews, output, coverage } = setup(t);
   assert.equal(run().status, 0);

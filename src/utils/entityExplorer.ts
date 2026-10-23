@@ -1,5 +1,6 @@
 import type { Paper, PaperAuthor } from '../models/Paper.ts';
 
+import { isOpenAlexBudgetRefusal } from '../services/openAlexClient.ts';
 import { areaKeyForCategory, areaKeyForPaper } from './areaAccent.ts';
 
 function getPaperTimestamp(paper: Partial<Paper>) {
@@ -241,6 +242,16 @@ export function explorerPageAllowance(autoPagesLeft: number, { byReader }: { byR
 export function explorerListState({ rows, hasMore, publicMode }: { rows: number; hasMore: boolean; publicMode: boolean }) {
   if (rows > 0) return 'rows';
   return hasMore && !publicMode ? 'looking' : 'empty';
+}
+
+/**
+ * The error code a failed publications or authors list shows. From 60 % of
+ * the day's OpenAlex budget the Worker refuses these lists (PAP-88) while
+ * OpenAlex and the reader's connection still work, so that refusal is a pause
+ * with its own words, not `failedCode`'s connection advice.
+ */
+export function explorerListErrorCode(error: unknown, failedCode: string) {
+  return isOpenAlexBudgetRefusal(error) ? 'OPENALEX_LIST_PAUSED' : failedCode;
 }
 
 /**

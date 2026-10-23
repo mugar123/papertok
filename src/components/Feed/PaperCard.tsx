@@ -770,6 +770,16 @@ const PaperCard = memo(function PaperCard({
      it started, and the pins are let go. */
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const sheetGrown = expanded || authorsExpanded || slotAway;
+  // The field's glyph stands on the authors' rule, and the author list opens
+  // above that rule: held at its closed height, the glyph stays put behind
+  // the names instead of sliding down with the rule.
+  const watermarkRef = useRef<HTMLSpanElement | null>(null);
+  const holdWatermark = () => {
+    const mark = watermarkRef.current;
+    if (!mark || mark.style.height) return;
+    mark.style.height = `${mark.getBoundingClientRect().height}px`;
+    mark.style.bottom = 'auto';
+  };
   const pinSheet = () => {
     const sheet = sheetRef.current;
     const frame = sheet?.parentElement;
@@ -1892,7 +1902,7 @@ const PaperCard = memo(function PaperCard({
             `.pc-watermark`), standing on that rule. */}
         <div className="pc-head">
         {watermark && (
-          <span className="pc-watermark" aria-hidden="true">
+          <span ref={watermarkRef} className="pc-watermark" aria-hidden="true">
             <watermark.Icon size={220} weight={watermark.weight} viewBox={watermark.ink} />
           </span>
         )}
@@ -2007,7 +2017,10 @@ const PaperCard = memo(function PaperCard({
                   setShowAuthorsModal(true);
                   return;
                 }
-                if (!authorsExpanded) pinSheet();
+                if (!authorsExpanded) {
+                  pinSheet();
+                  holdWatermark();
+                }
                 setAuthorsExpanded((open) => !open);
               }}
               aria-label={paper.authors.length > 3
@@ -2018,7 +2031,12 @@ const PaperCard = memo(function PaperCard({
             </button>
           )}
           {(paper.authors || []).length > 0 && (
-            <div id={authorsListId} className="pc-authors-list" data-open={authorsExpanded || undefined} inert={!authorsExpanded}>
+            <div
+              id={authorsListId}
+              className="pc-authors-list"
+              data-open={authorsExpanded || undefined}
+              inert={!authorsExpanded}
+            >
               <ul>
                 {paper.authors.map((author, idx) => {
                   const authorName = (author as PaperAuthor).name || author as string;

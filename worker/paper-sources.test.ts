@@ -5,9 +5,12 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { evictExpired } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
+import { handleOpenAlex } from './openalex-api.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
+import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -276,43 +279,44 @@ const gateFile = (name: string) => JSON.parse(readFileSync(new URL(`../scripts/d
 const topicLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-topics').map(job => job.lane);
 const topicsOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
 
-// OpenAlex W7223100088 as returned to the gate's cs.LG sample on 2026-10-23
+// OpenAlex W7223183626 as returned to the gate's q-fin.GN sample on 2026-10-23
 // (trimmed, abstract shortened): a subscription journal article.
 const subscriptionArticle = {
-  id: 'https://openalex.org/W7223100088',
-  doi: 'https://doi.org/10.1142/s0218001426590482',
-  title: 'Synthesis of Reliable Logic Question Answering Data for Large Language Model with Aid of Operations Research Program',
+  id: 'https://openalex.org/W7223183626',
+  doi: 'https://doi.org/10.33423/0t4j8j85',
+  title: 'The Performance of Passively Managed Index Portfolios Versus Complementary Non-Index Portfolios: Evidence from the H-Share Market',
   type: 'article',
   publication_date: '2026-10-22',
   publication_year: 2026,
-  abstract_inverted_index: invertedIndex('Logical reasoning is a highly valued capability in language models.'),
+  abstract_inverted_index: invertedIndex('This paper investigates the performance of the Hang Seng China Enterprises Index.'),
   primary_location: {
     is_oa: false,
-    landing_page_url: 'https://doi.org/10.1142/s0218001426590482',
+    landing_page_url: 'https://doi.org/10.33423/0t4j8j85',
     version: 'publishedVersion',
-    source: { id: 'https://openalex.org/S41486457', display_name: 'International Journal of Pattern Recognition and Artificial Intelligence', type: 'journal', is_core: true },
+    source: { id: 'https://openalex.org/S4210192355', display_name: 'Journal of Applied Business and Economics', type: 'journal', is_core: true },
   },
   open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
   primary_topic: {
-    id: 'https://openalex.org/T10028',
-    display_name: 'Topic Modeling',
-    subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
-    field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
-    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+    id: 'https://openalex.org/T10047',
+    display_name: 'Financial Markets and Investment Strategies',
+    subfield: { id: 'https://openalex.org/subfields/2003', display_name: 'Finance' },
+    field: { id: 'https://openalex.org/fields/20', display_name: 'Economics, Econometrics and Finance' },
+    domain: { id: 'https://openalex.org/domains/2', display_name: 'Social Sciences' },
   },
 };
 
 test('an arXiv leaf the precision gate admitted gets a journal-article lane for the sampled topics found on target', async t => {
   const reviews = gateFile('openalex-topic-reviews.json');
-  const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10028') ? [subscriptionArticle] : [] }));
+  const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10047') ? [subscriptionArticle] : [] }));
   // Sorted, as sampled, without the topics no sampled article was on target
-  // for: cs.LG's T13702 (0 of 2) and five it never returned, q-fin.GN's green
-  // bonds T13146 (0 of 5), astro-ph.SR's catch-all T13126 (never returned).
+  // for: q-fin.GN's green bonds T13146 (0 of 5) and four it never returned,
+  // cs.SE's T10456 (0 of 1) and six it never returned, cond-mat.stat-mech's
+  // T12261 (0 of 2) and one it never returned, and two cs.CV never returned.
   const asked = {
-    'cs.LG': ['T10028', 'T11122', 'T11689', 'T12535'],
-    'cs.CV': ['T10036'],
     'q-fin.GN': ['T10047', 'T10127'],
-    'astro-ph.SR': ['T10039', 'T10477'],
+    'cs.CV': ['T10036'],
+    'cs.SE': ['T10260', 'T10430', 'T10743'],
+    'cond-mat.stat-mech': ['T11520'],
   };
   for (const [leaf, topics] of Object.entries(asked)) {
     assert.ok(topicLanes().includes(leaf), `${leaf} has a lane in the nightly harvest`);
@@ -325,8 +329,8 @@ test('an arXiv leaf the precision gate admitted gets a journal-article lane for 
       assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
     }
   }
-  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'cs.LG', page: 1, since: '' });
-  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223100088', ['cs.LG']]]);
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'q-fin.GN', page: 1, since: '' });
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223183626', ['q-fin.GN']]]);
   assert.equal(items[0].paper.publicationType, 'article');
   assert.equal(items[0].paper.sourceType, 'journal');
   assert.equal(items[0].paper.openAccess, false, 'the explicit subscription access is kept');
@@ -337,7 +341,10 @@ test('a leaf the gate did not admit sends no topic request, and every lane is an
   const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf)!;
   // Too few on target in a full sample, or too few recent core articles to judge.
   // physics.plasm-ph had 13 of 15 on target, 6 of them calls its labeller doubted.
-  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample']]) {
+  // The seven last: 10 or 11 of 15 on target without recorded doubt, then 3 to 9
+  // in a blind relabel that recorded it.
+  const relabelled = ['astro-ph.SR', 'cs.LG', 'cs.SY', 'math.GT', 'eess.SY', 'civil.mat', 'med.tox'].map(leaf => [leaf, 'rejected']);
+  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample'], ...relabelled]) {
     assert.equal(statusOf(leaf).status, status, leaf);
     assert.equal(typeof statusOf(leaf).sampleSize, 'number', `${leaf} records its sample`);
     assert.equal(openAlexTopicFilterForLeaf(leaf), null, leaf);
@@ -414,10 +421,69 @@ test("the harvest stops asking OpenAlex once its share of the day is spent, leav
   assert.equal(urls.length, 400);
 });
 
+// PAP-88: readers' searches and profile lists stop at 60 % of the day's
+// OpenAlex ceiling, their card batches at 80 %. A followed author, search or
+// project asks OpenAlex in those same shapes, and a run started by a new follow
+// can come at any hour, so the harvest spends its own share up to 95 % and
+// leaves the rest to papers being opened.
+test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest leaves the last share to an opened paper", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/genetics/iyag290' }] } } } }] } } }
+    : { results: [] }));
+  const ceiling = 1_000;
+  const share = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(ceiling * OPENALEX_TIER_PERCENT[tier] / 100);
+  Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });
+  const spendElsewhere = (amount: number) => reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`, subject: 'readers', subjectLimit: ceiling, globalLimit: ceiling, amount,
+  });
+  const follows = (lane: string) => SOURCES['openalex-follows'].fetchPage(env as never, { lane, page: 1, since: '' });
+
+  // Readers have spent past both of their shares.
+  const readers = share('enrichment') + 50;
+  await spendElsewhere(readers);
+  await follows('author:A5023888391');
+  await follows('query:graph neural networks');
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '' });
+  assert.deepEqual(
+    urls.filter(url => url.hostname === 'api.openalex.org').map(url => (url.searchParams.has('search') ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
+    ['author.id', 'search', 'doi'],
+  );
+
+  // An author page, a search and a DOI list: 12 units. The rest of the
+  // harvest's tier goes elsewhere.
+  await spendElsewhere(share('feed') - readers - 12);
+  await assert.rejects(follows('author:A5000000001'), SourceRefused);
+  const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1'), env);
+  assert.equal(opened.status, 200, 'a paper being opened still has the rest of the ceiling');
+});
+
+// The harvest's share is counted in the day's OpenAlex ledger, on a miss only:
+// a page an earlier run or another location already stored costs none of it.
+test("the harvest reserves its share with the day's OpenAlex ledger, and a stored page reserves nothing", async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  const ledger = inMemoryQuotaLedger();
+  const entries = new Map<string, { value: string; metadata: unknown }>();
+  Object.assign(env, {
+    REQUEST_QUOTA_LEDGER: ledger.binding,
+    NOTIFICATION_STORE: {
+      getWithMetadata: async (key: string) => entries.get(key) ?? { value: null, metadata: null },
+      put: async (key: string, value: string, options?: { metadata?: unknown }) => { entries.set(key, { value, metadata: options?.metadata }); },
+    },
+  });
+  const follows = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'author:A5023888391', page: 1, since: '' });
+
+  await follows();
+  await follows();
+  assert.equal(urls.length, 1, 'the second page came from the store');
+  assert.deepEqual(ledger.calls.map(key => key.split(':').slice(0, 2).join(':')), ['openalex:day']);
+});
+
 // ─── Notable papers: the most-cited articles of an admitted leaf's last ten years ───
 
 // OpenAlex W2107743791 as returned on 2026-10-23 to cs.LG's notable query,
-// most cited first (trimmed, abstract shortened): a closed 2017 article.
+// most cited first (trimmed, abstract shortened): a closed 2017 article. The
+// relabelled gate no longer admits cs.LG, so the tests serve it as the
+// listing of cs.CV, which it admits.
 const plsiWork = {
   id: 'https://openalex.org/W2107743791',
   doi: 'https://doi.org/10.1145/3130348.3130370',
@@ -441,18 +507,18 @@ const plsiWork = {
 test("an admitted leaf's notable lane asks for its topics' most-cited articles of the last ten years, and keeps their year, citations and access", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const { urls, env } = relay(t, () => ({ results: [plsiWork] }));
-  const { items } = await SOURCES['openalex-notable'].fetchPage(env as never, { lane: 'notable:cs.LG', page: 1, since: '' });
+  const { items } = await SOURCES['openalex-notable'].fetchPage(env as never, { lane: 'notable:cs.CV', page: 1, since: '' });
   assert.equal(urls[0].searchParams.get('sort'), 'cited_by_count:desc');
   // The leaf's own topics and types, as its journal lane asks, over ten years.
   assert.deepEqual(filtersOf(urls[0]).sort(), [
-    ...openAlexTopicFilterForLeaf('cs.LG')!.split(','),
+    ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
     'from_publication_date:2016-01-01',
     'to_publication_date:2026-10-23',
     'has_abstract:true',
     'is_retracted:false',
     'primary_location.source.is_core:true',
   ].sort());
-  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W2107743791', ['notable:cs.LG']]]);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W2107743791', ['notable:cs.CV']]]);
   const [{ paper }] = items;
   assert.equal(paper.year, 2017);
   assert.equal(paper.citationsCount, 3988);
@@ -461,7 +527,7 @@ test("an admitted leaf's notable lane asks for its topics' most-cited articles o
 
   // The window is whole years: in January it starts ten years before that one.
   t.mock.timers.setTime(Date.parse('2027-01-02T03:00:00Z'));
-  await SOURCES['openalex-notable'].fetchPage(env as never, { lane: 'notable:cs.LG', page: 1, since: '' });
+  await SOURCES['openalex-notable'].fetchPage(env as never, { lane: 'notable:cs.CV', page: 1, since: '' });
   assert.ok(filtersOf(urls[1]).includes('from_publication_date:2017-01-01'));
 });
 
@@ -472,9 +538,9 @@ test('a notable lane is one OpenAlex call a week, and its papers stay whatever t
   const { urls, env } = relay(t, () => ({ results: full }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
-  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.LG' }, now);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, now);
   assert.equal(urls.length, 1, 'a full page is not followed by another');
-  const count = () => (db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:cs.LG'").get() as { n: number }).n;
+  const count = () => (db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:cs.CV'").get() as { n: number }).n;
   assert.equal(count(), 100, 'nine years old and filed');
   await evictExpired(store, now + 13 * 86_400_000);
   assert.equal(count(), 100, 'the next weekly listing comes before they lapse');
@@ -493,14 +559,14 @@ test("a notable lane's weekly listing renews its papers' counts, so the enrichme
   const { urls, env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
   const { binding, db } = testD1();
   const store = { ...env, PAPER_STORE: binding } as never;
-  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.LG' }, first);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
   // That night's enrichment.
   db.prepare('UPDATE works SET enriched_at = ?').run(new Date(first).toISOString());
 
   // A week on, the listing names one of them again, cited more, and a new one.
   t.mock.timers.setTime(first + 7 * DAY);
   listing = [{ ...plsiWork, cited_by_count: 4100 }, newcomer];
-  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.LG' }, first + 7 * DAY);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first + 7 * DAY);
   const counts = (db.prepare('SELECT paper FROM works').all() as Array<{ paper: string }>).map(row => JSON.parse(row.paper)).map(paper => [paper.id, paper.citationCount]);
   assert.deepEqual(counts.sort(), [['openalex:W1000000001', 3988], ['openalex:W1000000002', 3988], ['openalex:W2107743791', 4100]]);
 
@@ -520,11 +586,11 @@ test('every admitted leaf has a notable lane, asked again once a week has passed
   const lanes = async () => (await notableLaneJobs(binding as never, now)).map(job => `${job.source} ${job.lane}`);
   assert.deepEqual((await lanes()).sort(), topicLanes().map(leaf => `openalex-notable notable:${leaf}`).sort());
   const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-notable', ?, ?)");
-  // Last week's run reached cs.LG later in the night than this run has.
-  harvested.run('notable:cs.LG', '2026-10-23T04:10:00.000Z');
-  harvested.run('notable:cs.CV', '2026-10-24T02:35:00.000Z');
+  // Last week's run reached cs.CV later in the night than this run has.
+  harvested.run('notable:cs.CV', '2026-10-23T04:10:00.000Z');
+  harvested.run('notable:cs.SE', '2026-10-24T02:35:00.000Z');
   const due = await lanes();
-  assert.ok(due.includes('openalex-notable notable:cs.LG'), 'seven days on');
-  assert.ok(!due.includes('openalex-notable notable:cs.CV'), 'six days on');
+  assert.ok(due.includes('openalex-notable notable:cs.CV'), 'seven days on');
+  assert.ok(!due.includes('openalex-notable notable:cs.SE'), 'six days on');
   assert.equal(due.length, topicLanes().length - 1);
 });

@@ -10,6 +10,8 @@ type InstitutionProminence = Pick<OpenAlexInstitution, 'ror' | 'works_count' | '
 type InstitutionOptions = RequestOptions & { openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexPage<InstitutionProminence>>) => Promise<OpenAlexPage<InstitutionProminence>> };
 type WorksFilters = { peerReviewed?: boolean; category?: string; dateRange?: string };
 type ImpactPeriod = ReturnType<typeof getRecentImpactPeriod>;
+// One work by id, or the one-work list a DOI with no path id is asked for as.
+type OpenAlexWorkOrPage = OpenAlexWork | OpenAlexPage<OpenAlexWork>;
 export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact>> & {
   available: boolean; sampleSize: number; minimumSampleSize: number;
   entityType?: string; openAlexId?: string; period: ImpactPeriod; source: string; sampled?: boolean;
@@ -30,7 +32,7 @@ import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerRevi
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';
 import { matchesAuthorName } from '../utils/authorNameMatch.ts';
 import { paperReferenceFor } from '../utils/explorerPaths.ts';
-import { normalizePmid } from '../utils/publicNavigation.ts';
+import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/publicNavigation.ts';
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
 import {
   applyInstitutionWorksFallback,
@@ -1529,7 +1531,7 @@ export async function getAuthorsByEntity(type: string|undefined, id: string, pag
  * and format them as standard Paper objects (since they might not be on arXiv).
  * @param {string[]} dois 
  */
-export async function fetchPapersByDois(dois: string[], options: { throwOnProviderError?: boolean } = {}) {
+export async function fetchPapersByDois(dois: string[]) {
   if (!dois || dois.length === 0) return [];
   
   const cleanDois = dois.map(doi => {
@@ -1557,7 +1559,6 @@ export async function fetchPapersByDois(dois: string[], options: { throwOnProvid
       }
     } catch (err) {
       console.error("OpenAlex fetchPapersByDois failed", err);
-      if (options.throwOnProviderError) throw err;
     }
   }
   
@@ -1674,40 +1675,68 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId: unknown, { timeout
   }
 }
 
+// The DOI as a path id the Worker relay accepts (`openAlexTargetUrl` in
+// worker/openalex-api.ts): letters, digits and `._:%|,-/`, at most 240
+// characters, nothing that decodes to `..`. `encodeURIComponent` leaves
+// `!'()*~` as they are, and SICI DOIs carry parentheses; the slash after the
+// DOI prefix stays a slash. A `.` or `..` segment would not reach the relay as
+// sent: the URL parser resolves it first, into another path. A DOI the relay
+// would refuse, or the parser rewrite, has no path id ('').
+function doiPathId(doi: string) {
+  const id = `doi:${encodeURIComponent(doi)
+    .replace(/[!'()*~]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%2F/gi, '/')}`;
+  return id.length <= 240 && !doi.includes('..') && !doi.split('/').includes('.') ? id : '';
+}
+
 /**
  * One work fetched from OpenAlex by a provider id the feed keys papers with:
  * an OpenAlex work id (`W2741809807`) or a PubMed id (`pmid:31234567`), both
- * of which `GET /works/{id}` resolves directly. This is how the public paper
- * page opens the likes and saves the feed remembered under those ids — a
- * paper liked from an OpenAlex or PubMed card had no DOI or arXiv id stored
- * beside it, so its row on the profile could not link anywhere.
+ * of which `GET /works/{id}` resolves directly, or a DOI (`works/doi:…`).
+ * This is how the public paper page opens the likes and saves the feed
+ * remembered under those ids — a paper liked from an OpenAlex or PubMed card
+ * had no DOI or arXiv id stored beside it, so its row on the profile could not
+ * link anywhere — and how it opens a paper by DOI: one work by id is free on
+ * OpenAlex and never refused by the Worker's budget, where the `filter=doi:`
+ * list it used is billed (PAP-88). A DOI with no path id (`doiPathId`) is
+ * still asked for as that list, one work long, which the Worker bills one
+ * unit as a paper being opened.
  *
  * The returned paper carries the id the feed would have given it
  * (`openalex:W…` / `pmid:…`), so a like made on the page lands on the same
- * interaction document as one made on the card.
+ * interaction document as one made on the card. A paper opened by DOI keeps
+ * the id the DOI list gave it.
  *
  * `openAlexJson` is injectable for the test: the shared client binds
  * `globalThis.fetch` when the module loads, so swapping the global would not
  * reach it.
  */
-export async function fetchPaperByWorkId(type: unknown, value: unknown, options: { timeoutMs?: number; openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexWork>) => Promise<OpenAlexWork> } = {}) {
+export async function fetchPaperByWorkId(type: unknown, value: unknown, options: { timeoutMs?: number; openAlexJson?: (url: string, options: OpenAlexJsonOptions<OpenAlexWorkOrPage>) => Promise<OpenAlexWorkOrPage> } = {}) {
   const kind = String(type || '').toLowerCase();
   const clean = String(value || '').trim();
+  const doi = kind === 'doi' ? normalizePublicDoi(clean) : '';
   const lookup = kind === 'openalex' && /^W\d+$/i.test(clean)
     ? clean.toUpperCase()
     : kind === 'pmid' && /^\d+$/.test(clean) ? `pmid:${clean}` : '';
-  if (!lookup) return null;
+  if (!lookup && !doi) return null;
   const feedId = kind === 'openalex' ? `openalex:${lookup}` : lookup;
 
-  const requestJson: (url: string, options: OpenAlexJsonOptions<OpenAlexWork>) => Promise<OpenAlexWork> = options.openAlexJson || openAlexJson;
+  const doiPath = doi ? doiPathId(doi) : '';
+  const url = doi && !doiPath
+    ? `https://api.openalex.org/works?filter=doi:${encodeURIComponent(doi)}&per-page=1`
+    : `https://api.openalex.org/works/${doiPath || encodeURIComponent(lookup)}`;
+
+  const requestJson: (url: string, options: OpenAlexJsonOptions<OpenAlexWorkOrPage>) => Promise<OpenAlexWorkOrPage> = options.openAlexJson || openAlexJson;
   try {
-    const work = await requestJson(`https://api.openalex.org/works/${encodeURIComponent(lookup)}`, {
+    const answer = await requestJson(url, {
       timeoutMs: options.timeoutMs ?? 8000,
       retries: 0,
       cacheTtlMs: 5 * 60 * 1000,
     });
+    const work = answer && 'results' in answer ? answer.results?.[0] : answer as OpenAlexWork | null;
     if (!work?.id) return null;
-    return { ...formatOpenAlexWorkAsPaper(work), id: feedId };
+    const paper = formatOpenAlexWorkAsPaper(work);
+    return doi ? paper : { ...paper, id: feedId };
   } catch (error) {
     // A 404 is an id nobody can open, which the page reports as not found;
     // anything else is the provider misbehaving, and the page offers a retry.
