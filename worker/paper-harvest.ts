@@ -32,6 +32,12 @@ const PAGE_STEP = { retries: { limit: 5, delay: '1 minute', backoff: 'exponentia
 // An arXiv OAI page that fails three times is an outage, not a blip (2026-10-22:
 // no answer within 90 s for an hour); the run moves on instead of waiting on it.
 const OAI_STEP = { retries: { limit: 3, delay: '1 minute', backoff: 'exponential' }, timeout: '5 minutes' } as const;
+// arXiv's OAI asks for a pause with a 503 and its Retry-After. A pause longer
+// than this, or a fourth 503 in a row, is an outage too: the set ends there
+// rather than holding the run for hours, and is harvested from the same day
+// next time.
+const OAI_MAX_WAIT_SECONDS = 300;
+const OAI_MAX_WAITS = 3;
 const LANE_STEP = { retries: { limit: 2, delay: '1 minute', backoff: 'exponential' }, timeout: '10 minutes' } as const;
 
 /** Where a set's harvest starts: the last day it was harvested to the end, else the corpus window. */
@@ -69,7 +75,14 @@ async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jo
   let remaining = jobs;
   // Step names are the replay keys, so each round gets its own number.
   for (let round = 0; remaining.length > 0; round += 1) {
-    const processed = await step.do(`${label}: lanes ${round}`, LANE_STEP, () => harvestLanes(env, remaining));
+    let processed = LANES_PER_STEP;
+    try {
+      processed = await step.do(`${label}: lanes ${round}`, LANE_STEP, () => harvestLanes(env, remaining));
+    } catch (error) {
+      // Past its retries (a lane that keeps timing out): the lanes the step
+      // may have reached are passed over, and harvested again tomorrow.
+      console.error(`Harvest of ${label} lanes ${round} failed; passing over ${LANES_PER_STEP} lanes`, error);
+    }
     remaining = remaining.slice(processed);
   }
 }
@@ -146,12 +159,17 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
       const from = await step.do(`${set}: start`, () => harvestStart(db, set));
       let resumptionToken = '';
       // Step names are the replay keys, so each request gets its own number.
-      for (let request = 0, done = false; !done; request += 1) {
+      for (let request = 0, waits = 0, done = false; !done; request += 1) {
         const page = await step.do(`${set}: request ${request}`, OAI_STEP, () => harvestArxivPage(env, { set, from, resumptionToken }));
         if (page.retryAfterSeconds) {
+          waits += 1;
+          if (waits > OAI_MAX_WAITS || page.retryAfterSeconds > OAI_MAX_WAIT_SECONDS) {
+            throw new Error(`arXiv OAI asked for ${page.retryAfterSeconds} s, 503 number ${waits} in a row`);
+          }
           await step.sleep(`${set}: wait ${request}`, page.retryAfterSeconds * 1000);
           continue;
         }
+        waits = 0;
         resumptionToken = page.resumptionToken;
         done = !resumptionToken;
         if (!done) await step.sleep(`${set}: gap ${request}`, PAGE_GAP);
