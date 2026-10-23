@@ -85,6 +85,17 @@ test('an OAI record reads its character references and TeX author names, and kee
   assert.deepEqual(paper.authors, ['João Gonçalves', 'Özgür Erdős', 'Łukasz Bjørnsson', 'Paweł Kowalski', 'José García', 'Štěpán Košak', 'R. Müller for the $\\mathcal{N}=4$ team']);
 });
 
+// Vietnamese names put two accents on one letter, and the outer one stayed as
+// a command ("Nguy\~ên"). Dropping every brace glued a command the converter
+// does not know to its text ("\textitet al.").
+test('stacked TeX accents make one letter, and a TeX command the converter does not know stays as written', () => {
+  assert.deepEqual(
+    splitRawAuthors('Nguy\\~{\\^e}n V\\u{a}n Th\\`{\\^a}n, Ph\\d{a}m Th\\d{\\^e} and A. Smith \\textit{et al.}'),
+    ['Nguyễn Văn Thần', 'Phạm Thệ', 'A. Smith \\textit{et al.}'],
+  );
+  assert.deepEqual(splitRawAuthors('B. Jones {\\it et al}'), ['B. Jones {\\it et al}']);
+});
+
 
 // Trimmed from efetch for PMID 42775314 (2026-09-24), as in pubmedEfetch.test.ts:
 // a structured abstract beside a translation, MeSH terms and an author.
