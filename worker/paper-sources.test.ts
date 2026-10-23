@@ -311,9 +311,10 @@ test("a lane whose source's minute is full waits for the next minute instead of 
   assert.equal((await handlePubmed(new Request('https://papertok.internal/sources/pubmed?q=heart'), env)).status, 200);
   let settled = false;
   const harvest = harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'med.cardio' }).finally(() => { settled = true; });
-  // The route refuses with a 60 s retry-after; let the clock run until the lane settles.
-  for (let second = 0; !settled && second < 180; second += 1) {
-    await new Promise(resolve => setImmediate(resolve));
+  // The route refuses with a 60 s retry-after; let the clock run until the
+  // lane settles, letting the ledger answer within each second.
+  for (let second = 0; !settled && second < 15 * 60; second += 1) {
+    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
     t.mock.timers.tick(1_000);
   }
   await harvest;
