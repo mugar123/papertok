@@ -21,7 +21,7 @@ import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
+import { CORPUS_DAYS, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -217,6 +217,8 @@ async function withShortWaits<T>(attempt: () => Promise<T>) {
 }
 
 const LEAVES = getAllLeafCategories();
+// The leaves the precision gate admitted to OpenAlex topic lanes.
+const TOPIC_LEAVES = LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id));
 
 // The engineering leaves arXiv has no category for, searched by label.
 const ARXIV_LABEL_LEAVES = LEAVES.filter(leaf => ARXIV_FEED_AREAS.includes(leaf.area) && !isArxivCategory(leaf.id));
@@ -243,8 +245,8 @@ export const WORKING_PAPER_SERIES_IDS = [
 ];
 
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
-  | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-notable' | 'openalex-series' | 'openalex-follows' | 'openaire'
+  | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
 export interface LaneJob { source: SourceName; lane: string }
 
@@ -307,10 +309,10 @@ export async function reserveHarvestOpenAlex(env: Pick<WorkerEnv, 'REQUEST_QUOTA
   if (!reservation.accepted) throw new SourceRefused('/openalex (harvest share)', 3_600);
 }
 
-async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '' }: { page: number; perPage: number; search?: string }) {
+async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', sort = 'publication_date:desc' }: { page: number; perPage: number; search?: string; sort?: string }) {
   await reserveHarvestOpenAlex(env, search ? 10 : 1);
   const params: Record<string, string | number> = {
-    filter, sort: 'publication_date:desc', page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
+    filter, sort, page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
   if (search) params.search = search;
   const response = await askRoute(handleOpenAlex, '/openalex/works', params, env);
@@ -319,12 +321,22 @@ async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, se
 
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
-async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
-  page: number; lane: string; perPage: number; search?: string; map?: (work: OpenAlexWork) => Partial<Paper> | null;
+async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', sort, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
+  page: number; lane: string; perPage: number; search?: string; sort?: string; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
-  const works = await openAlexWorks(env, filter, { page, perPage, search });
+  const works = await openAlexWorks(env, filter, { page, perPage, search, sort });
   return pageOf(filed(works.map(map), lane), perPage);
 }
+
+// Notable papers (Pablo, 2026-10-23): each admitted leaf's most-cited articles
+// published from NOTABLE_YEARS calendar years before this one, asked once a
+// week since citation counts move slowly. One page of NOTABLE_PER_LANE is one
+// list call a lane a week from the harvest's OpenAlex share.
+const NOTABLE_YEARS = 10;
+const NOTABLE_PER_LANE = 100;
+const NOTABLE_LANE_DAYS = 7;
+
+const notableWindowFilter = (now = Date.now()) => `from_publication_date:${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01,to_publication_date:${day(new Date(now).toISOString())}`;
 
 // Followed OpenAlex entities, by the filter that names their works.
 const FOLLOW_FILTERS: Record<string, string> = { author: 'author.id', institution: 'institutions.id', topic: 'topics.id', concept: 'concepts.id' };
@@ -414,6 +426,18 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200 }),
   },
+  // Kept whatever their age (`keepsOld`): each week's listing renews them
+  // before KEPT_LISTING_DAYS run out, and one that drops out of the list leaves.
+  'openalex-notable': {
+    firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
+      notableWindowFilter(),
+      'has_abstract:true',
+      'is_retracted:false',
+      'primary_location.source.is_core:true',
+    ].join(','), { page, lane, perPage: NOTABLE_PER_LANE, sort: 'cited_by_count:desc' }),
+  },
   'openalex-series': {
     firstPages: 4, dailyPages: 2, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -463,7 +487,7 @@ export function categoryLaneJobs(): LaneJob[] {
   const jobs: LaneJob[] = [
     ...ARXIV_LABEL_LEAVES.map(leaf => ({ source: 'arxiv-search' as const, lane: leaf.id })),
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
-    ...LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
+    ...TOPIC_LEAVES.map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
   ];
   for (const leaf of LEAVES) {
@@ -475,6 +499,19 @@ export function categoryLaneJobs(): LaneJob[] {
     }
   }
   return jobs;
+}
+
+/**
+ * The notable lane of each leaf with a topic lane, unless it was harvested in
+ * the last NOTABLE_LANE_DAYS days. Counted in UTC days, so a lane is due a
+ * week on even when this run reaches it earlier in the night than last week's.
+ */
+export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise<LaneJob[]> {
+  const { results } = await db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-notable' AND harvested_through >= ?")
+    .bind(day(daysFromNow(1 - NOTABLE_LANE_DAYS, now))).all<{ lane: string }>();
+  const recent = new Set(results.map(row => row.lane));
+  return TOPIC_LEAVES.map(leaf => ({ source: 'openalex-notable' as const, lane: `${NOTABLE_LANE_PREFIX}${leaf.id}` }))
+    .filter(job => !recent.has(job.lane));
 }
 
 /** The source that serves a followed lane (paper-store.ts `followLane`). */

@@ -3,7 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, evictExpired } from './paper-store.ts';
-import { ARXIV_HARVEST_SETS, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 
 // arXiv announces at 20:00 US Eastern; by 02:30 UTC the day's records are listed.
@@ -118,7 +118,8 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
 /**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
- * lanes readers follow, the papers past their keeping date removed, then
+ * notable lanes due their weekly listing, the lanes readers follow, the papers
+ * past their keeping date removed, then
  * enrichment and embedding of what arrived within the day's budgets. A run for
  * newly followed lanes (`payload.lanes`) harvests and embeds only those.
  */
@@ -163,6 +164,8 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
+  // Before eviction, which drops a notable paper two weeks after its last listing.
+  await phase('notable lanes', async () => runLaneJobs(env, step, 'notable', await step.do('notable lanes', () => notableLaneJobs(db, started))));
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started))));
   await phase('evict', () => step.do('evict', async () => {
     await evictExpired(env, started);

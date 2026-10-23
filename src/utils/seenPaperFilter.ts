@@ -22,10 +22,18 @@ import { BloomFilter } from 'bloomfilter';
 // which serialises to 14_977 buckets -> 59_908 bytes -> 79_880 base64 chars.
 export const SEEN_FILTER_CAPACITY = 50000;
 export const SEEN_FILTER_ERROR_RATE = 0.01;
-export const SEEN_FILTER_BITS = Math.ceil(
-  (-SEEN_FILTER_CAPACITY * Math.log2(SEEN_FILTER_ERROR_RATE)) / Math.LN2 / 32,
-) * 32;
+const bitsFor = (capacity: number) => Math.ceil((-capacity * Math.log2(SEEN_FILTER_ERROR_RATE)) / Math.LN2 / 32) * 32;
+export const SEEN_FILTER_BITS = bitsFor(SEEN_FILTER_CAPACITY);
 export const SEEN_FILTER_HASHES = Math.ceil((Math.LN2 * SEEN_FILTER_BITS) / SEEN_FILTER_CAPACITY);
+
+// The papers a feed request says the reader has seen, so the corpus can offer
+// notable papers they have not (worker/paper-store.ts). Sized for 2,000 ids at
+// 1%: 19,200 bits, 7 hashes, 3,200 base64 characters whatever it holds. More
+// ids only raise the false positives, which pass over an unseen paper and
+// never offer a seen one.
+const FEED_SEEN_CAPACITY = 2000;
+const FEED_SEEN_BITS = bitsFor(FEED_SEEN_CAPACITY);
+const FEED_SEEN_HASHES = Math.ceil((Math.LN2 * FEED_SEEN_BITS) / FEED_SEEN_CAPACITY);
 
 // Base64 length of the bit array plus headroom for the bucket count growing to
 // the next multiple of 32. Rules reject anything larger.
@@ -114,6 +122,24 @@ export function deserializeSeenFilter(encoded: unknown): BloomFilter|null {
     if (buckets.length === 0) return null;
     const filter = new BloomFilter(buckets, SEEN_FILTER_HASHES);
     return filter.m === SEEN_FILTER_BITS ? filter : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The seen papers' ids as a feed request carries them (`seen`). */
+export function feedSeenFilter(paperIds: Iterable<string>) {
+  const filter = new BloomFilter(FEED_SEEN_BITS, FEED_SEEN_HASHES);
+  for (const paperId of paperIds) addSeenPaper(filter, paperId);
+  return uint32ArrayToBase64(filter.buckets);
+}
+
+/** A feed request's `seen`, or null when it is not a filter `feedSeenFilter` wrote. */
+export function readFeedSeenFilter(encoded: unknown): BloomFilter|null {
+  if (typeof encoded !== 'string' || encoded.length > MAX_SEEN_FILTER_CHARS) return null;
+  try {
+    const buckets = base64ToUint32Array(encoded);
+    return buckets.length * 32 === FEED_SEEN_BITS ? new BloomFilter(buckets, FEED_SEEN_HASHES) : null;
   } catch {
     return null;
   }

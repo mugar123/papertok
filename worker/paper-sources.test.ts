@@ -5,7 +5,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { evictExpired } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -381,4 +382,87 @@ test("the harvest stops asking OpenAlex once its share of the day is spent, leav
   );
   // A search is ten list calls of the harvest's 4,000.
   assert.equal(urls.length, 400);
+});
+
+// ─── Notable papers: the most-cited articles of an admitted leaf's last ten years ───
+
+// OpenAlex W2107743791 as returned on 2026-10-23 to cs.LG's notable query,
+// most cited first (trimmed, abstract shortened): a closed 2017 article.
+const plsiWork = {
+  id: 'https://openalex.org/W2107743791',
+  doi: 'https://doi.org/10.1145/3130348.3130370',
+  title: 'Probabilistic Latent Semantic Indexing',
+  type: 'article',
+  publication_date: '2017-08-02',
+  publication_year: 2017,
+  cited_by_count: 3988,
+  abstract_inverted_index: invertedIndex('Probabilistic Latent Semantic Indexing is a novel approach to automated document indexing.'),
+  authorships: [{ author: { id: 'https://openalex.org/A5102981763', display_name: 'Thomas Hofmann' }, institutions: [] }],
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.1145/3130348.3130370',
+    version: 'publishedVersion',
+    source: { id: 'https://openalex.org/S6756005', display_name: 'ACM SIGIR Forum', type: 'journal', is_core: true },
+  },
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  primary_topic: subscriptionArticle.primary_topic,
+};
+
+test("an admitted leaf's notable lane asks for its topics' most-cited articles of the last ten years, and keeps their year, citations and access", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ results: [plsiWork] }));
+  const { items } = await SOURCES['openalex-notable'].fetchPage(env as never, { lane: 'notable:cs.LG', page: 1, since: '' });
+  assert.equal(urls[0].searchParams.get('sort'), 'cited_by_count:desc');
+  // The leaf's own topics and types, as its journal lane asks, over ten years.
+  assert.deepEqual(filtersOf(urls[0]).sort(), [
+    ...openAlexTopicFilterForLeaf('cs.LG')!.split(','),
+    'from_publication_date:2016-01-01',
+    'to_publication_date:2026-10-23',
+    'has_abstract:true',
+    'is_retracted:false',
+    'primary_location.source.is_core:true',
+  ].sort());
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W2107743791', ['notable:cs.LG']]]);
+  const [{ paper }] = items;
+  assert.equal(paper.year, 2017);
+  assert.equal(paper.citationsCount, 3988);
+  assert.equal(paper.citationCountKnown, true);
+  assert.equal(paper.openAccess, false, 'a closed article stays closed');
+
+  // The window is whole years: in January it starts ten years before that one.
+  t.mock.timers.setTime(Date.parse('2027-01-02T03:00:00Z'));
+  await SOURCES['openalex-notable'].fetchPage(env as never, { lane: 'notable:cs.LG', page: 1, since: '' });
+  assert.ok(filtersOf(urls[1]).includes('from_publication_date:2017-01-01'));
+});
+
+test('a notable lane is one OpenAlex call a week, and its papers stay whatever their age until a listing lapses', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const now = Date.now();
+  const full = Array.from({ length: 100 }, (_, index) => ({ ...plsiWork, id: `https://openalex.org/W9${index}`, doi: `https://doi.org/10.1/plsi${index}`, title: `Probabilistic Latent Semantic Indexing, part ${index}` }));
+  const { urls, env } = relay(t, () => ({ results: full }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.LG' }, now);
+  assert.equal(urls.length, 1, 'a full page is not followed by another');
+  const count = () => (db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'notable:cs.LG'").get() as { n: number }).n;
+  assert.equal(count(), 100, 'nine years old and filed');
+  await evictExpired(store, now + 13 * 86_400_000);
+  assert.equal(count(), 100, 'the next weekly listing comes before they lapse');
+  await evictExpired(store, now + 15 * 86_400_000);
+  assert.equal(count(), 0, 'two weeks unlisted, they leave');
+});
+
+test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {
+  const { binding, db } = testD1();
+  const now = Date.parse('2026-10-30T02:40:00Z');
+  const lanes = async () => (await notableLaneJobs(binding as never, now)).map(job => `${job.source} ${job.lane}`);
+  assert.deepEqual((await lanes()).sort(), topicLanes().map(leaf => `openalex-notable notable:${leaf}`).sort());
+  const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-notable', ?, ?)");
+  // Last week's run reached cs.LG later in the night than this run has.
+  harvested.run('notable:cs.LG', '2026-10-23T04:10:00.000Z');
+  harvested.run('notable:cs.CV', '2026-10-24T02:35:00.000Z');
+  const due = await lanes();
+  assert.ok(due.includes('openalex-notable notable:cs.LG'), 'seven days on');
+  assert.ok(!due.includes('openalex-notable notable:cs.CV'), 'six days on');
+  assert.equal(due.length, topicLanes().length - 1);
 });

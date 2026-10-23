@@ -6,6 +6,7 @@ import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, pars
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
+import { feedSeenFilter } from '../src/utils/seenPaperFilter.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
@@ -246,6 +247,87 @@ test("a reader's later pages read the order the first page ranked, and only thei
   const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});
+
+// ─── Notable papers in the feed ───
+
+// Three of cs.LG's most-cited articles as its notable lane files them
+// (paper-sources.ts), from OpenAlex's records of 2026-10-23 (trimmed).
+const notableWork = (id: string, title: string, date: string, citations: number, isOa: boolean) => mapOpenAlexWork({
+  id: `https://openalex.org/${id}`,
+  doi: `https://doi.org/10.1/${id}`,
+  title,
+  type: 'article',
+  publication_date: date,
+  publication_year: Number(date.slice(0, 4)),
+  cited_by_count: citations,
+  primary_location: { is_oa: isOa, landing_page_url: `https://doi.org/10.1/${id}`, version: 'publishedVersion', source: { id: 'https://openalex.org/S1', display_name: 'A core journal', type: 'journal' } },
+  open_access: { is_oa: isOa, oa_status: isOa ? 'diamond' : 'closed', oa_url: null },
+})!;
+const NOTABLE = [
+  notableWork('W4309674289', 'Survey of Hallucination in Natural Language Generation', '2022-11-17', 4889, true),
+  notableWork('W2493916176', 'Enriching Word Vectors with Subword Information', '2017-12-01', 9650, true),
+  notableWork('W2107743791', 'Probabilistic Latent Semantic Indexing', '2017-08-02', 3988, false),
+];
+
+async function notableCorpus() {
+  const { env, db } = corpus();
+  const recent = Array.from({ length: 40 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.${String(index).padStart(5, '0')}`, arxivId: `2610.${String(index).padStart(5, '0')}`, title: `Recent paper ${index} on learning`, allCategories: [], categories: [], published: new Date(NOW - (index + 1) * 3_600_000).toISOString() },
+    lanes: ['cs.LG'],
+  }));
+  await ingestPapers(env, recent, { now: NOW });
+  await ingestPapers(env, NOTABLE.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  return { env, db };
+}
+
+test("one card in every fifteen is a notable paper of the reader's categories they have not seen, with its own year, citations and access", async () => {
+  const { env } = await notableCorpus();
+  // The reader saw the newest of the three on an earlier day.
+  const seen = feedSeenFilter(['openalex:W4309674289']);
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen }), { now: NOW });
+  assert.equal(page.length, 30);
+  const notable = page.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : []));
+  assert.deepEqual(notable, [[14, 'openalex:W2493916176'], [29, 'openalex:W2107743791']]);
+  for (const [index] of notable) {
+    const paper = page[index as number];
+    assert.deepEqual(paper._fetchedFor, ['cs.LG'], 'found for the category it is notable in');
+    assert.equal(paper.year, 2017);
+    assert.equal(paper.citationCountKnown, true);
+  }
+  assert.deepEqual([page[14].citationCount, page[14].openAccess], [9650, true]);
+  assert.deepEqual([page[29].citationCount, page[29].openAccess], [3988, false], 'a closed article stays closed');
+  assert.ok(!page.some(paper => paper.id === 'openalex:W4309674289'), 'a seen notable paper is not offered again');
+
+  // None left unseen: the next page is the reader's other papers only.
+  const next = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 30, seen }), { now: NOW });
+  assert.deepEqual(next.map(paper => paper.id), Array.from({ length: 12 }, (_, index) => `2610.${String(index + 28).padStart(5, '0')}`));
+});
+
+test('a reader who has seen every notable paper, or a request that does not say what was seen, gets none', async () => {
+  const { env } = await notableCorpus();
+  const seenAll = feedSeenFilter(NOTABLE.map(paper => paper.id!));
+  for (const query of [{ seen: seenAll }, {}]) {
+    const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, ...query }), { now: NOW });
+    assert.deepEqual(page.map(paper => paper.id), Array.from({ length: 30 }, (_, index) => `2610.${String(index).padStart(5, '0')}`));
+    assert.ok(!page.some(paper => paper._notable));
+  }
+  // An order ranked with notable papers in it serves only requests that say what was seen.
+  const stored = new Map<string, unknown>();
+  const cache = {
+    get: async (key: string) => (stored.get(key) as never) ?? null,
+    put: async (key: string, ranking: unknown) => { stored.set(key, ranking); },
+  };
+  const first = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]) }), { now: NOW, cache });
+  assert.equal(first.filter(paper => paper._notable).length, 2);
+  const later = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 10 }), { now: NOW, cache });
+  assert.ok(!later.some(paper => paper._notable));
+});
+
+test('a seen-paper filter the app did not write is refused', () => {
+  for (const seen of ['', 'not a filter', 42, feedSeenFilter([]).slice(1)]) {
+    assert.throws(() => parseFeedRequest({ categories: ['cs.LG'], seen }), (error: Error & { status?: number; code?: string }) => error.status === 400 && error.code === 'SEEN_INVALID', String(seen).slice(0, 20));
+  }
 });
 
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {
