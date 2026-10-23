@@ -114,7 +114,7 @@ export class PaperBuilder {
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
       peerReviewed: data.peerReviewed ?? (isOpenAlexRecord(data) || fromMerge ? undefined : !isPreprint),
       workingPaper: data.workingPaper || undefined,
-      openAccess: data.openAccess !== undefined ? data.openAccess : true,
+      openAccess: data.openAccess,
       pdfUrl: data.pdfUrl || undefined,
       openAccessPdfUrl: data.openAccessPdfUrl || undefined,
       landingPageUrl: data.landingPageUrl || '',

@@ -4,6 +4,9 @@ import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { isAIReadablePdfUrl } from '../utils/aiExplanationAccess.ts';
 import { isTransientReadError, ReadTimedOutError } from '../utils/boundedRead.ts';
+import { accessStatusForPaper, accessTagForPaper } from '../utils/paperStatus.ts';
+import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
+import { paperLegacyAdapter, type Paper } from '../models/Paper.ts';
 import { toRewriteSection } from '../models/Rewrite.ts';
 import {
   canRewritePaper,
@@ -56,8 +59,8 @@ function streamingClient(events: object[], breakConnection = false, {
       },
     }));
   };
-  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl', 'isTransientReadError', 'toRewriteSection', 'getSavedSummary', 'saveSummary',
-    `${clientSource}; return { rewritePaper, getCachedRewrite, clearRewriteCache };`)(transport, isAIReadablePdfUrl, isTransientReadError, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
+  const client = new Function('authenticatedWorkerFetch', 'isAIReadablePdfUrl', 'isTransientReadError', 'accessStatusForPaper', 'toRewriteSection', 'getSavedSummary', 'saveSummary',
+    `${clientSource}; return { rewritePaper, getCachedRewrite, clearRewriteCache };`)(transport, isAIReadablePdfUrl, isTransientReadError, accessStatusForPaper, toRewriteSection, store.getSavedSummary, store.saveSummary) as {
       rewritePaper: typeof rewritePaper;
       getCachedRewrite: typeof import('./paperRewriteService.ts').getCachedRewrite;
       clearRewriteCache: typeof import('./paperRewriteService.ts').clearRewriteCache;
@@ -500,6 +503,23 @@ test('an arXiv copy still wins over the PubMed one', () => {
     getRewritablePdfUrl({ arxivId: '2401.00001', pmcid: 'PMC10000000' }),
     'https://arxiv.org/pdf/2401.00001.pdf',
   );
+});
+
+// PAP-92. A list copy (`serializeLibraryPaper`) keeps the open copy's PDF as
+// `pdfUrl` and no access field. Read back, it showed "Open access" while the
+// rewrite, which asked `openAccess`, refused the same PDF.
+test('a paper is rewritable from its PDF exactly when its card reads as open', () => {
+  const pmcPdf = 'https://europepmc.org/articles/PMC7759461?pdf=render';
+  const stored = (paper: Partial<Paper>) => paperLegacyAdapter(JSON.parse(JSON.stringify(serializeLibraryPaper(paper))));
+  const cases: Array<[Partial<Paper>, string | null, string]> = [
+    [stored({ id: 'openalex:W1', title: 'Stored open copy', openAccess: true, pdfUrl: pmcPdf }), 'Open access', pmcPdf],
+    [stored({ id: 'openalex:W2', title: 'Stored closed copy', openAccess: false }), null, ''],
+    [{ id: 'openalex:W3', title: 'Closed record', openAccess: false, pdfUrl: pmcPdf }, 'Closed access', ''],
+  ];
+  for (const [paper, label, pdfUrl] of cases) {
+    assert.equal(accessTagForPaper(paper)?.label ?? null, label, paper.title);
+    assert.equal(getRewritablePdfUrl(paper), pdfUrl, paper.title);
+  }
 });
 
 /* ============================================================

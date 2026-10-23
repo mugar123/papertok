@@ -4,7 +4,7 @@ import { PubmedAdapter } from './PubmedAdapter.ts';
 import { pubmedCategoryQuery } from './pubmedRecords.ts';
 import { isFeedPublication } from '../feedPublicationRules.ts';
 import { PaperBuilder } from '../PaperBuilder.ts';
-import { reviewStatusForPaper } from '../../utils/paperStatus.ts';
+import { accessTagForPaper, reviewStatusForPaper } from '../../utils/paperStatus.ts';
 
 const adapter = new PubmedAdapter();
 
@@ -149,4 +149,27 @@ test('a PubMed article online by today shows its online date when its issue is p
     ['pmid:42900849', 2025, '2025 Oct'],
     ['pmid:3', undefined, ''],
   ]);
+});
+
+// PAP-92. Nothing in esummary says a paper is closed, only that a PMC copy
+// exists. The builder made every other record open (`openAccess: true` when
+// unset), and the feed builds every lane through `deduplicate`, so each
+// PubMed card without a PMC copy said "Open access" until OpenAlex answered.
+// The same `true` kept the card from asking for a free copy.
+function pubmedRecord(articleids: Array<{ idtype: string; value: string }> = []) {
+  return adapter.mapToStandard({
+    uid: '42900001',
+    title: 'A synthetic trial',
+    pubtype: ['Journal Article'],
+    source: 'J',
+    articleids: [{ idtype: 'doi', value: '10.5555/pap92' }, ...articleids],
+  });
+}
+test('a PubMed record without a PMC copy keeps its access unknown, and shows no access chip', () => {
+  for (const paper of [PaperBuilder.create(pubmedRecord()), PaperBuilder.deduplicate([pubmedRecord()])[0]]) {
+    assert.equal(paper.openAccess, undefined);
+    assert.equal(accessTagForPaper(paper), null);
+  }
+  const [deposited] = PaperBuilder.deduplicate([pubmedRecord([{ idtype: 'pmc', value: 'PMC1' }])]);
+  assert.equal(accessTagForPaper(deposited)?.label, 'Open access', 'a PMC copy is still proof of access');
 });

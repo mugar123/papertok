@@ -8,6 +8,7 @@ import {
   pickExplorationCategories,
   scorePaperForRecommendation,
   trimScoredCandidatePool,
+  type RecentProperties,
 } from './recommendationEngine.ts';
 import {
   createEmptyInteractionProfile,
@@ -430,7 +431,7 @@ test('the diversified shuffle does not re-score the whole pool on every iteratio
   // N(N+1)/2 = 1830 passes here, and grows quadratically as the reader scrolls
   // and the pool fills. Nothing in that half depends on the recent window: the
   // only part of the score that moves with the iteration is the diversity
-  // boost, six integer comparisons against five booleans. So the expensive half
+  // boost, six comparisons against five stored values. So the expensive half
   // is owed once per paper, hence a bound of 2N -- tight enough that restoring
   // the per-iteration pass fails it by an order of magnitude, loose enough not
   // to be brittle about how the cache is scoped.
@@ -599,4 +600,38 @@ test('a reader who has liked nothing yet ranks the cards as if they carried no t
   const scoresOf = (cards: Array<Partial<ReturnType<typeof makeCard>>>) => cards.map(card => scorePaperForRecommendation(card, cold).total);
 
   assert.deepEqual(scoresOf(pool), scoresOf(pool.map(card => ({ ...card, primaryTopic: undefined }))));
+});
+
+// PAP-92. A PubMed card without a PMC copy leaves its access unknown, and the
+// diversity rule read anything not open as paywalled: a run of such cards
+// counted as paywalled and boosted open cards, and after a run of open cards
+// they were boosted as the paywalled alternative.
+test('a card whose access is unknown counts as neither open nor paywalled for variety', () => {
+  const card = (id: string, openAccess?: boolean) => ({
+    id, primaryCategory: `med.${id}`, publicationStatus: 'published' as const, published: '2026-07-01T00:00:00Z', openAccess,
+  });
+  const recent = ['u1', 'u2', 'u3', 'u4', 'u5'].map(id => card(id));
+  const pool = [card('open', true), card('closed', false), card('unknown')];
+  const boost = (paper: ReturnType<typeof card>, recentPropsCount: Partial<RecentProperties>) => (
+    scorePaperForRecommendation(paper, { now: NOW, recentPropsCount }).diversityBoost);
+  let firstWindow: Partial<RecentProperties> | undefined;
+  const firstBoosts: Record<string, number> = {};
+  diversifiedWeightedShuffle(pool, {
+    initialPapers: recent,
+    random: () => 0,
+    scorePaper: (paper, recentPropsCount) => {
+      firstWindow ??= { ...recentPropsCount };
+      firstBoosts[paper.id] ??= boost(paper, recentPropsCount);
+    },
+  });
+  assert.equal(firstWindow?.openAccess, 0);
+  assert.equal(firstWindow?.subscription, 0);
+  assert.deepEqual(firstBoosts, { open: 0, closed: 0, unknown: 0 });
+
+  const afterOpen = { openAccess: 4 };
+  assert.ok(boost(card('closed', false), afterOpen) > 0, 'a paywalled card is the alternative to a run of open ones');
+  assert.equal(boost(card('unknown'), afterOpen), 0);
+  const afterPaywalled = { subscription: 3 };
+  assert.ok(boost(card('open', true), afterPaywalled) > 0, 'an open card is the alternative to a run of paywalled ones');
+  assert.equal(boost(card('unknown'), afterPaywalled), 0);
 });

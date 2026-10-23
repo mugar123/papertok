@@ -4,6 +4,7 @@ import type { FollowInput } from './following.ts';
 import { hasUsableAIAbstract } from './aiExplanationAccess.ts';
 import { leavesForOpenAlexTopic } from './areaAccent.ts';
 import { usableOpenAlexConcepts } from './openAlexConcepts.ts';
+import { accessStatusForPaper } from './paperStatus.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
 export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
@@ -430,12 +431,12 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     followedEntityMatches: followedSignals.matches,
     isExploration,
 
-    // The five booleans the diversity rule tests. Reading them off the paper is
-    // trivial, but keeping them here means the per-iteration work is six
-    // integer comparisons and nothing else.
+    // What the diversity rule tests. Reading it off the paper is trivial, but
+    // keeping it here means the per-iteration work is six comparisons and
+    // nothing else.
     isPreprint: paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint',
     isPublished: paper.publicationStatus === 'published',
-    isOA: paper.openAccess,
+    access: accessStatusForPaper(paper),
     isJournal: paper.sourceType === 'journal' || paper.journal,
     isConference: paper.sourceType === 'conference' || paper.conference,
 
@@ -454,8 +455,9 @@ function diversityBoostFor(stable: StableScore, recentPropsCount: Partial<Recent
   if (recentPropsCount.published! >= 4 && stable.isPreprint) diversityBoost += 10;
   if (recentPropsCount.preprint! >= 4 && stable.isPublished) diversityBoost += 10;
 
-  if (recentPropsCount.subscription! >= 3 && stable.isOA) diversityBoost += 8;
-  if (recentPropsCount.openAccess! >= 4 && !stable.isOA) diversityBoost += 5;
+  // Unknown access is neither: it is no alternative to either kind of run.
+  if (recentPropsCount.subscription! >= 3 && stable.access === 'open') diversityBoost += 8;
+  if (recentPropsCount.openAccess! >= 4 && stable.access === 'subscription') diversityBoost += 5;
 
   if (recentPropsCount.conference! >= 3 && stable.isJournal) diversityBoost += 8;
   if (recentPropsCount.journal! >= 4 && stable.isConference) diversityBoost += 5;
@@ -542,8 +544,9 @@ function countRecentProperties(papers: Partial<Paper>[]) {
     if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') counts.preprint += 1;
     else if (paper.publicationStatus === 'published') counts.published += 1;
 
-    if (paper.openAccess) counts.openAccess += 1;
-    else counts.subscription += 1;
+    const access = accessStatusForPaper(paper);
+    if (access === 'open') counts.openAccess += 1;
+    else if (access === 'subscription') counts.subscription += 1;
 
     if (paper.sourceType === 'journal' || paper.journal) counts.journal += 1;
     if (paper.sourceType === 'conference' || paper.conference) counts.conference += 1;
