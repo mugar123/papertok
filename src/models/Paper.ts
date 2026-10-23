@@ -32,8 +32,8 @@ export interface PaperSources {
   // Written and read only by `PaperBuilder.merge`: `peerReviewedByDoi` holds
   // the answer of every record merged into the row. A merged row without it,
   // such as one merged before the map existed, can lack a record's `false`,
-  // so no `true` in its map, or in the map of a row that merges it, confirms
-  // review.
+  // so a merge with it neither confirms review from a map's `true` nor keeps
+  // a row's `true` the way a merge of complete rows does.
   peerReviewedByDoiComplete?: true;
 }
 

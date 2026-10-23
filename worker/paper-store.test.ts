@@ -177,6 +177,12 @@ test('a row stored before merges kept review evidence does not read reviewed on 
     is_published: false,
     source: { id: 'https://openalex.org/S4210172589', display_name: 'SSRN Electronic Journal', type: 'repository', host_organization_name: 'RELX Group' },
   }, arxivLocation]);
+  const conferenceDoi = '10.1145/3600000.3600001';
+  const conferenceVersion = work('W505', conferenceDoi, 'article', [{
+    landing_page_url: `https://doi.org/${conferenceDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S222', display_name: 'ACM Economics and Computation', type: 'conference', host_organization_name: 'ACM' },
+  }, arxivLocation]);
   const notRefereed = mapAdsPaper({
     bibcode: '2026JIntE.160j3900E',
     title: [title],
@@ -223,6 +229,19 @@ test('a row stored before merges kept review evidence does not read reviewed on 
     assert.equal(served.length, 1, stored);
     assert.equal(served[0].doi, journalDoi, stored);
     assert.equal(served[0].peerReviewed, legacy ? undefined : false, stored);
+    // A row that began as the reviewed conference version keeps its `true`
+    // when the eprint's records arrive, on the code that kept the evidence.
+    // Behind OpenAlex's record of the journal DOI without a source, that row
+    // answers for the journal DOI with NASA ADS's `false`; a row stored
+    // before lacks it and must not lend that DOI the conference's `true`.
+    const conference = await harvest([conferenceVersion, notRefereed], [eprint, arxivListingJournal], legacy);
+    assert.equal(conference.length, 1, stored);
+    assert.equal(conference[0].doi, conferenceDoi, stored);
+    assert.equal(conference[0].peerReviewed, legacy ? undefined : true, stored);
+    const behindJournal = PaperBuilder.deduplicate([withoutSource, ...conference]);
+    assert.equal(behindJournal.length, 1, stored);
+    assert.equal(behindJournal[0].doi, journalDoi, stored);
+    assert.equal(behindJournal[0].peerReviewed, legacy ? undefined : false, stored);
   }
 });
 
