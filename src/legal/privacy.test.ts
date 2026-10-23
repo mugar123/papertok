@@ -97,10 +97,13 @@ test('every section of the Spanish policy survives the translation', () => {
   ]);
 });
 
-test('the page says Workers AI receives liked papers the catalogue has no vector for, without the reader', () => {
+test('the page says papers you liked, saved or opened reach the catalogue and Workers AI, without the reader', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   assert.doesNotMatch(html, /your likes [^.]*not sent to it/);
-  assert.match(html, /papers you liked [^.]*no vector[^.]*sent to it[^.]*without your identity/);
+  // Opening a paper asks for related ones by its id, as a like does (FeedContext's network expansion).
+  assert.match(html, /opening a paper [^.]*related[^.]*identifier/);
+  assert.match(html, /paper you liked, saved or opened that the catalogue does not have yet is added/);
+  assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
 });
 
 test('the build knows the second page and keeps the app entry named index', () => {
