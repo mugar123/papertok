@@ -773,11 +773,11 @@ const PaperCard = memo(function PaperCard({
   // above that rule: held at its closed height, the glyph stays put behind
   // the names instead of sliding down with the rule.
   const watermarkRef = useRef<HTMLSpanElement | null>(null);
-  const holdWatermark = (held: boolean) => {
+  const holdWatermark = () => {
     const mark = watermarkRef.current;
-    if (!mark || (held && mark.style.height)) return;
-    mark.style.height = held ? `${mark.getBoundingClientRect().height}px` : '';
-    mark.style.bottom = held ? 'auto' : '';
+    if (!mark || mark.style.height) return;
+    mark.style.height = `${mark.getBoundingClientRect().height}px`;
+    mark.style.bottom = 'auto';
   };
   const pinSheet = () => {
     const sheet = sheetRef.current;
@@ -2008,7 +2008,7 @@ const PaperCard = memo(function PaperCard({
                 }
                 if (!authorsExpanded) {
                   pinSheet();
-                  holdWatermark(true);
+                  holdWatermark();
                 }
                 setAuthorsExpanded((open) => !open);
               }}
@@ -2025,9 +2025,6 @@ const PaperCard = memo(function PaperCard({
               className="pc-authors-list"
               data-open={authorsExpanded || undefined}
               inert={!authorsExpanded}
-              onTransitionEnd={(event) => {
-                if (event.propertyName === 'grid-template-rows' && !authorsExpanded) holdWatermark(false);
-              }}
             >
               <ul>
                 {paper.authors.map((author, idx) => {
