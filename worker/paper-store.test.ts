@@ -3,7 +3,10 @@ import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
+import {
+  arxivIdOf, daysFromNow, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector,
+  rewriteWorks,
+} from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
@@ -271,6 +274,31 @@ test("a paper dated past tomorrow is not filed, and one filed before that rule l
   db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
   await evictExpired(env, NOW);
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+});
+
+// Other readers share a category's lane, and an author's or a topic's; a paper
+// a reader liked enters the corpus whatever its age, to rank their feed by.
+const liked2019 = { ...arxivRecord, id: '1905.00001', arxivId: '1905.00001', title: 'A liked paper from 2019 on attention', published: '2019-05-01T00:00:00.000Z' };
+
+test('a looked-up paper older than the corpus window enters none of the lanes its own record names', async () => {
+  const { env, db } = corpus();
+  const keepUntil = daysFromNow(30, NOW);
+  await ingestPapers(env, [{ paper: liked2019, lanes: [] }], { now: NOW, keepUntil });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'stored for its reader');
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes'), []);
+  // A recent one is filed under its categories, as the harvest would file it.
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW, keepUntil });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG']);
+});
+
+test("an enrichment that names an old paper's topic does not file it under that topic", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: liked2019, lanes: [] }, { paper: arxivRecord, lanes: [] }], { now: NOW, keepUntil: daysFromNow(30, NOW) });
+  const topic = { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' };
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, primaryTopic: topic } })), NOW);
+  const recent = stored.find(work => work.before.id === arxivRecord.id)!;
+  assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
 });
 
 // Each D1 round trip a request makes, as the statements it sent.

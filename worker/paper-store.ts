@@ -169,6 +169,9 @@ function entityLane(value: unknown) {
  * The lanes a paper belongs to by its own record, whichever source listed it:
  * its arXiv categories that are categories of the app, and the OpenAlex
  * authors, institutions, topics and concepts it names (what a reader follows).
+ * Every reader of them shares these lanes, so a paper is filed under them only
+ * inside the corpus window: an older one a reader liked, or a lane that keeps
+ * listings kept, stays in the lanes it was asked for.
  */
 export function recordLanes(paper: Partial<Paper>) {
   const lanes = new Set<string>();
@@ -323,7 +326,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    for (const lane of new Set([...group.lanes, ...recordLanes(paper)])) laneRows.push({ lane, id, published });
+    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper) : [])])) laneRows.push({ lane, id, published });
   }
 
   const statements: D1PreparedStatement[] = [];
@@ -363,21 +366,23 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
  * `ingestPapers` for the vector and the lanes; nothing else changes. A few
  * statements per chunk of papers: D1 counts each against the invocation.
  */
-export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>) {
+export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>, now = Date.now()) {
   const db = database(env);
+  const since = daysFromNow(-CORPUS_DAYS, now);
   const changed = updates
     .filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after))
     .map(({ id, before, after }) => {
       const paper = storedPaper(after);
+      const published = publishedOf(paper, now) || publishedOf(before, now);
       return {
         id,
         paper: JSON.stringify(paper),
-        published: publishedOf(paper) || publishedOf(before),
+        published,
         textChanged: embeddingText(paper) !== embeddingText(before),
         // A book or book review the enrichment revealed leaves every lane.
         offered: isFeedPublication(paper),
         keys: workKeys(paper),
-        lanes: recordLanes(paper),
+        lanes: published >= since ? recordLanes(paper) : [],
       };
     });
   const statements: D1PreparedStatement[] = [];
@@ -555,6 +560,14 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
   return workByPaperId;
 }
 
+/** Keeps these liked works for KEEP_LIKED_DAYS, past their keeping date and outside every lane (`evictExpired`). */
+export async function keepLiked(db: D1Database, workIds: number[], now = Date.now()) {
+  if (workIds.length === 0) return;
+  await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
+    AND (liked_until IS NULL OR liked_until < ?)`)
+    .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(workIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
+}
+
 interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
@@ -681,11 +694,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // Only the candidates' vectors, and only to compare with a like's: without
     // one the order is recency alone.
     likes.length ? readVectors(db, offered.map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
-    positiveIds.length
-      ? db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
-        AND (liked_until IS NULL OR liked_until < ?)`)
-        .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run()
-      : null,
+    keepLiked(db, positiveIds, now),
   ]);
   return rankBySimilarity(offered.map(candidate => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null })), likes, { now, order: query.order })
     .map(({ row }) => ({ workId: row.workId, lanes: row.lanes }));

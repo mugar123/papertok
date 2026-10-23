@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, WORKING_PAPER_SERIES_IDS, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -283,4 +284,17 @@ test("the harvest stops asking OpenAlex once its share of the day is spent, leav
   );
   // A search is ten list calls of the harvest's 4,000.
   assert.equal(urls.length, 400);
+});
+
+test('a paper a reader liked, looked up by id, stays for them whatever its age, in no lane other readers share', async t => {
+  const { urls, env } = relay(t, () => ({ ...splicingWork, publication_date: '2019-05-02', publication_year: 2019 }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as WorkerEnv;
+  const now = Date.now();
+  await ingestPaperIds(store, ['W7222916812'], { keepUntil: daysFromNow(KEEP_LIKED_DAYS, now), now });
+  assert.equal(urls.length, 1);
+  assert.equal(db.prepare('SELECT id FROM works').all().length, 1);
+  assert.deepEqual(db.prepare('SELECT lane FROM work_lanes').all(), [], "neither its author's nor its topic's readers are offered it");
+  await evictExpired(store, now + 86_400_000);
+  assert.equal(db.prepare('SELECT id FROM works').all().length, 1, 'the next eviction keeps it');
 });
