@@ -68,6 +68,29 @@ test('keeps a confirmed zero citation count distinct from missing metadata', () 
   assert.equal(enriched.citationCountKnown, true);
 });
 
+// An arXiv or PubMed listing has no citation data: its 0 comes with
+// `citationCountKnown: false`. The corpus merges every new listing into the
+// stored row, and that turned a count OpenAlex or iCite had confirmed back
+// into an unknown one.
+test('a record without citation data leaves a confirmed count as it was', () => {
+  const listing = () => PaperBuilder.create({
+    id: '2610.11111', arxivId: '2610.11111', title: 'Sparse attention for long documents',
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  });
+  for (const count of [0, 12]) {
+    const counted = PaperBuilder.merge(listing(), { citationCount: count, citationCountKnown: true }, 'openalex');
+    const listedAgain = PaperBuilder.merge(counted, listing(), 'arxiv');
+    assert.deepEqual([listedAgain.citationCount, listedAgain.citationCountKnown], [count, true]);
+  }
+  const [openAlexFirst] = PaperBuilder.deduplicate([
+    { id: 'openalex:W1', arxivId: '2610.11111', title: 'Sparse attention for long documents', citationsCount: 0, citationCountKnown: true, sources: { primary: 'openalex', enrichedBy: [] } },
+    listing(),
+  ]);
+  assert.deepEqual([openAlexFirst.citationCount, openAlexFirst.citationCountKnown], [0, true]);
+  const neverCounted = PaperBuilder.merge(listing(), listing(), 'arxiv');
+  assert.deepEqual([neverCounted.citationCount, neverCounted.citationCountKnown], [0, false]);
+});
+
 // A mapper leaves the year out when the provider's date is after today; the
 // builder, and `deduplicate` through it, used to write in the current year.
 test('a record without a year keeps no year', () => {

@@ -311,11 +311,13 @@ export class PaperBuilder {
     // Merge numbers
     // Adapters speak `citationsCount` and only `create` translates it, so a raw
     // duplicate arriving through `deduplicate` carried its count in the name
-    // this branch never read.
+    // this branch never read. A count its own record calls unknown (the 0 of
+    // every arXiv and PubMed listing) is no count: the corpus merges each new
+    // listing into the stored row, and taking it made a confirmed count unknown.
     const incomingCount = enrichmentData.citationCount ?? enrichmentData.citationsCount;
-    if (incomingCount !== undefined && incomingCount !== null) {
+    if (incomingCount !== undefined && incomingCount !== null && enrichmentData.citationCountKnown !== false) {
       merged.citationCount = Math.max(merged.citationCount || 0, incomingCount);
-      merged.citationCountKnown = enrichmentData.citationCountKnown ?? true;
+      merged.citationCountKnown = true;
     }
     if (enrichmentData.referenceCount !== undefined) {
       merged.referenceCount = Math.max(merged.referenceCount || 0, enrichmentData.referenceCount);
