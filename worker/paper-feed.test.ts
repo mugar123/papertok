@@ -161,6 +161,31 @@ test("a reader who just followed an author gets the author's newest papers from 
   assert.deepEqual(ids((await ask(followsPage(2))).papers), filed.slice(6));
 });
 
+test("a follow's papers reach the next page of every reader who asked for it before its first harvest finished", async t => {
+  rankingCaches(t);
+  const { env, db, runs, ask } = store();
+  await ingestPapers(env, [
+    { paper: paper('2610.50001', 'Category paper, 2 days', 2), lanes: [] },
+    { paper: paper('2610.50003', 'Category paper, 3 days', 3), lanes: [] },
+    { paper: paper('2610.50004', 'Category paper, 4 days', 4), lanes: [] },
+  ]);
+  const request = (page: number) => ({ categories: ['cs.CL'], follows: [followedAuthor], page, pageSize: 1 });
+  assert.deepEqual(ids((await ask(request(0), 'reader-1')).papers), ['2610.50001']);
+  assert.equal(runs.length, 1);
+  // Another reader follows the same author while that harvest runs.
+  assert.deepEqual(ids((await ask(request(0), 'reader-2')).papers), ['2610.50001']);
+  assert.equal(runs.length, 1, 'one harvest for the lane');
+  assert.deepEqual(ids((await ask(request(1), 'reader-1')).papers), ['2610.50003'], 'the harvest has filed nothing yet');
+  // The harvest files the author's paper and records that it finished.
+  await ingestPapers(env, [{ paper: paper('2610.50002', "The followed author's paper", 1), lanes: ['author:A77'] }]);
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A77', ?)").run(new Date().toISOString());
+  assert.deepEqual(ids((await ask(request(2), 'reader-1')).papers), ['2610.50002']);
+  assert.deepEqual(ids((await ask(request(1), 'reader-2')).papers), ['2610.50002']);
+  // With the harvest finished, the order is kept: a paper filed later waits for a first page.
+  await ingestPapers(env, [{ paper: paper('2610.50005', 'Category paper filed later', 0.5), lanes: [] }]);
+  assert.deepEqual(ids((await ask(request(2), 'reader-2')).papers), ['2610.50003']);
+});
+
 test("a page after one whose likes the lookup embedded goes on by them, and the next first page ranks by them", async t => {
   rankingCaches(t);
   const { env, db, ask } = store();
