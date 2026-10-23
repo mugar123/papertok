@@ -699,10 +699,11 @@ function sumTally(counts: Record<string, number> | undefined, matches: (tier: st
  * Today's OpenAlex budget as the ledger holds it, for `/health/openalex/budget`:
  * units, not calls, and only aggregates. Entity lookups cost nothing and never
  * appear; spend outside the ledger shows only through `observedCeiling`. Reads
- * without spending, through the ledger's `peek`.
+ * without spending, through the ledger's `peek`, which names the nightly run's
+ * share: the one a harvest miss naming no part, such as enrichment's, spends.
  */
 export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOString()) {
-  const request = openAlexLedgerRequest(env, now);
+  const request = openAlexLedgerRequest(env, now, { tier: 'feed' });
   let reading: QuotaReading;
   try {
     reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, request);
@@ -719,17 +720,17 @@ export async function readOpenAlexBudget(env: WorkerEnv, now = new Date().toISOS
   const used = reading.globalUsage ?? 0;
   const tiers = Object.fromEntries(Object.entries(OPENALEX_TIER_PERCENT).map(([tier, percent]) => {
     const limit = Math.floor(ceiling * percent / 100);
-    const spent = sumTally(reading.tally?.used, spentBy => spentBy === tier);
-    // The harvest's own share of the day closes `feed` too.
+    // The nightly run's share of the harvest's day closes `feed` too. `used`
+    // counts the runs new follows start as well, which spend a share of their own.
     const harvest = tier === 'feed';
     return [tier, {
       percent,
       limit,
-      ...(harvest ? { share: OPENALEX_HARVEST_DAILY_UNITS } : {}),
-      used: spent,
+      ...(harvest ? { share: request.subjectLimit } : {}),
+      used: sumTally(reading.tally?.used, spentBy => spentBy === tier),
       refused: sumTally(reading.tally?.refused, spentBy => spentBy === tier),
       // Whether a one-unit miss of this tier would be accepted now.
-      open: used + 1 <= limit && (!harvest || spent + 1 <= OPENALEX_HARVEST_DAILY_UNITS),
+      open: used + 1 <= limit && (!harvest || (reading.subjectUsage ?? 0) + 1 <= request.subjectLimit),
     }];
   }));
   const kinds = Object.fromEntries(OPENALEX_REPORTED_KINDS.map(kind => [kind, {

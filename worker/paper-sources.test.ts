@@ -371,6 +371,8 @@ test("followed searches stop at their part of the nightly run's OpenAlex share, 
   assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 72);
   const enrich = () => handleHarvestOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=50'), env);
   for (let call = 0; call < 2_999; call += 1) assert.equal((await enrich()).status, 200);
+  // The budget route says so too, with the new follows' 300 not yet spent.
+  assert.equal((await readOpenAlexBudget(env)).report!.tiers.feed.open, false);
   assert.equal((await enrich()).status, 429);
   // The rest of the new follows' 300 is still theirs.
   for (let call = 0; call < 29; call += 1) await followedSearch(true);
