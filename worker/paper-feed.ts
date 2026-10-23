@@ -200,11 +200,11 @@ export async function handleCorpusFeed(
   const papers = await readFeedPage(env, query, {
     cache: cache && {
       get: key => cache.get(key),
-      // At once, so that a next page asked before the work below ends goes on
-      // after this one's ranks.
+      // The ranks served, at once, so that a next page asked before the work
+      // below ends goes on after them.
       put: async (key, ranking) => {
         kept = [key, ranking];
-        await cache.put(key, { ...ranking, final: false });
+        await cache.put(key, { ranks: ranking.ranks.slice(0, ranking.served), served: ranking.served, final: false });
       },
     },
   });
