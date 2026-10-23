@@ -82,10 +82,12 @@ function isPublicRoute(path: string) {
 // address permanently, but two arrivals never ask the server for it: a
 // `#/public/paper/…` link from the HashRouter era, which utils/legacyHashRoute.ts
 // turns into this path inside the page, and the document the service worker
-// serves offline. The key, query and fragment carry over untouched.
+// serves offline. The key, query and fragment carry over untouched. The router
+// matches routes regardless of case, so the prefix is dropped the same way: a
+// `/Public/paper/…` left whole would redirect to itself and show a blank page.
 function LegacyPaperRedirect() {
   const { pathname, search, hash } = useLocation()
-  return <Navigate to={{ pathname: pathname.replace(/^\/public/, ''), search, hash }} replace />
+  return <Navigate to={{ pathname: pathname.replace(/^\/public/i, ''), search, hash }} replace />
 }
 
 function LoginRedirect() {
