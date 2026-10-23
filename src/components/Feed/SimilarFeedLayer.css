@@ -144,6 +144,49 @@
   text-transform: uppercase;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
+  /* Opacity runs linear and the travel on the curve: expo on opacity flashes. */
+  animation:
+    fadeIn 320ms linear backwards,
+    similar-status-in 320ms var(--ease-out-expo) backwards;
+}
+
+/* While the papers are found and classified, a band of ink sweeps the word
+   left to right, the way it is read. Its darkest point is the primary ink and
+   its lightest the tertiary one, so the label never drops below its contrast. */
+.similar-status[data-pending] {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--text-tertiary) 35%,
+    var(--text-primary) 50%,
+    var(--text-tertiary) 65%
+  ) 100% 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation:
+    fadeIn 320ms linear backwards,
+    similar-status-in 320ms var(--ease-out-expo) backwards,
+    similar-status-sweep 1.6s var(--ease-in-out) 320ms infinite;
+}
+
+@keyframes similar-status-in {
+  from { translate: -8px 0; }
+}
+
+@keyframes similar-status-sweep {
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .similar-status,
+  .similar-status[data-pending] {
+    animation: fadeIn 150ms linear backwards;
+  }
+
+  .similar-status[data-pending] {
+    color: var(--text-tertiary);
+    background: none;
+  }
 }
 
 .similar-context {
