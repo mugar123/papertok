@@ -16,7 +16,7 @@ export function isProtocolBookSeries(journal: { issn?: string; essn?: string; nl
     || PROTOCOL_SERIES_NLM_IDS.has(String(journal?.nlmId || '').trim());
 }
 
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 /**
  * Whether a provider's date begins after today (UTC). A date is read from the

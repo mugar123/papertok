@@ -21,7 +21,7 @@ export interface PubmedResponse {
 
 import { CATEGORIES } from '../../data/categoryTaxonomy.ts';
 import { mergePubmedAuthors, readPubmedEfetch } from '../../utils/pubmedEfetch.ts';
-import { PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries } from '../../utils/medlineRecord.ts';
+import { MONTHS, PROTOCOL_SERIES_ISSNS, isAfterToday, isProtocolBookSeries } from '../../utils/medlineRecord.ts';
 
 // PubMed's E-utilities payloads as the app's papers, for the browser's
 // adapter and the Worker's paper store alike: neither fetch path lives here.
@@ -178,6 +178,13 @@ function publicationTypeFromPubtype(pubtype: string | string[] | undefined) {
   return undefined; // unknown stays unknown; PaperBuilder must not default it
 }
 
+// The last month an issue's date names: "2026 Sep-Oct" runs to October, and a
+// year or a season ("2026", "2026 Spring") to December.
+function issueEndMonth(pubdate: string) {
+  const months = (pubdate.match(/\b[a-z]{3}\b/gi) || []).map(name => MONTHS.indexOf(name.toLowerCase()) + 1);
+  return Math.max(0, ...months) || 12;
+}
+
 export function mapPubmedSummary(raw: PubmedSummary, provider = 'pubmed'): Paper {
   let doi: string | null = null;
   let pmc: string | null = null;
@@ -216,9 +223,13 @@ export function mapPubmedSummary(raw: PubmedSummary, provider = 'pubmed'): Paper
   // article already online; `epubdate` is the day it went online. A date
   // after today is never shown, and a record with no other date shows none.
   // An issue named by its year or month alone ("2026", "2026 Oct") reads as
-  // that period's first day, so an online day in the same year comes first.
+  // that period's first day, so an online day in the same year, up to the
+  // period's end, comes first. A later one is a late upload, which keeps the
+  // issue's date.
   const issueHasDay = /^\d{4} [a-z]{3} \d/i.test(raw.pubdate || '');
-  const onlineFirst = !issueHasDay && raw.epubdate?.slice(0, 4) === raw.pubdate?.slice(0, 4);
+  const onlineMonth = MONTHS.indexOf((raw.epubdate || '').slice(5, 8).toLowerCase()) + 1;
+  const onlineFirst = !issueHasDay && raw.epubdate?.slice(0, 4) === raw.pubdate?.slice(0, 4)
+    && onlineMonth <= issueEndMonth(raw.pubdate || '');
   const dates = onlineFirst ? [raw.epubdate, raw.pubdate] : [raw.pubdate, raw.epubdate];
   const published = dates.find(date => date && !isAfterToday(date)) || '';
   const chapter = isProtocolBookSeries({ issn: raw.issn, essn: raw.essn, nlmId: raw.nlmuniqueid });
