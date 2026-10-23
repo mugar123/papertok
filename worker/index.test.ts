@@ -1837,6 +1837,23 @@ test('a citing working paper from OpenAlex is not peer reviewed and is marked on
   assert.equal(byTitle.get('No venue')!.peerReviewed, undefined);
 });
 
+test('a reference only OpenCitations Meta describes leaves its access unknown', async () => {
+  // OpenCitations Meta has no access data. A `false` here showed "Closed
+  // access" on the related card, and opening the card can only set it to open
+  // (PAP-92).
+  const response = await citationGraphAnswer(url => {
+    if (url.includes('/works/doi:')) return Response.json({ id: 'https://openalex.org/W1', cited_by_count: 0 });
+    if (url.includes('/index/v2/references/')) return Response.json([{ cited: 'omid:br/1 doi:10.5555/ref1' }]);
+    if (url.includes('/meta/v1/metadata/')) {
+      return Response.json([{ id: 'doi:10.5555/ref1 omid:br/1', title: 'Indexed by Meta alone', type: 'journal article' }]);
+    }
+    return Response.json(url.includes('opencitations') ? [] : { results: [] });
+  });
+
+  const { references } = await response.json<{ references: Array<{ title: string; openAccess?: boolean }> }>();
+  assert.deepEqual(references.map(paper => [paper.title, paper.openAccess]), [['Indexed by Meta alone', undefined]]);
+});
+
 // --- G5: billed spend reaches the ledger, with a daily ceiling --------------
 
 function recordingLedger(answer: (key: string) => QuotaReading = () => ({ accepted: true })) {
