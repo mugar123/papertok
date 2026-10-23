@@ -16,12 +16,12 @@ export default {
   // Workers Logs keeps console lines only (wrangler.toml turns invocation logs
   // off), so every refusal and failure leaves this one line. Some route
   // handlers log their own console.error line with the detail.
-  async fetch(request: Request, env: WorkerEnv) {
+  async fetch(request: Request, env: WorkerEnv, context?: Pick<ExecutionContext, 'waitUntil'>) {
     // An uncaught throw reaches the reader as Cloudflare's 500 page, so it is
     // logged as a 500 too.
     let status = 500;
     try {
-      const response = await handleRequest(request, env);
+      const response = await handleRequest(request, env, context);
       status = response.status;
       captureWorkerResponseFailure(status);
       return response;

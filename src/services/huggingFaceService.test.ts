@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapHuggingFacePaper, mapHuggingFaceResources } from './huggingFaceService.ts';
+import { mapHuggingFacePaper, mapHuggingFaceResources } from './huggingFaceRecords.ts';
 
 test('maps a Hugging Face paper without claiming peer review, citations or a field', () => {
   const paper = mapHuggingFacePaper({

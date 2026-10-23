@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PubmedAdapter, classifyPubmedCategory } from './adapters/PubmedAdapter.ts';
+import { PubmedAdapter } from './adapters/PubmedAdapter.ts';
+import { classifyPubmedCategory } from './adapters/pubmedRecords.ts';
 import { accessTagForPaper } from '../utils/paperStatus.ts';
 
 test('classifies PubMed papers using title, abstract, and MeSH-style subjects', () => {

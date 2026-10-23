@@ -63,7 +63,7 @@ test('SOURCE: el tirón escribe en el envoltorio con un atributo, no con una cla
 test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', async () => {
   const src = strip(await read('./FeedContainer.tsx'));
   const end = src.slice(src.indexOf('const onEnd = (event: TouchEvent) => {'), src.indexOf('const onCancel ='));
-  assert.match(end, /if \(outcome === 'refresh' && !busy && !running\) \{\s*landPull\(\);\s*refresh\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/);
+  assert.match(end, /if \(outcome === 'refresh' && !running\) \{\s*landPull\(\);\s*refresh\(\);\s*\} else \{\s*setPull\(0, 0\);\s*\}/);
 
   const css = strip(await read('./FeedContainer.css'));
   const grab = (sel: string) => { const at = css.indexOf(sel); assert.ok(at > 0, `falta ${sel}`); return css.slice(at, css.indexOf('}', at)); };
@@ -74,7 +74,7 @@ test('SOURCE: el tirón que refresca aterriza; el que no, vuelve con la goma', a
     assert.ok(visible.includes(decl), `y es la misma que la de is-visible (${decl})`);
   }
   const dipMs = /opacity (\d+)ms/.exec(grab('.feed-container--refreshing {'))![1];
-  assert.ok(landing.includes(`opacity ${dipMs}ms var(--ease-out-quad)`), `el aterrizaje corre el reloj del velo (${dipMs}ms)`);
+  assert.ok(landing.includes(`opacity ${dipMs}ms var(--ease-out)`), `the landing runs on the veil's clock (${dipMs}ms) with the strong ease-out`);
   const cards = grab(".feed-wrapper[data-pull='landing'] .pc {");
   assert.ok(cards.includes(`transform ${dipMs}ms var(--ease-out-quad)`), 'los papers entran en el hundimiento con el mismo reloj');
 
@@ -251,11 +251,9 @@ test('SOURCE: la cara no vuelve al verbo mientras la píldora se ve', async () =
   const rest = css.slice(css.indexOf('.feed-refresh {'), css.indexOf('}', css.indexOf('.feed-refresh {')));
   const travelMs = Number(/translate (\d+)ms/.exec(rest)![1]);
   assert.ok(exitMs >= travelMs, `la cola (${exitMs}ms) cubre el recorrido de salida (${travelMs}ms)`);
-  // Y NO toca ni a `is-visible` ni a `is-done`: la píldora se va cuando se iba
-  // y el acuse no se repite.
+  // Y NO toca a `is-visible`: la píldora se va cuando se iba.
   assert.match(src, /refreshPillHover \|\| isRefreshing \|\| refreshDone \? ' is-visible'/,
     'la cola no retiene la píldora en pantalla');
-  assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/, 'ni repite el acuse');
 });
 
 /**
@@ -295,8 +293,6 @@ test('SOURCE: el beat de Actualizado deja sitio al crossfade de salida', async (
   assert.match(beat, /prefersReducedMotion \? 500 : 1000/, '1s en motion pleno; 500ms si reduced');
   assert.match(beat, /setRefreshDone\(true\);\s*setDoneHold\(true\);/,
     'el beat arma la cola en el mismo sitio: son el mismo aterrizaje');
-  assert.match(src, /refreshDone && !isRefreshing \? ' is-done'/,
-    'is-done no se mezcla con el spinner; no hace falta setState al empezar');
 });
 
 test('SOURCE: la píldora no asoma solo porque el cursor ya estaba en la franja', async () => {
@@ -321,12 +317,8 @@ test('SOURCE: la píldora trabaja sin halo, y el aterrizaje conserva su spring',
   const spin = css.slice(css.indexOf('.feed-refresh-icon--spinning {'), css.indexOf('}', css.indexOf('.feed-refresh-icon--spinning {')));
   assert.doesNotMatch(spin, /scale|zoom/, 'y nada de zoom por otra puerta');
   assert.match(spin, /animation: feedRefreshSpin [\d.]+s linear infinite;/, 'una sola animación, y lineal');
-  const doneKf = css.slice(css.indexOf('@keyframes feedRefreshDone'), css.indexOf('100% { scale: 1; }', css.indexOf('@keyframes feedRefreshDone')));
-  const peak = Number(/scale: ([\d.]+);/.exec(doneKf.slice(doneKf.indexOf('0% { scale: 1; }') + 16))![1]);
-  assert.ok(peak > 1 && peak <= 1.06,
-    `el acuse es un respiro (${peak}): un pop grande multiplica con la entrada de la cara que corre debajo`);
-  assert.doesNotMatch(doneKf, /scale: 0\./,
-    'y sin rebote por debajo de 1: encoger el texto después de crecerlo lee como un tic');
+  assert.doesNotMatch(css, /feedRefreshDone|\.feed-refresh\.is-done/,
+    'Updated arrives on the face\'s spring alone: a pulse on the pill marked the same moment twice');
   const dip = css.slice(css.indexOf('.feed-container--refreshing {'), css.indexOf('}', css.indexOf('.feed-container--refreshing {')));
   const back = [...css.matchAll(/\.feed-container \{([^}]*)\}/g)]
     .map((m) => m[1]).find((b) => /transition:\s*opacity \d+ms/.test(b));
