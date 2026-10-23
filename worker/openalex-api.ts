@@ -81,8 +81,10 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
 
 // What a miss resolved to, before the asking origin is put on it. Identical
 // misses in flight in this isolate share one of these (see `inFlight`), and a
-// shared `Response` would have one body for several readers.
-type RelayedAnswer = { status: number; body: string; headers: Headers };
+// shared `Response` would have one body for several readers. `budgetRefusal`
+// marks the ledger's answer to the reservation of the request that started the
+// miss, which is that request's alone.
+type RelayedAnswer = { status: number; body: string; headers: Headers; budgetRefusal?: boolean };
 
 // A launch burst asks the same question from many tabs within the second it
 // takes OpenAlex to answer the first. Each of those used to miss the edge,
@@ -321,7 +323,7 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest
   if (harvest) cost.tier = 'feed';
   if (cost.units > 0) {
     const budget = await reserveOpenAlexBudget(env, '', cost, now);
-    if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers };
+    if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers, budgetRefusal: true };
   }
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
@@ -376,11 +378,19 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: boolean)
   const cached = await matchAtEdge(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  let pending = inFlight.get(cacheKey.url);
-  if (!pending) {
-    pending = relayMiss(target, cacheKey, env, harvest).finally(() => inFlight.delete(cacheKey.url));
-    inFlight.set(cacheKey.url, pending);
+  // A request joins a miss in flight whatever its own tier: joining spends no
+  // unit. It does not take that miss's budget refusal, because one URL can be
+  // asked under two tiers -- the harvest spends `feed` where a reader spends the
+  // URL's own -- and a reader's closed tier used to end a harvest run's
+  // enrichment. Whoever waited on a refused miss starts again under its own
+  // tier, one at a time, so a URL still has at most one reservation and one
+  // call in flight. OpenAlex's own refusal is its answer and is shared.
+  for (let pending = inFlight.get(cacheKey.url); pending; pending = inFlight.get(cacheKey.url)) {
+    const answer = await pending;
+    if (!answer.budgetRefusal) return forOrigin(answer, origin, env);
   }
+  const pending = relayMiss(target, cacheKey, env, harvest).finally(() => inFlight.delete(cacheKey.url));
+  inFlight.set(cacheKey.url, pending);
   return forOrigin(await pending, origin, env);
 }
 

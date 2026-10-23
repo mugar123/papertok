@@ -15,7 +15,7 @@ import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
-import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD } from './provider-runtime.ts';
+import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -1571,7 +1571,9 @@ test('identical OpenAlex misses in flight share one upstream call and one reserv
   }
 });
 
-test('a ledger refusal is shared with the identical requests waiting behind it', async () => {
+// A refusal answers one request's reservation under that request's tier, and
+// the harvest and a reader can ask for one URL under different tiers (PAP-88).
+test('a ledger refusal is not shared: each identical request waiting behind it is refused by its own reservation', async () => {
   const ledger = recordingLedger(() => ({ accepted: false, scope: 'global' }));
   const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
   const responses = await withWorkerFetchMock(async () => {
@@ -1580,7 +1582,7 @@ test('a ledger refusal is shared with the identical requests waiting behind it',
     reportApi.fetch(new Request(OPENALEX_LIST_URL, { headers }), env)
   ))));
 
-  assert.equal(ledger.reservations.length, 1, 'one answer from the ledger for the three');
+  assert.equal(ledger.reservations.length, 3, 'one answer from the ledger for each');
   for (const response of responses) {
     assert.equal(response.status, 429);
     assert.equal(response.headers.get('retry-after'), '300');
@@ -3825,6 +3827,143 @@ test("past the exploration share an exploration miss is refused with its tier na
     assert.equal((await ask(stored)).status, 200, 'a stored answer needs no budget');
   });
   assert.equal(calls.length, 2, 'the first stored answer and the harvest miss; nothing for the refusal or the stored read');
+});
+
+// A reader and the harvest can ask for the same URL under different tiers: a
+// batch of cards by DOI is enrichment (80 %) from a reader and `feed` (95 %)
+// from the harvest. Identical misses in flight share one call, and a reader's
+// refusal at 80 % used to be shared the same way, ending a harvest run's
+// enrichment phase.
+const CARD_BATCH = relayPath('works?filter=doi:10.1000/a|10.1000/b&per-page=50');
+const CARD_ANSWER = { results: [{ id: 'https://openalex.org/W1' }] };
+
+// Holds whoever reaches it until it is opened, so a second request can arrive
+// while the first still waits on the ledger or on OpenAlex.
+function gate() {
+  let open!: () => void;
+  let reach!: () => void;
+  const opened = new Promise<void>(resolve => { open = resolve; });
+  const reached = new Promise<void>(resolve => { reach = resolve; });
+  return { open, reached, pass: () => { reach(); return opened; } };
+}
+
+// Long enough for a request that has just started to reach the miss in flight.
+const settle = () => new Promise(resolve => setTimeout(resolve, 10));
+
+// The day's ledger with 8,000 of a 10,000-unit ceiling spent: enrichment's
+// share is used up and `feed`'s is not. With `held`, every call to the ledger
+// after that waits at the gate.
+async function dayAtEightThousand(held?: ReturnType<typeof gate>) {
+  const ledger = inMemoryQuotaLedger();
+  await reserveRequestQuota(ledger.binding, {
+    periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`,
+    subject: 'elsewhere',
+    subjectLimit: 10_000,
+    globalLimit: 10_000,
+    amount: 8_000,
+  });
+  const binding = held
+    ? {
+      idFromName: (name: string): unknown => name,
+      get: (name: unknown): Pick<DurableObjectStub, 'fetch'> => ({
+        fetch: async (url, init) => {
+          await held.pass();
+          return ledger.binding!.get(name as DurableObjectId).fetch(url, init);
+        },
+      }),
+    } as Env['REQUEST_QUOTA_LEDGER']
+    : ledger.binding;
+  return openAlexEnv({ REQUEST_QUOTA_LEDGER: binding, OPENALEX_GLOBAL_DAILY_LIMIT: '10000' });
+}
+
+test("at 8,000 of 10,000 units a reader's card batch is refused, and the harvest asking for the same batch meanwhile is answered under its own tier", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T15:00:00Z') });
+  const ledger = gate();
+  const env = await dayAtEightThousand(ledger);
+  const upstream: string[] = [];
+  const [reader, ...harvest] = await withWorkerFetchMock(async (url) => {
+    upstream.push(String(url));
+    return Response.json(CARD_ANSWER);
+  }, async () => {
+    const reader = reportApi.fetch(new Request(CARD_BATCH, { headers: BROWSER }), env);
+    await ledger.reached;
+    // Two harvest requests, so the requests the refusal leaves waiting are
+    // seen to share one new miss.
+    const harvest = [handleHarvestOpenAlex(new Request(CARD_BATCH), env), handleHarvestOpenAlex(new Request(CARD_BATCH), env)];
+    await settle();
+    ledger.open();
+    return Promise.all([reader, ...harvest]);
+  });
+
+  assert.equal(reader.status, 429);
+  assert.equal(reader.headers.get('x-papertok-budget-tier'), 'enrichment');
+  for (const response of harvest) {
+    assert.equal(response.status, 200, "the reader's refusal is not the harvest's");
+    assert.deepEqual(await response.json(), CARD_ANSWER);
+  }
+  assert.equal(upstream.length, 1);
+  const { report } = await readOpenAlexBudget(env);
+  assert.ok(report);
+  assert.equal(report.tiers.feed.used, 1, 'one reservation for both harvest requests');
+});
+
+test('a request whose own tier is used up gets the answer of a miss already in flight at no unit, but starts none of its own', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T15:00:00Z') });
+  const env = await dayAtEightThousand();
+  const openAlex = gate();
+  const upstream: string[] = [];
+  const reader = () => reportApi.fetch(new Request(CARD_BATCH, { headers: BROWSER }), env);
+  const [harvest, joined, alone] = await withWorkerFetchMock(async (url) => {
+    upstream.push(String(url));
+    await openAlex.pass();
+    return Response.json(CARD_ANSWER);
+  }, async () => {
+    const harvest = handleHarvestOpenAlex(new Request(CARD_BATCH), env);
+    await openAlex.reached;
+    const joined = reader();
+    await settle();
+    openAlex.open();
+    return [await harvest, await joined, await reader()];
+  });
+
+  assert.equal(harvest.status, 200);
+  assert.equal(joined.status, 200, 'it joined the call the harvest was making');
+  assert.deepEqual(await joined.json(), CARD_ANSWER);
+  assert.equal(joined.headers.get('access-control-allow-origin'), BROWSER.origin);
+  assert.equal(alone.status, 429, 'with nothing in flight, its tier refuses it');
+  assert.equal(alone.headers.get('x-papertok-budget-tier'), 'enrichment');
+  assert.equal(upstream.length, 1);
+  const { report } = await readOpenAlexBudget(env);
+  assert.ok(report);
+  assert.equal(report.tiers.feed.used, 1);
+  assert.equal(report.tiers.enrichment.used, 0, 'joining spent nothing');
+});
+
+test("OpenAlex's own refusal of a miss in flight is shared with the requests waiting on it", async () => {
+  const ledger = recordingLedger();
+  const env = openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding });
+  const openAlex = gate();
+  const upstream: string[] = [];
+  const responses = await withWorkerFetchMock(async (url) => {
+    upstream.push(String(url));
+    await openAlex.pass();
+    return Response.json({ error: 'Rate limit exceeded' }, { status: 429, headers: { 'retry-after': '3600' } });
+  }, async () => {
+    const reader = reportApi.fetch(new Request(CARD_BATCH, { headers: BROWSER }), env);
+    await openAlex.reached;
+    const harvest = handleHarvestOpenAlex(new Request(CARD_BATCH), env);
+    await settle();
+    openAlex.open();
+    return Promise.all([reader, harvest]);
+  });
+
+  for (const response of responses) {
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('retry-after'), '3600');
+    assert.equal(response.headers.get('x-papertok-budget-tier'), null, "OpenAlex's refusal, not the Worker's");
+  }
+  assert.equal(upstream.length, 1, 'the harvest did not ask OpenAlex again');
+  assert.equal(ledger.reservations.length, 1, 'nor reserve again');
 });
 
 test('a refusal at the full ceiling and a minute refusal also name the tier', async () => {
