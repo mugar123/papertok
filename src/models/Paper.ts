@@ -25,9 +25,10 @@ export interface PaperSources {
   // Written and read only by `PaperBuilder.merge`: by normalized publisher
   // DOI, what a merged record said of itself under it, whatever the row's own
   // answer and the DOI it shows: `true` on more than an arXiv DOI, or an
-  // outright `false`, which stands against any `true` under that DOI. A row
-  // under one of these DOIs that merges this one reads it as that record's
-  // answer.
+  // outright `false`, which stands in this map against any `true` under that
+  // DOI. A row under one of these DOIs that merges this one takes the entry
+  // as that record's answer. A `false` then ends the row's `true` only where
+  // that record's own would: not on a row that began as OpenAlex's record.
   peerReviewedByDoi?: Record<string, boolean>;
   // Written and read only by `PaperBuilder.merge`: `peerReviewedByDoi` holds
   // the answer of every record merged into the row. A merged row without it,
