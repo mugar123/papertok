@@ -384,7 +384,9 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: boolean)
   // URL's own -- and a reader's closed tier used to end a harvest run's
   // enrichment. Whoever waited on a refused miss starts again under its own
   // tier, one at a time, so a URL still has at most one reservation and one
-  // call in flight. OpenAlex's own refusal is its answer and is shared.
+  // call in flight. OpenAlex's own refusal is its answer and is shared. The
+  // `finally` below removes an entry before its waiters resume, so a waiter
+  // turned away finds the next miss or none, never the same one again.
   for (let pending = inFlight.get(cacheKey.url); pending; pending = inFlight.get(cacheKey.url)) {
     const answer = await pending;
     if (!answer.budgetRefusal) return forOrigin(answer, origin, env);
