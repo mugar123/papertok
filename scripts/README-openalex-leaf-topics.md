@@ -144,7 +144,10 @@ answered 200 at 1 credit each. The coverage report records each leaf's
 
 The 32 passing samples asked for 164 topics. Their lanes ask for the 80 with
 an article on target without doubt. Of the 84 left out, the samples never
-returned 65 and returned 19 only off target or with doubt.
+returned 65 and returned 19 only off target or with doubt. Later on 2026-10-23,
+32 more anonymous requests grouped each passing sample's query by
+`primary_topic.id`: of the 26,198 articles in those windows, the topics left
+out held 5,430, 2,218 on the 19 and 3,212 on the 65.
 
 Three labellers each labelled a third of the leaves; every leaf has one
 labeller. The label is `on-target` when a researcher who chose the leaf would
