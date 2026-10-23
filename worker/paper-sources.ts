@@ -75,8 +75,8 @@ const versionless = (value: unknown) => text(value).replace(/^.*\/abs\//, '').re
 // accent command becomes its combining mark and a special letter its letter;
 // grouping braces go, except inside a formula, which stays as written.
 const TEX_ACCENTS: Record<string, string> = {
-  '`': '̀', "'": '́', '^': '̂', '~': '̃', '=': '̄', '.': '̇', '"': '̈',
-  u: '̆', r: '̊', H: '̋', v: '̌', d: '̣', c: '̧', k: '̨', b: '̱',
+  '`': '\u0300', "'": '\u0301', '^': '\u0302', '~': '\u0303', '=': '\u0304', '.': '\u0307', '"': '\u0308',
+  u: '\u0306', r: '\u030a', H: '\u030b', v: '\u030c', d: '\u0323', c: '\u0327', k: '\u0328', b: '\u0331',
 };
 const TEX_ACCENT = /\\(?:([`'^~=."])|([urHvdckb])(?![a-zA-Z]))\s*(?:\{\s*(\\[ij]|[a-zA-Z])\s*\}|(\\[ij](?![a-zA-Z])|[a-zA-Z]))/g;
 const TEX_LETTERS: Record<string, string> = { i: 'ı', j: 'ȷ', o: 'ø', O: 'Ø', l: 'ł', L: 'Ł', ss: 'ß', aa: 'å', AA: 'Å', ae: 'æ', AE: 'Æ', oe: 'œ', OE: 'Œ' };
