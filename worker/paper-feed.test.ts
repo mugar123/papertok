@@ -151,8 +151,11 @@ test("this Worker and earlier versions never read each other's kept orders, so a
   // The order an earlier version kept for a reader's first page, as it keeps
   // it: in an order this one would not serve.
   const workId = (arxivId: string) => (db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number }).work_id;
-  entries.set(await previousWorkerKey('reader-2', asked), new Response(JSON.stringify(['2610.80002', '2610.80001'].map(arxivId => ({ workId: workId(arxivId), lanes: ['cs.CL'] })))));
+  const previousKey = await previousWorkerKey('reader-2', asked);
+  const previousList = ['2610.80002', '2610.80001'].map(arxivId => ({ workId: workId(arxivId), lanes: ['cs.CL'] }));
+  entries.set(previousKey, new Response(JSON.stringify(previousList)));
   assert.deepEqual(ids((await ask(request(1), 'reader-2')).papers), ['2610.80002'], 'ranked again, newest first');
+  assert.deepEqual(await entries.get(previousKey)?.json(), previousList, 'an earlier version still serving finds the list it kept');
 });
 
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
