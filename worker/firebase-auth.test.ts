@@ -9,7 +9,7 @@ const EMAIL = 'alice@example.com';
  * What a verified lookup now resolves to: who, whether the address is theirs,
  * and when they signed in (none here: `fakeIdToken` carries no `auth_time`).
  */
-const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true, authTime: null };
+const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true, ownsEmail: true, authTime: null };
 const PROJECT_ID = 'papertok-168df';
 const ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
@@ -133,8 +133,34 @@ test('an unverified address is carried, but carried as unverified', async () => 
   stubUser({ localId: UID, email: EMAIL, emailVerified: false });
   assert.deepEqual(
     await verify(fakeIdToken({ aud: PROJECT_ID })),
-    { uid: UID, email: EMAIL, emailVerified: false, authTime: null },
+    { uid: UID, email: EMAIL, emailVerified: false, ownsEmail: false, authTime: null },
   );
+});
+
+test('a Google or GitHub identity carrying the same address proves possession when Firebase has not flagged it', async () => {
+  // Firebase sets `emailVerified` only for providers that verify the address
+  // themselves, so a GitHub sign-in arrives unflagged (#267). The flag is kept
+  // as Firebase reported it; `ownsEmail` is what a route that only needs a
+  // proven owner should read.
+  stubUser({
+    localId: UID, email: EMAIL, emailVerified: false,
+    providerUserInfo: [{ providerId: 'github.com', email: ' Alice@Example.COM ' }],
+  });
+  assert.deepEqual(
+    await verify(fakeIdToken({ aud: PROJECT_ID })),
+    { uid: UID, email: EMAIL, emailVerified: false, ownsEmail: true, authTime: null },
+  );
+  // Another address, a provider Firebase does not vouch through, or no address
+  // at all prove nothing.
+  for (const user of [
+    { localId: UID, email: EMAIL, emailVerified: false, providerUserInfo: [{ providerId: 'google.com', email: 'mallory@example.com' }] },
+    { localId: UID, email: EMAIL, emailVerified: false, providerUserInfo: [{ providerId: 'facebook.com', email: EMAIL }] },
+    { localId: UID, email: EMAIL, emailVerified: false, providerUserInfo: [{ providerId: 'github.com' }] },
+    { localId: UID, emailVerified: false, providerUserInfo: [{ providerId: 'github.com', email: '' }] },
+  ]) {
+    stubUser(user);
+    assert.equal((await verify(fakeIdToken({ aud: PROJECT_ID }))).ownsEmail, false, JSON.stringify(user.providerUserInfo));
+  }
 });
 
 test('an address is normalised, so a match cannot turn on capitals or spacing', async () => {
@@ -144,7 +170,7 @@ test('an address is normalised, so a match cannot turn on capitals or spacing', 
 
 test('an account with no address at all resolves to an empty one, never to undefined', async () => {
   stubUser({ localId: UID });
-  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false, authTime: null });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false, ownsEmail: false, authTime: null });
 });
 
 test('the sign-in time travels with the identity once Google has accepted the token', async () => {
