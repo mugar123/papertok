@@ -20,7 +20,7 @@ import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, notableSince, publishedOf } from './paper-store.ts';
+import { CORPUS_DAYS, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, database, daysFromNow, findWorks, ingestPapers, keepLiked, notableSince, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -591,7 +591,8 @@ const LOOKUP_TIMEOUT_MS = 2_000;
 
 /**
  * Papers the app holds ids for but the corpus lacks (a reader's likes),
- * fetched and filed with no lane, kept for KEEP days whatever their date.
+ * fetched and kept as liked papers whatever their date: one older than the
+ * corpus window enters no lane (`recordLanes`).
  * arXiv ids ask arXiv; PubMed ids, DOIs and OpenAlex ids ask OpenAlex for the
  * single work, which it does not bill. Bounded by the caller's deadline.
  */
@@ -616,6 +617,11 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), LOOKUP_TIMEOUT_MS));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
   const found = settled.flatMap(result => (result === 'late' ? [] : result));
-  return ingestPapers(env, found, { keepUntil, now });
+  const stored = await ingestPapers(env, found, { keepUntil, now });
+  if (found.length) {
+    const db = database(env);
+    await keepLiked(db, [...new Set((await findWorks(db, paperIds)).values())], now);
+  }
+  return stored;
 }
 

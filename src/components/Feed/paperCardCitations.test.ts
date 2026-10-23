@@ -18,7 +18,7 @@ function bounded(code: string, from: string, to: string, label: string, maxLines
 // Automatic pagination can produce the first visible page after exclusions.
 test('SOURCE: the re-entry the guard was widened for still exists', async () => {
   const code = stripComments(await read('../../context/FeedContext.tsx'));
-  assert.match(code, /loadPapersRef\.current\?\.\(false, activeMode, false, nextPage\)/,
+  assert.match(code, /loadPapersRef\.current\?\.\(false, activeMode, nextPage\)/,
     'a first page emptied after the wait continues with `reset` false');
 });
 

@@ -59,15 +59,18 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
   assert.deepEqual(papers, [STORED]);
 });
 
-test('a page that says what the reader has seen sends it as the filter the Worker reads', async () => {
+test('a page that asks for notable papers sends what the reader has seen as the filter the Worker reads', async () => {
   const { asked, options } = harness(answered([]));
-  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 30, seen: new Set(['2610.00001', 'openalex:W2107743791']) }, options);
-  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 30 }, options);
-  const [withSeen, without] = asked.map(entry => entry.body as { seen?: string });
+  const seen = new Set(['2610.00001', 'openalex:W2107743791']);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 2 }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 0 }, options);
+  const [withSeen, ...without] = asked.map(entry => entry.body as { seen?: string; notable?: number });
+  assert.equal(withSeen.notable, 2);
   const read = readFeedSeenFilter(withSeen.seen);
   assert.ok(['2610.00001', 'openalex:W2107743791'].every(id => hasSeenPaper(read, id)));
   assert.equal(hasSeenPaper(read, 'openalex:W2493916176'), false);
-  assert.equal('seen' in without, false, 'a page that does not say asks for no notable papers');
+  for (const body of without) assert.ok(!('seen' in body) && !('notable' in body), 'a page that asks for no notable papers sends no filter');
 });
 
 test('a store that fails rejects, so the feed can say so and offer a retry', async () => {

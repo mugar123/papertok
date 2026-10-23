@@ -14,9 +14,16 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
-  // The papers the reader has seen. Only a page that says gets notable papers
-  // of its categories, and only ones the reader has not seen.
+  // The papers the reader has seen, and how many notable papers of its
+  // categories the page may add after its own: only ones the reader has not
+  // seen, for the app to place (placeNotableCards). Sent only together.
   seen?: Iterable<string>;
+  notable?: number;
+  /**
+   * Rank by the likes only once the corpus has fetched and embedded the ones
+   * it lacks, which can take seconds: for More like this, never a feed page.
+   */
+  waitForLikes?: boolean;
 }
 
 interface StoreOptions {
@@ -44,7 +51,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', seen }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   return askStore({
     categories,
     follows: follows.map(({ type, canonicalId, displayName, metadata }) => ({
@@ -57,7 +64,8 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
-    ...(seen ? { seen: feedSeenFilter(seen) } : {}),
+    ...(seen && notable > 0 ? { seen: feedSeenFilter(seen), notable } : {}),
+    ...(waitForLikes ? { waitForLikes } : {}),
   }, options);
 }
 

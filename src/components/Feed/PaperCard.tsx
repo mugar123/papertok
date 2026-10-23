@@ -1943,7 +1943,7 @@ const PaperCard = memo(function PaperCard({
               </span>
             </>
           )}
-          {/* Why the corpus put this paper in the page's notable slot; the
+          {/* Why the feed placed this paper in a notable card's place; the
               year and the count after it are the paper's own. */}
           {paper._notable && (
             <>

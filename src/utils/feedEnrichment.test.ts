@@ -6,7 +6,8 @@ import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
-  takeFeedPage,
+  notablePlaces,
+  placeNotableCards,
   preserveFeedAbstracts,
 } from './feedEnrichment.ts';
 
@@ -34,44 +35,46 @@ test('does not request duplicate enrichment for native OpenAlex papers', () => {
   assert.equal(needsOpenAlexEnrichment({ id: 'pmid:12345' }), false);
 });
 
-test('caps every visible feed page before OpenAlex enrichment', () => {
-  const candidates = Array.from({ length: 47 }, (_, index) => ({ id: `2607.${String(index).padStart(5, '0')}` }));
-  const page = takeFeedPage(candidates, 15);
+type Card = { id: string; _notable?: boolean };
 
-  assert.equal(page.length, 15);
-  assert.equal(page[14].id, '2607.00014');
+test("the fifteenth card of a new feed is the first notable card, and every other card stays in its order", () => {
+  // The corpus's fifteen, the follows' and exploration's: 21 other cards.
+  const others: Card[] = Array.from({ length: 21 }, (_, index) => ({ id: `card-${index}` }));
+  const notable: Card[] = [{ id: 'notable-0', _notable: true }, { id: 'notable-1', _notable: true }];
+  const page = placeNotableCards(others, notable, []);
+  assert.equal(page.length, 22);
+  assert.deepEqual(page.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : [])), [[14, 'notable-0']]);
+  assert.deepEqual(page.filter(paper => !paper._notable), others, 'no other card is left out or moved past another');
+
+  // With no notable card left, its place takes the next card; a notable card
+  // never takes another place, even when the other cards run out first.
+  assert.deepEqual(placeNotableCards(others, [], []), others);
+  assert.deepEqual(placeNotableCards(others.slice(0, 3), notable, []).map(paper => paper.id), ['card-0', 'card-1', 'card-2']);
+  // The place right after the last card: fourteen cards and a notable one fill fifteen.
+  assert.equal(placeNotableCards(others.slice(0, 14), notable, []).at(-1)?.id, 'notable-0');
 });
 
-test("the fifteenth card of a new feed is the batch's first notable card, whatever order the ranking left it in", () => {
-  // The corpus answered 30 cards, two of them notable; the reader's ranking
-  // moved one past the fifteen shown.
-  const ranked = Array.from({ length: 31 }, (_, index) => ({ id: `card-${index}`, _notable: index === 3 || index === 20 }));
-  const page = takeFeedPage(ranked, 15, []);
-  assert.equal(page.length, 15);
-  assert.deepEqual(page.filter(paper => paper._notable).map(paper => paper.id), ['card-3']);
-  assert.equal(page[14].id, 'card-3');
-  assert.deepEqual(page.slice(0, 14).map(paper => paper.id), ['card-0', 'card-1', 'card-2', ...Array.from({ length: 11 }, (_, index) => `card-${index + 4}`)]);
-
-  // With no notable card left, its place takes the next paper; a notable card
-  // never takes another place, even when the other papers run out first.
-  assert.equal(takeFeedPage(ranked.filter(paper => !paper._notable), 15, []).length, 15);
-  assert.deepEqual(takeFeedPage(ranked.slice(0, 4), 15, []).map(paper => paper.id), ['card-0', 'card-1', 'card-2']);
-});
-
-test('one card in fifteen is notable whatever size the pages are: the fifteenth, the thirtieth and so on', () => {
-  // Each batch holds more notable cards than a page needs (one in four).
-  const batch = (page: number) => Array.from({ length: 40 }, (_, index) => ({ id: `page${page}-${index}`, _notable: index % 4 === 1 }));
-  for (const pageSize of [7, 10, 15, 20, 32]) {
-    const feed: Array<{ id: string; _notable: boolean }> = [];
-    for (let page = 0; feed.length < 75; page += 1) feed.push(...takeFeedPage(batch(page), pageSize, feed));
+test('one card in fifteen is notable whatever size the pages are, when each page asks for its places', () => {
+  // The feed's pages: the corpus's fifteen, up to six follows and up to ten
+  // exploration cards, as STEP 5 adds them.
+  for (const sizes of [[15], [21], [31], [15, 21, 31, 22], [7, 30, 16, 25]]) {
+    const feed: Card[] = [];
+    for (let page = 0; feed.length < 120; page += 1) {
+      const size = sizes[page % sizes.length];
+      // The corpus answers the places asked for a page of up to 31 cards.
+      const asked = notablePlaces(feed, 31);
+      const others: Card[] = Array.from({ length: size }, (_, index) => ({ id: `page${page}-${index}` }));
+      const notable: Card[] = Array.from({ length: asked }, (_, index) => ({ id: `page${page}-notable-${index}`, _notable: true }));
+      feed.push(...placeNotableCards(others, notable, feed));
+    }
     const places = feed.flatMap((paper, index) => (paper._notable ? [index + 1] : []));
-    assert.deepEqual(places, Array.from({ length: Math.floor(feed.length / 15) }, (_, index) => 15 * (index + 1)), `pages of ${pageSize}`);
+    assert.deepEqual(places, Array.from({ length: Math.floor(feed.length / 15) }, (_, index) => 15 * (index + 1)), `pages of ${sizes}`);
   }
 
   // A card dismissed before the notable one moved it up to fourteenth: the
   // next notable card is still fifteen cards after it, not the next one.
   const shown = Array.from({ length: 14 }, (_, index) => ({ id: `shown-${index}`, _notable: index === 13 }));
-  const next = takeFeedPage(batch(9), 15, shown);
+  const next = placeNotableCards<Card>(Array.from({ length: 20 }, (_, index) => ({ id: `next-${index}` })), [{ id: 'notable', _notable: true }], shown);
   assert.deepEqual(next.flatMap((paper, index) => (paper._notable ? [index] : [])), [14]);
 });
 

@@ -100,30 +100,42 @@ export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined
 }
 
 // One feed card in NOTABLE_EVERY is a notable paper the reader has not seen,
-// when one is left (Pablo, 2026-10-23): the last card of every NOTABLE_EVERY.
-// The corpus spaces them so in its ranking (worker/paper-store.ts), and the
-// page shown places them by the same count, whatever its size.
+// when one is left (Pablo, 2026-10-23): the last card of every NOTABLE_EVERY,
+// counted from the last notable card shown, or from the feed's first card.
+// The corpus adds unseen ones after a page's own papers (worker/paper-store.ts)
+// and the app places them, so the count holds whatever size a page is.
 export const NOTABLE_EVERY = 15;
 
+const cardsSinceNotable = (cardsBefore: ReadonlyArray<Partial<Paper>>) => (
+  cardsBefore.length - 1 - cardsBefore.findLastIndex(paper => paper?._notable)
+);
+
 /**
- * The page shown from a ranked batch, after the feed's `cardsBefore`. Every
- * NOTABLE_EVERY-th card since the last notable one (or since the feed began)
- * is the batch's next notable card (`_notable`), or the next other card when
- * none is left; no other place takes a notable card.
+ * How many notable places a page of up to `others` other cards has after the
+ * feed's `cardsBefore` (`placeNotableCards`): a place follows every
+ * NOTABLE_EVERY - 1 other cards.
  */
-export function takeFeedPage<T extends Partial<Paper>>(papers: T[] | null | undefined, pageSize = 15, cardsBefore: ReadonlyArray<Partial<Paper>> = []) {
-  const safeSize = Number.isFinite(pageSize) ? Math.max(0, Math.floor(pageSize)) : 15;
-  const list = Array.isArray(papers) ? papers : [];
-  const notable = list.filter(paper => paper?._notable);
-  const others = list.filter(paper => !paper?._notable);
-  const sinceNotable = cardsBefore.length - 1 - cardsBefore.findLastIndex(paper => paper?._notable);
+export function notablePlaces(cardsBefore: ReadonlyArray<Partial<Paper>>, others: number) {
+  return Math.floor((cardsSinceNotable(cardsBefore) % NOTABLE_EVERY + Math.max(0, others)) / (NOTABLE_EVERY - 1));
+}
+
+/**
+ * The page shown after the feed's `cardsBefore`: every other card, in order,
+ * with the notable cards (`_notable`), in theirs, at the places: every
+ * NOTABLE_EVERY-th card since the last notable one, the place right after the
+ * page's last card included. A place with no notable card left takes the next
+ * other card, and a notable card with no place is left out.
+ */
+export function placeNotableCards<T extends Partial<Paper>>(others: T[], notable: T[], cardsBefore: ReadonlyArray<Partial<Paper>> = []) {
+  const since = cardsSinceNotable(cardsBefore);
+  const left = [...notable];
   const page: T[] = [];
-  while (page.length < safeSize) {
-    const notablePlace = (sinceNotable + page.length + 1) % NOTABLE_EVERY === 0;
-    const next = (notablePlace && notable.shift()) || others.shift();
-    if (!next) break;
-    page.push(next);
+  const atPlace = () => (since + page.length + 1) % NOTABLE_EVERY === 0;
+  for (const paper of others) {
+    if (atPlace() && left.length) page.push(left.shift()!);
+    page.push(paper);
   }
+  if (others.length && atPlace() && left.length) page.push(left.shift()!);
   return page;
 }
 

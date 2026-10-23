@@ -199,8 +199,9 @@ export interface Paper {
   // Ranking credit only: it says why the card was fetched, not what the paper
   // is, so it is never shown or stored as the paper's classification.
   _fetchedFor?: string[];
-  // Set by the corpus on a card it placed in a page's notable slot: one of the
-  // most-cited papers of the reader's categories, which the card says it is.
+  // Set by the corpus on a notable paper it adds to a page, which the feed
+  // places (placeNotableCards): one of the most-cited papers of the reader's
+  // categories, which the card says it is.
   _notable?: boolean;
   _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;

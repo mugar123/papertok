@@ -1,9 +1,13 @@
 import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
 import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector, rewriteWorks } from './paper-store.ts';
+import {
+  arxivIdOf, daysFromNow, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector,
+  rewriteWorks,
+} from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { mapAdsPaper } from '../src/services/domainSourceRecords.ts';
@@ -11,7 +15,7 @@ import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { feedSeenFilter } from '../src/utils/seenPaperFilter.ts';
-import { takeFeedPage } from '../src/utils/feedEnrichment.ts';
+import { notablePlaces, placeNotableCards } from '../src/utils/feedEnrichment.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
@@ -50,6 +54,19 @@ test('a stored vector reads back the same whether D1 returns bytes or numbers', 
   const unsignedBytes = [...new Uint8Array(stored.buffer)];
   assert.deepEqual([...readVector(unsignedBytes)], [76, -102]);
   assert.deepEqual([...readVector(stored.buffer)], [76, -102]);
+});
+
+// D1 answers a BLOB as an array of its unsigned bytes, and a ranked page
+// decodes up to 4,000 of them: 50 to 170 ms of Worker CPU in the #272 review.
+test("a page's vectors decode in a few milliseconds from the numbers D1 returns", () => {
+  const vectors = Array.from({ length: 4_000 }, (_, row) => Array.from({ length: 256 }, (_, index) => (row * 31 + index * 17) & 255));
+  let fastest = Infinity;
+  for (let run = 0; run < 5; run += 1) {
+    const started = performance.now();
+    vectors.forEach(readVector);
+    fastest = Math.min(fastest, performance.now() - started);
+  }
+  assert.ok(fastest < 15, `4,000 vectors took ${fastest.toFixed(1)} ms`);
 });
 
 // ─── The corpus in D1 (migrations applied to an in-memory SQLite) ───
@@ -501,76 +518,87 @@ async function notableCorpus() {
   return { env, db };
 }
 
-test("one card in every fifteen is a notable paper of the reader's categories they have not seen, with its own year, citations and access", async () => {
+const recentIds = (from: number, to: number) => Array.from({ length: to - from }, (_, index) => `2610.${String(from + index).padStart(5, '0')}`);
+
+test("a page that asks for notable papers gets the unseen ones of the reader's categories after its own, with their own year, citations and access", async () => {
   const { env } = await notableCorpus();
   // The reader saw the newest of the three on an earlier day.
-  const seen = feedSeenFilter(['openalex:W4309674289']);
-  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen }), { now: NOW });
-  assert.equal(page.length, 30);
-  const notable = page.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : []));
-  assert.deepEqual(notable, [[14, 'openalex:W2493916176'], [29, 'openalex:W2107743791']]);
-  for (const [index] of notable) {
-    const paper = page[index as number];
+  const seen = ['openalex:W4309674289'];
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen: feedSeenFilter(seen), notable: 3 }), { now: NOW });
+  // Without a like, the closest is the newest.
+  assert.deepEqual(page.map(paper => paper.id), [...recentIds(0, 15), 'openalex:W2493916176', 'openalex:W2107743791']);
+  assert.deepEqual(page.map(paper => paper._notable === true), [...Array(15).fill(false), true, true]);
+  for (const paper of page.slice(15)) {
     assert.deepEqual(paper._fetchedFor, ['cs.LG'], 'found for the category it is notable in');
     assert.equal(paper.year, 2017);
     assert.equal(paper.citationCountKnown, true);
   }
-  assert.deepEqual([page[14].citationCount, page[14].openAccess], [9650, true]);
-  assert.deepEqual([page[29].citationCount, page[29].openAccess], [3988, false], 'a closed article stays closed');
-  assert.ok(!page.some(paper => paper.id === 'openalex:W4309674289'), 'a seen notable paper is not offered again');
+  assert.deepEqual([page[15].citationCount, page[15].openAccess], [9650, true]);
+  assert.deepEqual([page[16].citationCount, page[16].openAccess], [3988, false], 'a closed article stays closed');
 
-  // None left unseen: the next page is the reader's other papers only.
-  const next = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 30, seen }), { now: NOW });
-  assert.deepEqual(next.map(paper => paper.id), Array.from({ length: 12 }, (_, index) => `2610.${String(index + 28).padStart(5, '0')}`));
+  // Asked for one, the page adds the closest.
+  const one = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen: feedSeenFilter(seen), notable: 1 }), { now: NOW });
+  assert.deepEqual(one.slice(15).map(paper => paper.id), ['openalex:W2493916176']);
+
+  // Once shown they are seen, and none is left: the next page is the reader's other papers only.
+  const shown = [...seen, ...page.map(paper => paper.id)];
+  const next = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 15, seen: feedSeenFilter(shown), notable: 3 }), { now: NOW });
+  assert.deepEqual(next.map(paper => paper.id), recentIds(15, 30));
 });
 
-test('a reader who has seen every notable paper, or a request that does not say what was seen, gets none', async () => {
+test('a reader who has seen every notable paper, a request that does not say what was seen or one that asks for none gets none', async () => {
   const { env } = await notableCorpus();
   const seenAll = feedSeenFilter(NOTABLE.map(paper => paper.id!));
-  for (const query of [{ seen: seenAll }, {}]) {
+  for (const query of [{ seen: seenAll, notable: 3 }, { notable: 3 }, { seen: feedSeenFilter([]) }]) {
     const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, ...query }), { now: NOW });
-    assert.deepEqual(page.map(paper => paper.id), Array.from({ length: 30 }, (_, index) => `2610.${String(index).padStart(5, '0')}`));
+    assert.deepEqual(page.map(paper => paper.id), recentIds(0, 30));
     assert.ok(!page.some(paper => paper._notable));
   }
-  // An order ranked with notable papers in it serves only requests that say what was seen.
+  // An order ranked with notable papers serves only requests that ask for them.
   const stored = new Map<string, unknown>();
   const cache = {
     get: async (key: string) => (stored.get(key) as never) ?? null,
     put: async (key: string, ranking: unknown) => { stored.set(key, ranking); },
   };
-  const first = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]) }), { now: NOW, cache });
-  assert.equal(first.filter(paper => paper._notable).length, 2);
+  const first = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]), notable: 3 }), { now: NOW, cache });
+  assert.equal(first.filter(paper => paper._notable).length, 3);
   const later = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 10 }), { now: NOW, cache });
   assert.ok(!later.some(paper => paper._notable));
 });
 
-test('fourteen papers and an unseen notable one fill a page of fifteen, the notable one last', async () => {
+test('a page short of papers of its own still adds the notable ones asked for, and a page past the last adds none', async () => {
   const { env } = corpus();
   await ingestPapers(env, recentPapers(14), { now: NOW });
   await ingestPapers(env, [{ paper: NOTABLE[1], lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
-  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]) }), { now: NOW });
-  assert.equal(page.length, 15);
-  assert.deepEqual(page.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : [])), [[14, 'openalex:W2493916176']]);
+  const request = (page: number) => parseFeedRequest({ categories: ['cs.LG'], page, pageSize: 15, seen: feedSeenFilter([]), notable: 3 });
+  const page = await readFeedPage(env, request(0), { now: NOW });
+  assert.deepEqual(page.map(paper => [paper.id, paper._notable === true]), [...recentIds(0, 14).map(id => [id, false]), ['openalex:W2493916176', true]]);
+  assert.deepEqual(await readFeedPage(env, request(1), { now: NOW }), [], 'notable papers alone are no page');
 });
 
-test("the app shows one card in fifteen notable whatever size its pages are, from corpus pages of twice that size", async () => {
+test('the app shows one card in fifteen notable from corpus pages of fifteen and the cards the follows and exploration add', async () => {
   const { env } = corpus();
   await ingestPapers(env, recentPapers(160), { now: NOW });
   // Synthetic works in the recorded shape.
-  const notable = Array.from({ length: 12 }, (_, index) => notableWork(`W90000000${index}`, `Highly cited study ${index} of representation learning`, '2019-05-01', 5000 - index, true));
+  const notable = Array.from({ length: 16 }, (_, index) => notableWork(`W9000000${String(index).padStart(2, '0')}`, `Highly cited study ${index} of representation learning`, '2019-05-01', 5000 - index, true));
   await ingestPapers(env, notable.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
-  for (const pageSize of [8, 10, 15]) {
+  // Cards the follows (up to six) and exploration (up to ten) add to each page.
+  for (const added of [[0], [6], [16], [6, 16, 0, 10, 3, 16]]) {
     // Later pages read the order the first one ranked, as the Worker's cache keeps it.
     const orders = new Map<string, unknown>();
     const cache = { get: async (key: string) => (orders.get(key) as never) ?? null, put: async (key: string, ranking: unknown) => { orders.set(key, ranking); } };
     const feed: Array<{ id: string; _notable?: boolean }> = [];
-    for (let page = 0; page < 4; page += 1) {
-      const corpusPage = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page, pageSize: pageSize * 2, seen: feedSeenFilter(feed.map(paper => paper.id)) }), { now: NOW, cache });
-      feed.push(...takeFeedPage(corpusPage, pageSize, feed));
+    for (let page = 0; page < 6; page += 1) {
+      const corpusPage = await readFeedPage(env, parseFeedRequest({
+        categories: ['cs.LG'], page, pageSize: 15, seen: feedSeenFilter(feed.map(paper => paper.id)), notable: notablePlaces(feed, 31),
+      }), { now: NOW, cache });
+      const others = [...corpusPage.filter(paper => !paper._notable), ...Array.from({ length: added[page % added.length] }, (_, index) => ({ id: `added-${page}-${index}` }))];
+      feed.push(...placeNotableCards(others, corpusPage.filter(paper => paper._notable), feed));
     }
-    assert.equal(feed.length, pageSize * 4);
+    assert.equal(feed.filter(paper => !paper._notable).length, 90 + [0, 1, 2, 3, 4, 5].reduce((sum, page) => sum + added[page % added.length], 0), 'every other card is shown');
     const places = feed.flatMap((paper, index) => (paper._notable ? [index + 1] : []));
-    assert.deepEqual(places, Array.from({ length: Math.floor(feed.length / 15) }, (_, index) => 15 * (index + 1)), `pages of ${pageSize}`);
+    assert.deepEqual(places, Array.from({ length: Math.floor(feed.length / 15) }, (_, index) => 15 * (index + 1)), `pages adding ${added}`);
+    assert.equal(new Set(feed.map(paper => paper.id)).size, feed.length, 'no card twice');
   }
 });
 
@@ -587,7 +615,7 @@ test('in January the year that left the ten-year window gives no notable card, w
   await ingestPapers(env, recentPapers(30, january), { now: january });
   await evictExpired(env, january);
   assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'notable:cs.LG'").length, 2);
-  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]) }), { now: january });
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, seen: feedSeenFilter([]), notable: 3 }), { now: january });
   assert.deepEqual(page.filter(paper => paper._notable).map(paper => [paper.id, paper.year]), [['openalex:W2017000001', 2017]]);
   assert.ok(!page.some(paper => paper.id === 'openalex:W2016000001'));
 });
@@ -607,6 +635,97 @@ test("a paper dated past tomorrow is not filed, and one filed before that rule l
   db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
   await evictExpired(env, NOW);
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+});
+
+// Other readers share a category's lane, and an author's or a topic's; a paper
+// a reader liked enters the corpus whatever its age, to rank their feed by.
+const liked2019 = { ...arxivRecord, id: '1905.00001', arxivId: '1905.00001', title: 'A liked paper from 2019 on attention', published: '2019-05-01T00:00:00.000Z' };
+
+test('a looked-up paper older than the corpus window enters none of the lanes its own record names', async () => {
+  const { env, db } = corpus();
+  const keepUntil = daysFromNow(30, NOW);
+  await ingestPapers(env, [{ paper: liked2019, lanes: [] }], { now: NOW, keepUntil });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1, 'stored for its reader');
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes'), []);
+  // A recent one is filed under its categories, as the harvest would file it.
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW, keepUntil });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG']);
+});
+
+test("an enrichment that names an old paper's topic does not file it under that topic", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: liked2019, lanes: [] }, { paper: arxivRecord, lanes: [] }], { now: NOW, keepUntil: daysFromNow(30, NOW) });
+  const topic = { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' };
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, primaryTopic: topic } })), NOW);
+  const recent = stored.find(work => work.before.id === arxivRecord.id)!;
+  assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
+});
+
+test('a paper only an unfollowed entity names leaves; a category, the working-paper series or a follow keeps it', async () => {
+  const { env, db } = corpus();
+  const paper = (id: string, title: string) => ({ ...arxivRecord, id, arxivId: id, title, allCategories: [], categories: [] });
+  await ingestPapers(env, [
+    // As a paper its category's lane trimmed is: nearly every enriched paper names an author.
+    { paper: paper('2610.00041', 'Named by an author nobody follows'), lanes: ['author:A9'] },
+    { paper: paper('2610.00042', 'Listed for an author a reader follows'), lanes: ['author:A10'] },
+    { paper: paper('2610.00043', 'In a category, named by an author'), lanes: ['cs.LG', 'author:A9'] },
+    { paper: paper('2610.00044', 'In the working-paper series'), lanes: ['series:working-papers'] },
+  ], { now: NOW });
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
+  await evictExpired(env, NOW);
+  assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key LIKE 'arxiv:%' ORDER BY key").map(row => row.key), ['arxiv:2610.00042', 'arxiv:2610.00043', 'arxiv:2610.00044']);
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 1, 'the author lane still names the paper its category keeps');
+});
+
+// Each D1 round trip a request makes, as the statements it sent.
+function roundTrips(t: TestContext, binding: D1Database) {
+  const trips: string[][] = [];
+  const statement = Object.getPrototypeOf(binding.prepare('SELECT 1')) as Record<'all' | 'first' | 'run', (...args: unknown[]) => unknown>;
+  for (const name of ['all', 'first', 'run'] as const) {
+    const send = statement[name];
+    t.mock.method(statement, name, function (this: { sql: string }, ...args: unknown[]) {
+      trips.push([this.sql]);
+      return send.apply(this, args);
+    });
+  }
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', (statements: D1PreparedStatement[]) => {
+    trips.push(statements.map(sent => (sent as unknown as { sql: string }).sql));
+    return batch(statements);
+  });
+  return trips;
+}
+
+test("a page reads vectors only to rank by a like, and the candidates' in one round trip", async t => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  // 2,200 candidates in two lanes, a minute apart. Two liked papers in no
+  // lane: 2610.02201 with a vector like the oldest candidate's only, and
+  // 2610.02202 without one.
+  db.exec('BEGIN');
+  for (let id = 1; id <= 2_202; id += 1) {
+    const arxivId = `2610.${String(id).padStart(5, '0')}`;
+    const published = new Date(NOW - id * 60_000).toISOString();
+    insertWork.run(id, JSON.stringify({ id: arxivId, arxivId, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertKey.run(`arxiv:${arxivId}`, id);
+    if (id <= 2_200) insertLane.run(id % 2 ? 'cs.CL' : 'cs.LG', id, published);
+    if (id <= 2_201) insertVector.run(id, Buffer.from(quantize(id >= 2_200 ? [1, 0] : [0, 1]).buffer));
+  }
+  db.exec('COMMIT');
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const vectorReads = () => trips.filter(trip => trip.some(sql => /^\s*SELECT\b[\s\S]*\bwork_vectors\b/i.test(sql))).length;
+  const page = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['cs.CL', 'cs.LG'], positiveIds, pageSize: 1 }), { now: NOW });
+
+  assert.deepEqual((await page([])).map(paper => paper.id), ['2610.00001']);
+  assert.equal(vectorReads(), 0, 'newest first reads no vector');
+  assert.deepEqual((await page(['2610.02202'])).map(paper => paper.id), ['2610.00001']);
+  assert.equal(vectorReads(), 1, "a like without a vector: only its own is looked for");
+  assert.deepEqual((await page(['2610.02201'])).map(paper => paper.id), ['2610.02200']);
+  assert.equal(vectorReads(), 3, "the like's vector, then every candidate's in one round trip");
 });
 
 test("an enrichment step's papers are written back however long their text, within what one D1 call carries", async () => {

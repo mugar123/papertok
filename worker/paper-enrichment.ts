@@ -211,7 +211,7 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   const types = crossrefDois.length ? await crossrefTypes(crossrefDois).catch(() => new Map<string, string>()) : new Map<string, string>();
   enriched = enriched.map(paper => withCrossrefType(paper, types.get(normalizeDoi(paper.doi))));
 
-  await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })));
+  await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })), now);
   // A paper OpenAlex should have known but did not counts a miss. One waiting
   // for an OpenAlex that did not answer is left for the next run.
   const marks = rows.flatMap((row, index) => {
