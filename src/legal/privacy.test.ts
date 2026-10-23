@@ -97,6 +97,12 @@ test('every section of the Spanish policy survives the translation', () => {
   ]);
 });
 
+test('the page says Workers AI receives liked papers the catalogue has no vector for, without the reader', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.doesNotMatch(html, /your likes [^.]*not sent to it/);
+  assert.match(html, /papers you liked [^.]*no vector[^.]*sent to it[^.]*without your identity/);
+});
+
 test('the build knows the second page and keeps the app entry named index', () => {
   const config = read('vite.config.ts').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const input = config.match(/input:\s*\{([\s\S]*?)\}/)?.[1] || '';
