@@ -772,17 +772,12 @@ const PaperCard = memo(function PaperCard({
   // The field's glyph stands on the authors' rule, and the author list opens
   // above that rule: held at its closed height, the glyph stays put behind
   // the names instead of sliding down with the rule.
-  const pinWatermark = () => {
-    const mark = sheetRef.current?.querySelector<HTMLElement>(':scope .pc-head > .pc-watermark');
-    if (!mark || mark.style.height) return;
-    mark.style.height = `${mark.getBoundingClientRect().height}px`;
-    mark.style.bottom = 'auto';
-  };
-  const releaseWatermark = () => {
-    const mark = sheetRef.current?.querySelector<HTMLElement>(':scope .pc-head > .pc-watermark');
-    if (!mark) return;
-    mark.style.height = '';
-    mark.style.bottom = '';
+  const watermarkRef = useRef<HTMLSpanElement | null>(null);
+  const holdWatermark = (held: boolean) => {
+    const mark = watermarkRef.current;
+    if (!mark || (held && mark.style.height)) return;
+    mark.style.height = held ? `${mark.getBoundingClientRect().height}px` : '';
+    mark.style.bottom = held ? 'auto' : '';
   };
   const pinSheet = () => {
     const sheet = sheetRef.current;
@@ -1906,7 +1901,7 @@ const PaperCard = memo(function PaperCard({
             `.pc-watermark`), standing on that rule. */}
         <div className="pc-head">
         {watermark && (
-          <span className="pc-watermark" aria-hidden="true">
+          <span ref={watermarkRef} className="pc-watermark" aria-hidden="true">
             <watermark.Icon size={220} weight={watermark.weight} viewBox={watermark.ink} />
           </span>
         )}
@@ -2013,7 +2008,7 @@ const PaperCard = memo(function PaperCard({
                 }
                 if (!authorsExpanded) {
                   pinSheet();
-                  pinWatermark();
+                  holdWatermark(true);
                 }
                 setAuthorsExpanded((open) => !open);
               }}
@@ -2031,7 +2026,7 @@ const PaperCard = memo(function PaperCard({
               data-open={authorsExpanded || undefined}
               inert={!authorsExpanded}
               onTransitionEnd={(event) => {
-                if (event.target === event.currentTarget && event.propertyName === 'grid-template-rows' && !authorsExpanded) releaseWatermark();
+                if (event.propertyName === 'grid-template-rows' && !authorsExpanded) holdWatermark(false);
               }}
             >
               <ul>

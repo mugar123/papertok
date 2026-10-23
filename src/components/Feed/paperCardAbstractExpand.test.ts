@@ -10,7 +10,7 @@ test('SOURCE: opening the abstract pins the card on the press, before the state 
   // grown and re-centred the sheet, and froze the shifted position.
   const toggle = jsx.slice(jsx.indexOf('const toggleExpanded = '), jsx.indexOf('setExpanded(newState);') + 1);
   assert.ok(toggle.includes('pinSheet()'), 'the press pins the sheet before the state flips');
-  assert.match(jsx, /if \(!authorsExpanded\) \{\s*pinSheet\(\);\s*pinWatermark\(\);\s*\}\s*setAuthorsExpanded\(\(open\) => !open\);/,
+  assert.match(jsx, /if \(!authorsExpanded\) \{\s*pinSheet\(\);\s*holdWatermark\(true\);\s*\}\s*setAuthorsExpanded\(\(open\) => !open\);/,
     'the author list pins the card and holds the field glyph before it opens');
 });
 
