@@ -26,13 +26,21 @@ const LIKED_LOOKUP_MAX_PAPERS = 10;
 const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT_MS + 1_000;
 // A followed lane asked for again within a day is not written again.
 const FOLLOW_REFRESH_MS = 86_400_000;
-// Runs a reader's new follows may start a day, and the whole app's. A run is a
-// Workflow instance spending the new follows' shares of OpenAlex and Workers
-// AI (paper-sources.ts, paper-store.ts), so one account cannot spend them for
-// everyone. Past the reader's runs a new follow is still registered, and the
+// New followed lanes a reader's runs may harvest at once a day, and the whole
+// app's. Runs spend the new follows' shares of OpenAlex and Workers AI
+// (paper-sources.ts, paper-store.ts), but an author known by name is searched
+// on the arXiv beat the app's readers share, and a project asks OpenAIRE,
+// without a share: counted by lane, since one request can bring 20, this is
+// what bounds them in a day. Past it a new follow is still registered, and the
 // nightly run harvests it.
-const NEW_FOLLOW_RUNS_PER_READER = 20;
-const NEW_FOLLOW_RUNS_PER_DAY = 2_000;
+const NEW_LANES_HARVESTED_PER_READER = 20;
+const NEW_LANES_HARVESTED_PER_DAY = 2_000;
+// New followed lanes a reader may register a day, and the whole app's. The
+// nightly run harvests the 400 lanes asked for most recently, so one account
+// must not fill them, or followed_lanes, with its own new lanes. Past them a
+// new follow is served from what the corpus has.
+const NEW_LANES_REGISTERED_PER_READER = 40;
+const NEW_LANES_REGISTERED_PER_DAY = 4_000;
 
 /**
  * Liked papers the corpus cannot rank against yet, fetched and embedded, for
@@ -61,9 +69,9 @@ async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: strin
 
 /**
  * Notes the followed lanes a reader asked for, so the daily harvest keeps them
- * served, and starts a harvest of the ones nobody had asked for yet, within the
- * reader's runs for the day: their papers arrive for the reader's next page
- * rather than tomorrow's.
+ * served, and starts a harvest of the ones nobody had asked for yet: their
+ * papers arrive for the reader's next page rather than tomorrow's. Both stay
+ * within the reader's new lanes for the day.
  */
 async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], now = Date.now()) {
   if (lanes.length === 0 || !env.PAPER_STORE) return;
@@ -72,18 +80,29 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
     .bind(JSON.stringify(lanes)).all<{ lane: string; requested_at: string }>();
   const known = new Map(results.map(row => [row.lane, row.requested_at]));
   const due = lanes.filter(lane => known.has(lane) && Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
-  const fresh = lanes.filter(lane => !known.has(lane));
+  let fresh = lanes.filter(lane => !known.has(lane));
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (fresh.length) {
+    const registration = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+      periodKey: `followed-lanes:day:${day}`,
+      subject: `uid:${uid}`,
+      subjectLimit: NEW_LANES_REGISTERED_PER_READER,
+      globalLimit: NEW_LANES_REGISTERED_PER_DAY,
+      amount: fresh.length,
+    });
+    if (!registration.accepted) fresh = [];
+  }
   const written = [...due, ...fresh];
   if (written.length === 0) return;
-  const day = new Date(now).toISOString().slice(0, 10);
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
     ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(written)).run();
   if (fresh.length === 0 || !env.PAPER_HARVEST) return;
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
-    periodKey: `follow-runs:day:${day}`,
+    periodKey: `follow-run-lanes:day:${day}`,
     subject: `uid:${uid}`,
-    subjectLimit: NEW_FOLLOW_RUNS_PER_READER,
-    globalLimit: NEW_FOLLOW_RUNS_PER_DAY,
+    subjectLimit: NEW_LANES_HARVESTED_PER_READER,
+    globalLimit: NEW_LANES_HARVESTED_PER_DAY,
+    amount: fresh.length,
   });
   if (!reservation.accepted) return;
   try {

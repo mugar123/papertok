@@ -53,8 +53,9 @@ const EMBEDDING_TOKENS_PER_UNIT = 1_000;
 // rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
 // ten long papers; on the harvest's subject, one account spent the whole
 // 60M-token day in 143 minutes. The runs new follows start, together: no reader
-// is recorded with them, and each of the 20 runs a reader may start a day can
-// bring a few hundred papers; what they leave waits for the daily run.
+// is recorded with them, and each of the 20 new lanes a reader's runs may
+// harvest a day can bring a few hundred papers; what they leave waits for the
+// daily run.
 const READER_EMBEDDING_DAILY_TOKENS = 50_000;
 const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // Similarity orders the page; recency only separates near ties, so a reader

@@ -40,23 +40,41 @@ test("the corpus's copy of a paper comes back by any id the app holds for it, in
   await assert.rejects(ask({ categories: [] }), { code: 'LANES_REQUIRED' });
 });
 
-test("a reader's new follows start up to 20 harvest runs a day; past them the follow waits for the nightly run, and no reader is recorded with it", async () => {
+test("a reader's new follows are harvested at once up to 20 a day, however many a request brings; past them the follow waits for the nightly run, and no reader is recorded with it", async () => {
   const { db, runs, ask } = store();
-  const follow = (index: number) => ({ type: 'topic', canonicalId: `query-${index}`, displayName: `Search ${index}`, metadata: { query: `search ${index}` } });
-  for (let index = 0; index < 20; index += 1) await ask({ follows: [follow(index)] });
-  assert.equal(runs.length, 20);
+  // Authors known by name only: each is an arXiv search, which spends no share of OpenAlex.
+  const author = (index: number) => ({ type: 'author', canonicalId: `name-${index}`, displayName: `Author ${index}` });
+  await ask({ follows: Array.from({ length: 20 }, (_, index) => author(index)) });
+  assert.equal(runs.length, 1);
+  assert.equal((runs[0] as { params: { lanes: string[] } }).params.lanes.length, 20);
   // The same reader's 21st new follow of the day answers as usual and starts no run.
-  assert.deepEqual(await ask({ follows: [follow(20)] }), { papers: [] });
-  assert.equal(runs.length, 20);
+  assert.deepEqual(await ask({ follows: [author(20)] }), { papers: [] });
+  assert.equal(runs.length, 1);
   // Another reader's still starts one.
-  await ask({ follows: [follow(21)] }, 'reader-2');
-  assert.equal(runs.length, 21);
-  assert.deepEqual((runs[20] as { params: { lanes: string[] } }).params.lanes, ['query:search 21']);
-  // Every follow is registered, the 21st too: the nightly run harvests what followed_lanes holds.
+  await ask({ follows: [author(21)] }, 'reader-2');
+  assert.equal(runs.length, 2);
+  assert.deepEqual((runs[1] as { params: { lanes: string[] } }).params.lanes, ['author-name:author 21']);
+  // The 21st is registered too: the nightly run harvests what followed_lanes holds.
   const lanes = db.prepare('SELECT * FROM followed_lanes').all() as Array<Record<string, unknown>>;
   assert.equal(lanes.length, 22);
-  assert.ok(lanes.some(row => row.lane === 'query:search 20'));
+  assert.ok(lanes.some(row => row.lane === 'author-name:author 20'));
   assert.deepEqual(Object.keys(lanes[0]).sort(), ['lane', 'requested_at']);
+});
+
+test('a reader adds at most 40 new followed lanes a day; past them a new follow is served from what the corpus has and is not registered', async () => {
+  const { db, ask } = store();
+  const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
+  }));
+  const registered = () => (db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n;
+  await ask({ follows: searches(0, 20) });
+  await ask({ follows: searches(20, 20) });
+  assert.equal(registered(), 40);
+  assert.deepEqual(await ask({ follows: searches(40, 1) }), { papers: [] });
+  assert.equal(registered(), 40);
+  // Another reader's new follow is still registered.
+  await ask({ follows: searches(40, 1) }, 'reader-2');
+  assert.equal(registered(), 41);
 });
 
 test('the page answers before a liked paper without a vector is embedded, and the Worker embeds it afterwards', async t => {
