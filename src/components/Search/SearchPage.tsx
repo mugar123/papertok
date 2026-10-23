@@ -36,7 +36,7 @@ import useQuickSave from '../../hooks/useQuickSave.ts';
 import { useLanguage } from '../../context/LanguageContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
-import { getOpenAlexHealth, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import { getOpenAlexHealth, isOpenAlexBudgetRefusal, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 import {
   SECTION_SOURCES,
   SOURCE_LABELS,
@@ -77,6 +77,12 @@ const SEARCH_MIN_LOADING_MS = 180;
 // The page waits for the slowest section it shows, so the sections a reader
 // looks at less often get less.
 const PAGE_SECTION_TIMEOUTS = { papers: 6000, authors: 5000, institutions: 4500, topics: 4500, projects: 6000 };
+// When OpenAlex searches come back at the latest, then why they stopped while
+// OpenAlex itself still answers (PAP-88), in that order because the strip cuts
+// its end on a narrow screen. The day's budget resets at 00:00 UTC; a new
+// budget reading can reopen them sooner, so no countdown is given and Retry
+// stays.
+const OPENALEX_BUDGET_PAUSE_NOTE = "Searches resume by 00:00 UTC at the latest. PaperTok keeps the rest of the day's OpenAlex budget for opening papers and the feed.";
 
 // `scope` is the one on screen, which the page changes when the reader opens
 // another; the search answers each scope it was asked for, and only the
@@ -337,9 +343,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     // OpenAIRE also satisfies `isOpenAlexRateLimitError`, which walks the cause
     // chain looking for that status.
     const openAlexIssues = snapshot.issues.filter(issue => SECTION_SOURCES[issue.section] === 'openalex');
+    // OpenAlex refusing the key is an outage with a wait. The Worker pausing
+    // searches for the day's budget is not, and has no wait worth counting.
+    const keyRefused = (error: unknown) => isOpenAlexRateLimitError(error) && !isOpenAlexBudgetRefusal(error);
     const health = getOpenAlexHealth();
     const rateLimited = health.rateLimited
-      || openAlexIssues.some(issue => isOpenAlexRateLimitError(issue.error));
+      || openAlexIssues.some(issue => keyRefused(issue.error));
+    const budgetPaused = openAlexIssues.some(issue => isOpenAlexBudgetRefusal(issue.error));
     // Both sources of the wait, latest end wins: the client zeroes
     // `rateLimitedUntil` as soon as any request succeeds, so health can read 0
     // while the error that failed still carries what OpenAlex said. That wait
@@ -349,7 +359,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     const retryAtMs = Math.max(
       now + (health.retryAfterMs || 0),
       ...openAlexIssues.map(issue => (
-        isOpenAlexRateLimitError(issue.error)
+        keyRefused(issue.error)
           ? issue.failedAtMs + ((issue.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0)
           : 0
       )),
@@ -359,7 +369,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setInstitutionResults(snapshot.results.institutions);
     setConceptResults(snapshot.results.topics);
     setProjectResults(snapshot.results.projects);
-    setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs: retryAtMs - now, now }));
+    setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, budgetPaused, retryAfterMs: retryAtMs - now, now }));
     setIsSearching(false);
   }, []);
 
@@ -624,10 +634,14 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const outageDetail = [
     outageSections && `${outageSections.charAt(0).toUpperCase()}${outageSections.slice(1)} may be incomplete.`,
     searchIssue?.rateLimited && openAlexRetryLabel && `Back in about ${openAlexRetryLabel}.`,
+    searchIssue?.budgetPaused && OPENALEX_BUDGET_PAUSE_NOTE,
   ].filter(Boolean).join(' ');
   const outageTitle = searchIssue?.rateLimited
     ? 'OpenAlex is temporarily unavailable'
-    : `${outageSourceNames} did not respond`;
+    : searchIssue?.budgetPaused
+      // Short enough for the one-line strip on a 320 px screen.
+      ? 'OpenAlex searches paused'
+      : `${outageSourceNames} did not respond`;
   const suggestedQueries: { label: string; icon: ReactElement; query: string; section: SearchScopeId }[] = [
     {
       label: 'Cosmology',
@@ -840,10 +854,14 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {[
                   activeSearchFilter === 'all'
                     ? 'No other source found anything for this search.'
-                    : `${activeFilterOption.label} come from ${outageSourceNames}, so none can be shown until it answers.`,
+                    : searchIssue?.budgetPaused && SECTION_SOURCES[activeSearchFilter] === 'openalex'
+                      ? `${activeFilterOption.label} come from OpenAlex, so none can be shown while its searches are paused.`
+                      : `${activeFilterOption.label} come from ${outageSourceNames}, so none can be shown until it answers.`,
                   searchIssue?.rateLimited && openAlexRetryLabel
                     ? `It should be back in about ${openAlexRetryLabel}.`
-                    : 'It usually comes back in a moment.',
+                    : searchIssue?.budgetPaused
+                      ? OPENALEX_BUDGET_PAUSE_NOTE
+                      : 'It usually comes back in a moment.',
                 ].join(' ')}
               </EmptyState>
             )}

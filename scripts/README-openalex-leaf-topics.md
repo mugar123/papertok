@@ -23,8 +23,10 @@ The Worker's nightly harvest gives every leaf in the generated map its own
 `openalex-topics` lane (`categoryLaneJobs()` in `worker/paper-sources.ts`),
 which asks for the leaf's admitted topic IDs, sorted as in its sample. Each
 lane reads up to 5 pages of 200 a night from the harvest's share of 4,000
-OpenAlex list calls (`HARVEST_OPENALEX_DAILY_CALLS`), so every admitted leaf
-adds up to 5 calls a night. The 39 leaves in the map take at most 195.
+OpenAlex units a day (`OPENALEX_HARVEST_DAILY_UNITS` in
+`worker/provider-runtime.ts`; a page is one list call, one unit), so every
+admitted leaf adds up to 5 units a night. The 39 leaves in the map take at
+most 195.
 
 ## Propose candidates
 

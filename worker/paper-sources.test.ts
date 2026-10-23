@@ -5,7 +5,10 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { handleOpenAlex } from './openalex-api.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
+import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -414,4 +417,61 @@ test("the harvest stops asking OpenAlex once its share of the day is spent, leav
   );
   // A search is ten list calls of the harvest's 4,000.
   assert.equal(urls.length, 400);
+});
+
+// PAP-88: readers' searches and profile lists stop at 60 % of the day's
+// OpenAlex ceiling, their card batches at 80 %. A followed author, search or
+// project asks OpenAlex in those same shapes, and a run started by a new follow
+// can come at any hour, so the harvest spends its own share up to 95 % and
+// leaves the rest to papers being opened.
+test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest leaves the last share to an opened paper", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/genetics/iyag290' }] } } } }] } } }
+    : { results: [] }));
+  const ceiling = 1_000;
+  const share = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(ceiling * OPENALEX_TIER_PERCENT[tier] / 100);
+  Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });
+  const spendElsewhere = (amount: number) => reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`, subject: 'readers', subjectLimit: ceiling, globalLimit: ceiling, amount,
+  });
+  const follows = (lane: string) => SOURCES['openalex-follows'].fetchPage(env as never, { lane, page: 1, since: '' });
+
+  // Readers have spent past both of their shares.
+  const readers = share('enrichment') + 50;
+  await spendElsewhere(readers);
+  await follows('author:A5023888391');
+  await follows('query:graph neural networks');
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '' });
+  assert.deepEqual(
+    urls.filter(url => url.hostname === 'api.openalex.org').map(url => (url.searchParams.has('search') ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
+    ['author.id', 'search', 'doi'],
+  );
+
+  // An author page, a search and a DOI list: 12 units. The rest of the
+  // harvest's tier goes elsewhere.
+  await spendElsewhere(share('feed') - readers - 12);
+  await assert.rejects(follows('author:A5000000001'), SourceRefused);
+  const opened = await handleOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=1'), env);
+  assert.equal(opened.status, 200, 'a paper being opened still has the rest of the ceiling');
+});
+
+// The harvest's share is counted in the day's OpenAlex ledger, on a miss only:
+// a page an earlier run or another location already stored costs none of it.
+test("the harvest reserves its share with the day's OpenAlex ledger, and a stored page reserves nothing", async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  const ledger = inMemoryQuotaLedger();
+  const entries = new Map<string, { value: string; metadata: unknown }>();
+  Object.assign(env, {
+    REQUEST_QUOTA_LEDGER: ledger.binding,
+    NOTIFICATION_STORE: {
+      getWithMetadata: async (key: string) => entries.get(key) ?? { value: null, metadata: null },
+      put: async (key: string, value: string, options?: { metadata?: unknown }) => { entries.set(key, { value, metadata: options?.metadata }); },
+    },
+  });
+  const follows = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'author:A5023888391', page: 1, since: '' });
+
+  await follows();
+  await follows();
+  assert.equal(urls.length, 1, 'the second page came from the store');
+  assert.deepEqual(ledger.calls.map(key => key.split(':').slice(0, 2).join(':')), ['openalex:day']);
 });

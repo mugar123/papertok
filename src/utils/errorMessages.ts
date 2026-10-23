@@ -19,6 +19,7 @@ const ERROR_MESSAGES = {
     PARTIAL_PUBLICATIONS_LOAD_FAILED: 'Some publications could not be loaded.',
     AUTHORS_LOAD_FAILED: 'Authors could not be loaded. Check your connection and try again.',
     PARTIAL_AUTHORS_LOAD_FAILED: 'Some authors could not be loaded.',
+    OPENALEX_LIST_PAUSED: "PaperTok has paused this OpenAlex list to keep the day's budget for opening papers and the feed. The list is available again by 00:00 UTC at the latest.",
     LISTS_LOAD_FAILED: 'Your custom lists could not be updated.',
     LISTS_LOAD_STALLED: 'Your lists are taking unusually long. Still trying.',
     LIST_METADATA_LOAD_FAILED: 'Some metadata for this list could not be loaded.',

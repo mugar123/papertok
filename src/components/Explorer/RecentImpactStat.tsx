@@ -13,6 +13,12 @@ const LEGACY_IMPACT_LEVELS: Record<string, string> = {
 };
 
 function unavailableCopy({ error, impact }: ImpactProps) {
+  if (error === 'budget_paused') {
+    return {
+      title: "PaperTok has paused this OpenAlex request to keep the day's budget for opening papers and the feed. The score is available again by 00:00 UTC at the latest.",
+      detail: 'Paused',
+    };
+  }
   if (error === 'rate_limited') {
     return {
       title: 'OpenAlex has temporarily limited requests. The score will return when available.',
