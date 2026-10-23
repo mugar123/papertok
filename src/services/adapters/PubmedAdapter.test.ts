@@ -5,7 +5,7 @@ import { pubmedCategoryQuery } from './pubmedRecords.ts';
 import { isFeedPublication } from '../feedPublicationRules.ts';
 import { PaperBuilder } from '../PaperBuilder.ts';
 import { accessTagForPaper, reviewStatusForPaper } from '../../utils/paperStatus.ts';
-import { mapOpenAlexEnrichmentWork } from '../openAlexService.ts';
+import { mapOpenAlexEnrichmentWork } from '../../utils/openAlexWork.ts';
 
 const adapter = new PubmedAdapter();
 
