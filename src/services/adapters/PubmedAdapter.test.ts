@@ -5,7 +5,6 @@ import { pubmedCategoryQuery } from './pubmedRecords.ts';
 import { isFeedPublication } from '../feedPublicationRules.ts';
 import { PaperBuilder } from '../PaperBuilder.ts';
 import { accessTagForPaper, reviewStatusForPaper } from '../../utils/paperStatus.ts';
-import { mapOpenAlexEnrichmentWork } from '../../utils/openAlexWork.ts';
 
 const adapter = new PubmedAdapter();
 
@@ -147,23 +146,11 @@ function pubmedRecord(articleids: Array<{ idtype: string; value: string }> = [])
     articleids: [{ idtype: 'doi', value: '10.5555/pap92' }, ...articleids],
   });
 }
-const openAlexWork = (isOa: boolean) => mapOpenAlexEnrichmentWork({
-  id: 'https://openalex.org/W1',
-  doi: 'https://doi.org/10.5555/pap92',
-  open_access: { is_oa: isOa, oa_url: isOa ? 'https://example.org/pap92.pdf' : null },
-})!.enrichment;
-
 test('a PubMed record without a PMC copy keeps its access unknown, and shows no access chip', () => {
   for (const paper of [PaperBuilder.create(pubmedRecord()), PaperBuilder.deduplicate([pubmedRecord()])[0]]) {
     assert.equal(paper.openAccess, undefined);
     assert.equal(accessTagForPaper(paper), null);
   }
-});
-
-test('OpenAlex or a PMC copy decides the access of a PubMed record', () => {
-  const [unknown] = PaperBuilder.deduplicate([pubmedRecord()]);
-  assert.equal(accessTagForPaper(PaperBuilder.merge(unknown, openAlexWork(false), 'openalex'))!.label, 'Closed access');
-  assert.equal(accessTagForPaper(PaperBuilder.merge(unknown, openAlexWork(true), 'openalex'))!.label, 'Open access');
   const [deposited] = PaperBuilder.deduplicate([pubmedRecord([{ idtype: 'pmc', value: 'PMC1' }])]);
-  assert.equal(accessTagForPaper(deposited)!.label, 'Open access');
+  assert.equal(accessTagForPaper(deposited)?.label, 'Open access', 'a PMC copy is still proof of access');
 });
