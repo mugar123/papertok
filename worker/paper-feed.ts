@@ -122,13 +122,18 @@ const RANKING_CACHE_SECONDS = 15 * 60;
 /**
  * The reader's ranking in this location's cache, under a key built from the
  * verified uid and the request: one reader's order is never another's.
+ *
+ * The path names the entry's shape. Workers before KeptRanking keep a plain
+ * list under `store-ranking/` and slice whatever they find there, so a
+ * rollback reading this shape would throw; under its own path, neither
+ * version reads the other's entries, and the next page is ranked again.
  */
 function rankingCache(uid: string): RankingCache | undefined {
   if (typeof caches === 'undefined') return undefined;
   const keyFor = async (key: string) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${uid}\n${key}`));
     const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    return new Request(`https://papertok.internal/cache/store-ranking/${hex}`);
+    return new Request(`https://papertok.internal/cache/store-ranking-v2/${hex}`);
   };
   return {
     async get(key) {

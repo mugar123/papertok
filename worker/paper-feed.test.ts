@@ -131,6 +131,30 @@ test('an empty first page keeps no order, so papers that arrive after it start o
   assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 2, pageSize: 1 })).papers), ['2610.20002']);
 });
 
+// Where Worker versions before KeptRanking keep a reader's order, and where a
+// rollback to one reads it: a plain list of ranks, under a digest of the uid
+// and the request, which they slice for the next page.
+async function previousWorkerKey(uid: string, request: { lanes: string[]; positives: string[]; order: string }) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${uid}\n${JSON.stringify(request)}`));
+  return `https://papertok.internal/cache/store-ranking/${Buffer.from(digest).toString('hex')}`;
+}
+
+test("this Worker and earlier versions never read each other's kept orders, so after a rollback or a deploy the next page is ranked again", async t => {
+  const entries = rankingCaches(t);
+  const { env, db, ask } = store();
+  await ingestPapers(env, [{ paper: paper('2610.80001', 'Newer paper', 1), lanes: [] }, { paper: paper('2610.80002', 'Older paper', 2), lanes: [] }]);
+  const request = (page: number) => ({ categories: ['cs.CL'], page, pageSize: 1 });
+  const asked = { lanes: ['cs.CL'], positives: [], order: 'recent' };
+  assert.deepEqual(ids((await ask(request(0), 'reader-1')).papers), ['2610.80001']);
+  assert.equal(entries.size, 1, 'the order is kept');
+  assert.equal(entries.get(await previousWorkerKey('reader-1', asked)), undefined, 'after a rollback, the next page finds no order to slice');
+  // The order an earlier version kept for a reader's first page, as it keeps
+  // it: in an order this one would not serve.
+  const workId = (arxivId: string) => (db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number }).work_id;
+  entries.set(await previousWorkerKey('reader-2', asked), new Response(JSON.stringify(['2610.80002', '2610.80001'].map(arxivId => ({ workId: workId(arxivId), lanes: ['cs.CL'] })))));
+  assert.deepEqual(ids((await ask(request(1), 'reader-2')).papers), ['2610.80002'], 'ranked again, newest first');
+});
+
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {
