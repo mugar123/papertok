@@ -80,8 +80,9 @@ const TEX_ACCENTS: Record<string, string> = {
 };
 const TEX_ACCENT = /\\(?:([`'^~=."])|([urHvdckb])(?![a-zA-Z]))\s*(?:\{\s*(\\[ij]|[a-zA-Z])\s*\}|(\\[ij](?![a-zA-Z])|[a-zA-Z]))/g;
 const TEX_LETTERS: Record<string, string> = { i: 'ı', j: 'ȷ', o: 'ø', O: 'Ø', l: 'ł', L: 'Ł', ss: 'ß', aa: 'å', AA: 'Å', ae: 'æ', AE: 'Æ', oe: 'œ', OE: 'Œ' };
-// A control word ends at the spaces after it: "Bj\o rn" is Bjørn.
-const TEX_LETTER = /\\(ss|aa|AA|ae|AE|oe|OE|[ijoOlL])(?![a-zA-Z])(?:\{\}|\s*)/g;
+// TeX would also take the space after `\l`, but names are written as read:
+// "Pawe\l Kowalski" is two words.
+const TEX_LETTER = /\\(ss|aa|AA|ae|AE|oe|OE|[ijoOlL])(?![a-zA-Z])(?:\{\})?/g;
 
 function texNameText(value: string) {
   return value.split(/(\$[^$]*\$)/).map((part, index) => (index % 2 ? part : part
