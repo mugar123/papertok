@@ -142,3 +142,18 @@ test('English always joins with and', () => {
 test('three or more items keep the commas', () => {
   assert.equal(joinNames(['papers', 'authors', 'topics']), 'papers, authors and topics');
 });
+
+/* --- The Worker pausing a kind of request for the day's budget (PAP-88) ----- */
+
+test("a budget pause names OpenAlex's sections without a countdown, and OpenAlex refusing the key outranks it", () => {
+  const paused = describeSearchOutage({ sections: ['papers'], budgetPaused: true, retryAfterMs: 300_000, now: 1_000 });
+  assert.deepEqual(paused!.sources, ['openalex']);
+  assert.equal(paused!.budgetPaused, true);
+  assert.equal(paused!.rateLimited, false);
+  assert.equal(paused!.retryAtMs, null, 'a reading can reopen the tier at any moment: no time is promised');
+
+  const both = describeSearchOutage({ sections: ['papers'], rateLimited: true, budgetPaused: true, retryAfterMs: 60_000, now: 1_000 });
+  assert.equal(both!.rateLimited, true);
+  assert.equal(both!.budgetPaused, false);
+  assert.equal(both!.retryAtMs, 61_000);
+});
