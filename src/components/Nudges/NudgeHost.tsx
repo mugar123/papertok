@@ -126,8 +126,8 @@ export default function NudgeHost() {
     setPicked(null);
   }, []);
 
-  // Escape only puts it away for this visit: the key also closes dialogs, so
-  // it is no sign the change was read. It comes back on the next visit.
+  // Escape only puts it away for this visit: a key pressed to clear the corner
+  // is no sign the change was read. It comes back on the next visit.
   const hidePrivacy = useCallback(() => setPicked(null), []);
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
