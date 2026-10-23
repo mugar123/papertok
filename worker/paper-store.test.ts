@@ -5,6 +5,7 @@ import test from 'node:test';
 import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 
@@ -105,6 +106,14 @@ test('a paper published before the corpus window is not filed, unless its lane k
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
   await ingestPapers(env, [{ paper: old, lanes: ['mech.aero'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
   assert.deepEqual(rows(db, 'SELECT kept_until FROM works').map(row => row.kept_until), ['2026-11-05T03:00:00.000Z']);
+});
+
+// esummary dates the issue "2026": read as 1 January, outside the 90 days.
+test('a PubMed article in a volume dated by its year alone is filed under the day it went online', async () => {
+  const { env, db } = corpus();
+  const article = mapPubmedSummary({ uid: '42900002', title: 'A cardiology article in the 2026 volume', source: 'J', pubdate: '2026', epubdate: '2026 Oct 16', pubtype: ['Journal Article'] });
+  await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes').map(row => row.lane), ['med.cardio']);
 });
 
 test('a paper past its keeping date leaves with its keys, lanes and vector', async () => {

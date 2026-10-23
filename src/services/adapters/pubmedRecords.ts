@@ -215,7 +215,12 @@ export function mapPubmedSummary(raw: PubmedSummary, provider = 'pubmed'): Paper
   // `pubdate` is the print issue's date, which can be after today for an
   // article already online; `epubdate` is the day it went online. A date
   // after today is never shown, and a record with no other date shows none.
-  const published = [raw.pubdate, raw.epubdate].find(date => date && !isAfterToday(date)) || '';
+  // An issue named by its year or month alone ("2026", "2026 Oct") reads as
+  // that period's first day, so an online day in the same year comes first.
+  const issueHasDay = /^\d{4} [a-z]{3} \d/i.test(raw.pubdate || '');
+  const onlineFirst = !issueHasDay && raw.epubdate?.slice(0, 4) === raw.pubdate?.slice(0, 4);
+  const dates = onlineFirst ? [raw.epubdate, raw.pubdate] : [raw.pubdate, raw.epubdate];
+  const published = dates.find(date => date && !isAfterToday(date)) || '';
   const chapter = isProtocolBookSeries({ issn: raw.issn, essn: raw.essn, nlmId: raw.nlmuniqueid });
 
   return {
