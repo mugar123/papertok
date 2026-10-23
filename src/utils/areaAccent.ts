@@ -82,10 +82,10 @@ function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
 }
 
 /*
- * OPENALEX_LEAF_TOPICS holds the OpenAlex topics whose newest core-journal
- * articles stand for a leaf, for the harvest's journal-article lane (PAP-73,
- * PAP-99): the leaves arXiv does not serve, and arXiv's own, which otherwise
- * show only preprints. Topics, not subfields: in a blind check on 2026-10-21,
+ * OPENALEX_LEAF_TOPICS holds the OpenAlex topics whose newest articles from
+ * core sources stand for a leaf, for the harvest's journal-article lane
+ * (PAP-73, PAP-99): the leaves arXiv does not serve, and arXiv's own, which
+ * otherwise show only preprints. Topics, not subfields: in a blind check on 2026-10-21,
  * newest-first articles from core sources were on the leaf's field in 74 % of
  * 172 results by topic and 53 % of 190 by subfield, because subfields such as
  * 2202 (aerospace) also hold whole neighbouring disciplines. Only leaves checked
