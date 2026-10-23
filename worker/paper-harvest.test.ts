@@ -92,6 +92,24 @@ test("a followed lanes' run embeds its own lanes' papers and leaves the rest to 
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM work_vectors').get() as { n: number }).n, 2);
 });
 
+test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, and the nightly refresh still has its 700", async t => {
+  const asked = providers(t);
+  const { env, db } = corpus();
+  // The relay's own ceilings, out of the way: the harvest's shares are under test.
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const searches = () => asked.filter(url => url.hostname === 'api.openalex.org' && url.searchParams.has('search')).length;
+  // A followed search is ten units, and an empty answer ends its lane after one.
+  const lanes = Array.from({ length: 80 }, (_, index) => `query:search ${index}`);
+  for (let run = 0; run < 4; run += 1) {
+    await runPaperHarvest(env, followRun(lanes.slice(run * 10, run * 10 + 10)), workflowStep().step);
+  }
+  assert.equal(searches(), 30);
+  // Every lane asked for since, refreshed by the nightly run on the same day.
+  db.prepare('INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?)').run(new Date().toISOString(), JSON.stringify(lanes));
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  assert.equal(searches() - 30, 70);
+});
+
 test('a lane step that fails past its retries passes over its lanes, not the rest of the run', async t => {
   providers(t);
   const { env, db } = corpus();

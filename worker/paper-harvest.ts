@@ -17,9 +17,9 @@ const EMBED_STEP_PAPERS = 256;
 const ENRICH_STEP_PAPERS = 500;
 const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, most recently asked first. A followed search
-// costs ten calls, an entity one, of the 1,000 a day followed lanes may spend
-// (paper-sources.ts); once they are spent, the run's other OpenAlex followed
-// lanes are skipped.
+// costs ten calls, an entity one, of the 700 a day the nightly refresh of
+// followed lanes may spend (paper-sources.ts); once they are spent, the run's
+// other OpenAlex followed lanes are skipped.
 const FOLLOWED_LANES_PER_RUN = 400;
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
@@ -136,8 +136,9 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
  * set harvested from where it last finished, every other source's lanes, the
  * lanes readers follow, the papers past their keeping date removed, then
  * enrichment and embedding of what arrived within the day's budgets. A run for
- * newly followed lanes (`payload.lanes`) harvests those and embeds only their
- * papers: the rest of the corpus is the daily run's to embed.
+ * newly followed lanes (`payload.lanes`) harvests those within the new
+ * follows' share of OpenAlex and embeds only their papers: the rest of the
+ * corpus is the daily run's to embed.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
@@ -146,7 +147,8 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
 
   const followed = event.payload?.lanes;
   if (followed?.length) {
-    await runLaneJobs(env, step, 'followed', followed.map(followedLaneJob).filter(Boolean) as LaneJob[]);
+    const jobs = followed.map(followedLaneJob).filter(Boolean) as LaneJob[];
+    await runLaneJobs(env, step, 'followed', jobs.map(job => ({ ...job, newFollow: true })));
     await phase('embed', () => embedAll(env, step, followed));
     return;
   }

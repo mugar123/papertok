@@ -351,14 +351,14 @@ test("followed searches stop at their part of the harvest's OpenAlex day, and ca
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
   const followedSearch = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 } });
-  // A search is ten list calls: followed lanes may spend 1,000 of the harvest's 4,000.
-  for (let call = 0; call < 100; call += 1) await followedSearch();
+  // A search is ten list calls: the nightly refresh of followed lanes may spend 700 of the harvest's 4,000.
+  for (let call = 0; call < 70; call += 1) await followedSearch();
   await assert.rejects(followedSearch(), (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60);
   await assert.rejects(SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), SourceRefused);
-  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 100);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 70);
   // A category's lane is still served, and enrichment after it, up to the whole share.
   await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'bio.mol', page: 1, since: '', waits: { seconds: 0 } });
-  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 101);
-  for (let call = 0; call < 2_999; call += 1) await reserveHarvestOpenAlex(env, 1);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 71);
+  for (let call = 0; call < 3_299; call += 1) await reserveHarvestOpenAlex(env, 1);
   await assert.rejects(reserveHarvestOpenAlex(env, 1), SourceRefused);
 });

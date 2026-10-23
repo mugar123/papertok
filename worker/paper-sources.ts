@@ -289,9 +289,10 @@ export type SourceName =
   | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
   | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
-export interface LaneJob { source: SourceName; lane: string }
+// `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
+export interface LaneJob { source: SourceName; lane: string; newFollow?: boolean }
 
-interface PageRequest { lane: string; page: number; since: string; waits: LaneWaits }
+interface PageRequest { lane: string; page: number; since: string; waits: LaneWaits; newFollow?: boolean }
 interface SourcePage { items: Harvested[]; newest: string; full: boolean }
 interface SourceSpec {
   // Pages on a lane's first run, and on later ones (a later run also stops
@@ -337,30 +338,39 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // list calls (a search is ten). The rest of the day's ledger stays for readers'
 // searches and pages; the shared ledger still counts every call.
 const HARVEST_OPENALEX_DAILY_CALLS = 4_000;
-// The part of that share followed lanes may spend, the runs new follows start
-// included. Readers choose how many there are, and 400 followed searches spent
-// the whole share before a paper was enriched: category lanes and enrichment
-// keep the rest.
-const HARVEST_OPENALEX_FOLLOWED_CALLS = 1_000;
+// The parts of that share followed lanes may spend, 1,000 in all. Readers
+// choose how many there are, and 400 followed searches spent the whole share
+// before a paper was enriched: category lanes and enrichment keep the rest.
+// The runs new follows start spend from 00:00 UTC, before the nightly run
+// reaches its followed lanes, so they have a part of their own and never
+// spend the nightly refresh's.
+const HARVEST_FOLLOW_SHARES = {
+  nightly: { subject: 'harvest:follows', calls: 700 },
+  new: { subject: 'harvest:new-follows', calls: 300 },
+};
+
+/** Which part of the followed lanes' share a lane spends: the nightly refresh's, or the runs new follows start. */
+type FollowShare = keyof typeof HARVEST_FOLLOW_SHARES;
 
 /**
  * Reserves harvest calls against its own daily share before the shared ledger
  * sees them; a followed lane's against its part of the share too, in the same
  * transaction.
  */
-export async function reserveHarvestOpenAlex(env: Pick<WorkerEnv, 'REQUEST_QUOTA_LEDGER'>, calls: number, { followed = false } = {}) {
+export async function reserveHarvestOpenAlex(env: Pick<WorkerEnv, 'REQUEST_QUOTA_LEDGER'>, calls: number, { follows }: { follows?: FollowShare } = {}) {
+  const share = follows ? HARVEST_FOLLOW_SHARES[follows] : { subject: 'harvest', calls: HARVEST_OPENALEX_DAILY_CALLS };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
     periodKey: `harvest-openalex:day:${new Date().toISOString().slice(0, 10)}`,
-    subject: followed ? 'harvest:follows' : 'harvest',
-    subjectLimit: followed ? HARVEST_OPENALEX_FOLLOWED_CALLS : HARVEST_OPENALEX_DAILY_CALLS,
+    subject: share.subject,
+    subjectLimit: share.calls,
     globalLimit: HARVEST_OPENALEX_DAILY_CALLS,
     amount: calls,
   });
-  if (!reservation.accepted) throw new SourceRefused(`/openalex (harvest share${followed ? ', followed lanes' : ''})`, 3_600);
+  if (!reservation.accepted) throw new SourceRefused(`/openalex (harvest share${follows ? `, ${follows} follows` : ''})`, 3_600);
 }
 
-async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', followed = false }: { page: number; perPage: number; search?: string; followed?: boolean }) {
-  await reserveHarvestOpenAlex(env, search ? 10 : 1, { followed });
+async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', follows }: { page: number; perPage: number; search?: string; follows?: FollowShare }) {
+  await reserveHarvestOpenAlex(env, search ? 10 : 1, { follows });
   const params: Record<string, string | number> = {
     filter, sort: 'publication_date:desc', page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
@@ -371,10 +381,10 @@ async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, se
 
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
-async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', followed = false, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
-  page: number; lane: string; perPage: number; search?: string; followed?: boolean; map?: (work: OpenAlexWork) => Partial<Paper> | null;
+async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', follows, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
+  page: number; lane: string; perPage: number; search?: string; follows?: FollowShare; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
-  const works = await openAlexWorks(env, filter, { page, perPage, search, followed });
+  const works = await openAlexWorks(env, filter, { page, perPage, search, follows });
   return pageOf(filed(works.map(map), lane), perPage);
 }
 
@@ -485,19 +495,20 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   },
   'openalex-follows': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, keepsOld: true,
-    fetchPage: (env, { lane, page }) => {
+    fetchPage: (env, { lane, page, newFollow }) => {
       const [kind, value] = [lane.slice(0, lane.indexOf(':')), lane.slice(lane.indexOf(':') + 1)];
-      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, followed: true });
+      const follows = newFollow ? 'new' : 'nightly';
+      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, follows });
       // None dated after today, which would sort first.
-      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, followed: true });
+      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, follows });
     },
   },
   openaire: {
     firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true,
-    fetchPage: async (env, { lane }) => {
+    fetchPage: async (env, { lane, newFollow }) => {
       const dois = await openAireProjectDois(lane);
       if (!dois.length) return { items: [], newest: '', full: false };
-      return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50, followed: true });
+      return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50, follows: newFollow ? 'new' : 'nightly' });
     },
   },
   biorxiv: { firstPages: 20, dailyPages: 20, dated: false, overlapDays: 2, fetchPage: bioRxivPage },
@@ -546,7 +557,7 @@ const KEPT_LISTING_DAYS = 14;
  * than the last run reached, or the run's page allowance. Records the lane's
  * progress only once it completes.
  */
-export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
+export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: LaneJob, now = Date.now()) {
   const spec = SOURCES[source];
   const db = env.PAPER_STORE!;
   const state = await db.prepare('SELECT harvested_through FROM lane_state WHERE source = ? AND lane = ?').bind(source, lane)
@@ -559,7 +570,7 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
   const waits = { seconds: LANE_WAIT_SECONDS };
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
-    const result = await spec.fetchPage(env, { lane, page, since, waits });
+    const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
   }
