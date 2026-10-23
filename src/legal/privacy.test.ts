@@ -106,6 +106,13 @@ test('the page says papers you liked, saved or opened reach the catalogue and Wo
   assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
 });
 
+test("the page says the server counts a signed-in reader's requests per account, not only their volume", () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // The ledger keys per-account limits (feed, follows, embedding, provider minutes) by a SHA-256 of the uid.
+  assert.doesNotMatch(html, /not who makes them/);
+  assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
+});
+
 test('the build knows the second page and keeps the app entry named index', () => {
   const config = read('vite.config.ts').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const input = config.match(/input:\s*\{([\s\S]*?)\}/)?.[1] || '';
