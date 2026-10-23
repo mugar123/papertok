@@ -23,7 +23,8 @@ export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact
 
 import { openAlexTypeaheadExpression } from './openAlexSearchQuery.ts';
 import { CATEGORIES } from '../data/categories.ts';
-import { areaKeyForCategory, openAlexFilterForArea } from '../utils/areaAccent.ts';
+import { areaKeyForCategory } from '../utils/areaAccent.ts';
+import { openAlexFilterForArea } from '../data/openAlexAreas.ts';
 import { usableOpenAlexAbstract } from '../utils/openAlexAbstract.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publicationStatus.ts';
 import { usableOpenAlexConcepts } from '../utils/openAlexConcepts.ts';

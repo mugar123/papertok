@@ -24,7 +24,6 @@ import type { Paper } from '../models/Paper.ts';
 import { CATEGORIES, getArxivArchiveArea } from '../data/categoryTaxonomy.ts';
 import { OPENALEX_LEAF_TOPICS } from '../data/openAlexLeafTopics.generated.ts';
 import { OPENALEX_FIELD_AREAS, OPENALEX_SUBFIELD_AREAS } from '../data/openAlexAreas.ts';
-export { openAlexFilterForArea } from '../data/openAlexAreas.ts';
 
 const FALLBACK = 'var(--gradient-brand)';
 
@@ -85,12 +84,12 @@ function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
  * OPENALEX_LEAF_TOPICS holds the OpenAlex topics whose newest articles from
  * core sources stand for a leaf, for the harvest's journal-article lane
  * (PAP-73, PAP-99): the leaves arXiv does not serve, and arXiv's own, which
- * otherwise show only preprints. Topics, not subfields: in a blind check on 2026-10-21,
- * newest-first articles from core sources were on the leaf's field in 74 % of
- * 172 results by topic and 53 % of 190 by subfield, because subfields such as
- * 2202 (aerospace) also hold whole neighbouring disciplines. Only leaves checked
- * against returned papers are listed; any other leaf sends no request, as an
- * unchecked list could bring back another field's papers.
+ * otherwise show only preprints. Topics, not subfields: in a blind check on
+ * 2026-10-21, newest-first articles from core sources were on the leaf's field
+ * in 74 % of 172 results by topic and 53 % of 190 by subfield, because
+ * subfields such as 2202 (aerospace) also hold whole neighbouring disciplines.
+ * Only leaves checked against returned papers are listed; any other leaf sends
+ * no request, as an unchecked list could bring back another field's papers.
  * scripts/generate-openalex-leaf-topics.ts writes the map and admits a new leaf
  * only when its labelled sample passes.
  */
