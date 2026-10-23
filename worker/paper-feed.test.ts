@@ -6,6 +6,7 @@ import type { WorkerEnv } from './env.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
+import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -154,6 +155,69 @@ test('a liked paper arXiv answers after 2 s is still filed by the lookup after t
   t.mock.timers.tick(2_000);
   assert.deepEqual((await answer).papers, []);
   t.mock.timers.tick(1_000);
+});
+
+test("the lookup after the page files what arXiv sends at the end of the route's longest seat wait and upstream deadline", async t => {
+  // The route reads its cache, then waits up to ARXIV_PACE_MAX_WAIT_MS for a
+  // seat on arXiv's beat, then up to ARXIV_UPSTREAM_TIMEOUT_MS for arXiv. Here
+  // the cache read takes 0.3 s (in production, that read and the beat's
+  // ledger round trips), the seat comes 0.1 s inside the longest wait, and
+  // arXiv answers 0.1 s inside its deadline.
+  const cacheReadMs = 300;
+  const period = ARXIV_PACE_PERIOD_MS;
+  const seatAsked = Math.floor(Date.now() / period) * period + 2 * period - ARXIV_PACE_MAX_WAIT_MS + 100;
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: seatAsked - 2 * cacheReadMs });
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  let arxivAsked = 0;
+  globalThis.fetch = (async () => {
+    arxivAsked += 1;
+    await new Promise(resolve => setTimeout(resolve, ARXIV_UPSTREAM_TIMEOUT_MS - 100));
+    return new Response(SLOW_LIKE, { headers: { 'content-type': 'application/atom+xml' } });
+  }) as typeof fetch;
+  (globalThis as TestGlobals).caches = { default: {
+    match: async (key: Request) => {
+      if (new URL(key.url).pathname.startsWith('/cache/arxiv')) await new Promise(resolve => setTimeout(resolve, cacheReadMs));
+      return null;
+    },
+    put: async () => undefined,
+  } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  // The ledger hashes subjects off the event loop; let it answer between ticks.
+  const flush = async () => {
+    for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => setImmediate(resolve));
+  };
+  const run = async (work: Promise<unknown>, limitMs: number) => {
+    let settled = false;
+    work.then(() => { settled = true; }, () => { settled = true; });
+    for (let elapsed = 0; !settled && elapsed <= limitMs; elapsed += 100) {
+      await flush();
+      t.mock.timers.tick(100);
+    }
+    await flush();
+    return work;
+  };
+
+  const { env, db } = store();
+  Object.assign(env, { AI: { run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, () => 0.5)) }) } });
+  await ingestPapers(env, [{ paper: stored, lanes: [] }]);
+  // Two readers' arXiv searches take this period's seat and the next one.
+  const searches = ['all:attention', 'all:sparsity'].map(query => handleArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
+  await flush();
+  t.mock.timers.tick(cacheReadMs);
+  await flush();
+  assert.equal(arxivAsked, 1, "the first search went to arXiv; the second waits for the next period's seat");
+
+  const afterAnswer: Array<Promise<unknown>> = [];
+  const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });
+  await handleCorpusFeed(request, env, { uid: 'reader-1' }, work => { afterAnswer.push(work); });
+  await run(Promise.all([...afterAnswer, ...searches]), 15_000);
+  assert.equal(arxivAsked, 3);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM work_keys WHERE key = 'arxiv:2610.55555'").get()?.n, 1);
 });
 
 test("a reader's ranking is kept for their next pages under their own key, never another reader's", async t => {

@@ -19,10 +19,11 @@ type FeedEnv = StoreEnv & WorkerEnv;
 const ENOUGH_STORED_POSITIVES = 3;
 const LIKED_LOOKUP_MAX_PAPERS = 10;
 // The lookup of liked papers runs after the page has answered, so it waits as
-// long as the arXiv route itself may: a seat on arXiv's beat, then arXiv. With
+// long as the arXiv route itself may: a seat on arXiv's beat, then arXiv, plus
+// a second for the route's cache read and the beat's ledger round trips. With
 // the 2 s an inline lookup has, an answer arXiv sends later spends an app-wide
 // seat and files nothing.
-const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT_MS;
+const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT_MS + 1_000;
 // A followed lane asked for again within a day is not written again.
 const FOLLOW_REFRESH_MS = 86_400_000;
 // New followed lanes a reader may add to the harvest a day, and the whole app.
