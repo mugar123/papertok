@@ -769,6 +769,21 @@ const PaperCard = memo(function PaperCard({
      it started, and the pins are let go. */
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const sheetGrown = expanded || authorsExpanded || slotAway;
+  // The field's glyph stands on the authors' rule, and the author list opens
+  // above that rule: held at its closed height, the glyph stays put behind
+  // the names instead of sliding down with the rule.
+  const pinWatermark = () => {
+    const mark = sheetRef.current?.querySelector<HTMLElement>(':scope .pc-head > .pc-watermark');
+    if (!mark || mark.style.height) return;
+    mark.style.height = `${mark.getBoundingClientRect().height}px`;
+    mark.style.bottom = 'auto';
+  };
+  const releaseWatermark = () => {
+    const mark = sheetRef.current?.querySelector<HTMLElement>(':scope .pc-head > .pc-watermark');
+    if (!mark) return;
+    mark.style.height = '';
+    mark.style.bottom = '';
+  };
   const pinSheet = () => {
     const sheet = sheetRef.current;
     const frame = sheet?.parentElement;
@@ -1996,7 +2011,10 @@ const PaperCard = memo(function PaperCard({
                   setShowAuthorsModal(true);
                   return;
                 }
-                if (!authorsExpanded) pinSheet();
+                if (!authorsExpanded) {
+                  pinSheet();
+                  pinWatermark();
+                }
                 setAuthorsExpanded((open) => !open);
               }}
               aria-label={paper.authors.length > 3
@@ -2007,7 +2025,15 @@ const PaperCard = memo(function PaperCard({
             </button>
           )}
           {(paper.authors || []).length > 0 && (
-            <div id={authorsListId} className="pc-authors-list" data-open={authorsExpanded || undefined} inert={!authorsExpanded}>
+            <div
+              id={authorsListId}
+              className="pc-authors-list"
+              data-open={authorsExpanded || undefined}
+              inert={!authorsExpanded}
+              onTransitionEnd={(event) => {
+                if (event.target === event.currentTarget && event.propertyName === 'grid-template-rows' && !authorsExpanded) releaseWatermark();
+              }}
+            >
               <ul>
                 {paper.authors.map((author, idx) => {
                   const authorName = (author as PaperAuthor).name || author as string;
