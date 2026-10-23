@@ -470,9 +470,9 @@ export class PaperBuilder {
     // `true` filed under arXiv's DOI would outrank. Beside a map that lacks a
     // record's answer, on either side (`holdsEveryAnswer`), a `true` may be
     // one that record's `false` under the DOI would have stood against: such
-    // a merge confirms nothing from a map and keeps no `true` the way a
-    // complete one does (`repeatsTrue`, `keepsConfirmed`), as merges did
-    // before the map. A `false` stands whatever else is missing.
+    // a merge confirms nothing from a map and keeps no `true` the way a merge
+    // of complete rows does (`repeatsTrue`, `keepsConfirmed`). A `false`
+    // stands whatever else is missing.
     const everyAnswer = holdsEveryAnswer(existingPaper) && holdsEveryAnswer(enrichmentData);
     const baseDoiEntry = baseDoi !== '' && enrichmentDoi !== baseDoi
       ? enrichmentData.sources?.peerReviewedByDoi?.[baseDoi]
@@ -527,10 +527,10 @@ export class PaperBuilder {
     // A `true` the row already reads on more than an arXiv DOI stands, and
     // another `true` adds nothing to it. A merged preprint row can reopen the
     // journal article's answer, and an arXiv record's DOI would otherwise
-    // become all that answer rests on. Beside a map that lacks a record's
-    // answer it keeps nothing: the row's `true`, about the DOI it shows, would
-    // then answer for another DOI whose `false` the map lost, as the
-    // conference version's for the journal article NASA ADS lists unrefereed.
+    // become all that answer rests on. Not beside a map that lacks a record's
+    // answer: the row's `true`, about the DOI it shows, could then answer for
+    // another DOI whose `false` the map lost, as a conference version's `true`
+    // for the journal article that NASA ADS lists as not refereed.
     const repeatsTrue = everyAnswer && merged.peerReviewed === true && !arxivDoiOnly && enrichmentReview === true;
     // Nor does a record without an answer end a `true` that a record under the
     // row's DOI gave (`sources.peerReviewedByDoi`). A published record typed
