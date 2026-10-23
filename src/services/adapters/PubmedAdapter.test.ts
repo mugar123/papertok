@@ -114,6 +114,31 @@ test('a PubMed record dated after today shows no year and no date', async (t) =>
   assert.equal(today.year, 2026);
 });
 
+// A print date with only a year or a month reads as the first day of that
+// period: an article online on 16 October in the 2026 volume was dated
+// 1 January, outside the corpus's 90 days, and the harvest dropped it.
+// An online day after the issue's period is a late upload, which keeps the
+// issue's date, as PMID 42900849 does below. Synthetic records in esummary's
+// date forms.
+test('a PubMed article whose issue names only a year or a month shows the day it went online within that period', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
+  const { papers } = await feedSearch('partial dates', [
+    { uid: '1', title: 'Molecular biology in a yearly volume', source: 'J', pubdate: '2026', epubdate: '2026 Oct 16', pubtype: ['Journal Article'] },
+    { uid: '2', title: 'Molecular biology in a monthly issue', source: 'J', pubdate: '2026 Oct', epubdate: '2026 Oct 16', pubtype: ['Journal Article'] },
+    { uid: '3', title: 'Molecular biology online the year before its volume', source: 'J', pubdate: '2026', epubdate: '2025 Dec 30', pubtype: ['Journal Article'] },
+    { uid: '4', title: 'Molecular biology online after its monthly issue', source: 'J', pubdate: '2026 Jan', epubdate: '2026 Mar 3', pubtype: ['Journal Article'] },
+    { uid: '5', title: 'Molecular biology in a two-month issue', source: 'J', pubdate: '2026 Sep-Oct', epubdate: '2026 Oct 16', pubtype: ['Journal Article'] },
+  ]);
+
+  assert.deepEqual(PaperBuilder.deduplicate(papers).map(paper => [paper.id, paper.year, paper.published]), [
+    ['pmid:1', 2026, '2026 Oct 16'],
+    ['pmid:2', 2026, '2026 Oct 16'],
+    ['pmid:3', 2026, '2026'],
+    ['pmid:4', 2026, '2026 Jan'],
+    ['pmid:5', 2026, '2026 Oct 16'],
+  ]);
+});
+
 // Dates as esummary gave them on 2026-10-20: PMID 42900737 (PNAS) went online
 // that day in an issue printed on 27 October; PMID 42900849 (Biol Bull) went
 // online after its issue was printed. The third record is not online yet.

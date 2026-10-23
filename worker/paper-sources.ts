@@ -59,6 +59,8 @@ const XML = new XMLParser({
   removeNSPrefix: true,
   parseTagValue: false,
   trimValues: true,
+  // Without it only XML's five named references are read; arXiv writes `&#39;`.
+  htmlEntities: true,
   isArray: name => ['record', 'version', 'entry', 'author', 'category'].includes(name),
 });
 
@@ -69,11 +71,42 @@ const isoDate = (value: unknown) => {
 };
 const versionless = (value: unknown) => text(value).replace(/^.*\/abs\//, '').replace(/v\d+$/, '');
 
+// arXivRaw writes names in TeX: Gon\c{c}alves, {\"O}zt{\"u}rk, \L{}ukasz. An
+// accent command becomes its combining mark and a special letter its letter;
+// braces that group letters go. A formula, and a command not converted here
+// (`\textit{et al.}`), stay as written.
+const TEX_ACCENTS: Record<string, string> = {
+  '`': '\u0300', "'": '\u0301', '^': '\u0302', '~': '\u0303', '=': '\u0304', '.': '\u0307', '"': '\u0308',
+  u: '\u0306', r: '\u030a', H: '\u030b', v: '\u030c', d: '\u0323', c: '\u0327', k: '\u0328', b: '\u0331',
+};
+const TEX_ACCENT = /\\(?:([`'^~=."])|([urHvdckb])(?![a-zA-Z]))\s*(?:\{\s*(\\[ij]|\p{L}\p{M}*)\s*\}|(\\[ij](?![a-zA-Z])|\p{L}\p{M}*))/gu;
+const TEX_LETTERS: Record<string, string> = { i: 'ı', j: 'ȷ', o: 'ø', O: 'Ø', l: 'ł', L: 'Ł', ss: 'ß', aa: 'å', AA: 'Å', ae: 'æ', AE: 'Æ', oe: 'œ', OE: 'Œ' };
+// TeX would also take the space after `\l`, but names are written as read:
+// "Pawe\l Kowalski" is two words.
+const TEX_LETTER = /\\(ss|aa|AA|ae|AE|oe|OE|[ijoOlL])(?![a-zA-Z])(?:\{\})?/g;
+const TEX_GROUP = /(?<!\\[a-zA-Z]+\s*)\{([^{}\\]*)\}/g;
+
+function texNameText(value: string) {
+  return value.split(/(\$[^$]*\$)/).map((part, index) => {
+    if (index % 2) return part;
+    // An accent over an accented letter, `\~{\^e}`, reads once the inner one
+    // has. Each pass that changes the text removes a backslash or two braces.
+    for (let previous = ''; part !== previous;) {
+      previous = part;
+      part = part
+        .replace(TEX_ACCENT, (match, symbol, letter, braced, bare) => `${(braced || bare).replace('\\', '')}${TEX_ACCENTS[symbol || letter]}`)
+        .replace(TEX_LETTER, (match, name) => TEX_LETTERS[name])
+        .replace(TEX_GROUP, '$1');
+    }
+    return part;
+  }).join('').normalize('NFC');
+}
+
 // arXivRaw lists authors as one string: "A, B (MIT) and C".
 export function splitRawAuthors(value: unknown) {
   let names = text(value);
   while (/\([^()]*\)/.test(names)) names = names.replace(/\([^()]*\)/g, '');
-  return names.split(/,|\s+and\s+/).map(text).filter(Boolean);
+  return texNameText(names).split(/,|\s+and\s+/).map(text).filter(Boolean);
 }
 
 /** The records of one OAI-PMH `ListRecords` page in arXivRaw, and the token for the next. */
