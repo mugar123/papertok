@@ -86,6 +86,40 @@ test('two sources listing one paper make one row under the id readers already ho
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.CV', 'cs.LG']);
 });
 
+// #270 filed each new arXiv version whole. Since #272 a listing merges into
+// the stored row, and `merge` only fills gaps, so a revised title or abstract
+// never reached the card or its vector.
+test("the source a row came from replaces its title and abstract when it lists the paper again; another source's text does not", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
+  db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
+  const revision = arxivRecordPaper({
+    arxivId: '2610.11111',
+    title: 'Sparse attention for long documents and code',
+    abstract: 'We make attention sparse, and prove that it converges.',
+    authors: ['Ana Pérez', 'Li Wei'],
+    categories: ['cs.CL', 'cs.LG'],
+    doi: null,
+    journalRef: null,
+    comments: null,
+    published: '2026-10-10T12:00:00.000Z',
+    updated: '2026-10-20T08:00:00.000Z',
+  });
+  await ingestPapers(env, [{ paper: revision, lanes: [] }], { now: NOW });
+  const stored = (id: string) => JSON.parse(String(rows(db, `SELECT w.paper FROM works w JOIN work_keys k ON k.work_id = w.id WHERE k.key = 'id:${id}'`)[0].paper));
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [revision.title, revision.abstract, revision.abstract]);
+  assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the new text is embedded again');
+  // Hugging Face still lists the first version's text.
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: [] }], { now: NOW });
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [revision.title, revision.abstract]);
+
+  // esummary has no abstract: a listing without efetch's keeps the stored one.
+  const article = { ...mapPubmedSummary({ uid: '42900003', title: 'A cardiology trial', source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] }), abstract: 'We randomised 400 patients.' };
+  await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: { ...article, title: 'A cardiology trial (corrected)', abstract: '' }, lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual([stored('pmid:42900003').title, stored('pmid:42900003').abstract], ['A cardiology trial (corrected)', 'We randomised 400 patients.']);
+});
+
 test('a record that names two stored papers folds them into one, keeping one id and every lane', async () => {
   const { env, db } = corpus();
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
