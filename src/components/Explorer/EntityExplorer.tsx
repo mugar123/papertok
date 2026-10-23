@@ -47,7 +47,7 @@ import {
   X,
 } from '@phosphor-icons/react';
 import { getEntityById, peekEntity, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService.ts';
-import { isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import { isOpenAlexBudgetRefusal, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService.ts';
 import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters/index.ts';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService.ts';
@@ -57,6 +57,7 @@ import {
   EXPLORER_AUTO_PAGES,
   EXPLORER_ROW_CHUNK,
   authorIdentityVerified,
+  explorerListErrorCode,
   explorerListState,
   explorerPageAllowance,
   entityPapersRequestKey,
@@ -1020,13 +1021,15 @@ export default function EntityExplorer({
         } catch (error) {
           if (!isCancelled) {
             setRecentImpactError(
-              isOpenAlexRateLimitError(error)
-                ? 'rate_limited'
-                : (error as { code?: string } | null)?.code === 'timeout'
-                  ? 'timeout'
-                  : (error as { code?: string } | null)?.code === 'network_error'
-                    ? 'network_error'
-                    : 'unavailable'
+              isOpenAlexBudgetRefusal(error)
+                ? 'budget_paused'
+                : isOpenAlexRateLimitError(error)
+                  ? 'rate_limited'
+                  : (error as { code?: string } | null)?.code === 'timeout'
+                    ? 'timeout'
+                    : (error as { code?: string } | null)?.code === 'network_error'
+                      ? 'network_error'
+                      : 'unavailable'
             );
             console.error(`Failed to load recent ${type} impact`, error);
           }
@@ -1410,7 +1413,7 @@ export default function EntityExplorer({
         console.error("Failed to load papers for entity", err);
         if (request.cancelled) return;
         if (page === 1) setPapers([]);
-        setPapersError('PUBLICATIONS_LOAD_FAILED');
+        setPapersError(explorerListErrorCode(err, 'PUBLICATIONS_LOAD_FAILED'));
         setHasMore(false); // Stop infinite looping on errors
       }
       if (request.cancelled) return;
@@ -1468,7 +1471,7 @@ export default function EntityExplorer({
         console.error("Failed to load authors for entity", err);
         if (isCancelled) return;
         if (authorsPage === 1) setEntityAuthors([]);
-        setAuthorsError('AUTHORS_LOAD_FAILED');
+        setAuthorsError(explorerListErrorCode(err, 'AUTHORS_LOAD_FAILED'));
         setHasMoreAuthors(false); // Stop infinite looping on errors
       }
       if (isCancelled) return;

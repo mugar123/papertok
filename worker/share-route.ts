@@ -5,8 +5,8 @@ import type { WorkerEnv } from './env.ts';
 
 import { createFirestoreRest } from '../src/utils/firestoreRest.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
-import { addOpenAlexCredentials } from './openalex-api.ts';
-import { fetchWithDeadline, OPENALEX_CALLS, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
+import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
+import { fetchWithDeadline, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { createShareLoader, createShellLoader, handleSharePage } from './share-pages.ts';
 import { awaitUpstreamSlot } from './upstream-pace.ts';
@@ -60,8 +60,15 @@ function shareProviders(env: WorkerEnv): ShareProviders {
     async openAlex(path, params = {}) {
       const url = addOpenAlexCredentials(new URL(`https://api.openalex.org/${path}`), env);
       for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
-      const budget = await reserveOpenAlexBudget(env, '', OPENALEX_CALLS.relay);
-      if (budget.error) throw new Error('The OpenAlex budget refused a share page');
+      // Billed as the relay bills the same URL: a DOI, work, PMID or entity
+      // lookup is free and reserves nothing, so the tiers cannot refuse it.
+      // What is billed (the arXiv landing-page lookup) is enrichment: a
+      // crawler's preview, not a reader waiting on the page.
+      const { units } = openAlexCostFor(url);
+      if (units > 0) {
+        const budget = await reserveOpenAlexBudget(env, '', { units, tier: 'enrichment', kind: 'share' });
+        if (budget.error) throw new Error('The OpenAlex budget refused a share page');
+      }
       const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SHARE_UPSTREAM_TIMEOUT_MS);
       if (response.status === 404) return null;
       if (!response.ok) throw shareUpstreamError('OpenAlex', response);

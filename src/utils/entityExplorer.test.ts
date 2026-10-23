@@ -19,7 +19,11 @@ import {
   pinSourcePaper,
   authorIdentityVerified,
   sourceArxivIdFrom,
+  explorerListErrorCode,
 } from './entityExplorer.ts';
+import { getUiErrorMessage } from './errorMessages.ts';
+import { openAlexClient } from '../services/openAlexClient.ts';
+import { getAuthorsByEntity, getWorksByEntity } from '../services/openAlexService.ts';
 
 // A name is shared ("Wei Zhang" is 11,284 OpenAlex entities): a page reached
 // by a name alone is only this person when an id or the paper confirms it
@@ -338,4 +342,58 @@ test('area counts agree with what each area filter keeps, cross-listed papers in
     assert.equal(counts[key], filterAndSortEntityPapers(papers, { filters: { category: key } }).length);
   }
   assert.deepEqual(counts, { physics: 2, cs: 1, math: 1, bio: 0 });
+});
+
+// PAP-88: from 60 % of the day's OpenAlex budget the Worker refuses the lists
+// an Explorer page asks for by author, institution or topic, and its authors
+// tab, and names the tier on the 429. OpenAlex and the network still answer
+// other requests, so the list says it is paused and when it is back at the
+// latest instead of blaming the reader's connection. An institution's Crossref
+// rows still fill its list during the pause.
+test("an Explorer list the Worker paused for the day's budget says so instead of blaming the connection", async () => {
+  const realOpenAlexFetch = openAlexClient.fetchImpl;
+  const realFetch = globalThis.fetch;
+  const failure = (request: Promise<unknown>) => request.then(
+    () => assert.fail('the list was expected to fail'),
+    (error: unknown) => error,
+  );
+  const shown = (error: unknown, failedCode: string) => getUiErrorMessage(explorerListErrorCode(error, failedCode), failedCode);
+  let crossref: () => Response = () => new Response('{}', { status: 503 });
+  openAlexClient.fetchImpl = async () => new Response('{"code":"PROVIDER_RATE_LIMITED"}', {
+    status: 429,
+    headers: { 'Retry-After': '300', 'X-PaperTok-Budget-Tier': 'exploration' },
+  });
+  globalThis.fetch = async () => crossref();
+  try {
+    const paused = [
+      shown(await failure(getWorksByEntity('author', 'A7000000881', 'cited_by_count:desc', 1, '', {}, 'Ada Lovelace')), 'PUBLICATIONS_LOAD_FAILED'),
+      shown(await failure(getWorksByEntity('topic', 'T7000000882', 'cited_by_count:desc', 1, '', {}, 'Cosmology')), 'PUBLICATIONS_LOAD_FAILED'),
+      shown(await failure(getWorksByEntity('institution', 'I7000000883', 'cited_by_count:desc', 1, '', {}, 'Some University')), 'PUBLICATIONS_LOAD_FAILED'),
+      shown(await failure(getAuthorsByEntity('concept', 'C7000000884', 1, '', 'Cosmology')), 'AUTHORS_LOAD_FAILED'),
+    ];
+    for (const message of paused) {
+      assert.doesNotMatch(message, /connection/i);
+      assert.match(message, /paused/);
+      assert.match(message, /00:00 UTC/);
+    }
+
+    crossref = () => Response.json({ message: { items: [{
+      DOI: '10.1000/fallback',
+      title: ['A work Crossref knew about'],
+      author: [{ given: 'Ada', family: 'Researcher' }],
+      issued: { 'date-parts': [[2024, 3, 1]] },
+      'container-title': ['Journal of Fallbacks'],
+      type: 'journal-article',
+    }] } });
+    const institution = await getWorksByEntity('institution', 'I7000000885', 'cited_by_count:desc', 1, '', {}, 'Some University');
+    assert.deepEqual(institution.papers.map(paper => paper.title), ['A work Crossref knew about']);
+
+    openAlexClient.fetchImpl = async () => { throw new TypeError('fetch failed'); };
+    const offline = await failure(getWorksByEntity('author', 'A7000000886', 'cited_by_count:desc', 1, '', {}, 'Ada Lovelace'));
+    assert.equal(shown(offline, 'PUBLICATIONS_LOAD_FAILED'), 'Publications could not be loaded. Check your connection and try again.');
+    assert.equal(shown(offline, 'AUTHORS_LOAD_FAILED'), 'Authors could not be loaded. Check your connection and try again.');
+  } finally {
+    openAlexClient.fetchImpl = realOpenAlexFetch;
+    globalThis.fetch = realFetch;
+  }
 });
