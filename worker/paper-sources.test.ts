@@ -371,6 +371,93 @@ test('the 14 inherited leaves keep their lanes and the topics accepted in #236',
     'd712fc6dd9b51123876e8bbf61022a0172cde893fa03bb7aa394bfa16cd14d5f');
 });
 
+// ─── Journal articles of a whole area (PAP-107) ───
+
+// OpenAlex W7223244690 as returned on 2026-10-23 to the physics area's newest
+// articles (trimmed, abstract shortened): a closed article with no free copy.
+const closedPhysicsArticle = {
+  id: 'https://openalex.org/W7223244690',
+  doi: 'https://doi.org/10.7566/jpsj.95.111002',
+  title: 'High-harmonic Generation Spectroscopy in van der Waals Materials: Accessing Bloch Wavefunctions and Their Scattering Processes',
+  type: 'article',
+  publication_date: '2026-10-23',
+  publication_year: 2026,
+  authorships: [{ author: { id: 'https://openalex.org/A5102845839', display_name: 'Kento Uchida' }, institutions: [{ id: 'https://openalex.org/I22299242', display_name: 'Kyoto University' }] }],
+  abstract_inverted_index: invertedIndex('High-harmonic generation (HHG) has emerged as a promising tool for probing femtosecond-to-attosecond electron dynamics in crystalline solids.'),
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.7566/jpsj.95.111002',
+    version: 'publishedVersion',
+    is_published: true,
+    source: { id: 'https://openalex.org/S119212824', display_name: 'Journal of the Physical Society of Japan', type: 'journal', is_core: true },
+  },
+  locations: [],
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  cited_by_count: 0,
+  primary_topic: {
+    id: 'https://openalex.org/T10566',
+    display_name: 'Laser-Matter Interactions and Applications',
+    subfield: { id: 'https://openalex.org/subfields/3107', display_name: 'Atomic and Molecular Physics, and Optics' },
+    field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
+    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+  },
+};
+
+test("an area's journal lane asks OpenAlex for the core journal articles labelled as that area, and files them under the area, paywall and review as recorded", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const { urls, env } = relay(t, () => ({ results: [closedPhysicsArticle] }));
+  const { items } = await SOURCES['openalex-areas'].fetchPage(env as never, { lane: 'area:physics', page: 1, since: '' });
+  const [url] = urls;
+  for (const filter of ['primary_topic.field.id:31', 'type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true', 'from_publication_date:2026-07-25', 'to_publication_date:2026-10-23']) {
+    assert.ok(filtersOf(url).includes(filter), filter);
+  }
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(url.searchParams.has('search'), false);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223244690', ['area:physics']]]);
+  const [{ paper }] = items;
+  // What the card's access chip reads (paperStatus.ts): an explicit `false`,
+  // and no arXiv copy or PDF to call it open.
+  assert.deepEqual([paper.openAccess, paper.arxivId, paper.pdfUrl], [false, undefined, null]);
+  assert.equal(paper.peerReviewed, true, 'a journal article, by the review rule');
+  assert.equal(paper.workingPaper, undefined);
+  assert.equal(areaLabelForPaper(paper), 'Physics');
+  assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), [], 'no leaf is claimed for it');
+
+  // Engineering is read as electrical engineering unless a subfield names
+  // mechanical or civil work, and Economics as economics unless it is finance:
+  // each lane asks for what its label reads, and no paper twice.
+  const areaFilters = async (lane: string) => {
+    await SOURCES['openalex-areas'].fetchPage(env as never, { lane, page: 1, since: '' });
+    return filtersOf(urls.at(-1)!).filter(filter => filter.startsWith('primary_topic.')).sort();
+  };
+  assert.deepEqual(await areaFilters('area:eess'), [
+    'primary_topic.field.id:22',
+    ...['2202', '2203', '2205', '2206', '2210', '2211', '2212', '2215'].map(id => `primary_topic.subfield.id:!${id}`),
+  ]);
+  assert.deepEqual(await areaFilters('area:mech'), ['primary_topic.subfield.id:2202|2203|2206|2210|2211']);
+  assert.deepEqual(await areaFilters('area:econ'), ['primary_topic.field.id:20', 'primary_topic.subfield.id:!2003']);
+  assert.deepEqual(await areaFilters('area:q-fin'), ['primary_topic.subfield.id:2003']);
+});
+
+test('the areas the feed fills from arXiv get a journal lane; medicine and biology, whose every leaf PubMed serves, do not', () => {
+  const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
+  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin', 'area:stat']);
+});
+
+// The cost of the lanes: one list call an area a night, two on a lane's first run.
+test("an area's journal lane asks one page of 200 a night, and two on its first run", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const page = (number: number) => Array.from({ length: 200 }, (_, index) => ({
+    ...closedPhysicsArticle, id: `https://openalex.org/W${number}${String(index).padStart(3, '0')}`, doi: `https://doi.org/10.1/${number}.${index}`, title: `Journal article ${number}-${index} on high-harmonic spectroscopy`,
+  }));
+  const { urls, env } = relay(t, url => ({ results: page(Number(url.searchParams.get('page'))) }));
+  const { binding } = testD1();
+  await harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [['1', '200'], ['2', '200']]);
+  await harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.equal(urls.length, 3, 'a later run reads the newest page only');
+});
+
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const work = (id: string, date: string) => ({ ...splicingWork, id: `https://openalex.org/${id}`, doi: `https://doi.org/10.1/${id}`, title: `Paper ${id}`, publication_date: date });

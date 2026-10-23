@@ -15,12 +15,13 @@ import {
 } from '../src/services/domainSourceRecords.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
+import { openAlexLabelFilterForArea } from '../src/data/openAlexAreas.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, areaLane, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -275,7 +276,7 @@ export const WORKING_PAPER_SERIES_IDS = [
 ];
 
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-areas' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
   | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
 export interface LaneJob { source: SourceName; lane: string }
@@ -431,6 +432,21 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200 }),
   },
+  // The newest journal articles of a whole area, filed under the area. On
+  // 2026-10-23 a page of 200 held the last one or two days of each area but
+  // finance's nine: about 22 (finance) to 370 (electrical engineering) a day.
+  // So a night reads one page, the newest 200: one list call an area.
+  'openalex-areas': {
+    firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      openAlexLabelFilterForArea(lane.slice('area:'.length)),
+      windowFilter(),
+      'type:article',
+      'has_abstract:true',
+      'is_retracted:false',
+      'primary_location.source.is_core:true',
+    ].join(','), { page, lane, perPage: 200 }),
+  },
   'openalex-series': {
     firstPages: 4, dailyPages: 2, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -482,6 +498,7 @@ export function categoryLaneJobs(): LaneJob[] {
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
     ...LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
+    ...AREA_LANE_AREAS.map(area => ({ source: 'openalex-areas' as const, lane: areaLane(area) })),
   ];
   for (const leaf of LEAVES) {
     const plan = getDomainSourcePlan([leaf.id]);

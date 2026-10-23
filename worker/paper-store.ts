@@ -6,6 +6,7 @@ import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
 import { hasUsableAIAbstract } from '../src/utils/aiExplanationAccess.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paperDisplayTitle.ts';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
+import { ARXIV_FEED_AREAS } from '../src/services/arxivRecords.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
@@ -94,7 +95,7 @@ export function readVector(value: unknown) {
 
 // Normalized here rather than assumed: a vector cut to its leading dimensions
 // (migration 0004) is no longer a unit vector.
-function cosine(a: Int8Array, b: Int8Array) {
+export function cosine(a: Int8Array, b: Int8Array) {
   let dot = 0;
   let normA = 0;
   let normB = 0;
@@ -156,6 +157,13 @@ const LEAF_IDS = new Set(LEAVES.map(leaf => leaf.id));
 // the series say a paper is economics, not which branch.
 export const WORKING_PAPERS_LANE = 'series:working-papers';
 const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
+// Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
+// to a reader of any of its leaves, for the areas whose leaves the feed fills
+// from arXiv: PubMed lists journal articles for every leaf of medicine and
+// biology. A paper a leaf of its area holds leaves the area's lane
+// (leaf-filing.ts), so it reaches that leaf's readers and no other's.
+export const AREA_LANE_AREAS: readonly string[] = ARXIV_FEED_AREAS;
+export const areaLane = (area: string) => `area:${area}`;
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
 const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
 
@@ -656,8 +664,14 @@ export interface RankingCache {
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
-  const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
-  const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
+  const areas = new Set(LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
+  const readsEconomics = [...areas].some(area => WORKING_PAPER_AREAS.has(area));
+  const lanes = [...new Set([
+    ...query.categories,
+    ...(readsEconomics ? [WORKING_PAPERS_LANE] : []),
+    ...AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane),
+    ...query.follows.map(follow => follow.lane),
+  ])];
   if (lanes.length === 0) return [];
   const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), order: query.order });
   let ranking = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;

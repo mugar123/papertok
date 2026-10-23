@@ -54,3 +54,21 @@ export function openAlexFilterForArea(areaKey: string | null) {
   if (subfields.length) return `primary_topic.subfield.id:${subfields.join('|')}`;
   return null;
 }
+
+/**
+ * The works filter for exactly the works a card labels as this area
+ * (`areaKeyForPaper`): the area's filter, less the subfields another area
+ * claims within its fields. OpenAlex ANDs a repeated key, so each excluded
+ * subfield is a `!` clause of its own. For the paper harvest's area lanes
+ * (worker/paper-sources.ts), where a paper of another area would be served
+ * to the wrong readers rather than trimmed from a list by its label.
+ */
+export function openAlexLabelFilterForArea(areaKey: string) {
+  const filter = openAlexFilterForArea(areaKey);
+  if (!filter?.startsWith('primary_topic.field.id:')) return filter;
+  const fields = new Set(Object.keys(OPENALEX_FIELD_AREAS).filter(id => OPENALEX_FIELD_AREAS[id] === areaKey));
+  // A subfield's id begins with its field's: 2202 is in Engineering, 22.
+  const claimed = Object.keys(OPENALEX_SUBFIELD_AREAS)
+    .filter(id => OPENALEX_SUBFIELD_AREAS[id] !== areaKey && fields.has(id.slice(0, 2)));
+  return [filter, ...claimed.map(id => `primary_topic.subfield.id:!${id}`)].join(',');
+}

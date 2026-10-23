@@ -5,6 +5,7 @@ import type { LaneJob } from './paper-sources.ts';
 import { CORPUS_DAYS, daysFromNow, embedPending, evictExpired } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
+import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 
 // arXiv announces at 20:00 US Eastern; by 02:30 UTC the day's records are listed.
 export const PAPER_HARVEST_CRON = '30 2 * * *';
@@ -119,8 +120,10 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
  * lanes readers follow, the papers past their keeping date removed, then
- * enrichment and embedding of what arrived within the day's budgets. A run for
- * newly followed lanes (`payload.lanes`) harvests and embeds only those.
+ * enrichment and embedding of what arrived within the day's budgets, and last
+ * the filing of the areas' journal articles under leaves, which reads the
+ * vectors. A run for newly followed lanes (`payload.lanes`) harvests and
+ * embeds only those.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
@@ -176,6 +179,9 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
     }
   });
   await phase('embed', () => embedAll(env, step));
+  // Apart, so a failed recomputation still files by the last run's centroids.
+  await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
+  await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));
 }
 
 /**

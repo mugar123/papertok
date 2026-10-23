@@ -402,6 +402,44 @@ test("a reader of economics also gets the working-paper series, filed under none
   assert.deepEqual(followed.map(item => [item.id, item._followedEntityMatches?.map(match => (match as PaperFollowMatch).canonicalId)]), [['2610.00013', ['query-topic-1']]]);
 });
 
+// PAP-107: a journal article of a whole area, as its OpenAlex lane lists it.
+const physicsJournalArticle = mapOpenAlexWork({
+  id: 'https://openalex.org/W7223244690',
+  doi: 'https://doi.org/10.7566/jpsj.95.111002',
+  title: 'High-harmonic Generation Spectroscopy in van der Waals Materials',
+  type: 'article',
+  publication_date: '2026-10-21',
+  authorships: [{ author: { id: 'https://openalex.org/A5102845839', display_name: 'Kento Uchida' }, institutions: [] }],
+  abstract_inverted_index: { 'High-harmonic': [0], generation: [1], probes: [2], 'electron dynamics in crystalline solids.': [3] },
+  primary_location: { is_oa: false, landing_page_url: 'https://doi.org/10.7566/jpsj.95.111002', source: { id: 'https://openalex.org/S119212824', display_name: 'Journal of the Physical Society of Japan', type: 'journal' } },
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  primary_topic: {
+    id: 'https://openalex.org/T10566',
+    display_name: 'Laser-Matter Interactions and Applications',
+    subfield: { id: 'https://openalex.org/subfields/3107', display_name: 'Atomic and Molecular Physics, and Optics' },
+    field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
+  },
+} as Parameters<typeof mapOpenAlexWork>[0])!;
+
+test("a reader of any leaf of an area is served the area's journal articles, filed under none of their leaves, and eviction keeps them while the lane lists them", async () => {
+  const { env, db } = corpus();
+  const quantum = { ...arxivRecord, id: '2610.00021', arxivId: '2610.00021', title: 'A quantum error-correcting code', allCategories: ['quant-ph'], categories: ['quant-ph'], primaryCategory: 'quant-ph', published: '2026-10-20T00:00:00.000Z' };
+  await ingestPapers(env, [
+    { paper: quantum, lanes: [] },
+    { paper: physicsJournalArticle, lanes: ['area:physics'] },
+  ], { now: NOW });
+  const served = async (categories: string[]) => (await readFeedPage(env, parseFeedRequest({ categories }), { now: NOW }))
+    .map(item => [item.id, item._fetchedFor]);
+  // Newest first: the article is dated a day after the preprint.
+  assert.deepEqual(await served(['quant-ph']), [['openalex:W7223244690', undefined], ['2610.00021', ['quant-ph']]]);
+  assert.deepEqual(await served(['hep-th']), [['openalex:W7223244690', undefined]], 'any physics leaf');
+  assert.deepEqual(await served(['math.AG']), [], 'another area');
+  assert.deepEqual(await served(['med.onco']), [], 'another area');
+  await evictExpired(env, NOW);
+  assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'area:physics'").length, 1);
+  assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'the area lane keeps its paper in the corpus');
+});
+
 test('two writers filing one paper at once meet on one row, and a short title joins nothing', async () => {
   const { env, db } = corpus();
   await Promise.all([
