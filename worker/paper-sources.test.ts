@@ -10,7 +10,7 @@ import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { parseXmlDocument as parseWithShim } from '../src/test-support/xmlDomShim.ts';
 import { readPubmedEfetch } from '../src/utils/pubmedEfetch.ts';
-import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaves } from '../src/utils/areaAccent.ts';
+import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
 import { getCategoryArea } from '../src/data/categoryTaxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 
@@ -308,7 +308,7 @@ test('a leaf the gate did not admit sends no topic request, and every lane is an
   for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample']]) {
     assert.equal(statusOf(leaf).status, status, leaf);
     assert.equal(typeof statusOf(leaf).sampleSize, 'number', `${leaf} records its sample`);
-    assert.equal(openAlexTopicFilterForLeaves([leaf]), null, leaf);
+    assert.equal(openAlexTopicFilterForLeaf(leaf), null, leaf);
     assert.ok(!topicLanes().includes(leaf), leaf);
   }
   assert.deepEqual(topicLanes().sort(), coverage.filter(row => row.status === 'inherited' || row.status === 'passed').map(row => row.leaf).sort());

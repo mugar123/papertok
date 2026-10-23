@@ -93,28 +93,17 @@ function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
  * scripts/generate-openalex-leaf-topics.ts writes the map and admits a new leaf
  * only when its labelled sample passes, with the topics found on target in it.
  */
-// OpenAlex takes at most 50 values for one filter key.
-const MAX_OPENALEX_FILTER_VALUES = 50;
-
 /**
- * The OpenAlex works filter for the reader's leaves: their topic IDs taken in
- * turn from each leaf, so every leaf is represented when the lists hold more
- * than one filter takes, then sorted, the order the admission gate sampled
- * them in; and the work types. Aerospace adds conference papers, 19 of 20 of
- * them on the field in that check (structural engineering: 0 of 2). Null when
- * no leaf has a topic list.
+ * The OpenAlex works filter for one leaf's lane: its topic IDs, sorted, the
+ * order the admission gate sampled them in; and the work types. Aerospace adds
+ * conference papers, 19 of 20 of them on the field in that check (structural
+ * engineering: 0 of 2). Null when the leaf has no topic list.
  */
-export function openAlexTopicFilterForLeaves(leaves: readonly string[]) {
-  const lists = leaves.map(leaf => OPENALEX_LEAF_TOPICS[leaf]).filter(Boolean);
-  const longest = Math.max(0, ...lists.map(list => list.length));
-  const topics = Array.from({ length: longest }, (_, index) => lists.map(list => list[index]))
-    .flat()
-    .filter(Boolean)
-    .slice(0, MAX_OPENALEX_FILTER_VALUES)
-    .sort();
-  if (!topics.length) return null;
-  const types = leaves.includes('mech.aero') ? 'article|conference-paper' : 'article';
-  return `primary_topic.id:${topics.join('|')},type:${types}`;
+export function openAlexTopicFilterForLeaf(leaf: string) {
+  const topics = OPENALEX_LEAF_TOPICS[leaf];
+  if (!topics) return null;
+  const types = leaf === 'mech.aero' ? 'article|conference-paper' : 'article';
+  return `primary_topic.id:${[...topics].sort().join('|')},type:${types}`;
 }
 
 /** The leaves whose topic list holds this OpenAlex topic, given its ID or URL. */

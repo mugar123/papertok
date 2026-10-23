@@ -14,7 +14,7 @@ import {
   mapBioRxivPaper,
 } from '../src/services/domainSourceRecords.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
-import { openAlexTopicFilterForLeaves } from '../src/utils/areaAccent.ts';
+import { openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
@@ -407,7 +407,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   'openalex-topics': {
     firstPages: 5, dailyPages: 5, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
-      openAlexTopicFilterForLeaves([lane]),
+      openAlexTopicFilterForLeaf(lane),
       windowFilter(),
       'has_abstract:true',
       'is_retracted:false',
@@ -463,7 +463,7 @@ export function categoryLaneJobs(): LaneJob[] {
   const jobs: LaneJob[] = [
     ...ARXIV_LABEL_LEAVES.map(leaf => ({ source: 'arxiv-search' as const, lane: leaf.id })),
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
-    ...LEAVES.filter(leaf => openAlexTopicFilterForLeaves([leaf.id])).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
+    ...LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
   ];
   for (const leaf of LEAVES) {
