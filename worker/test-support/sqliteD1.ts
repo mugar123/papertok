@@ -1,3 +1,4 @@
+import type { DatabaseSyncOptions } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -6,6 +7,27 @@ import { DatabaseSync } from 'node:sqlite';
 // tested as written. Test-only.
 
 type Value = string | number | bigint | null | Uint8Array;
+
+// D1's SQLite limits, each one past it refused by local D1 (2026-10-23). Node
+// applies `limits` from version 24; Node 22, which CI runs, ignores the option
+// (and @types/node 22 does not declare it), so the two the store's SQL comes
+// near, compound terms and bound parameters, are also checked below.
+const D1_LIMITS = { compoundSelect: 5, variableNumber: 100, exprDepth: 100, likePatternLength: 50 };
+
+// The most terms of any one compound SELECT in the statement: compound
+// operators are counted per parenthesis level, outside literals, quoted names
+// and comments.
+function compoundTerms(sql: string) {
+  const code = sql.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|--[^\n]*|\/\*[\s\S]*?\*\//g, ' ');
+  const levels = [1];
+  let most = 1;
+  for (const [token] of code.matchAll(/[()]|\b(?:UNION|INTERSECT|EXCEPT)\b/gi)) {
+    if (token === '(') levels.push(1);
+    else if (token === ')') levels.pop();
+    else most = Math.max(most, (levels[levels.length - 1] += 1));
+  }
+  return most;
+}
 
 function bindable(value: unknown): Value {
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -29,12 +51,19 @@ class Statement {
     return bound;
   }
 
+  // SQLite's own messages, which D1 relays.
+  prepared() {
+    if (this.params.length > D1_LIMITS.variableNumber) throw new Error('too many SQL variables');
+    if (compoundTerms(this.sql) > D1_LIMITS.compoundSelect) throw new Error('too many terms in compound SELECT');
+    return this.db.prepare(this.sql);
+  }
+
   async all<T>() {
-    return { results: this.db.prepare(this.sql).all(...this.params) as T[], success: true, meta: {} };
+    return { results: this.prepared().all(...this.params) as T[], success: true, meta: {} };
   }
 
   async first<T>() {
-    return (this.db.prepare(this.sql).get(...this.params) as T | undefined) ?? null;
+    return (this.prepared().get(...this.params) as T | undefined) ?? null;
   }
 
   async run() {
@@ -42,12 +71,13 @@ class Statement {
   }
 
   runNow() {
-    return this.db.prepare(this.sql).run(...this.params);
+    return this.prepared().run(...this.params);
   }
 }
 
 export function testD1() {
-  const db = new DatabaseSync(':memory:');
+  const options: DatabaseSyncOptions & { limits: typeof D1_LIMITS } = { limits: D1_LIMITS };
+  const db = new DatabaseSync(':memory:', options);
   const migrations = new URL('../migrations/', import.meta.url);
   for (const file of readdirSync(migrations).filter(name => name.endsWith('.sql')).sort()) {
     db.exec(readFileSync(new URL(file, migrations), 'utf8'));
@@ -59,7 +89,7 @@ export function testD1() {
       try {
         // A read in a batch answers its rows, as D1's does.
         const results = statements.map(statement => (/^\s*SELECT/i.test(statement.sql)
-          ? { success: true, results: statement.db.prepare(statement.sql).all(...statement.params), meta: {} }
+          ? { success: true, results: statement.prepared().all(...statement.params), meta: {} }
           : { success: true, meta: { changes: Number(statement.runNow().changes) } }));
         db.exec('COMMIT');
         return results;
