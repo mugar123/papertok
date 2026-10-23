@@ -40,22 +40,22 @@ test("the corpus's copy of a paper comes back by any id the app holds for it, in
   await assert.rejects(ask({ categories: [] }), { code: 'LANES_REQUIRED' });
 });
 
-test("a reader's new follows join the harvest at once, up to a daily allowance, and no reader is recorded with them", async () => {
+test("a reader's new follows start up to 20 harvest runs a day; past them the follow waits for the nightly run, and no reader is recorded with it", async () => {
   const { db, runs, ask } = store();
-  const follows = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
-    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
-  }));
-  await ask({ follows: follows(0, 20) });
-  assert.equal(runs.length, 1);
-  assert.equal((runs[0] as { params: { lanes: string[] } }).params.lanes.length, 20);
-  // The same reader's 21st new follow of the day is served from what the corpus has, not harvested.
-  await ask({ follows: follows(20, 1) });
-  assert.equal(runs.length, 1);
-  // Another reader's is.
-  await ask({ follows: follows(20, 1) }, 'reader-2');
-  assert.equal(runs.length, 2);
+  const follow = (index: number) => ({ type: 'topic', canonicalId: `query-${index}`, displayName: `Search ${index}`, metadata: { query: `search ${index}` } });
+  for (let index = 0; index < 20; index += 1) await ask({ follows: [follow(index)] });
+  assert.equal(runs.length, 20);
+  // The same reader's 21st new follow of the day answers as usual and starts no run.
+  assert.deepEqual(await ask({ follows: [follow(20)] }), { papers: [] });
+  assert.equal(runs.length, 20);
+  // Another reader's still starts one.
+  await ask({ follows: [follow(21)] }, 'reader-2');
+  assert.equal(runs.length, 21);
+  assert.deepEqual((runs[20] as { params: { lanes: string[] } }).params.lanes, ['query:search 21']);
+  // Every follow is registered, the 21st too: the nightly run harvests what followed_lanes holds.
   const lanes = db.prepare('SELECT * FROM followed_lanes').all() as Array<Record<string, unknown>>;
-  assert.equal(lanes.length, 21);
+  assert.equal(lanes.length, 22);
+  assert.ok(lanes.some(row => row.lane === 'query:search 20'));
   assert.deepEqual(Object.keys(lanes[0]).sort(), ['lane', 'requested_at']);
 });
 

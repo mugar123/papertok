@@ -129,7 +129,10 @@ database_name = "papertok-paper-store"
 database_id = "f3440843-6097-4c1d-ba66-d6450c3986c7"
 migrations_dir = "worker/migrations"
 
-# One instance a day, started by the 02:30 UTC cron (worker/paper-harvest.ts).
+# One instance a day, started by the 02:30 UTC cron (worker/paper-harvest.ts),
+# and one for each feed request that brings follows nobody had asked for: at
+# most 20 a reader and 2,000 in all a UTC day (worker/paper-feed.ts). Past them
+# the nightly instance harvests those follows.
 [[workflows]]
 name = "papertok-paper-harvest"
 binding = "PAPER_HARVEST"
