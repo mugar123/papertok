@@ -135,8 +135,8 @@ function checkReview(leaf: string, value: unknown) {
   const precision = sampleSize ? onTarget / sampleSize : null;
   const status = sampleSize < minimumSample ? 'insufficient-sample'
     : precision! >= minimumPrecision ? 'passed' : 'rejected';
-  // A passing leaf's precision says nothing about a topic none of its articles
-  // were on target for, such as a generic catch-all, so its lane leaves it out.
+  // A passing leaf's precision says nothing about a topic with no sampled
+  // article on target, such as a generic catch-all, so its lane leaves it out.
   const counts = topicIds.map(topic => {
     const works = review!.works.filter(work => topicKey(work.primary_topic.id) === topic);
     return { topic, sampled: works.length, onTarget: works.filter(work => hits.has(topicKey(work.id))).length };

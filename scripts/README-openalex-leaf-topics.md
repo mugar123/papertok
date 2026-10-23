@@ -21,10 +21,10 @@ section). The generator does not call OpenAlex or the production relay.
 
 The Worker's nightly harvest gives every leaf in the generated map its own
 `openalex-topics` lane (`categoryLaneJobs()` in `worker/paper-sources.ts`),
-which asks for the leaf's admitted topic IDs in sorted order, as the sample did. Each
+which asks for the leaf's admitted topic IDs, sorted as in its sample. Each
 lane reads up to 5 pages of 200 a night from the harvest's share of 4,000
-OpenAlex list calls (`HARVEST_OPENALEX_DAILY_CALLS`), so every admitted leaf adds
-up to 5 calls a night. The 46 leaves in the map take at most 230.
+OpenAlex list calls (`HARVEST_OPENALEX_DAILY_CALLS`), so every admitted leaf
+adds up to 5 calls a night. The 46 leaves in the map take at most 230.
 
 ## Propose candidates
 
@@ -45,11 +45,12 @@ node scripts/generate-openalex-leaf-topics.ts \
 ```
 
 The report includes every leaf in `categoryTaxonomy.ts`. For each leaf with
-neither an inherited list nor a review, the generator restricts candidates to the existing area's OpenAlex ancestors,
-then ranks topic names and keywords against the leaf label. At least 60% of the
-label's significant words must match; at most ten topic IDs are proposed. This
-is candidate selection, not relevance evidence. Generic labels, synonyms and
-areas that cross the two taxonomies can require further selector work.
+neither an inherited list nor a review, the generator restricts candidates to
+the existing area's OpenAlex ancestors, then ranks topic names and keywords
+against the leaf label. At least 60% of the label's significant words must
+match; at most ten topic IDs are proposed. This is candidate selection, not
+relevance evidence. Generic labels, synonyms and areas that cross the two
+taxonomies can require further selector work.
 
 No candidate enters the runtime map without a complete review. Once a leaf has
 a review, its topics are the `primary_topic.id` values its sample query named,
@@ -77,8 +78,8 @@ Keep the entire returned page while labelling. Prepare a separate, shuffled
 review sheet with only the target leaf, opaque row IDs, titles and decoded
 abstracts. Hide topic IDs, query, venue, access and the proposed mapping while
 labelling. Record `on-target` or `off-target` for every row, and add
-`"uncertain": true` to any call you doubt: the gate counts it as a miss whatever
-its label. Join the labels back to work IDs only after finishing the
+`"uncertain": true` to any call you doubt: the gate counts it as a miss
+whatever its label. Join the labels back to work IDs only after finishing the
 blind labels. Blindness is a review procedure: the generator cannot prove that
 an annotator did not inspect the hidden data.
 
@@ -105,16 +106,16 @@ their existing acceptance.
 A passing leaf's lane asks only for the sampled topics with at least one
 article on target without doubt. The leaf's precision says nothing about a
 topic the sample never returned, such as a generic catch-all, or returned only
-off target. The report's `byTopic` gives, for each sampled topic, the articles
-on target without doubt and the articles returned. Leaving topics out only
-removes articles from the sample: at capture time, the lane's newest articles
-were the sample's articles on its topics, at the same or a higher share on
-target. A topic too rare to appear among the 15 newest articles cannot enter a
-lane this way.
+off target. The report's `byTopic` gives each topic's articles on target
+without doubt over the articles the sample returned on it, such as `9/12`.
+Leaving topics out only removes articles from the sample: at capture time, the
+lane's newest articles were the sample's articles on its topics, at the same or
+a higher share on target. A topic too rare to appear among the 15 newest
+articles cannot enter a lane this way.
 
 Low precision and short samples leave a leaf disabled and are reported as
-`rejected` or `insufficient-sample`. Invalid, stale or incomplete evidence
-aborts generation before the previous map is overwritten. `not-reviewed`,
+`rejected` or `insufficient-sample`. Invalid or incomplete evidence aborts
+generation before the previous map is overwritten. `not-reviewed`,
 `no-candidates` and `no-catalogue` are not failed precision tests.
 
 After review, retain the evidence in `scripts/data/openalex-topic-reviews.json`,
