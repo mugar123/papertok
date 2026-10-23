@@ -11,11 +11,11 @@ import { mapICitePublication, mergeICiteEnrichment } from '../src/services/iCite
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europePmcRecords.ts';
 import { withCrossrefType } from '../src/services/feedPublicationRules.ts';
 import { normalizeDoi } from '../src/utils/publicNavigation.ts';
-import { handleOpenAlex } from './openalex-api.ts';
+import { handleHarvestOpenAlex } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
-import { fetchArxivPapers, reserveHarvestOpenAlex } from './paper-sources.ts';
+import { fetchArxivPapers } from './paper-sources.ts';
 
 // What the feed used to add to every page it showed, added once to each stored
 // paper instead: OpenAlex's citations, topics, authors and access; iCite's and
@@ -47,22 +47,18 @@ const chunks = <T>(values: T[], size: number) => Array.from({ length: Math.ceil(
 class OpenAlexUnavailable extends Error {}
 
 async function openAlexChunk(env: EnrichEnv, filter: string) {
-  try {
-    await reserveHarvestOpenAlex(env, 1);
-  } catch {
-    throw new OpenAlexUnavailable('harvest share spent');
-  }
   const url = new URL('https://papertok.internal/openalex/works');
   url.searchParams.set('filter', filter);
   url.searchParams.set('per_page', '50');
   url.searchParams.set('select', OPENALEX_ENRICHMENT_SELECT);
   for (let attempt = 0; ; attempt += 1) {
     // A timeout or a refused connection is OpenAlex failing, like a 5xx.
-    const response = await handleOpenAlex(new Request(url), env).catch((error: Error) => {
+    const response = await handleHarvestOpenAlex(new Request(url), env).catch((error: Error) => {
       throw new OpenAlexUnavailable(`OpenAlex enrichment failed: ${error?.name || error}`);
     });
     if (response.ok) return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
-    // A minute's ceiling is waited out once; a spent day is not.
+    // A short wait (OpenAlex's own rate limit) is waited out once; a spent day
+    // or harvest share, which the relay refuses with five minutes, is not.
     const wait = Number(response.headers.get('retry-after')) || 0;
     if (response.status === 429 && attempt === 0 && wait > 0 && wait <= 60) {
       await new Promise(resolve => setTimeout(resolve, wait * 1000));

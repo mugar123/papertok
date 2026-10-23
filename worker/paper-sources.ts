@@ -2,6 +2,7 @@ import type { Paper } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Harvested, StoreEnv } from './paper-store.ts';
+import type { QuotaPart } from './request-quota-ledger.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
@@ -16,10 +17,9 @@ import {
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { openAlexTopicFilterForLeaves } from '../src/utils/areaAccent.ts';
 import { handleArxiv } from './arxiv-api.ts';
-import { handleOpenAlex } from './openalex-api.ts';
+import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';
-import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, daysFromNow, ingestPapers, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
@@ -334,57 +334,38 @@ async function arxivSearch(env: SourceEnv, query: string, { page, lane, waits }:
 
 const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?.label || leafId.replace(/\./g, ' ');
 
-// The share of OpenAlex's day the harvest may spend, enrichment included, in
-// list calls (a search is ten). The rest of the day's ledger stays for readers'
-// searches and pages; the shared ledger still counts every call.
-const HARVEST_OPENALEX_DAILY_CALLS = 4_000;
-// The parts of that share followed lanes may spend, 1,000 in all. Readers
-// choose how many there are, and 400 followed searches spent the whole share
-// before a paper was enriched: category lanes and enrichment keep the rest.
-// The runs new follows start spend from 00:00 UTC, before the nightly run
-// reaches its followed lanes, so they have a part of their own and never
-// spend the nightly refresh's.
-const HARVEST_FOLLOW_SHARES = {
-  nightly: { subject: 'harvest:follows', calls: 700 },
-  new: { subject: 'harvest:new-follows', calls: 300 },
+// The parts of the harvest's own share of OpenAlex's day
+// (`OPENALEX_HARVEST_DAILY_UNITS`, 4,000 units) that its lanes spend. A billed
+// miss reserves the share and its lane's part in one ledger transaction, with
+// the day's ceiling; enrichment spends the share alone. A spent share or part
+// is a refusal that ends the source for this step. Followed lanes may spend
+// 1,000 units, in two parts. Readers choose how many there are, and 400
+// followed searches spent the whole share before a paper was enriched:
+// category lanes and enrichment keep the rest. The runs new follows start
+// spend from 00:00 UTC, before the nightly run reaches its followed lanes, so
+// they have a part of their own and never spend the nightly refresh's.
+type HarvestPart = 'nightly' | 'new';
+const HARVEST_OPENALEX_PARTS: Record<HarvestPart, QuotaPart> = {
+  nightly: { subject: 'openalex:harvest:follows', limit: 700 },
+  new: { subject: 'openalex:harvest:new-follows', limit: 300 },
 };
 
-/** Which part of the followed lanes' share a lane spends: the nightly refresh's, or the runs new follows start. */
-type FollowShare = keyof typeof HARVEST_FOLLOW_SHARES;
-
-/**
- * Reserves harvest calls against its own daily share before the shared ledger
- * sees them; a followed lane's against its part of the share too, in the same
- * transaction.
- */
-export async function reserveHarvestOpenAlex(env: Pick<WorkerEnv, 'REQUEST_QUOTA_LEDGER'>, calls: number, { follows }: { follows?: FollowShare } = {}) {
-  const share = follows ? HARVEST_FOLLOW_SHARES[follows] : { subject: 'harvest', calls: HARVEST_OPENALEX_DAILY_CALLS };
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
-    periodKey: `harvest-openalex:day:${new Date().toISOString().slice(0, 10)}`,
-    subject: share.subject,
-    subjectLimit: share.calls,
-    globalLimit: HARVEST_OPENALEX_DAILY_CALLS,
-    amount: calls,
-  });
-  if (!reservation.accepted) throw new SourceRefused(`/openalex (harvest share${follows ? `, ${follows} follows` : ''})`, 3_600);
-}
-
-async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', follows }: { page: number; perPage: number; search?: string; follows?: FollowShare }) {
-  await reserveHarvestOpenAlex(env, search ? 10 : 1, { follows });
+async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', part }: { page: number; perPage: number; search?: string; part?: HarvestPart }) {
   const params: Record<string, string | number> = {
     filter, sort: 'publication_date:desc', page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
   if (search) params.search = search;
-  const response = await askRoute(handleOpenAlex, '/openalex/works', params, env);
+  const harvest = (request: Request, routeEnv: WorkerEnv) => handleHarvestOpenAlex(request, routeEnv, part && HARVEST_OPENALEX_PARTS[part]);
+  const response = await askRoute(harvest, '/openalex/works', params, env);
   return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
 }
 
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
-async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', follows, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
-  page: number; lane: string; perPage: number; search?: string; follows?: FollowShare; map?: (work: OpenAlexWork) => Partial<Paper> | null;
+async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
+  page: number; lane: string; perPage: number; search?: string; part?: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
-  const works = await openAlexWorks(env, filter, { page, perPage, search, follows });
+  const works = await openAlexWorks(env, filter, { page, perPage, search, part });
   return pageOf(filed(works.map(map), lane), perPage);
 }
 
@@ -497,10 +478,10 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, keepsOld: true,
     fetchPage: (env, { lane, page, newFollow }) => {
       const [kind, value] = [lane.slice(0, lane.indexOf(':')), lane.slice(lane.indexOf(':') + 1)];
-      const follows = newFollow ? 'new' : 'nightly';
-      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, follows });
+      const part = newFollow ? 'new' : 'nightly';
+      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, part });
       // None dated after today, which would sort first.
-      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, follows });
+      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, part });
     },
   },
   openaire: {
@@ -508,7 +489,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: async (env, { lane, newFollow }) => {
       const dois = await openAireProjectDois(lane);
       if (!dois.length) return { items: [], newest: '', full: false };
-      return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50, follows: newFollow ? 'new' : 'nightly' });
+      return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50, part: newFollow ? 'new' : 'nightly' });
     },
   },
   biorxiv: { firstPages: 20, dailyPages: 20, dated: false, overlapDays: 2, fetchPage: bioRxivPage },
