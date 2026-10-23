@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, reserveHarvestOpenAlex, splitRawAuthors } from './paper-sources.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
@@ -269,18 +269,21 @@ test("a followed project's lane asks OpenAIRE by its id, with the funder only fo
   assert.ok(urls.some(url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter') === 'doi:10.1093/genetics/iyag290'));
 });
 
-test("the harvest stops asking OpenAlex once its share of the day is spent, leaving the rest to readers", async t => {
-  const { urls, env } = relay(t, () => ({ results: [] }));
+test("followed searches stop at their part of the harvest's OpenAlex day, and category lanes and enrichment keep the rest", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
+    : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  await assert.rejects(
-    (async () => {
-      for (let call = 0; call < 401; call += 1) {
-        await SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '' });
-      }
-    })(),
-    (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60,
-  );
-  // A search is ten list calls of the harvest's 4,000.
-  assert.equal(urls.length, 400);
+  const followedSearch = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '' });
+  // A search is ten list calls: followed lanes may spend 1,000 of the harvest's 4,000.
+  for (let call = 0; call < 100; call += 1) await followedSearch();
+  await assert.rejects(followedSearch(), (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60);
+  await assert.rejects(SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '' }), SourceRefused);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 100);
+  // A category's lane is still served, and enrichment after it, up to the whole share.
+  await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'bio.mol', page: 1, since: '' });
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 101);
+  for (let call = 0; call < 2_999; call += 1) await reserveHarvestOpenAlex(env, 1);
+  await assert.rejects(reserveHarvestOpenAlex(env, 1), SourceRefused);
 });

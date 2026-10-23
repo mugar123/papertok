@@ -17,7 +17,9 @@ const EMBED_STEP_PAPERS = 256;
 const ENRICH_STEP_PAPERS = 500;
 const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, most recently asked first. A followed search
-// costs ten calls, an entity one.
+// costs ten calls, an entity one, of the 1,000 a day followed lanes may spend
+// (paper-sources.ts); once they are spent, the run's other OpenAlex followed
+// lanes are skipped.
 const FOLLOWED_LANES_PER_RUN = 400;
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
