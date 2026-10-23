@@ -203,14 +203,17 @@ async function askRoute(handler: RouteHandler, path: string, params: Record<stri
   return response;
 }
 
-// A refusal that names a short wait is waited out, twice at most; a longer
-// one (OpenAlex's spent day) ends the lane for this run.
+// A refusal that names a short wait is waited out, twice at most: a minute's
+// ceiling (PubMed's, 60 s) as well as a pace beat. A longer one (OpenAlex's
+// spent day) ends the lane for this run.
+const SHORT_WAIT_SECONDS = 60;
+
 async function withShortWaits<T>(attempt: () => Promise<T>) {
   for (let tries = 0; ; tries += 1) {
     try {
       return await attempt();
     } catch (error) {
-      if (!(error instanceof SourceRefused) || error.retryAfterSeconds > 30 || tries >= 2) throw error;
+      if (!(error instanceof SourceRefused) || error.retryAfterSeconds > SHORT_WAIT_SECONDS || tries >= 2) throw error;
       await new Promise(resolve => setTimeout(resolve, error.retryAfterSeconds * 1000));
     }
   }

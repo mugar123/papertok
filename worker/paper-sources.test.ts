@@ -5,6 +5,7 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, reserveHarvestOpenAlex, splitRawAuthors } from './paper-sources.ts';
 import { parseXmlDocument } from './xml-dom.ts';
+import { handlePubmed } from './source-api.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { parseXmlDocument as parseWithShim } from '../src/test-support/xmlDomShim.ts';
@@ -267,6 +268,25 @@ test("a followed project's lane asks OpenAIRE by its id, with the funder only fo
   assert.equal(openAire[1].searchParams.get('projectID'), '2047484');
   assert.equal(openAire[1].searchParams.get('funder'), 'NSF');
   assert.ok(urls.some(url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter') === 'doi:10.1093/genetics/iyag290'));
+});
+
+test("a lane whose source's minute is full waits for the next minute instead of failing", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  const { urls, env } = relay(t, () => ({ esearchresult: { idlist: [] } }));
+  Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: '1' });
+  const { binding, db } = testD1();
+  // A reader's PubMed search takes this minute's one request.
+  assert.equal((await handlePubmed(new Request('https://papertok.internal/sources/pubmed?q=heart'), env)).status, 200);
+  let settled = false;
+  const harvest = harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'med.cardio' }).finally(() => { settled = true; });
+  // The route refuses with a 60 s retry-after; let the clock run until the lane settles.
+  for (let second = 0; !settled && second < 180; second += 1) {
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.tick(1_000);
+  }
+  await harvest;
+  assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
+  assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all().map(row => ({ ...row })), [{ source: 'pubmed', lane: 'med.cardio' }]);
 });
 
 test("followed searches stop at their part of the harvest's OpenAlex day, and category lanes and enrichment keep the rest", async t => {
