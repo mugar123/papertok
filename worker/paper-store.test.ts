@@ -2,7 +2,7 @@ import type { PaperFollowMatch } from '../src/models/Paper.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { arxivIdOf, embedPending, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
+import { arxivIdOf, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
@@ -275,6 +275,31 @@ test('two embedding passes at once embed each paper once', async () => {
   assert.equal(embedded[0] + embedded[1], 64);
   assert.equal(texts.length, 64);
   assert.equal(new Set(texts).size, 64);
+});
+
+test("one reader's lookups embed a small share of the day, and the harvest and other readers keep the rest", async () => {
+  const { binding, db } = testD1();
+  const { AI } = embeddingModel();
+  // 200,000 estimated tokens a day; each paper below is about 670.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '200000' } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 400 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.1${String(index).padStart(4, '0')}`, arxivId: `2610.1${String(index).padStart(4, '0')}`,
+      title: `Liked paper ${index}`, abstract: `A long abstract of paper ${index}. `.repeat(100), allCategories: [], categories: [],
+    },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const ids = (db.prepare('SELECT id FROM works ORDER BY id').all() as Array<{ id: number }>).map(row => row.id);
+  // A lookup embeds at most ten liked papers; this reader keeps asking with new ones.
+  let readerEmbedded = 0;
+  for (let lookup = 0; lookup < 30; lookup += 1) {
+    const embedded = await embedWorks(env, ids.slice(lookup * 10, lookup * 10 + 10), 'reader-1');
+    if (embedded === 0) break;
+    readerEmbedded += embedded;
+  }
+  assert.ok(readerEmbedded > 0 && readerEmbedded <= 100, `one reader embedded ${readerEmbedded}`);
+  assert.equal(await embedWorks(env, ids.slice(390), 'reader-2'), 10, "another reader's lookup is still embedded");
+  assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
 });
 
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {

@@ -29,9 +29,10 @@ const NEW_FOLLOWED_LANES_PER_DAY = 2_000;
  * Liked papers the corpus cannot rank against yet, fetched and embedded, for
  * the reader's next page: only for a profile with fewer than
  * ENOUGH_STORED_POSITIVES ranked likes, since a reader with a few already gets
- * a ranked page. Failures leave the likes already stored.
+ * a ranked page. Embedded within the reader's own share of the day. Failures
+ * leave the likes already stored.
  */
-async function addMissingPositives(env: FeedEnv, positiveIds: string[]) {
+async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: string[]) {
   try {
     const db = database(env);
     const workByPaperId = await findWorks(db, positiveIds);
@@ -43,7 +44,7 @@ async function addMissingPositives(env: FeedEnv, positiveIds: string[]) {
     const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
     if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
     const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
-    await embedWorks(env, [...new Set(found.values())]);
+    await embedWorks(env, [...new Set(found.values())], uid);
   } catch (error) {
     console.warn('Paper store could not add liked papers', error);
   }
@@ -161,7 +162,7 @@ export async function handleCorpusFeed(
   // it, and later pages, would repeat the same lookup.
   await later(Promise.all([
     registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
-    query.page === 0 && query.follows.length === 0 && query.positiveIds.length ? addMissingPositives(env, query.positiveIds) : null,
+    query.page === 0 && query.follows.length === 0 && query.positiveIds.length ? addMissingPositives(env, identity.uid, query.positiveIds) : null,
   ]).catch(error => console.warn('Paper store follow-up failed', error)));
   return { papers };
 }
