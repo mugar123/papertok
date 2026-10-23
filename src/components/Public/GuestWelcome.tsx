@@ -71,8 +71,8 @@ const COPY = {
     skip: 'Skip the intro',
     welcome: {
       kicker: 'Welcome to PaperTok',
-      title: <>Today’s science, <em>in one feed.</em></>,
-      lede: 'Like TikTok, but you come out smarter. Five minutes a day and nothing in your field slips past you.',
+      title: <>Scientific papers, <em>in one feed.</em></>,
+      lede: 'Like TikTok, but you come out smarter. New papers from your fields, in a feed that learns what you like.',
       cta: 'Get started',
       or: 'or',
       signIn: 'I already have an account',
