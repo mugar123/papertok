@@ -626,7 +626,8 @@ export interface RankingCache {
  *
  * The first page ranks every candidate and leaves the order in `cache`; a
  * later page of the same request reads only its own papers from it, and ranks
- * again only when the order is gone.
+ * again only when the order is gone. An empty order is not left: the lanes
+ * may be about to fill.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
@@ -637,7 +638,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   let ranking = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
   if (!ranking) {
     ranking = await rankCandidates(db, lanes, query, now);
-    await cache?.put(cacheKey, ranking).catch(error => console.warn('Feed ranking not cached', error));
+    if (ranking.length) await cache?.put(cacheKey, ranking).catch(error => console.warn('Feed ranking not cached', error));
   }
   const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize);
   if (ranked.length === 0) return [];

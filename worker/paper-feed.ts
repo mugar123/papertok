@@ -26,10 +26,11 @@ const NEW_FOLLOWED_LANES_PER_READER = 20;
 const NEW_FOLLOWED_LANES_PER_DAY = 2_000;
 
 /**
- * Liked papers the corpus cannot rank against yet, fetched and embedded, for
- * the reader's next page: only for a profile with fewer than
- * ENOUGH_STORED_POSITIVES ranked likes, since a reader with a few already gets
- * a ranked page. Failures leave the likes already stored.
+ * Liked papers the corpus cannot rank against yet, fetched and embedded: only
+ * for a profile with fewer than ENOUGH_STORED_POSITIVES ranked likes, since a
+ * reader with a few already gets a ranked page. Returns whether it stored a
+ * paper or a vector, which changes the reader's ranking. Failures leave the
+ * likes already stored, and count as a change: what they stored is unknown.
  */
 async function addMissingPositives(env: FeedEnv, positiveIds: string[]) {
   try {
@@ -39,23 +40,25 @@ async function addMissingPositives(env: FeedEnv, positiveIds: string[]) {
     const { results } = workIds.length
       ? await db.prepare('SELECT work_id FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(workIds)).all<{ work_id: number }>()
       : { results: [] };
-    if (results.length >= ENOUGH_STORED_POSITIVES) return;
+    if (results.length >= ENOUGH_STORED_POSITIVES) return false;
     const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
-    if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+    const stored = absent.length ? await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) }) : 0;
     const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
-    await embedWorks(env, [...new Set(found.values())]);
+    return stored + await embedWorks(env, [...new Set(found.values())]) > 0;
   } catch (error) {
     console.warn('Paper store could not add liked papers', error);
+    return true;
   }
 }
 
 /**
  * Notes the followed lanes a reader asked for, so the daily harvest keeps them
  * served, and starts a harvest of the ones nobody had asked for yet: their
- * papers arrive for the reader's next page rather than tomorrow's.
+ * papers arrive for the reader's next page rather than tomorrow's. Returns
+ * whether it started one.
  */
 async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], now = Date.now()) {
-  if (lanes.length === 0 || !env.PAPER_STORE) return;
+  if (lanes.length === 0 || !env.PAPER_STORE) return false;
   const db = env.PAPER_STORE;
   const { results } = await db.prepare('SELECT lane, requested_at FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
     .bind(JSON.stringify(lanes)).all<{ lane: string; requested_at: string }>();
@@ -74,15 +77,16 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
     if (!reservation.accepted) fresh = [];
   }
   const written = [...due, ...fresh];
-  if (written.length === 0) return;
+  if (written.length === 0) return false;
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
     ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(written)).run();
-  if (fresh.length && env.PAPER_HARVEST) {
-    try {
-      await env.PAPER_HARVEST.create({ id: `follow-${new Date(now).toISOString().slice(0, 10)}-${crypto.randomUUID()}`, params: { lanes: fresh } });
-    } catch (error) {
-      console.warn('Followed lanes harvest did not start', error);
-    }
+  if (fresh.length === 0 || !env.PAPER_HARVEST) return false;
+  try {
+    await env.PAPER_HARVEST.create({ id: `follow-${new Date(now).toISOString().slice(0, 10)}-${crypto.randomUUID()}`, params: { lanes: fresh } });
+    return true;
+  } catch (error) {
+    console.warn('Followed lanes harvest did not start', error);
+    return false;
   }
 }
 
@@ -154,15 +158,28 @@ export async function handleCorpusFeed(
   }
   await reserveFeedRequest(env, identity.uid);
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
-  const papers = await readFeedPage(env, query, { cache: rankingCache(identity.uid) });
-  // After the page, not before it: a lookup of liked papers can take seconds
+  // Only a first page of categories looks up liked papers: the follows asked
+  // beside it, and later pages, would repeat the same lookup.
+  const looksUp = query.page === 0 && query.follows.length === 0 && query.positiveIds.length > 0;
+  // More like this ranks by the one paper just liked, which the corpus may not
+  // have embedded yet: ranked before the lookup, its page would be newest
+  // first. That request is not the feed's first paint, so it waits for the
+  // lookup, which has its own deadline (ingestPaperIds).
+  const looksUpFirst = looksUp && query.positiveIds.length === 1;
+  if (looksUpFirst) await addMissingPositives(env, query.positiveIds);
+  const cache = rankingCache(identity.uid);
+  let ranked: Parameters<RankingCache['put']> | null = null;
+  const papers = await readFeedPage(env, query, { cache: cache && { get: key => cache.get(key), put: async (...entry) => { ranked = entry; } } });
+  // Otherwise after the page, not before it: a lookup can take seconds
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
-  // Only a first page of categories looks them up: the follows asked beside
-  // it, and later pages, would repeat the same lookup.
+  // The order serves the next pages only if this work changed nothing it
+  // reads: a new follow's harvest is under way, or a like has a vector now.
   await later(Promise.all([
     registerFollowedLanes(env, identity.uid, query.follows.map(follow => follow.lane)),
-    query.page === 0 && query.follows.length === 0 && query.positiveIds.length ? addMissingPositives(env, query.positiveIds) : null,
-  ]).catch(error => console.warn('Paper store follow-up failed', error)));
+    looksUp && !looksUpFirst ? addMissingPositives(env, query.positiveIds) : false,
+  ]).then(async ([harvesting, added]) => {
+    if (ranked && cache && !harvesting && !added) await cache.put(...ranked);
+  }).catch(error => console.warn('Paper store follow-up failed', error)));
   return { papers };
 }
 
