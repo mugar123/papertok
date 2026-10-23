@@ -130,11 +130,20 @@ function checkReview(leaf: string, value: unknown) {
   }
   if (labels.size !== workIds.size) invalid('label every sampled article; do not omit misses');
   const sampleSize = workIds.size;
-  const onTarget = review!.labels.filter(label => label.label === 'on-target' && !label.uncertain).length;
+  const hits = new Set(review!.labels.filter(label => label.label === 'on-target' && !label.uncertain).map(label => topicKey(label.workId)));
+  const onTarget = hits.size;
   const precision = sampleSize ? onTarget / sampleSize : null;
   const status = sampleSize < minimumSample ? 'insufficient-sample'
     : precision! >= minimumPrecision ? 'passed' : 'rejected';
-  return { topicIds, status, sampleSize, onTarget, precision };
+  // A passing leaf's precision says nothing about a topic none of its articles
+  // were on target for, such as a generic catch-all, so its lane leaves it out.
+  const counts = topicIds.map(topic => {
+    const works = review!.works.filter(work => topicKey(work.primary_topic.id) === topic);
+    return { topic, sampled: works.length, onTarget: works.filter(work => hits.has(topicKey(work.id))).length };
+  });
+  const byTopic = Object.fromEntries(counts.map(count => [count.topic, `${count.onTarget}/${count.sampled}`]));
+  const onTargetTopics = counts.filter(count => count.onTarget).map(count => count.topic);
+  return { topicIds, status, sampleSize, onTarget, precision, byTopic, onTargetTopics };
 }
 
 const { values } = parseArgs({ options: {
@@ -155,8 +164,8 @@ const report = leaves.map(leaf => {
   const row = { leaf: leaf.id, label: leaf.label };
   if (baseline.topics[leaf.id]) return { ...row, topicIds: baseline.topics[leaf.id], status: 'inherited' };
   if (Object.hasOwn(reviews, leaf.id)) {
-    const result = checkReview(leaf.id, reviews[leaf.id]);
-    if (result.status === 'passed') active[leaf.id] = result.topicIds;
+    const { onTargetTopics, ...result } = checkReview(leaf.id, reviews[leaf.id]);
+    if (result.status === 'passed') active[leaf.id] = onTargetTopics;
     return { ...row, ...result };
   }
   const topicIds = candidatesForLeaf(leaf, catalogue);

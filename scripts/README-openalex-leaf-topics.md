@@ -21,7 +21,7 @@ section). The generator does not call OpenAlex or the production relay.
 
 The Worker's nightly harvest gives every leaf in the generated map its own
 `openalex-topics` lane (`categoryLaneJobs()` in `worker/paper-sources.ts`),
-which asks for the leaf's topic IDs in sorted order, as the sample did. Each
+which asks for the leaf's admitted topic IDs in sorted order, as the sample did. Each
 lane reads up to 5 pages of 200 a night from the harvest's share of 4,000
 OpenAlex list calls (`HARVEST_OPENALEX_DAILY_CALLS`), so every admitted leaf adds
 up to 5 calls a night. The 46 leaves in the map take at most 230.
@@ -96,10 +96,21 @@ the gate requires, shows that every work had one, and the work IDs lead back to
 the full records.
 
 Admission requires a full page of 15 unique recent articles, complete labels,
-and at least two thirds (10 of 15) on target without doubt. PR #236 reports 74.1% overall
-and a lowest accepted profile of 66.0%, but does not state a formal per-leaf
-threshold. Two thirds is a conservative rounding of that observed floor; PAP-99
-adopted it as the rule. The original 14 lists retain their existing acceptance.
+and at least two thirds (10 of 15) on target without doubt. PR #236 reports
+74.1% overall and a lowest accepted profile of 66.0%, but does not state a
+formal per-leaf threshold. Two thirds is a conservative rounding of that
+observed floor; PAP-99 adopted it as the rule. The original 14 lists retain
+their existing acceptance.
+
+A passing leaf's lane asks only for the sampled topics with at least one
+article on target without doubt. The leaf's precision says nothing about a
+topic the sample never returned, such as a generic catch-all, or returned only
+off target. The report's `byTopic` gives, for each sampled topic, the articles
+on target without doubt and the articles returned. Leaving topics out only
+removes articles from the sample: at capture time, the lane's newest articles
+were the sample's articles on its topics, at the same or a higher share on
+target. A topic too rare to appear among the 15 newest articles cannot enter a
+lane this way.
 
 Low precision and short samples leave a leaf disabled and are reported as
 `rejected` or `insufficient-sample`. Invalid, stale or incomplete evidence
@@ -120,7 +131,7 @@ admission mechanics; they do not establish live precision or feed composition.
 
 107 anonymous requests, one per proposed leaf, between 08:04 and 08:05 UTC, all
 answered 200 at 1 credit each. The coverage report records each leaf's
-`sampleSize`, `onTarget` and decision:
+`sampleSize`, `onTarget`, `byTopic` and decision:
 
 | Decision | Leaves |
 | --- | --- |
@@ -129,6 +140,10 @@ answered 200 at 1 credit each. The coverage report records each leaf's
 | `insufficient-sample` | 3: `math.OC` (0 articles), `med.endo` (12), `chemeng.metal` (13) |
 | `no-candidates` | 22 |
 | `inherited` | 14 |
+
+The 32 passing samples asked for 164 topics. Their lanes ask for the 80 with
+an article on target without doubt. Of the 84 left out, the samples never
+returned 65 and returned 19 only off target or with doubt.
 
 Three labellers each labelled a third of the leaves; every leaf has one
 labeller. The label is `on-target` when a researcher who chose the leaf would

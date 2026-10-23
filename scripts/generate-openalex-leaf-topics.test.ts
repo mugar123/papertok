@@ -35,7 +35,7 @@ function setup(t: import('node:test').TestContext) {
     '--reviews', reviews, '--out', output, '--report', report, ...extra,
   ], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
   const coverage = () => JSON.parse(readFileSync(report, 'utf8')) as Array<{
-    leaf: string; status: string; topicIds: string[]; sampleSize?: number; precision?: number;
+    leaf: string; status: string; topicIds: string[]; sampleSize?: number; precision?: number; byTopic?: Record<string, string>;
   }>;
   return { directory, reviews, output, report, run, coverage };
 }
@@ -107,7 +107,7 @@ test('a review records only what the gate checks: no abstracts, no sampler addre
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(coverage().find(row => row.leaf === 'cs.AI'), {
     leaf: 'cs.AI', label: 'Artificial Intelligence', topicIds,
-    status: 'passed', sampleSize: 15, onTarget: 12, precision: 0.8,
+    status: 'passed', sampleSize: 15, onTarget: 12, precision: 0.8, byTopic: { [topicIds[0]]: '12/15' },
   });
   assert.ok(readFileSync(output, 'utf8').includes("'cs.AI':"));
 });
@@ -127,6 +127,21 @@ test('low precision or too few papers cannot enable a leaf', t => {
   assert.equal(run().status, 0);
   assert.equal(coverage().find(row => row.leaf === 'cs.AI')!.status, 'insufficient-sample');
   assert.ok(!readFileSync(output, 'utf8').includes("'cs.AI':"));
+});
+
+test('a passing leaf asks only for the topics its sample found on target', t => {
+  const { run, reviews, output, coverage } = setup(t);
+  assert.equal(run().status, 0);
+  // 12 articles on T19001, all on target; 3 on T19005, all off target; none on T19006.
+  const review = evidence('T19001');
+  review.query = review.query.replace('primary_topic.id%3AT19001', 'primary_topic.id%3AT19001%7CT19005%7CT19006');
+  for (const work of review.works.slice(12)) work.primary_topic.id = 'https://openalex.org/T19005';
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': review }));
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(readFileSync(output, 'utf8'), /'cs\.AI': \['T19001'\],/);
+  const row = coverage().find(row => row.leaf === 'cs.AI')!;
+  assert.deepEqual([row.status, row.topicIds, row.byTopic], ['passed', ['T19001', 'T19005', 'T19006'], { T19001: '12/12', T19005: '0/3', T19006: '0/0' }]);
 });
 
 test('a call the labeller marked uncertain counts as a miss', t => {

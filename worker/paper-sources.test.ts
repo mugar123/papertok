@@ -270,17 +270,25 @@ const subscriptionArticle = {
   },
 };
 
-test('an arXiv leaf the precision gate admitted gets a journal-article lane, asked as its sample was', async t => {
+test('an arXiv leaf the precision gate admitted gets a journal-article lane for the sampled topics found on target', async t => {
   const reviews = gateFile('openalex-topic-reviews.json');
   const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10028') ? [subscriptionArticle] : [] }));
-  for (const leaf of ['cs.LG', 'cs.CV']) {
+  // Sorted, as sampled, without the topics no sampled article was on target
+  // for: cs.LG's T13702 (0 of 2) and five it never returned, q-fin.GN's green
+  // bonds T13146 (0 of 5), astro-ph.SR's catch-all T13126 (never returned).
+  const asked = {
+    'cs.LG': ['T10028', 'T11122', 'T11689', 'T12535'],
+    'cs.CV': ['T10036'],
+    'q-fin.GN': ['T10047', 'T10127'],
+    'astro-ph.SR': ['T10039', 'T10477'],
+  };
+  for (const [leaf, topics] of Object.entries(asked)) {
     assert.ok(topicLanes().includes(leaf), `${leaf} has a lane in the nightly harvest`);
     await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '' });
     const filters = filtersOf(urls.at(-1)!);
     const sampled = new URL(reviews[leaf].query).searchParams.get('filter')!.split(',');
-    // The same topic IDs in the same canonical order, so the evidence names the request.
-    assert.deepEqual(topicsOf(filters), topicsOf(sampled), leaf);
-    assert.deepEqual(topicsOf(filters), [...topicsOf(filters)].sort(), `${leaf} asks with sorted topic IDs`);
+    assert.deepEqual(topicsOf(filters), topics, leaf);
+    assert.ok(topics.every(id => topicsOf(sampled).includes(id)), `${leaf} asks only for topics its sample asked for`);
     for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
       assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
     }

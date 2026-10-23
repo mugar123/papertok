@@ -91,7 +91,7 @@ function areaKeyForOpenAlexTopic(topic: Partial<Paper>['primaryTopic']) {
  * Only leaves checked against returned papers are listed; any other leaf sends
  * no request, as an unchecked list could bring back another field's papers.
  * scripts/generate-openalex-leaf-topics.ts writes the map and admits a new leaf
- * only when its labelled sample passes.
+ * only when its labelled sample passes, with the topics found on target in it.
  */
 // OpenAlex takes at most 50 values for one filter key.
 const MAX_OPENALEX_FILTER_VALUES = 50;
