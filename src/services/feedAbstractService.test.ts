@@ -73,7 +73,7 @@ test('the screenshot paper is withheld until its linked arXiv abstract settles',
 
 test('the video abstract is recovered before admission without changing published metadata', async () => {
   const result = await recovery(async () => [arxivPaper])([videoPaper]);
-  assert.deepEqual(result[0], { ...videoPaper, abstract: sourceAbstract, summary: sourceAbstract, sources: { primary: 'openalex', enrichedBy: ['arxiv'] } });
+  assert.deepEqual(result[0], { ...videoPaper, abstract: sourceAbstract, summary: sourceAbstract, sources: { primary: 'openalex', enrichedBy: ['arxiv'], peerReviewedByDoiComplete: true } });
 });
 
 test('scientific reviews recover by exact DOI while a failed arXiv source leaves its paper usable', async () => {

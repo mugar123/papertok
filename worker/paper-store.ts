@@ -4,6 +4,8 @@ import type { WorkerEnv } from './env.ts';
 
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
+import { hasUsableAIAbstract } from '../src/utils/aiExplanationAccess.ts';
+import { isPlaceholderPaperTitle } from '../src/utils/paperDisplayTitle.ts';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
 import { NOTABLE_EVERY } from '../src/utils/feedEnrichment.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seenPaperFilter.ts';
@@ -263,24 +265,47 @@ async function readWorks(db: D1Database, ids: number[]) {
   return works;
 }
 
+const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
+
+// Hugging Face lists arXiv papers with the title and abstract it copied from
+// arXiv, so arXiv's listing carries a new version to a row Hugging Face
+// started, and Hugging Face's copy never replaces it.
+const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
+  ? listed.get(sourceRecordKey('arxiv', row.arxivId))
+  : listed.get(sourceRecordKey(row.sources?.primary, row.id)));
+
+// A row's title and abstract are those of the source it was built from, and
+// that source listing it again (a new arXiv version) replaces them, where
+// `merge` only fills a gap. A listing without an abstract keeps the stored one.
+function withOwnText(row: Paper, own: Paper | undefined): Paper {
+  if (!own) return row;
+  return hasUsableAIAbstract(own.abstract)
+    ? { ...row, title: own.title, abstract: own.abstract, summary: own.summary }
+    : { ...row, title: own.title };
+}
+
 /**
  * Files what sources returned: records of one paper merge (PaperBuilder.merge,
  * the rule the browser applied to every page) into the row any of their
  * identifiers already names, or start a new one. A record that bridges two
- * rows folds them into one (`idRank`). A merge that changes the title or
- * abstract drops the vector for the embedding pass. Returns how many rows were
- * written.
+ * rows folds them into one (`idRank`). The row's own source listing it again
+ * replaces its title and abstract (`withOwnText`). A merge that changes the
+ * title or abstract drops the vector for the embedding pass. Returns how many
+ * rows were written.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
   const groups: Group[] = [];
   const groupOfKey = new Map<string, Group>();
+  const listed = new Map<string, Paper>();
   for (const item of items) {
-    if (!item?.paper?.title || !item.paper.id || !isFeedPublication(item.paper)) continue;
+    // A mapper stands "Untitled" in for a title its source left out.
+    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublication(item.paper)) continue;
     const published = publishedOf(item.paper, now);
     if (!published || (published < since && !keepUntil)) continue;
     const paper = PaperBuilder.create(item.paper);
+    listed.set(sourceRecordKey(paper.sources?.primary, paper.id), paper);
     const keys = workKeys(paper);
     const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
     let group = joined[0];
@@ -321,7 +346,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
-      paper = stored.slice(1).reduce((base, other) => PaperBuilder.merge(base, other.paper, other.paper.provider || other.paper.sources?.primary), stored[0].paper);
+      const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
+      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
       paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });

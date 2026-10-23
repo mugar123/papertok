@@ -1,10 +1,14 @@
-import type { PaperFollowMatch } from '../src/models/Paper.ts';
+import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
+import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
+import { PaperBuilder } from '../src/services/PaperBuilder.ts';
+import { mapAdsPaper } from '../src/services/domainSourceRecords.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { feedSeenFilter } from '../src/utils/seenPaperFilter.ts';
 import { takeFeedPage } from '../src/utils/feedEnrichment.ts';
@@ -65,6 +69,18 @@ const arxivRecord = arxivRecordPaper({
   published: '2026-10-10T12:00:00.000Z',
   updated: '2026-10-10T12:00:00.000Z',
 });
+const arxivRevision = arxivRecordPaper({
+  arxivId: '2610.11111',
+  title: 'Sparse attention for long documents and code',
+  abstract: 'We make attention sparse, and prove that it converges.',
+  authors: ['Ana Pérez', 'Li Wei'],
+  categories: ['cs.CL', 'cs.LG'],
+  doi: null,
+  journalRef: null,
+  comments: null,
+  published: '2026-10-10T12:00:00.000Z',
+  updated: '2026-10-20T08:00:00.000Z',
+});
 const huggingFaceRecord = mapHuggingFacePaper({
   paper: { id: '2610.11111', title: 'Sparse attention for long documents', summary: 'We make attention sparse.', publishedAt: '2026-10-10T12:00:00.000Z', upvotes: 31, authors: [{ name: 'Ana Pérez' }] },
 }, ['cs.CV'])!;
@@ -87,6 +103,54 @@ test('two sources listing one paper make one row under the id readers already ho
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.CV', 'cs.LG']);
 });
 
+// #270 filed each new arXiv version whole. Since #272 a listing merges into
+// the stored row, and `merge` only fills gaps, so a revised title or abstract
+// never reached the card or its vector.
+test("the source a row came from replaces its title and abstract when it lists the paper again; another source's text does not", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
+  db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  const stored = (id: string) => JSON.parse(String(rows(db, `SELECT w.paper FROM works w JOIN work_keys k ON k.work_id = w.id WHERE k.key = 'id:${id}'`)[0].paper));
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [arxivRevision.title, arxivRevision.abstract, arxivRevision.abstract]);
+  assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the new text is embedded again');
+  // Hugging Face still lists the first version's text.
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: [] }], { now: NOW });
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [arxivRevision.title, arxivRevision.abstract]);
+
+  // esummary has no abstract: a listing without efetch's keeps the stored one.
+  const article = { ...mapPubmedSummary({ uid: '42900003', title: 'A cardiology trial', source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] }), abstract: 'We randomised 400 patients.' };
+  await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: { ...article, title: 'A cardiology trial (corrected)', abstract: '' }, lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual([stored('pmid:42900003').title, stored('pmid:42900003').abstract], ['A cardiology trial (corrected)', 'We randomised 400 patients.']);
+});
+
+// Hugging Face lists arXiv papers with the title and abstract it copied from
+// arXiv. A night whose arXiv sets fail still runs the Hugging Face lane, so
+// that lane can start a row, which then never took a new arXiv version.
+test("a row Hugging Face started takes arXiv's new version, and Hugging Face's copy does not undo it", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: ['cs.CV'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper));
+  assert.deepEqual([stored().id, stored().title, stored().abstract], ['arxiv:2610.11111', arxivRevision.title, arxivRevision.abstract]);
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: ['cs.CV'] }], { now: NOW });
+  assert.deepEqual([stored().title, stored().abstract], [arxivRevision.title, arxivRevision.abstract]);
+});
+
+// The PubMed mapper writes "Untitled" for a record esummary gives no title.
+// Filed, the placeholder was a card's title, and a listing of a stored paper
+// replaced its real title with it.
+test('a listing without a real title is not filed, and does not rename the stored paper', async () => {
+  const { env, db } = corpus();
+  const listing = (title: string) => mapPubmedSummary({ uid: '42900003', title, source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] });
+  await ingestPapers(env, [{ paper: listing(''), lanes: ['med.cardio'] }], { now: NOW });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+  await ingestPapers(env, [{ paper: listing('A cardiology trial'), lanes: ['med.cardio'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: listing(''), lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)).title), ['A cardiology trial']);
+});
+
 test('a record that names two stored papers folds them into one, keeping one id and every lane', async () => {
   const { env, db } = corpus();
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
@@ -100,6 +164,151 @@ test('a record that names two stored papers folds them into one, keeping one id 
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['bio.comp', 'cs.CL', 'cs.LG']);
 });
 
+test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
+  // Synthetic OpenAlex records as the harvest maps them, one harvest each, so
+  // the stored row is the base of each later merge. OpenAlex's record of the
+  // eprint, typed `preprint` under arXiv's DOI while listing the journal's
+  // copy, reopens the article's answer; its record of the journal DOI
+  // without a source gives none.
+  const { env, db } = corpus();
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const arxivLocation: OpenAlexLocation = {
+    landing_page_url: 'https://arxiv.org/abs/2610.00007',
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const journalLocation: OpenAlexLocation = {
+    landing_page_url: `https://doi.org/${journalDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal', host_organization_name: 'Elsevier' },
+  };
+  const work = (id: string, doi: string, type: string, locations: OpenAlexLocation[]) => mapOpenAlexWork({
+    id: `https://openalex.org/${id}`,
+    doi: `https://doi.org/${doi}`,
+    title: 'Bank capital and the transmission of monetary policy',
+    type,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    publication_date: '2026-10-12',
+    primary_location: locations[0],
+    locations,
+  })!;
+  const article = work('W502', journalDoi, 'article', [journalLocation, arxivLocation]);
+  const eprint = work('W503', '10.48550/arXiv.2610.00007', 'preprint', [arxivLocation, journalLocation]);
+  const withoutSource = work('W507', journalDoi, 'article', [{ ...journalLocation, source: null }, arxivLocation]);
+  for (const paper of [article, eprint, withoutSource]) await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+  const works = rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)));
+  assert.equal(works.length, 1);
+  assert.equal(works[0].doi, journalDoi);
+  assert.equal(works[0].peerReviewed, true);
+});
+
+test('a row stored before merges kept review evidence does not read reviewed on the evidence merged into it since', async () => {
+  // Synthetic records as the sources' mappers return them, one harvest each.
+  // Code before `sources.peerReviewedByDoi` stored a merged row without the
+  // answers its records gave under each DOI (stripped here, as that code
+  // never wrote them), so it lacks NASA ADS's non-refereed record of the
+  // journal article. A row built from scratch keeps that denial. Records
+  // merged since must not make the row read reviewed where that code did
+  // not: it reads unknown, as that code read it.
+  const journalDoi = '10.1016/j.jinteco.2026.103900';
+  const title = 'Bank capital and the transmission of monetary policy';
+  const arxivLocation: OpenAlexLocation = {
+    landing_page_url: 'https://arxiv.org/abs/2610.00007',
+    is_published: false,
+    source: { id: 'https://openalex.org/S4306400194', display_name: 'arXiv (Cornell University)', type: 'repository' },
+  };
+  const journalLocation: OpenAlexLocation = {
+    landing_page_url: `https://doi.org/${journalDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S111', display_name: 'Journal of International Economics', type: 'journal', host_organization_name: 'Elsevier' },
+  };
+  const work = (id: string, doi: string, type: string, locations: OpenAlexLocation[]) => mapOpenAlexWork({
+    id: `https://openalex.org/${id}`,
+    doi: `https://doi.org/${doi}`,
+    title,
+    type,
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ana Economist' } }],
+    publication_date: '2026-10-12',
+    primary_location: locations[0],
+    locations,
+  })!;
+  const article = work('W502', journalDoi, 'article', [journalLocation, arxivLocation]);
+  const eprint = work('W503', '10.48550/arXiv.2610.00007', 'preprint', [arxivLocation, journalLocation]);
+  const withoutSource = work('W507', journalDoi, 'article', [{ ...journalLocation, source: null }, arxivLocation]);
+  const ssrnEntry = work('W513', '10.2139/ssrn.4400000', 'preprint', [{
+    landing_page_url: 'https://doi.org/10.2139/ssrn.4400000',
+    is_published: false,
+    source: { id: 'https://openalex.org/S4210172589', display_name: 'SSRN Electronic Journal', type: 'repository', host_organization_name: 'RELX Group' },
+  }, arxivLocation]);
+  const conferenceDoi = '10.1145/3600000.3600001';
+  const conferenceVersion = work('W505', conferenceDoi, 'article', [{
+    landing_page_url: `https://doi.org/${conferenceDoi}`,
+    is_published: true,
+    source: { id: 'https://openalex.org/S222', display_name: 'ACM Economics and Computation', type: 'conference', host_organization_name: 'ACM' },
+  }, arxivLocation]);
+  const notRefereed = mapAdsPaper({
+    bibcode: '2026JIntE.160j3900E',
+    title: [title],
+    author: ['Economist, Ana'],
+    doi: [journalDoi],
+    identifier: ['arXiv:2610.00007'],
+    property: ['ARTICLE', 'OPENACCESS'],
+    doctype: 'article',
+    pub: 'Journal of International Economics',
+    pubdate: '2026-10-12',
+    year: '2026',
+    abstract: 'Bank capital.',
+  })!;
+  const arxivListingJournal = arxivRecordPaper({
+    arxivId: '2610.00007',
+    title,
+    abstract: 'Bank capital.',
+    authors: ['Ana Economist'],
+    categories: ['econ.GN'],
+    doi: journalDoi,
+    journalRef: null,
+    comments: null,
+    published: '2026-10-12T12:00:00.000Z',
+    updated: '2026-10-12T12:00:00.000Z',
+  });
+  const harvest = async (before: Paper[], after: Paper[], legacy: boolean) => {
+    const { env, db } = corpus();
+    for (const paper of before) await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+    if (legacy) db.prepare("UPDATE works SET paper = json_remove(paper, '$.sources.peerReviewedByDoi', '$.sources.peerReviewedByDoiComplete')").run();
+    for (const paper of after) await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+    return rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)) as Paper);
+  };
+  for (const [stored, legacy] of [['from scratch', false], ['before the evidence was kept', true]] as const) {
+    // A later harvest lists the article again, then OpenAlex's record of the
+    // eprint, which reopens the row's answer, then its record of the journal
+    // DOI without a source, which gives none.
+    const reopened = await harvest([article, notRefereed], [article, eprint, withoutSource], legacy);
+    assert.equal(reopened.length, 1, stored);
+    assert.equal(reopened[0].doi, journalDoi, stored);
+    assert.equal(reopened[0].peerReviewed, undefined, stored);
+    // The followed feed puts an arXiv record that lists the journal's DOI
+    // before a row that began as the paper's SSRN entry.
+    const served = PaperBuilder.deduplicate([arxivListingJournal, ...await harvest([ssrnEntry, notRefereed], [article], legacy)]);
+    assert.equal(served.length, 1, stored);
+    assert.equal(served[0].doi, journalDoi, stored);
+    assert.equal(served[0].peerReviewed, legacy ? undefined : false, stored);
+    // A row built from scratch that began as the reviewed conference version
+    // keeps its `true` when the eprint's records arrive; one stored before
+    // reads unknown there, as that code read it. Behind OpenAlex's record of
+    // the journal DOI without a source, the row built from scratch answers
+    // for that DOI with NASA ADS's `false`; the one stored before lacks it
+    // and must not lend that DOI the conference version's `true`.
+    const conference = await harvest([conferenceVersion, notRefereed], [eprint, arxivListingJournal], legacy);
+    assert.equal(conference.length, 1, stored);
+    assert.equal(conference[0].doi, conferenceDoi, stored);
+    assert.equal(conference[0].peerReviewed, legacy ? undefined : true, stored);
+    const behindJournal = PaperBuilder.deduplicate([withoutSource, ...conference]);
+    assert.equal(behindJournal.length, 1, stored);
+    assert.equal(behindJournal[0].doi, journalDoi, stored);
+    assert.equal(behindJournal[0].peerReviewed, legacy ? undefined : false, stored);
+  }
+});
+
 test('a paper published before the corpus window is not filed, unless its lane keeps listings', async () => {
   const { env, db } = corpus();
   const old = { ...arxivRecord, id: '2401.00001', arxivId: '2401.00001', title: 'An older paper', published: '2024-01-10T00:00:00.000Z' };
@@ -107,6 +316,14 @@ test('a paper published before the corpus window is not filed, unless its lane k
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
   await ingestPapers(env, [{ paper: old, lanes: ['mech.aero'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
   assert.deepEqual(rows(db, 'SELECT kept_until FROM works').map(row => row.kept_until), ['2026-11-05T03:00:00.000Z']);
+});
+
+// esummary dates the issue "2026": read as 1 January, outside the 90 days.
+test('a PubMed article in a volume dated by its year alone is filed under the day it went online', async () => {
+  const { env, db } = corpus();
+  const article = mapPubmedSummary({ uid: '42900002', title: 'A cardiology article in the 2026 volume', source: 'J', pubdate: '2026', epubdate: '2026 Oct 16', pubtype: ['Journal Article'] });
+  await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes').map(row => row.lane), ['med.cardio']);
 });
 
 test('a paper past its keeping date leaves with its keys, lanes and vector', async () => {

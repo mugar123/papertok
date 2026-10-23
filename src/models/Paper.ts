@@ -22,6 +22,23 @@ export interface PaperSources {
   // not reviewed. A `true` that rests on an arXiv DOI alone then reads
   // unknown, whether it reached the row before that record or after it.
   deniedElsewhere?: true;
+  // Written and read only by `PaperBuilder.merge`: by normalized publisher
+  // DOI, what a merged record said of itself under it, whatever the row's own
+  // answer and the DOI it shows: `true` on more than an arXiv DOI, or an
+  // outright `false`, which stands in this map against any `true` under that
+  // DOI. A row under one of these DOIs that merges this one takes the entry
+  // as that record's answer. A `false` then ends the row's `true` only where
+  // that record's own would: not on a row that began as OpenAlex's record.
+  peerReviewedByDoi?: Record<string, boolean>;
+  // Written and read only by `PaperBuilder.merge`: `peerReviewedByDoi` holds
+  // the answer of every record merged into the row. A merged row without it,
+  // such as one merged before the map existed, can lack a record's `false`,
+  // so a merge with it neither confirms review from a map's `true` nor keeps
+  // a row's `true` the way a merge of complete rows does. Code from before
+  // the map keeps this mark on a row it merges but files no answer, so a row
+  // it merged after the mark was written still reads complete; after a
+  // Worker rollback to such code, worker/README.md clears the mark.
+  peerReviewedByDoiComplete?: true;
 }
 
 export interface PaperSubjectReference {
