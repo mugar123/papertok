@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -315,14 +316,23 @@ test('a leaf the gate did not admit sends no topic request, and every lane is an
 });
 
 test('the 14 inherited leaves keep their lanes and the topics accepted in #236', async t => {
-  const { topics } = gateFile('openalex-leaf-topics-baseline.json') as { topics: Record<string, string[]> };
-  assert.equal(Object.keys(topics).length, 14);
+  const inherited = [
+    'bio.biochem', 'bio.cell', 'bio.comp', 'bio.eco', 'bio.gen', 'bio.mol', 'bio.neuro',
+    'bio.physio', 'civil.env', 'civil.hydro', 'civil.struct', 'mech.aero', 'med.neuro', 'med.psych',
+  ];
   const { urls, env } = relay(t, () => ({ results: [] }));
-  for (const [leaf, accepted] of Object.entries(topics)) {
+  const asked: Array<[string, string[]]> = [];
+  for (const leaf of inherited) {
     assert.ok(topicLanes().includes(leaf), leaf);
     await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '' });
-    assert.deepEqual(topicsOf(filtersOf(urls.at(-1)!)), [...accepted].sort(), leaf);
+    asked.push([leaf, topicsOf(filtersOf(urls.at(-1)!))]);
   }
+  assert.deepEqual(asked.find(([leaf]) => leaf === 'bio.mol')![1],
+    ['T10123', 'T10268', 'T10521', 'T10604', 'T10878', 'T11041', 'T11237', 'T11482', 'T11765', 'T12534']);
+  // The 14 lists as merged in #236 (areaAccent.ts on main before PAP-99), each
+  // sorted: an edit to the baseline file cannot also move this expectation.
+  assert.equal(createHash('sha256').update(JSON.stringify(asked)).digest('hex'),
+    'd712fc6dd9b51123876e8bbf61022a0172cde893fa03bb7aa394bfa16cd14d5f');
 });
 
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
