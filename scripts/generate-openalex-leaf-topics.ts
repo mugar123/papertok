@@ -14,11 +14,9 @@ interface Review {
   candidateHash: string;
   capturedAt: string;
   query: string;
-  works: Array<{
-    id: string; title: string; type: string; publication_date: string;
-    abstract_inverted_index: Record<string, number[]>;
-    primary_topic: { id: string };
-  }>;
+  // Only the fields checked below; the query's has_abstract:true proves the
+  // abstracts, and the work IDs lead back to the full records.
+  works: Array<{ id: string; title: string; type: string; publication_date: string; primary_topic: { id: string } }>;
   labels: Array<{ workId: string; label: 'on-target' | 'off-target' }>;
 }
 
@@ -100,7 +98,7 @@ function checkReview(leaf: string, topicIds: string[], candidateHash: string, va
   ];
   const allowedParams = new Set(['filter', 'sort', 'page', 'per-page', 'mailto', 'select']);
   if (query.origin !== 'https://api.openalex.org' || query.pathname !== '/works'
-    || query.username || query.password || !query.searchParams.get('mailto')
+    || query.username || query.password
     || [...query.searchParams.keys()].some(key => !allowedParams.has(key) || query.searchParams.getAll(key).length !== 1)
     || query.searchParams.get('sort') !== 'publication_date:desc'
     || query.searchParams.get('page') !== '1' || query.searchParams.get('per-page') !== String(minimumSample)
@@ -116,8 +114,6 @@ function checkReview(leaf: string, topicIds: string[], candidateHash: string, va
       || typeof work.title !== 'string' || !work.title.trim()
       || !/^\d{4}-\d{2}-\d{2}$/.test(work.publication_date)
       || work.publication_date < firstDay || work.publication_date > previousDate
-      || !work.abstract_inverted_index || typeof work.abstract_inverted_index !== 'object'
-      || Array.isArray(work.abstract_inverted_index) || !Object.keys(work.abstract_inverted_index).length
       || !topicIds.includes(topicKey(work.primary_topic?.id))) invalid(`invalid recent article: ${id}`);
     workIds.add(id);
     previousDate = work.publication_date;

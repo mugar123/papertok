@@ -15,7 +15,10 @@
       "T11683"
     ],
     "candidateHash": "8cf8f37c051407c1f81d73c2f7d702db8ec3278ff23e7f741ea813be25f6f881",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "cond-mat.supr-con",
@@ -28,7 +31,10 @@
       "T13531"
     ],
     "candidateHash": "775cdcbbd98991122d8e281d23b50d2d4cc49bd41b793aaefc3cf0a39a710491",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "cond-mat.str-el",
@@ -37,7 +43,10 @@
       "T11603"
     ],
     "candidateHash": "84dc8b62e7b63e902f0b90d1d7a31f6bd6dab64d1e711cebca96b09bd15a09a1",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "cond-mat.mtrl-sci",
@@ -52,7 +61,10 @@
       "T11949"
     ],
     "candidateHash": "3a8c4a0cc8583de474014209613999dfe5f3de9bb2cb36f3a584b695e9086437",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "cond-mat.mes-hall",
@@ -70,7 +82,10 @@
       "T13769"
     ],
     "candidateHash": "2f20fa979085372c4b888991a71b41843481da61dbd98d90598fe3cfca5b802c",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "cond-mat.soft",
@@ -79,7 +94,10 @@
       "T11682"
     ],
     "candidateHash": "1a06f39c8f090460bba5fdf2e24a0d8f88a96407962b09c84ef299fdc7ec83fd",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "cond-mat.quant-gas",
@@ -89,7 +107,10 @@
       "T11993"
     ],
     "candidateHash": "160243c6ce7cac156ddda29a81f16cea2b5e10122cb234868078a6742a84abed",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "hep-th",
@@ -102,7 +123,10 @@
       "T12516"
     ],
     "candidateHash": "5f10b94d1af98a8c591e5423cbf327183f78a58b08830001f54a3ab9f119c563",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "hep-ph",
@@ -115,7 +139,10 @@
       "T12516"
     ],
     "candidateHash": "3403e23422a18b5af9fd40d3650697fb5fc21829c8f443af620317096a4fc45b",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "hep-ex",
@@ -129,7 +156,10 @@
       "T12516"
     ],
     "candidateHash": "fe0a6ecc68f76adaaad278d16337e9db19bfbf1cdd912735848a3e7b91334607",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "astro-ph.CO",
@@ -142,7 +172,10 @@
       "T13080"
     ],
     "candidateHash": "c08d57fc54d740ee992c8320483cc25e5b6960cdaa0153ed8318b889f1f44c67",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "astro-ph.GA",
@@ -160,7 +193,10 @@
       "T13126"
     ],
     "candidateHash": "9169548526dd3d2849f0ab5cf50872b1843272f2af0f0e7e0fc71d3527574f67",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "astro-ph.HE",
@@ -169,7 +205,10 @@
       "T10818"
     ],
     "candidateHash": "896ffe07bc7cc61b6fa6501d1c3bae0eae4515e2ea4d49c106f828d36741533f",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "astro-ph.EP",
@@ -178,7 +217,10 @@
       "T10039"
     ],
     "candidateHash": "a65acd8953cfe8577f5a0cb23655d8955d1ad20af6c095f31df191f6f02c7f20",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "gr-qc",
@@ -190,7 +232,10 @@
       "T13080"
     ],
     "candidateHash": "b5f6aa2527941258481c6fca4d6d042354a5d2e3aca15d146971832ee4d24bf4",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "math-ph",
@@ -199,7 +244,10 @@
       "T12516"
     ],
     "candidateHash": "d6a3db619db927495a6f421cc442da53c2932644aab0d8956bb31124e3b602d3",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "nucl-th",
@@ -217,7 +265,10 @@
       "T12762"
     ],
     "candidateHash": "5acec59b2f932ee9e17507150ae564fca94ad2506d12219ed5fc01824c047ad4",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "nucl-ex",
@@ -226,7 +277,10 @@
       "T11603"
     ],
     "candidateHash": "d10093f8d2da2ab85169d07038115986a49215cd8a1f853ebc39c1d258c0fd5d",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "physics.optics",
@@ -243,7 +297,10 @@
       "T13126"
     ],
     "candidateHash": "b2e4a185a9030a4fb6168e8e5316ca753df6eeb7ed5e23419799c674d9e5eb34",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "physics.atom-ph",
@@ -259,7 +316,10 @@
       "T13531"
     ],
     "candidateHash": "4b78c32947171f51b4d4f9e470f905faad556674c769e8810a27da89c1282f3d",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "physics.flu-dyn",
@@ -270,7 +330,10 @@
       "T11486"
     ],
     "candidateHash": "df1980ad7eed37cf6e2c8265ff14876a88dbf9dda2e0380caeca47ad7550feb2",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "physics.plasm-ph",
@@ -286,7 +349,10 @@
       "T11175"
     ],
     "candidateHash": "7c98115fccfec1ad8facda6b7139dc6e8dbcab1d64662b60523ad7aa0b4cc52a",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "physics.bio-ph",
@@ -297,7 +363,10 @@
       "T13769"
     ],
     "candidateHash": "c8f6bfdb919c4fa949e1df12d3f0c57729140ec8d939f39e45d081d6448671f1",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "physics.comp-ph",
@@ -306,7 +375,10 @@
       "T10591"
     ],
     "candidateHash": "0b342cdee056f0a1db7a1e91ae27c3a8b9ab2f24349eb036339eaf0b249c4c93",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "cs.AI",
@@ -324,7 +396,10 @@
       "T12797"
     ],
     "candidateHash": "9dce723ea2645945b9fd32de3575d0dc3c9381ae567e58fcef5a22888e7450d2",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "cs.LG",
@@ -342,7 +417,10 @@
       "T10028"
     ],
     "candidateHash": "1d26e7bdcb7a749b024a2560261cc95f6e5495a6c4a648fbda376c8c58c9509b",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "cs.CV",
@@ -353,7 +431,10 @@
       "T12549"
     ],
     "candidateHash": "35e750532754a385161be4ef396e1f66836547bbf05db8d3f8463735b7148f20",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "cs.CL",
@@ -376,7 +457,10 @@
       "T14381"
     ],
     "candidateHash": "42799a5e18d5b9e94ea8ebf9b26118b78da3a5dccdb0ff252ec54a4df752ddf3",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "cs.CR",
@@ -388,7 +472,10 @@
       "T13674"
     ],
     "candidateHash": "511212913e4ef79aa9cba0d7dd1bf65214728f0860ba14edad7c74f9b6170a2e",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "cs.SE",
@@ -406,7 +493,10 @@
       "T10456"
     ],
     "candidateHash": "1bc81de63f3fb7c6a6fc470df60ee59f99198e442da41f650993f79d7094cf33",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "cs.DS",
@@ -424,7 +514,10 @@
       "T14175"
     ],
     "candidateHash": "686f84ac6de81875880ea56051d6e0d6222201cad3c4c35df2db6134a155b5a1",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "cs.DB",
@@ -437,7 +530,10 @@
       "T13681"
     ],
     "candidateHash": "73827e9dca5d3f84a1b6b24672d2572fdfae30d259a68a3ea456956e0564fbfd",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "cs.DC",
@@ -450,7 +546,10 @@
       "T12292"
     ],
     "candidateHash": "4ded266439ac086e8850f85adf65a8c1b59e5a53d55fd9863a216799b69df7cb",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "cs.NE",
@@ -461,7 +560,10 @@
       "T13935"
     ],
     "candidateHash": "e7b8e161749707d35ef3a345868d5cb7712b547e938f5ee40e010fc2c70072a2",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "cs.IR",
@@ -477,7 +579,10 @@
       "T13976"
     ],
     "candidateHash": "a6c18c686132a9bece9e2e37bdb78810173741fa4a4811f48cfccdecfa5568a4",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "cs.HC",
@@ -493,7 +598,10 @@
       "T13155"
     ],
     "candidateHash": "b3cbd4de6e1c44c6c92724210f94e09aa996cb6f1e1b558245194b29fe218def",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "cs.PL",
@@ -503,7 +611,10 @@
       "T10904"
     ],
     "candidateHash": "829fdb048c2dfcf7900de794c73b9cc0c17595402279f6e0d663da5a0cba4e1a",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "cs.GT",
@@ -512,7 +623,10 @@
       "T11574"
     ],
     "candidateHash": "aaaf8619a50e1349b510a718ae14256c07190f4692bd3bdb9ca56c2c0c80da46",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "cs.SI",
@@ -530,7 +644,10 @@
       "T11309"
     ],
     "candidateHash": "0b6fdc69eca28fc3dc5b56510517f52d01e8ab5364a41e52039ede023e597934",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "cs.NI",
@@ -540,7 +657,10 @@
       "T14455"
     ],
     "candidateHash": "ee361be7d009e72ef211fe47f6bf799d075964aa95c5fd320c2b3daaf0021542",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "cs.GR",
@@ -550,7 +670,10 @@
       "T14254"
     ],
     "candidateHash": "fc442d6f51ed08ca96452b97fd940e4ff5c31dfc6afb1934ca27d6093b82fdfe",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "cs.SD",
@@ -560,7 +683,10 @@
       "T11309"
     ],
     "candidateHash": "6f26c441269ef38a4a00c951e0c3c3c214d4af5f90ce95d7a3b376acfda1278b",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8
   },
   {
     "leaf": "cs.MM",
@@ -577,7 +703,10 @@
       "T14516"
     ],
     "candidateHash": "2ec7b42131ff809b439c178b0283d5b68cf0faa46b11e1777f704cb02fd2506e",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "cs.SY",
@@ -595,7 +724,10 @@
       "T10142"
     ],
     "candidateHash": "b2f62e892136254b80d234c5f1e5e3f42982ab75dfde5ed0ae45b6212abc1ba8",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "math.AG",
@@ -608,7 +740,10 @@
       "T12504"
     ],
     "candidateHash": "a34ad11fc174cdee1c8874a765ba103cc82976138b6e45cbb2d19120222a3b88",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "math.AP",
@@ -624,7 +759,10 @@
       "T10948"
     ],
     "candidateHash": "dc829700895eb77373d0ef4af13c581f673c39ac4d2aff3265b41fffab93aa63",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "math.NT",
@@ -642,7 +780,10 @@
       "T14500"
     ],
     "candidateHash": "527d1f8ff2fee56e068c139629fe21336d30da09d345caf20c92a0351fe0ef6d",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "math.PR",
@@ -655,7 +796,10 @@
       "T13797"
     ],
     "candidateHash": "eaac847ab814cb44d11c4dfb20b71cf2d920519aeaef5616dc8aeca8296c227e",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "math.ST",
@@ -668,7 +812,10 @@
       "T13500"
     ],
     "candidateHash": "20e916a9820d717bda35e2127ec727fb9dfa25ec748085d20c8d2ce998324d72",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "math.DG",
@@ -685,7 +832,10 @@
       "T10588"
     ],
     "candidateHash": "7ba6d7f786d576d1ada6eca805840d3d66aa2db56bfd360802ce8b68c38f3dc9",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "math.FA",
@@ -699,7 +849,10 @@
       "T13797"
     ],
     "candidateHash": "046e47f48d5f6991bc7d6c7c6114a84f95e4c3b3d69d8f6fa2eb08982998fc76",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "math.NA",
@@ -712,7 +865,10 @@
       "T13806"
     ],
     "candidateHash": "6284c474f7c8f70fb64a8aab9ccd0ff261f797e50d472e866554ca4ac0803045",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "math.OC",
@@ -721,7 +877,10 @@
       "T14082"
     ],
     "candidateHash": "4ed2164cfe7faf81867ffec644c05aaedabfe21bf762be75ab5e73c3c531d3e3",
-    "status": "not-reviewed"
+    "status": "insufficient-sample",
+    "sampleSize": 0,
+    "onTarget": 0,
+    "precision": null
   },
   {
     "leaf": "math.LO",
@@ -742,7 +901,10 @@
       "T11680"
     ],
     "candidateHash": "3edd117713ebcdfa41e0697435574555396cc702c223961261db3180b1476f80",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "math.GT",
@@ -751,7 +913,10 @@
       "T10304"
     ],
     "candidateHash": "73653899347d6724c1c830b4d83d85244386f8f62ef8fcd60f15546286e5a5cc",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "math.RA",
@@ -760,7 +925,10 @@
       "T11703"
     ],
     "candidateHash": "18c5190c821cfa9dda07a57a9de875dda34724a3c61e8aac3bdc03e332e4ebd0",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "math.CA",
@@ -785,7 +953,10 @@
       "T12404"
     ],
     "candidateHash": "10981569b1d79482c0561c11b389a7f59a08be2a0a3d3a83d5daccd8ece9eee8",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "stat.ML",
@@ -800,7 +971,10 @@
       "T14465"
     ],
     "candidateHash": "23f632733172197283f90a9f7840d7b6f4cf131a39b433bdd24e67dcf7b1fdcd",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "stat.ME",
@@ -814,7 +988,10 @@
       "T14369"
     ],
     "candidateHash": "306cc658fb2879c3dca00f25b4da1cb1aeb6305ba944408642a6dc22f4c10da5",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "stat.AP",
@@ -826,7 +1003,10 @@
       "T14406"
     ],
     "candidateHash": "04498b5eebd975e8759ef312db53cffa7fdc75e1be0e1d3f3e5ba26fff20a692",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "stat.CO",
@@ -845,7 +1025,10 @@
       "T14406"
     ],
     "candidateHash": "c21c8bda006124188080111cc537ebe25f7edb0d7e8f16165e00cb9c1cb974f3",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "econ.EM",
@@ -857,7 +1040,10 @@
       "T14051"
     ],
     "candidateHash": "5b80a9442321bf0dfdfd91a15d4858e829cac26a718b76b8f86ca2b1f1a9ca6a",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "econ.GN",
@@ -875,7 +1061,10 @@
       "T10841"
     ],
     "candidateHash": "836b2e2ad3079f968850f99fa20b355fc5a900e589ef26545acd280bb8baa524",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "econ.TH",
@@ -893,7 +1082,10 @@
       "T10841"
     ],
     "candidateHash": "2ec4c3555d5b02d850587906a0ba0c16dc81b799160823ec474f47574ee55026",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 0,
+    "precision": 0
   },
   {
     "leaf": "q-fin.ST",
@@ -926,7 +1118,10 @@
       "T14317"
     ],
     "candidateHash": "55006f64c00c43c56d450d03ff816d2de547970df04f99a87b8caa9086465235",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "q-fin.MF",
@@ -950,7 +1145,10 @@
       "T10067"
     ],
     "candidateHash": "f9543cc83eb5074860205e4da6b832eafef67f05e9764ac81f7780d2a621f88c",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "q-fin.GN",
@@ -965,7 +1163,10 @@
       "T14464"
     ],
     "candidateHash": "42b3b5816b7b88f2e40cafe36b570642c83d7389cc1969208411432930b6f610",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "eess.SP",
@@ -983,7 +1184,10 @@
       "T12537"
     ],
     "candidateHash": "fbd1103580cee9bc926d717c0e80f63680a015edaf1aa0f8b479e6bd435c3916",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "eess.IV",
@@ -998,7 +1202,10 @@
       "T14257"
     ],
     "candidateHash": "886fd442207cb338ea0daf7ba1c90e4c744448c9a030119dc31b4da6ce974c7f",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "eess.SY",
@@ -1016,7 +1223,10 @@
       "T11701"
     ],
     "candidateHash": "c1d7d5e652401860bde99187c908ee6f4f14b29d9160a099303363c4f0c3b646",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "eess.telecom",
@@ -1027,7 +1237,10 @@
       "T13816"
     ],
     "candidateHash": "ef8da9249196b9000ea7a0d9b8dc3b5965a15e4548093618323d19d77f44f1a8",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 3,
+    "precision": 0.2
   },
   {
     "leaf": "eess.electro",
@@ -1052,7 +1265,10 @@
       "T13183"
     ],
     "candidateHash": "2d5dfa565bf6ebdd5f6c0c7a72d314308cfb8aedf2cb2d8e522ae14b3bc6dc2d",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "eess.optics",
@@ -1063,7 +1279,10 @@
       "T12510"
     ],
     "candidateHash": "3f0f30fa229f7fdfddb5d84f08584db0606af1f3737ed26e7b3e20486bf64acc",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "mech.dyn",
@@ -1072,7 +1291,10 @@
       "T11170"
     ],
     "candidateHash": "f7a859d58fcd1be9eb1eba3fe2e8ecfcc6d459b757129e5655083946048666f7",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "mech.fluid",
@@ -1083,7 +1305,10 @@
       "T13116"
     ],
     "candidateHash": "a039f051559b9130b2a0f3d0c3d9327240070d7bc43f297e3a5c6fec385ea960",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "mech.thermo",
@@ -1098,7 +1323,10 @@
       "T13200"
     ],
     "candidateHash": "c889147acc47e9bcff9cd4f5d5df2510c418f4804f3457a7bfbc0314fefb1338",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "mech.solid",
@@ -1144,7 +1372,10 @@
       "T14262"
     ],
     "candidateHash": "651b9178780681d7b9298c4ae6dcef2e5caf6a8c7b5665661ff7184f6a08db39",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8
   },
   {
     "leaf": "mech.cad",
@@ -1166,7 +1397,10 @@
       "T13990"
     ],
     "candidateHash": "7cc844f1d1c645743dade83000cbe59328b8c2481e0e5a924150704f89a02c08",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "mech.acoustics",
@@ -1211,7 +1445,10 @@
       "T13031"
     ],
     "candidateHash": "2e1c7790840b26b4424a9f36329e18155406047946f089863312bbc058dfa2cc",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "civil.hydro",
@@ -1250,7 +1487,10 @@
       "T13601"
     ],
     "candidateHash": "2e29fa180066859ed38912cf5d671c9a113755aeab3c3ea79021305b74f8a909",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666
   },
   {
     "leaf": "civil.quake",
@@ -1261,7 +1501,10 @@
       "T12233"
     ],
     "candidateHash": "45575357ed143854ccfaab89b7ca73aed81d4ac0931b92ebcc530847827ff118",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "civil.env",
@@ -1298,7 +1541,10 @@
       "T13031"
     ],
     "candidateHash": "4a79a49b4bdac9ccc4d07e694c3d0a2f5d98df4176694c0ce1ec9784a5474b44",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "civil.urban",
@@ -1309,7 +1555,10 @@
       "T14456"
     ],
     "candidateHash": "09e4ecb75a8e3dcae22d53fd13065657c90bfed5e36167fc7b080779c4f4a814",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 2,
+    "precision": 0.13333333333333333
   },
   {
     "leaf": "chemeng.process",
@@ -1321,7 +1570,10 @@
       "T12038"
     ],
     "candidateHash": "80250691c9dc4bc1aa5069a05bfa2189dcb058f77bdde0870a46acd3828c676c",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "chemeng.poly",
@@ -1339,7 +1591,10 @@
       "T12628"
     ],
     "candidateHash": "61c075d55a9e44de62f4ff91f0a6d0c54e5a3e0249606a65078165e53d0417b5",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "chemeng.nano",
@@ -1349,7 +1604,10 @@
       "T11471"
     ],
     "candidateHash": "f683e9692b6b0f282ba9be3d371f19553ef2d2d698f096daf4c6eefba4c628df",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 6,
+    "precision": 0.4
   },
   {
     "leaf": "chemeng.energy",
@@ -1359,7 +1617,10 @@
       "T12046"
     ],
     "candidateHash": "33187a6b3d8082639711ca2632ad225b8a83615dbe250111e6ebd4f3925442cb",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667
   },
   {
     "leaf": "chemeng.bio",
@@ -1375,7 +1636,10 @@
       "T14184"
     ],
     "candidateHash": "eee9c8a05bea8177b5df10d6dfa61065f24d19b9dffd7b57add048e62203070c",
-    "status": "not-reviewed"
+    "status": "insufficient-sample",
+    "sampleSize": 13,
+    "onTarget": 13,
+    "precision": 1
   },
   {
     "leaf": "chemeng.ceramics",
@@ -1384,7 +1648,10 @@
       "T10132"
     ],
     "candidateHash": "7275bb7b267cfb475a271cd414a890377a91c75226760adbcb0d7d929789e7bc",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "chemeng.sep",
@@ -1409,7 +1676,10 @@
       "T13483"
     ],
     "candidateHash": "63f3f03efcd24ab8f3a2600bbf39b4aa65f2fa388806d5674d85a23883a0c79e",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "med.onco",
@@ -1427,7 +1697,10 @@
       "T11296"
     ],
     "candidateHash": "d2c1e7499a463fe7aa30810d8aea3776003637a380084769dbe5207ce25eb65a",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "med.cardio",
@@ -1492,7 +1765,10 @@
       "T10312"
     ],
     "candidateHash": "3ac0df851d03000708ff7560423e3cd8f229c32015e20915b9c97e33ce047462",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333
   },
   {
     "leaf": "med.pharma",
@@ -1510,7 +1786,10 @@
       "T13037"
     ],
     "candidateHash": "4ea7531205e6688c5c815a321beb3df0f288ccb953a7fe2ffe61828290662589",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8
   },
   {
     "leaf": "med.tox",
@@ -1526,7 +1805,10 @@
       "T14199"
     ],
     "candidateHash": "6a5071b0a889d69614028b4866ef2b1bdb3146fbe278d72cf376dbedc928e18f",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333
   },
   {
     "leaf": "med.peds",
@@ -1544,7 +1826,10 @@
       "T10560"
     ],
     "candidateHash": "d60961d322ec9203426dbd2216010e7c2b89599cf5186582d73b35ed2b932af5",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 8,
+    "precision": 0.5333333333333333
   },
   {
     "leaf": "med.surg",
@@ -1562,7 +1847,10 @@
       "T11377"
     ],
     "candidateHash": "02c169d15f7562b12e8f6bf3bcf0739ca81d19f5cc5ad359dffe35ef55592189",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8
   },
   {
     "leaf": "med.immuno",
@@ -1578,7 +1866,10 @@
       "T13533"
     ],
     "candidateHash": "14ac3ae8d528155ac3bf06b6c090b0e825ea83a7aefe10120ab623bfc7b06f70",
-    "status": "not-reviewed"
+    "status": "insufficient-sample",
+    "sampleSize": 12,
+    "onTarget": 1,
+    "precision": 0.08333333333333333
   },
   {
     "leaf": "med.path",
@@ -1596,7 +1887,10 @@
       "T13759"
     ],
     "candidateHash": "d9f8ef3dcea058280d0c4dd4e70d442ecccce897641088933564b76390ed6f05",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 1,
+    "precision": 0.06666666666666667
   },
   {
     "leaf": "med.radio",
@@ -1606,7 +1900,10 @@
       "T11636"
     ],
     "candidateHash": "6e65dd15a7b321a9d146251c161c09242d0b00007dd34a5374cf8699957bd963",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 5,
+    "precision": 0.3333333333333333
   },
   {
     "leaf": "med.infect",
@@ -1624,7 +1921,10 @@
       "T12402"
     ],
     "candidateHash": "e86b04c4e5e261780df99e598a966a3aa9195c58d05d2b7694c171a46b722be4",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "med.derma",
@@ -1635,7 +1935,10 @@
       "T13953"
     ],
     "candidateHash": "d07f9b8d24b385aa4123d2fb263856a4c8089a6245d969e119505d9fd96094af",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "bio.gen",
@@ -1750,7 +2053,10 @@
       "T14378"
     ],
     "candidateHash": "76111834f60983f3a984212705d6e606aca36a6df07ffad9a520e9470088ec60",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667
   },
   {
     "leaf": "bio.zoo",
@@ -1769,7 +2075,10 @@
       "T14310"
     ],
     "candidateHash": "024e9324c5264614b9f45fdeff02652364f6f7700387995f420e6ca199560a82",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "bio.micro",
@@ -1780,7 +2089,10 @@
       "T12349"
     ],
     "candidateHash": "ee12b728c5e8f7fc57ec33bda2dd0e5b7e8699963e5f805c96be626da0f3a5c6",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6
   },
   {
     "leaf": "bio.immuno",
@@ -1789,7 +2101,10 @@
       "T10134"
     ],
     "candidateHash": "a1224c61e03e911b1be53ccc4b000f46b17eb22404487a45d0ceabe48386b74d",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666
   },
   {
     "leaf": "bio.comp",
@@ -1851,7 +2166,10 @@
       "T12596"
     ],
     "candidateHash": "50fde4737ef71e6b47e6f848582305443e9cc2b55c3d8befa2a6886a43aca44b",
-    "status": "not-reviewed"
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1
   },
   {
     "leaf": "bio.biotech",
@@ -1865,6 +2183,9 @@
       "T14018"
     ],
     "candidateHash": "f20d29192efcfa3fdd42e686d292fb1c28c682d51d2b9ba3ba24954fa8351042",
-    "status": "not-reviewed"
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6
   }
 ]

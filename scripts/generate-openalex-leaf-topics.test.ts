@@ -93,6 +93,25 @@ test('complete recent labels enable generated AI, cosmology and economics candid
   }
 });
 
+test('a review records only what the gate checks: no abstracts, no sampler address', t => {
+  const { run, reviews, output, coverage } = setup(t);
+  assert.equal(run().status, 0);
+  const { topicIds, candidateHash } = coverage().find(row => row.leaf === 'cs.AI')!;
+  const review = evidence(topicIds[0], candidateHash);
+  const query = new URL(review.query);
+  query.searchParams.delete('mailto');
+  // The query's has_abstract:true is the evidence that every work had one.
+  const works = review.works.map(({ id, type, title, publication_date, primary_topic }) => ({ id, type, title, publication_date, primary_topic }));
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': { ...review, query: query.href, works } }));
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(coverage().find(row => row.leaf === 'cs.AI'), {
+    leaf: 'cs.AI', label: 'Artificial Intelligence', topicIds, candidateHash,
+    status: 'passed', sampleSize: 15, onTarget: 12, precision: 0.8,
+  });
+  assert.ok(readFileSync(output, 'utf8').includes("'cs.AI':"));
+});
+
 test('low precision or too few papers cannot enable a leaf', t => {
   const { run, reviews, output, coverage } = setup(t);
   assert.equal(run().status, 0);
@@ -115,7 +134,7 @@ test('stale candidates, duplicate labels and non-feed samples fail without overw
   assert.equal(run().status, 0);
   const before = readFileSync(output, 'utf8');
   const { topicIds, candidateHash } = coverage().find(row => row.leaf === 'cs.AI')!;
-  for (const change of ['hash', 'duplicate-label', 'missing-label', 'text-query', 'long-page', 'old-paper', 'missing-abstract', 'wrong-topic']) {
+  for (const change of ['hash', 'duplicate-label', 'missing-label', 'text-query', 'long-page', 'old-paper', 'no-abstract-filter', 'wrong-topic']) {
     const review = evidence(topicIds[0], candidateHash);
     if (change === 'hash') review.candidateHash = 'stale';
     if (change === 'duplicate-label') review.labels[1] = review.labels[0];
@@ -123,7 +142,7 @@ test('stale candidates, duplicate labels and non-feed samples fail without overw
     if (change === 'text-query') review.query = 'https://api.openalex.org/works?search=Artificial+Intelligence';
     if (change === 'long-page') review.query = review.query.replace('per-page=15', 'per-page=25');
     if (change === 'old-paper') review.works[0].publication_date = '2001-01-01';
-    if (change === 'missing-abstract') review.works[0].abstract_inverted_index = {};
+    if (change === 'no-abstract-filter') review.query = review.query.replace('%2Chas_abstract%3Atrue', '');
     if (change === 'wrong-topic') review.works[0].primary_topic.id = 'https://openalex.org/T99999';
     writeFileSync(reviews, JSON.stringify({ 'cs.AI': review }));
     const result = run();

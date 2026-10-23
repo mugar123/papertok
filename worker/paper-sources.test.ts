@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, WORKING_PAPER_SERIES_IDS, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, WORKING_PAPER_SERIES_IDS, categoryLaneJobs, harvestLane, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { parseXmlDocument as parseWithShim } from '../src/test-support/xmlDomShim.ts';
 import { readPubmedEfetch } from '../src/utils/pubmedEfetch.ts';
-import { areaLabelForPaper, leavesForOpenAlexTopic } from '../src/utils/areaAccent.ts';
+import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaves } from '../src/utils/areaAccent.ts';
 import { getCategoryArea } from '../src/data/categoryTaxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 
@@ -235,6 +236,84 @@ test("a category's OpenAlex lane asks by its measured topic IDs, not by text, an
   // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
   await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'mech.aero', page: 1, since: '' });
   assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
+});
+
+// ─── Which leaves get an OpenAlex topic lane: the precision gate's decisions ───
+
+const gateFile = (name: string) => JSON.parse(readFileSync(new URL(`../scripts/data/${name}`, import.meta.url), 'utf8'));
+const topicLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-topics').map(job => job.lane);
+const topicsOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
+
+// OpenAlex W7223100088 as returned to the gate's cs.LG sample on 2026-10-23
+// (trimmed, abstract shortened): a subscription journal article.
+const subscriptionArticle = {
+  id: 'https://openalex.org/W7223100088',
+  doi: 'https://doi.org/10.1142/s0218001426590482',
+  title: 'Synthesis of Reliable Logic Question Answering Data for Large Language Model with Aid of Operations Research Program',
+  type: 'article',
+  publication_date: '2026-10-22',
+  publication_year: 2026,
+  abstract_inverted_index: invertedIndex('Logical reasoning is a highly valued capability in language models.'),
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.1142/s0218001426590482',
+    version: 'publishedVersion',
+    source: { id: 'https://openalex.org/S41486457', display_name: 'International Journal of Pattern Recognition and Artificial Intelligence', type: 'journal', is_core: true },
+  },
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  primary_topic: {
+    id: 'https://openalex.org/T10028',
+    display_name: 'Topic Modeling',
+    subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
+    field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
+    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+  },
+};
+
+test('an arXiv leaf the precision gate admitted gets a journal-article lane, asked as its sample was', async t => {
+  const reviews = gateFile('openalex-topic-reviews.json');
+  const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10028') ? [subscriptionArticle] : [] }));
+  for (const leaf of ['cs.LG', 'cs.CV']) {
+    assert.ok(topicLanes().includes(leaf), `${leaf} has a lane in the nightly harvest`);
+    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '' });
+    const filters = filtersOf(urls.at(-1)!);
+    const sampled = new URL(reviews[leaf].query).searchParams.get('filter')!.split(',');
+    // The same topic IDs in the same canonical order, so the evidence names the request.
+    assert.deepEqual(topicsOf(filters), topicsOf(sampled), leaf);
+    assert.deepEqual(topicsOf(filters), [...topicsOf(filters)].sort(), `${leaf} asks with sorted topic IDs`);
+    for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
+      assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
+    }
+  }
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'cs.LG', page: 1, since: '' });
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223100088', ['cs.LG']]]);
+  assert.equal(items[0].paper.publicationType, 'article');
+  assert.equal(items[0].paper.sourceType, 'journal');
+  assert.equal(items[0].paper.openAccess, false, 'the explicit subscription access is kept');
+});
+
+test('a leaf the gate did not admit sends no topic request, and every lane is an inherited or admitted leaf', () => {
+  const coverage = gateFile('openalex-leaf-topics-coverage.json') as Array<{ leaf: string; status: string; sampleSize?: number }>;
+  const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf)!;
+  // Too few on target in a full sample, or too few recent core articles to judge.
+  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample']]) {
+    assert.equal(statusOf(leaf).status, status, leaf);
+    assert.equal(typeof statusOf(leaf).sampleSize, 'number', `${leaf} records its sample`);
+    assert.equal(openAlexTopicFilterForLeaves([leaf]), null, leaf);
+    assert.ok(!topicLanes().includes(leaf), leaf);
+  }
+  assert.deepEqual(topicLanes().sort(), coverage.filter(row => row.status === 'inherited' || row.status === 'passed').map(row => row.leaf).sort());
+});
+
+test('the 14 inherited leaves keep their lanes and the topics accepted in #236', async t => {
+  const { topics } = gateFile('openalex-leaf-topics-baseline.json') as { topics: Record<string, string[]> };
+  assert.equal(Object.keys(topics).length, 14);
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  for (const [leaf, accepted] of Object.entries(topics)) {
+    assert.ok(topicLanes().includes(leaf), leaf);
+    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '' });
+    assert.deepEqual(topicsOf(filtersOf(urls.at(-1)!)), [...accepted].sort(), leaf);
+  }
 });
 
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
