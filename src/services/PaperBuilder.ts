@@ -99,7 +99,9 @@ function ownPeerReviewedByDoi(record: Partial<Paper>, sourceName?: string): NonN
 // (`ownPeerReviewedByDoi`), and `merge` marks a row it builds from such
 // records and rows (`sources.peerReviewedByDoiComplete`). A row merged before
 // the map existed lacks its records' answers: a corpus row stored then, or a
-// card an older bundle merged.
+// card an older bundle merged from unmarked rows. That code keeps a mark it
+// finds, though: a marked row it merges still reads complete, without the
+// answer of the record it merged in.
 function holdsEveryAnswer(record: Pick<Partial<Paper>, 'sources'>) {
   return !hasMerged(record) || record.sources?.peerReviewedByDoiComplete === true;
 }

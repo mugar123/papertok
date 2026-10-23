@@ -33,7 +33,10 @@ export interface PaperSources {
   // the answer of every record merged into the row. A merged row without it,
   // such as one merged before the map existed, can lack a record's `false`,
   // so a merge with it neither confirms review from a map's `true` nor keeps
-  // a row's `true` the way a merge of complete rows does.
+  // a row's `true` the way a merge of complete rows does. Code from before
+  // the map keeps this mark on a row it merges but files no answer, so a row
+  // it merged after the mark was written still reads complete; after a
+  // Worker rollback to such code, worker/README.md clears the mark.
   peerReviewedByDoiComplete?: true;
 }
 
