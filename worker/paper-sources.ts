@@ -2,7 +2,7 @@ import type { Paper } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Harvested, StoreEnv } from './paper-store.ts';
-import type { QuotaPart } from './request-quota-ledger.ts';
+import type { HarvestAsk } from './openalex-api.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
@@ -334,23 +334,23 @@ async function arxivSearch(env: SourceEnv, query: string, { page, lane, waits }:
 
 const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?.label || leafId.replace(/\./g, ' ');
 
-// The parts of the harvest's own share of OpenAlex's day
-// (`OPENALEX_HARVEST_DAILY_UNITS`, 4,000 units) that its lanes spend. A billed
-// miss reserves the share and its lane's part in one ledger transaction, with
-// the day's ceiling; enrichment spends the share alone. A spent share or part
-// is a refusal that ends the source for this step. Followed lanes may spend
-// 1,000 units, in two parts. Readers choose how many there are, and 400
-// followed searches spent the whole share before a paper was enriched. The
-// runs new follows start spend from 00:00 UTC, before the nightly run reaches
-// its followed lanes, so they have a part of their own and never spend the
-// nightly refresh's. Category lanes run before the followed lanes every night,
-// so they stop at the other 3,000 and leave the followed lanes theirs;
-// enrichment runs last and spends what is left of the share.
+// What the harvest's lanes spend of its own share of OpenAlex's day
+// (`OPENALEX_HARVEST_DAILY_UNITS`, 4,000 units). The runs new follows start
+// spend from 00:00 UTC and at any hour after, so they have 300 of it as a
+// share of their own, which nothing in the nightly run spends
+// (provider-runtime.ts). The nightly run has the other 3,700: a billed miss
+// reserves that share and its lane's part in one ledger transaction, with the
+// day's ceiling; enrichment spends the share alone. A spent share or part is
+// a refusal that ends the source for this step. Readers choose how many
+// followed lanes there are, and 400 followed searches spent the whole share
+// before a paper was enriched, so the nightly refresh of followed lanes has a
+// part of 700. Category lanes run before it every night, so they stop at
+// 3,000 and leave it its 700; enrichment runs last and spends what is left.
 type HarvestPart = 'categories' | 'nightly' | 'new';
-const HARVEST_OPENALEX_PARTS: Record<HarvestPart, QuotaPart> = {
-  categories: { subject: 'openalex:harvest:categories', limit: 3_000 },
-  nightly: { subject: 'openalex:harvest:follows', limit: 700 },
-  new: { subject: 'openalex:harvest:new-follows', limit: 300 },
+const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {
+  categories: { part: { subject: 'openalex:harvest:categories', limit: 3_000 } },
+  nightly: { part: { subject: 'openalex:harvest:follows', limit: 700 } },
+  new: { newFollow: true },
 };
 
 async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', part }: { page: number; perPage: number; search?: string; part: HarvestPart }) {

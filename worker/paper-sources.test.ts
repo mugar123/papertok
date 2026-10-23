@@ -348,24 +348,33 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
-test("followed searches stop at their part of the harvest's OpenAlex day, and category lanes and enrichment keep the rest", async t => {
+// Enrichment runs last in the nightly run and can always use more units. A
+// reader who follows something new after it has finished must still have the
+// follow harvested at once, not the next night.
+test("followed searches stop at their part of the nightly run's OpenAlex share, category lanes and enrichment keep the rest of it, and new follows keep their own 300", async t => {
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
     ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
     : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  const followedSearch = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 } });
+  const followedSearch = (newFollow = false) => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 }, newFollow });
   // A search is ten list calls: the nightly refresh of followed lanes may spend 700 of the harvest's 4,000.
   for (let call = 0; call < 70; call += 1) await followedSearch();
   await assert.rejects(followedSearch(), (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60);
   await assert.rejects(SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), SourceRefused);
   assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 70);
-  // A category's lane is still served, and enrichment after it, up to the whole share.
+  // A run a new follow started, before the nightly run's enrichment.
+  await followedSearch(true);
+  // A category's lane is still served, and enrichment after it, up to the
+  // nightly run's 3,700 whatever the new follows have spent.
   await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'bio.mol', page: 1, since: '', waits: { seconds: 0 } });
-  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 71);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 72);
   const enrich = () => handleHarvestOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=50'), env);
-  for (let call = 0; call < 3_299; call += 1) assert.equal((await enrich()).status, 200);
+  for (let call = 0; call < 2_999; call += 1) assert.equal((await enrich()).status, 200);
   assert.equal((await enrich()).status, 429);
+  // The rest of the new follows' 300 is still theirs.
+  for (let call = 0; call < 29; call += 1) await followedSearch(true);
+  await assert.rejects(followedSearch(true), SourceRefused);
 });
 
 // The nightly run harvests every category lane before its followed lanes, and

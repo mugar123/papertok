@@ -1,6 +1,5 @@
 import type { WorkerEnv } from './env.ts';
 import type { OpenAlexBudget, OpenAlexTier, UpstreamError } from './provider-runtime.ts';
-import type { QuotaPart } from './request-quota-ledger.ts';
 
 export type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 
@@ -324,6 +323,7 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest
   if (harvest) {
     cost.tier = 'feed';
     cost.part = harvest.part;
+    cost.newFollow = harvest.newFollow;
   }
   if (cost.units > 0) {
     const budget = await reserveOpenAlexBudget(env, '', cost, now);
@@ -360,17 +360,18 @@ export function handleOpenAlex(request: Request, env: WorkerEnv) {
   return relayOpenAlex(request, env, null);
 }
 
-// The harvest's misses, and the part of its share a billed one spends.
-interface HarvestAsk { part?: QuotaPart }
+// What a billed harvest miss spends: the new follows' share for a run a new
+// follow started, otherwise the nightly run's, and the part of it a lane names.
+export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
 
 /**
  * The relay as the paper harvest asks it in-process: the same validation,
  * cache keys, shared store and reading, but a billed miss reserves the
- * harvest's share of the day (`feed`, `OPENALEX_HARVEST_DAILY_UNITS`) rather
- * than a reader's tier, and `part` of that share when one is named.
+ * harvest's share of the day (`feed`, `OPENALEX_HARVEST_DAILY_UNITS`) that
+ * `ask` names rather than a reader's tier.
  */
-export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, part?: QuotaPart) {
-  return relayOpenAlex(request, env, { part });
+export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: HarvestAsk = {}) {
+  return relayOpenAlex(request, env, ask);
 }
 
 async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null) {
@@ -388,7 +389,7 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
   // A request joins a miss in flight whatever its own tier: joining spends no
   // unit. It does not take that miss's budget refusal, because one URL can be
   // asked under two tiers -- the harvest spends `feed` where a reader spends the
-  // URL's own, and two of the harvest's lanes can spend two parts of its share --
+  // URL's own, and two of the harvest's lanes can spend two shares or parts of it --
   // and a reader's closed tier used to end a harvest run's
   // enrichment. Whoever waited on a refused miss starts again under its own
   // tier, one at a time, so a URL still has at most one reservation and one

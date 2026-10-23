@@ -26,9 +26,12 @@ export interface OpenAlexBudget {
   units: number;
   tier: OpenAlexTier;
   kind: OpenAlexKind;
-  // `feed` only: the part of the harvest's share this miss spends, such as
+  // `feed` only: the part of the nightly run's share this miss spends, such as
   // the followed lanes' (paper-sources.ts).
   part?: QuotaPart;
+  // `feed` only: a miss of a run a new follow started, which spends the new
+  // follows' share (`OPENALEX_NEW_FOLLOWS_DAILY_UNITS`) rather than the nightly run's.
+  newFollow?: boolean;
 }
 
 interface CacheOptions {
@@ -117,10 +120,14 @@ export const OPENALEX_TIER_PERCENT: Readonly<Record<OpenAlexTier, number>> = Obj
 // where readers' misses count the minute: the share and the day's ceiling are
 // checked in one transaction, and a page the harvest finds stored spends none
 // of it. With this bound of its own, the harvest does not count against the
-// minute's ceiling, which guards the day against readers' bursts. Its lanes
-// spend named parts of it, checked in the same transaction
-// (`HARVEST_OPENALEX_PARTS` in paper-sources.ts).
+// minute's ceiling, which guards the day against readers' bursts. The runs new
+// follows start have OPENALEX_NEW_FOLLOWS_DAILY_UNITS of it, a subject of
+// their own, and the nightly run the rest, so neither spends the other's: a
+// follow added after the run's enrichment is still harvested at once. The
+// nightly run's lanes spend named parts of its share, checked in the same
+// transaction (`HARVEST_OPENALEX_PARTS` in paper-sources.ts).
 export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
+export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
 // Names the tier on every refusal of the OpenAlex budget, so the client can
 // tell the Worker's own refusal of one request from OpenAlex refusing the key:
 // only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
@@ -573,19 +580,28 @@ export function boundedText(value: unknown, maxLength: number) {
 // (with its own alarm and cleanup) created for every minute. What was taken
 // travels back to the caller, the same shape as every other gate, so whoever
 // owns the refund can name it. The harvest's reservations (`feed`) check its
-// day's share as the subject instead of the minute, and the part of that share
-// a lane spends, when it names one.
-function openAlexLedgerRequest(env: WorkerEnv, now: string, tier?: OpenAlexTier, part?: QuotaPart): QuotaRequest {
+// day's share as the subject instead of the minute: the new follows' share for
+// a run a new follow started, otherwise the nightly run's, with the part of it
+// a lane spends when it names one.
+function openAlexLedgerRequest(env: WorkerEnv, now: string, budget?: Pick<OpenAlexBudget, 'tier' | 'part' | 'newFollow'>): QuotaRequest {
   const day = {
     periodKey: `openalex:day:${now.slice(0, 10)}`,
     globalLimit: boundedLimit(env.OPENALEX_GLOBAL_DAILY_LIMIT, DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT, 1_000_000),
   };
-  return tier === 'feed'
-    ? { ...day, subject: 'openalex:harvest', subjectLimit: OPENALEX_HARVEST_DAILY_UNITS, ...(part ? { part } : {}) }
-    : {
+  if (budget?.tier !== 'feed') {
+    return {
       ...day,
       subject: `openalex:minute:${now.slice(0, 16)}`,
       subjectLimit: boundedLimit(env.OPENALEX_GLOBAL_MINUTE_LIMIT, DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT, 100_000),
+    };
+  }
+  return budget.newFollow
+    ? { ...day, subject: 'openalex:harvest:new-follows', subjectLimit: OPENALEX_NEW_FOLLOWS_DAILY_UNITS }
+    : {
+      ...day,
+      subject: 'openalex:harvest',
+      subjectLimit: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS,
+      ...(budget.part ? { part: budget.part } : {}),
     };
 }
 
@@ -594,7 +610,7 @@ function openAlexLedgerRequest(env: WorkerEnv, now: string, tier?: OpenAlexTier,
 // day's object; the relay passes the instant its reading will name too.
 export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budget: OpenAlexBudget, now = new Date().toISOString()) {
   const ledgerRequest = {
-    ...openAlexLedgerRequest(env, now, budget.tier, budget.part),
+    ...openAlexLedgerRequest(env, now, budget),
     amount: budget.units,
     percent: OPENALEX_TIER_PERCENT[budget.tier],
     tally: `${budget.tier}.${budget.kind}`,

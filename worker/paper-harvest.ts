@@ -12,8 +12,9 @@ export const PAPER_HARVEST_CRON = '30 2 * * *';
 const PAGE_GAP = '5 seconds';
 const EMBED_STEP_PAPERS = 256;
 // 25 to 50 papers per OpenAlex call: a step of 500 is about 20 calls, and a
-// run's ENRICH_STEPS about 3,000 units of the harvest's 4,000-unit share of the
-// day (OPENALEX_HARVEST_DAILY_UNITS). A larger backlog drains over the next runs.
+// run's ENRICH_STEPS about 3,000 units of the nightly run's 3,700 of the
+// harvest's share of the day (provider-runtime.ts). A larger backlog drains
+// over the next runs.
 const ENRICH_STEP_PAPERS = 500;
 const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, the longest due first: a lane is due from
