@@ -538,9 +538,10 @@ const LOOKUP_TIMEOUT_MS = 2_000;
  * Papers the app holds ids for but the corpus lacks (a reader's likes),
  * fetched and filed with no lane, kept for KEEP days whatever their date.
  * arXiv ids ask arXiv; PubMed ids, DOIs and OpenAlex ids ask OpenAlex for the
- * single work, which it does not bill. Bounded by the caller's deadline.
+ * single work, which it does not bill. An answer later than `deadlineMs` is
+ * dropped: 2 s for a caller that answers a reader inline.
  */
-export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepUntil, now = Date.now() }: { keepUntil: string; now?: number }) {
+export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepUntil, now = Date.now(), deadlineMs = LOOKUP_TIMEOUT_MS }: { keepUntil: string; now?: number; deadlineMs?: number }) {
   const arxivIds: string[] = [];
   const openAlexPaths: string[] = [];
   for (const id of paperIds) {
@@ -558,7 +559,7 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   if (arxivIds.length) {
     lookups.push(fetchArxivPapers(env, arxivIds).then(papers => papers.map(paper => ({ paper, lanes: [] }))));
   }
-  const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), LOOKUP_TIMEOUT_MS));
+  const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), deadlineMs));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
   const found = settled.flatMap(result => (result === 'late' ? [] : result));
   return ingestPapers(env, found, { keepUntil, now });

@@ -8,6 +8,7 @@ import {
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, ingestPaperIds } from './paper-sources.ts';
+import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -17,6 +18,11 @@ type FeedEnv = StoreEnv & WorkerEnv;
 
 const ENOUGH_STORED_POSITIVES = 3;
 const LIKED_LOOKUP_MAX_PAPERS = 10;
+// The lookup of liked papers runs after the page has answered, so it waits as
+// long as the arXiv route itself may: a seat on arXiv's beat, then arXiv. With
+// the 2 s an inline lookup has, an answer arXiv sends later spends an app-wide
+// seat and files nothing.
+const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT_MS;
 // A followed lane asked for again within a day is not written again.
 const FOLLOW_REFRESH_MS = 86_400_000;
 // New followed lanes a reader may add to the harvest a day, and the whole app.
@@ -42,7 +48,7 @@ async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: strin
       : { results: [] };
     if (results.length >= ENOUGH_STORED_POSITIVES) return;
     const absent = positiveIds.filter(id => !workByPaperId.has(id)).slice(0, LIKED_LOOKUP_MAX_PAPERS);
-    if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS) });
+    if (absent.length) await ingestPaperIds(env, absent, { keepUntil: daysFromNow(KEEP_LIKED_DAYS), deadlineMs: LIKED_LOOKUP_DEADLINE_MS });
     const found = await findWorks(db, positiveIds.slice(0, LIKED_LOOKUP_MAX_PAPERS));
     await embedWorks(env, [...new Set(found.values())], uid);
   } catch (error) {

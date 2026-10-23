@@ -95,6 +95,67 @@ test('the page answers before a liked paper without a vector is embedded, and th
   assert.equal(embeddings, 1, 'the liked paper is embedded after it');
 });
 
+// arXiv's Atom answer for one id, as `parseArxivAtom` reads it (synthetic).
+const SLOW_LIKE = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2610.55555v1</id>
+    <published>${new Date(Date.now() - 86_400_000).toISOString()}</published>
+    <updated>${new Date(Date.now() - 86_400_000).toISOString()}</updated>
+    <title>A liked paper arXiv answers slowly</title>
+    <summary>We wait for it.</summary>
+    <author><name>Ana Pérez</name></author>
+    <arxiv:primary_category term="cs.CL"/>
+    <category term="cs.CL"/>
+  </entry>
+</feed>`;
+
+test('a liked paper arXiv answers after 2 s is still filed by the lookup after the page, while an inline lookup keeps its 2 s', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  let arxivAsked = 0;
+  // arXiv answers three seconds after it is asked.
+  globalThis.fetch = (async () => {
+    arxivAsked += 1;
+    await new Promise(resolve => setTimeout(resolve, 3_000));
+    return new Response(SLOW_LIKE, { headers: { 'content-type': 'application/atom+xml' } });
+  }) as typeof fetch;
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  const asked = async (count: number) => {
+    for (let turn = 0; arxivAsked < count; turn += 1) {
+      if (turn > 1_000) throw new Error('arXiv was never asked');
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+
+  // After the page, the lookup waits for the answer. (Each case has its own
+  // store: arXiv's beat would make the second request wait for a seat.)
+  const later = store();
+  Object.assign(later.env, { AI: { run: async (_model: string, { text }: { text: string[] }) => ({ data: text.map(() => Array.from({ length: 1024 }, () => 0.5)) }) } });
+  await ingestPapers(later.env, [{ paper: stored, lanes: [] }]);
+  const afterAnswer: Array<Promise<unknown>> = [];
+  const request = new Request('https://papertok.internal/store/papers', { method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], positiveIds: ['2610.55555'] }) });
+  await handleCorpusFeed(request, later.env, { uid: 'reader-1' }, work => { afterAnswer.push(work); });
+  await asked(1);
+  t.mock.timers.tick(3_000);
+  await Promise.all(afterAnswer);
+  assert.equal(later.db.prepare("SELECT COUNT(*) AS n FROM work_keys WHERE key = 'arxiv:2610.55555'").get()?.n, 1);
+
+  // `{ ids }` answers inline, so it waits 2 s at most.
+  const inline = store();
+  const answer = inline.ask({ ids: ['2610.55555'] });
+  await asked(2);
+  t.mock.timers.tick(2_000);
+  assert.deepEqual((await answer).papers, []);
+  t.mock.timers.tick(1_000);
+});
+
 test("a reader's ranking is kept for their next pages under their own key, never another reader's", async t => {
   const entries = new Map<string, Response>();
   const realCaches = (globalThis as { caches?: unknown }).caches;
