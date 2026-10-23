@@ -133,6 +133,19 @@ test("a row Hugging Face started takes arXiv's new version, and Hugging Face's c
   assert.deepEqual([stored().title, stored().abstract], [arxivRevision.title, arxivRevision.abstract]);
 });
 
+// The PubMed mapper writes "Untitled" for a record esummary gives no title.
+// Filed, the placeholder was a card's title, and a listing of a stored paper
+// replaced its real title with it.
+test('a listing without a real title is not filed, and does not rename the stored paper', async () => {
+  const { env, db } = corpus();
+  const listing = (title: string) => mapPubmedSummary({ uid: '42900003', title, source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] });
+  await ingestPapers(env, [{ paper: listing(''), lanes: ['med.cardio'] }], { now: NOW });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+  await ingestPapers(env, [{ paper: listing('A cardiology trial'), lanes: ['med.cardio'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: listing(''), lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)).title), ['A cardiology trial']);
+});
+
 test('a record that names two stored papers folds them into one, keeping one id and every lane', async () => {
   const { env, db } = corpus();
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };

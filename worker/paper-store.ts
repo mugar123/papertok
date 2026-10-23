@@ -4,6 +4,7 @@ import type { WorkerEnv } from './env.ts';
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
 import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
 import { hasUsableAIAbstract } from '../src/utils/aiExplanationAccess.ts';
+import { isPlaceholderPaperTitle } from '../src/utils/paperDisplayTitle.ts';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
@@ -285,7 +286,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const groupOfKey = new Map<string, Group>();
   const listed = new Map<string, Paper>();
   for (const item of items) {
-    if (!item?.paper?.title || !item.paper.id || !isFeedPublication(item.paper)) continue;
+    // A mapper stands "Untitled" in for a title its source left out.
+    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublication(item.paper)) continue;
     const published = publishedOf(item.paper, now);
     if (!published || (published < since && !keepUntil)) continue;
     const paper = PaperBuilder.create(item.paper);
