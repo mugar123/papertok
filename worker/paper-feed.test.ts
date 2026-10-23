@@ -186,6 +186,24 @@ test("a follow's papers reach the next page of every reader who asked for it bef
   assert.deepEqual(ids((await ask(request(2), 'reader-2')).papers), ['2610.50003']);
 });
 
+// Runs `work` once, right after the corpus's next batch of reads: a page's
+// candidates, read in one batch.
+function afterNextBatch(env: WorkerEnv, work: () => Promise<void>) {
+  const binding = env.PAPER_STORE!;
+  let pending = true;
+  env.PAPER_STORE = {
+    prepare: (sql: string) => binding.prepare(sql),
+    async batch(statements: D1PreparedStatement[]) {
+      const results = await binding.batch(statements);
+      if (pending) {
+        pending = false;
+        await work();
+      }
+      return results;
+    },
+  } as unknown as D1Database;
+}
+
 test("a follow's papers reach the next page when its first harvest ends while a page ranks", async t => {
   rankingCaches(t);
   const { env, db, runs, ask } = store();
@@ -198,24 +216,36 @@ test("a follow's papers reach the next page when its first harvest ends while a 
   assert.deepEqual(ids((await ask(request(0))).papers), ['2610.70001']);
   assert.equal(runs.length, 1);
   // The harvest files the author's paper and records that it finished right
-  // after the next page has read its candidates, in one batch.
-  const binding = env.PAPER_STORE!;
-  let harvesting = true;
-  env.PAPER_STORE = {
-    prepare: (sql: string) => binding.prepare(sql),
-    async batch(statements: D1PreparedStatement[]) {
-      const results = await binding.batch(statements);
-      if (harvesting) {
-        harvesting = false;
-        await ingestPapers(env, [{ paper: paper('2610.70009', "The followed author's paper", 0.5), lanes: ['author:A77'] }]);
-        db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A77', ?)").run(new Date().toISOString());
-      }
-      return results;
-    },
-  } as unknown as D1Database;
+  // after the next page has read its candidates.
+  afterNextBatch(env, async () => {
+    await ingestPapers(env, [{ paper: paper('2610.70009', "The followed author's paper", 0.5), lanes: ['author:A77'] }]);
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A77', ?)").run(new Date().toISOString());
+  });
   assert.deepEqual(ids((await ask(request(1))).papers), ['2610.70002'], 'ranked before the harvest filed anything');
   assert.deepEqual(ids((await ask(request(2))).papers), ['2610.70009']);
   assert.deepEqual(ids((await ask(request(3))).papers), ['2610.70003']);
+});
+
+test("a follow another reader adds, whose first harvest ends while a page ranks, reaches that page's next page", async t => {
+  rankingCaches(t);
+  const { env, db, runs, ask } = store();
+  await ingestPapers(env, [
+    { paper: paper('2610.71001', 'Category paper, 2 days', 2), lanes: [] },
+    { paper: paper('2610.71002', 'Category paper, 3 days', 3), lanes: [] },
+  ]);
+  const request = (page: number) => ({ categories: ['cs.CL'], follows: [followedAuthor], page, pageSize: 1 });
+  // Right after this reader's first page has read its candidates, another
+  // reader's request adds the author to the harvest, and that first harvest
+  // files the author's paper and records that it finished.
+  afterNextBatch(env, async () => {
+    db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A77', ?)").run(new Date().toISOString());
+    await ingestPapers(env, [{ paper: paper('2610.71009', "The followed author's paper", 0.5), lanes: ['author:A77'] }]);
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', 'author:A77', ?)").run(new Date().toISOString());
+  });
+  assert.deepEqual(ids((await ask(request(0), 'reader-2')).papers), ['2610.71001'], 'ranked before the harvest filed anything');
+  assert.equal(runs.length, 0, "the other reader's request started the harvest");
+  assert.deepEqual(ids((await ask(request(1), 'reader-2')).papers), ['2610.71009']);
+  assert.deepEqual(ids((await ask(request(2), 'reader-2')).papers), ['2610.71002']);
 });
 
 test("a page after one whose likes the lookup embedded goes on by them, and the next first page ranks by them", async t => {

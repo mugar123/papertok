@@ -73,19 +73,21 @@ async function readFollowedLanes(env: FeedEnv, lanes: string[]): Promise<Followe
  * served, and starts a harvest of the ones nobody had asked for yet: their
  * papers arrive for the reader's next page rather than tomorrow's. Returns
  * whether one of them, whoever asked for it first, has not finished its first
- * harvest yet: until it has, its papers can still arrive.
+ * harvest yet, or finished it after the page read its candidates
+ * (`harvestedBefore` holds the lanes that had finished then): its papers can
+ * still arrive, or arrived after the page was ranked.
  *
  * It reads the lanes itself, after the page, rather than take the read the
  * request made before it: a reader's next page can arrive before the previous
  * page has registered a new lane, and that early read would register it
  * again, with a second unit of the allowance and a second harvest.
  */
-async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], now = Date.now()) {
+async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], harvestedBefore: Set<string>, now = Date.now()) {
   if (lanes.length === 0 || !env.PAPER_STORE) return false;
   const db = env.PAPER_STORE;
   const followed = await readFollowedLanes(env, lanes);
   const known = new Map(followed.map(row => [row.lane, row.requested_at]));
-  const waiting = followed.some(row => !row.harvested);
+  const waiting = followed.some(row => !row.harvested || !harvestedBefore.has(row.lane));
   const due = lanes.filter(lane => known.has(lane) && Date.parse(known.get(lane)!) < now - FOLLOW_REFRESH_MS);
   let fresh = lanes.filter(lane => !known.has(lane));
   if (fresh.length) {
@@ -198,12 +200,12 @@ export async function handleCorpusFeed(
     throw new PaperStoreError('LANES_REQUIRED', 400);
   }
   const lanes = query.follows.map(follow => follow.lane);
-  // Whether a followed lane awaited its first harvest before the page read
-  // its candidates. Read after the page only, a harvest that ended while it
-  // ranked would look finished, though the page was ranked without its
+  // The followed lanes that had finished their first harvest before the page
+  // read its candidates. Read after the page only, a harvest that ended while
+  // it ranked would look finished, though the page was ranked without its
   // papers. Read beside the reservation, so it adds no round trip.
   const [, followed] = await Promise.all([reserveFeedRequest(env, identity.uid), readFollowedLanes(env, lanes)]);
-  const harvestPending = followed.some(row => !row.harvested);
+  const harvestedBefore = new Set(followed.filter(row => row.harvested).map(row => row.lane));
   if (query.page > FEED_LAST_PAGE) return { papers: [] };
   // Only a first page of categories looks up liked papers: the follows asked
   // beside it, and later pages, would repeat the same lookup.
@@ -235,13 +237,14 @@ export async function handleCorpusFeed(
   // (arXiv's pace), and the page is ranked by the likes the corpus has now.
   if (looksUp && !waitsForLikes) lookup = addMissingPositives(env, query.positiveIds);
   // The whole order serves the next pages only if this work leaves the
-  // ranking as it was: a followed lane waiting for its first harvest, before
-  // the page or after it, or a like stored or embedded, changes it.
+  // ranking as it was: a followed lane waiting for its first harvest, or
+  // finishing it after the page read its candidates, or a like stored or
+  // embedded, changes it.
   await later(Promise.all([
-    registerFollowedLanes(env, identity.uid, lanes),
+    registerFollowedLanes(env, identity.uid, lanes, harvestedBefore),
     lookup ?? false,
   ]).then(async ([waiting, added]) => {
-    if (kept?.[1].final && cache && !harvestPending && !waiting && !added) await cache.put(...kept);
+    if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
   return { papers };
 }
