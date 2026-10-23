@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { Transition } from 'framer-motion';
 interface NudgePanelProps {
@@ -6,6 +7,8 @@ interface NudgePanelProps {
   // A second answer of equal weight, for a question with two (the consent ask).
   secondaryAction?: { label: string; onClick: () => void };
   dismissLabel?: string; onDismiss?: () => void;
+  // Escape anywhere puts the panel away and leaves focus where it is.
+  onEscape?: () => void;
 }
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from '@phosphor-icons/react';
@@ -18,9 +21,11 @@ import './NudgePanel.css';
 // panels that appear in one corner and move differently read as two different
 // systems talking over each other.
 //
-// An aside, not a dialog: it takes no focus, traps nothing, and covers no
-// control. Someone reading a paper can ignore it to the end of the page, and
-// the X is the only thing it asks for.
+// An aside, not a dialog: it takes no focus and traps nothing. Someone reading
+// a paper can ignore it to the end of the page, and the X is the only thing it
+// asks for. On a phone it does cover the bottom of the card, Read article
+// among it; a panel given `onEscape` goes away on Escape without moving focus,
+// so a control focused underneath it can still be seen (WCAG 2.4.11).
 //
 // The motion, measured on its twin (2026-09-12): opacity runs straight and
 // lands first, movement keeps easing underneath it. One curve for all three
@@ -50,8 +55,18 @@ export default function NudgePanel({
   secondaryAction,
   dismissLabel,
   onDismiss,
+  onEscape,
 }: NudgePanelProps) {
   const prefersReducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!onEscape) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) onEscape();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onEscape]);
 
   return (
     <motion.aside

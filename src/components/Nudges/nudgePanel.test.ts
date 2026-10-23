@@ -118,3 +118,16 @@ test('the notice is announced politely and dismissed for this reader and version
   assert.match(jsx, /rememberPrivacyNotice\(uid, PRIVACY_POLICY_VERSION\);\s*setPicked\(null\);/);
   assert.match(jsx, /<a href="\/privacy\.html" target="_blank" rel="noopener noreferrer">\s*\{copy\.privacy\.policy\}/);
 });
+
+/**
+ * On a phone the panel covers the bottom of the card. Escape has to put it away
+ * without moving focus, so a control focused underneath it can be seen
+ * (WCAG 2.4.11), and without counting as having read the change.
+ */
+test('Escape puts the notice away for this visit and leaves focus where it is', async () => {
+  const [panel, host] = await Promise.all([panelJsx, hostJsx]);
+  assert.match(panel, /document\.addEventListener\('keydown', handleKeyDown\);/);
+  assert.match(panel, /if \(event\.key === 'Escape' && !event\.defaultPrevented\) onEscape\(\);/);
+  assert.match(host, /const hidePrivacy = useCallback\(\(\) => setPicked\(null\), \[\]\);/, 'hidden, not remembered');
+  assert.match(host, /onClick: acknowledgePrivacy \}\}\s*onEscape=\{hidePrivacy\}\s*\/>/, 'on the policy notice');
+});

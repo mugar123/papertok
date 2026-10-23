@@ -126,6 +126,9 @@ export default function NudgeHost() {
     setPicked(null);
   }, []);
 
+  // Escape only puts it away for this visit: the key also closes dialogs, so
+  // it is no sign the change was read. It comes back on the next visit.
+  const hidePrivacy = useCallback(() => setPicked(null), []);
   const uid = user?.uid;
   const acknowledgePrivacy = useCallback(() => {
     rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
@@ -195,6 +198,7 @@ export default function NudgeHost() {
             </>
           )}
           action={{ label: copy.privacy.done, onClick: acknowledgePrivacy }}
+          onEscape={hidePrivacy}
         />
       ) : picked === 'email-down' && emailCopy && (
         <NudgePanel
