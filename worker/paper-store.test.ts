@@ -5,6 +5,7 @@ import test from 'node:test';
 import { arxivIdOf, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 
@@ -63,6 +64,18 @@ const arxivRecord = arxivRecordPaper({
   published: '2026-10-10T12:00:00.000Z',
   updated: '2026-10-10T12:00:00.000Z',
 });
+const arxivRevision = arxivRecordPaper({
+  arxivId: '2610.11111',
+  title: 'Sparse attention for long documents and code',
+  abstract: 'We make attention sparse, and prove that it converges.',
+  authors: ['Ana Pérez', 'Li Wei'],
+  categories: ['cs.CL', 'cs.LG'],
+  doi: null,
+  journalRef: null,
+  comments: null,
+  published: '2026-10-10T12:00:00.000Z',
+  updated: '2026-10-20T08:00:00.000Z',
+});
 const huggingFaceRecord = mapHuggingFacePaper({
   paper: { id: '2610.11111', title: 'Sparse attention for long documents', summary: 'We make attention sparse.', publishedAt: '2026-10-10T12:00:00.000Z', upvotes: 31, authors: [{ name: 'Ana Pérez' }] },
 }, ['cs.CV'])!;
@@ -85,6 +98,54 @@ test('two sources listing one paper make one row under the id readers already ho
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.CV', 'cs.LG']);
 });
 
+// #270 filed each new arXiv version whole. Since #272 a listing merges into
+// the stored row, and `merge` only fills gaps, so a revised title or abstract
+// never reached the card or its vector.
+test("the source a row came from replaces its title and abstract when it lists the paper again; another source's text does not", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
+  db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  const stored = (id: string) => JSON.parse(String(rows(db, `SELECT w.paper FROM works w JOIN work_keys k ON k.work_id = w.id WHERE k.key = 'id:${id}'`)[0].paper));
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [arxivRevision.title, arxivRevision.abstract, arxivRevision.abstract]);
+  assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the new text is embedded again');
+  // Hugging Face still lists the first version's text.
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: [] }], { now: NOW });
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [arxivRevision.title, arxivRevision.abstract]);
+
+  // esummary has no abstract: a listing without efetch's keeps the stored one.
+  const article = { ...mapPubmedSummary({ uid: '42900003', title: 'A cardiology trial', source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] }), abstract: 'We randomised 400 patients.' };
+  await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: { ...article, title: 'A cardiology trial (corrected)', abstract: '' }, lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual([stored('pmid:42900003').title, stored('pmid:42900003').abstract], ['A cardiology trial (corrected)', 'We randomised 400 patients.']);
+});
+
+// Hugging Face lists arXiv papers with the title and abstract it copied from
+// arXiv. A night whose arXiv sets fail still runs the Hugging Face lane, so
+// that lane can start a row, which then never took a new arXiv version.
+test("a row Hugging Face started takes arXiv's new version, and Hugging Face's copy does not undo it", async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: ['cs.CV'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper));
+  assert.deepEqual([stored().id, stored().title, stored().abstract], ['arxiv:2610.11111', arxivRevision.title, arxivRevision.abstract]);
+  await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: ['cs.CV'] }], { now: NOW });
+  assert.deepEqual([stored().title, stored().abstract], [arxivRevision.title, arxivRevision.abstract]);
+});
+
+// The PubMed mapper writes "Untitled" for a record esummary gives no title.
+// Filed, the placeholder was a card's title, and a listing of a stored paper
+// replaced its real title with it.
+test('a listing without a real title is not filed, and does not rename the stored paper', async () => {
+  const { env, db } = corpus();
+  const listing = (title: string) => mapPubmedSummary({ uid: '42900003', title, source: 'J', pubdate: '2026 Oct 12', pubtype: ['Journal Article'] });
+  await ingestPapers(env, [{ paper: listing(''), lanes: ['med.cardio'] }], { now: NOW });
+  assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+  await ingestPapers(env, [{ paper: listing('A cardiology trial'), lanes: ['med.cardio'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: listing(''), lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT paper FROM works').map(row => JSON.parse(String(row.paper)).title), ['A cardiology trial']);
+});
+
 test('a record that names two stored papers folds them into one, keeping one id and every lane', async () => {
   const { env, db } = corpus();
   const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
@@ -105,6 +166,14 @@ test('a paper published before the corpus window is not filed, unless its lane k
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
   await ingestPapers(env, [{ paper: old, lanes: ['mech.aero'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
   assert.deepEqual(rows(db, 'SELECT kept_until FROM works').map(row => row.kept_until), ['2026-11-05T03:00:00.000Z']);
+});
+
+// esummary dates the issue "2026": read as 1 January, outside the 90 days.
+test('a PubMed article in a volume dated by its year alone is filed under the day it went online', async () => {
+  const { env, db } = corpus();
+  const article = mapPubmedSummary({ uid: '42900002', title: 'A cardiology article in the 2026 volume', source: 'J', pubdate: '2026', epubdate: '2026 Oct 16', pubtype: ['Journal Article'] });
+  await ingestPapers(env, [{ paper: article, lanes: ['med.cardio'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes').map(row => row.lane), ['med.cardio']);
 });
 
 test('a paper past its keeping date leaves with its keys, lanes and vector', async () => {
