@@ -77,6 +77,48 @@ test('a reader adds at most 40 new followed lanes a day; past them a new follow 
   assert.equal(registered(), 41);
 });
 
+// The app sends every follow with each page, so new lanes the allowance refused
+// all together would come back refused in every request that day.
+test("a reader near the day's allowances still adds, and has harvested at once, the new lanes that fit", async () => {
+  const { db, runs, ask } = store();
+  const authors = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'author', canonicalId: `name-${from + index}`, displayName: `Author ${from + index}`,
+  }));
+  const lanesOf = (run: unknown) => (run as { params: { lanes: string[] } }).params.lanes;
+  const registered = () => db.prepare('SELECT lane FROM followed_lanes').all().map(row => (row as { lane: string }).lane);
+
+  await ask({ follows: authors(0, 19) });
+  // Two new lanes and one run lane left: the first is harvested at once, both are added.
+  await ask({ follows: authors(19, 2) });
+  assert.equal(runs.length, 2);
+  assert.deepEqual(lanesOf(runs[1]), ['author-name:author 19']);
+  assert.equal(registered().length, 21);
+
+  await ask({ follows: authors(21, 18) });
+  // Two new lanes and one registration left: the first is added.
+  await ask({ follows: authors(39, 2) });
+  assert.equal(registered().length, 40);
+  assert.ok(registered().includes('author-name:author 39'));
+  assert.equal(registered().includes('author-name:author 40'), false);
+});
+
+test('two follows that name one lane count once against the allowances and are harvested once', async () => {
+  const { db, runs, ask } = store();
+  // Two authors known by the same name: one arXiv search.
+  await ask({ follows: [
+    { type: 'author', canonicalId: 'name-g1', displayName: 'Author G' },
+    { type: 'author', canonicalId: 'name-g2', displayName: 'Author G' },
+  ] });
+  assert.deepEqual((runs[0] as { params: { lanes: string[] } }).params.lanes, ['author-name:author g']);
+  // 39 more new lanes fit the reader's 40.
+  const searches = (from: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'topic', canonicalId: `query-${from + index}`, displayName: `Search ${from + index}`, metadata: { query: `search ${from + index}` },
+  }));
+  await ask({ follows: searches(0, 20) });
+  await ask({ follows: searches(20, 19) });
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM followed_lanes').get() as { n: number }).n, 40);
+});
+
 test('the page answers before a liked paper without a vector is embedded, and the Worker embeds it afterwards', async t => {
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;

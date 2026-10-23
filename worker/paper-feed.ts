@@ -2,6 +2,7 @@ import type { Paper } from '../src/models/Paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FeedRequestBody, RankedCandidate, RankingCache, StoreEnv } from './paper-store.ts';
+import type { QuotaRequest } from './request-quota-ledger.ts';
 
 import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
@@ -69,12 +70,31 @@ async function addMissingPositives(env: FeedEnv, uid: string, positiveIds: strin
 }
 
 /**
+ * Reserves a unit a lane for as many of `lanes`, in order, as the allowance
+ * has left. All of them in one reservation, or, when that is refused, the
+ * number the refusal says is left, in a second one. The app sends every follow
+ * with each page, so lanes refused together would come back with every request
+ * that day and keep the reader's last units from being used.
+ */
+async function reserveLanes(env: FeedEnv, allowance: Omit<QuotaRequest, 'amount'>, lanes: string[]) {
+  const ledger = env.REQUEST_QUOTA_LEDGER ?? null;
+  const whole = await reserveRequestQuota(ledger, { ...allowance, amount: lanes.length });
+  if (whole.accepted) return lanes;
+  if (whole.subjectUsage === undefined || whole.globalUsage === undefined) return [];
+  const left = Math.min(allowance.subjectLimit - whole.subjectUsage, allowance.globalLimit - whole.globalUsage);
+  if (left <= 0) return [];
+  return (await reserveRequestQuota(ledger, { ...allowance, amount: left })).accepted ? lanes.slice(0, left) : [];
+}
+
+/**
  * Notes the followed lanes a reader asked for, so the daily harvest keeps them
  * served, and starts a harvest of the ones nobody had asked for yet: their
  * papers arrive for the reader's next page rather than tomorrow's. Both stay
  * within the reader's new lanes for the day.
  */
-async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[], now = Date.now()) {
+async function registerFollowedLanes(env: FeedEnv, uid: string, asked: string[], now = Date.now()) {
+  // Two follows can name one lane, such as two authors known by the same name.
+  const lanes = [...new Set(asked)];
   if (lanes.length === 0 || !env.PAPER_STORE) return;
   const db = env.PAPER_STORE;
   const { results } = await db.prepare('SELECT lane, requested_at FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
@@ -84,30 +104,27 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
   let fresh = lanes.filter(lane => !known.has(lane));
   const day = new Date(now).toISOString().slice(0, 10);
   if (fresh.length) {
-    const registration = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+    fresh = await reserveLanes(env, {
       periodKey: `followed-lanes:day:${day}`,
       subject: `uid:${uid}`,
       subjectLimit: NEW_LANES_REGISTERED_PER_READER,
       globalLimit: NEW_LANES_REGISTERED_PER_DAY,
-      amount: fresh.length,
-    });
-    if (!registration.accepted) fresh = [];
+    }, fresh);
   }
   const written = [...due, ...fresh];
   if (written.length === 0) return;
   await db.prepare(`INSERT INTO followed_lanes (lane, requested_at) SELECT value, ? FROM json_each(?) WHERE true
     ON CONFLICT (lane) DO UPDATE SET requested_at = excluded.requested_at`).bind(new Date(now).toISOString(), JSON.stringify(written)).run();
   if (fresh.length === 0 || !env.PAPER_HARVEST) return;
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
+  const harvested = await reserveLanes(env, {
     periodKey: `follow-run-lanes:day:${day}`,
     subject: `uid:${uid}`,
     subjectLimit: NEW_LANES_HARVESTED_PER_READER,
     globalLimit: NEW_LANES_HARVESTED_PER_DAY,
-    amount: fresh.length,
-  });
-  if (!reservation.accepted) return;
+  }, fresh);
+  if (harvested.length === 0) return;
   try {
-    await env.PAPER_HARVEST.create({ id: `follow-${day}-${crypto.randomUUID()}`, params: { lanes: fresh } });
+    await env.PAPER_HARVEST.create({ id: `follow-${day}-${crypto.randomUUID()}`, params: { lanes: harvested } });
   } catch (error) {
     console.warn('Followed lanes harvest did not start', error);
   }
