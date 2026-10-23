@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Paper } from '../models/Paper.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
-import { classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from './feedPublicationService.ts';
+import { classifyFeedPublications, dropUnreachedPublications } from './feedPublicationService.ts';
+import { isFeedPublication } from './feedPublicationRules.ts';
 import { dribblingFetch } from '../test-support/deadlineHarness.ts';
 
 // Reduced from the OpenAlex and Crossref responses captured on 2026-10-18

@@ -1,7 +1,7 @@
 import type { Paper } from '../models/Paper.ts';
 import { normalizeDoi } from '../utils/publicNavigation.ts';
+import { isFeedPublication, withCrossrefType } from './feedPublicationRules.ts';
 
-const BOOK_TYPES = new Set(['book', 'monograph', 'edited-book', 'reference-book', 'book-set', 'book-series']);
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ABSENT_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_CACHED = 500;
@@ -18,31 +18,6 @@ let unsaved = false;
 let requests: Promise<void> = Promise.resolve();
 let retryAt = 0;
 let nextRequestAt = 0;
-
-// These publishers explicitly identify book reviews that Crossref calls journal-article.
-// Checked 2026-10-18; corrections match identifiers, never titles or the word "review".
-const BOOK_REVIEWS = new Map([
-  ['10.2307/2309205', 'jstor'], // https://www.jstor.org/stable/i314912
-  ['10.2307/2307774', 'jstor'], // https://www.jstor.org/stable/i314811
-  ['10.1038/162006a0', 'nature'], // https://www.nature.com/articles/162006a0 (Books Received)
-]);
-
-function confirmedPublication(paper: Partial<Paper>) {
-  const source = BOOK_REVIEWS.get(normalizeDoi(paper.doi));
-  if (source) return { type: 'book-review', source };
-  // Oda's book has no DOI in this OpenAlex record. Its author and ISBN link
-  // identify https://link.springer.com/book/9783642725494, not a research review.
-  if (paper.id === 'openalex:W1503277431'
-    || (paper.sources?.primary === 'openalex' && paper.id === 'W1503277431')) {
-    return { type: 'book', source: 'springer' };
-  }
-  return null;
-}
-
-export function isFeedPublication(paper: Partial<Paper>) {
-  return !confirmedPublication(paper)
-    && ![paper.publicationType, paper.sourceType].some(type => type === 'book-review' || BOOK_TYPES.has(type || ''));
-}
 
 /**
  * Removes confirmed books and book reviews the reader has not reached. The
@@ -197,18 +172,7 @@ export async function classifyFeedPublications(papers: Paper[]): Promise<Paper[]
 export function applyKnownPublicationTypes(papers: Paper[]): Paper[] {
   restore();
   return papers.map(paper => {
-    const doi = normalizeDoi(paper.doi);
-    const cached = cache.get(doi);
-    const confirmed = confirmedPublication(paper);
-    const type = confirmed?.type || (cached && cached.expiresAt > Date.now() ? cached.type : null);
-    // journal-article describes a format, not a research purpose: it must not
-    // replace an existing scientific review classification.
-    if (!type || (!BOOK_TYPES.has(type) && type !== 'book-review')) return paper;
-    const source = confirmed?.source || 'crossref';
-    return {
-      ...paper,
-      publicationType: type,
-      sources: { ...paper.sources, enrichedBy: [...new Set([...paper.sources.enrichedBy, source])] },
-    };
+    const cached = cache.get(normalizeDoi(paper.doi));
+    return withCrossrefType(paper, cached && cached.expiresAt > Date.now() ? cached.type : null);
   });
 }

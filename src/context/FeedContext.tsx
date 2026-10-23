@@ -2,7 +2,6 @@ import type { PropsWithChildren } from 'react';
 import type { Paper, PaperFollowMatch } from '../models/Paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 import type { CuratedSetName, InteractionDocumentData, InteractionEvent, InteractionProfile, ProfileSignals } from '../utils/interactionProfile.ts';
-import type { PersonalCandidate } from '../services/personalRecommendationsService.ts';
 import type { ProfileLoadResult } from '../utils/interactionProfileLoader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendationEngine.ts';
 // `savedAt` is set only on a snapshot read back from storage.
@@ -56,14 +55,10 @@ import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
 import { auth } from '../services/firebase.ts';
 import { useFollowing } from './FollowingContext.tsx';
-import { ARXIV_FEED_AREAS, fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService.ts';
+import { fetchPapers, clearCache } from '../services/arxivService.ts';
 import { getDeviceInfo } from '../utils/device.ts';
-import { CATEGORIES, getAllLeafCategories } from '../data/categories.ts';
-import { PubmedAdapter, pubmedCategoryQuery } from '../services/adapters/PubmedAdapter.ts';
-import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService.ts';
-import { getPapersByProject } from '../services/openAireService.ts';
-import { getPaperRecommendations } from '../services/semanticScholarService.ts';
-import { PaperBuilder } from '../services/PaperBuilder.ts';
+import { getAllLeafCategories } from '../data/categories.ts';
+import { enrichPapersBatch } from '../services/openAlexService.ts';
 import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
@@ -72,7 +67,6 @@ import {
   pickExplorationCategories,
   readRecommendationWeights,
 } from '../utils/recommendationEngine.ts';
-import { fetchPersonalCandidates, personalRecommendationRequest } from '../services/personalRecommendationsService.ts';
 import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 import { reRankHoldMs } from '../utils/feedReRankTiming.ts';
 import {
@@ -92,7 +86,6 @@ import {
   curatedIds,
   isPaperKnown,
   lacksLearnedAffinities,
-  positiveExamples,
   readProfileSignals,
   recordInteractionEvent,
   seedLearnedAffinities,
@@ -111,8 +104,7 @@ import {
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
 } from '../services/interactionProfileStore.ts';
-import { fetchDomainPapers, fetchOpenAlexTopicPapers, fetchWorkingPapers } from '../services/domainSourceService.ts';
-import { fetchStoreFeed } from '../services/paperStoreService.ts';
+import { fetchCorpusPage, fetchCorpusPapers } from '../services/paperStoreService.ts';
 import {
   abstractsInFlight,
   cardsGivenTopic,
@@ -123,15 +115,15 @@ import {
   preserveFeedAbstracts,
   takeFeedPage,
 } from '../utils/feedEnrichment.ts';
-import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.ts';
-import { shouldAbortFeedLoad } from '../utils/feedLoadGuard.ts';
-import { lateSourceCandidates } from '../utils/feedLateCandidates.ts';
-import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications, isFeedPublication } from '../services/feedPublicationService.ts';
+import { resolveWithin, settleWithin } from '../utils/asyncTiming.ts';
+import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
+import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
-import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService.ts';
-import { awaitWithinGate, CITATION_GATE_MAX_WAIT_MS } from '../utils/feedCitationGate.ts';
-import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.ts';
+import { fetchICiteMetrics } from '../services/iCiteService.ts';
+import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
+import { enrichPubmedIds } from '../services/europePmcService.ts';
+import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { recoverFeedAbstracts } from '../services/feedAbstractService.ts';
 import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/feedAbstractWait.ts';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
@@ -140,19 +132,13 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 const loadTopicRetrieval = () => import('../services/topicRetrievalService.ts');
 
 const PAGE_SIZE = 15;
+// How many of the reader's ranked categories a page asks the corpus for.
+const MAIN_CATEGORIES = 10;
 // A reload starts on a random one of the first pages, for variety.
 const RESET_START_PAGES = 5;
-// Per-source cap on the first-render fetch. The slowest healthy source
-// measured 2.4 s in production (OpenAlex, cold edge; PubMed's serial chain
-// 2.05 s); the only upstream ever seen above 4 s is OpenReview's cold 5.2 s,
-// which the previous 5 s budget lost anyway after waiting the full 5 s for it.
+// How long exploration and the follows may hold a page: past it, the page is
+// shown without them.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
-// How many papers of the OpenAlex topic page count toward the first paint. The
-// page holds 25 papers and often answers first, from the Worker's cache. Counted
-// whole, it supplied more than 10 of the first 15 cards in 57 % of modelled
-// molecular-biology loads and 68 % of neuroscience ones (plan G, PAP-73). Now
-// another lane that answers within the budget above joins it.
-const OPENALEX_TOPIC_READY_LIMIT = 10;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 // How long the main query may wait for the followed-topic category ids. The
 // topic module is prewarmed the moment a topic follow is known (see the
@@ -231,55 +217,38 @@ function demoSet(key: string, value: unknown) {
   localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
 }
 
-async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], queryMode: string) {
-  const selected = [...(followedEntities || [])]
-    .sort(() => 0.5 - Math.random())
-    .slice(0, 4);
+// How many papers the followed entities add to a page.
+const FOLLOWED_PER_PAGE = 6;
 
-  const results = await Promise.allSettled(selected.map(async (follow) => {
-    let candidates: Paper[] = [];
-    if (follow.type === 'topic') {
-      const { fetchTopicPapers } = await loadTopicRetrieval();
-      const result = await fetchTopicPapers(follow, {
-        allowLegacyDisplayName: true,
-        maxPapers: 3,
-        mode: queryMode,
-        page: Math.floor(Math.random() * 5) + 1,
-        pageSize: 5,
-        timeoutMs: OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-      });
-      candidates = result.papers;
-    } else if (follow.type === 'author') {
-      if (/^A\d+$/i.test(follow.canonicalId)) {
-        candidates = (await getWorksByEntity('author', follow.canonicalId, 'publication_date:desc', 1)).papers;
-      } else {
-        candidates = await getAuthorPapers(follow.displayName, 3);
-      }
-    } else if (follow.type === 'institution') {
-      candidates = (await getWorksByEntity('institution', follow.canonicalId, 'publication_date:desc', 1, '', {}, follow.displayName)).papers;
-    } else if (follow.type === 'project') {
-      // A bare grant code answers for every funder that ever used it
-      // (`grantID=100010` is three projects), and that is the shape of every
-      // project followed before the OpenAIRE id landed. The funder stored on
-      // the follow is what narrows it; documents written before it was stored
-      // carry none, and for those this is the empty default it always had.
-      const projectResult = await getPapersByProject(follow.canonicalId, 1, { funder: follow.metadata?.funder || '' });
-      const [arxivPapers, doiPapers] = await Promise.all([
-        fetchPapersByIds(projectResult.arxivIds || []).catch(() => []),
-        fetchPapersByDois(projectResult.dois || []).catch(() => []),
-      ]);
-      candidates = [...arxivPapers, ...doiPapers];
-    }
-
-    return candidates.slice(0, 3).map((paper) => ({
-      ...paper,
-      _type: 'followed' as const,
-      _followedEntityMatches: mergeFollowEntityMatches(paper._followedEntityMatches, [follow]),
-    }));
+/**
+ * Papers of the reader's follows from the paper corpus: the Worker serves an
+ * author, institution, OpenAlex topic, project or followed query from the
+ * lane it harvests for it, and says which follows each paper matched. A
+ * topic follow that is one of the app's categories is asked for as those
+ * categories, and matched by the categories a paper was found under.
+ */
+async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, categoryIdsOf }: {
+  page: number; order: string; positiveIds: string[]; categoryIdsOf: (follow: FollowEntity) => string[];
+}) {
+  const categoryFollows = followedEntities
+    .map(follow => ({ follow, categoryIds: follow.type === 'topic' ? categoryIdsOf(follow) : [] }))
+    .filter(entry => entry.categoryIds.length > 0);
+  const papers = await fetchCorpusPage({
+    categories: [...new Set(categoryFollows.flatMap(entry => entry.categoryIds))],
+    follows: followedEntities,
+    positiveIds,
+    page,
+    pageSize: FOLLOWED_PER_PAGE,
+    order,
+  });
+  return papers.map(paper => ({
+    ...paper,
+    _type: 'followed' as const,
+    _followedEntityMatches: mergeFollowEntityMatches(
+      paper._followedEntityMatches,
+      categoryFollows.filter(entry => entry.categoryIds.some(id => paper._fetchedFor?.includes(id))).map(entry => entry.follow),
+    ),
   }));
-
-  return PaperBuilder.deduplicate(results.flatMap(result => result.status === 'fulfilled' ? result.value : []))
-    .slice(0, 6);
 }
 
 function mergeFollowEntityMatches(...groups: Array<Paper['_followedEntityMatches']>) {
@@ -295,22 +264,6 @@ function mergeFollowEntityMatches(...groups: Array<Paper['_followedEntityMatches
 const ENGAGEMENT_WINDOW_CARDS = 20;
 interface EngagementWindow { cards: number; skips: number; deepReads: number; likes: number; saves: number }
 const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, deepReads: 0, likes: 0, saves: 0 });
-
-// How many of the personal recommendations each page draws, like the five the
-// graph candidates contribute.
-const PERSONAL_CANDIDATES_PER_PAGE = 5;
-
-// Papers come back through the sources that already normalize them: arXiv for
-// an arXiv id, OpenAlex for a DOI.
-async function fetchPersonalPapers(candidates: PersonalCandidate[]) {
-  const arxivIds = candidates.map(candidate => candidate.arxivId).filter((id): id is string => Boolean(id));
-  const dois = candidates.filter(candidate => !candidate.arxivId && candidate.doi).map(candidate => candidate.doi as string);
-  const [arxivPapers, doiPapers] = await Promise.all([
-    arxivIds.length > 0 ? fetchPapersByIds(arxivIds).catch(() => []) : [],
-    dois.length > 0 ? fetchPapersByDois(dois).catch(() => []) : [],
-  ]);
-  return [...arxivPapers, ...doiPapers] as Paper[];
-}
 
 // `feedRouteActive` says whether the route that actually renders this feed is
 // on screen. The provider wraps every route so its consumers (save modal, PDF
@@ -361,15 +314,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // loadPapers runs it, unless a load starts or the account changes first.
   const loadAfterCommit = useRef<{ args: Parameters<FeedContextValue['loadPapers']>; requestId: number; sessionId: number } | null>(null);
   const feedSessionId = useRef(0);
-  const openAlexEnrichmentAttempts = useRef(new Set<string>());
-  // Papers the slower sources returned after the page painted (see
-  // utils/feedLateCandidates.js). Offered to the next page's pool, once.
-  const lateSourceCandidatesRef = useRef<Paper[]>([]);
-  // Bumped on every reset. The session id only changes with the account, but
-  // a preference or follow change resets the feed too, and a query still in
-  // flight from before must not refill the pool for the old preferences.
-  const latePoolGenerationRef = useRef(0);
-  const openAlexEnrichmentRequests = useRef(new Map<string, ReturnType<typeof enrichPapersBatch>>());
   const activeUserId = useRef(user?.uid || null);
   // Initial ref values that read storage or allocate go through a lazy
   // useState: the provider re-renders on every feed change, and useRef(value)
@@ -406,9 +350,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
-  const relatedCandidates = useRef<string[]>([]);
-  // Semantic Scholar's answer for this profile's examples, drawn page by page.
-  const personalCandidates = useRef<PersonalCandidate[]>([]);
   const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
   const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
   const recommendationWeights = useRef(initialRecommendationWeights);
@@ -935,64 +876,23 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     
     isTraversingNetwork.current = true;
     try {
-      let enriched = paper.openAlex;
-      if (!enriched) {
-        const pid = getOpenAlexEnrichmentId(paper);
-        let enrichmentRequest = openAlexEnrichmentRequests.current.get(pid);
-
-        if (!enrichmentRequest && !openAlexEnrichmentAttempts.current.has(pid)) {
-          openAlexEnrichmentAttempts.current.add(pid);
-          enrichmentRequest = enrichPapersBatch([pid]).catch((error): Awaited<ReturnType<typeof enrichPapersBatch>> => {
-            console.error('OpenAlex interaction enrichment failed', error);
-            return {};
-          });
-          openAlexEnrichmentRequests.current.set(pid, enrichmentRequest);
-          enrichmentRequest.finally(() => {
-            if (openAlexEnrichmentRequests.current.get(pid) === enrichmentRequest) {
-              openAlexEnrichmentRequests.current.delete(pid);
-            }
-          });
-        }
-
-        const res = enrichmentRequest ? await enrichmentRequest : {};
-        if (sessionId !== feedSessionId.current) return;
-        enriched = res[pid];
-      }
-      
-      let relatedArxivIds: string[] = [];
-      
-      try {
-        // Fetch ML recommendations from Semantic Scholar first (High quality)
-        const semanticRecs = await getPaperRecommendations(paper);
-        relatedArxivIds = [...semanticRecs];
-      } catch (err) {
-        console.warn("Semantic Scholar fetch failed", err);
-      }
+      // The corpus papers closest to this one, within the reader's interests
+      // and the paper's own category: the corpus ranks by likeness to it alone.
+      const categories = [...new Set([paper.primaryCategory, ...(userPreferences || [])].filter(Boolean) as string[])].slice(0, MAIN_CATEGORIES);
+      const related = categories.length > 0
+        ? await fetchCorpusPage({ categories, positiveIds: [paper.id], page: 0, pageSize: 15 }).catch(() => [])
+        : [];
       if (sessionId !== feedSessionId.current) return;
-      
-      if (enriched && enriched.related_works && enriched.related_works.length > 0) {
-        console.log(`[Recommender] Walking the OpenAlex citation network for: ${paper.title}`);
-        const openAlexRecs = await getArxivIdsForOpenAlexWorks(enriched.related_works);
-        if (sessionId !== feedSessionId.current) return;
-        relatedArxivIds = [...new Set([...relatedArxivIds, ...openAlexRecs])];
-      }
-        
-      const filteredIds = relatedArxivIds.filter(id => 
-        id &&
-          !likedPaperIdsRef.current.has(id) &&
-          !savedPaperIdsRef.current.has(id) &&
-          !readPaperIdsRef.current.has(id) &&
-          !notInterestedIdsRef.current.has(id) &&
-          !sessionSeenPapers.current.has(id) &&
-          !isKnownPaper(id)
-        );
-        
-        if (filteredIds.length === 0) return;
-        
-        // Fetch the top 5 papers from this citation network
-        const newGraphPapers = await fetchPapersByIds(filteredIds.slice(0, 5)).catch(() => []);
-        if (sessionId !== feedSessionId.current) return;
-        
+
+      const newGraphPapers = related.filter(candidate =>
+        !likedPaperIdsRef.current.has(candidate.id) &&
+          !savedPaperIdsRef.current.has(candidate.id) &&
+          !readPaperIdsRef.current.has(candidate.id) &&
+          !notInterestedIdsRef.current.has(candidate.id) &&
+          !sessionSeenPapers.current.has(candidate.id) &&
+          !isKnownPaper(candidate.id)
+      ).slice(0, 5);
+
         if (newGraphPapers.length > 0) {
           newGraphPapers.forEach(p => {
             p._type = 'graph';
@@ -1005,7 +905,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           setPapers(current => {
             if (current.findIndex(p => p.id === paper.id) === -1) return current; // paper not found in current feed
 
-            // The OpenAlex fetch above is a network round trip: the reader may
+            // The corpus fetch above is a network round trip: the reader may
             // have swiped on while it was in flight, so the paper the
             // interaction named is no longer where they are. Anchor on the
             // deeper of the two (final review, 2026-09-04).
@@ -1030,14 +930,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             return [...locked, ...reRankedRest];
           });
           
-          console.log(`[Recommender] Inserted ${newGraphPapers.length} related OpenAlex papers into the feed.`);
+          console.log(`[Recommender] Inserted ${newGraphPapers.length} related papers into the feed.`);
         }
     } catch (err) {
       console.error('[Recommender] Failed to expand the paper network:', err);
     } finally {
       if (sessionId === feedSessionId.current) isTraversingNetwork.current = false;
     }
-  }, [calculateAndAttachScore, isKnownPaper]);
+  }, [calculateAndAttachScore, isKnownPaper, userPreferences]);
 
   // Load user interactions
   useEffect(() => {
@@ -1063,8 +963,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setPersonalLibrary({});
       interactionProfile.current = createEmptyInteractionProfile();
       profileSignals.current = readProfileSignals(null);
-      relatedCandidates.current = [];
-      personalCandidates.current = [];
       engagementWindow.current = emptyEngagementWindow();
       interactionProfileHydrated.current = false;
       loadedProfileUserId.current = null;
@@ -1154,24 +1052,21 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // still loading ask again now that it has ids to work with.
         setInteractionProfileGeneration(generation => generation + 1);
         profileSignals.current = readProfileSignals(profile);
-        relatedCandidates.current = [];
-        personalCandidates.current = [];
         setRecommendationProfileUserId(userId);
 
-        // The liked and saved papers' OpenAlex records seed the concept and
-        // author affinities when the profile has none, and their related works
-        // feed the graph candidates. An overlay, not a gate: the sample is
-        // capped and runs after the first source wave has the network, so a
-        // large liked library cannot stall the first cards. The sample comes
-        // from the aggregate's own order (newest first): `liked`/`saved` above
-        // are Sets sorted by id for the lists, and cutting those to 24 kept
-        // the alphabetically-first likes forever (audit 2026-09-02, A3).
-        const positiveIds = selectSemanticProfilePositiveIds(
-          curatedIds(profile, 'liked'),
-          curatedIds(profile, 'saved'),
-        );
+        // The liked and saved papers, as the paper corpus enriched them, seed
+        // the concept and author affinities when the profile has none. An
+        // overlay, not a gate: the sample is capped and runs after the first
+        // page has the network, so a large liked library cannot stall the first
+        // cards. The sample comes from the aggregate's own order (newest first):
+        // `liked`/`saved` above are Sets sorted by id for the lists, and cutting
+        // those to 24 kept the alphabetically-first likes forever (audit
+        // 2026-09-02, A3).
         // Decided now, before the reader's first event adds entries of its own.
         const needsLearnedSeed = lacksLearnedAffinities(profile);
+        const positiveIds = needsLearnedSeed
+          ? selectSemanticProfilePositiveIds(curatedIds(profile, 'liked'), curatedIds(profile, 'saved'))
+          : [];
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn: () => void) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn: () => void) => setTimeout(fn, 0);
@@ -1179,40 +1074,19 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           void (async () => {
             // A profile that arrived late replaces this one, and owns the work.
             const superseded = () => cancelled || interactionProfile.current !== profile;
+            if (superseded() || positiveIds.length === 0) return;
+            const stored = await fetchCorpusPapers(positiveIds).catch((error) => {
+              console.warn('Liked papers unavailable for the affinity seed', error);
+              return [];
+            });
             if (superseded()) return;
-            const seedExamples: Array<ReturnType<typeof paperAffinitySignals>> = [];
-            const relatedWorksPool: string[] = [];
-            if (positiveIds.length > 0) {
-              const openAlexData = await enrichPapersBatch(positiveIds);
-              if (superseded()) return;
-              positiveIds.forEach((id) => {
-                const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
-                const data = openAlexData[pid];
-                if (!data) return;
-                seedExamples.push(paperAffinitySignals({ openAlex: { concepts: data.concepts }, authors: data.authors }));
-                if (data.related_works) {
-                  relatedWorksPool.push(...data.related_works);
-                }
-              });
-            }
-            const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
-            if (superseded()) return;
-            if (needsLearnedSeed && seedExamples.length > 0) {
+            const seedExamples = stored.map(paper => paperAffinitySignals(paper));
+            if (seedExamples.length > 0) {
               seedLearnedAffinities(profile, seedExamples);
               profileSignals.current = readProfileSignals(profile);
               scheduleInteractionProfileFlush(userId, profile);
+              reRankFeedRef.current();
             }
-            relatedCandidates.current = relatedArxivIds;
-            reRankFeedRef.current();
-
-            // Asked once per profile load, off the first paint; each page then
-            // draws from the answer.
-            const candidates = await fetchPersonalCandidates(personalRecommendationRequest(
-              positiveExamples(profile),
-              curatedIds(profile, 'notInterested'),
-            ));
-            if (superseded()) return;
-            personalCandidates.current = candidates;
           })();
         });
         semanticIdleHandle = semanticIdleHandleId;
@@ -1329,14 +1203,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     feedLoadInFlight.current = true;
     const activeSessionId = feedSessionId.current;
 
-    if (reset) {
-      openAlexEnrichmentAttempts.current.clear();
-      openAlexEnrichmentRequests.current.clear();
-      lateSourceCandidatesRef.current = [];
-      latePoolGenerationRef.current += 1;
-    }
-    const poolGeneration = latePoolGenerationRef.current;
-
     setLoading(true);
     setError(null);
     
@@ -1378,152 +1244,59 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
-        // Relevance order is for a reader whose views lean to older papers. A
-        // new account is neutral, and a coin flip gave half of those loads
-        // arXiv's relevance order: older papers (none from this year on an AI
-        // profile's first page), and a query arXiv did not answer within the
-        // Worker's 5 s deadline (502 at 5.07 s, 2026-09-16), past the 4 s first
-        // paint.
+        // Relevance order is for a reader whose views lean to older papers: the
+        // corpus ranks their page by likeness alone, without the recency that
+        // separates near ties for everyone else.
         const queryMode = (temporalPreference.current || 0) < -0.3 ? 'relevance' : 'recent';
+        const positiveIds = selectSemanticProfilePositiveIds(
+          curatedIds(interactionProfile.current, 'liked'),
+          curatedIds(interactionProfile.current, 'saved'),
+        );
 
-        // Optional recommendation signals run alongside the primary sources.
-        // They enrich the mix when available without extending first paint.
-        // Declared here, ISSUED after arXiv, PubMed, the OpenAlex topics and
-        // the domain sources below: the OpenAlex client queues two at a time in
-        // arrival order, and asking for the followed entities first put the
-        // feed's former OpenAlex search behind all of them (measured 2026-09-16:
-        // 2.3 s late on a cold entry, past the first-paint budget). The topic
-        // request replaced that search (PAP-73). The working-paper series wait
-        // for the personal and followed lookups on purpose.
-        let graphCandidatesPromise = Promise.resolve<Paper[]>([]);
-        let personalCandidatesPromise = Promise.resolve<Paper[]>([]);
-        let followedCandidatesPromise = Promise.resolve<Paper[]>([]);
-
-        // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
+        // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
+        // One request stands for every source the feed reads: the Worker
+        // harvests, merges and enriches them once a day (worker/paper-store.ts)
+        // and ranks the page by the reader's liked and saved papers. It asks for
+        // two pages' worth so the ranking below still chooses the fifteen shown.
+        // The follows are optional: they join the page if they answer in time.
+        const followedCandidatesPromise = followedEntities.length > 0
+          ? resolveWithin(
+            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(followedEntities, {
+              page: currentPage,
+              order: queryMode,
+              positiveIds,
+              categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
+            })),
+            OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+            [],
+          )
+          : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
-        let mainSourceResults: Awaited<ReturnType<typeof settleSourcesForFirstPaint<Paper>>['first']> = [];
+        let mainFailed = false;
         try {
-          // Determine parent areas for each preference
-          const getParentArea = (catId: string) => {
-             for (const [areaId, area] of Object.entries(CATEGORIES)) {
-               if (area.subcategories && (area.subcategories as Record<string, { label: string }>)[catId]) return areaId;
-             }
-             return null;
-          };
-
-          const arxivCats = rankedPreferences.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!)).slice(0, 5);
-
-          let arxivProm = Promise.resolve<Paper[]>([]);
-          if (arxivCats.length > 0) {
-              arxivProm = fetchStoreFeed(arxivCats, currentPage, PAGE_SIZE, queryMode, selectSemanticProfilePositiveIds(
-                curatedIds(interactionProfile.current, 'liked'),
-                curatedIds(interactionProfile.current, 'saved'),
-              ));
-          }
-
-          const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
-          const pubmedCats = rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
-
-          let pubmedProm = Promise.resolve<Paper[]>([]);
-          if (pubmedCats.length > 0) {
-             const pubmedAdapter = new PubmedAdapter();
-             pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedCats), currentPage + 1, { internalCategories: pubmedCats, requireAbstract: true }).then(res => res.papers);
-          }
-
-          // OpenAlex by topic ID, for the leaves arXiv does not serve (PAP-73).
-          // Not by the category labels' text: of 442 hand-labelled results of
-          // that search, 9 were research articles in the reader's field.
-          const openAlexTopicProm = fetchOpenAlexTopicPapers(rankedPreferences.slice(0, 5), currentPage + 1);
-
-          const domainProm = fetchDomainPapers(
-            rankedPreferences.slice(0, 5),
-            currentPage + 1,
-            8,
-            queryMode,
-          );
-
-          if (relatedCandidates.current?.length > 0) {
-            graphCandidatesPromise = resolveWithin(
-              fetchPapersByIds([...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 5)),
-              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-              [],
-            );
-          }
-          if (personalCandidates.current.length > 0) {
-            personalCandidatesPromise = resolveWithin(
-              fetchPersonalPapers(personalCandidates.current.splice(0, PERSONAL_CANDIDATES_PER_PAGE)),
-              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-              [],
-            );
-          }
-          if (followedEntities.length > 0) {
-            followedCandidatesPromise = resolveWithin(
-              fetchFollowedEntityCandidates(followedEntities, queryMode),
-              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-              [],
-            );
-          }
-          // Asked once the personal and followed lookups settle: they share the
-          // queue's two OpenAlex slots, and the page waits for them. Asked first, the
-          // series pushed three followed authors past their 3.5 s budget (2026-10-20).
-          // A topic follow enqueues only after an import, so source order is not enough.
-          const workingPapersProm = Promise.all([personalCandidatesPromise, followedCandidatesPromise])
-            .then(() => fetchWorkingPapers(rankedPreferences.slice(0, 5), currentPage + 1));
-
-          const { first, all } = settleSourcesForFirstPaint(
-            [arxivProm, pubmedProm, openAlexTopicProm, domainProm, workingPapersProm],
-            FEED_SOURCE_RENDER_BUDGET_MS,
-            (papers) => PaperBuilder.deduplicate(papers).filter(isAvailablePaper).length >= PAGE_SIZE,
-            { readyLimits: new Map([[openAlexTopicProm, OPENALEX_TOPIC_READY_LIMIT]]) },
-          );
-          let sourceResults = await first;
-          mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
-          // A raw page can mostly contain papers the account already knows.
-          // Let slower sources complete it before publishing a short batch.
-          if (mainPapers.filter(isAvailablePaper).length < PAGE_SIZE) {
-            sourceResults = await all;
-            mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
-          } else {
-            // The sources still running answer into the next page's pool.
-            // Guarded by session and pool generation, not request: a later
-            // page of the same feed is exactly who should receive them, a
-            // reset feed is not. Appended, not assigned: the auto-fetch path
-            // starts page N+1 before N's late answer lands.
-            const painted = mainPapers;
-            all.then((settled) => {
-              if (feedSessionId.current !== activeSessionId || latePoolGenerationRef.current !== poolGeneration) return;
-              const pooled = lateSourceCandidatesRef.current;
-              lateSourceCandidatesRef.current = [...pooled, ...lateSourceCandidates([...painted, ...pooled], settled)];
-            });
-          }
-          mainSourceResults = sourceResults;
+          mainPapers = await fetchCorpusPage({
+            categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
+            positiveIds,
+            page: currentPage,
+            pageSize: PAGE_SIZE * 2,
+            order: queryMode,
+          });
         } catch (e) {
-          console.error("Error fetching main papers:", e);
-          throw e;
+          console.error('Error fetching main papers:', e);
+          mainFailed = true;
         }
-
         mainPapers.forEach(p => { p._type = 'exploit'; });
 
-        // ─── STEP 4: Graph/Related papers (semantically similar to liked) ───
-        const graphPapers = await graphCandidatesPromise;
-        graphPapers.forEach(p => { p._type = 'graph'; p._isGraphCandidate = true; });
-
-        // Semantic Scholar's recommendations for this reader's own examples.
-        const personalPapers = await personalCandidatesPromise;
-        personalPapers.forEach(p => { p._type = 'personal'; p._isPersonalCandidate = true; });
-
-        // ─── STEP 5: Followed topics, authors, institutions and projects ───
+        // ─── STEP 4: Followed topics, authors, institutions and projects ───
         const followedPapers = await followedCandidatesPromise;
 
-        // Only give up when the OPTIONAL candidates cannot bootstrap the feed
-        // either: a dead arXiv must not blank a feed that graph, personal or
-        // followed papers could populate on their own, or that the seen
-        // papers carried from an earlier page can fill.
-        if (shouldAbortFeedLoad(mainSourceResults, mainPapers, graphPapers, personalPapers, followedPapers, seenFallback?.papers)) {
-          throw new Error('No scientific provider returned usable papers.');
+        // Only give up when the follows cannot bootstrap the feed either, nor
+        // the seen papers carried from an earlier page.
+        if (mainFailed && followedPapers.length === 0 && !seenFallback?.papers?.length) {
+          throw new Error('The paper store returned no usable papers.');
         }
 
-        // ─── STEP 6: ADAPTIVE EXPLORATION (always baseline, more if bored) ───
+        // ─── STEP 5: ADAPTIVE EXPLORATION (always baseline, more if bored) ───
         const explorationPapers: Paper[] = [];
         const currentBoredom = boredomLevel.current;
         
@@ -1549,57 +1322,26 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           ? Math.min(8, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
           : 5; // Baseline exploration: cold-start users deserve real serendipity
 
-        // The first screen already has a broad multi-source candidate pool. Defer
-        // extra exploration network calls to prefetched pages so initial entry is fast.
-        if (!reset && nearbyCats.length > 0) {
-          const randomStart = Math.floor(Math.random() * 30);
-          
-          let fetchedExplore: Paper[] = [];
-          try {
-            const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
-
-            const getParentArea = (catId: string) => {
-               for (const [areaId, area] of Object.entries(CATEGORIES)) {
-                 if (area.subcategories && (area.subcategories as Record<string, { label: string }>)[catId]) return areaId;
-               }
-               return null;
-            };
-
-            const arxivNearby = nearbyCats.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!));
-            let arxivProm = Promise.resolve<Paper[]>([]);
-            if (arxivNearby.length > 0) {
-               arxivProm = fetchStoreFeed(arxivNearby, Math.floor(randomStart / exploreCount), exploreCount, queryMode, []).catch(() => []);
-            }
-            
-            const pubmedNearby = nearbyCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!)).slice(0, 3);
-            let pubmedProm = Promise.resolve<Paper[]>([]);
-            if (pubmedNearby.length > 0) {
-                const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedNearby), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
-            }
-
-            const domainProm = fetchDomainPapers(
-              nearbyCats.slice(0, 3),
-              Math.floor(randomStart / 25) + 1,
-              exploreCount,
-              queryMode,
-            ).catch(() => []);
-
-            const [arx, pub, domain] = await Promise.all(
-              [arxivProm, pubmedProm, domainProm]
-                .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
-            );
-            // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...domain]).slice(0, exploreCount * 2);
-          } catch (e) {
-            console.error("Error fetching explore papers:", e);
-          }
-
-          fetchedExplore.forEach(p => { 
+        // The first screen already has a broad candidate pool. Defer exploration
+        // to later pages so initial entry is fast.
+        const explore = async (categories: string[], count: number) => {
+          const papers = await resolveWithin(fetchCorpusPage({
+            categories: categories.slice(0, MAIN_CATEGORIES),
+            page: Math.floor(Math.random() * 30 / count),
+            pageSize: count * 2,
+            order: queryMode,
+          }).catch((e) => {
+            console.error('Error fetching explore papers:', e);
+            return [];
+          }), FEED_SOURCE_RENDER_BUDGET_MS, []);
+          papers.forEach(p => {
             p._type = 'exploration';
             p._debugScore = { isExploration: true };
           });
-          explorationPapers.push(...fetchedExplore);
+          return papers;
+        };
+        if (!reset && nearbyCats.length > 0) {
+          explorationPapers.push(...await explore(nearbyCats, exploreCount));
         }
 
         // If highly bored, pull from completely random categories outside user areas
@@ -1609,60 +1351,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
-          
-          if (randomCats.length > 0) {
-            const randomStart = Math.floor(Math.random() * 30);
-            const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
-            
-            const getParentArea = (catId: string) => {
-               for (const [areaId, area] of Object.entries(CATEGORIES)) {
-                 if (area.subcategories && (area.subcategories as Record<string, { label: string }>)[catId]) return areaId;
-               }
-               return null;
-            };
-
-            const arxivRandom = randomCats.filter(c => ARXIV_FEED_AREAS.includes(getParentArea(c)!));
-            let arxivProm = Promise.resolve<Paper[]>([]);
-            if (arxivRandom.length > 0) {
-                arxivProm = fetchStoreFeed(arxivRandom, Math.floor(randomStart / 2), 2, queryMode, []).catch(() => []);
-            }
-            
-            const pubmedRandom = randomCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)!));
-            let pubmedProm = Promise.resolve<Paper[]>([]);
-            if (pubmedRandom.length > 0) {
-                const pubmedAdapter = new PubmedAdapter();
-                pubmedProm = pubmedAdapter.search(pubmedCategoryQuery(pubmedRandom), Math.floor(randomStart/25) + 1, { requireAbstract: true }).then(res => res.papers).catch(() => []);
-            }
-
-            let randomPapers: Paper[] = [];
-            try {
-                const domainProm = fetchDomainPapers(
-                  randomCats,
-                  Math.floor(randomStart / 25) + 1,
-                  2,
-                  queryMode,
-                ).catch(() => []);
-                const [arx, pub, domain] = await Promise.all(
-                  [arxivProm, pubmedProm, domainProm]
-                    .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
-                );
-                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...domain]).slice(0, 2);
-            } catch (e) {
-                console.error("Error fetching random bored papers:", e);
-            }
-
-            randomPapers.forEach(p => { 
-              p._type = 'exploration';
-              p._debugScore = { isExploration: true };
-            });
-            explorationPapers.push(...randomPapers);
-          }
+          if (randomCats.length > 0) explorationPapers.push(...(await explore(randomCats, 2)).slice(0, 2));
         }
 
-        // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
-        const lateMain = lateSourceCandidatesRef.current.splice(0);
-        lateMain.forEach(p => { p._type = 'exploit'; });
-        const allFetched = [...mainPapers, ...lateMain, ...graphPapers, ...personalPapers, ...followedPapers, ...explorationPapers];
+        // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
+        const allFetched = [...mainPapers, ...followedPapers, ...explorationPapers];
         
         const uniqueMap = new Map<string, Paper>();
         allFetched.forEach(p => {
@@ -1679,15 +1372,19 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         
         const corePapers = Array.from(uniqueMap.values());
         newPapers = corePapers;
+
+        // An empty first page is not the end of the feed. A reload's random
+        // start page can lie past what the corpus holds for these interests,
+        // and a corpus with nothing for them is not ready: that is an error
+        // with a retry, not an empty feed.
+        if (reset && newPapers.length === 0 && !seenFallback) {
+          if (currentPage > 0) return loadPapersRef.current?.(reset, activeMode, false, 0, { keepThroughVisible });
+          throw new Error('The paper store has no papers for these interests yet.');
+        }
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
       if (requestId !== feedRequestId.current) return;
-
-      // Only types this browser already knows exclude a paper here. The
-      // chosen page is sent to Crossref below; answers that arrive before it
-      // is shown apply then, later ones once it is on screen.
-      newPapers = applyKnownPublicationTypes(newPapers);
 
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
@@ -1740,10 +1437,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }
       }
 
-      // Source adapters intentionally return a wider candidate pool. Select the
-      // visible page before enrichment so every page fits in one OpenAlex batch.
-      // Otherwise later pages could exceed the wait budget and lose all metadata,
-      // even when the first chunk had already succeeded.
+      // The corpus answers two pages' worth; the reader's ranking chooses the page.
       if (activeMode === 'top' || activeMode === null) {
         filtered = diversifiedWeightedShuffle(filtered, {
           scorePaper: calculateAndAttachScore,
@@ -1753,78 +1447,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
       filtered = takeFeedPage(filtered, PAGE_SIZE);
 
-      const enrichmentIds = [...new Set(
-        filtered
-          .filter(needsOpenAlexEnrichment)
-          .map(getOpenAlexEnrichmentId)
-          .filter(Boolean)
-      )];
-      const enrichmentPromise = enrichPapersBatch(enrichmentIds, {
-        timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS,
-      }).catch((err): Awaited<ReturnType<typeof enrichPapersBatch>> => {
-        console.error('OpenAlex feed enrichment failed', err);
-        return {};
-      });
-
-      enrichmentIds.forEach((id) => {
-        openAlexEnrichmentAttempts.current.add(id);
-        openAlexEnrichmentRequests.current.set(id, enrichmentPromise);
-      });
-      enrichmentPromise.then((enrichmentById) => {
-        enrichmentIds.forEach((id) => {
-          if (!enrichmentById[id]) openAlexEnrichmentAttempts.current.delete(id);
-        });
-      });
-      enrichmentPromise.finally(() => {
-        enrichmentIds.forEach((id) => {
-          if (openAlexEnrichmentRequests.current.get(id) === enrichmentPromise) {
-            openAlexEnrichmentRequests.current.delete(id);
-          }
-        });
-      });
-
-      const iCitePmids = [...new Set(filtered.map(paper => paper?.pmid).filter(Boolean))] as string[];
-      const iCitePromise = fetchICiteMetrics(iCitePmids);
-      // Enrich only the selected page. An unavailable source leaves its papers
-      // usable, without what it would have added.
-      const europePmcPromise = enrichPubmedIds(iCitePmids).catch((err) => {
-        console.warn('Europe PMC feed enrichment failed', err);
-        return new Map();
-      });
-      const recoveryPromise = recoverFeedAbstracts(filtered);
-      const publicationsPromise = classifyFeedPublications(filtered);
-      if (requestId !== feedRequestId.current) return;
-
-      // Only the first screen waits, and only as long as a loading screen is
-      // worth holding, so its citations and abstracts are usually in place.
-      // `papers` is still empty when a first page emptied after this wait
-      // continues with `reset` false. Later pages and a follow change are shown at once: the
-      // reader is on a card, and the rest arrives while they read.
-      const [gatedOpenAlex, gatedICite, gatedEuropePmc, recovered] = await awaitWithinGate([
-        enrichmentIds.length > 0 ? enrichmentPromise : null,
-        iCitePmids.length > 0 ? iCitePromise : null,
-        iCitePmids.length > 0 ? europePmcPromise : null,
-        recoveryPromise,
-      ], { maxWaitMs: papers.length === 0 && !keepThroughVisible ? CITATION_GATE_MAX_WAIT_MS : 0 });
-      if (requestId !== feedRequestId.current || feedSessionId.current !== activeSessionId) return;
-      if (recovered) filtered = mergeFeedAbstracts(filtered, recovered);
-      if (gatedOpenAlex) filtered = mergeOpenAlexEnrichment(filtered, gatedOpenAlex);
-      if (gatedICite) filtered = mergeICiteEnrichment(filtered, gatedICite);
-      if (gatedEuropePmc) filtered = mergeEuropePmcEnrichment(filtered, gatedEuropePmc);
-      // Crossref may have answered during the wait. Its books leave before
-      // display; an emptied page continues like any short first screen below.
-      filtered = applyKnownPublicationTypes(filtered).filter(isFeedPublication);
-      // Only cards this load adds may wait. The seen bypass and a follow
-      // change can offer a card that is already on screen, and its settled
-      // state must not turn back into "Loading abstract".
-      const shownIds = new Set((reset && !keepThroughVisible ? [] : papers).map(paper => paper.id));
-      const abstractsComing = abstractsInFlight(filtered.filter(paper => !shownIds.has(paper.id)), {
-        openAlex: !gatedOpenAlex, europePmc: !gatedEuropePmc, recovery: !recovered,
-      });
-
-      // Paint now. A second shuffle after enrichment used to reorder the
-      // cards the reader had just started looking at; late merge keeps order
-      // and identity (paperFieldsEqual) so citations appear in place.
+      // The corpus enriched these papers when it stored them: the page is
+      // shown as it arrived.
       if (activeMode === 'top' || activeMode === null) {
         logRankingBatch('fresh feed', filtered);
       }
@@ -1886,15 +1510,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setHasMore(nextHasMore);
       autoRetryUsedRef.current = false; // successful load re-arms the safety retry
 
-      followShownPapers({
-        mode: activeMode, sessionId: activeSessionId, signature: preferenceSignature, waiting: abstractsComing,
-        openAlex: enrichmentIds.length > 0 && !gatedOpenAlex ? enrichmentPromise : null,
-        iCite: iCitePmids.length > 0 && !gatedICite ? iCitePromise : null,
-        europePmc: iCitePmids.length > 0 && !gatedEuropePmc ? europePmcPromise : null,
-        recovery: recovered ? null : recoveryPromise,
-        publications: publicationsPromise,
-      });
-
       // A short first screen should fill itself even before the reader reaches
       // the scroll sentinel. Use the same bounded pagination as excluded pages;
       // a competing load or reset cancels this scheduled continuation. The
@@ -1933,9 +1548,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [
     userPreferences, page, papers, loading, feedMode,
-    profileSignals, relatedCandidates, personalCandidates, isKnownPaper,
+    profileSignals, isKnownPaper,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
-    followShownPapers,
   ]);
 
   // The account and interests whose snapshot is on screen. Both effects below
