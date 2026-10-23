@@ -261,7 +261,7 @@ const notableWork = (id: string, title: string, date: string, citations: number,
   publication_date: date,
   publication_year: Number(date.slice(0, 4)),
   cited_by_count: citations,
-  primary_location: { is_oa: isOa, landing_page_url: `https://doi.org/10.1/${id}`, version: 'publishedVersion', source: { id: 'https://openalex.org/S1', display_name: 'A core journal', type: 'journal' } },
+  primary_location: { is_oa: isOa, landing_page_url: `https://doi.org/10.1/${id}`, source: { id: 'https://openalex.org/S1', display_name: 'A core journal', type: 'journal' } },
   open_access: { is_oa: isOa, oa_status: isOa ? 'diamond' : 'closed', oa_url: null },
 })!;
 const NOTABLE = [
