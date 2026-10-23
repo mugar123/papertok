@@ -87,7 +87,9 @@ export function quantize(values: number[]) {
 export function readVector(value: unknown) {
   if (value instanceof ArrayBuffer) return new Int8Array(value);
   if (ArrayBuffer.isView(value)) return new Int8Array(value.buffer, value.byteOffset, value.byteLength);
-  return Int8Array.from(value as number[], byte => (byte > 127 ? byte - 256 : byte));
+  // D1 answers a BLOB as its unsigned bytes. The constructor wraps 128-255 to
+  // -128 to -1, as a callback per byte would, at a twentieth of the CPU.
+  return new Int8Array(value as number[]);
 }
 
 // Normalized here rather than assumed: a vector cut to its leading dimensions
@@ -553,12 +555,12 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
   return workByPaperId;
 }
 
-interface Candidate { workId: number; published: string; lanes: string[]; embedding: Int8Array | null }
+interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
 // for up to a dozen categories and twenty follows.
-async function readCandidates(db: D1Database, lanes: string[]) {
+async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
   const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
     'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
@@ -574,19 +576,22 @@ async function readCandidates(db: D1Database, lanes: string[]) {
       }
     }
   });
+  return [...byWork].map(([workId, candidate]) => ({ workId, ...candidate }));
+}
+
+// The works' vectors, a statement for each 2,000 of them, in one round trip.
+async function readVectors(db: D1Database, workIds: number[]) {
   const vectors = new Map<number, Int8Array>();
-  const ids = [...byWork.keys()];
-  for (let start = 0; start < ids.length; start += 2_000) {
-    const { results } = await db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
-      .bind(JSON.stringify(ids.slice(start, start + 2_000))).all<{ work_id: number; embedding: unknown }>();
+  const chunks: D1PreparedStatement[] = [];
+  for (let start = 0; start < workIds.length; start += 2_000) {
+    chunks.push(db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(workIds.slice(start, start + 2_000))));
+  }
+  if (chunks.length === 0) return vectors;
+  for (const { results } of await db.batch<{ work_id: number; embedding: unknown }>(chunks)) {
     results.forEach(row => vectors.set(row.work_id, readVector(row.embedding)));
   }
-  return [...byWork].map(([workId, candidate]): Candidate => ({
-    workId,
-    published: candidate.published,
-    lanes: candidate.lanes,
-    embedding: vectors.get(workId) ?? null,
-  }));
+  return vectors;
 }
 
 export interface FeedFollow { type: PaperFollowMatch['type']; canonicalId: string; displayName?: string; lane: string }
@@ -660,21 +665,28 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
     // and D1 bills rows read. A quiet lane keeps its share instead of being
-    // crowded out by a busy one. Only the candidates' vectors are read. The
-    // window is the corpus's own: what is past it has been evicted.
+    // crowded out by a busy one. The window is the corpus's own: what is past
+    // it has been evicted.
     readCandidates(db, lanes),
     positiveIds.length
       ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
       : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
   ]);
+  const likes = positives.results.map(row => readVector(row.embedding));
   // A liked paper is not offered again, and keeps its vector in the corpus.
-  if (positiveIds.length) {
-    await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
-      AND (liked_until IS NULL OR liked_until < ?)`)
-      .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
-  }
   const liked = new Set(positiveIds);
-  return rankBySimilarity(candidates.filter(candidate => !liked.has(candidate.workId)), positives.results.map(row => readVector(row.embedding)), { now, order: query.order })
+  const offered = candidates.filter(candidate => !liked.has(candidate.workId));
+  const [vectors] = await Promise.all([
+    // Only the candidates' vectors, and only to compare with a like's: without
+    // one the order is recency alone.
+    likes.length ? readVectors(db, offered.map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
+    positiveIds.length
+      ? db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
+        AND (liked_until IS NULL OR liked_until < ?)`)
+        .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run()
+      : null,
+  ]);
+  return rankBySimilarity(offered.map(candidate => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null })), likes, { now, order: query.order })
     .map(({ row }) => ({ workId: row.workId, lanes: row.lanes }));
 }
 

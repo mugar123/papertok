@@ -1,4 +1,5 @@
 import type { PaperFollowMatch } from '../src/models/Paper.ts';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -44,6 +45,19 @@ test('a stored vector reads back the same whether D1 returns bytes or numbers', 
   const unsignedBytes = [...new Uint8Array(stored.buffer)];
   assert.deepEqual([...readVector(unsignedBytes)], [76, -102]);
   assert.deepEqual([...readVector(stored.buffer)], [76, -102]);
+});
+
+// D1 answers a BLOB as an array of its unsigned bytes, and a ranked page
+// decodes up to 4,000 of them: 50 to 170 ms of Worker CPU in the #272 review.
+test("a page's vectors decode in a few milliseconds from the numbers D1 returns", () => {
+  const vectors = Array.from({ length: 4_000 }, (_, row) => Array.from({ length: 256 }, (_, index) => (row * 31 + index * 17) & 255));
+  let fastest = Infinity;
+  for (let run = 0; run < 5; run += 1) {
+    const started = performance.now();
+    vectors.forEach(readVector);
+    fastest = Math.min(fastest, performance.now() - started);
+  }
+  assert.ok(fastest < 15, `4,000 vectors took ${fastest.toFixed(1)} ms`);
 });
 
 // ─── The corpus in D1 (migrations applied to an in-memory SQLite) ───
@@ -257,4 +271,54 @@ test("a paper dated past tomorrow is not filed, and one filed before that rule l
   db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
   await evictExpired(env, NOW);
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
+});
+
+// Each D1 round trip a request makes, as the statements it sent.
+function roundTrips(t: TestContext, binding: D1Database) {
+  const trips: string[][] = [];
+  const statement = Object.getPrototypeOf(binding.prepare('SELECT 1')) as Record<'all' | 'first' | 'run', (...args: unknown[]) => unknown>;
+  for (const name of ['all', 'first', 'run'] as const) {
+    const send = statement[name];
+    t.mock.method(statement, name, function (this: { sql: string }, ...args: unknown[]) {
+      trips.push([this.sql]);
+      return send.apply(this, args);
+    });
+  }
+  const batch = binding.batch.bind(binding);
+  t.mock.method(binding, 'batch', (statements: D1PreparedStatement[]) => {
+    trips.push(statements.map(sent => (sent as unknown as { sql: string }).sql));
+    return batch(statements);
+  });
+  return trips;
+}
+
+test("a page reads vectors only to rank by a like, and the candidates' in one round trip", async t => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  // 2,200 candidates in two lanes, a minute apart. Two liked papers in no
+  // lane: 2610.02201 with a vector like the oldest candidate's only, and
+  // 2610.02202 without one.
+  db.exec('BEGIN');
+  for (let id = 1; id <= 2_202; id += 1) {
+    const arxivId = `2610.${String(id).padStart(5, '0')}`;
+    const published = new Date(NOW - id * 60_000).toISOString();
+    insertWork.run(id, JSON.stringify({ id: arxivId, arxivId, title: `Paper ${id}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertKey.run(`arxiv:${arxivId}`, id);
+    if (id <= 2_200) insertLane.run(id % 2 ? 'cs.CL' : 'cs.LG', id, published);
+    if (id <= 2_201) insertVector.run(id, Buffer.from(quantize(id >= 2_200 ? [1, 0] : [0, 1]).buffer));
+  }
+  db.exec('COMMIT');
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const vectorReads = () => trips.filter(trip => trip.some(sql => /^\s*SELECT\b[\s\S]*\bwork_vectors\b/i.test(sql))).length;
+  const page = (positiveIds: string[]) => readFeedPage(env, parseFeedRequest({ categories: ['cs.CL', 'cs.LG'], positiveIds, pageSize: 1 }), { now: NOW });
+
+  assert.deepEqual((await page([])).map(paper => paper.id), ['2610.00001']);
+  assert.equal(vectorReads(), 0, 'newest first reads no vector');
+  assert.deepEqual((await page(['2610.02202'])).map(paper => paper.id), ['2610.00001']);
+  assert.equal(vectorReads(), 1, "a like without a vector: only its own is looked for");
+  assert.deepEqual((await page(['2610.02201'])).map(paper => paper.id), ['2610.02200']);
+  assert.equal(vectorReads(), 3, "the like's vector, then every candidate's in one round trip");
 });
