@@ -186,7 +186,7 @@ test("one account registering 40 broad followed searches a day does not keep ano
 
   await follow('reader-b', ['a narrow topic']);
   assert.equal(await refreshedTonight('2026-10-20'), true);
-  const refreshed = [];
+  const refreshed: boolean[] = [];
   for (const [day, night] of ['2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24'].entries()) {
     t.mock.timers.setTime(Date.parse(`${night}T12:00:00Z`) - 86_400_000);
     const searches = Array.from({ length: 40 }, (_, index) => `broad ${day}-${index}`);
