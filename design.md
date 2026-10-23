@@ -1,6 +1,6 @@
 ---
 name: PaperTok
-description: Today's science in one feed, printed like an index over editorial content.
+description: Scientific papers in one feed, printed like an index over editorial content.
 colors:
   navy-ink: "#1d2b53"
   ink-hover: "#3e4a6b"

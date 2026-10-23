@@ -314,7 +314,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const pullRef = useRef({ phase: 'idle', startY: 0, startX: 0, startedAt: 0 });
   // The touch listeners are attached once per scroller, not per render, so
   // what they need from the render lives here instead of in their closure.
-  const pullDepsRef = useRef({ refresh: refreshFeed, loading, isRefreshing });
+  const pullDepsRef = useRef({ refresh: refreshFeed, isRefreshing });
   const pullLandingTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const refreshPillRef = useRef<HTMLButtonElement | null>(null);
   // Whether the scroll back to the top is still owed (see the effect below).
@@ -820,7 +820,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, []);
   useEffect(() => () => clearTimeout(pullLandingTimerRef.current), []);
   useEffect(() => {
-    pullDepsRef.current = { refresh: refreshFeed, loading, isRefreshing };
+    pullDepsRef.current = { refresh: refreshFeed, isRefreshing };
   });
 
 
@@ -1104,10 +1104,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
         endY: touch.clientY,
         elapsedMs: performance.now() - state.startedAt,
       });
-      const { refresh, loading: busy, isRefreshing: running } = pullDepsRef.current;
+      const { refresh, isRefreshing: running } = pullDepsRef.current;
       // Released short of a refresh is a spring: everything goes back.
-      // Released into one is a hand-over: see `landPull`.
-      if (outcome === 'refresh' && !busy && !running) {
+      // Released into one is a hand-over: see `landPull`. A page still
+      // loading does not stop it: a refresh replaces that load, as the
+      // pill's button already does.
+      if (outcome === 'refresh' && !running) {
         landPull();
         refresh();
       } else {

@@ -161,7 +161,7 @@ export class PaperBuilder {
       publicationStatus: data.publicationStatus || (readsAsPreprint(data) ? 'preprint' : 'published'),
       peerReviewed: ownAnswer(data),
       workingPaper: data.workingPaper || undefined,
-      openAccess: data.openAccess !== undefined ? data.openAccess : true,
+      openAccess: data.openAccess,
       pdfUrl: data.pdfUrl || undefined,
       openAccessPdfUrl: data.openAccessPdfUrl || undefined,
       landingPageUrl: data.landingPageUrl || '',
