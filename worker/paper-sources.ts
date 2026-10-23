@@ -329,9 +329,9 @@ async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPag
 }
 
 // Notable papers (Pablo, 2026-10-23): each admitted leaf's most-cited articles
-// published from NOTABLE_YEARS calendar years before this one, asked once a
-// week since citation counts move slowly. One page of NOTABLE_PER_LANE is one
-// list call a lane a week from the harvest's OpenAlex share.
+// published from 1 January NOTABLE_YEARS years before the current year, asked
+// once a week. One page of NOTABLE_PER_LANE is one list call a lane a week,
+// reserved from the harvest's OpenAlex share.
 const NOTABLE_YEARS = 10;
 const NOTABLE_PER_LANE = 100;
 const NOTABLE_LANE_DAYS = 7;
