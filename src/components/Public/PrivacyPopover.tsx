@@ -25,15 +25,20 @@ const COPY = {
   newTab: ' (opens in a new tab)',
 };
 
+// The trigger where the host has no icon button of its own: the shared ghost
+// icon button, the size of the explorer's Share.
+const ICON_BUTTON = buttonVariants({ variant: 'ghost', size: 'icon-sm' });
+
 /**
  * A visitor without an account is measured until they object, and has no
  * Settings to object in: this is their switch, and their way to the policy,
- * from the first screen of the welcome on. The host passes its own chrome
- * class, as it does for ThemeToggle. The choice belongs to analyticsService and
- * goes through the analytics context, exactly like the Settings switch, so the
- * two cannot disagree.
+ * from the first screen of the welcome on and at the top of every page a
+ * shared link opens. The host passes its own chrome class, as it does for
+ * ThemeToggle. The choice belongs to analyticsService and goes through the
+ * analytics context, exactly like the Settings switch, so the two cannot
+ * disagree.
  */
-export default function PrivacyPopover({ className = '' }) {
+export default function PrivacyPopover({ className = ICON_BUTTON }) {
   const { consent, updateConsent } = useAnalyticsConsent();
   const [saveFailed, setSaveFailed] = useState(false);
 

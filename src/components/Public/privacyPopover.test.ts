@@ -30,6 +30,36 @@ test('a visitor reaches the analytics switch and the policy from the welcome bar
   assert.match(popover, /<span className="visually-hidden">\{COPY\.newTab\}<\/span>/);
 });
 
+test('a visitor reaches the same switch from the header of every page a shared link opens', async () => {
+  // Each page keeps it in its own visitor chrome and only there: a session
+  // has Settings, and the switch's own words say "without an account".
+  const paper = await read('./PublicPaperPage.tsx');
+  const nav = paper.slice(paper.indexOf('<nav className="public-paper-nav"'), paper.indexOf('</nav>'));
+  assert.match(nav, /<PrivacyPopover className="public-paper-nav-button" \/>/);
+
+  const list = await read('../Lists/PublicListPage.tsx');
+  const brand = list.slice(list.indexOf('<header className="public-list-brand">'), list.indexOf('</header>'));
+  assert.match(brand, /\{!user && <PrivacyPopover \/>\}/);
+
+  // The explorer's bar: in the live hero and in the skeleton before it.
+  const explorer = await read('../Explorer/EntityExplorer.tsx');
+  assert.equal(explorer.match(/\{publicMode && <PrivacyPopover \/>\}/g)?.length, 2);
+
+  const notFound = await read('../Layout/NotFoundPage.tsx');
+  assert.match(notFound, /\{!user && \(\s*<div className="not-found-bar">\s*<PrivacyPopover \/>/);
+});
+
+test('the policy says where the button is, and names the pages that have it', async () => {
+  const policy = await readFile(new URL('../../../privacy.html', import.meta.url), 'utf8');
+  const where = policy.match(/with the Privacy\s+button at the top of ([^.]*)\./)?.[1]?.replace(/\s+/g, ' ');
+  assert.ok(where, 'the policy no longer says where the Privacy button is');
+  assert.match(where, /the welcome screens/);
+  // The pages the test above holds the button to. No feed: the welcome became
+  // a page and there has been no guest feed since.
+  for (const page of ['a paper', 'a list', 'an author or a topic', 'no longer works']) assert.match(where, new RegExp(page));
+  assert.doesNotMatch(where, /\bthe feed\b/);
+});
+
 test('arrow keys in the Privacy panel stay in the panel on the feed', async () => {
   // The feed turns ArrowUp/ArrowDown into a card change unless focus is in
   // something interactive; a non-modal popup is, whatever inside it has focus.

@@ -16,6 +16,7 @@ import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../u
 import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/boundedRead.ts';
 import { shareOrCopyLink } from '../../utils/shareLink.ts';
 import { copyText } from '../../utils/clipboard.ts';
+import PrivacyPopover from '../Public/PrivacyPopover.tsx';
 import './PublicListPage.css';
 
 function arxivUrl(arxivId: unknown) {
@@ -224,6 +225,20 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
 
   const pageClass = `public-list-page${hasAppChrome ? ' public-list-page--app' : ''}`;
 
+  // The standalone page's own header, the same one over the wait and over the
+  // list. Privacy is for a visitor only: a session has Settings for it, and the
+  // switch's own words say "without an account".
+  const brandHeader = !hasAppChrome && (
+    <header className="public-list-brand">
+      <Link to="/feed">{copy.brand}</Link>
+      <div className="public-list-brand-actions">
+        {status === 'ready' && <span>{copy.publicList}</span>}
+        {!user && <PrivacyPopover />}
+        <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
+      </div>
+    </header>
+  );
+
   if (status !== 'ready') {
     // 'loading', 'slow' and 'offline' are all still waits: they keep the
     // spinner and the read behind them running. Only the other three are
@@ -245,12 +260,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
                 : [copy.loading, ''];
     return (
       <main className={pageClass}>
-        {!hasAppChrome && (
-          <header className="public-list-brand">
-            <Link to="/feed">{copy.brand}</Link>
-            <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
-          </header>
-        )}
+        {brandHeader}
         <section className="public-list-status" aria-live="polite" aria-busy={waiting}>
           {waiting ? <span className="public-list-spinner" aria-hidden="true" /> : <BookOpen size={30} />}
           <h1>{stateCopy[0]}</h1>
@@ -270,15 +280,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
 
   return (
     <main className={pageClass}>
-      {!hasAppChrome && (
-        <header className="public-list-brand">
-          <Link to="/feed">{copy.brand}</Link>
-          <div className="public-list-brand-actions">
-            <span>{copy.publicList}</span>
-            <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
-          </div>
-        </header>
-      )}
+      {brandHeader}
 
       <div className="public-list-content">
         <section className="public-list-heading">

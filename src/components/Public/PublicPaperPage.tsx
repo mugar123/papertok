@@ -22,6 +22,7 @@ import SkeletonCard from '../Feed/SkeletonCard.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../Onboarding/Petri.tsx';
+import PrivacyPopover from './PrivacyPopover.tsx';
 import './PublicPaperPage.css';
 
 const COPY = {
@@ -276,9 +277,16 @@ export default function PublicPaperPage({
             <ArrowLeft size={20} />
           </button>
           <div className="public-paper-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
-          <button type="button" className="public-paper-nav-button" onClick={() => navigate('/feed')} aria-label={text(COPY.home)} title={text(COPY.home)}>
-            <House size={19} />
-          </button>
+          <div className="public-paper-nav-actions">
+            {/* A shared link is many visitors' first page, and a visitor has
+                no Settings: the analytics switch is in the bar, as on the
+                welcome. Only here, in the visitor's chrome: a session has
+                Settings, and the switch's own words say "without an account". */}
+            <PrivacyPopover className="public-paper-nav-button" />
+            <button type="button" className="public-paper-nav-button" onClick={() => navigate('/feed')} aria-label={text(COPY.home)} title={text(COPY.home)}>
+              <House size={19} />
+            </button>
+          </div>
         </nav>
       )}
 

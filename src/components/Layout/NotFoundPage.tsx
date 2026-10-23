@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { House } from '@phosphor-icons/react';
+import { useAuth } from '../../context/AuthContext.tsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
 import Petri from '../Onboarding/Petri.tsx';
+import PrivacyPopover from '../Public/PrivacyPopover.tsx';
 import './NotFoundPage.css';
 
 // An address the app does not declare. It used to land on /feed without a
@@ -21,6 +23,7 @@ const COPY = {
 
 export default function NotFoundPage() {
   const location = useLocation();
+  const { user } = useAuth();
   const copy = COPY.en;
   const metadata = useMemo(() => ({
     title: { en: COPY.en.documentTitle },
@@ -32,6 +35,14 @@ export default function NotFoundPage() {
 
   return (
     <main className="not-found-page">
+      {/* A dead shared link is opened without an account more often than
+          with one, and a visitor has no Settings: the analytics switch is at
+          the top, as on every other page a link opens. A session has Settings. */}
+      {!user && (
+        <div className="not-found-bar">
+          <PrivacyPopover />
+        </div>
+      )}
       <div className="not-found-card">
         <Petri pose="lost" code="404" className="not-found-petri" />
         <h1>{copy.title}</h1>

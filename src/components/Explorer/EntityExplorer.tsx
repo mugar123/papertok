@@ -104,6 +104,7 @@ import { ListRowAuthors, PaperListRow } from '../Lists/ListRow.tsx';
 import SharePanel from '../Feed/SharePanel.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import Petri from '../Onboarding/Petri.tsx';
+import PrivacyPopover from '../Public/PrivacyPopover.tsx';
 import { ExplorerEmptyState } from './ExplorerEmptyState.tsx';
 import ExplorerGuestGate from './ExplorerGuestGate.tsx';
 import { pickEmptyVariant } from './explorerEmptyVariant.ts';
@@ -1613,7 +1614,10 @@ export default function EntityExplorer({
     toggleFollow(followEntity).catch(console.error);
   };
 
-  const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0) && (
+  // A visitor's analytics switch rides at the end of the actions, the far
+  // side of the bar from Back, where the paper page and the list keep it too.
+  // Only without a session: an account has Settings for it.
+  const heroActions = (followEntity || publicEntityUrl || heroLinks.length > 0 || publicMode) && (
     <div className="ehc-actions">
       {followEntity && (
         <FollowToggle
@@ -1654,6 +1658,7 @@ export default function EntityExplorer({
           ))}
         </div>
       )}
+      {publicMode && <PrivacyPopover />}
     </div>
   );
 
@@ -1758,6 +1763,9 @@ export default function EntityExplorer({
                 <ArrowLeft size={20} />
               </Button>
             </div>
+            {/* Where the live hero keeps it (`heroActions`), from the first
+                frame: a visitor can object while the entity is still coming. */}
+            {publicMode && <PrivacyPopover />}
           </div>
 
           {/* The live hero's own nesting, copied rather than approximated:
