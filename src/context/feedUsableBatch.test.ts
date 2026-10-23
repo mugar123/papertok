@@ -193,26 +193,39 @@ function reloadOnPageOne(t: import('node:test').TestContext, { seen = [] as stri
   return { ...loaded, starts };
 }
 const pageIds = (...pages: number[]) => pages.flatMap(index => records(`page-${index}`)).map(paper => paper.id);
+const pageOf = (start: number) => records(`page-${start / 15}`);
+// The corpus sends a notable card only when the reader has not seen it, so a
+// page whose other papers were all seen still holds its two.
+const withUnseenNotable = (page: (start: number) => FeedRecord[]) => (start: number) => {
+  const papers = page(start);
+  return papers.length ? [...papers, ...records(`notable-${start / 15}`, 2).map(paper => ({ ...paper, _notable: true }))] : papers;
+};
+const notableVariants = [
+  ['', (page: (start: number) => FeedRecord[]) => page],
+  [', and every page holds unseen notable cards', withUnseenNotable],
+] as const;
 
 // The browser check of 2026-10-21: after five reloads every page a reload
 // starts on (0 to 4) had been shown, and the sixth showed page 1 again.
-test('a reload after every start page was shown shows unseen papers from a later page', async t => {
-  const { state, env, run, starts } = reloadOnPageOne(t, { seen: pageIds(0, 1, 2, 3, 4) });
-  env.loadPapersRef.current = run;
-  const steps: string[] = [];
-  const { setLoading, setPapers } = env;
-  env.setLoading = value => { steps.push(`loading ${value}`); setLoading(value); };
-  env.setPapers = value => { setPapers(value); steps.push(`${state.papers.length} papers`); };
-  await run(true, null, true);
-  assert.equal(state.error, null);
-  assert.equal(starts[0], 15, 'the reload started on page 1');
-  assert.equal(state.papers.length, 15);
-  assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(0, 1, 2, 3, 4).includes(id)), [],
-    'no paper shown before is shown again');
-  assert.equal(starts.length, 2, 'one more page was asked for');
-  assert.ok(steps.indexOf('15 papers') < steps.indexOf('loading false'),
-    `the first screen stays loading until the later page is shown: ${steps.join(', ')}`);
-});
+for (const [cards, withCards] of notableVariants) {
+  test(`a reload after every start page was shown shows unseen papers from a later page${cards}`, async t => {
+    const { state, env, run, starts } = reloadOnPageOne(t, { seen: pageIds(0, 1, 2, 3, 4), page: withCards(pageOf) });
+    env.loadPapersRef.current = run;
+    const steps: string[] = [];
+    const { setLoading, setPapers } = env;
+    env.setLoading = value => { steps.push(`loading ${value}`); setLoading(value); };
+    env.setPapers = value => { setPapers(value); steps.push(`${state.papers.length} papers`); };
+    await run(true, null, true);
+    assert.equal(state.error, null);
+    assert.equal(starts[0], 15, 'the reload started on page 1');
+    assert.equal(state.papers.length, 15);
+    assert.deepEqual(state.papers.map(paper => paper.id).filter(id => pageIds(0, 1, 2, 3, 4).includes(id)), [],
+      'no paper shown before is shown again');
+    assert.deepEqual(starts, [15, 90], 'one more page was asked for, past every reload start');
+    assert.ok(steps.indexOf('15 papers') < steps.indexOf('loading false'),
+      `the first screen stays loading until the later page is shown: ${steps.join(', ')}`);
+  });
+}
 
 test('a refresh whose start page was all shown before replaces the cards on screen with unseen ones', async t => {
   const onScreen = records('page-1');
@@ -226,19 +239,21 @@ test('a refresh whose start page was all shown before replaces the cards on scre
 });
 
 for (const [name, page] of [
-  ['every later page was shown before too', (start: number) => records(`page-${start / 15}`)],
+  ['every later page was shown before too', pageOf],
   ['no later page has papers', (start: number) => start === 15 ? records('page-1') : []],
 ] as const) {
-  test(`a reload whose start page was all shown before still gets a feed when ${name}`, async t => {
-    const everyPage = Array.from({ length: 30 }, (_, index) => records(`page-${index}`)).flat().map(paper => paper.id);
-    const { state, env, run, starts } = reloadOnPageOne(t, { seen: everyPage, page });
-    env.loadPapersRef.current = run;
-    await run(true, null, true);
-    assert.equal(state.error, null);
-    assert.equal(state.papers.length, 15, 'the feed is not empty');
-    assert.equal(state.hasMore, true, 'the reader can scroll on');
-    assert.ok(starts.length <= 3, `at most two more pages are asked for: ${JSON.stringify(starts)}`);
-  });
+  for (const [cards, withCards] of notableVariants) {
+    test(`a reload whose start page was all shown before still gets a feed when ${name}${cards}`, async t => {
+      const everyPage = Array.from({ length: 30 }, (_, index) => records(`page-${index}`)).flat().map(paper => paper.id);
+      const { state, env, run, starts } = reloadOnPageOne(t, { seen: everyPage, page: withCards(page) });
+      env.loadPapersRef.current = run;
+      await run(true, null, true);
+      assert.equal(state.error, null);
+      assert.equal(state.papers.length, 15, 'the feed is not empty');
+      assert.equal(state.hasMore, true, 'the reader can scroll on');
+      assert.ok(starts.length <= 3, `at most two more pages are asked for: ${JSON.stringify(starts)}`);
+    });
+  }
 }
 
 test('after a reload shows its seen start page because the later page was empty, scrolling goes on from the page after it', async t => {

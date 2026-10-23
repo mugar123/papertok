@@ -1393,8 +1393,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       let filtered = newPapers.filter(isAvailablePaper);
 
       // No paper on this page can be shown: try a later page before showing
-      // seen papers again.
-      if (filtered.length === 0) {
+      // seen papers again. Notable cards alone count as none: they take only
+      // the fifteenth place (takeFeedPage), and the corpus sends them unseen
+      // even when the reader saw every other paper on the page.
+      if (filtered.every(paper => paper._notable)) {
         // Shown before, but never liked, saved, read or dismissed. A notable
         // card is never shown twice.
         const bypassSeen = newPapers.filter((p) =>
