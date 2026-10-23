@@ -136,17 +136,17 @@ answered 200 at 1 credit each. The coverage report records each leaf's
 
 | Decision | Leaves |
 | --- | --- |
-| `passed` (10 or more of 15 on target without doubt) | 32 |
+| `passed` (10 or more of 15 on target and not marked uncertain) | 32 |
 | `rejected` | 72 |
 | `insufficient-sample` | 3: `math.OC` (0 articles), `med.endo` (12), `chemeng.metal` (13) |
 | `no-candidates` | 22 |
 | `inherited` | 14 |
 
 The 32 passing samples asked for 164 topics. Their lanes ask for the 80 with
-an article on target without doubt. Of the 84 left out, the samples never
-returned 65 and returned 19 only off target or with doubt. Later on 2026-10-23,
-32 more anonymous requests grouped each passing sample's query by
-`primary_topic.id`: of the 26,198 articles in those windows, the topics left
+an article on target and not marked uncertain. Of the 84 left out, the samples
+never returned 65 and returned 19 only off target or marked uncertain. Later
+on 2026-10-23, 32 more anonymous requests grouped each passing sample's query
+by `primary_topic.id`: of the 26,198 articles in those windows, the topics left
 out held 5,430, 2,218 on the 19 and 3,212 on the 65.
 
 Three labellers each labelled a third of the leaves; every leaf has one
@@ -158,15 +158,27 @@ OpenAlex's access flag beside the title and the first 300 characters of the
 abstract. The labellers report judging from the title, the abstract and the
 venue. Topic IDs, the query and the proposed mapping were hidden.
 
-The first labeller marked 122 of their 525 calls as borderline, defined as
-calls a second labeller could reasonably flip. The reviews record them as
-`uncertain`. Eight leaves passed only on such calls and are rejected:
-`cond-mat.quant-gas`, `physics.optics`, `physics.plasm-ph`, `math.ST`,
-`eess.SP`, `civil.trans`, `med.pharma` and `med.surg`. The other two labellers
-marked no call as uncertain, so every call they made counts as recorded.
+The labelling instructions asked for a verdict and a short reason per article,
+not for doubt. The first labeller added a list of borderline calls anyway,
+defined as calls a second labeller could reasonably flip: 122 of their 525.
+The reviews record them as `uncertain`. Eight leaves passed only on such calls
+and are rejected: `cond-mat.quant-gas`, `physics.optics`, `physics.plasm-ph`,
+`math.ST`, `eess.SP`, `civil.trans`, `med.pharma` and `med.surg`.
 
-Seven leaves passed at exactly 10 of 15, where one changed call would reject
-them: `astro-ph.SR`, `cs.LG`, `cs.SY`, `math.CO`, `math.GT`, `q-fin.GN` and
-`mech.mfg`. A second labeller working blind, as the procedure above describes,
-could confirm these seven and re-examine the eight rejected leaves; a new
-review replaces the leaf's entry.
+The second and third labellers had no way to record doubt. Their 1,060 calls
+carry no `uncertain` flag because doubt was not asked for: whether they
+doubted any call is unknown, not zero. The doubt rule therefore applied only
+to the first labeller's 35 leaves. Of the 32 passing leaves, 25 come from the
+second and third labellers; the first labeller's seven are `astro-ph.HE`,
+`cs.NI`, `math.CO`, `math.RA`, `mech.mfg`, `bio.bot` and `bio.marine`. Ten of
+the 25 are close to the threshold. One doubted call would reject
+`astro-ph.SR`, `cs.LG`, `cs.SY`, `math.GT` or `q-fin.GN` (10 of 15); two would
+reject `eess.SY`, `eess.power`, `civil.mat`, `chemeng.process` or `med.tox`
+(11 of 15). Topics are affected too: 69 of the lanes' 80 topics come from
+these 25 leaves, and one doubted call would remove any of the 17 with a single
+article on target.
+
+The first labeller's `math.CO` and `mech.mfg` also passed at exactly 10 of 15.
+A second labeller working blind, as the procedure above describes, could record
+doubt on the 25 leaves, confirm the seven at 10 of 15 and re-examine the eight
+rejected leaves; a new review replaces the leaf's entry.
