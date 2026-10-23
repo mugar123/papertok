@@ -245,43 +245,44 @@ const gateFile = (name: string) => JSON.parse(readFileSync(new URL(`../scripts/d
 const topicLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-topics').map(job => job.lane);
 const topicsOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
 
-// OpenAlex W7223100088 as returned to the gate's cs.LG sample on 2026-10-23
+// OpenAlex W7223183626 as returned to the gate's q-fin.GN sample on 2026-10-23
 // (trimmed, abstract shortened): a subscription journal article.
 const subscriptionArticle = {
-  id: 'https://openalex.org/W7223100088',
-  doi: 'https://doi.org/10.1142/s0218001426590482',
-  title: 'Synthesis of Reliable Logic Question Answering Data for Large Language Model with Aid of Operations Research Program',
+  id: 'https://openalex.org/W7223183626',
+  doi: 'https://doi.org/10.33423/0t4j8j85',
+  title: 'The Performance of Passively Managed Index Portfolios Versus Complementary Non-Index Portfolios: Evidence from the H-Share Market',
   type: 'article',
   publication_date: '2026-10-22',
   publication_year: 2026,
-  abstract_inverted_index: invertedIndex('Logical reasoning is a highly valued capability in language models.'),
+  abstract_inverted_index: invertedIndex('This paper investigates the performance of the Hang Seng China Enterprises Index.'),
   primary_location: {
     is_oa: false,
-    landing_page_url: 'https://doi.org/10.1142/s0218001426590482',
+    landing_page_url: 'https://doi.org/10.33423/0t4j8j85',
     version: 'publishedVersion',
-    source: { id: 'https://openalex.org/S41486457', display_name: 'International Journal of Pattern Recognition and Artificial Intelligence', type: 'journal', is_core: true },
+    source: { id: 'https://openalex.org/S4210192355', display_name: 'Journal of Applied Business and Economics', type: 'journal', is_core: true },
   },
   open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
   primary_topic: {
-    id: 'https://openalex.org/T10028',
-    display_name: 'Topic Modeling',
-    subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
-    field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
-    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+    id: 'https://openalex.org/T10047',
+    display_name: 'Financial Markets and Investment Strategies',
+    subfield: { id: 'https://openalex.org/subfields/2003', display_name: 'Finance' },
+    field: { id: 'https://openalex.org/fields/20', display_name: 'Economics, Econometrics and Finance' },
+    domain: { id: 'https://openalex.org/domains/2', display_name: 'Social Sciences' },
   },
 };
 
 test('an arXiv leaf the precision gate admitted gets a journal-article lane for the sampled topics found on target', async t => {
   const reviews = gateFile('openalex-topic-reviews.json');
-  const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10028') ? [subscriptionArticle] : [] }));
+  const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10047') ? [subscriptionArticle] : [] }));
   // Sorted, as sampled, without the topics no sampled article was on target
-  // for: cs.LG's T13702 (0 of 2) and five it never returned, q-fin.GN's green
-  // bonds T13146 (0 of 5), astro-ph.SR's catch-all T13126 (never returned).
+  // for: q-fin.GN's green bonds T13146 (0 of 5) and four it never returned,
+  // cs.SE's T10456 (0 of 1) and six it never returned, cond-mat.stat-mech's
+  // T12261 (0 of 2) and one it never returned, and two cs.CV never returned.
   const asked = {
-    'cs.LG': ['T10028', 'T11122', 'T11689', 'T12535'],
-    'cs.CV': ['T10036'],
     'q-fin.GN': ['T10047', 'T10127'],
-    'astro-ph.SR': ['T10039', 'T10477'],
+    'cs.CV': ['T10036'],
+    'cs.SE': ['T10260', 'T10430', 'T10743'],
+    'cond-mat.stat-mech': ['T11520'],
   };
   for (const [leaf, topics] of Object.entries(asked)) {
     assert.ok(topicLanes().includes(leaf), `${leaf} has a lane in the nightly harvest`);
@@ -294,8 +295,8 @@ test('an arXiv leaf the precision gate admitted gets a journal-article lane for 
       assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
     }
   }
-  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'cs.LG', page: 1, since: '' });
-  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223100088', ['cs.LG']]]);
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'q-fin.GN', page: 1, since: '' });
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223183626', ['q-fin.GN']]]);
   assert.equal(items[0].paper.publicationType, 'article');
   assert.equal(items[0].paper.sourceType, 'journal');
   assert.equal(items[0].paper.openAccess, false, 'the explicit subscription access is kept');
@@ -306,7 +307,10 @@ test('a leaf the gate did not admit sends no topic request, and every lane is an
   const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf)!;
   // Too few on target in a full sample, or too few recent core articles to judge.
   // physics.plasm-ph had 13 of 15 on target, 6 of them calls its labeller doubted.
-  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample']]) {
+  // The seven last: 10 or 11 of 15 on target without recorded doubt, then 3 to 9
+  // in a blind relabel that recorded it.
+  const relabelled = ['astro-ph.SR', 'cs.LG', 'cs.SY', 'math.GT', 'eess.SY', 'civil.mat', 'med.tox'].map(leaf => [leaf, 'rejected']);
+  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample'], ...relabelled]) {
     assert.equal(statusOf(leaf).status, status, leaf);
     assert.equal(typeof statusOf(leaf).sampleSize, 'number', `${leaf} records its sample`);
     assert.equal(openAlexTopicFilterForLeaf(leaf), null, leaf);
