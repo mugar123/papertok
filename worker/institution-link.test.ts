@@ -12,7 +12,7 @@ import {
 } from './institution-link.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/requestDeadline.ts';
-import { InstitutionAccessError, findResolver, readInstitutionQuery } from './institution-access.ts';
+import { InstitutionAccessError, findResolver, readAccessQuery, readInstitutionQuery } from './institution-access.ts';
 
 const UID = 'alice-uid';
 const PROJECT_ID = 'papertok-168df';
@@ -252,9 +252,22 @@ test('the federation metadata being down leaves the entityID unknown but still l
   }
 });
 
+/**
+ * A linked institution as the browser sends it (empty ids left out), read by
+ * the parser of each route that receives it: `/access` and
+ * `/institution/services`.
+ */
+function routeQueries({ domain, rorId, entityId }: { domain: string; rorId: string | null; entityId: string | null }) {
+  const params = Object.entries({ domain, rorId, entityId }).filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return {
+    access: readAccessQuery(new URLSearchParams([['doi', '10.1000/xyz'], ...params])),
+    services: readInstitutionQuery(new URLSearchParams(params)),
+  };
+}
+
 // The first is what SeamlessAccess listed under seha.ae (PAP-68). Stored, any
 // of these would make every later `/access` and `/institution/services`
-// request of the account a 400, since both routes refuse them.
+// request of the account a 400.
 const MALFORMED_ENTITY_IDS = [
   'https.//idp.seha.ae/openathens',
   'urn:mace:',
@@ -266,7 +279,7 @@ const MALFORMED_ENTITY_IDS = [
 
 test('an entityID the access routes refuse is left unknown, and the link still completes', async () => {
   for (const entityID of MALFORMED_ENTITY_IDS) {
-    assert.throws(() => readInstitutionQuery(new URLSearchParams({ domain: 'usal.es', entityId: entityID })),
+    assert.throws(() => routeQueries({ domain: 'usal.es', rorId: null, entityId: entityID }),
       (error) => error instanceof InstitutionAccessError && error.code === 'INVALID_INSTITUTION_ID', entityID);
     const upstream = stubUpstreams({
       users: { [SESSION_TOKEN]: SESSION_USAL },
@@ -278,9 +291,8 @@ test('an entityID the access routes refuse is left unknown, and the link still c
       assert.equal(institution!.rorId, 'https://ror.org/02f40zc51', entityID);
       assert.equal(institution!.entityId, null, entityID);
       assert.deepEqual(admin.documents[`users/${UID}`].institution, institution);
-      // What was stored is a query both routes take.
-      assert.deepEqual(readInstitutionQuery(new URLSearchParams({ domain: institution!.domain, rorId: institution!.rorId })),
-        { domain: 'usal.es', entityId: null, rorId: 'https://ror.org/02f40zc51' });
+      const expected = { domain: 'usal.es', entityId: null, rorId: 'https://ror.org/02f40zc51' };
+      assert.deepEqual(routeQueries(institution!), { access: { doi: '10.1000/xyz', ...expected }, services: expected });
     } finally {
       upstream.restore();
     }
@@ -309,7 +321,8 @@ test('the entityIDs the access routes take are stored as the federation lists th
       const institution = await resolveInstitution(domain, { cache: null });
       assert.equal(institution.rorId, rorId, domain);
       assert.equal(institution.entityId, entityID, domain);
-      assert.deepEqual(readInstitutionQuery(new URLSearchParams({ domain, rorId, entityId: entityID })), { domain, entityId: entityID, rorId });
+      const expected = { domain, entityId: entityID, rorId };
+      assert.deepEqual(routeQueries(institution), { access: { doi: '10.1000/xyz', ...expected }, services: expected });
     } finally {
       upstream.restore();
     }
