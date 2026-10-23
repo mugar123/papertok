@@ -14,7 +14,6 @@
       "T11415",
       "T11683"
     ],
-    "candidateHash": "8cf8f37c051407c1f81d73c2f7d702db8ec3278ff23e7f741ea813be25f6f881",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -25,12 +24,11 @@
     "label": "Superconductivity",
     "topicIds": [
       "T10037",
-      "T12491",
       "T10681",
       "T11682",
+      "T12491",
       "T13531"
     ],
-    "candidateHash": "775cdcbbd98991122d8e281d23b50d2d4cc49bd41b793aaefc3cf0a39a710491",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 4,
@@ -42,7 +40,6 @@
     "topicIds": [
       "T11603"
     ],
-    "candidateHash": "84dc8b62e7b63e902f0b90d1d7a31f6bd6dab64d1e711cebca96b09bd15a09a1",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -52,15 +49,14 @@
     "leaf": "cond-mat.mtrl-sci",
     "label": "Materials Science",
     "topicIds": [
+      "T10049",
       "T10099",
       "T10657",
-      "T11853",
-      "T14363",
-      "T10049",
       "T10666",
-      "T11949"
+      "T11853",
+      "T11949",
+      "T14363"
     ],
-    "candidateHash": "3a8c4a0cc8583de474014209613999dfe5f3de9bb2cb36f3a584b695e9086437",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -70,7 +66,6 @@
     "leaf": "cond-mat.mes-hall",
     "label": "Mesoscale and Nanoscale Physics",
     "topicIds": [],
-    "candidateHash": "8251a4b0c1ab0c415e34d981b4af2a47bbbe799e338e88bc269592369aac5777",
     "status": "no-candidates"
   },
   {
@@ -81,7 +76,6 @@
       "T12261",
       "T13769"
     ],
-    "candidateHash": "2f20fa979085372c4b888991a71b41843481da61dbd98d90598fe3cfca5b802c",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -93,7 +87,6 @@
     "topicIds": [
       "T11682"
     ],
-    "candidateHash": "1a06f39c8f090460bba5fdf2e24a0d8f88a96407962b09c84ef299fdc7ec83fd",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -106,7 +99,6 @@
       "T10425",
       "T11993"
     ],
-    "candidateHash": "160243c6ce7cac156ddda29a81f16cea2b5e10122cb234868078a6742a84abed",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -116,13 +108,12 @@
     "leaf": "hep-th",
     "label": "High Energy Physics - Theory",
     "topicIds": [
-      "T10527",
       "T10048",
       "T10384",
+      "T10527",
       "T10818",
       "T12516"
     ],
-    "candidateHash": "5f10b94d1af98a8c591e5423cbf327183f78a58b08830001f54a3ab9f119c563",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -132,13 +123,12 @@
     "leaf": "hep-ph",
     "label": "High Energy Physics - Phenomenology",
     "topicIds": [
-      "T10527",
       "T10048",
       "T10384",
+      "T10527",
       "T10818",
       "T12516"
     ],
-    "candidateHash": "3403e23422a18b5af9fd40d3650697fb5fc21829c8f443af620317096a4fc45b",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -148,14 +138,13 @@
     "leaf": "hep-ex",
     "label": "High Energy Physics - Experiment",
     "topicIds": [
-      "T10527",
       "T10048",
       "T10384",
+      "T10527",
       "T10818",
       "T12250",
       "T12516"
     ],
-    "candidateHash": "fe0a6ecc68f76adaaad278d16337e9db19bfbf1cdd912735848a3e7b91334607",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -165,13 +154,12 @@
     "leaf": "astro-ph.CO",
     "label": "Cosmology",
     "topicIds": [
-      "T10095",
       "T10026",
+      "T10095",
       "T11090",
       "T11415",
       "T13080"
     ],
-    "candidateHash": "c08d57fc54d740ee992c8320483cc25e5b6960cdaa0153ed8318b889f1f44c67",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -181,7 +169,6 @@
     "leaf": "astro-ph.GA",
     "label": "Astrophysics of Galaxies",
     "topicIds": [],
-    "candidateHash": "df2b23c6c637a899c808cca3ae8d7faf1d3f529a708b47241f6818cfc7dad3fa",
     "status": "no-candidates"
   },
   {
@@ -192,7 +179,6 @@
       "T10477",
       "T13126"
     ],
-    "candidateHash": "9169548526dd3d2849f0ab5cf50872b1843272f2af0f0e7e0fc71d3527574f67",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -204,7 +190,6 @@
     "topicIds": [
       "T10818"
     ],
-    "candidateHash": "896ffe07bc7cc61b6fa6501d1c3bae0eae4515e2ea4d49c106f828d36741533f",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -216,7 +201,6 @@
     "topicIds": [
       "T10039"
     ],
-    "candidateHash": "a65acd8953cfe8577f5a0cb23655d8955d1ad20af6c095f31df191f6f02c7f20",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 5,
@@ -231,7 +215,6 @@
       "T11960",
       "T13080"
     ],
-    "candidateHash": "b5f6aa2527941258481c6fca4d6d042354a5d2e3aca15d146971832ee4d24bf4",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 8,
@@ -243,7 +226,6 @@
     "topicIds": [
       "T12516"
     ],
-    "candidateHash": "d6a3db619db927495a6f421cc442da53c2932644aab0d8956bb31124e3b602d3",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -254,17 +236,16 @@
     "label": "Nuclear Theory",
     "topicIds": [
       "T10093",
-      "T11949",
-      "T13458",
       "T10382",
       "T10463",
       "T11175",
       "T11603",
+      "T11949",
       "T11965",
       "T12603",
-      "T12762"
+      "T12762",
+      "T13458"
     ],
-    "candidateHash": "5acec59b2f932ee9e17507150ae564fca94ad2506d12219ed5fc01824c047ad4",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 2,
@@ -276,7 +257,6 @@
     "topicIds": [
       "T11603"
     ],
-    "candidateHash": "d10093f8d2da2ab85169d07038115986a49215cd8a1f853ebc39c1d258c0fd5d",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -287,16 +267,15 @@
     "label": "Optics",
     "topicIds": [
       "T10490",
+      "T10566",
+      "T10988",
       "T11050",
       "T11414",
       "T11484",
-      "T13493",
-      "T10566",
-      "T10988",
       "T12917",
-      "T13126"
+      "T13126",
+      "T13493"
     ],
-    "candidateHash": "b2e4a185a9030a4fb6168e8e5316ca753df6eeb7ed5e23419799c674d9e5eb34",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -307,15 +286,14 @@
     "label": "Atomic Physics",
     "topicIds": [
       "T10523",
+      "T10923",
       "T11414",
       "T11993",
-      "T10923",
       "T12004",
       "T12762",
       "T13458",
       "T13531"
     ],
-    "candidateHash": "4b78c32947171f51b4d4f9e470f905faad556674c769e8810a27da89c1282f3d",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -329,7 +307,6 @@
       "T11206",
       "T11486"
     ],
-    "candidateHash": "df1980ad7eed37cf6e2c8265ff14876a88dbf9dda2e0380caeca47ad7550feb2",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 4,
@@ -339,16 +316,15 @@
     "leaf": "physics.plasm-ph",
     "label": "Plasma Physics",
     "topicIds": [
+      "T10159",
       "T10251",
       "T10384",
+      "T10527",
+      "T11175",
       "T11603",
       "T12077",
-      "T13769",
-      "T10159",
-      "T10527",
-      "T11175"
+      "T13769"
     ],
-    "candidateHash": "7c98115fccfec1ad8facda6b7139dc6e8dbcab1d64662b60523ad7aa0b4cc52a",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -362,7 +338,6 @@
       "T11513",
       "T13769"
     ],
-    "candidateHash": "c8f6bfdb919c4fa949e1df12d3f0c57729140ec8d939f39e45d081d6448671f1",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 5,
@@ -374,7 +349,6 @@
     "topicIds": [
       "T10591"
     ],
-    "candidateHash": "0b342cdee056f0a1db7a1e91ae27c3a8b9ab2f24349eb036339eaf0b249c4c93",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -384,18 +358,17 @@
     "leaf": "cs.AI",
     "label": "Artificial Intelligence",
     "topicIds": [
-      "T11574",
-      "T12026",
-      "T13904",
-      "T14174",
-      "T14414",
       "T10456",
       "T11349",
+      "T11574",
+      "T12026",
       "T12128",
       "T12260",
-      "T12797"
+      "T12797",
+      "T13904",
+      "T14174",
+      "T14414"
     ],
-    "candidateHash": "9dce723ea2645945b9fd32de3575d0dc3c9381ae567e58fcef5a22888e7450d2",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 2,
@@ -405,6 +378,8 @@
     "leaf": "cs.LG",
     "label": "Machine Learning",
     "topicIds": [
+      "T10028",
+      "T11122",
       "T11689",
       "T11714",
       "T12072",
@@ -412,11 +387,8 @@
       "T12676",
       "T13373",
       "T13693",
-      "T13702",
-      "T11122",
-      "T10028"
+      "T13702"
     ],
-    "candidateHash": "1d26e7bdcb7a749b024a2560261cc95f6e5495a6c4a648fbda376c8c58c9509b",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -426,11 +398,10 @@
     "leaf": "cs.CV",
     "label": "Computer Vision",
     "topicIds": [
-      "T13674",
       "T10036",
-      "T12549"
+      "T12549",
+      "T13674"
     ],
-    "candidateHash": "35e750532754a385161be4ef396e1f66836547bbf05db8d3f8463735b7148f20",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -440,23 +411,21 @@
     "leaf": "cs.CL",
     "label": "Computation and Language",
     "topicIds": [],
-    "candidateHash": "851633b04a72c98af1395a9a688773c43d3f517428d66bf85f81afd11d11b613",
     "status": "no-candidates"
   },
   {
     "leaf": "cs.RO",
     "label": "Robotics",
     "topicIds": [
-      "T10462",
-      "T10586",
-      "T14335",
       "T10249",
+      "T10462",
       "T10533",
+      "T10586",
       "T13904",
       "T13964",
+      "T14335",
       "T14381"
     ],
-    "candidateHash": "42799a5e18d5b9e94ea8ebf9b26118b78da3a5dccdb0ff252ec54a4df752ddf3",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -466,12 +435,11 @@
     "leaf": "cs.CR",
     "label": "Cryptography and Security",
     "topicIds": [
-      "T10237",
       "T10020",
+      "T10237",
       "T11498",
       "T13674"
     ],
-    "candidateHash": "511212913e4ef79aa9cba0d7dd1bf65214728f0860ba14edad7c74f9b6170a2e",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -483,16 +451,15 @@
     "topicIds": [
       "T10260",
       "T10430",
+      "T10456",
       "T10639",
       "T10714",
       "T10743",
       "T11450",
       "T11675",
       "T12127",
-      "T12423",
-      "T10456"
+      "T12423"
     ],
-    "candidateHash": "1bc81de63f3fb7c6a6fc470df60ee59f99198e442da41f650993f79d7094cf33",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 14,
@@ -502,18 +469,17 @@
     "leaf": "cs.DS",
     "label": "Data Structures and Algorithms",
     "topicIds": [
-      "T11269",
+      "T10080",
       "T10538",
-      "T11106",
       "T10637",
+      "T11106",
+      "T11269",
+      "T11303",
       "T12761",
       "T13373",
-      "T10080",
-      "T11303",
       "T14025",
       "T14175"
     ],
-    "candidateHash": "686f84ac6de81875880ea56051d6e0d6222201cad3c4c35df2db6134a155b5a1",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -523,13 +489,12 @@
     "leaf": "cs.DB",
     "label": "Databases",
     "topicIds": [
-      "T10317",
       "T10181",
+      "T10317",
       "T11106",
       "T12292",
       "T13681"
     ],
-    "candidateHash": "73827e9dca5d3f84a1b6b24672d2572fdfae30d259a68a3ea456956e0564fbfd",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 8,
@@ -539,13 +504,12 @@
     "leaf": "cs.DC",
     "label": "Distributed Computing",
     "topicIds": [
-      "T10715",
       "T10101",
+      "T10715",
       "T11181",
       "T12203",
       "T12292"
     ],
-    "candidateHash": "4ded266439ac086e8850f85adf65a8c1b59e5a53d55fd9863a216799b69df7cb",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 8,
@@ -559,7 +523,6 @@
       "T13062",
       "T13935"
     ],
-    "candidateHash": "e7b8e161749707d35ef3a345868d5cb7712b547e938f5ee40e010fc2c70072a2",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,
@@ -569,16 +532,15 @@
     "leaf": "cs.IR",
     "label": "Information Retrieval",
     "topicIds": [
-      "T10286",
-      "T14435",
-      "T13523",
       "T10028",
+      "T10286",
       "T11309",
       "T11550",
       "T12016",
-      "T13976"
+      "T13523",
+      "T13976",
+      "T14435"
     ],
-    "candidateHash": "a6c18c686132a9bece9e2e37bdb78810173741fa4a4811f48cfccdecfa5568a4",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -588,16 +550,15 @@
     "leaf": "cs.HC",
     "label": "Human-Computer Interaction",
     "topicIds": [
-      "T10803",
-      "T12128",
       "T10470",
+      "T10803",
       "T11349",
       "T11398",
       "T11707",
-      "T14254",
-      "T13155"
+      "T12128",
+      "T13155",
+      "T14254"
     ],
-    "candidateHash": "b3cbd4de6e1c44c6c92724210f94e09aa996cb6f1e1b558245194b29fe218def",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 5,
@@ -610,7 +571,6 @@
       "T10126",
       "T10904"
     ],
-    "candidateHash": "829fdb048c2dfcf7900de794c73b9cc0c17595402279f6e0d663da5a0cba4e1a",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -622,7 +582,6 @@
     "topicIds": [
       "T11574"
     ],
-    "candidateHash": "aaaf8619a50e1349b510a718ae14256c07190f4692bd3bdb9ca56c2c0c80da46",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 2,
@@ -632,18 +591,17 @@
     "leaf": "cs.SI",
     "label": "Social and Information Networks",
     "topicIds": [
-      "T13924",
-      "T14435",
-      "T11896",
-      "T13553",
-      "T13983",
-      "T13514",
-      "T13976",
-      "T14100",
       "T10028",
-      "T11309"
+      "T11309",
+      "T11896",
+      "T13514",
+      "T13553",
+      "T13924",
+      "T13976",
+      "T13983",
+      "T14100",
+      "T14435"
     ],
-    "candidateHash": "0b6fdc69eca28fc3dc5b56510517f52d01e8ab5364a41e52039ede023e597934",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -656,7 +614,6 @@
       "T11478",
       "T14455"
     ],
-    "candidateHash": "ee361be7d009e72ef211fe47f6bf799d075964aa95c5fd320c2b3daaf0021542",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -669,7 +626,6 @@
       "T10481",
       "T14254"
     ],
-    "candidateHash": "fc442d6f51ed08ca96452b97fd940e4ff5c31dfc6afb1934ca27d6093b82fdfe",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -679,10 +635,9 @@
     "leaf": "cs.SD",
     "label": "Sound",
     "topicIds": [
-      "T11349",
-      "T11309"
+      "T11309",
+      "T11349"
     ],
-    "candidateHash": "6f26c441269ef38a4a00c951e0c3c3c214d4af5f90ce95d7a3b376acfda1278b",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 12,
@@ -692,17 +647,16 @@
     "leaf": "cs.MM",
     "label": "Multimedia",
     "topicIds": [
-      "T13567",
-      "T14216",
       "T12260",
       "T13541",
+      "T13567",
       "T13873",
       "T14067",
+      "T14216",
       "T14254",
       "T14496",
       "T14516"
     ],
-    "candidateHash": "2ec7b42131ff809b439c178b0283d5b68cf0faa46b11e1777f704cb02fd2506e",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -712,18 +666,17 @@
     "leaf": "cs.SY",
     "label": "Systems and Control",
     "topicIds": [
+      "T10142",
       "T10249",
-      "T10820",
-      "T13541",
-      "T13935",
       "T10772",
+      "T10820",
       "T10933",
       "T11125",
       "T12794",
+      "T13541",
       "T13615",
-      "T10142"
+      "T13935"
     ],
-    "candidateHash": "b2f62e892136254b80d234c5f1e5e3f42982ab75dfde5ed0ae45b6212abc1ba8",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -739,7 +692,6 @@
       "T11680",
       "T12504"
     ],
-    "candidateHash": "a34ad11fc174cdee1c8874a765ba103cc82976138b6e45cbb2d19120222a3b88",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -749,7 +701,6 @@
     "leaf": "math.AP",
     "label": "Analysis of PDEs",
     "topicIds": [],
-    "candidateHash": "53b3f95b4b3c984c0572df4593ab8885a3cfd2ac74c72848c251fd86ac8e0c3f",
     "status": "no-candidates"
   },
   {
@@ -758,7 +709,6 @@
     "topicIds": [
       "T10948"
     ],
-    "candidateHash": "dc829700895eb77373d0ef4af13c581f673c39ac4d2aff3265b41fffab93aa63",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 14,
@@ -769,8 +719,8 @@
     "label": "Number Theory",
     "topicIds": [
       "T10061",
-      "T11166",
       "T10948",
+      "T11166",
       "T11329",
       "T11345",
       "T11428",
@@ -779,7 +729,6 @@
       "T13400",
       "T14500"
     ],
-    "candidateHash": "527d1f8ff2fee56e068c139629fe21336d30da09d345caf20c92a0351fe0ef6d",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -789,13 +738,12 @@
     "leaf": "math.PR",
     "label": "Probability",
     "topicIds": [
-      "T13500",
       "T11875",
+      "T13500",
       "T13546",
       "T13680",
       "T13797"
     ],
-    "candidateHash": "eaac847ab814cb44d11c4dfb20b71cf2d920519aeaef5616dc8aeca8296c227e",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -805,13 +753,12 @@
     "leaf": "math.ST",
     "label": "Statistics Theory",
     "topicIds": [
-      "T11875",
-      "T13797",
       "T11716",
       "T11871",
-      "T13500"
+      "T11875",
+      "T13500",
+      "T13797"
     ],
-    "candidateHash": "20e916a9820d717bda35e2127ec727fb9dfa25ec748085d20c8d2ce998324d72",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -821,17 +768,15 @@
     "leaf": "math.DG",
     "label": "Differential Geometry",
     "topicIds": [],
-    "candidateHash": "9730939abb1f763f233799fb2787d10d797eae47b00dc1d944b50eb09bb42bce",
     "status": "no-candidates"
   },
   {
     "leaf": "math.DS",
     "label": "Dynamical Systems",
     "topicIds": [
-      "T12396",
-      "T10588"
+      "T10588",
+      "T12396"
     ],
-    "candidateHash": "7ba6d7f786d576d1ada6eca805840d3d66aa2db56bfd360802ce8b68c38f3dc9",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -842,13 +787,12 @@
     "label": "Functional Analysis",
     "topicIds": [
       "T10541",
-      "T12037",
       "T11545",
       "T11871",
+      "T12037",
       "T12062",
       "T13797"
     ],
-    "candidateHash": "046e47f48d5f6991bc7d6c7c6114a84f95e4c3b3d69d8f6fa2eb08982998fc76",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 4,
@@ -858,13 +802,12 @@
     "leaf": "math.NA",
     "label": "Numerical Analysis",
     "topicIds": [
+      "T12135",
       "T12727",
       "T13400",
       "T13487",
-      "T12135",
       "T13806"
     ],
-    "candidateHash": "6284c474f7c8f70fb64a8aab9ccd0ff261f797e50d472e866554ca4ac0803045",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -876,7 +819,6 @@
     "topicIds": [
       "T14082"
     ],
-    "candidateHash": "4ed2164cfe7faf81867ffec644c05aaedabfe21bf762be75ab5e73c3c531d3e3",
     "status": "insufficient-sample",
     "sampleSize": 0,
     "onTarget": 0,
@@ -886,21 +828,19 @@
     "leaf": "math.LO",
     "label": "Logic",
     "topicIds": [],
-    "candidateHash": "eb492135134d0ffdbcaddecc1bd367d4137c49feaf72469214d5e6ed1211f442",
     "status": "no-candidates"
   },
   {
     "leaf": "math.GR",
     "label": "Group Theory",
     "topicIds": [
-      "T10849",
       "T10287",
       "T10304",
+      "T10849",
       "T10899",
       "T11151",
       "T11680"
     ],
-    "candidateHash": "3edd117713ebcdfa41e0697435574555396cc702c223961261db3180b1476f80",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 2,
@@ -912,7 +852,6 @@
     "topicIds": [
       "T10304"
     ],
-    "candidateHash": "73653899347d6724c1c830b4d83d85244386f8f62ef8fcd60f15546286e5a5cc",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -924,7 +863,6 @@
     "topicIds": [
       "T11703"
     ],
-    "candidateHash": "18c5190c821cfa9dda07a57a9de875dda34724a3c61e8aac3bdc03e332e4ebd0",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -934,7 +872,6 @@
     "leaf": "math.CA",
     "label": "Classical Analysis and ODEs",
     "topicIds": [],
-    "candidateHash": "3aed645da16882aa751257461c41554efd49a03364cb279f130e1070436fc7da",
     "status": "no-candidates"
   },
   {
@@ -952,7 +889,6 @@
       "T11829",
       "T12404"
     ],
-    "candidateHash": "10981569b1d79482c0561c11b389a7f59a08be2a0a3d3a83d5daccd8ece9eee8",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -970,7 +906,6 @@
       "T14280",
       "T14465"
     ],
-    "candidateHash": "23f632733172197283f90a9f7840d7b6f4cf131a39b433bdd24e67dcf7b1fdcd",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -980,14 +915,13 @@
     "leaf": "stat.ME",
     "label": "Methodology",
     "topicIds": [
-      "T10467",
-      "T13587",
       "T10206",
+      "T10467",
       "T11798",
       "T11810",
+      "T13587",
       "T14369"
     ],
-    "candidateHash": "306cc658fb2879c3dca00f25b4da1cb1aeb6305ba944408642a6dc22f4c10da5",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -1002,7 +936,6 @@
       "T13609",
       "T14406"
     ],
-    "candidateHash": "04498b5eebd975e8759ef312db53cffa7fdc75e1be0e1d3f3e5ba26fff20a692",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -1012,7 +945,6 @@
     "leaf": "stat.CO",
     "label": "Computation",
     "topicIds": [],
-    "candidateHash": "7a879ea3e8bf3b712e13f53c6ce110b3df9b2864ea2f593b0c45b98cdd36d24e",
     "status": "no-candidates"
   },
   {
@@ -1024,7 +956,6 @@
       "T13609",
       "T14406"
     ],
-    "candidateHash": "c21c8bda006124188080111cc537ebe25f7edb0d7e8f16165e00cb9c1cb974f3",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -1039,7 +970,6 @@
       "T12722",
       "T14051"
     ],
-    "candidateHash": "5b80a9442321bf0dfdfd91a15d4858e829cac26a718b76b8f86ca2b1f1a9ca6a",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -1060,7 +990,6 @@
       "T10804",
       "T10841"
     ],
-    "candidateHash": "836b2e2ad3079f968850f99fa20b355fc5a900e589ef26545acd280bb8baa524",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,
@@ -1081,7 +1010,6 @@
       "T10804",
       "T10841"
     ],
-    "candidateHash": "2ec4c3555d5b02d850587906a0ba0c16dc81b799160823ec474f47574ee55026",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 0,
@@ -1091,21 +1019,18 @@
     "leaf": "q-fin.ST",
     "label": "Statistical Finance",
     "topicIds": [],
-    "candidateHash": "0e67297c93c42a944f3921e6dbb43b2169aef16eb82d4170290d62298552e293",
     "status": "no-candidates"
   },
   {
     "leaf": "q-fin.CP",
     "label": "Computational Finance",
     "topicIds": [],
-    "candidateHash": "a07352bd530ebf99393b4fe73053765e4974fda56b150b1f872a47a2402b6c58",
     "status": "no-candidates"
   },
   {
     "leaf": "q-fin.PM",
     "label": "Portfolio Management",
     "topicIds": [],
-    "candidateHash": "a50e90d59e76ff97d5fe002e53d7a756abc73bfa164d4af89c887c941d871b56",
     "status": "no-candidates"
   },
   {
@@ -1117,7 +1042,6 @@
       "T14154",
       "T14317"
     ],
-    "candidateHash": "55006f64c00c43c56d450d03ff816d2de547970df04f99a87b8caa9086465235",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -1127,14 +1051,12 @@
     "leaf": "q-fin.MF",
     "label": "Mathematical Finance",
     "topicIds": [],
-    "candidateHash": "38c6c3b810233d8092748e6377e6b15ed60ad672f238b39bd9a4677df5bb102a",
     "status": "no-candidates"
   },
   {
     "leaf": "q-fin.PR",
     "label": "Pricing of Securities",
     "topicIds": [],
-    "candidateHash": "47c0b44cf6342b13a73058eba6f8ce58e42e56f9af7c7017f055fa967f75b295",
     "status": "no-candidates"
   },
   {
@@ -1144,7 +1066,6 @@
       "T10047",
       "T10067"
     ],
-    "candidateHash": "f9543cc83eb5074860205e4da6b832eafef67f05e9764ac81f7780d2a621f88c",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -1154,15 +1075,14 @@
     "leaf": "q-fin.GN",
     "label": "General Finance",
     "topicIds": [
+      "T10047",
+      "T10127",
       "T11817",
       "T13146",
       "T14154",
       "T14317",
-      "T10047",
-      "T10127",
       "T14464"
     ],
-    "candidateHash": "42b3b5816b7b88f2e40cafe36b570642c83d7389cc1969208411432930b6f610",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -1172,18 +1092,17 @@
     "leaf": "eess.SP",
     "label": "Signal Processing",
     "topicIds": [
-      "T10891",
-      "T13816",
-      "T14420",
       "T10232",
       "T10500",
       "T10767",
+      "T10891",
       "T11038",
       "T11233",
       "T12300",
-      "T12537"
+      "T12537",
+      "T13816",
+      "T14420"
     ],
-    "candidateHash": "fbd1103580cee9bc926d717c0e80f63680a015edaf1aa0f8b479e6bd435c3916",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -1193,15 +1112,14 @@
     "leaf": "eess.IV",
     "label": "Image and Video Processing",
     "topicIds": [
-      "T12983",
-      "T13114",
-      "T12597",
       "T11606",
+      "T12597",
+      "T12983",
       "T13049",
+      "T13114",
       "T13292",
       "T14257"
     ],
-    "candidateHash": "886fd442207cb338ea0daf7ba1c90e4c744448c9a030119dc31b4da6ce974c7f",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,
@@ -1222,7 +1140,6 @@
       "T11394",
       "T11701"
     ],
-    "candidateHash": "c1d7d5e652401860bde99187c908ee6f4f14b29d9160a099303363c4f0c3b646",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 11,
@@ -1232,11 +1149,10 @@
     "leaf": "eess.telecom",
     "label": "Telecommunications",
     "topicIds": [
-      "T13905",
       "T11499",
-      "T13816"
+      "T13816",
+      "T13905"
     ],
-    "candidateHash": "ef8da9249196b9000ea7a0d9b8dc3b5965a15e4548093618323d19d77f44f1a8",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 3,
@@ -1246,7 +1162,6 @@
     "leaf": "eess.electro",
     "label": "Electronics & Microelectronics",
     "topicIds": [],
-    "candidateHash": "2285205819a848e7ce8205eebba3a07971c65a2ff1c80dc71d724f0d8600155e",
     "status": "no-candidates"
   },
   {
@@ -1264,7 +1179,6 @@
       "T13093",
       "T13183"
     ],
-    "candidateHash": "2d5dfa565bf6ebdd5f6c0c7a72d314308cfb8aedf2cb2d8e522ae14b3bc6dc2d",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 11,
@@ -1274,11 +1188,10 @@
     "leaf": "eess.optics",
     "label": "Applied Optics & Photonics",
     "topicIds": [
-      "T10846",
       "T10205",
+      "T10846",
       "T12510"
     ],
-    "candidateHash": "3f0f30fa229f7fdfddb5d84f08584db0606af1f3737ed26e7b3e20486bf64acc",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -1290,7 +1203,6 @@
     "topicIds": [
       "T11170"
     ],
-    "candidateHash": "f7a859d58fcd1be9eb1eba3fe2e8ecfcc6d459b757129e5655083946048666f7",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 5,
@@ -1301,10 +1213,9 @@
     "label": "Fluid Mechanics",
     "topicIds": [
       "T10360",
-      "T13951",
-      "T13116"
+      "T13116",
+      "T13951"
     ],
-    "candidateHash": "a039f051559b9130b2a0f3d0c3d9327240070d7bc43f297e3a5c6fec385ea960",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -1316,13 +1227,12 @@
     "topicIds": [
       "T10568",
       "T11126",
-      "T12139",
-      "T13645",
-      "T13685",
       "T11529",
-      "T13200"
+      "T12139",
+      "T13200",
+      "T13645",
+      "T13685"
     ],
-    "candidateHash": "c889147acc47e9bcff9cd4f5d5df2510c418f4804f3457a7bfbc0314fefb1338",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -1332,7 +1242,6 @@
     "leaf": "mech.solid",
     "label": "Solid Mechanics",
     "topicIds": [],
-    "candidateHash": "80f1fcb443c09039d7a99d4022dfc9b15c3275b84bb64b2dcadcaa03f3cf5bc6",
     "status": "no-candidates"
   },
   {
@@ -1356,22 +1265,20 @@
       "T12007",
       "T12081"
     ],
-    "candidateHash": "4f0bc3508a72c7bb5e4695b1689c544eee17006ddf6ce4002c9342356b8e0889",
     "status": "inherited"
   },
   {
     "leaf": "mech.mfg",
     "label": "Manufacturing",
     "topicIds": [
-      "T10705",
-      "T10783",
       "T10615",
+      "T10705",
       "T10707",
+      "T10783",
       "T12959",
       "T13451",
       "T14262"
     ],
-    "candidateHash": "651b9178780681d7b9298c4ae6dcef2e5caf6a8c7b5665661ff7184f6a08db39",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 12,
@@ -1381,7 +1288,6 @@
     "leaf": "mech.cad",
     "label": "CAD & Simulation",
     "topicIds": [],
-    "candidateHash": "eda7a58bd8d4c68f0e82ecf6d7e5919c5b49ef6cc0e4d3139272055634f96820",
     "status": "no-candidates"
   },
   {
@@ -1396,7 +1302,6 @@
       "T12959",
       "T13990"
     ],
-    "candidateHash": "7cc844f1d1c645743dade83000cbe59328b8c2481e0e5a924150704f89a02c08",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 4,
@@ -1406,7 +1311,6 @@
     "leaf": "mech.acoustics",
     "label": "Acoustics & Vibrations",
     "topicIds": [],
-    "candidateHash": "7b841b70d4d084c457e5e76a26e86df5649fbc6377b7bed996ed1a47f1b41997",
     "status": "no-candidates"
   },
   {
@@ -1429,7 +1333,6 @@
       "T10687",
       "T12487"
     ],
-    "candidateHash": "8caf32bb84a1e05e9750f71cd53183f741e50390217cc54238e63c04cb84be07",
     "status": "inherited"
   },
   {
@@ -1439,12 +1342,11 @@
       "T10233",
       "T11375",
       "T12233",
-      "T13236",
-      "T13941",
       "T12940",
-      "T13031"
+      "T13031",
+      "T13236",
+      "T13941"
     ],
-    "candidateHash": "2e1c7790840b26b4424a9f36329e18155406047946f089863312bbc058dfa2cc",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -1470,23 +1372,21 @@
       "T11634",
       "T10969"
     ],
-    "candidateHash": "6f6603e461a8cec24f37b7a34c0db96f7160668965d0b660b3247f0bccd156ca",
     "status": "inherited"
   },
   {
     "leaf": "civil.trans",
     "label": "Transportation",
     "topicIds": [
-      "T13527",
-      "T14445",
       "T11344",
       "T11622",
       "T11807",
       "T12306",
       "T13190",
-      "T13601"
+      "T13527",
+      "T13601",
+      "T14445"
     ],
-    "candidateHash": "2e29fa180066859ed38912cf5d671c9a113755aeab3c3ea79021305b74f8a909",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 10,
@@ -1496,11 +1396,10 @@
     "leaf": "civil.quake",
     "label": "Earthquake Engineering",
     "topicIds": [
-      "T14146",
       "T10160",
-      "T12233"
+      "T12233",
+      "T14146"
     ],
-    "candidateHash": "45575357ed143854ccfaab89b7ca73aed81d4ac0931b92ebcc530847827ff118",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -1527,20 +1426,18 @@
       "T10284",
       "T11952"
     ],
-    "candidateHash": "ead94ee4449a7767da448c564ae4aed215665d68aa0fb26be5e9cead99f50f66",
     "status": "inherited"
   },
   {
     "leaf": "civil.mat",
     "label": "Construction Materials",
     "topicIds": [
-      "T12190",
-      "T13236",
       "T12105",
+      "T12190",
       "T12940",
-      "T13031"
+      "T13031",
+      "T13236"
     ],
-    "candidateHash": "4a79a49b4bdac9ccc4d07e694c3d0a2f5d98df4176694c0ce1ec9784a5474b44",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 11,
@@ -1554,7 +1451,6 @@
       "T13689",
       "T14456"
     ],
-    "candidateHash": "09e4ecb75a8e3dcae22d53fd13065657c90bfed5e36167fc7b080779c4f4a814",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 2,
@@ -1566,10 +1462,9 @@
     "topicIds": [
       "T10192",
       "T11593",
-      "T13104",
-      "T12038"
+      "T12038",
+      "T13104"
     ],
-    "candidateHash": "80250691c9dc4bc1aa5069a05bfa2189dcb058f77bdde0870a46acd3828c676c",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 11,
@@ -1590,7 +1485,6 @@
       "T12416",
       "T12628"
     ],
-    "candidateHash": "61c075d55a9e44de62f4ff91f0a6d0c54e5a3e0249606a65078165e53d0417b5",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -1603,7 +1497,6 @@
       "T10610",
       "T11471"
     ],
-    "candidateHash": "f683e9692b6b0f282ba9be3d371f19553ef2d2d698f096daf4c6eefba4c628df",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 6,
@@ -1616,7 +1509,6 @@
       "T11947",
       "T12046"
     ],
-    "candidateHash": "33187a6b3d8082639711ca2632ad225b8a83615dbe250111e6ebd4f3925442cb",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 7,
@@ -1626,7 +1518,6 @@
     "leaf": "chemeng.bio",
     "label": "Bioengineering",
     "topicIds": [],
-    "candidateHash": "4e7e9e188b169c0c2bcee61ec555537dbde67263707ad704cf14fef122d172b1",
     "status": "no-candidates"
   },
   {
@@ -1635,7 +1526,6 @@
     "topicIds": [
       "T14184"
     ],
-    "candidateHash": "eee9c8a05bea8177b5df10d6dfa61065f24d19b9dffd7b57add048e62203070c",
     "status": "insufficient-sample",
     "sampleSize": 13,
     "onTarget": 13,
@@ -1647,7 +1537,6 @@
     "topicIds": [
       "T10132"
     ],
-    "candidateHash": "7275bb7b267cfb475a271cd414a890377a91c75226760adbcb0d7d929789e7bc",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -1657,7 +1546,6 @@
     "leaf": "chemeng.sep",
     "label": "Separation Technologies",
     "topicIds": [],
-    "candidateHash": "5914fd16fbc6b5429e549b017f96d1ad5e29c8ed20f504a40e8c6465471b981d",
     "status": "no-candidates"
   },
   {
@@ -1675,7 +1563,6 @@
       "T13099",
       "T13483"
     ],
-    "candidateHash": "63f3f03efcd24ab8f3a2600bbf39b4aa65f2fa388806d5674d85a23883a0c79e",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -1685,18 +1572,17 @@
     "leaf": "med.onco",
     "label": "Oncology",
     "topicIds": [
+      "T10129",
       "T10231",
+      "T10950",
+      "T11141",
       "T11149",
+      "T11296",
       "T11328",
       "T11669",
       "T12695",
-      "T13123",
-      "T10129",
-      "T10950",
-      "T11141",
-      "T11296"
+      "T13123"
     ],
-    "candidateHash": "d2c1e7499a463fe7aa30810d8aea3776003637a380084769dbe5207ce25eb65a",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 14,
@@ -1706,7 +1592,6 @@
     "leaf": "med.cardio",
     "label": "Cardiology",
     "topicIds": [],
-    "candidateHash": "d847b6ff93cad9b9639d7d85f49e75b169a31bf32aaa6521fc3aaa7dd954cc2d",
     "status": "no-candidates"
   },
   {
@@ -1726,7 +1611,6 @@
       "T10919",
       "T11735"
     ],
-    "candidateHash": "51783cb0a516aa3e3540d12ff454c9c3e7c45456ac8bf58d0b1d89b24ca0a48b",
     "status": "inherited"
   },
   {
@@ -1746,25 +1630,23 @@
       "T11093",
       "T10168"
     ],
-    "candidateHash": "3cbf7468c446cfeceaee999d1de8dd5b7a280e2a3b06e39cf9a56cd4b4fc21a7",
     "status": "inherited"
   },
   {
     "leaf": "med.pubh",
     "label": "Public Health & Epidemiology",
     "topicIds": [
-      "T14093",
+      "T10312",
+      "T11555",
       "T12041",
+      "T12413",
       "T12492",
       "T12935",
-      "T14495",
-      "T11555",
-      "T12413",
       "T13112",
       "T13522",
-      "T10312"
+      "T14093",
+      "T14495"
     ],
-    "candidateHash": "3ac0df851d03000708ff7560423e3cd8f229c32015e20915b9c97e33ce047462",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 14,
@@ -1774,18 +1656,17 @@
     "leaf": "med.pharma",
     "label": "Pharmacology",
     "topicIds": [
-      "T11752",
-      "T12539",
-      "T12649",
-      "T13202",
       "T10800",
       "T11635",
+      "T11752",
       "T12023",
       "T12356",
+      "T12539",
+      "T12649",
       "T12817",
-      "T13037"
+      "T13037",
+      "T13202"
     ],
-    "candidateHash": "4ea7531205e6688c5c815a321beb3df0f288ccb953a7fe2ffe61828290662589",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 12,
@@ -1804,7 +1685,6 @@
       "T14072",
       "T14199"
     ],
-    "candidateHash": "6a5071b0a889d69614028b4866ef2b1bdb3146fbe278d72cf376dbedc928e18f",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 11,
@@ -1814,18 +1694,17 @@
     "leaf": "med.peds",
     "label": "Pediatrics",
     "topicIds": [
+      "T10234",
+      "T10436",
+      "T10560",
       "T11174",
       "T11292",
       "T12460",
       "T12552",
       "T12823",
       "T13770",
-      "T14437",
-      "T10234",
-      "T10436",
-      "T10560"
+      "T14437"
     ],
-    "candidateHash": "d60961d322ec9203426dbd2216010e7c2b89599cf5186582d73b35ed2b932af5",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 8,
@@ -1846,7 +1725,6 @@
       "T11322",
       "T11377"
     ],
-    "candidateHash": "02c169d15f7562b12e8f6bf3bcf0739ca81d19f5cc5ad359dffe35ef55592189",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 12,
@@ -1856,7 +1734,6 @@
     "leaf": "med.immuno",
     "label": "Clinical Immunology",
     "topicIds": [],
-    "candidateHash": "018b23a2c9c37232c54c61f5cc61e2d50241159b9384340341b5187760a57b1e",
     "status": "no-candidates"
   },
   {
@@ -1865,7 +1742,6 @@
     "topicIds": [
       "T13533"
     ],
-    "candidateHash": "14ac3ae8d528155ac3bf06b6c090b0e825ea83a7aefe10120ab623bfc7b06f70",
     "status": "insufficient-sample",
     "sampleSize": 12,
     "onTarget": 1,
@@ -1886,7 +1762,6 @@
       "T13543",
       "T13759"
     ],
-    "candidateHash": "d9f8ef3dcea058280d0c4dd4e70d442ecccce897641088933564b76390ed6f05",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 1,
@@ -1899,7 +1774,6 @@
       "T11363",
       "T11636"
     ],
-    "candidateHash": "6e65dd15a7b321a9d146251c161c09242d0b00007dd34a5374cf8699957bd963",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 5,
@@ -1910,17 +1784,16 @@
     "label": "Infectious Diseases",
     "topicIds": [
       "T10296",
-      "T11381",
-      "T12297",
-      "T12914",
-      "T11819",
-      "T12492",
       "T10482",
       "T10897",
+      "T11381",
       "T11430",
-      "T12402"
+      "T11819",
+      "T12297",
+      "T12402",
+      "T12492",
+      "T12914"
     ],
-    "candidateHash": "e86b04c4e5e261780df99e598a966a3aa9195c58d05d2b7694c171a46b722be4",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,
@@ -1934,7 +1807,6 @@
       "T13597",
       "T13953"
     ],
-    "candidateHash": "d07f9b8d24b385aa4123d2fb263856a4c8089a6245d969e119505d9fd96094af",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -1955,7 +1827,6 @@
       "T10676",
       "T11764"
     ],
-    "candidateHash": "903c26e90fdc804e1dfb38d2536a66a0c7b06c87fdcb32515f635defc94896b0",
     "status": "inherited"
   },
   {
@@ -1973,7 +1844,6 @@
       "T11765",
       "T11237"
     ],
-    "candidateHash": "4c6c9af165dd69dc74281e7efe44f85438d64571ede40c0dece0138dd9435b95",
     "status": "inherited"
   },
   {
@@ -1991,7 +1861,6 @@
       "T11841",
       "T10407"
     ],
-    "candidateHash": "6f622eeed59aec4bbccb1403c4926ed21f87331d6c65e7904f021ed62902e2c9",
     "status": "inherited"
   },
   {
@@ -2011,7 +1880,6 @@
       "T10985",
       "T10614"
     ],
-    "candidateHash": "037b6f97e0b3c82b1f52c7897cd8c4c0e57a0a766c94d3c76597ca7fe79e6b67",
     "status": "inherited"
   },
   {
@@ -2035,24 +1903,22 @@
       "T12091",
       "T11913"
     ],
-    "candidateHash": "9f713e358b53a78765ef7d905b32c3465fac7f4da9456078347ee06c849b80e0",
     "status": "inherited"
   },
   {
     "leaf": "bio.evo",
     "label": "Evolution & Population Dynamics",
     "topicIds": [
-      "T11764",
       "T10012",
-      "T14310",
       "T10174",
       "T10751",
+      "T11764",
       "T12043",
       "T12968",
       "T13102",
+      "T14310",
       "T14378"
     ],
-    "candidateHash": "76111834f60983f3a984212705d6e606aca36a6df07ffad9a520e9470088ec60",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 13,
@@ -2062,7 +1928,6 @@
     "leaf": "bio.zoo",
     "label": "Zoology",
     "topicIds": [],
-    "candidateHash": "08ff9ed0743da8da8b09758678b7c793dbb68c6406acd27b539fe639128eadfd",
     "status": "no-candidates"
   },
   {
@@ -2074,7 +1939,6 @@
       "T13015",
       "T14310"
     ],
-    "candidateHash": "024e9324c5264614b9f45fdeff02652364f6f7700387995f420e6ca199560a82",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -2088,7 +1952,6 @@
       "T12181",
       "T12349"
     ],
-    "candidateHash": "ee12b728c5e8f7fc57ec33bda2dd0e5b7e8699963e5f805c96be626da0f3a5c6",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,
@@ -2100,7 +1963,6 @@
     "topicIds": [
       "T10134"
     ],
-    "candidateHash": "a1224c61e03e911b1be53ccc4b000f46b17eb22404487a45d0ceabe48386b74d",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 4,
@@ -2118,7 +1980,6 @@
       "T10519",
       "T12576"
     ],
-    "candidateHash": "72d53e728bf9100883fb9afdee31036a3c5a9bf5363640e53607688bfdddb27f",
     "status": "inherited"
   },
   {
@@ -2138,7 +1999,6 @@
       "T10745",
       "T11209"
     ],
-    "candidateHash": "7da28eb211f1f6d817c2caa84f351e6a4e99cb81908aa265baef4d146593c04c",
     "status": "inherited"
   },
   {
@@ -2156,7 +2016,6 @@
       "T10303",
       "T11884"
     ],
-    "candidateHash": "cb84e958c92ae0e3b3217661b6457238156f2ecde84b5e96f986d6dd383f92c7",
     "status": "inherited"
   },
   {
@@ -2165,7 +2024,6 @@
     "topicIds": [
       "T12596"
     ],
-    "candidateHash": "50fde4737ef71e6b47e6f848582305443e9cc2b55c3d8befa2a6886a43aca44b",
     "status": "passed",
     "sampleSize": 15,
     "onTarget": 15,
@@ -2182,7 +2040,6 @@
       "T12929",
       "T14018"
     ],
-    "candidateHash": "f20d29192efcfa3fdd42e686d292fb1c28c682d51d2b9ba3ba24954fa8351042",
     "status": "rejected",
     "sampleSize": 15,
     "onTarget": 9,

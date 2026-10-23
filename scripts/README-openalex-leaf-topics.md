@@ -44,15 +44,19 @@ node scripts/generate-openalex-leaf-topics.ts \
   --report /path/coverage.json
 ```
 
-The report includes every leaf in `categoryTaxonomy.ts`. For each new leaf,
-the generator restricts candidates to the existing area's OpenAlex ancestors,
+The report includes every leaf in `categoryTaxonomy.ts`. For each leaf with
+neither an inherited list nor a review, the generator restricts candidates to the existing area's OpenAlex ancestors,
 then ranks topic names and keywords against the leaf label. At least 60% of the
 label's significant words must match; at most ten topic IDs are proposed. This
 is candidate selection, not relevance evidence. Generic labels, synonyms and
 areas that cross the two taxonomies can require further selector work.
 
-The report's `candidateHash` binds a review to that leaf's generated topic IDs.
-No candidate enters the runtime map without a complete review.
+No candidate enters the runtime map without a complete review. Once a leaf has
+a review, its topics are the `primary_topic.id` values its sample query named,
+and the generator no longer derives them from the leaf's label or the
+catalogue. Renaming the leaf or changing the catalogue therefore keeps the
+review. To review a different topic list for the leaf, replace its review with
+a new sample.
 
 ## Review a recent sample
 
@@ -81,9 +85,8 @@ The reviews JSON is keyed by leaf ID. Each value contains:
 
 | Key | Contents |
 | --- | --- |
-| `candidateHash` | The hash from the candidate report |
 | `capturedAt` | UTC capture timestamp |
-| `query` | The works URL as sent; a `mailto` may be left out, as it does not change the results |
+| `query` | The works URL as sent; a `mailto` may be left out, as it does not change the results. Its sorted `primary_topic.id` values are the reviewed topics |
 | `works` | Every returned work, newest first, with only `id`, `type`, `title`, `publication_date` and `primary_topic.id` |
 | `labels` | One `{ "workId": "https://openalex.org/W…", "label": "on-target" }` or `off-target` per work |
 
@@ -102,9 +105,8 @@ Low precision and short samples leave a leaf disabled and are reported as
 aborts generation before the previous map is overwritten. `not-reviewed`,
 `no-candidates` and `no-catalogue` are not failed precision tests.
 
-After review, retain the evidence in `scripts/data/openalex-topic-reviews.json`
-and keep the catalogue unchanged, since a different catalogue changes the
-candidate hashes. Regenerate with the default command and verify `--check`.
+After review, retain the evidence in `scripts/data/openalex-topic-reviews.json`,
+regenerate with the default command and verify `--check`.
 Do not hand-edit the generated file or replace unknown access, citation counts
 or review status while labelling. A source's explicit
 `open_access.is_oa: false` is evidence of subscription access; missing access

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +10,6 @@ interface Topic {
   field?: { id: string }; subfield?: { id: string };
 }
 interface Review {
-  candidateHash: string;
   capturedAt: string;
   query: string;
   // Only the fields checked below; the query's has_abstract:true proves the
@@ -54,7 +52,6 @@ function readCatalogue(value: unknown): Topic[] {
 }
 
 function candidatesForLeaf(leaf: typeof leaves[number], catalogue: Topic[]) {
-  if (baseline.topics[leaf.id]) return baseline.topics[leaf.id];
   let terms = [...new Set(words(leaf.label).filter(word => !stopWords.has(word)))];
   if (!terms.length) terms = words(leaf.areaLabel).filter(word => !stopWords.has(word));
   if (!terms.length) return [];
@@ -79,11 +76,10 @@ function topicKey(value: string) {
   return String(value || '').split('/').pop()!;
 }
 
-function checkReview(leaf: string, topicIds: string[], candidateHash: string, value: unknown) {
+function checkReview(leaf: string, value: unknown) {
   const review = value as Review | null;
   const invalid = (reason: string): never => { throw new Error(`${leaf}: ${reason}`); };
-  if (!review || review.candidateHash !== candidateHash) invalid('review does not match the generated candidates');
-  if (!topicIds.length) invalid('review has no candidate topics');
+  if (!review || typeof review.query !== 'string') invalid('missing review');
   const capturedAt = Date.parse(review!.capturedAt);
   if (!Number.isFinite(capturedAt)) invalid('missing capture date');
   const day = (time: number) => new Date(time).toISOString().slice(0, 10);
@@ -91,8 +87,14 @@ function checkReview(leaf: string, topicIds: string[], candidateHash: string, va
   const lastDay = day(capturedAt);
   const query = new URL(review!.query);
   const filters = query.searchParams.get('filter')?.split(',') || [];
+  // The topics the sample asked for are the ones it is evidence for; the label
+  // and the catalogue only proposed them, so editing either keeps the review.
+  const topicIds = filters.find(filter => filter.startsWith('primary_topic.id:'))?.slice('primary_topic.id:'.length).split('|') || [];
+  if (!topicIds.length || topicIds.some(id => !/^T\d+$/.test(id)) || topicIds.join() !== [...new Set(topicIds)].sort().join()) {
+    invalid('the query must name its topic IDs once each, sorted');
+  }
   const required = [
-    `primary_topic.id:${[...topicIds].sort().join('|')}`, 'type:article',
+    `primary_topic.id:${topicIds.join('|')}`, 'type:article',
     `from_publication_date:${firstDay}`, `to_publication_date:${lastDay}`,
     'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true',
   ];
@@ -130,7 +132,7 @@ function checkReview(leaf: string, topicIds: string[], candidateHash: string, va
   const precision = sampleSize ? onTarget / sampleSize : null;
   const status = sampleSize < minimumSample ? 'insufficient-sample'
     : precision! >= minimumPrecision ? 'passed' : 'rejected';
-  return { status, sampleSize, onTarget, precision };
+  return { topicIds, status, sampleSize, onTarget, precision };
 }
 
 const { values } = parseArgs({ options: {
@@ -141,22 +143,22 @@ const { values } = parseArgs({ options: {
   check: { type: 'boolean', default: false },
 } });
 const catalogue = readCatalogue(readJson(values.catalogue!));
-const reviews = readJson(values.reviews!);
+const reviews = readJson(values.reviews!) as Record<string, unknown>;
 if (!reviews || typeof reviews !== 'object' || Array.isArray(reviews)) throw new Error('Reviews must be keyed by taxonomy leaf ID');
-const reviewEntries = Object.entries(reviews);
-for (const [leaf] of reviewEntries) {
+for (const leaf of Object.keys(reviews)) {
   if (!leaves.some(item => item.id === leaf) || baseline.topics[leaf]) throw new Error(`Review must name a new taxonomy leaf: ${leaf}`);
 }
 const active = { ...baseline.topics };
 const report = leaves.map(leaf => {
+  const row = { leaf: leaf.id, label: leaf.label };
+  if (baseline.topics[leaf.id]) return { ...row, topicIds: baseline.topics[leaf.id], status: 'inherited' };
+  if (Object.hasOwn(reviews, leaf.id)) {
+    const result = checkReview(leaf.id, reviews[leaf.id]);
+    if (result.status === 'passed') active[leaf.id] = result.topicIds;
+    return { ...row, ...result };
+  }
   const topicIds = candidatesForLeaf(leaf, catalogue);
-  const candidateHash = createHash('sha256').update(JSON.stringify([leaf.id, topicIds])).digest('hex');
-  const review = reviewEntries.find(([id]) => id === leaf.id);
-  const result = baseline.topics[leaf.id] ? { status: 'inherited' }
-    : review ? checkReview(leaf.id, topicIds, candidateHash, review[1])
-      : { status: topicIds.length ? 'not-reviewed' : catalogue.length ? 'no-candidates' : 'no-catalogue' };
-  if (result.status === 'passed') active[leaf.id] = topicIds;
-  return { leaf: leaf.id, label: leaf.label, topicIds, candidateHash, ...result };
+  return { ...row, topicIds, status: topicIds.length ? 'not-reviewed' : catalogue.length ? 'no-candidates' : 'no-catalogue' };
 });
 const output = [
   '// Generated by scripts/generate-openalex-leaf-topics.ts; do not edit.',

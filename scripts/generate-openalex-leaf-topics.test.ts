@@ -35,12 +35,12 @@ function setup(t: import('node:test').TestContext) {
     '--reviews', reviews, '--out', output, '--report', report, ...extra,
   ], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
   const coverage = () => JSON.parse(readFileSync(report, 'utf8')) as Array<{
-    leaf: string; status: string; topicIds: string[]; candidateHash: string; sampleSize?: number; precision?: number;
+    leaf: string; status: string; topicIds: string[]; sampleSize?: number; precision?: number;
   }>;
   return { directory, reviews, output, report, run, coverage };
 }
 
-function evidence(topic: string, candidateHash: string, relevant = 12) {
+function evidence(topic: string, relevant = 12) {
   const works = Array.from({ length: 15 }, (_, index) => ({
     id: `https://openalex.org/W99000${index}`, type: 'article',
     title: `Synthetic scientific result ${index}`, publication_date: '2026-10-20',
@@ -54,7 +54,7 @@ function evidence(topic: string, candidateHash: string, relevant = 12) {
   query.searchParams.set('page', '1');
   query.searchParams.set('mailto', 'app@papertok.io');
   return {
-    candidateHash, capturedAt: '2026-10-22T12:00:00Z', query: query.href, works,
+    capturedAt: '2026-10-22T12:00:00Z', query: query.href, works,
     labels: works.map((work, index) => ({ workId: work.id, label: index < relevant ? 'on-target' : 'off-target' })),
   };
 }
@@ -83,7 +83,7 @@ test('complete recent labels enable generated AI, cosmology and economics candid
   const rows = coverage();
   writeFileSync(reviews, JSON.stringify(Object.fromEntries(['cs.AI', 'astro-ph.CO', 'econ.GN'].map(leaf => {
     const row = rows.find(row => row.leaf === leaf)!;
-    return [leaf, evidence(row.topicIds[0], row.candidateHash)];
+    return [leaf, evidence(row.topicIds[0])];
   }))));
   const result = run();
   assert.equal(result.status, 0, result.stderr);
@@ -96,8 +96,8 @@ test('complete recent labels enable generated AI, cosmology and economics candid
 test('a review records only what the gate checks: no abstracts, no sampler address', t => {
   const { run, reviews, output, coverage } = setup(t);
   assert.equal(run().status, 0);
-  const { topicIds, candidateHash } = coverage().find(row => row.leaf === 'cs.AI')!;
-  const review = evidence(topicIds[0], candidateHash);
+  const { topicIds } = coverage().find(row => row.leaf === 'cs.AI')!;
+  const review = evidence(topicIds[0]);
   const query = new URL(review.query);
   query.searchParams.delete('mailto');
   // The query's has_abstract:true is the evidence that every work had one.
@@ -106,7 +106,7 @@ test('a review records only what the gate checks: no abstracts, no sampler addre
   const result = run();
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(coverage().find(row => row.leaf === 'cs.AI'), {
-    leaf: 'cs.AI', label: 'Artificial Intelligence', topicIds, candidateHash,
+    leaf: 'cs.AI', label: 'Artificial Intelligence', topicIds,
     status: 'passed', sampleSize: 15, onTarget: 12, precision: 0.8,
   });
   assert.ok(readFileSync(output, 'utf8').includes("'cs.AI':"));
@@ -115,12 +115,12 @@ test('a review records only what the gate checks: no abstracts, no sampler addre
 test('low precision or too few papers cannot enable a leaf', t => {
   const { run, reviews, output, coverage } = setup(t);
   assert.equal(run().status, 0);
-  const { topicIds, candidateHash } = coverage().find(row => row.leaf === 'cs.AI')!;
-  writeFileSync(reviews, JSON.stringify({ 'cs.AI': evidence(topicIds[0], candidateHash, 9) }));
+  const { topicIds } = coverage().find(row => row.leaf === 'cs.AI')!;
+  writeFileSync(reviews, JSON.stringify({ 'cs.AI': evidence(topicIds[0], 9) }));
   assert.equal(run().status, 0);
   assert.equal(coverage().find(row => row.leaf === 'cs.AI')!.status, 'rejected');
   assert.ok(!readFileSync(output, 'utf8').includes("'cs.AI':"));
-  const short = evidence(topicIds[0], candidateHash);
+  const short = evidence(topicIds[0]);
   short.works = short.works.slice(0, 5);
   short.labels = short.labels.slice(0, 5);
   writeFileSync(reviews, JSON.stringify({ 'cs.AI': short }));
@@ -129,14 +129,14 @@ test('low precision or too few papers cannot enable a leaf', t => {
   assert.ok(!readFileSync(output, 'utf8').includes("'cs.AI':"));
 });
 
-test('stale candidates, duplicate labels and non-feed samples fail without overwriting output', t => {
+test('unsorted topics, duplicate labels and non-feed samples fail without overwriting output', t => {
   const { run, reviews, output, coverage } = setup(t);
   assert.equal(run().status, 0);
   const before = readFileSync(output, 'utf8');
-  const { topicIds, candidateHash } = coverage().find(row => row.leaf === 'cs.AI')!;
-  for (const change of ['hash', 'duplicate-label', 'missing-label', 'text-query', 'long-page', 'old-paper', 'no-abstract-filter', 'wrong-topic']) {
-    const review = evidence(topicIds[0], candidateHash);
-    if (change === 'hash') review.candidateHash = 'stale';
+  const { topicIds } = coverage().find(row => row.leaf === 'cs.AI')!;
+  for (const change of ['unsorted-topics', 'duplicate-label', 'missing-label', 'text-query', 'long-page', 'old-paper', 'no-abstract-filter', 'wrong-topic']) {
+    const review = evidence(topicIds[0]);
+    if (change === 'unsorted-topics') review.query = review.query.replace(`primary_topic.id%3A${topicIds[0]}`, `primary_topic.id%3AT99999%7C${topicIds[0]}`);
     if (change === 'duplicate-label') review.labels[1] = review.labels[0];
     if (change === 'missing-label') review.labels.pop();
     if (change === 'text-query') review.query = 'https://api.openalex.org/works?search=Artificial+Intelligence';
@@ -164,18 +164,38 @@ test('--check detects a stale generated map or coverage report', t => {
   assert.equal(readFileSync(report, 'utf8'), '[]\n');
 });
 
-test('generation can reconstruct a missing output from taxonomy inputs', t => {
+function copyCheckout(t: import('node:test').TestContext) {
   const { directory } = setup(t);
   const checkout = join(directory, 'checkout');
   mkdirSync(checkout);
   cpSync(new URL('./', import.meta.url), join(checkout, 'scripts'), { recursive: true });
   cpSync(new URL('../src/', import.meta.url), join(checkout, 'src'), { recursive: true });
   writeFileSync(join(checkout, 'package.json'), '{"type":"module"}\n');
+  const generate = () => spawnSync(process.execPath, ['scripts/generate-openalex-leaf-topics.ts'], { cwd: checkout, encoding: 'utf8' });
+  return { checkout, generate };
+}
+
+test('generation can reconstruct a missing output from taxonomy inputs', t => {
+  const { checkout, generate } = copyCheckout(t);
   const output = join(checkout, 'src/data/openAlexLeafTopics.generated.ts');
   rmSync(output);
-  const result = spawnSync(process.execPath, ['scripts/generate-openalex-leaf-topics.ts'], {
-    cwd: checkout, encoding: 'utf8',
-  });
+  const result = generate();
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(output, 'utf8'), /'bio\.mol': \['T10878', 'T10521', 'T10604'/);
+});
+
+test("renaming a reviewed leaf keeps its review: its topics are the ones the sample's query named", t => {
+  const { checkout, generate } = copyCheckout(t);
+  const taxonomy = join(checkout, 'src/data/categoryTaxonomy.ts');
+  const output = join(checkout, 'src/data/openAlexLeafTopics.generated.ts');
+  const report = join(checkout, 'scripts/data/openalex-leaf-topics-coverage.json');
+  const rowOf = (leaf: string) => (JSON.parse(readFileSync(report, 'utf8')) as Array<{ leaf: string }>).find(row => row.leaf === leaf)!;
+  const map = readFileSync(output, 'utf8');
+  const reviewed = rowOf('cs.CV');
+  // A copy edit that changes which catalogue topics the label proposes.
+  writeFileSync(taxonomy, readFileSync(taxonomy, 'utf8').replace("'cs.CV': { label: 'Computer Vision' }", "'cs.CV': { label: 'Vision' }"));
+  const result = generate();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(output, 'utf8'), map, 'the map keeps the reviewed topics');
+  assert.deepEqual(rowOf('cs.CV'), { ...reviewed, label: 'Vision' });
 });

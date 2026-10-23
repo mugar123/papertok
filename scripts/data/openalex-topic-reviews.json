@@ -1,6 +1,5 @@
 {
   "astro-ph.CO": {
-    "candidateHash": "c08d57fc54d740ee992c8320483cc25e5b6960cdaa0153ed8318b889f1f44c67",
     "capturedAt": "2026-10-23T08:04:45.919Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10026%7CT10095%7CT11090%7CT11415%7CT13080%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -39,7 +38,6 @@
     ]
   },
   "astro-ph.EP": {
-    "candidateHash": "a65acd8953cfe8577f5a0cb23655d8955d1ad20af6c095f31df191f6f02c7f20",
     "capturedAt": "2026-10-23T08:04:47.748Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10039%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -78,7 +76,6 @@
     ]
   },
   "astro-ph.HE": {
-    "candidateHash": "896ffe07bc7cc61b6fa6501d1c3bae0eae4515e2ea4d49c106f828d36741533f",
     "capturedAt": "2026-10-23T08:04:47.134Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10818%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -117,7 +114,6 @@
     ]
   },
   "astro-ph.SR": {
-    "candidateHash": "9169548526dd3d2849f0ab5cf50872b1843272f2af0f0e7e0fc71d3527574f67",
     "capturedAt": "2026-10-23T08:04:46.521Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10039%7CT10477%7CT13126%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -156,7 +152,6 @@
     ]
   },
   "bio.biotech": {
-    "candidateHash": "f20d29192efcfa3fdd42e686d292fb1c28c682d51d2b9ba3ba24954fa8351042",
     "capturedAt": "2026-10-23T08:05:44.788Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10120%7CT10240%7CT11426%7CT12181%7CT12929%7CT14018%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -195,7 +190,6 @@
     ]
   },
   "bio.bot": {
-    "candidateHash": "024e9324c5264614b9f45fdeff02652364f6f7700387995f420e6ca199560a82",
     "capturedAt": "2026-10-23T08:05:42.368Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12618%7CT12630%7CT13015%7CT14310%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -234,7 +228,6 @@
     ]
   },
   "bio.evo": {
-    "candidateHash": "76111834f60983f3a984212705d6e606aca36a6df07ffad9a520e9470088ec60",
     "capturedAt": "2026-10-23T08:05:41.763Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10012%7CT10174%7CT10751%7CT11764%7CT12043%7CT12968%7CT13102%7CT14310%7CT14378%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -273,7 +266,6 @@
     ]
   },
   "bio.immuno": {
-    "candidateHash": "a1224c61e03e911b1be53ccc4b000f46b17eb22404487a45d0ceabe48386b74d",
     "capturedAt": "2026-10-23T08:05:43.572Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10134%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -312,7 +304,6 @@
     ]
   },
   "bio.marine": {
-    "candidateHash": "50fde4737ef71e6b47e6f848582305443e9cc2b55c3d8befa2a6886a43aca44b",
     "capturedAt": "2026-10-23T08:05:44.186Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12596%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -351,7 +342,6 @@
     ]
   },
   "bio.micro": {
-    "candidateHash": "ee12b728c5e8f7fc57ec33bda2dd0e5b7e8699963e5f805c96be626da0f3a5c6",
     "capturedAt": "2026-10-23T08:05:42.969Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12167%7CT12181%7CT12349%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -390,7 +380,6 @@
     ]
   },
   "chemeng.ceramics": {
-    "candidateHash": "7275bb7b267cfb475a271cd414a890377a91c75226760adbcb0d7d929789e7bc",
     "capturedAt": "2026-10-23T08:05:33.869Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10132%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -429,7 +418,6 @@
     ]
   },
   "chemeng.energy": {
-    "candidateHash": "33187a6b3d8082639711ca2632ad225b8a83615dbe250111e6ebd4f3925442cb",
     "capturedAt": "2026-10-23T08:05:32.653Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11947%7CT12046%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -468,7 +456,6 @@
     ]
   },
   "chemeng.metal": {
-    "candidateHash": "eee9c8a05bea8177b5df10d6dfa61065f24d19b9dffd7b57add048e62203070c",
     "capturedAt": "2026-10-23T08:05:33.267Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT14184%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -503,7 +490,6 @@
     ]
   },
   "chemeng.nano": {
-    "candidateHash": "f683e9692b6b0f282ba9be3d371f19553ef2d2d698f096daf4c6eefba4c628df",
     "capturedAt": "2026-10-23T08:05:32.048Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10610%7CT11471%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -542,7 +528,6 @@
     ]
   },
   "chemeng.poly": {
-    "candidateHash": "61c075d55a9e44de62f4ff91f0a6d0c54e5a3e0249606a65078165e53d0417b5",
     "capturedAt": "2026-10-23T08:05:31.443Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10389%7CT10501%7CT10660%7CT10661%7CT10810%7CT10859%7CT11686%7CT12084%7CT12416%7CT12628%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -581,7 +566,6 @@
     ]
   },
   "chemeng.process": {
-    "candidateHash": "80250691c9dc4bc1aa5069a05bfa2189dcb058f77bdde0870a46acd3828c676c",
     "capturedAt": "2026-10-23T08:05:30.838Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10192%7CT11593%7CT12038%7CT13104%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -620,7 +604,6 @@
     ]
   },
   "civil.geo": {
-    "candidateHash": "2e1c7790840b26b4424a9f36329e18155406047946f089863312bbc058dfa2cc",
     "capturedAt": "2026-10-23T08:05:27.824Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10233%7CT11375%7CT12233%7CT12940%7CT13031%7CT13236%7CT13941%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -659,7 +642,6 @@
     ]
   },
   "civil.mat": {
-    "candidateHash": "4a79a49b4bdac9ccc4d07e694c3d0a2f5d98df4176694c0ce1ec9784a5474b44",
     "capturedAt": "2026-10-23T08:05:29.634Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12105%7CT12190%7CT12940%7CT13031%7CT13236%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -698,7 +680,6 @@
     ]
   },
   "civil.quake": {
-    "candidateHash": "45575357ed143854ccfaab89b7ca73aed81d4ac0931b92ebcc530847827ff118",
     "capturedAt": "2026-10-23T08:05:29.027Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10160%7CT12233%7CT14146%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -737,7 +718,6 @@
     ]
   },
   "civil.trans": {
-    "candidateHash": "2e29fa180066859ed38912cf5d671c9a113755aeab3c3ea79021305b74f8a909",
     "capturedAt": "2026-10-23T08:05:28.428Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11344%7CT11622%7CT11807%7CT12306%7CT13190%7CT13527%7CT13601%7CT14445%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -776,7 +756,6 @@
     ]
   },
   "civil.urban": {
-    "candidateHash": "09e4ecb75a8e3dcae22d53fd13065657c90bfed5e36167fc7b080779c4f4a814",
     "capturedAt": "2026-10-23T08:05:30.236Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT13601%7CT13689%7CT14456%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -815,7 +794,6 @@
     ]
   },
   "cond-mat.mtrl-sci": {
-    "candidateHash": "3a8c4a0cc8583de474014209613999dfe5f3de9bb2cb36f3a584b695e9086437",
     "capturedAt": "2026-10-23T08:04:41.646Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10049%7CT10099%7CT10657%7CT10666%7CT11853%7CT11949%7CT14363%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -854,7 +832,6 @@
     ]
   },
   "cond-mat.quant-gas": {
-    "candidateHash": "160243c6ce7cac156ddda29a81f16cea2b5e10122cb234868078a6742a84abed",
     "capturedAt": "2026-10-23T08:04:43.487Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10425%7CT11993%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -893,7 +870,6 @@
     ]
   },
   "cond-mat.soft": {
-    "candidateHash": "1a06f39c8f090460bba5fdf2e24a0d8f88a96407962b09c84ef299fdc7ec83fd",
     "capturedAt": "2026-10-23T08:04:42.872Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11682%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -932,7 +908,6 @@
     ]
   },
   "cond-mat.stat-mech": {
-    "candidateHash": "2f20fa979085372c4b888991a71b41843481da61dbd98d90598fe3cfca5b802c",
     "capturedAt": "2026-10-23T08:04:42.260Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11520%7CT12261%7CT13769%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -971,7 +946,6 @@
     ]
   },
   "cond-mat.str-el": {
-    "candidateHash": "84dc8b62e7b63e902f0b90d1d7a31f6bd6dab64d1e711cebca96b09bd15a09a1",
     "capturedAt": "2026-10-23T08:04:41.033Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11603%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1010,7 +984,6 @@
     ]
   },
   "cond-mat.supr-con": {
-    "candidateHash": "775cdcbbd98991122d8e281d23b50d2d4cc49bd41b793aaefc3cf0a39a710491",
     "capturedAt": "2026-10-23T08:04:40.419Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10037%7CT10681%7CT11682%7CT12491%7CT13531%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1049,7 +1022,6 @@
     ]
   },
   "cs.AI": {
-    "candidateHash": "9dce723ea2645945b9fd32de3575d0dc3c9381ae567e58fcef5a22888e7450d2",
     "capturedAt": "2026-10-23T08:04:54.400Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10456%7CT11349%7CT11574%7CT12026%7CT12128%7CT12260%7CT12797%7CT13904%7CT14174%7CT14414%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1088,7 +1060,6 @@
     ]
   },
   "cs.CR": {
-    "candidateHash": "511212913e4ef79aa9cba0d7dd1bf65214728f0860ba14edad7c74f9b6170a2e",
     "capturedAt": "2026-10-23T08:04:56.803Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10020%7CT10237%7CT11498%7CT13674%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1127,7 +1098,6 @@
     ]
   },
   "cs.CV": {
-    "candidateHash": "35e750532754a385161be4ef396e1f66836547bbf05db8d3f8463735b7148f20",
     "capturedAt": "2026-10-23T08:04:55.600Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10036%7CT12549%7CT13674%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1166,7 +1136,6 @@
     ]
   },
   "cs.DB": {
-    "candidateHash": "73827e9dca5d3f84a1b6b24672d2572fdfae30d259a68a3ea456956e0564fbfd",
     "capturedAt": "2026-10-23T08:04:58.606Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10181%7CT10317%7CT11106%7CT12292%7CT13681%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1205,7 +1174,6 @@
     ]
   },
   "cs.DC": {
-    "candidateHash": "4ded266439ac086e8850f85adf65a8c1b59e5a53d55fd9863a216799b69df7cb",
     "capturedAt": "2026-10-23T08:04:59.209Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10101%7CT10715%7CT11181%7CT12203%7CT12292%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1244,7 +1212,6 @@
     ]
   },
   "cs.DS": {
-    "candidateHash": "686f84ac6de81875880ea56051d6e0d6222201cad3c4c35df2db6134a155b5a1",
     "capturedAt": "2026-10-23T08:04:58.006Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10080%7CT10538%7CT10637%7CT11106%7CT11269%7CT11303%7CT12761%7CT13373%7CT14025%7CT14175%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1283,7 +1250,6 @@
     ]
   },
   "cs.GR": {
-    "candidateHash": "fc442d6f51ed08ca96452b97fd940e4ff5c31dfc6afb1934ca27d6093b82fdfe",
     "capturedAt": "2026-10-23T08:05:04.727Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10481%7CT14254%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1322,7 +1288,6 @@
     ]
   },
   "cs.GT": {
-    "candidateHash": "aaaf8619a50e1349b510a718ae14256c07190f4692bd3bdb9ca56c2c0c80da46",
     "capturedAt": "2026-10-23T08:05:02.523Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11574%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1361,7 +1326,6 @@
     ]
   },
   "cs.HC": {
-    "candidateHash": "b3cbd4de6e1c44c6c92724210f94e09aa996cb6f1e1b558245194b29fe218def",
     "capturedAt": "2026-10-23T08:05:01.038Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10470%7CT10803%7CT11349%7CT11398%7CT11707%7CT12128%7CT13155%7CT14254%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1400,7 +1364,6 @@
     ]
   },
   "cs.IR": {
-    "candidateHash": "a6c18c686132a9bece9e2e37bdb78810173741fa4a4811f48cfccdecfa5568a4",
     "capturedAt": "2026-10-23T08:05:00.436Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10028%7CT10286%7CT11309%7CT11550%7CT12016%7CT13523%7CT13976%7CT14435%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1439,7 +1402,6 @@
     ]
   },
   "cs.LG": {
-    "candidateHash": "1d26e7bdcb7a749b024a2560261cc95f6e5495a6c4a648fbda376c8c58c9509b",
     "capturedAt": "2026-10-23T08:04:54.999Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10028%7CT11122%7CT11689%7CT11714%7CT12072%7CT12535%7CT12676%7CT13373%7CT13693%7CT13702%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1478,7 +1440,6 @@
     ]
   },
   "cs.MM": {
-    "candidateHash": "2ec7b42131ff809b439c178b0283d5b68cf0faa46b11e1777f704cb02fd2506e",
     "capturedAt": "2026-10-23T08:05:05.952Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12260%7CT13541%7CT13567%7CT13873%7CT14067%7CT14216%7CT14254%7CT14496%7CT14516%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1517,7 +1478,6 @@
     ]
   },
   "cs.NE": {
-    "candidateHash": "e7b8e161749707d35ef3a345868d5cb7712b547e938f5ee40e010fc2c70072a2",
     "capturedAt": "2026-10-23T08:04:59.824Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12611%7CT13062%7CT13935%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1556,7 +1516,6 @@
     ]
   },
   "cs.NI": {
-    "candidateHash": "ee361be7d009e72ef211fe47f6bf799d075964aa95c5fd320c2b3daaf0021542",
     "capturedAt": "2026-10-23T08:05:04.114Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11478%7CT14455%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1595,7 +1554,6 @@
     ]
   },
   "cs.PL": {
-    "candidateHash": "829fdb048c2dfcf7900de794c73b9cc0c17595402279f6e0d663da5a0cba4e1a",
     "capturedAt": "2026-10-23T08:05:01.915Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10126%7CT10904%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1634,7 +1592,6 @@
     ]
   },
   "cs.RO": {
-    "candidateHash": "42799a5e18d5b9e94ea8ebf9b26118b78da3a5dccdb0ff252ec54a4df752ddf3",
     "capturedAt": "2026-10-23T08:04:56.199Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10249%7CT10462%7CT10533%7CT10586%7CT13904%7CT13964%7CT14335%7CT14381%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1673,7 +1630,6 @@
     ]
   },
   "cs.SD": {
-    "candidateHash": "6f26c441269ef38a4a00c951e0c3c3c214d4af5f90ce95d7a3b376acfda1278b",
     "capturedAt": "2026-10-23T08:05:05.339Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11309%7CT11349%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1712,7 +1668,6 @@
     ]
   },
   "cs.SE": {
-    "candidateHash": "1bc81de63f3fb7c6a6fc470df60ee59f99198e442da41f650993f79d7094cf33",
     "capturedAt": "2026-10-23T08:04:57.405Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10260%7CT10430%7CT10456%7CT10639%7CT10714%7CT10743%7CT11450%7CT11675%7CT12127%7CT12423%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1751,7 +1706,6 @@
     ]
   },
   "cs.SI": {
-    "candidateHash": "0b6fdc69eca28fc3dc5b56510517f52d01e8ab5364a41e52039ede023e597934",
     "capturedAt": "2026-10-23T08:05:03.140Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10028%7CT11309%7CT11896%7CT13514%7CT13553%7CT13924%7CT13976%7CT13983%7CT14100%7CT14435%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1790,7 +1744,6 @@
     ]
   },
   "cs.SY": {
-    "candidateHash": "b2f62e892136254b80d234c5f1e5e3f42982ab75dfde5ed0ae45b6212abc1ba8",
     "capturedAt": "2026-10-23T08:05:06.558Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10142%7CT10249%7CT10772%7CT10820%7CT10933%7CT11125%7CT12794%7CT13541%7CT13615%7CT13935%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1829,7 +1782,6 @@
     ]
   },
   "econ.EM": {
-    "candidateHash": "5b80a9442321bf0dfdfd91a15d4858e829cac26a718b76b8f86ca2b1f1a9ca6a",
     "capturedAt": "2026-10-23T08:05:17.488Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11911%7CT12446%7CT12722%7CT14051%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1868,7 +1820,6 @@
     ]
   },
   "econ.GN": {
-    "candidateHash": "836b2e2ad3079f968850f99fa20b355fc5a900e589ef26545acd280bb8baa524",
     "capturedAt": "2026-10-23T08:05:18.095Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10007%7CT10128%7CT10393%7CT10438%7CT10471%7CT10605%7CT10632%7CT10785%7CT10804%7CT10841%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1907,7 +1858,6 @@
     ]
   },
   "econ.TH": {
-    "candidateHash": "2ec4c3555d5b02d850587906a0ba0c16dc81b799160823ec474f47574ee55026",
     "capturedAt": "2026-10-23T08:05:18.694Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10007%7CT10128%7CT10393%7CT10438%7CT10471%7CT10605%7CT10632%7CT10785%7CT10804%7CT10841%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1946,7 +1896,6 @@
     ]
   },
   "eess.IV": {
-    "candidateHash": "886fd442207cb338ea0daf7ba1c90e4c744448c9a030119dc31b4da6ce974c7f",
     "capturedAt": "2026-10-23T08:05:21.753Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11606%7CT12597%7CT12983%7CT13049%7CT13114%7CT13292%7CT14257%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -1985,7 +1934,6 @@
     ]
   },
   "eess.SP": {
-    "candidateHash": "fbd1103580cee9bc926d717c0e80f63680a015edaf1aa0f8b479e6bd435c3916",
     "capturedAt": "2026-10-23T08:05:21.138Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10232%7CT10500%7CT10767%7CT10891%7CT11038%7CT11233%7CT12300%7CT12537%7CT13816%7CT14420%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2024,7 +1972,6 @@
     ]
   },
   "eess.SY": {
-    "candidateHash": "c1d7d5e652401860bde99187c908ee6f4f14b29d9160a099303363c4f0c3b646",
     "capturedAt": "2026-10-23T08:05:22.357Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10040%7CT10046%7CT10740%7CT10791%7CT10805%7CT10876%7CT11081%7CT11236%7CT11394%7CT11701%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2063,7 +2010,6 @@
     ]
   },
   "eess.optics": {
-    "candidateHash": "3f0f30fa229f7fdfddb5d84f08584db0606af1f3737ed26e7b3e20486bf64acc",
     "capturedAt": "2026-10-23T08:05:24.175Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10205%7CT10846%7CT12510%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2102,7 +2048,6 @@
     ]
   },
   "eess.power": {
-    "candidateHash": "2d5dfa565bf6ebdd5f6c0c7a72d314308cfb8aedf2cb2d8e522ae14b3bc6dc2d",
     "capturedAt": "2026-10-23T08:05:23.571Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10305%7CT10424%7CT10568%7CT10972%7CT11249%7CT11941%7CT12277%7CT12451%7CT13093%7CT13183%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2141,7 +2086,6 @@
     ]
   },
   "eess.telecom": {
-    "candidateHash": "ef8da9249196b9000ea7a0d9b8dc3b5965a15e4548093618323d19d77f44f1a8",
     "capturedAt": "2026-10-23T08:05:22.969Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11499%7CT13816%7CT13905%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2180,7 +2124,6 @@
     ]
   },
   "gr-qc": {
-    "candidateHash": "b5f6aa2527941258481c6fca4d6d042354a5d2e3aca15d146971832ee4d24bf4",
     "capturedAt": "2026-10-23T08:04:48.361Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10095%7CT11415%7CT11960%7CT13080%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2219,7 +2162,6 @@
     ]
   },
   "hep-ex": {
-    "candidateHash": "fe0a6ecc68f76adaaad278d16337e9db19bfbf1cdd912735848a3e7b91334607",
     "capturedAt": "2026-10-23T08:04:45.308Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10048%7CT10384%7CT10527%7CT10818%7CT12250%7CT12516%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2258,7 +2200,6 @@
     ]
   },
   "hep-ph": {
-    "candidateHash": "3403e23422a18b5af9fd40d3650697fb5fc21829c8f443af620317096a4fc45b",
     "capturedAt": "2026-10-23T08:04:44.705Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10048%7CT10384%7CT10527%7CT10818%7CT12516%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2297,7 +2238,6 @@
     ]
   },
   "hep-th": {
-    "candidateHash": "5f10b94d1af98a8c591e5423cbf327183f78a58b08830001f54a3ab9f119c563",
     "capturedAt": "2026-10-23T08:04:44.098Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10048%7CT10384%7CT10527%7CT10818%7CT12516%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2336,7 +2276,6 @@
     ]
   },
   "math-ph": {
-    "candidateHash": "d6a3db619db927495a6f421cc442da53c2932644aab0d8956bb31124e3b602d3",
     "capturedAt": "2026-10-23T08:04:48.965Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12516%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2375,7 +2314,6 @@
     ]
   },
   "math.AG": {
-    "candidateHash": "a34ad11fc174cdee1c8874a765ba103cc82976138b6e45cbb2d19120222a3b88",
     "capturedAt": "2026-10-23T08:05:07.174Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10061%7CT10304%7CT10896%7CT11680%7CT12504%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2414,7 +2352,6 @@
     ]
   },
   "math.CO": {
-    "candidateHash": "dc829700895eb77373d0ef4af13c581f673c39ac4d2aff3265b41fffab93aa63",
     "capturedAt": "2026-10-23T08:05:07.776Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10948%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2453,7 +2390,6 @@
     ]
   },
   "math.DS": {
-    "candidateHash": "7ba6d7f786d576d1ada6eca805840d3d66aa2db56bfd360802ce8b68c38f3dc9",
     "capturedAt": "2026-10-23T08:05:10.198Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10588%7CT12396%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2492,7 +2428,6 @@
     ]
   },
   "math.FA": {
-    "candidateHash": "046e47f48d5f6991bc7d6c7c6114a84f95e4c3b3d69d8f6fa2eb08982998fc76",
     "capturedAt": "2026-10-23T08:05:10.800Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10541%7CT11545%7CT11871%7CT12037%7CT12062%7CT13797%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2531,7 +2466,6 @@
     ]
   },
   "math.GR": {
-    "candidateHash": "3edd117713ebcdfa41e0697435574555396cc702c223961261db3180b1476f80",
     "capturedAt": "2026-10-23T08:05:12.633Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10287%7CT10304%7CT10849%7CT10899%7CT11151%7CT11680%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2570,7 +2504,6 @@
     ]
   },
   "math.GT": {
-    "candidateHash": "73653899347d6724c1c830b4d83d85244386f8f62ef8fcd60f15546286e5a5cc",
     "capturedAt": "2026-10-23T08:05:13.234Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10304%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2609,7 +2542,6 @@
     ]
   },
   "math.MP": {
-    "candidateHash": "10981569b1d79482c0561c11b389a7f59a08be2a0a3d3a83d5daccd8ece9eee8",
     "capturedAt": "2026-10-23T08:05:14.448Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10588%7CT11022%7CT11191%7CT11210%7CT11345%7CT11428%7CT11564%7CT11654%7CT11829%7CT12404%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2648,7 +2580,6 @@
     ]
   },
   "math.NA": {
-    "candidateHash": "6284c474f7c8f70fb64a8aab9ccd0ff261f797e50d472e866554ca4ac0803045",
     "capturedAt": "2026-10-23T08:05:11.413Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT12135%7CT12727%7CT13400%7CT13487%7CT13806%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2687,7 +2618,6 @@
     ]
   },
   "math.NT": {
-    "candidateHash": "527d1f8ff2fee56e068c139629fe21336d30da09d345caf20c92a0351fe0ef6d",
     "capturedAt": "2026-10-23T08:05:08.378Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10061%7CT10948%7CT11166%7CT11329%7CT11345%7CT11428%7CT12037%7CT12069%7CT13400%7CT14500%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2726,14 +2656,12 @@
     ]
   },
   "math.OC": {
-    "candidateHash": "4ed2164cfe7faf81867ffec644c05aaedabfe21bf762be75ab5e73c3c531d3e3",
     "capturedAt": "2026-10-23T08:05:12.029Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT14082%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [],
     "labels": []
   },
   "math.PR": {
-    "candidateHash": "eaac847ab814cb44d11c4dfb20b71cf2d920519aeaef5616dc8aeca8296c227e",
     "capturedAt": "2026-10-23T08:05:08.981Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11875%7CT13500%7CT13546%7CT13680%7CT13797%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2772,7 +2700,6 @@
     ]
   },
   "math.RA": {
-    "candidateHash": "18c5190c821cfa9dda07a57a9de875dda34724a3c61e8aac3bdc03e332e4ebd0",
     "capturedAt": "2026-10-23T08:05:13.836Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11703%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2811,7 +2738,6 @@
     ]
   },
   "math.ST": {
-    "candidateHash": "20e916a9820d717bda35e2127ec727fb9dfa25ec748085d20c8d2ce998324d72",
     "capturedAt": "2026-10-23T08:05:09.596Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11716%7CT11871%7CT11875%7CT13500%7CT13797%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2850,7 +2776,6 @@
     ]
   },
   "mech.auto": {
-    "candidateHash": "7cc844f1d1c645743dade83000cbe59328b8c2481e0e5a924150704f89a02c08",
     "capturedAt": "2026-10-23T08:05:27.223Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10670%7CT10891%7CT11138%7CT12197%7CT12759%7CT12959%7CT13990%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2889,7 +2814,6 @@
     ]
   },
   "mech.dyn": {
-    "candidateHash": "f7a859d58fcd1be9eb1eba3fe2e8ecfcc6d459b757129e5655083946048666f7",
     "capturedAt": "2026-10-23T08:05:24.780Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11170%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2928,7 +2852,6 @@
     ]
   },
   "mech.fluid": {
-    "candidateHash": "a039f051559b9130b2a0f3d0c3d9327240070d7bc43f297e3a5c6fec385ea960",
     "capturedAt": "2026-10-23T08:05:25.387Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10360%7CT13116%7CT13951%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -2967,7 +2890,6 @@
     ]
   },
   "mech.mfg": {
-    "candidateHash": "651b9178780681d7b9298c4ae6dcef2e5caf6a8c7b5665661ff7184f6a08db39",
     "capturedAt": "2026-10-23T08:05:26.621Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10615%7CT10705%7CT10707%7CT10783%7CT12959%7CT13451%7CT14262%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3006,7 +2928,6 @@
     ]
   },
   "mech.thermo": {
-    "candidateHash": "c889147acc47e9bcff9cd4f5d5df2510c418f4804f3457a7bfbc0314fefb1338",
     "capturedAt": "2026-10-23T08:05:26.009Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10568%7CT11126%7CT11529%7CT12139%7CT13200%7CT13645%7CT13685%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3045,7 +2966,6 @@
     ]
   },
   "med.derma": {
-    "candidateHash": "d07f9b8d24b385aa4123d2fb263856a4c8089a6245d969e119505d9fd96094af",
     "capturedAt": "2026-10-23T08:05:41.148Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10837%7CT13597%7CT13953%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3084,7 +3004,6 @@
     ]
   },
   "med.endo": {
-    "candidateHash": "14ac3ae8d528155ac3bf06b6c090b0e825ea83a7aefe10120ab623bfc7b06f70",
     "capturedAt": "2026-10-23T08:05:38.734Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT13533%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3117,7 +3036,6 @@
     ]
   },
   "med.gen": {
-    "candidateHash": "63f3f03efcd24ab8f3a2600bbf39b4aa65f2fa388806d5674d85a23883a0c79e",
     "capturedAt": "2026-10-23T08:05:34.469Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10902%7CT11051%7CT11566%7CT11709%7CT11861%7CT12264%7CT12647%7CT12994%7CT13099%7CT13483%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3156,7 +3074,6 @@
     ]
   },
   "med.infect": {
-    "candidateHash": "e86b04c4e5e261780df99e598a966a3aa9195c58d05d2b7694c171a46b722be4",
     "capturedAt": "2026-10-23T08:05:40.546Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10296%7CT10482%7CT10897%7CT11381%7CT11430%7CT11819%7CT12297%7CT12402%7CT12492%7CT12914%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3195,7 +3112,6 @@
     ]
   },
   "med.onco": {
-    "candidateHash": "d2c1e7499a463fe7aa30810d8aea3776003637a380084769dbe5207ce25eb65a",
     "capturedAt": "2026-10-23T08:05:35.082Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10129%7CT10231%7CT10950%7CT11141%7CT11149%7CT11296%7CT11328%7CT11669%7CT12695%7CT13123%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3234,7 +3150,6 @@
     ]
   },
   "med.path": {
-    "candidateHash": "d9f8ef3dcea058280d0c4dd4e70d442ecccce897641088933564b76390ed6f05",
     "capturedAt": "2026-10-23T08:05:39.335Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10238%7CT10760%7CT10966%7CT11184%7CT11452%7CT11658%7CT11787%7CT12067%7CT13543%7CT13759%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3273,7 +3188,6 @@
     ]
   },
   "med.peds": {
-    "candidateHash": "d60961d322ec9203426dbd2216010e7c2b89599cf5186582d73b35ed2b932af5",
     "capturedAt": "2026-10-23T08:05:37.515Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10234%7CT10436%7CT10560%7CT11174%7CT11292%7CT12460%7CT12552%7CT12823%7CT13770%7CT14437%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3312,7 +3226,6 @@
     ]
   },
   "med.pharma": {
-    "candidateHash": "4ea7531205e6688c5c815a321beb3df0f288ccb953a7fe2ffe61828290662589",
     "capturedAt": "2026-10-23T08:05:36.299Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10800%7CT11635%7CT11752%7CT12023%7CT12356%7CT12539%7CT12649%7CT12817%7CT13037%7CT13202%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3351,7 +3264,6 @@
     ]
   },
   "med.pubh": {
-    "candidateHash": "3ac0df851d03000708ff7560423e3cd8f229c32015e20915b9c97e33ce047462",
     "capturedAt": "2026-10-23T08:05:35.685Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10312%7CT11555%7CT12041%7CT12413%7CT12492%7CT12935%7CT13112%7CT13522%7CT14093%7CT14495%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3390,7 +3302,6 @@
     ]
   },
   "med.radio": {
-    "candidateHash": "6e65dd15a7b321a9d146251c161c09242d0b00007dd34a5374cf8699957bd963",
     "capturedAt": "2026-10-23T08:05:39.940Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11363%7CT11636%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3429,7 +3340,6 @@
     ]
   },
   "med.surg": {
-    "candidateHash": "02c169d15f7562b12e8f6bf3bcf0739ca81d19f5cc5ad359dffe35ef55592189",
     "capturedAt": "2026-10-23T08:05:38.130Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10455%7CT10563%7CT10569%7CT10599%7CT10630%7CT10861%7CT11055%7CT11291%7CT11322%7CT11377%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3468,7 +3378,6 @@
     ]
   },
   "med.tox": {
-    "candidateHash": "6a5071b0a889d69614028b4866ef2b1bdb3146fbe278d72cf376dbedc928e18f",
     "capturedAt": "2026-10-23T08:05:36.901Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10800%7CT11274%7CT12023%7CT12356%7CT12649%7CT13533%7CT14072%7CT14199%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3507,7 +3416,6 @@
     ]
   },
   "nucl-ex": {
-    "candidateHash": "d10093f8d2da2ab85169d07038115986a49215cd8a1f853ebc39c1d258c0fd5d",
     "capturedAt": "2026-10-23T08:04:50.182Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11603%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3546,7 +3454,6 @@
     ]
   },
   "nucl-th": {
-    "candidateHash": "5acec59b2f932ee9e17507150ae564fca94ad2506d12219ed5fc01824c047ad4",
     "capturedAt": "2026-10-23T08:04:49.577Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10093%7CT10382%7CT10463%7CT11175%7CT11603%7CT11949%7CT11965%7CT12603%7CT12762%7CT13458%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3585,7 +3492,6 @@
     ]
   },
   "physics.atom-ph": {
-    "candidateHash": "4b78c32947171f51b4d4f9e470f905faad556674c769e8810a27da89c1282f3d",
     "capturedAt": "2026-10-23T08:04:51.386Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10523%7CT10923%7CT11414%7CT11993%7CT12004%7CT12762%7CT13458%7CT13531%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3624,7 +3530,6 @@
     ]
   },
   "physics.bio-ph": {
-    "candidateHash": "c8f6bfdb919c4fa949e1df12d3f0c57729140ec8d939f39e45d081d6448671f1",
     "capturedAt": "2026-10-23T08:04:53.192Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10923%7CT11513%7CT13769%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3663,7 +3568,6 @@
     ]
   },
   "physics.comp-ph": {
-    "candidateHash": "0b342cdee056f0a1db7a1e91ae27c3a8b9ab2f24349eb036339eaf0b249c4c93",
     "capturedAt": "2026-10-23T08:04:53.795Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10591%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3702,7 +3606,6 @@
     ]
   },
   "physics.flu-dyn": {
-    "candidateHash": "df1980ad7eed37cf6e2c8265ff14876a88dbf9dda2e0380caeca47ad7550feb2",
     "capturedAt": "2026-10-23T08:04:51.989Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10527%7CT11206%7CT11486%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3741,7 +3644,6 @@
     ]
   },
   "physics.optics": {
-    "candidateHash": "b2e4a185a9030a4fb6168e8e5316ca753df6eeb7ed5e23419799c674d9e5eb34",
     "capturedAt": "2026-10-23T08:04:50.783Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10490%7CT10566%7CT10988%7CT11050%7CT11414%7CT11484%7CT12917%7CT13126%7CT13493%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3780,7 +3682,6 @@
     ]
   },
   "physics.plasm-ph": {
-    "candidateHash": "7c98115fccfec1ad8facda6b7139dc6e8dbcab1d64662b60523ad7aa0b4cc52a",
     "capturedAt": "2026-10-23T08:04:52.591Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10159%7CT10251%7CT10384%7CT10527%7CT11175%7CT11603%7CT12077%7CT13769%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3819,7 +3720,6 @@
     ]
   },
   "q-fin.GN": {
-    "candidateHash": "42b3b5816b7b88f2e40cafe36b570642c83d7389cc1969208411432930b6f610",
     "capturedAt": "2026-10-23T08:05:20.523Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10047%7CT10127%7CT11817%7CT13146%7CT14154%7CT14317%7CT14464%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3858,7 +3758,6 @@
     ]
   },
   "q-fin.RM": {
-    "candidateHash": "55006f64c00c43c56d450d03ff816d2de547970df04f99a87b8caa9086465235",
     "capturedAt": "2026-10-23T08:05:19.308Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10282%7CT11976%7CT14154%7CT14317%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3897,7 +3796,6 @@
     ]
   },
   "q-fin.TR": {
-    "candidateHash": "f9543cc83eb5074860205e4da6b832eafef67f05e9764ac81f7780d2a621f88c",
     "capturedAt": "2026-10-23T08:05:19.918Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10047%7CT10067%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3936,7 +3834,6 @@
     ]
   },
   "quant-ph": {
-    "candidateHash": "8cf8f37c051407c1f81d73c2f7d702db8ec3278ff23e7f741ea813be25f6f881",
     "capturedAt": "2026-10-23T08:04:39.483Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10022%7CT10224%7CT10382%7CT10622%7CT11177%7CT11261%7CT11262%7CT11414%7CT11415%7CT11683%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -3975,7 +3872,6 @@
     ]
   },
   "stat.AP": {
-    "candidateHash": "04498b5eebd975e8759ef312db53cffa7fdc75e1be0e1d3f3e5ba26fff20a692",
     "capturedAt": "2026-10-23T08:05:16.270Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11890%7CT13309%7CT13609%7CT14406%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -4014,7 +3910,6 @@
     ]
   },
   "stat.ME": {
-    "candidateHash": "306cc658fb2879c3dca00f25b4da1cb1aeb6305ba944408642a6dc22f4c10da5",
     "capturedAt": "2026-10-23T08:05:15.655Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT10206%7CT10467%7CT11798%7CT11810%7CT13587%7CT14369%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -4053,7 +3948,6 @@
     ]
   },
   "stat.ML": {
-    "candidateHash": "23f632733172197283f90a9f7840d7b6f4cf131a39b433bdd24e67dcf7b1fdcd",
     "capturedAt": "2026-10-23T08:05:15.049Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11326%7CT11918%7CT13612%7CT14222%7CT14260%7CT14280%7CT14465%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
@@ -4092,7 +3986,6 @@
     ]
   },
   "stat.TH": {
-    "candidateHash": "c21c8bda006124188080111cc537ebe25f7edb0d7e8f16165e00cb9c1cb974f3",
     "capturedAt": "2026-10-23T08:05:16.874Z",
     "query": "https://api.openalex.org/works?filter=primary_topic.id%3AT11890%7CT13309%7CT13609%7CT14406%2Ctype%3Aarticle%2Cfrom_publication_date%3A2026-07-25%2Cto_publication_date%3A2026-10-23%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=publication_date%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic",
     "works": [
