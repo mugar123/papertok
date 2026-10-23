@@ -14,7 +14,7 @@ import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 // is recorded and returns at once. `fail` names the steps that fail past their
 // retries; `skipLanes` answers the category lanes' steps as if every lane were
 // done, for a daily run whose lanes the test does not exercise.
-function workflowStep({ fail = (_name: string) => false, skipLanes = false } = {}) {
+function workflowStep({ fail = () => false, skipLanes = false }: { fail?: (name: string) => boolean; skipLanes?: boolean } = {}) {
   const steps: string[] = [];
   const sleeps: Array<number | string> = [];
   const step = {
