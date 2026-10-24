@@ -22,7 +22,6 @@ import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf }
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
-import { accessTagForPaper } from '../src/utils/paper-status.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
@@ -593,9 +592,12 @@ test("a venue lane's articles reach the readers of its leaf alone, a paywalled o
   const page = await readFeedPage(store, parseFeedRequest({ categories: ['econ.EM', 'econ.TH'] }));
   assert.deepEqual(page.map(paper => [paper.id, paper._fetchedFor]), [['openalex:W7222586136', ['econ.TH']], ['openalex:W7221756071', ['econ.EM']]]);
   for (const paper of page) {
-    // The card's access chip, from the record alone.
-    const chip = accessTagForPaper(paper);
-    assert.deepEqual([chip?.key, chip?.label], ['subscription', 'Closed access'], paper.id);
+    // What accessStatusForPaper (src/utils/paper-status.ts) reads as
+    // `subscription`, the card's Closed access chip: an explicit `false`, and
+    // no arXiv id or PDF to call it open. The Worker's test project cannot
+    // import paper-status.ts, whose Unpaywall types need Vite's.
+    assert.equal(paper.openAccess, false, paper.id);
+    assert.deepEqual([paper.arxivId, paper.pdfUrl, paper.openAccessPdfUrl].filter(Boolean), [], paper.id);
     assert.equal(paper.peerReviewed, true, `${paper.id}: a journal article, by the review rule`);
     assert.equal(paper.workingPaper, undefined);
   }

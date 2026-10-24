@@ -55,6 +55,7 @@ function setup(t: import('node:test').TestContext) {
   ], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
   const coverage = () => JSON.parse(readFileSync(report, 'utf8')) as Array<{
     leaf: string; status: string; sampleSize: number; onTarget: number; filters: string[]; sources: string[]; bySource: Record<string, string>;
+    sourceSamples?: Record<string, string>;
   }>;
   return { write, run, coverage, output };
 }
@@ -131,7 +132,7 @@ test("a source's own sample passes only as the leaf's does: a full page of 15, a
   const lane = sample({ asked: ['S901', 'S904'], from: ['S901'] });
   write({ 'econ.EM': { sample: lane, sourceSamples: [sample({ asked: ['S904'], size: 1, onTarget: 1 })] } });
   assert.equal(run().status, 0);
-  const [row] = coverage() as Array<{ sources: string[]; sourceSamples: Record<string, string> }>;
+  const [row] = coverage();
   assert.deepEqual([row.sources, row.sourceSamples], [['S901'], { S904: '1/1' }]);
   const before = readFileSync(output, 'utf8');
   write({ 'econ.EM': { sample: sample({ asked: ['S901', 'S904'], from: ['S901'], abstract: false }), sourceSamples: [sample({ asked: ['S904'], onTarget: 15 })] } });
