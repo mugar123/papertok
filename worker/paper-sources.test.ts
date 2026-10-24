@@ -647,6 +647,33 @@ test("a venue lane reads five pages on its first night and three at most after, 
   assert.ok(firstNight <= 3_000, `${firstNight} units`);
 });
 
+// OpenAlex dates every Physics of Fluids article of a month's issue by its
+// first day and lists a tied date oldest record first (the flu-dyn sample: all
+// 2026-10-01, ids ascending), so one indexed late comes behind its issue.
+test("a venue lane reads its three pages whatever their dates, so an issue's article indexed late, behind two pages of its issue date, is kept", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  const FLUIDS = { id: 'S22862804', display_name: 'Physics of Fluids' };
+  const JFM = { id: 'S152000018', display_name: 'Journal of Fluid Mechanics' };
+  const article = (n: number, date: string, source: typeof JFM) => journalArticle(`W71${n}`, `10.1063/${n}`, `Turbulent boundary layer study number ${n}`, date, source, null);
+  // 200 articles dated since the last run's 14 days of overlap, then the 1
+  // October issue: 200 records listed before and 50 indexed since.
+  const listing = [
+    ...Array.from({ length: 200 }, (_, index) => article(10_000 + index, `2026-10-${23 - Math.floor(index / 15)}`, JFM)),
+    ...Array.from({ length: 250 }, (_, index) => article(20_000 + index, '2026-10-01', FLUIDS)),
+  ];
+  const { urls, env } = relay(t, url => {
+    const page = Number(url.searchParams.get('page'));
+    return { results: listing.slice((page - 1) * 200, page * 200) };
+  });
+  const { binding, db } = testD1();
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-venues', 'physics.flu-dyn', '2026-10-23T03:00:00.000Z')").run();
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-venues', lane: 'physics.flu-dyn' });
+  assert.deepEqual(urls.map(url => url.searchParams.get('page')), ['1', '2', '3']);
+  const stored = new Set(db.prepare('SELECT paper FROM works').all().map(row => (JSON.parse(String((row as { paper: string }).paper)) as { id: string }).id));
+  assert.equal(stored.size, 450);
+  assert.ok(stored.has('openalex:W7120249'), 'the issue article indexed last');
+});
+
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const work = (id: string, date: string) => ({ ...splicingWork, id: `https://openalex.org/${id}`, doi: `https://doi.org/10.1/${id}`, title: `Paper ${id}`, publication_date: date });

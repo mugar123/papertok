@@ -67,12 +67,15 @@ journal's reviewed row (#198, PAP-85). A working paper stored on an earlier
 night keeps its own row, Working paper tag included, when its journal article
 arrives and merges into it (`PaperBuilder.merge`).
 
-Each night a lane reads up to 3 pages of 200 and stops after a page that is
-not full, or whose newest article is older than the 14 days before its last
-run; its first night reads up to 5. A lane with under 200 articles in 90 days
-asks once a night. From the
-curators' 90-day counts, the 79 lanes ask about 121 list calls a night, 237 at
-most, and 151 on their first night, of the 3,000 the category lanes may spend
+Each night a lane reads up to 3 pages of 200, newest first, and stops after a
+page that is not full; its first night reads up to 5. Unlike a topic lane, it
+does not stop at a page older than its last run: OpenAlex dates every Physics
+of Fluids article of a month's issue, about 390, by the issue's first day and
+lists a tied date oldest record first, so an article indexed late in the month
+comes after the rest of its issue. A lane with under 200 articles in 90 days
+asks once a night, one with under 400 twice. From the curators' 90-day counts,
+the 79 lanes ask about 132 list calls a night, 237 at most, and 151 on their
+first night, of the 3,000 the category lanes may spend
 of the harvest's 4,000 units a day. cs.SY and eess.SY send the same request,
 which the relay answers from its store the second time.
 

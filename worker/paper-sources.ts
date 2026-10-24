@@ -537,10 +537,14 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // as the area lanes take them; the sources are named, so neither `is_core`
   // nor the listed series' filter applies. In the 90 days to 2026-10-23 the
   // lanes' sources published 0.2 (stat.ML) to 22 (mech.thermo) articles a day.
-  // Physics of Fluids dates each issue, about 390 articles, by its first day:
-  // three pages a night keep a whole issue, where one would keep its newest 200.
+  // OpenAlex dates every Physics of Fluids article of a month's issue, about
+  // 390, by the issue's first day and lists a tied date oldest record first,
+  // so one indexed late in the month comes after the rest of its issue. From
+  // about the 16th, stopping at a page older than the last run would never
+  // reach it, so a lane reads its pages whatever their dates: three a night
+  // keep a whole issue.
   'openalex-venues': {
-    firstPages: 5, dailyPages: 3, dated: true, overlapDays: 14,
+    firstPages: 5, dailyPages: 3, dated: false, overlapDays: 0,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexVenueFilterForLeaf(lane),
       windowFilter(),
