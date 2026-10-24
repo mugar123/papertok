@@ -130,6 +130,7 @@ const SETTINGS_COPY = {
   connectedAs: 'Connected as ',
   connected: 'Connected',
   onlyMethod: 'Your only way to sign in, so it cannot be disconnected.',
+  methodUnlinked: 'Connect it and you can sign in with it as well as the way you sign in today.',
   connectShort: 'Connect',
   connect: (label: string) => `Connect ${label}`,
   connecting: (label: string) => `Connecting ${label}…`,
@@ -269,12 +270,19 @@ function ProfileAccountPage() {
         <div className="settings-list">
           {/* Every way in, the ones in use included. A method that is the
               only way in cannot be disconnected: the account would have no
-              door, and its row says so to assistive technology. */}
+              door. The rows carry no visible subtitle, so that fact, and
+              that connecting adds a way in rather than replacing one, reach
+              assistive technology as hidden text. */}
           {methods.map(method => (
             <div key={method.id} className="settings-row settings-row-inline">
               <div className="settings-row-content">
                 <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
-                {!method.linked && <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} />}
+                {!method.linked && (
+                  <>
+                    <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} keepLine={false} />
+                    <span id={`${preparingId}-${method.id}-hint`} className="visually-hidden">{copy.methodUnlinked}</span>
+                  </>
+                )}
               </div>
               {method.linked ? (
                 <span className="settings-account-id">
@@ -292,7 +300,7 @@ function ProfileAccountPage() {
                   disabled={Boolean(linking) || preparing}
                   focusableWhenDisabled={preparing}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  aria-describedby={preparing ? `${preparingId}-${method.id}` : undefined}
+                  aria-describedby={preparing ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
                 >
                   {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
@@ -312,7 +320,7 @@ function ProfileAccountPage() {
           description={institution ? copy.institutionLinked(institution.name) : copy.institutionDescription}
         />
         <div className="settings-list">
-          <div className="settings-row settings-row-inline">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content settings-row-title-line">
               <h3 className="settings-method-name"><GraduationCap size={16} aria-hidden="true" />{copy.institution}</h3>
               {institution && <InstitutionPill institution={institution} />}
