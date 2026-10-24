@@ -689,9 +689,9 @@ export interface FeedQuery {
  */
 /**
  * A reader's ranked candidates, kept for the pages after the first. `paperId`
- * is the app's id of the paper once a page that skips seen papers has read it
- * from its row, '' when the corpus no longer holds the work: the next pages
- * check it against their filter without reading it again.
+ * is the app's id of the paper once a page with `seen` has read it from its
+ * row to check it against the filter, '' when the corpus no longer holds the
+ * work: the next pages check it against theirs without reading it again.
  */
 export interface RankedCandidate { workId: number; lanes: string[]; paperId?: string }
 /**
