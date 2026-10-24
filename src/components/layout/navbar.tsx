@@ -4,6 +4,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { ruleTransform } from '../../utils/nav-rule.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
+import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
 import { MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
 import AccountMenu from './account-menu.tsx';
 import { shouldOpenSearchOnSlash } from './search-shortcut.ts';
@@ -82,7 +83,8 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     navbarHasArrived = true;
     setArriving(false);
   };
-  const { setFeedMode } = useFeed();
+  const { setFeedMode, refreshFeed, isRefreshing } = useFeed();
+  const followingUpdates = useFollowingUpdates();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -139,6 +141,11 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     if (event.button !== 0 || event.pointerType !== 'touch') return;
     touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
   };
+  /** Pressing the tab you are already on reloads its feed, as the pill does. */
+  const refreshTab = (tab: string) => {
+    if (tab === 'home' && !isRefreshing) void refreshFeed();
+    if (tab === 'following') void followingUpdates.refresh();
+  };
   const releasePress = () => {
     touchRef.current = null;
   };
@@ -171,11 +178,20 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     handledRef.current = Date.now();
     if (tab === 'home') setFeedMode('top');
     if (pathname !== to) void navigate(to);
+    else refreshTab(tab);
   };
-  const swallowSynthesisedClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (Date.now() - handledRef.current > 1500) return;
-    handledRef.current = 0;
-    event.preventDefault();
+  const handleTabClick = (event: MouseEvent<HTMLAnchorElement>, tab: string, to: string) => {
+    if (Date.now() - handledRef.current <= 1500) {
+      handledRef.current = 0;
+      event.preventDefault();
+      return;
+    }
+    if (tab === 'home') setFeedMode('top');
+    // A modified click still opens the tab elsewhere.
+    if (pathname === to && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+      event.preventDefault();
+      refreshTab(tab);
+    }
   };
   const rule = useActiveTabRule(linksRef, activeTab, activeTab);
 
@@ -250,7 +266,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             end
             data-tab="home"
             className={`navbar-link ${isHomeActive ? 'active' : ''}`}
-            onClick={(event) => { swallowSynthesisedClick(event); setFeedMode('top'); }}
+            onClick={(event) => handleTabClick(event, 'home', '/feed')}
             onPointerDown={(event) => pressTab(event, 'home')}
             onPointerUp={(event) => liftTab(event, 'home', '/feed')}
             onPointerCancel={releasePress}
@@ -263,7 +279,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             to="/following"
             data-tab="following"
             className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
-            onClick={swallowSynthesisedClick}
+            onClick={(event) => handleTabClick(event, 'following', '/following')}
             onPointerDown={(event) => pressTab(event, 'following')}
             onPointerUp={(event) => liftTab(event, 'following', '/following')}
             onPointerCancel={releasePress}

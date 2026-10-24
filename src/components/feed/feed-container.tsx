@@ -25,6 +25,7 @@ interface FeedContainerProps {
   landmark?: { label: string; heading: string } | null;
 }
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState, startTransition } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowsClockwise, Check } from '@phosphor-icons/react';
 import { Button } from '../ui/button.tsx';
@@ -55,6 +56,8 @@ import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../.
 import { createFeedResumeMemory } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
+import { tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
+import { LONG_PRESS_MS } from './long-press.ts';
 import './feed-container.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 
@@ -213,12 +216,16 @@ const ATOM_VEIL_REDUCED_VARIANTS = {
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
 // dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
 // ES el contenedor en cada rama en vez de un nivel más.
-function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsWithChildren<{ landmark: FeedContainerProps['landmark']; className?: string }>) {
+function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, children }: PropsWithChildren<{
+  landmark: FeedContainerProps['landmark'];
+  className?: string;
+  nodeRef?: (node: HTMLElement | null) => void;
+}>) {
   if (!landmark) {
-    return <div className={className}>{children}</div>;
+    return <div ref={nodeRef} className={className}>{children}</div>;
   }
   return (
-    <main className={className} aria-label={landmark.label}>
+    <main ref={nodeRef} className={className} aria-label={landmark.label}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
       {children}
     </main>
@@ -279,6 +286,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // resume, el tirón y el salto del refresco, que corren con el nodo ya
   // montado y no necesitan enterarse de nada.
   const [feedNode, setFeedNode] = useState<HTMLDivElement | null>(null);
+  const [swipeNode, setSwipeNode] = useState<HTMLElement | null>(null);
   const attachFeed = useCallback((node: HTMLDivElement | null) => {
     feedRef.current = node;
     setFeedNode(node);
@@ -1123,6 +1131,45 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [feedNode, canPull, setPull, landPull]);
 
+  // A sideways swipe moves between For you and Following (feed-tab-swipe.ts),
+  // from every state of the page, empty and failed ones included. The Similar
+  // layer is neither tab and keeps its sideways touches.
+  const navigate = useNavigate();
+  const tabPath = source ? (scrollKey === 'following' ? '/following' : null) : '/feed';
+  useEffect(() => {
+    const el = swipeNode;
+    if (!el || !tabPath) return undefined;
+    let start: { x: number; y: number; at: number } | null = null;
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      const ignored = (event.target as Element | null)?.closest?.('.related-sheet');
+      start = touch && event.touches.length === 1 && !ignored ? { x: touch.clientX, y: touch.clientY, at: event.timeStamp } : null;
+    };
+    const onEnd = (event: TouchEvent) => {
+      const touch = event.changedTouches[0];
+      // A finger that rested long enough to open the list picker is not a swipe.
+      if (!start || !touch || event.timeStamp - start.at >= LONG_PRESS_MS) return;
+      const to = tabSwipeTarget({
+        from: tabPath,
+        startX: start.x,
+        dx: touch.clientX - start.x,
+        dy: touch.clientY - start.y,
+        viewportWidth: window.innerWidth,
+      });
+      start = null;
+      if (to) void navigate(to);
+    };
+    const onCancel = () => { start = null; };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onCancel, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onCancel);
+    };
+  }, [swipeNode, tabPath, navigate]);
+
 
 
 
@@ -1132,7 +1179,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // la rama con papers. Un estado de la página sigue siendo la página.
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
-      <FeedLandmark landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} landmark={landmark} className="feed-empty">
         <EmptyState
           role="alert"
           art={<Petri pose="upset" className="feed-error-petri" />}
@@ -1152,7 +1199,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   if (displayState === FEED_DISPLAY_STATES.SKELETON) {
     return (
-      <FeedLandmark landmark={landmark}>
+      <FeedLandmark nodeRef={setSwipeNode} landmark={landmark}>
         <div className="feed-container">
           <div className="feed-snap-item"><SkeletonCard /></div>
         </div>
@@ -1163,12 +1210,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+    return <FeedLandmark nodeRef={setSwipeNode} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
-      <FeedLandmark landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} landmark={landmark} className="feed-empty">
         <div className="atom-loader">
           <Petri pose="flask" className="petri-loader" />
         </div>
@@ -1189,7 +1236,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark landmark={landmark}>
+    <FeedLandmark nodeRef={setSwipeNode} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
@@ -1275,6 +1322,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
               onPickList={onSaveToList}
+              holdToPickList
               getInteractionState={getInteractionState}
               analyticsSurface={analyticsSurface}
               position={index + 1}
