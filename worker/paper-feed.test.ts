@@ -7,6 +7,7 @@ import type { WorkerEnv } from './env.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
+import { feedSeenFilter } from '../src/utils/seenPaperFilter.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 
@@ -156,6 +157,50 @@ test("this Worker and earlier versions never read each other's kept orders, so a
   entries.set(previousKey, new Response(JSON.stringify(previousList)));
   assert.deepEqual(ids((await ask(request(1), 'reader-2')).papers), ['2610.80002'], 'ranked again, newest first');
   assert.deepEqual(await entries.get(previousKey)?.json(), previousList, 'an earlier version still serving finds the list it kept');
+});
+
+// `count` cs.CL papers, an hour apart, newest first.
+const recent = (count: number) => Array.from({ length: count }, (_, index) => paper(`2610.6${String(index).padStart(4, '0')}`, `Recent paper ${index}`, (index + 1) / 24));
+
+test("a reload is one request for the reader's next unseen papers, and the next page goes on past the ones it showed, from the order the reload kept", async t => {
+  const entries = rankingCaches(t);
+  const { env, db, ask } = store();
+  const papers = recent(60);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  // Two pages an earlier session showed.
+  const shown = ids(papers.slice(0, 30));
+  const reload = await ask({ categories: ['cs.CL'], page: 0, pageSize: 15, seen: feedSeenFilter(shown) });
+  assert.deepEqual(ids(reload.papers), ids(papers.slice(30, 45)));
+  assert.equal(reload.skipsSeen, true, 'the answer says the filter was applied');
+  // Whatever the lanes hold now, the next page reads the order the reload kept.
+  db.exec('DELETE FROM work_lanes');
+  const next = await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen: feedSeenFilter([...shown, ...ids(reload.papers)]) });
+  assert.deepEqual(ids(next.papers), ids(papers.slice(45, 60)));
+  // Each filter is its request's own: both read one kept order, which holds neither.
+  assert.equal(entries.size, 1);
+  const kept = await [...entries.values()][0].clone().text();
+  assert.ok(!kept.includes(feedSeenFilter(shown)), 'the filter is not kept');
+});
+
+test("a reader who has seen every paper of their ranking gets the page they asked for again, and an app without the filter keeps page numbers", async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(20);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen) });
+  // All but two seen: those two, with no seen paper added.
+  const twoLeft = await ask(request(0, ids(papers.slice(0, 18))));
+  assert.deepEqual([ids(twoLeft.papers), twoLeft.skipsSeen], [ids(papers.slice(18)), true]);
+  // All seen: the pages the request names, as without the filter, so the feed is not empty.
+  const all = ids(papers);
+  const again = await ask(request(0, all));
+  assert.deepEqual([ids(again.papers), again.skipsSeen], [ids(papers.slice(0, 15)), true]);
+  assert.deepEqual(ids((await ask(request(1, all))).papers), ids(papers.slice(15)));
+  assert.deepEqual((await ask(request(2, all))).papers, []);
+  // An app that sends no filter.
+  const numbered = await ask({ categories: ['cs.CL'], page: 1, pageSize: 15 }, 'reader-2');
+  assert.deepEqual(ids(numbered.papers), ids(papers.slice(15)));
+  assert.equal('skipsSeen' in numbered, false);
 });
 
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };

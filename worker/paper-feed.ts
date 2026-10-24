@@ -177,7 +177,9 @@ function readBody<T>(request: Request) {
 
 /**
  * `POST /store/papers`: a page of corpus papers for the reader's categories,
- * follows and likes, or with `ids`, the corpus's copies of those papers.
+ * follows and likes, or with `ids`, the corpus's copies of those papers. A
+ * page asked with `seen` says `skipsSeen`: it passed over the papers the
+ * filter holds, so the app has no later page to try for unseen ones.
  */
 export async function handleCorpusFeed(
   request: Request,
@@ -185,7 +187,7 @@ export async function handleCorpusFeed(
   identity: Pick<VerifiedIdentity, 'uid'>,
   // Work the page does not wait for; awaited when nothing can outlive the response.
   later: (work: Promise<unknown>) => void | Promise<unknown> = work => work,
-): Promise<{ papers: Paper[] }> {
+): Promise<{ papers: Paper[]; skipsSeen?: true }> {
   const body = await readBody<FeedRequestBody & { ids?: unknown }>(request);
   if (Array.isArray(body?.ids)) {
     const ids = [...new Set(body.ids.map(id => String(id ?? '').trim().slice(0, 300)).filter(Boolean))].slice(0, LOOKUP_MAX_IDS);
@@ -251,7 +253,7 @@ export async function handleCorpusFeed(
   ]).then(async ([waiting, added]) => {
     if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
-  return { papers };
+  return { papers, ...(query.seen ? { skipsSeen: true as const } : {}) };
 }
 
 /**

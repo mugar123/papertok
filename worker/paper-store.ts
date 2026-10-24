@@ -671,7 +671,8 @@ export interface FeedQuery {
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
-  // The papers the reader has seen (`feedSeenFilter`); without it, no notable papers.
+  // The papers the reader has seen (`feedSeenFilter`): the page passes over
+  // them. Without it, `page` names the page, and no notable papers come.
   seen: BloomFilter | null;
   // How many unseen notable papers the page adds after its own, at most.
   notable: number;
@@ -688,10 +689,11 @@ export interface RankedCandidate { workId: number; lanes: string[] }
 /**
  * The order a reader's pages were served from. `served` counts the ranks
  * pages have covered, including the empty ones of a page the order ran out
- * on, which `ranks` holds as null. A `final` order serves the next pages as
- * it is; otherwise a next page keeps only the ranks served and ranks the rest
- * again. `notable` is the asked categories' notable papers, closest first,
- * which no rank holds: each page reads the ones its reader has not seen.
+ * on, which `ranks` holds as null, and the seen ones a page passed over. A
+ * `final` order serves the next pages as it is; otherwise a next page keeps
+ * only the ranks served and ranks the rest again. `notable` is the asked
+ * categories' notable papers, closest first, which no rank holds: each page
+ * reads the ones its reader has not seen.
  */
 export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean; notable?: RankedCandidate[] }
 export interface RankingCache {
@@ -711,6 +713,12 @@ export interface RankingCache {
  * that arrived since starts on this page, and none served comes back. An
  * order with nothing left to serve is not final: the lanes may be about to
  * fill.
+ *
+ * With `seen`, the page is the first papers of the order the filter does not
+ * hold, whatever `page` says, so a reload needs one request however many
+ * pages the reader saw before (PAP-103); a false positive passes over a paper
+ * the reader has not seen. When the order holds none, the page is the one
+ * `page` names, papers the reader has seen, rather than none.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
@@ -721,23 +729,33 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
   let ranking = kept?.final ? kept.ranks : null;
   let notable = kept?.notable ?? [];
+  const rankedAgain = !ranking;
   if (!ranking) {
     const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
     const shown = new Set(served.map(candidate => candidate?.workId));
     const ranked = await rankCandidates(db, lanes, query, now);
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
     notable = ranked.notable;
-    const through = (query.page + 1) * query.pageSize;
+  }
+  const [own, unseen] = await Promise.all([
+    query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize) : null,
+    // After the page's own papers, for the app to place: one it leaves out is
+    // still unseen, so a later page offers it again.
+    query.seen && query.notable > 0 ? unseenRanks(db, notable, query.seen, query.notable) : null,
+  ]);
+  const { ranked, through } = own?.unseen.length
+    ? { ranked: own.unseen, through: own.end }
+    : {
+      ranked: ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null),
+      through: (query.page + 1) * query.pageSize,
+    };
+  if (rankedAgain) {
     await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
       .catch(error => console.warn('Feed ranking not cached', error));
   }
-  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   if (ranked.length === 0) return [];
-  // After the page's own papers, for the app to place: one it leaves out is
-  // still unseen, so a later page offers it again.
-  const unseen = query.seen && query.notable > 0 ? await unseenNotable(db, notable, query.seen, query.notable) : [];
-  const notableIds = new Set(unseen.map(candidate => candidate.workId));
-  const candidates = [...ranked, ...unseen];
+  const notableIds = new Set(unseen?.unseen.map(candidate => candidate.workId));
+  const candidates = [...ranked, ...(unseen?.unseen ?? [])];
   const works = await readWorks(db, candidates.map(candidate => candidate.workId));
   const categories = new Set(query.categories);
   return candidates.flatMap(candidate => {
@@ -756,20 +774,27 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
 }
 
 /**
- * The notable papers in `ranked` the reader has not seen, in order, until
- * `wanted` are found. The filter holds the ids the app was served, so each
- * candidate's is read from its row.
+ * The first `wanted` of `ranks` whose papers the reader has not seen, in
+ * order, and how many ranks the walk took to find them (`end`). The filter
+ * holds the ids the app was served, so each candidate's is read from its
+ * row: 200 the first time and twice as many each time after, so a reader who
+ * has seen a few thousand papers costs a few reads.
  */
-async function unseenNotable(db: D1Database, ranked: RankedCandidate[], seen: BloomFilter, wanted: number) {
+async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number) {
   const unseen: RankedCandidate[] = [];
-  for (let start = 0; start < ranked.length && unseen.length < wanted; start += 200) {
-    const chunk = ranked.slice(start, start + 200);
+  let end = 0;
+  for (let size = 200; end < ranks.length && unseen.length < wanted; size *= 2) {
+    const chunk = ranks.slice(end, end + size);
     const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
-      .bind(JSON.stringify(chunk.map(candidate => candidate.workId))).all<{ id: number; paper_id: string }>();
+      .bind(JSON.stringify(chunk.flatMap(candidate => (candidate ? [candidate.workId] : [])))).all<{ id: number; paper_id: string }>();
     const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
-    unseen.push(...chunk.filter(candidate => paperIds.has(candidate.workId) && !hasSeenPaper(seen, paperIds.get(candidate.workId))));
+    for (const candidate of chunk) {
+      if (unseen.length === wanted) break;
+      end += 1;
+      if (candidate && paperIds.has(candidate.workId) && !hasSeenPaper(seen, paperIds.get(candidate.workId))) unseen.push(candidate);
+    }
   }
-  return unseen.slice(0, wanted);
+  return { unseen, end };
 }
 
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
