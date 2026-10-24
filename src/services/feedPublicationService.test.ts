@@ -335,3 +335,25 @@ test('a book left out after the reader leaves the notable cards after it fifteen
   assert.deepEqual(notableAt(kept), [14, 29, 44]);
   assert.deepEqual(kept.filter(work => !work._notable).map(work => work.id), others.filter((_, index) => index !== 20).map(work => work.id));
 });
+
+// The snapshot restore runs on every page, and only the feed reports the card
+// the reader is on: after a reload on another page, the reader comes back to
+// their card by its id when they open the feed. A Crossref answer before that
+// has no card to place the notable cards against.
+test('with no card reported, a book taken out leaves the other cards in their order, so no notable card crosses the reader', () => {
+  const notable = (id: string): Paper => ({ ...paper(`10.5555/${id}`), _notable: true });
+  const others = Array.from({ length: 29 }, (_, index) => paper(`10.5555/card-${index}`));
+  const ids = (list: Paper[]) => list.map(work => work.id);
+  const dropBooks = (list: Paper[], books: Paper[]) => dropUnreachedPublications(list, books.map(work => paper(work.doi!, 'book')), null);
+  // The reader dismissed the notable card at 14, the re-rank placed the next
+  // one at 29, and they left on the seventeenth card.
+  const ahead = [...others, notable('notable-1')];
+  const afterDismissal = dropBooks(ahead, [others[5]]);
+  assert.deepEqual(ids(afterDismissal), ids(ahead).filter(id => id !== others[5].id));
+  assert.ok(ids(afterDismissal).indexOf('10.5555/notable-1') > ids(afterDismissal).indexOf(others[16].id), 'the reader still reaches it');
+  // The reader left two cards past the notable card at 14.
+  const passed = placeNotableCards(others.slice(0, 28), [notable('notable-0'), notable('notable-1')]);
+  const afterPass = dropBooks(passed, [others[5], others[7]]);
+  assert.deepEqual(ids(afterPass), ids(passed).filter(id => id !== others[5].id && id !== others[7].id));
+  assert.ok(ids(afterPass).indexOf('10.5555/notable-0') < ids(afterPass).indexOf(others[15].id), 'the notable card they saw does not come again');
+});
