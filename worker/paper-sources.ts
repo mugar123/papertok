@@ -421,8 +421,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       : arxivSearch(env, `all:"${quotedLabel(lane)}"`, page, lane)),
   },
   pubmed: {
-    // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology.
-    firstPages: 10, dailyPages: 10, backfillPages: 40, dated: true, overlapDays: 3,
+    // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology,
+    // and two of nine 40-page steps ran out of the Worker's 30 s of CPU.
+    firstPages: 10, dailyPages: 10, backfillPages: 20, dated: true, overlapDays: 3,
     fetchPage: async (env, { lane, page, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
@@ -591,10 +592,16 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
   const until = state.backfill_until || new Date(now).toISOString().slice(0, 10);
   const since = daysFromNow(-CORPUS_DAYS, now);
   const held = await db.prepare('SELECT count(*) AS n FROM work_lanes WHERE lane = ?').bind(lane).first<{ n: number }>();
+  // Saved after each page, so a step cut short goes on from the last one read.
+  const save = (next: number | null) => db.prepare('UPDATE lane_state SET backfill_until = ?, backfill_page = ? WHERE source = ? AND lane = ?')
+    .bind(until, next, source, lane).run();
   let page = state.backfill_page || 1;
-  let done = (held?.n || 0) >= FEED_CANDIDATE_LIMIT;
   let stored = 0;
-  for (let read = 0; !done && read < spec.backfillPages; read += 1, page += 1) {
+  if ((held?.n || 0) >= FEED_CANDIDATE_LIMIT) {
+    await save(null);
+    return stored;
+  }
+  for (let read = 0; read < spec.backfillPages; read += 1, page += 1) {
     if (read > 0) await new Promise(resolve => setTimeout(resolve, BACKFILL_GAP_MS));
     let result: SourcePage;
     try {
@@ -604,10 +611,10 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       break;
     }
     stored += await ingestPapers(env, result.items, { now });
-    done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
+    const done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
+    await save(done ? null : page + 1);
+    if (done) break;
   }
-  await db.prepare('UPDATE lane_state SET backfill_until = ?, backfill_page = ? WHERE source = ? AND lane = ?')
-    .bind(until, done ? null : page, source, lane).run();
   return stored;
 }
 
