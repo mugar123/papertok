@@ -163,7 +163,7 @@
   min-width: 0;
 }
 
-/* On /search, the tabs as a menu; only a phone shows it (see 768px). */
+/* On /search, the tabs as a menu; shown only below 768px, where the tabs give way. */
 .navbar-page-picker {
   display: none;
   align-items: center;
@@ -188,16 +188,11 @@
   color: var(--text-secondary);
 }
 
-.navbar-page-menu {
-  width: 200px;
-}
-
-.navbar-page-menu .account-menu-item[aria-current='page'],
-.navbar-page-sheet .pc-share-row[aria-current='page'] {
+.navbar-page-row[aria-current='page'] {
   font-weight: var(--fw-semibold);
 }
 
-.navbar-page-menu-check {
+.navbar-page-check {
   margin-left: auto;
 }
 

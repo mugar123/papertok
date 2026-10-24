@@ -13,9 +13,8 @@ import type { FeedTab, FeedTabKey } from '../../utils/feed-tabs.ts';
 import { CaretDown, Check, MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
 import { FEED_TABS } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
-import '../feed/share-panel.css';
-import useIsPhone from '../../hooks/use-is-phone.ts';
-import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
+import RailMenu from '../feed/rail-menu.tsx';
+import { DrawerClose } from '../ui/drawer.tsx';
 import { shouldOpenSearchOnSlash } from './search-shortcut.ts';
 
 // The palette's chord is shown the way this keyboard spells it (search-shortcut.ts takes both).
@@ -109,72 +108,57 @@ function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRele
   );
 }
 
-/**
- * The tabs as a menu on /search, where the field takes their place below
- * 768px (navbar.css hides it above). A phone gets a drawer of thumb-sized
- * rows, as the scope picker beside it does.
- */
+/** The tabs as a menu on /search, where the field takes their place below 768px. */
 function PagePicker({ search }: { search: string }) {
-  const isPhone = useIsPhone();
-  const [open, setOpen] = useState(false);
-  const trigger = (
-    <>
-      {'Search'}
-      <CaretDown size={12} aria-hidden="true" />
-    </>
-  );
-  if (isPhone) {
-    const close = () => setOpen(false);
-    return (
-      <Drawer open={open} onOpenChange={setOpen}>
-        <DrawerTrigger className="navbar-page-picker" aria-label={'Search, switch page'}>{trigger}</DrawerTrigger>
-        <DrawerContent className="pc-share-sheet navbar-page-sheet">
-          <DrawerHandle />
-          <DrawerTitle render={<h2 />} className="pc-share-sheet-title">{'Go to'}</DrawerTitle>
-          <ul className="pc-share-list">
-            {FEED_TABS.map(({ key, path, label }) => {
-              const TabIcon = TAB_ICONS[key];
-              return (
-                <li key={key}>
-                  <Link to={path} className="pc-share-row" onClick={close}>
-                    <TabIcon size={20} aria-hidden="true" /> {label}
-                  </Link>
-                </li>
-              );
-            })}
-            <li>
-              <Link to={`/search${search}`} className="pc-share-row" aria-current="page" onClick={close}>
-                <MagnifyingGlass size={20} aria-hidden="true" /> {'Search'}
-                <Check size={18} aria-hidden="true" className="navbar-page-menu-check" />
-              </Link>
-            </li>
-          </ul>
-        </DrawerContent>
-      </Drawer>
-    );
-  }
+  const searchRow = `/search${search}`;
   return (
-    <Menu.Root>
-      <Menu.Trigger className="navbar-page-picker" aria-label={'Search, switch page'}>{trigger}</Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner className="account-menu-positioner" align="start" sideOffset={8}>
-          <Menu.Popup className="account-menu navbar-page-menu">
-            {FEED_TABS.map(({ key, path, label }) => {
-              const TabIcon = TAB_ICONS[key];
-              return (
-                <Menu.LinkItem key={key} className="account-menu-item" closeOnClick render={<Link to={path} />}>
-                  <TabIcon size={17} aria-hidden="true" /> {label}
-                </Menu.LinkItem>
-              );
-            })}
-            <Menu.LinkItem className="account-menu-item" closeOnClick aria-current="page" render={<Link to={`/search${search}`} />}>
-              <MagnifyingGlass size={17} aria-hidden="true" /> {'Search'}
-              <Check size={15} aria-hidden="true" className="navbar-page-menu-check" />
-            </Menu.LinkItem>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+    <RailMenu
+      title={'Go to'}
+      side="bottom"
+      align="start"
+      trigger={(
+        <button type="button" className="navbar-page-picker" aria-label={'Search, switch page'}>
+          {'Search'}
+          <CaretDown size={12} aria-hidden="true" />
+        </button>
+      )}
+      menu={(
+        <>
+          {FEED_TABS.map(({ key, path, label }) => {
+            const TabIcon = TAB_ICONS[key];
+            return (
+              <Menu.LinkItem key={key} className="pc-share-menu-item" closeOnClick render={<Link to={path} />}>
+                <TabIcon size={16} aria-hidden="true" /> {label}
+              </Menu.LinkItem>
+            );
+          })}
+          <Menu.LinkItem className="pc-share-menu-item navbar-page-row" closeOnClick aria-current="page" render={<Link to={searchRow} />}>
+            <MagnifyingGlass size={16} aria-hidden="true" /> {'Search'}
+            <Check size={15} aria-hidden="true" className="navbar-page-check" />
+          </Menu.LinkItem>
+        </>
+      )}
+      sheet={(
+        <>
+          {FEED_TABS.map(({ key, path, label }) => {
+            const TabIcon = TAB_ICONS[key];
+            return (
+              <li key={key}>
+                <Link to={path} className="pc-share-row">
+                  <TabIcon size={20} aria-hidden="true" /> {label}
+                </Link>
+              </li>
+            );
+          })}
+          <li>
+            <DrawerClose className="pc-share-row navbar-page-row" aria-current="page">
+              <MagnifyingGlass size={20} aria-hidden="true" /> {'Search'}
+              <Check size={18} aria-hidden="true" className="navbar-page-check" />
+            </DrawerClose>
+          </li>
+        </>
+      )}
+    />
   );
 }
 
@@ -224,15 +208,13 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
   // On /search the bar holds the page's own field, which SearchPage renders
-  // into this slot; the shortcut focuses it rather than opening the palette.
+  // into this slot; SearchPage also takes the shortcut there.
   const onSearchPage = pathname === '/search';
-  const searchSlotRef = useRef<HTMLDivElement | null>(null);
   const searchFieldRef = useRef<HTMLElement | null>(null);
   const attachSearchField = useCallback((node: HTMLElement | null) => {
     searchFieldRef.current = node;
   }, []);
   const attachSearchSlot = useCallback((node: HTMLDivElement | null) => {
-    searchSlotRef.current = node;
     searchFieldRef.current = node;
     onSearchSlot?.(node);
   }, [onSearchSlot]);
@@ -242,10 +224,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
     const handleShortcut = (event: KeyboardEvent) => {
       // Bound on `window`, so a modal dialog's inertness does not filter it:
       // the guard has to be asked explicitly (search-shortcut.ts).
-      if (!shouldOpenSearchOnSlash(event, document)) return;
+      if (onSearchPage || !shouldOpenSearchOnSlash(event, document)) return;
       event.preventDefault();
-      if (onSearchPage) searchSlotRef.current?.querySelector('input')?.focus();
-      else onOpenSearch();
+      onOpenSearch();
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);

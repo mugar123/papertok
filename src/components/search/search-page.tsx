@@ -44,6 +44,7 @@ import {
   joinNames,
   outageAffectsFilter,
 } from '../../utils/search-outage.ts';
+import { shouldOpenSearchOnSlash } from '../layout/search-shortcut.ts';
 import PaperCard from '../feed/paper-card.tsx';
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
@@ -663,6 +664,18 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Focus goes back to the field: the control that was pressed unmounts while
   // the search runs.
+  // The header's shortcut opens the palette everywhere else (navbar.tsx); here
+  // it focuses this field, once the field is in the header.
+  useEffect(() => {
+    const focusField = (event: KeyboardEvent) => {
+      const field = searchInputRef.current;
+      if (!field?.isConnected || !shouldOpenSearchOnSlash(event, document)) return;
+      event.preventDefault();
+      field.focus();
+    };
+    window.addEventListener('keydown', focusField);
+    return () => window.removeEventListener('keydown', focusField);
+  }, []);
   const retrySearch = () => {
     void performSearch(query.trim(), activeSearchFilter);
     searchInputRef.current?.focus();
