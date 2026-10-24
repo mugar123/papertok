@@ -214,7 +214,10 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
 type SourceEnv = StoreEnv & WorkerEnv;
 type RouteHandler = (request: Request, env: WorkerEnv, identity?: null) => Promise<Response>;
 
-/** A route refused for now: its own minute ceiling, a pace beat or the day's budget. */
+/**
+ * A route refused for now: its own minute ceiling, a pace beat, the day's
+ * budget, or the quota ledger that keeps them, when it cannot answer.
+ */
 export class SourceRefused extends Error {
   retryAfterSeconds: number;
   constructor(path: string, retryAfterSeconds: number) {
@@ -222,6 +225,10 @@ export class SourceRefused extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
+
+// A ledger that cannot answer, as a refusal longer than a lane waits out
+// (LANE_WAIT_SECONDS): the relay refuses a spent day with the same 300.
+const LEDGER_REFUSAL_SECONDS = 300;
 
 // Asks a Worker route in-process, as the browser asked it over the network:
 // the route's own validation, keys, cache, ceilings and deadlines apply.
@@ -232,6 +239,14 @@ async function askRoute(handler: RouteHandler, path: string, params: Record<stri
   }
   const response = await handler(new Request(url), env, null);
   if (response.status === 429) throw new SourceRefused(path, Number(response.headers.get('retry-after')) || 60);
+  // The route's ledger could not answer, so no provider was asked. Nothing
+  // says when it is back: a refusal longer than a lane waits ends the source
+  // for the step rather than asking the ledger again for every lane, and a
+  // followed lane keeps its turn (paper-harvest.ts).
+  if (response.status === 503) {
+    const answer = await response.clone().json().catch(() => null) as { code?: unknown } | null;
+    if (answer?.code === 'PROVIDER_QUOTA_NOT_CONFIGURED') throw new SourceRefused(path, LEDGER_REFUSAL_SECONDS);
+  }
   if (!response.ok) throw new Error(`${path} answered ${response.status}`);
   return response;
 }

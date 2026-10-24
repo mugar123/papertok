@@ -326,7 +326,15 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest
     cost.newFollow = harvest.newFollow;
   }
   if (cost.units > 0) {
-    const budget = await reserveOpenAlexBudget(env, '', cost, now);
+    // A ledger the harvest cannot reach answers it as one that cannot answer,
+    // with nothing sent to OpenAlex: the harvest tells that from OpenAlex
+    // failing (paper-sources.ts `askRoute`). A reader's request still fails
+    // as the router answers any other throw.
+    const budget = await reserveOpenAlexBudget(env, '', cost, now).catch((error: unknown) => {
+      if (!harvest) throw error;
+      console.warn('OpenAlex ledger unreachable for the harvest', error);
+      return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' }) };
+    });
     if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers, budgetRefusal: true };
   }
 

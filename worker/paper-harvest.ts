@@ -68,8 +68,9 @@ export async function harvestStart(db: D1Database, set: string, now = Date.now()
  * recorded as failed before the harvest starts, so a lane whose step stops
  * mid-lane past its timeout has had it too, and the step's retry passes the
  * lane over: a lane has one turn a run. A harvest clears the failures. A
- * budget refusal (`SourceRefused`) puts back what was there, so the lane keeps
- * its turn.
+ * refusal (`SourceRefused`: a spent share, part or day, a pace beat, or a
+ * ledger that cannot answer) puts back what was there, so the lane keeps its
+ * turn.
  */
 async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
   const db = env.PAPER_STORE!;

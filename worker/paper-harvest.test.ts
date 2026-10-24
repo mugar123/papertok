@@ -322,6 +322,54 @@ test('a followed lane the budget refuses keeps its turn: the next night it comes
   assert.deepEqual(searchesAsked(asked.slice(before)).slice(0, 2), ['followed first', 'followed second']);
 });
 
+// The quota ledger as the relay finds it when its Durable Object answers with
+// an error or cannot be reached, while `failure` says so.
+function failingLedger(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], failure: () => 'error' | 'throw' | null) {
+  return {
+    idFromName: (name: string) => ledger!.idFromName(name),
+    get: (id: Parameters<NonNullable<WorkerEnv['REQUEST_QUOTA_LEDGER']>['get']>[0]) => ({
+      fetch: async (url: string, init?: RequestInit) => {
+        const mode = failure();
+        if (mode === 'throw') throw new Error('the ledger cannot be reached');
+        if (mode === 'error') return new Response('down', { status: 500 });
+        return ledger!.get(id).fetch(url, init);
+      },
+    }),
+  } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+}
+
+// With our own ledger down, no OpenAlex unit can be reserved and OpenAlex is
+// asked nothing: that says nothing about a lane.
+test('nights without the quota ledger cost no followed lane a wait: the night it answers again refreshes them all', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
+  providers(t);
+  const lanes = [
+    ...Array.from({ length: 10 }, (_, index) => `query:search ${index}`),
+    ...Array.from({ length: 10 }, (_, index) => `author:A${index + 1}`),
+  ];
+  for (const failure of ['error', 'throw'] as const) {
+    for (const outage of [1, 4]) {
+      const { env, db } = corpus();
+      Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+      let down = false;
+      env.REQUEST_QUOTA_LEDGER = failingLedger(env.REQUEST_QUOTA_LEDGER, () => (down ? failure : null));
+      const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
+      for (const lane of lanes) follow.run(lane, '2026-10-20T12:00:00.000Z', '2026-10-20T12:00:00.000Z');
+      const refreshed: number[] = [];
+      for (let night = 1; night <= outage + 3; night += 1) {
+        const at = Date.parse('2026-10-20T02:30:00Z') + night * 86_400_000;
+        // Asked for again every day, so none leaves the harvest.
+        db.prepare('UPDATE followed_lanes SET requested_at = ?').run(new Date(at - 3_600_000).toISOString());
+        down = night <= outage;
+        t.mock.timers.setTime(at);
+        await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+        refreshed.push((db.prepare('SELECT COUNT(*) AS n FROM lane_state WHERE harvested_through = ?').get(new Date(at).toISOString()) as { n: number }).n);
+      }
+      assert.deepEqual(refreshed, [...Array(outage).fill(0), lanes.length, lanes.length, lanes.length], `ledger ${failure} for ${outage} nights`);
+    }
+  }
+});
+
 test('a followed lane harvested after failing nights is asked again the night after its next failure', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
   let failing = true;
