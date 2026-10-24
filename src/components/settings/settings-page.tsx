@@ -321,9 +321,9 @@ function ProfileAccountPage() {
         />
         <div className="settings-list">
           <div className="settings-row settings-row-side">
-            <div className="settings-row-content settings-row-title-line">
+            <div className="settings-row-content">
               <h3 className="settings-method-name"><GraduationCap size={16} aria-hidden="true" />{copy.institution}</h3>
-              {institution && <InstitutionPill institution={institution} />}
+              {institution && <InstitutionPill institution={institution} className="settings-row-pill" />}
             </div>
             <RowAction
               Icon={institution ? GearSix : LinkSimple}

@@ -290,6 +290,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The linked university's badge sits under the row's title, and a long name
+   wraps there rather than pushing the action aside. */
+.settings-row-pill {
+  margin-top: var(--space-2);
+  white-space: normal;
+}
+
 .settings-method-name {
   display: flex;
   align-items: center;
