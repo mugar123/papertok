@@ -3,6 +3,7 @@ declare const document: { createElement(tag: 'a'): CitationDownload; body: { app
 
 import type { Paper } from '../models/paper.ts';
 import { storedClassification } from '../models/paper.ts';
+import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 
 function authorName(author: Paper['authors'][number] | undefined) {
   if (typeof author === 'string') return author.trim();
@@ -87,7 +88,8 @@ export function papersToRIS(papers: Partial<Paper>[] = []) {
     if (paper.journal) lines.push(`JO  - ${paper.journal}`);
     if (paper.doi) lines.push(`DO  - ${paper.doi}`);
     if (paper.landingPageUrl) lines.push(`UR  - ${paper.landingPageUrl}`);
-    if (paper.summary) lines.push(`AB  - ${paper.summary.replace(/\s+/g, ' ').trim()}`);
+    const abstract = [paper.summary, paper.abstract].find(hasUsableAIAbstract);
+    if (abstract) lines.push(`AB  - ${abstract.replace(/\s+/g, ' ').trim()}`);
     lines.push('ER  -');
     return lines.join('\n');
   }).join('\n\n');

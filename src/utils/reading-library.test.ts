@@ -180,6 +180,11 @@ test('an interaction excerpt reads the abstract and is cut at 500 characters', (
   assert.equal(abstractExcerpt({}), '');
 });
 
+test('a RIS record carries the abstract of a served card, and no placeholder', () => {
+  assert.match(papersToRIS([{ title: 'A paper', abstract: 'The abstract.' }]), /^AB {2}- The abstract\.$/m);
+  assert.doesNotMatch(papersToRIS([{ title: 'A paper', abstract: 'No abstract available.' }]), /^AB /m);
+});
+
 test('exports valid-looking BibTeX and RIS records', () => {
   const bib = papersToBibTeX([paper]);
   const ris = papersToRIS([paper]);

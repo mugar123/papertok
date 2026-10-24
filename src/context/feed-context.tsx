@@ -1763,7 +1763,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
-          paperAbstract: abstractExcerpt(paper),
+          paperAbstract: abstractExcerpt(paper) || undefined,
           // The same copy a save keeps. A like used to store only the title
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
@@ -1815,7 +1815,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
-          paperAbstract: abstractExcerpt(paper),
+          paperAbstract: abstractExcerpt(paper) || undefined,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
