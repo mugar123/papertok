@@ -611,13 +611,6 @@ export const OPENALEX_LEAF_VENUES: Readonly<Record<string, { readonly sources: r
     ],
     filters: ['type:article'],
   },
-  'q-fin.RM': {
-    sources: [
-      'S116483603', // Journal of Risk & Insurance (Wiley)
-      'S198325475', // Insurance Mathematics and Economics (Elsevier BV)
-    ],
-    filters: ['type:article'],
-  },
   'quant-ph': {
     sources: [
       'S2738600312', // npj Quantum Information (Nature Portfolio)

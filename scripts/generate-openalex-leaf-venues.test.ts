@@ -6,13 +6,16 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 // Synthetic sources and samples; these do not establish live precision.
+const curated = ['cs.AI', 'cs.DS', 'econ.EM', 'econ.GN', 'econ.TH', 'hep-ex', 'q-fin.PM'];
 const sources = {
-  S901: { name: 'Journal of Synthetic Econometrics', publisher: 'Example Press', type: 'journal' },
-  S902: { name: 'Synthetic Economic Letters', publisher: 'Example Press', type: 'journal' },
-  S903: { name: 'Synthetic Review of Estimation', publisher: null, type: 'journal' },
-  S904: { name: 'Synthetic Methods Quarterly', publisher: 'Example Press', type: 'journal' },
+  S901: { name: 'Journal of Synthetic Econometrics', publisher: 'Example Press', type: 'journal', leaves: curated },
+  S902: { name: 'Synthetic Economic Letters', publisher: 'Example Press', type: 'journal', leaves: curated },
+  S903: { name: 'Synthetic Review of Estimation', publisher: null, type: 'journal', leaves: curated },
+  S904: { name: 'Synthetic Methods Quarterly', publisher: 'Example Press', type: 'journal', leaves: curated },
+  // Sampled for a leaf, but its curator left it off every list.
+  S905: { name: 'Synthetic Insurance Review', publisher: 'Example Press', type: 'journal', leaves: [] },
   // A listed working-paper series, filed by OpenAlex as a journal.
-  S2809516038: { name: 'National Bureau of Economic Research', publisher: null, type: 'journal' },
+  S2809516038: { name: 'National Bureau of Economic Research', publisher: null, type: 'journal', leaves: ['econ.GN'] },
 };
 
 interface Options {
@@ -46,7 +49,7 @@ function setup(t: import('node:test').TestContext) {
   const reviews = join(directory, 'reviews.json');
   const output = join(directory, 'venues.ts');
   const report = join(directory, 'coverage.json');
-  const write = (leaves: Record<string, unknown>) => writeFileSync(reviews, JSON.stringify({ sources, leaves }));
+  const write = (leaves: Record<string, unknown>, records: Record<string, unknown> = sources) => writeFileSync(reviews, JSON.stringify({ sources: records, leaves }));
   const run = (...extra: string[]) => spawnSync(process.execPath, [
     'scripts/generate-openalex-leaf-venues.ts', '--reviews', reviews, '--out', output, '--report', report, ...extra,
   ], { cwd: new URL('..', import.meta.url), encoding: 'utf8' });
@@ -100,6 +103,25 @@ test('a short page, too few on target, or doubted calls give a leaf no lane, and
     'q-fin.PM': ['rejected', []],
   });
   assert.deepEqual([...readFileSync(output, 'utf8').matchAll(/^ {2}'([^']+)': \{/gm)].map(match => match[1]), ['econ.EM', 'econ.TH']);
+});
+
+// q-fin.RM on 2026-10-23: the two insurance journals its curator excluded
+// were 10 of 15 on target.
+test('a source its curator did not file under the leaf stays out of the lane, whatever its sample', t => {
+  const { write, run, coverage, output } = setup(t);
+  write({
+    // S905 is on target, but on no curated list; S901 is curated for econ.EM.
+    'econ.EM': { sample: sample({ asked: ['S901', 'S905'], from: ['S901', 'S905'] }) },
+    'q-fin.RM': { sample: sample({ asked: ['S905'], onTarget: 10 }) },
+  });
+  const result = run();
+  assert.equal(result.status, 0, result.stderr);
+  const statuses = Object.fromEntries(coverage().map(row => [row.leaf, [row.status, row.onTarget, row.sources]]));
+  assert.deepEqual(statuses, { 'econ.EM': ['passed', 12, ['S901']], 'q-fin.RM': ['not-curated', 10, []] });
+  assert.deepEqual([...readFileSync(output, 'utf8').matchAll(/^ {2}'([^']+)': \{/gm)].map(match => match[1]), ['econ.EM']);
+  // A filing must name taxonomy leaves.
+  write({ 'econ.EM': { sample: sample() } }, { ...sources, S901: { ...sources.S901, leaves: ['econ.EMX'] } });
+  assert.match(run().stderr, /S901: leaves must list the taxonomy leaves its curator filed it under/);
 });
 
 test('a lane keeps the types and the topic or author filter its sample asked with', t => {

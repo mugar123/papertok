@@ -563,8 +563,9 @@ test('a leaf whose venue sample fell short of the gate, or that has none, sends 
   // econ.GN's 15 newest articles, asked as the lane asks, without
   // has_abstract, were 9 on target: two Journal of Political Economy articles
   // without an abstract were doubted. cs.DS's sources held 13 recent articles
-  // with an abstract, cs.GT's 11.
-  const short = [['econ.GN', 'rejected'], ['math.AG', 'rejected'], ['math.GR', 'rejected'], ['q-fin.PM', 'rejected'], ['cs.DS', 'insufficient-sample'], ['cs.GT', 'insufficient-sample'], ['q-fin.PR', 'insufficient-sample'], ['q-fin.TR', 'insufficient-sample']];
+  // with an abstract, cs.GT's 11. q-fin.RM's two insurance journals were 10 of
+  // 15 on target, but its curator excluded both.
+  const short = [['econ.GN', 'rejected'], ['math.AG', 'rejected'], ['math.GR', 'rejected'], ['q-fin.PM', 'rejected'], ['cs.DS', 'insufficient-sample'], ['cs.GT', 'insufficient-sample'], ['q-fin.PR', 'insufficient-sample'], ['q-fin.TR', 'insufficient-sample'], ['q-fin.RM', 'not-curated']];
   for (const [leaf, status] of short) {
     assert.equal(statusOf(leaf)?.status, status, leaf);
     assert.equal(openAlexVenueFilterForLeaf(leaf), null, leaf);

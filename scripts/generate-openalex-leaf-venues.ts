@@ -19,7 +19,9 @@ interface Sample {
   // `uncertain` marks a call the labeller doubted; it counts as a miss.
   labels: Array<{ workId: string; label?: 'on-target' | 'off-target'; uncertain?: true }>;
 }
-interface Source { name: string; publisher: string | null; type: string }
+// `leaves`: the leaves its curator filed it under; none for a source sampled
+// but left off the curated lists.
+interface Source { name: string; publisher: string | null; type: string; leaves: string[] }
 interface Reviews {
   sources: Record<string, Source>;
   // `sample` decides the leaf; a source sample asks the leaf's filters of one
@@ -129,14 +131,17 @@ function checkLeaf(leaf: string, entry: Reviews['leaves'][string], records: Revi
     }
     ownSamples.set(id, own.bySource.get(id)!);
   }
+  // Only a source its curator filed under the leaf can enter its lane: a sample
+  // tests the curated list, it does not add to it.
+  const curated = (id: string) => Array.isArray(records[id]?.leaves) && records[id].leaves.includes(leaf);
   // The leaf's precision says nothing about a source its sample never reached,
   // or reached only off target: the lane leaves it out unless a sample of its
   // own is two thirds on target.
-  const admitted = status !== 'passed' ? [] : lane.sources.filter(id => lane.bySource.get(id)!.onTarget > 0
-    || (ownSamples.get(id)?.sampled && ownSamples.get(id)!.onTarget / ownSamples.get(id)!.sampled >= minimumPrecision));
+  const admitted = status !== 'passed' ? [] : lane.sources.filter(id => curated(id) && (lane.bySource.get(id)!.onTarget > 0
+    || (ownSamples.get(id)?.sampled && ownSamples.get(id)!.onTarget / ownSamples.get(id)!.sampled >= minimumPrecision)));
   for (const id of admitted) {
     const record = records[id];
-    if (!record || typeof record.name !== 'string' || !record.name.trim() || (record.publisher !== null && typeof record.publisher !== 'string')) {
+    if (typeof record.name !== 'string' || !record.name.trim() || (record.publisher !== null && typeof record.publisher !== 'string')) {
       throw new Error(`${leaf}: ${id} needs its verified name, publisher and type`);
     }
     // Its articles must read reviewed, by the venue rule, and not as a listed
@@ -145,7 +150,9 @@ function checkLeaf(leaf: string, entry: Reviews['leaves'][string], records: Revi
     if (reviewed !== true) throw new Error(`${leaf}: ${id} (${record.name}) is not a venue the review rule calls reviewed`);
   }
   return {
-    status,
+    // A passing sample whose on-target sources are all off the curated list
+    // gives the leaf no lane.
+    status: status === 'passed' && !admitted.length ? 'not-curated' : status,
     sampleSize: lane.sampleSize,
     onTarget: lane.onTarget,
     precision,
@@ -166,6 +173,11 @@ const { values } = parseArgs({ options: {
 const reviews = JSON.parse(readFileSync(values.reviews!, 'utf8')) as Reviews;
 if (!reviews?.sources || typeof reviews.sources !== 'object' || !reviews.leaves || typeof reviews.leaves !== 'object') {
   throw new Error('Reviews must hold the verified sources and the samples keyed by taxonomy leaf ID');
+}
+for (const [id, record] of Object.entries(reviews.sources)) {
+  if (!Array.isArray(record?.leaves) || record.leaves.some(leaf => !leaves.some(item => item.id === leaf))) {
+    throw new Error(`${id}: leaves must list the taxonomy leaves its curator filed it under`);
+  }
 }
 const report = Object.keys(reviews.leaves).sort().map(leaf => {
   const known = leaves.find(item => item.id === leaf);

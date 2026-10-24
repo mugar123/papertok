@@ -22,7 +22,7 @@ node scripts/generate-openalex-leaf-venues.ts --check
 
 | Key | Contents |
 | --- | --- |
-| `sources` | Each source ID the samples asked for, with the `name`, `publisher` and `type` (`journal`, `conference`) its curator verified with `/sources/<id>`. Nine computer science sources the curator dropped after sampling (eight with no work since 2024, one re-dated repository copy) have no record; a source without one cannot enter a lane. |
+| `sources` | Each source ID the samples asked for, with the `name`, `publisher` and `type` (`journal`, `conference`) its curator verified with `/sources/<id>`, and `leaves`, the leaves its curator filed it under: the curated lists, kept here only. A source filed under none was sampled but left off the lists: the excluded insurance, derivatives and market microstructure journals of q-fin.RM, q-fin.PR and q-fin.TR, and the optional Journal of Portfolio Management and Financial Analysts Journal of q-fin.PM. Nine computer science sources the curator dropped after sampling (eight with no work since 2024, one re-dated repository copy) have no record; a source without one cannot enter a lane. |
 | `leaves` | Per taxonomy leaf: `sample`, the leaf's labelled sample, and optionally `sourceSamples`, samples of one of its sources each |
 
 A sample holds `capturedAt`, the `query` as sent without the sampler's
@@ -42,8 +42,11 @@ filter. Nothing else is accepted.
 
 A leaf passes with a full page of 15 and at least 10 on target without doubt,
 the topic lanes' rule (`README-openalex-leaf-topics.md`). Its lane then asks
-for the sources with at least one article on target without doubt, or whose
-own sample, asked with the leaf's filters, is at least two thirds on target.
+for the sources its curator filed under it that have at least one article on
+target without doubt, or whose own sample, asked with the leaf's filters, is at
+least two thirds on target. A sample tests the curated list and does not add
+to it: a leaf whose sample passes on sources its curator left out has no lane
+(`not-curated` in the report).
 The leaf's precision says nothing about a source its 15 newest did not reach,
 so such a source stays out, as a topic does in a topic lane. Every source a
 lane asks for must be one the review rule calls reviewed
@@ -67,8 +70,8 @@ Each night a lane reads up to 3 pages of 200 and stops after a page that is
 not full, or whose newest article is older than the 14 days before its last
 run; its first night reads up to 5. A lane with under 200 articles in 90 days
 asks once a night. From the
-curators' 90-day counts, the 80 lanes ask about 122 list calls a night, 240 at
-most, and 152 on their first night, of the 3,000 the category lanes may spend
+curators' 90-day counts, the 79 lanes ask about 121 list calls a night, 237 at
+most, and 151 on their first night, of the 3,000 the category lanes may spend
 of the harvest's 4,000 units a day. cs.SY and eess.SY send the same request,
 which the relay answers from its store the second time.
 
@@ -78,8 +81,11 @@ Curators proposed the lists and took the samples with keyless OpenAlex requests:
 economics and finance on 2026-10-23 between 19:15 and 19:27 UTC, physics,
 mathematics, computer science with statistics and electrical engineering, and
 engineering on 2026-10-24 between 02:06 and 02:54 UTC, with the window that
-ended on 2026-10-23. Each leaf's sample is the list its curator recommended
-before labelling; a list tried before it and dropped is not recorded here.
+ended on 2026-10-23. A leaf with a curated list is sampled on that list, as
+its curator recommended it before labelling; a list tried before it and
+dropped is not recorded here. q-fin.PM, q-fin.PR, q-fin.RM and q-fin.TR have no
+curated list: their samples asked for the candidate journals the curator
+weighed and did not recommend, and record why those leaves have no lane.
 Economics and finance were sampled with and without `has_abstract:true`; their
 evidence is the sample asked as the lane asks. Every other sample asked
 `has_abstract:true`, so its labeller saw only articles with an abstract; the
@@ -94,7 +100,7 @@ labels are blind to the curators' calls, not to the venue.
 
 | Area | Leaves with a lane | Leaves sampled without one |
 | --- | --- | --- |
-| Economics and finance | econ.EM, econ.TH, q-fin.GN, q-fin.MF, q-fin.RM | econ.GN 9 of 15 (11 of 15 with `has_abstract:true`; two articles without an abstract were doubted), q-fin.PM 4 of 15, q-fin.PR 9 articles in 90 days, q-fin.TR 4 |
+| Economics and finance | econ.EM, econ.TH, q-fin.GN, q-fin.MF | econ.GN 9 of 15 (11 of 15 with `has_abstract:true`; two articles without an abstract were doubted), q-fin.RM 10 of 15 from the Journal of Risk and Insurance and Insurance: Mathematics and Economics, which its curator excluded as insurance and actuarial journals, q-fin.PM 4 of 15, q-fin.PR 9 articles in 90 days, q-fin.TR 4 |
 | Physics | all 24 sampled | none |
 | Mathematics | 12 | math.AG 9 of 15, math.GR 7 of 15 |
 | Computer science, statistics, electrical engineering | 25 | cs.DS 13 articles in 90 days (all on target), cs.GT 11 (9 on target) |
@@ -109,7 +115,7 @@ cond-mat.supr-con, cond-mat.quant-gas, cond-mat.mes-hall, astro-ph.GA,
 astro-ph.SR and physics.atom-ph. hep-th's sample, the same 15 with and without
 `authors_count:<100`, is recorded without it.
 
-The passing leaves' samples asked for 435 sources. Their lanes ask for 245;
+The passing leaves' samples asked for 433 sources. Their lanes ask for 243;
 the other 190 had no article on target among their leaf's 15 newest. 37 of
 them are conferences, which publish their proceedings once a year (AAAI,
 IJCAI, ACL, NeurIPS, CHI and SIGIR among them). Three journals entered on a

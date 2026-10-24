@@ -2024,7 +2024,7 @@
   {
     "leaf": "q-fin.RM",
     "label": "Risk Management",
-    "status": "passed",
+    "status": "not-curated",
     "sampleSize": 15,
     "onTarget": 10,
     "precision": 0.6666666666666666,
@@ -2036,10 +2036,7 @@
       "S116483603": "4/7",
       "S198325475": "6/8"
     },
-    "sources": [
-      "S116483603",
-      "S198325475"
-    ]
+    "sources": []
   },
   {
     "leaf": "q-fin.TR",
