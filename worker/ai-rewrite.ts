@@ -73,6 +73,7 @@ import {
   nanPdfPart,
 } from './nan-client.ts';
 import { extractPaperText, formatPaperTextForPrompt } from './paper-text.ts';
+import { DEGRADED_CACHE_SECONDS } from './provider-runtime.ts';
 
 // Bump when the prompt or output budget changes so cached rewrites use that policy.
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v3';
@@ -573,12 +574,12 @@ export function cacheableFinish(finishReason: unknown, droppedSections = 0) {
   return null;
 }
 
-async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite) {
+async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite, ttlSeconds: number) {
   const target = rewriteStore(env);
   if (!target) return;
   try {
     await target.store.put(`${target.prefix}${key}`, JSON.stringify(value), {
-      expirationTtl: REWRITE_CACHE_TTL_SECONDS,
+      expirationTtl: ttlSeconds,
     });
   } catch {
     // A missed cache write only costs a future regeneration.
@@ -999,11 +1000,17 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // be complete. Only a complete result is worth replacing it with.
         cachedWrite = regenerate ? finish === 'complete' : finish !== null;
         if (cachedWrite) {
+          // The key names the model that was asked first. A rewrite the fallback
+          // wrote says which model wrote it and is kept only as long as an
+          // outage-driven answer, so readers get the primary model again once it
+          // recovers, and a regenerate that fell back does not hold a complete
+          // entry's place for thirty days.
+          const fellBack = activeModel !== model;
           await writeCachedRewrite(env, cacheKey, {
-            meta,
+            meta: fellBack ? { ...meta, model: activeModel } : meta,
             sections,
             truncated: finish === 'truncated',
-          });
+          }, fellBack ? DEGRADED_CACHE_SECONDS : REWRITE_CACHE_TTL_SECONDS);
         }
         await send({
           type: 'done',

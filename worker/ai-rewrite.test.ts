@@ -1269,6 +1269,34 @@ test('a 503 from flash before any token is retried once on the fallback model', 
   assert.equal(state.release, 0);
 });
 
+test('a rewrite the fallback wrote is stored briefly, under the name of the model that wrote it', async () => {
+  const store = fakeRewriteStore();
+  const models: string[] = [];
+  const env = {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+
+  await runRewrite({ provider: failingPrimary(models) }, env);
+
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(store.entries.size, 1);
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'gemini-3.5-flash-lite');
+  // Minutes, not the thirty days a primary rewrite is kept for, and no less than
+  // the sixty seconds KV accepts.
+  assert.ok(entry.ttl! >= 60 && entry.ttl! <= 120, `ttl ${entry.ttl}`);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[0].model, 'gemini-3.5-flash-lite');
+});
+
 test('the provider own daily wall on flash is worth trying on flash-lite', async () => {
   const models: string[] = [];
 
