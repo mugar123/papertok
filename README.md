@@ -50,33 +50,6 @@ Worker routes that require production identity reject its tokens. See the
 
 Run `npm run check` before opening a pull request.
 
-## Analytics and error monitoring
-
-Reader analytics distinguish `reader_open` (the internal reader becomes visible),
-`paper_open` (an attempt to open the original/PDF), and `paper_rewrite` (an attempted
-Worker request). `paper_rewrite_result` reports success, incomplete output,
-failure or cancellation, with the reading level, cache status, bounded duration
-and an allowlisted error code. Cached results do not count as Worker requests.
-`auth_prompt_view` records the sign-in dialog's reason; `auth_result` distinguishes
-successful, cancelled and failed Google/GitHub attempts without account details.
-
-Sentry receives frontend and Worker errors in separate `papertok-web` and
-`papertok-worker` projects. Frontend collection covers the React error boundary,
-uncaught JavaScript errors and unhandled promise rejections, on production hosts
-and behind the analytics opt-out. Worker collection covers uncaught request,
-scheduled-task and Durable Object failures, caught router and rewrite failures,
-and otherwise unreported 5xx responses. Expected 4xx responses are excluded.
-Backend operational reporting is independent of browser analytics consent.
-
-Reports keep standard error types, code locations, release identifiers and
-allowlisted operation/status tags. Messages, request data, account details,
-paper content and breadcrumbs are removed; transport IP inference is suppressed.
-Tracing, replay, logs and metrics are disabled. `app_error` remains a product
-counter in PostHog. Hidden frontend source maps upload during Vite builds and
-are deleted from the published assets. Set `SENTRY_AUTH_TOKEN` in the Vercel
-Production build environment; never use a `VITE_*` variable for this credential.
-The Worker deployment command uploads its maps separately (see `worker/README.md`).
-
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome. For large changes, open an issue first.
@@ -94,5 +67,5 @@ PaperTok depends on open scholarly infrastructure, especially arXiv, OpenAlex an
 
 ## License
 
-[MIT](LICENSE). Built by [Nicolás Muñoz](https://github.com/mugar123), with UI design by Samuel
-and contributions from Pablo Presa and bipo.
+[MIT](LICENSE). Built by [Nicolás Muñoz](https://github.com/mugar123),
+[Samuel](https://x.com/disamdev), Pablo Presa and Asier.
