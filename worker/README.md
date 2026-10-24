@@ -163,7 +163,7 @@ The native `https://papertok-report-api.<account>.workers.dev` route still answe
 still accepted by `src/services/worker-api-client.ts`, so a bundle built before the variable
 was flipped keeps working.
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, a hit is served from the edge cache for a day, and misses share a per-minute ceiling (`PDF_GLOBAL_MINUTE_LIMIT`, 120 by default) that closes when the ledger is missing.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (delete the comments and content reports from before comments were removed, drop public lists, follows, clear `createdBy` on paper stubs, profile and handle, the private user tree, newsletter KV, then Auth last). The private user tree includes the saved plain-words summaries (`summaries`) and their history rows (`summaryHistory`); the sweep reads document names only, 80 per request, so a page of summaries is not downloaded just to be deleted. Replies other accounts wrote under a deleted comment stay. Every request also needs a recent sign-in: when the verified token's `auth_time` is missing or more than 240 s old, the route answers 401 `AUTH_RECENT_LOGIN_REQUIRED` before it deletes anything. Identity Toolkit refuses to delete the Auth account for a sign-in that is not recent (`CREDENTIAL_TOO_OLD_LOGIN_AGAIN`), and Auth is the last stage, so without this check that refusal arrived after the data was gone. Firebase does not document its window; it is commonly reported as five minutes. The settings dialog signs the user in again with a popup just before the first request. A deletion that runs past the window stops with the same 401 while `users/{uid}`, the newsletter and Auth are still there, and the next request after a new sign-in continues it. This is a **new** route: deploy the Worker before the frontend.
 
@@ -554,6 +554,84 @@ Workers Logs moves to Cloudflare Observability pricing. Read the lines in the Cl
 under Workers & Pages → `papertok-report-api` → Observability, or live with `npx wrangler tail`.
 Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: without it, every
 `wrangler deploy` switches Workers Logs off, whatever the dashboard says.
+
+
+## PDF relay limits
+
+`GET /pdf?url=` allows 30 valid requests per IP in each fixed UTC minute,
+including edge-cache hits. The same `REQUEST_QUOTA_LEDGER` object handles
+`api.papertok.app`, the native `workers.dev` endpoint and any other hostname
+reaching this Worker. Concurrent requests reserve the caller allowance and the
+upstream allowance in one storage transaction, before fetching the PDF. A miss
+spends one unit of each; a hit spends only the caller allowance. Misses still
+share `PDF_GLOBAL_MINUTE_LIMIT` (120 by default). A failure upstream keeps its
+reservation because an attempt was made. Invalid URLs, disallowed Origins,
+unsupported methods and OPTIONS preflights spend neither allowance.
+
+The caller identity comes only from `CF-Connecting-IP`, which Cloudflare sets
+on ingress. Equivalent IPv6 spellings normalize to the same address. The Worker
+computes an HMAC-SHA-256 over the PDF namespace, UTC minute and address using
+`PDF_RATE_LIMIT_SECRET`; the quota client hashes this identifier before sending
+it to the ledger. The stored counters contain no raw IP, account ID or paper URL.
+The identifier changes each minute and is not sent to analytics or logs. Networks
+behind NAT share one allowance. Cloudflare Worker subrequests may share a
+Cloudflare-provided IP and therefore an allowance too.
+
+The ledger schedules deletion for the end of that minute plus 60 seconds (at
+most two minutes after reservation). Cloudflare alarm delays or failures can
+retain the expired counters longer; they do not apply to the next minute. Other
+ledger users retain the existing three-day cleanup policy. The privacy notice
+in [privacy.html](../privacy.html) describes this security processing.
+
+An exhausted allowance returns JSON `PROVIDER_RATE_LIMITED`, HTTP 429,
+`Cache-Control: no-store` and a CORS-exposed `Retry-After` with the seconds until
+the next UTC minute. There is no HTML challenge. Limits reset at that boundary,
+not 60 seconds after the first refusal; up to 60 requests can straddle two
+adjacent windows, while no IP can consume more than 30 of either window's
+upstream quota. Multiple IPs can still exhaust the shared ceiling. Missing or
+invalid IP metadata, a missing/short secret or an unavailable ledger fails
+closed, including for edge-cache hits. The reader uses its existing external-PDF
+fallback on refusal; closing and reopening it after the reset retries loading.
+
+### Provisioning and verification
+
+Set a dedicated random secret of at least 32 characters before deploying this
+handler. Do not reuse a provider key or put it in `VITE_*`. After approval of the
+privacy change, provision it without printing it:
+
+```bash
+openssl rand -hex 32 | npx wrangler secret put PDF_RATE_LIMIT_SECRET
+```
+
+Use a disposable value of at least 32 characters in local `.dev.vars`. Requests
+sent directly to a local Worker must also supply a test `CF-Connecting-IP`.
+Never expose a local emulator as a trusted public ingress. Retain the same
+production secret across deployments; rotating it during a minute changes the
+caller identifier and grants a fresh caller allowance in that minute, while the
+shared ceiling stays intact.
+
+This implementation supersedes ENG-126's WAF proposal. Workers Paid and the
+zone's WAF plan are separate: the inspected account has Workers Standard, while
+`papertok.app` has Free Website. No WAF upgrade or rate-limit binding is required.
+The existing native endpoint stays enabled, so old bundles need no migration.
+Misses use one ledger call as before; edge-cache hits now also use one call and
+write a caller counter, which adds metered Durable Object work. Browser-cache
+hits make no Worker request and spend no quota.
+
+Run `node --test worker/pdf-proxy.test.ts worker/request-quota-ledger.test.ts`
+and the existing relay tests in `worker/index.test.ts`. The burst test must
+accept 30 of 120 concurrent requests from one IP across both hostnames, refuse
+90, and still accept an uncached PDF for another IP. Check cache hits with an
+exhausted global ceiling, IPv6 normalization, minute-boundary recovery, missing
+configuration and cleanup. These tests use mocked upstreams and no provider
+quota. Run `npm run check` for the frontend build and Worker dry-run.
+
+Before publication, verify the secret exists, the privacy notice is published
+through Vercel, and both deployment paths are compatible. After Worker deployment,
+verify both public hostnames, allowed-Origin CORS and the mobile reader's load,
+refusal, external link and retry states. Test exhaustion only in isolated
+infrastructure with mocked upstreams. A local test or dry-run does not establish
+production deployment, Cloudflare header behavior or alarm delivery.
 
 ## Retired storage and deployment
 

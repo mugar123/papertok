@@ -3,7 +3,8 @@ import type { WorkerEnv } from './env.ts';
 import { fetchPaperPdfBytes } from './ai-explanation.ts';
 import { isAIReadablePdfUrl } from '../src/utils/ai-explanation-access.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
-import { reserveSharedMinuteQuota, serveCached } from './provider-runtime.ts';
+import { serveCached } from './provider-runtime.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 const DEFAULT_PDF_GLOBAL_MINUTE_LIMIT = 120;
 // The in-app PDF viewer on a touch screen (src/components/pdf/pdf-pages.tsx)
@@ -14,16 +15,20 @@ const DEFAULT_PDF_GLOBAL_MINUTE_LIMIT = 120;
 // read (`isAIReadablePdfUrl`) are accepted, every redirect is checked against
 // the same list, the body must be a PDF and is capped at the AI routes' 8 MB
 // (`fetchPaperPdfBytes`), the caller must be the app (Origin required, not
-// optional), and a shared per-minute ceiling bounds what misses can cost the
+// optional), and an atomic per-IP and shared per-minute ceiling bounds what misses can cost the
 // upstream hosts. A hit costs nothing upstream: the edge keeps a PDF for a day.
-const PDF_PROXY_CEILING = Object.freeze({
-  namespace: 'pdf',
-  variable: 'PDF_GLOBAL_MINUTE_LIMIT',
-  fallback: DEFAULT_PDF_GLOBAL_MINUTE_LIMIT,
-});
 const PDF_PROXY_FETCH_BUDGET_MS = 20_000;
 const PDF_PROXY_CACHE_SECONDS = 24 * 60 * 60;
 const PDF_PROXY_FAILURE_STATUS = Object.freeze({ not_pdf: 415, too_large: 413, unreachable: 502 });
+
+function normalizeCallerAddress(ip: string) {
+  if (!/^[\da-f:.]+$/i.test(ip)) return '';
+  try {
+    if (ip.includes(':')) return new URL(`https://[${ip}]/`).hostname;
+    if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(ip)) return new URL(`https://${ip}/`).hostname;
+  } catch { /* The URL parser rejects malformed IPv4 and IPv6 addresses. */ }
+  return '';
+}
 
 export async function handlePdfProxy(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
@@ -46,10 +51,39 @@ export async function handlePdfProxy(request: Request, env: WorkerEnv) {
     { method: 'GET' },
   );
   const cached = await caches.default.match(cacheKey);
+  // Cloudflare overwrites this header on ingress; never use a client-supplied
+  // forwarding header or a shared fallback identity when it is absent.
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  const address = normalizeCallerAddress(ip);
+  const secret = env.PDF_RATE_LIMIT_SECRET;
+  if (!address || !secret || secret.length < 32) {
+    return json({ code: 'PDF_RATE_LIMIT_NOT_CONFIGURED' }, 503, noStore);
+  }
+  const now = Date.now();
+  const minute = new Date(now).toISOString().slice(0, 16);
+  const nextMinute = (Math.floor(now / 60_000) + 1) * 60_000;
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`pdf:${minute}:${address}`));
+  const subject = Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, '0')).join('');
+  const configuredLimit = Number.parseInt(env.PDF_GLOBAL_MINUTE_LIMIT || '', 10);
+  const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `pdf:${minute}`,
+    subject,
+    subjectLimit: 30,
+    globalLimit: Number.isFinite(configuredLimit)
+      ? Math.max(1, Math.min(100_000, configuredLimit)) : DEFAULT_PDF_GLOBAL_MINUTE_LIMIT,
+    globalAmount: cached ? 0 : 1,
+    expiresAt: nextMinute + 60_000,
+  });
+  if (!quota.accepted) {
+    return json({ code: quota.code ? 'PROVIDER_QUOTA_NOT_CONFIGURED' : 'PROVIDER_RATE_LIMITED' }, quota.code ? 503 : 429, {
+      ...noStore,
+      'retry-after': String(Math.ceil((nextMinute - now) / 1000)),
+    });
+  }
   if (cached) return serveCached(cached, origin, env);
-
-  const minute = await reserveSharedMinuteQuota(PDF_PROXY_CEILING, env, origin);
-  if (minute.error) return minute.error;
 
   const { bytes, reason } = await fetchPaperPdfBytes(target, PDF_PROXY_FETCH_BUDGET_MS);
   if (!bytes) {

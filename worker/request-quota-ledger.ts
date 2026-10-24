@@ -7,6 +7,10 @@ export interface QuotaRequest {
   subjectLimit: number;
   globalLimit: number;
   amount?: number;
+  // Cache hits count toward a caller's limit without spending upstream quota.
+  globalAmount?: number;
+  // Short-lived caller identifiers must not inherit the default three-day retention.
+  expiresAt?: number;
   // The share of the global ceiling this request may fill, in percent; absent
   // is all of it. One day of OpenAlex budget serves requests that do not
   // matter equally, and the less important ones stop first (PAP-88).
@@ -131,6 +135,9 @@ export class RequestQuotaLedger {
     // a request whose remaining units it would have refused. Absent means one,
     // which is what every caller written before this asked for.
     const amount = payload?.amount === undefined ? 1 : positiveInteger(payload.amount);
+    const globalAmount = payload?.globalAmount === undefined ? amount
+      : payload.globalAmount === 0 ? 0 : positiveInteger(payload.globalAmount);
+    const expiresAt = payload?.expiresAt;
     const percent = optionalPercent(payload?.percent);
     const tallyName = optionalTally(payload?.tally);
     const reportedRemaining = optionalRemaining(payload?.remaining);
@@ -139,6 +146,9 @@ export class RequestQuotaLedger {
     const partLimit = hasPart ? positiveInteger(payload?.partLimit) : 0;
     if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit || !amount
       || !percent || tallyName === null || reportedRemaining === null
+      || (payload?.globalAmount !== undefined && payload.globalAmount !== 0 && !globalAmount)
+      || (expiresAt !== undefined && (!Number.isSafeInteger(expiresAt)
+        || Number(expiresAt) <= Date.now() || Number(expiresAt) > Date.now() + RETENTION_MS))
       || (action === 'observe' && reportedRemaining === undefined)
       || (hasPart && (!partKey || !partLimit))) {
       return json({ code: 'INVALID_REQUEST' }, 400);
@@ -192,7 +202,7 @@ export class RequestQuotaLedger {
         // is what keeps a repeated release from minting quota that was never
         // reserved.
         const releasedSubjectUsage = Math.max(0, subjectUsage - amount);
-        const releasedGlobalUsage = Math.max(0, globalUsage - amount);
+        const releasedGlobalUsage = Math.max(0, globalUsage - globalAmount);
         if (tallyName) addToTally(tally.used, tallyName, -amount);
         await Promise.all([
           transaction.put(subjectStorageKey, releasedSubjectUsage),
@@ -219,7 +229,7 @@ export class RequestQuotaLedger {
         ? 'user'
         : partKey && partUsage + amount > partLimit
           ? 'part'
-          : globalUsage + amount > limit ? 'global' : '';
+          : globalAmount > 0 && globalUsage + globalAmount > limit ? 'global' : '';
       // Only the day's share refusing is tallied: a subject's refusal (for
       // OpenAlex, the minute's ceiling) is a burst rather than a closed tier,
       // and counting it would add a write here exactly when the object is
@@ -233,7 +243,7 @@ export class RequestQuotaLedger {
       }
 
       const nextSubjectUsage = subjectUsage + amount;
-      const nextGlobalUsage = globalUsage + amount;
+      const nextGlobalUsage = globalUsage + globalAmount;
       if (tallyName) addToTally(tally.used, tallyName, amount);
       await Promise.all([
         transaction.put(subjectStorageKey, nextSubjectUsage),
@@ -250,7 +260,8 @@ export class RequestQuotaLedger {
     });
 
     const alarm = await this.state.storage.getAlarm();
-    if (alarm === null) await this.state.storage.setAlarm(Date.now() + RETENTION_MS);
+    const cleanupAt = expiresAt === undefined ? Date.now() + RETENTION_MS : Number(expiresAt);
+    if (alarm === null || cleanupAt < alarm) await this.state.storage.setAlarm(cleanupAt);
     return json(result);
   }
 
@@ -271,6 +282,8 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   subjectLimit,
   globalLimit,
   amount = 1,
+  globalAmount,
+  expiresAt,
   percent,
   tally,
   remaining,
@@ -291,6 +304,8 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
       subjectLimit,
       globalLimit,
       amount,
+      globalAmount,
+      expiresAt,
       // JSON leaves an undefined field out, and the object reads its absence
       // as the default.
       percent,
