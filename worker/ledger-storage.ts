@@ -5,9 +5,6 @@ export interface LedgerTransaction {
   put(key: string, value: unknown): unknown;
   delete(key: string): unknown;
 }
-export interface ListedLedgerTransaction extends LedgerTransaction {
-  list<T = unknown>(options: { prefix: string }): Map<string, T> | Promise<Map<string, T>>;
-}
 export interface LedgerStorage<Transaction extends LedgerTransaction = LedgerTransaction> {
   transaction<T>(operation: (transaction: Transaction) => Promise<T>): Promise<T>;
 }

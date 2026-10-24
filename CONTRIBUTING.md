@@ -75,7 +75,8 @@ Worker without replacing Wrangler's declarations.
 
 Use Node 22.18 or later for native type stripping. CI selects Node 22;
 Node 22.23.3 and Node 24.21.0 run the `.ts` tests without a stripping flag.
-`npm test` discovers `.test.ts` files under `src/`, `worker/` and `proxy/`.
+`npm test` discovers `.test.ts` files under `src/`, `worker/`, `proxy/`,
+`scripts/` and `eslint-rules/`.
 The rules suite runs separately through `npm run test:rules`.
 ESLint loads `eslint.config.ts` with `unstable_native_nodejs_ts_config`, using
 the same Node runtime without a separate TypeScript loader.
@@ -100,9 +101,7 @@ strategy and required-backend guards.
 
 Remaining JavaScript has a separate execution or ownership boundary:
 `public/sw-html-warm.js` is copied directly into the service worker;
-`scripts/backfill-user-profiles.js` is an optional admin utility requiring
-`firebase-admin`; `scripts/diagnostics/` contains manual probes;
-and `.agents/skills/impeccable/scripts/` is vendored code. These files are outside
+`scripts/diagnostics/` contains manual probes. These files are outside
 the application TypeScript configs. Existing JavaScript lint coverage remains.
 
 ## Coding agents
@@ -129,7 +128,7 @@ criteria can be discussed.
 
 ## Diagnostics
 
-Manual API probes live in `scripts/diagnostics/`. They are intentionally excluded from lint
+Manual API probes are documented in [`scripts/diagnostics/README.md`](scripts/diagnostics/README.md). They are intentionally excluded from lint
 and automated tests because many hit live services and may consume provider quota.
 
 ## Security

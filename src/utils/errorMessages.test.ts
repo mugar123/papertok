@@ -18,7 +18,7 @@ test('never exposes an unknown Spanish message in the English interface', () => 
 
 test('a failed sign-in check before deletion says why instead of the generic deletion failure', () => {
   const generic = getUiErrorMessage('ACCOUNT_DELETION_FAILED');
-  for (const code of ['auth/user-mismatch', 'AUTH_PROVIDERS_UNSUPPORTED_IN_DEMO']) {
+  for (const code of ['auth/user-mismatch']) {
     const message = getUiErrorMessage({ code, message: 'raw provider copy' }, 'ACCOUNT_DELETION_FAILED');
     assert.notEqual(message, generic, code);
     assert.notEqual(message, 'raw provider copy', code);

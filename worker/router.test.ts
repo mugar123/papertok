@@ -180,7 +180,7 @@ test('unsubscribe PUT still goes through the notification Origin gate', async ()
   assert.deepEqual(await response.json(), { code: 'EMAIL_ORIGIN_NOT_ALLOWED' });
 });
 
-for (const path of ['/related', '/recommendations', '/citation-graph', '/sources/core', '/sources/physics', '/sources/scopus']) {
+for (const path of ['/related', '/citation-graph', '/sources/core', '/sources/physics', '/sources/scopus']) {
   test(`${path} requires identity before validating a query or reading the cache`, async () => {
     const response = await worker.fetch(request(path), { FIREBASE_WEB_API_KEY: 'test-key' });
     assert.equal(response.status, 401);
@@ -204,3 +204,10 @@ test('the scheduled entry point passes the event time and keeps the job alive wi
   assert.equal(summary.sent, 0);
   assert.ok(saved.some(({ value }) => value.scheduledAt === '2026-10-13T07:20:00.000Z'));
 });
+
+for (const path of ['/recommendations', '/store/feed', '/lists/attribute']) {
+  test(`retired route ${path} does not call a provider`, async () => {
+    const response = await worker.fetch(new Request(`https://worker.test${path}`), {});
+    assert.equal(response.status, 404);
+  });
+}

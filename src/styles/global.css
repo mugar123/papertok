@@ -357,9 +357,8 @@ textarea:focus-visible,
 }
 
 /* Visible only while focused: the first Tab of every page lands here.
-   The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
-   400, but the page chrome this link has to sit in front of ignores that scale
-   — the guest header and the public paper header are at 900 and the search
+   The z-index is a literal because fixed headers sit above the token scale:
+   the guest header and the public paper header are at 900 and the search
    header at 1000. At 401 the link was focused and completely painted over by
    the guest header (verified in the browser: `elementFromPoint` on the focused
    link returned `.guest-wordmark`), which is exactly the "focus is hidden by

@@ -15,7 +15,7 @@ export interface FollowingContextValue {
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { FollowingContext } from './contexts.ts';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db, IS_DEMO } from '../services/firebase.ts';
+import { db } from '../services/firebase.ts';
 import { getRorInstitution, normalizeRorId } from '../services/rorService.ts';
 import { useAuth } from './AuthContext.tsx';
 import { useAnalyticsConsent } from './AnalyticsContext.tsx';
@@ -23,7 +23,6 @@ import {
   createFollowEntity,
   createFollowKey,
   followsEntity,
-  getFollowingStorageKey,
   migrateLegacyAuthors,
 } from '../utils/following.ts';
 import { finishLegacyAuthorsMigration } from '../utils/followingMigration.ts';
@@ -53,18 +52,6 @@ class FollowsUnavailableError extends Error {
     this.code = 'FOLLOWS_UNAVAILABLE';
     this.retryable = true;
   }
-}
-
-function readDemoFollowing(userId: string): FollowEntity[] {
-  try {
-    return JSON.parse(localStorage.getItem(getFollowingStorageKey(userId)) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function writeDemoFollowing(userId: string, follows: FollowEntity[]) {
-  localStorage.setItem(getFollowingStorageKey(userId), JSON.stringify(follows));
 }
 
 export function FollowingProvider({ children }: PropsWithChildren) {
@@ -122,22 +109,6 @@ export function FollowingProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!user?.uid) {
       return undefined;
-    }
-
-    if (IS_DEMO) {
-      const stored = readDemoFollowing(user.uid);
-      const migrated = migrateLegacyAuthors(followedAuthorsRef.current);
-      const merged = [...stored];
-      migrated.forEach((legacy) => {
-        if (!followsEntity(merged, legacy)) merged.push(legacy);
-      });
-      const timeoutId = setTimeout(() => {
-        setFollowedEntities(merged);
-        writeDemoFollowing(user.uid, merged);
-        localStorage.removeItem('papertok_followedAuthors');
-        setLoading(false);
-      }, 0);
-      return () => clearTimeout(timeoutId);
     }
 
     followsArrived.current = false;
@@ -200,7 +171,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
    */
   useEffect(() => {
     const userId = user?.uid;
-    if (!userId || IS_DEMO) return;
+    if (!userId) return;
     if (!followsArrived.current || legacyMigrationAttempted.current) return;
     if (followedAuthors.length === 0) return;
 
@@ -301,16 +272,12 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     setPendingFollowKeys(current => new Set(current).add(pendingKey));
 
     try {
-      if (IS_DEMO) {
-        writeDemoFollowing(user.uid, next);
-      } else {
-        const followRef = doc(db, 'users', user.uid, 'following', createFollowKey(entity.type, entity.canonicalId));
-        if (wasFollowing) {
-          const existingKey = existingFollow!.followKey || createFollowKey(existingFollow!.type, existingFollow!.canonicalId);
-          await deleteDoc(doc(db, 'users', user.uid, 'following', existingKey));
-        }
-        else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
+      const followRef = doc(db, 'users', user.uid, 'following', createFollowKey(entity.type, entity.canonicalId));
+      if (wasFollowing) {
+        const existingKey = existingFollow!.followKey || createFollowKey(existingFollow!.type, existingFollow!.canonicalId);
+        await deleteDoc(doc(db, 'users', user.uid, 'following', existingKey));
       }
+      else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
       void trackEvent('follow_change', {
         entity_type: entity.type,
         action: wasFollowing ? 'remove' : 'add',

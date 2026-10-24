@@ -8,7 +8,7 @@ import {
   FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
-import { ARXIV_HARVEST_SETS, followedLaneJob, ingestPaperIds } from './paper-sources.ts';
+import { followedLaneJob, ingestPaperIds } from './paper-sources.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -310,35 +310,4 @@ export async function handleCorpusFeed(
     if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
   return { papers };
-}
-
-/**
- * `POST /store/feed`, the arXiv-only contract of the bundles published before
- * the corpus (2026-10-22): the same page in its old shape, arXiv papers only.
- * Remove once those bundles have updated themselves.
- */
-export async function handleStoreFeed(request: Request, env: FeedEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
-  const body = await readBody<FeedRequestBody>(request);
-  const query = parseFeedRequest({ categories: body?.categories, positiveIds: body?.positiveIds, page: body?.page, pageSize: body?.pageSize });
-  if (query.categories.length === 0) throw new PaperStoreError('CATEGORIES_REQUIRED', 400);
-  if (query.page > FEED_LAST_PAGE) return { papers: [] };
-  await reserveFeedRequest(env, identity.uid);
-  // Until the first harvest has finished every arXiv set the corpus holds its
-  // oldest papers first; those bundles ask arXiv itself when this is empty.
-  const harvested = await database(env).prepare("SELECT COUNT(*) AS sets FROM lane_state WHERE source = 'arxiv-oai'").first<{ sets: number }>();
-  if ((harvested?.sets || 0) < ARXIV_HARVEST_SETS.length) return { papers: [] };
-  const papers = await readFeedPage(env, query);
-  return {
-    papers: papers.filter(paper => paper.arxivId && paper.sources?.primary === 'arxiv').map(paper => ({
-      arxivId: paper.arxivId,
-      title: paper.title,
-      abstract: paper.abstract,
-      authors: paper.authors.map(author => (typeof author === 'string' ? author : author.name)),
-      categories: paper.allCategories || paper.categories || [],
-      doi: paper.doi || null,
-      journalRef: paper.journal || null,
-      comments: null,
-      published: paper.published,
-    })),
-  };
 }

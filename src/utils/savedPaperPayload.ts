@@ -92,14 +92,3 @@ export function buildSavedPaperPayload<T>(paper: Partial<Paper> | null | undefin
 
   return payload;
 }
-
-/**
- * Whether this paper can be written at all.
- *
- * The only way left to fail is having no id and no title, which leaves nothing
- * to put in the required field. The caller checks this BEFORE touching the
- * list, so the orphan cannot be created.
- */
-export function canStoreSavedPaper(paper: Partial<Paper> | null | undefined) {
-  return Boolean(buildSavedPaperPayload(paper, 'x').title);
-}

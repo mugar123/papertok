@@ -9,10 +9,6 @@ import { PaperRewriteSession as RewriteSession } from './ai-rewrite-session.ts';
 import { runPaperHarvest } from './paper-harvest.ts';
 import { workerSentryOptions } from './error-tracking.ts';
 
-// Unbound and unused. Kept only so that a later, separate change can delete the
-// class with a `deleted_classes` migration.
-export { KimiBudgetLedger } from './kimi-budget-ledger.ts';
-
 // The SDK requires native DurableObject subclasses. Storage and quota behavior
 // stay in the existing implementations; these adapters own instrumentation only.
 class InstrumentedEmailLedger extends DurableObject<WorkerEnv> {

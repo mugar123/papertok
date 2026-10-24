@@ -12,16 +12,14 @@
   ],
   "ignoreExportsUsedInFile": true,
   "treatConfigHintsAsErrors": true,
-  "ignore": [".agents/**", "scripts/diagnostics/**"],
+  "ignore": ["scripts/diagnostics/**"],
   "ignoreDependencies": [
     // Pinned to a patched release for @firebase/firestore's transitive copy.
     "protobufjs",
     // `cloudflare:workers` is a Workers runtime module, not a package.
     "cloudflare",
     // Ambient Deno types for proxy/tsconfig.json.
-    "@types/deno",
-    // Installed by whoever runs the optional admin backfill (CONTRIBUTING.md).
-    "firebase-admin"
+    "@types/deno"
   ],
   // `npm run test:rules` uses a globally installed firebase-tools (tests/README.md).
   "ignoreBinaries": ["firebase"]

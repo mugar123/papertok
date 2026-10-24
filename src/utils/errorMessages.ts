@@ -31,8 +31,6 @@ const ERROR_MESSAGES = {
     ACCOUNT_DELETION_NOT_CONFIGURED: 'Account deletion is not available right now.',
     AUTH_RECENT_LOGIN_REQUIRED: 'For security, deletion needs a recent sign-in. Try again and sign in when the window opens.',
     CONFIRMATION_REQUIRED: 'Confirm deletion from the settings dialog.',
-    ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO: 'Demo mode cannot delete a real account.',
-    AUTH_PROVIDERS_UNSUPPORTED_IN_DEMO: 'Demo mode does not use real sign-in.',
     AUTH_REQUIRED: 'Sign in again, then retry.',
     INSTITUTION_STORAGE_UNAVAILABLE: 'Allow browser storage for PaperTok, then request a new verification link.',
     INSTITUTION_VERIFICATION_CANCELED: 'This request expired, was canceled, or belongs to another account or browser. Request a new link from your university settings.',
@@ -53,7 +51,6 @@ const ERROR_MESSAGES = {
     INSTITUTION_LINK_FAILED: 'Your institution could not be linked. Try again.',
     INSTITUTION_LINK_UNREACHABLE: 'Your institution could not be linked because the server could not be reached.',
     INSTITUTION_LINK_NOT_CONFIGURED: 'Institution linking is not available right now.',
-    INSTITUTION_UNSUPPORTED_IN_DEMO: 'Demo mode cannot link an institution.',
   },
 };
 

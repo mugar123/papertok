@@ -105,8 +105,3 @@ export function resolveListColor(list: { id?: string; color?: string | null } | 
   if (Object.hasOwn(SYSTEM_LIST_COLORS, list.id)) return SYSTEM_LIST_COLORS[list.id];
   return listColorVarById(resolveListColorId(list));
 }
-
-/** Whether this list's colour belongs to the owner and can be edited. */
-export function listColorIsEditable(listId: string | null | undefined) {
-  return Boolean(listId) && !Object.hasOwn(SYSTEM_LIST_COLORS, listId as string);
-}

@@ -869,7 +869,6 @@ test('journal candidates keep canonical editions and discovery provenance withou
     assert.equal(entry.id, `journal-${entry.issn}`);
     assert.ok(entry.eissn);
     assert.equal(entry.doi, undefined);
-    // The frontend's publisherLogos test checks every reference against bundled assets.
     assert.ok(entry.platformId);
     assert.ok(entry.sources && entry.sources.length >= 2);
     for (const source of entry.sources) assert.equal(new URL(source).protocol, 'https:');

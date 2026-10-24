@@ -99,8 +99,6 @@ export default defineConfig([
   // but ESLint does not read .gitignore and linted them from the main tree.
   globalIgnores([
     'dist', '.wrangler', 'worker-configuration.d.ts', '.claude/**', 'scripts/diagnostics/**',
-    // Vendored Impeccable scripts retain their upstream source and lint conventions.
-    '.agents/skills/impeccable/scripts/**',
   ]),
   {
     linterOptions: { reportUnusedDisableDirectives: 'error' },

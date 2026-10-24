@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AuthIdentityUnsupportedError,
   EmailAlreadyUsedError,
   IdentityAlreadyLinkedError,
   SIGN_IN_PROVIDERS,
@@ -33,7 +32,6 @@ function fakeApi(overrides: IdentityApi = {}) {
     api: {
       authentication: { currentUser: null },
       providers: { [GOOGLE]: 'google-provider', [GITHUB]: 'github-provider' },
-      isDemo: false,
       popupSignIn: async (authentication, provider) => {
         calls.push(['signIn', provider]);
         return { user: { uid: 'user-1', providerData: [{ providerId: GITHUB }] } };
@@ -105,12 +103,6 @@ test('F5: an unknown provider is a programming error, not a popup', async () => 
 
   await assert.rejects(() => signInWithProvider('twitter.com', api), TypeError);
   assert.deepEqual(calls, [], 'no popup was opened');
-});
-
-test('F5: demo mode has no providers to sign in with', async () => {
-  const { api } = fakeApi({ isDemo: true });
-
-  await assert.rejects(() => signInWithProvider(GITHUB, api), AuthIdentityUnsupportedError);
 });
 
 // --- the email collision ---------------------------------------------------
@@ -294,13 +286,11 @@ test('signing in again reports the account that confirmed, even if the session s
   assert.equal(await reauthenticateCurrentUser(api), 'alice');
 });
 
-test('demo mode and a missing session open no popup', async () => {
-  const currentUser = { uid: 'user-1', providerData: [{ providerId: GOOGLE }] };
-  const { api, calls } = fakeApi({ authentication: { currentUser }, isDemo: true });
-  await assert.rejects(() => reauthenticateCurrentUser(api), AuthIdentityUnsupportedError);
+test('a missing session opens no popup', async () => {
+  const { api, calls } = fakeApi();
 
   await assert.rejects(
-    () => reauthenticateCurrentUser({ ...api, isDemo: false, authentication: { currentUser: null } }),
+    () => reauthenticateCurrentUser({ ...api, authentication: { currentUser: null } }),
     /Authentication is required/,
   );
   assert.deepEqual(calls, []);

@@ -96,10 +96,6 @@ export function calculateEntityRecentImpact(works: Array<{ fwci?: number | null 
   };
 }
 
-export function calculateInstitutionRecentImpact(works: Array<{ fwci?: number | null }> = [], minimumSampleSize = 50) {
-  return calculateEntityRecentImpact(works, minimumSampleSize);
-}
-
 /**
  * A funded project's name, spelled the same way wherever it is shown or
  * stored. The acronym alone is not the name: a follow is keyed by id, and a

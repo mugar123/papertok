@@ -16,7 +16,7 @@ export interface FollowingUpdatesContextValue {
 import { useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FollowingUpdatesContext } from './contexts.ts';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db, IS_DEMO } from '../services/firebase.ts';
+import { db } from '../services/firebase.ts';
 import { fetchFollowingUpdates } from '../services/followingUpdatesService.ts';
 import { useAuth } from './AuthContext.tsx';
 import { useFollowing } from './FollowingContext.tsx';
@@ -105,7 +105,7 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
       }
     }, 0);
 
-    if (!userId || IS_DEMO || initializedForUser.current === userId) {
+    if (!userId || initializedForUser.current === userId) {
       return () => {
         cancelled = true;
         clearTimeout(restoreTimeout);
@@ -220,15 +220,13 @@ export function FollowingUpdatesProvider({ children }: PropsWithChildren) {
     const compact = compactSeenIds(nextSeenIds);
     const local = readLocalState(userId);
     writeLocalState(userId, { ...local, seenIds: compact });
-    if (!IS_DEMO) {
-      try {
-        await setDoc(doc(db, 'users', userId, 'settings', 'followingUpdates'), {
-          seenIds: compact,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-      } catch (persistError) {
-        console.warn('Could not save the updates state', persistError);
-      }
+    try {
+      await setDoc(doc(db, 'users', userId, 'settings', 'followingUpdates'), {
+        seenIds: compact,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (persistError) {
+      console.warn('Could not save the updates state', persistError);
     }
   }, [userId]);
 
