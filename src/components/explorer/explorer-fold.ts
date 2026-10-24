@@ -1,4 +1,4 @@
-import type { Transition } from 'framer-motion';
+import type { MotionProps, Transition } from 'framer-motion';
 
 // A fold's collapse. What travels is the page under the fold, and it has to
 // land, so the space rides a gentle ease-in-out while the contents fade
@@ -15,13 +15,13 @@ const FOLD_OUT: Transition = {
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
 };
 
-export function foldMotion(reduce: boolean | null) {
+export function foldMotion(reduce: boolean | null): Pick<MotionProps, 'initial' | 'animate' | 'exit' | 'transition'> {
   return {
     initial: reduce ? { opacity: 0 } : { opacity: 0, height: 0 },
     animate: { opacity: 1, height: 'auto' },
     exit: reduce ? { opacity: 0 } : { opacity: 0, height: 0, transition: FOLD_OUT },
     transition: reduce
       ? { duration: 0 }
-      : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } } as Transition,
+      : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } },
   };
 }
