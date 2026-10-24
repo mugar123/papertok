@@ -1390,7 +1390,7 @@
     "cs.DS": {
       "sample": {
         "capturedAt": "2026-10-24T02:53:19Z",
-        "query": "https://api.openalex.org/works?filter=primary_location.source.id:S7407087723|S4210175768|S4363608728|S4306420974|S137348503|S89324355,from_publication_date:2026-07-25,to_publication_date:2026-10-23,type:article|conference-paper,has_abstract:true,is_retracted:false&sort=publication_date:desc&per-page=15&page=1&select=id,doi,title,publication_date,type,language,primary_location,open_access,primary_topic,abstract_inverted_index",
+        "query": "https://api.openalex.org/works?filter=primary_location.source.id:S7407087723|S4210175768|S4363608728|S137348503|S89324355,from_publication_date:2026-07-25,to_publication_date:2026-10-23,type:article|conference-paper,has_abstract:true,is_retracted:false&sort=publication_date:desc&per-page=15&page=1&select=id,doi,title,publication_date,type,language,primary_location,open_access,primary_topic,abstract_inverted_index",
         "works": [
           {"id":"https://openalex.org/W4225655880","type":"article","title":"Nearly Tight Spectral Sparsification of Directed Hypergraphs by a Simple Iterative Sampling Algorithm","publication_date":"2026-10-16","source":"S89324355"},
           {"id":"https://openalex.org/W4414768891","type":"article","title":"Maximum List r-Colorable Induced Subgraphs in $$kP_3$$-Free Graphs","publication_date":"2026-10-05","source":"S89324355"},

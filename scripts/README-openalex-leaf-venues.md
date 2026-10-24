@@ -26,7 +26,7 @@ node scripts/generate-openalex-leaf-venues.ts --check
 | `leaves` | Per taxonomy leaf: `sample`, the leaf's labelled sample, and optionally `sourceSamples`, samples of one of its sources each |
 
 A sample holds `capturedAt`, the `query` as sent without the sampler's
-address, every returned work (`id`, `type`, `title`, `publication_date`,
+address (cs.DS's was derived, below), every returned work (`id`, `type`, `title`, `publication_date`,
 `source`, and `primary_topic` when the query filtered on topics) and one label
 per work: `on-target`, `off-target`, or `uncertain: true` without a label for a
 call the labeller doubted, which counts as a miss.
@@ -101,7 +101,11 @@ mathematics, computer science with statistics and electrical engineering, and
 engineering on 2026-10-24 between 02:06 and 02:54 UTC, with the window that
 ended on 2026-10-23. A leaf with a curated list is sampled on that list, as
 its curator recommended it before labelling; a list tried before it and
-dropped is not recorded here. q-fin.PM, q-fin.PR, q-fin.RM and q-fin.TR have no
+dropped is not recorded here. cs.DS's query was derived, not sent: from the 14
+works a six-source request returned, its curator removed the one of the older
+Symposium on Discrete Algorithms ID (S4306420974), a 2000 paper a repository
+re-dated, and the five-source query recorded returns the other 13, since that
+request held every work in the window. q-fin.PM, q-fin.PR, q-fin.RM and q-fin.TR have no
 curated list: their samples asked for the candidate journals the curator
 weighed and did not recommend, and record why those leaves have no lane.
 Economics and finance were sampled with and without `has_abstract:true`; their

@@ -5,10 +5,12 @@ import { parseArgs } from 'node:util';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { openAlexPeerReviewed } from '../src/utils/publication-status.ts';
 
-// The journals (and, for computer science, the proceedings) whose newest
-// articles stand for a leaf, by OpenAlex source ID (PAP-104). Each leaf's
-// evidence is a labelled sample: its sources' 15 newest articles, asked the way
-// the lane asks. scripts/README-openalex-leaf-venues.md describes the inputs.
+// The journals (and, in computer science, statistics and electrical
+// engineering, the proceedings) whose newest articles stand for a leaf, by
+// OpenAlex source ID (PAP-104). Each leaf's evidence is a labelled sample: its
+// sources' 15 newest articles, asked with the lane's types and topic or author
+// filter, and outside economics and finance with has_abstract:true, which the
+// lane does not ask. scripts/README-openalex-leaf-venues.md describes the inputs.
 
 interface Work { id: string; type: string; title: string; publication_date: string; source: string; primary_topic?: string }
 interface Sample {
