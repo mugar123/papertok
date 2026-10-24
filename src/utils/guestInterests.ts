@@ -71,8 +71,7 @@ export function normalizeGuestTopics(topics: unknown, areas: unknown) {
  * five preferences to arXiv and OpenAlex (three to PubMed), ranked by an
  * affinity a new account does not have yet, and its exploration step draws
  * from the siblings the preferences left out. Handing it all 26 physics
- * categories gave a physics-only first page and nothing left to explore
- * (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 3). So: the
+ * categories gave a physics-only first page and nothing left to explore. The
  * first GUEST_SEED_PER_AREA subcategories of each area, interleaved across
  * areas — physics[0], eess[0], mech[0], physics[1], … — so that a ranking
  * with nothing to go on still spreads its window over every area picked.

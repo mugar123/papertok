@@ -440,15 +440,6 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
 }
 
 /**
- * The newest positive examples, for the personal recommendations: likes,
- * saves and reads of at least twice the reader's median, with the category
- * each was filed under ('' when it was not known).
- */
-export function positiveExamples(profile: InteractionProfile | null | undefined): PositiveExample[] {
-  return profile ? profile.positives.map(example => ({ ...example })) : [];
-}
-
-/**
  * Concept and author affinities cannot be rebuilt from the interaction
  * documents, which store neither. A profile loaded without any — an aggregate
  * written before they existed, or one just rebuilt — needs them seeded from
@@ -1009,8 +1000,4 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
   profile.truncated = Boolean(data.truncated);
   profile.updatedAt = typeof data.updatedAt === 'string' ? data.updatedAt : null;
   return profile;
-}
-
-export function interactionProfileNeedsRebuild(data: Partial<StoredInteractionProfile> | null | undefined) {
-  return deserializeInteractionProfile(data) === null;
 }

@@ -1,6 +1,6 @@
 import type { PublicListInput, PublicListPayload } from './publicListPayload.ts';
 export interface ListOperationResult { code?: string; shareId?: string; paperCount?: number; listCount?: number; skipped?: number; publishedAt?: string; updatedAt?: string }
-interface ListOperations { isDemo?: boolean; rest?: Pick<typeof firestoreRest, 'getDocument'>; request?: typeof authenticatedWorkerFetch; apiBase?: string }
+interface ListOperations { rest?: Pick<typeof firestoreRest, 'getDocument'>; request?: typeof authenticatedWorkerFetch; apiBase?: string }
 
 /**
  * Publishing goes through the Worker; reading does not.
@@ -15,7 +15,6 @@ interface ListOperations { isDemo?: boolean; rest?: Pick<typeof firestoreRest, '
  * document fetched with one read, straight from Firestore, with no session and
  * no round trip through the Worker.
  */
-import { IS_DEMO } from './firebase.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 import { firestoreRest } from './firestoreRestClient.ts';
 import {
@@ -30,15 +29,6 @@ import {
 // contain, now that firestore.rules cannot (F11). Re-exported here so every
 // existing caller keeps its import path.
 export { PUBLIC_LIST_LIMITS, sanitizePublicList, sanitizePublicPaper };
-
-export class PublicListUnsupportedError extends Error {
-  declare code: string;
-  constructor() {
-    super('Public lists are unavailable in demo mode.');
-    this.name = 'PublicListUnsupportedError';
-    this.code = 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
-  }
-}
 
 /**
  * Carries the Worker's own code so the UI can tell "over your daily limit"
@@ -64,17 +54,12 @@ function cleanString(value: unknown, maximum: number|undefined) {
 
 function operations(overrides: ListOperations = {}) {
   return {
-    isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     rest: overrides.rest || firestoreRest,
     request: overrides.request || authenticatedWorkerFetch,
     apiBase: overrides.apiBase === undefined
       ? import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '')
       : overrides.apiBase,
   };
-}
-
-function requireSupported(api: ReturnType<typeof operations>) {
-  if (api.isDemo) throw new PublicListUnsupportedError();
 }
 
 function validateShareId(shareId: unknown) {
@@ -129,15 +114,9 @@ async function callWorker(api: ReturnType<typeof operations>, path: string, body
   return payload;
 }
 
-/**
- * `attributed: false` because there is no public profile to show the list on.
- * The Worker attributes a publish by default, which would add a card nobody
- * can see to `profileLists/{uid}` and refuse the 31st publish with
- * `PROFILE_LISTS_FULL`.
- */
+// Keep attribution disabled when a newly deployed frontend reaches an older Worker.
 export async function publishPublicList(input: PublicListInput, overrides?: ListOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
   const payload = sanitizePublicList(input);
   const result = await callWorker(api, '/lists/publish', { listId, ...payload, attributed: false });
@@ -164,7 +143,6 @@ export async function publishPublicList(input: PublicListInput, overrides?: List
  */
 export async function syncPublicList(shareId: string, input: PublicListInput, overrides?: ListOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
   const normalizedShareId = validateShareId(shareId);
 
@@ -197,7 +175,6 @@ export async function syncPublicList(shareId: string, input: PublicListInput, ov
 
 export async function unpublishPublicList(shareId: string, listId: string, overrides?: ListOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const normalizedListId = validatePrivateListId(listId);
   const normalizedShareId = validateShareId(shareId);
   await callWorker(api, '/lists/unpublish', {
@@ -207,7 +184,6 @@ export async function unpublishPublicList(shareId: string, listId: string, overr
 
 export async function readPublicList(shareId: string, { signal }: { signal?: AbortSignal } = {}, overrides?: ListOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const normalizedShareId = validateShareId(shareId);
   // Over REST, anonymous (`allow get: if true`): one request with no listen
   // stream behind it and no cache to answer from. On the SDK the read rode the

@@ -4,7 +4,7 @@ import {
   inMemoryPersistence, initializeAuth, isSignInWithEmailLink,
   signInWithEmailLink, signOut,
 } from 'firebase/auth';
-import app, { auth, IS_DEMO } from './firebase.ts';
+import app, { auth } from './firebase.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 import { institutionDomainOf } from '../utils/institutionDomain.ts';
 
@@ -12,7 +12,6 @@ type InstitutionInput = Partial<Record<'domain' | 'rorId' | 'name' | 'acronym' |
 export type LinkedInstitution = NonNullable<ReturnType<typeof normalizeInstitution>>;
 type SignedInAccount = Pick<import('firebase/auth').User, 'uid'> & Partial<Pick<import('firebase/auth').User, 'email' | 'emailVerified'>>;
 interface InstitutionOperations {
-  isDemo?: boolean;
   request?: typeof authenticatedWorkerFetch;
   apiBase?: string;
   currentUser?: () => SignedInAccount | null;
@@ -92,8 +91,7 @@ function secondaryAuth() {
 
 function operations(overrides: InstitutionOperations = {}) {
   return {
-    isDemo: IS_DEMO,
-    request: authenticatedWorkerFetch,
+        request: authenticatedWorkerFetch,
     apiBase: import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, ''),
     currentUser: () => auth.currentUser as SignedInAccount | null,
     secondaryAuth,
@@ -134,7 +132,6 @@ export function pendingInstitutionVerification(overrides: InstitutionOperations 
 }
 
 function requireAccount(api: ReturnType<typeof operations>) {
-  if (api.isDemo) throw new InstitutionLinkError('INSTITUTION_UNSUPPORTED_IN_DEMO', 400);
   if (!api.apiBase) throw new InstitutionLinkError('INSTITUTION_LINK_NOT_CONFIGURED', 503);
   const current = api.currentUser();
   if (!current) throw new InstitutionLinkError('AUTH_REQUIRED', 401);

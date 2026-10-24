@@ -95,10 +95,6 @@ export function followsEntity(followedEntities: FollowEntity[], entity: FollowIn
   });
 }
 
-export function getFollowingStorageKey(userId: unknown) {
-  return `papertok_following_${String(userId || 'anonymous').replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-}
-
 export function migrateLegacyAuthors(authorNames: string[] = []) {
   return [...new Set(authorNames.filter(Boolean))].map((displayName) => createFollowEntity({
     type: 'author',

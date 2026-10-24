@@ -5,7 +5,6 @@ import { deleteAccount, AccountDeletionError } from './accountDeletionService.ts
 test('deleteAccount retries 202 slices until complete', async () => {
   const statuses = [];
   const result = await deleteAccount('alice', {
-    isDemo: false,
     apiBase: 'https://worker.test',
     currentUid: () => 'alice',
     request: async () => {
@@ -23,7 +22,6 @@ test('deleteAccount retries 202 slices until complete', async () => {
 test('a 401 after work has started is treated as Auth already gone', async () => {
   let calls = 0;
   const result = await deleteAccount('alice', {
-    isDemo: false,
     apiBase: 'https://worker.test',
     currentUid: () => 'alice',
     request: async () => {
@@ -38,24 +36,11 @@ test('a 401 after work has started is treated as Auth already gone', async () =>
   assert.equal(calls, 2);
 });
 
-test('demo mode never calls the Worker', async () => {
-  await assert.rejects(
-    () => deleteAccount('alice', {
-      isDemo: true,
-      apiBase: 'https://worker.test',
-      request: async () => { throw new Error('must not call'); },
-    }),
-    error => error instanceof AccountDeletionError
-      && error.code === 'ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO',
-  );
-});
-
 test('a session switch between slices stops the deletion before the next POST', async () => {
   let uid = 'alice';
   let calls = 0;
   await assert.rejects(
     deleteAccount('alice', {
-      isDemo: false,
       apiBase: 'https://worker.test',
       currentUid: () => uid,
       request: async () => {
@@ -75,7 +60,6 @@ test('a session switch after Alice confirmed and before the first slice sends no
   let calls = 0;
   await assert.rejects(
     deleteAccount('alice', {
-      isDemo: false,
       apiBase: 'https://worker.test',
       currentUid: () => 'bob',
       request: async () => {
@@ -92,7 +76,6 @@ test('AUTH_RECENT_LOGIN_REQUIRED is never success, even after work started', asy
   let calls = 0;
   await assert.rejects(
     deleteAccount('alice', {
-      isDemo: false,
       apiBase: 'https://worker.test',
       currentUid: () => 'alice',
       request: async () => {
@@ -110,7 +93,6 @@ test('a 401 before the user tree was reached is an error, not completion', async
   let calls = 0;
   await assert.rejects(
     deleteAccount('alice', {
-      isDemo: false,
       apiBase: 'https://worker.test',
       currentUid: () => 'alice',
       request: async () => {

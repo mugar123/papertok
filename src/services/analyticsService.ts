@@ -110,7 +110,6 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   newsletter_action: new Set(['subscribe', 'unsubscribe']),
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
   annotation_origin: new Set(['user', 'ai']),
-  export_format: new Set(['tex']),
   app_error_kind: new Set(['render_crash', 'chunk_load_failed', 'feed_load_failed']),
   activation_age: new Set(['day_0', 'day_1', 'days_2_6', 'days_7_13', 'days_14_29', 'days_30_59', 'days_60_plus']),
   ai_feature: new Set(['rewrite', 'annotation']),
@@ -167,7 +166,6 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // asked for — the second costs one of the day's AI uses and the first is free,
   // so counting them together would hide which one people actually want.
   paper_annotation: { level: 'rewrite_level', surface: 'surface', origin: 'annotation_origin', ...PAPER_DETAIL },
-  paper_export: { level: 'rewrite_level', surface: 'surface', format: 'export_format', notes: 'boundedNumber', ...PAPER_DETAIL },
   // How the For You feed is landing, one event per twenty cards: of those
   // cards, how many were skipped, read past the reader's own median dwell,
   // liked and saved. Counts only; no paper, topic or account travels with it.

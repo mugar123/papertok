@@ -534,8 +534,7 @@ button.pc-masthead-field:focus-visible {
 }
 
 .pc-date,
-.pc-citations,
-.pc-readtime {
+.pc-citations {
   font: inherit;
   letter-spacing: inherit;
   color: var(--text-secondary);
@@ -1423,8 +1422,6 @@ button.pc-topics-pop-item:focus-visible {
     box-shadow: var(--shadow-lg);
   }
 }
-
-.related-sheet--loading { height: calc(min(430px, 58vh) + var(--bleed)); height: calc(min(430px, 58dvh) + var(--bleed)); }
 .related-sheet--empty,
 .related-sheet--error,
 .related-sheet--signin,
@@ -2223,8 +2220,7 @@ button.pc-topics-pop-item:focus-visible {
   animation: none;
 }
 
-.related-state,
-.related-loading {
+.related-state {
   flex: 1 1 auto;
   min-height: 180px;
 }
@@ -2322,28 +2318,6 @@ button.pc-topics-pop-item:focus-visible {
   padding: 24px;
   color: var(--text-secondary);
   text-align: center;
-}
-
-.related-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  padding: 20px 18px 18px;
-  color: var(--text-secondary);
-}
-
-.related-skeletons { display: grid; gap: 8px; }
-
-.related-skeleton {
-  display: block;
-  height: 54px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: linear-gradient(90deg, var(--bg-secondary) 20%, var(--border-subtle) 48%, var(--bg-secondary) 76%);
-  background-size: 240% 100%;
-  animation: relatedShimmer 1.45s ease-in-out infinite;
-  animation-delay: calc(var(--skeleton-index, 0) * 100ms);
 }
 
 /* ── Related paper opened as a full card ──
@@ -2885,8 +2859,6 @@ button.pc-topics-pop-item:focus-visible {
   .related-sheet {
     height: calc(min(74dvh, 620px) + var(--bleed));
   }
-
-  .related-sheet--loading { height: calc(min(410px, 58dvh) + var(--bleed)); }
   .related-sheet--empty,
   .related-sheet--error,
   .related-sheet--signin,
@@ -2981,41 +2953,36 @@ button.pc-topics-pop-item:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .pc,
-  .pc-sheet,
-  .pc-figure,
-  .pc-figure.is-loaded.is-resumed,
-  /* Beside `.pc-figure`, never without it: with movement refused a clipping
-     appears in one frame, so the glyph has to make room in that same frame.
-     A 620ms cross-fade next to an instant arrival is the two coming apart
-     again, which is the fault this pairing exists to close. */
-  .pc-watermark,
-  .pc-meta,
-  .pc-title,
-  .pc-authors,
-  .pc-action-bar,
-  .pc-side-actions,
-  .pc-abstract,
-  .pc-side-icon,
-  .pc-side-btn,
-  .pc-scroll-hint,
-  .pc-heart-burst,
-  .pc-heart-ring,
-  .related-overlay,
-  .related-sheet,
-  .related-list,
-  .related-item,
-  .related-card-overlay,
-  .related-card-content,
-  .related-card-loading-line,
-  .related-skeleton,
-  .graph-now,
-  .graph-mark,
-  .graph-chip,
-  .graph-edge,
-  .graph-node,
-  .graph-travel,
-  .graph-skeleton,
-  .graph-peek {
+.pc-sheet,
+.pc-figure,
+.pc-figure.is-loaded.is-resumed,
+.pc-watermark,
+.pc-meta,
+.pc-title,
+.pc-authors,
+.pc-action-bar,
+.pc-side-actions,
+.pc-abstract,
+.pc-side-icon,
+.pc-side-btn,
+.pc-scroll-hint,
+.pc-heart-burst,
+.pc-heart-ring,
+.related-overlay,
+.related-sheet,
+.related-list,
+.related-item,
+.related-card-overlay,
+.related-card-content,
+.related-card-loading-line,
+.graph-now,
+.graph-mark,
+.graph-chip,
+.graph-edge,
+.graph-node,
+.graph-travel,
+.graph-skeleton,
+.graph-peek {
     animation: none;
     transition: none;
   }

@@ -47,7 +47,7 @@ From the repository root, install dependencies with `npm ci`. Run the Worker wit
 
 For the frontend, copy `.env.example` to `.env.local` and run `npm run dev -- --port 5173` in another terminal. The example points both API variables to `http://localhost:8787`. Firebase web configuration is already in `src/services/firebase.ts`; signing in uses the configured Firebase project.
 
-To use the app with made-up accounts instead of real Google or GitHub sign-in, run `npm run dev:emulators` instead of `npm run dev` (`PORT=5174 npm run dev:emulators` picks another port). It starts the Firebase Auth and Firestore emulators, which need firebase-tools on `PATH` and Java 21 or later (see [`tests/README.md`](../tests/README.md)), and runs Vite in `emulators` mode against them. The app then signs in as `tester@example.com` whenever a page loads with nobody signed in. A new account starts at onboarding. Add `?as=<name>` to any URL, for example `http://localhost:5173/feed?as=alice`, to switch to `<name>@example.com`; the same name always reopens the same account. Guest screens show only between logging out and the next page load, so test them with `npm run dev`. Accounts and Firestore documents stay on this machine and are saved to the untracked `.firebase-emulators/` directory when you stop the command with Ctrl+C. The Worker still checks tokens against the real Firebase project, so routes that require a signed-in user answer 401 for emulator accounts: plain-words rewrites, passage explanations, related papers, personal recommendations, the citation graph, the CORE, physics and Scopus sources, institution access, public lists, notifications and account deletion.
+To use the app with made-up accounts instead of real Google or GitHub sign-in, run `npm run dev:emulators` instead of `npm run dev` (`PORT=5174 npm run dev:emulators` picks another port). It starts the Firebase Auth and Firestore emulators, which need firebase-tools on `PATH` and Java 21 or later (see [`tests/README.md`](../tests/README.md)), and runs Vite in `emulators` mode against them. The app then signs in as `tester@example.com` whenever a page loads with nobody signed in. A new account starts at onboarding. Add `?as=<name>` to any URL, for example `http://localhost:5173/feed?as=alice`, to switch to `<name>@example.com`; the same name always reopens the same account. Guest screens show only between logging out and the next page load, so test them with `npm run dev`. Accounts and Firestore documents stay on this machine and are saved to the untracked `.firebase-emulators/` directory when you stop the command with Ctrl+C. The Worker still checks tokens against the real Firebase project, so routes that require a signed-in user answer 401 for emulator accounts: plain-words rewrites, passage explanations, related papers, the corpus feed, the citation graph, the CORE, physics and Scopus sources, institution access, public lists, notifications and account deletion.
 
 Run the entry-point and routing tests without credentials or live provider calls:
 
@@ -55,7 +55,7 @@ Run the entry-point and routing tests without credentials or live provider calls
 node --test worker/index.test.ts worker/router.test.ts
 ```
 
-Before opening a PR, run `npm run check`. It includes the secret scan, lint, Node tests, frontend build and Worker dry-run. The build needs the API variables from `.env.local`. A dry-run packages the Worker without deploying it.
+Before opening a PR, run `npm run check`. It includes the secret scan, lint, knip, TypeScript checks, Node tests, frontend build and Worker dry-run. The build needs the API variables from `.env.local`. A dry-run packages the Worker without deploying it.
 
 ### Paper store
 
@@ -71,7 +71,9 @@ A lane is one of the app's categories (`cs.LG`, `bio.gen`, `mech.fluid`), a foll
 
 Similarity runs in the Worker over at most 4,000 candidates from the asked lanes (the categories, the working-paper series and the follows), an equal share of the newest papers of each, plus at most 800 from the area lanes the request reads, split the same way, so the area lanes take none of a reader's own candidates. 800 is the floor's 3 of every 15 ranks of 4,000. Each lane is read with its own statement in one batch (D1 refuses a compound SELECT of more than a few terms). The candidates' vectors are read, in one batch, only when a liked paper has a vector; otherwise the page is newest first. The first page keeps the ranked order for 15 minutes in this location's cache, under a key from the verified uid and the request; later pages read only their own papers from it, and rank again when it is gone. The whole order is kept once the work after the answer has run, and only if every followed lane the request asks for had finished its first harvest (`lane_state`) before the page read its candidates, whoever followed it first, that work stored no liked paper or vector, and the order has papers left to serve. Otherwise only the ranks already served are kept: the next page ranks again and goes on after them, so a paper that arrived since starts on that page and no paper already served comes back. A like changes the request, and so the ranking. The order is kept under `store-ranking-v2/`; Worker versions that keep a plain list of ranks use `store-ranking/`, so after a rollback or a deploy neither version reads the other's entries, and a reader's next page is ranked again.
 
-`POST /store/feed` answers the arXiv-only contract of the bundles published before the corpus (`{ categories, positiveIds, page, pageSize }` to arXiv records) from the same corpus. It does not read the area lanes: their journal articles would take ranks that its arXiv-only answer leaves empty. Remove it, and `/recommendations`, once those bundles have updated themselves.
+`/store/feed`, `/recommendations` and `/lists/attribute` are retired. Current
+clients use `/store/papers` and link-only public lists. Older bundles must refresh
+before the Worker with these removals is deployed.
 
 The `30 2 * * *` cron starts one `PaperHarvestWorkflow` instance per UTC day (`worker/paper-harvest.ts`):
 1. Each arXiv OAI-PMH set (`cs`, `math`, `physics`, `stat`, `eess`, `econ`, `q-fin`) from the day in `lane_state`, keeping papers first submitted in the last 90 days, with a 5 s pause between pages and arXiv's `Retry-After` on a 503. A `Retry-After` over 5 minutes, a fourth 503 in a row or a request failing three times ends that set and the ones after it for the run; they start from the same day next time.
@@ -80,7 +82,7 @@ The `30 2 * * *` cron starts one `PaperHarvestWorkflow` instance per UTC day (`w
 4. Enrichment of new papers (`worker/paper-enrichment.ts`): OpenAlex's citations, topics, authors and access by arXiv id, DOI or OpenAlex id, 25 to 50 a request; iCite and Europe PMC for PubMed ids; Crossref's type for OpenAlex's own records, which takes books out of every lane. A paper OpenAlex does not know yet is asked again after 3, 6 and 9 days. OpenAlex calls spend the nightly run's 3,700 of the harvest's share of the day's ledger (the `feed` tier under **Budget tiers**), whatever the lanes before them left of it, with no part of their own, and never the new follows' 300; a spent share or day leaves the rest for the next run.
 5. Embedding of the newest papers without a vector, from their title and abstract, or the title alone for a paper without an abstract, until `EMBEDDING_DAILY_TOKEN_LIMIT` (60M estimated tokens, about 48,000 neurons, ~$0.40 a day past the free 10,000) is reserved. That drains the first backlog in two nights; a day's new papers stay inside the free allocation, and `wrangler.toml` dates the return to 7.5M (2026-10-25). Each pass claims the papers it embeds for 10 minutes (`works.embedding_claimed_until`, migration 0006), so passes that overlap (this one, a follow run's, a reader's lookup) never embed one paper twice.
 6. Eviction (run before enrichment and embedding): each lane keeps its newest 4,000 papers, the most a page can rank from a category, the series or a follow (a page reads fewer of an area lane's, whose older articles can still be filed under a leaf at step 7); a paper goes once no category lane, the working-paper series, an area lane or a lane in `followed_lanes` holds it, or past its keeping date (90 days after publication, 14 days after a specialist source or a followed lane last listed it), unless a reader ranked their feed by it or looked it up in the last 30 days (`liked_until`). The lane of an OpenAlex entity nobody follows keeps nothing on its own, so someone who follows that entity later starts without the older papers only its lane held, until the follow's harvest lists them.
-7. Leaf filing (`worker/leaf-filing.ts`), after embedding. A paper of an area lane that a leaf of the area also holds (by its arXiv version's categories or a leaf's own lane) leaves the area lane. In an area with a rule in `LEAF_FILING_RULES`, each arXiv leaf with at least 50 vectors of papers whose primary arXiv category it is gets a centroid, the mean of the newest 500, stored in `leaf_centroids` (migration 0008) in place of the last run's, and a paper whose vector reaches the rule's similarity to its closest centroid, by the rule's margin over the next one, is filed under that leaf instead. No area has a rule until calibration sets one, so no centroid is computed and every other journal article stays at area level. `node worker/test-support/evaluate-leaf-filing.ts <store.sqlite | store.sql>` reports, for each area and candidate rule, how many held-out arXiv papers the rule files and how many of those under their own category, and how many papers of the area's lane it would file.
+7. Leaf filing (`worker/leaf-filing.ts`), after embedding. A paper of an area lane that a leaf of the area also holds (by its arXiv version's categories or a leaf's own lane) leaves the area lane. In an area with a rule in `LEAF_FILING_RULES`, each arXiv leaf with at least 50 vectors of papers whose primary arXiv category it is gets a centroid, the mean of the newest 500, stored in `leaf_centroids` (migration 0009) in place of the last run's, and a paper whose vector reaches the rule's similarity to its closest centroid, by the rule's margin over the next one, is filed under that leaf instead. No area has a rule until calibration sets one, so no centroid is computed and every other journal article stays at area level. `node worker/test-support/evaluate-leaf-filing.ts <store.sqlite | store.sql>` reports, for each area and candidate rule, how many held-out arXiv papers the rule files and how many of those under their own category, and how many papers of the area's lane it would file.
 
 A new or emptied database needs a harvest before a frontend that reads it is published: apply the migrations, deploy the Worker, start a run with `npx wrangler workflows trigger papertok-paper-harvest`, and wait for its lanes to fill. Until then the feed answers an empty first page with its error and retry.
 
@@ -141,7 +143,7 @@ The native `https://papertok-report-api.<account>.workers.dev` route still answe
 still accepted by `src/services/workerApiClient.ts`, so a bundle built before the variable
 was flipped keeps working.
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/recommendations`, `/store/papers`, `/store/feed`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, a hit is served from the edge cache for a day, and misses share a per-minute ceiling (`PDF_GLOBAL_MINUTE_LIMIT`, 120 by default) that closes when the ledger is missing.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, a hit is served from the edge cache for a day, and misses share a per-minute ceiling (`PDF_GLOBAL_MINUTE_LIMIT`, 120 by default) that closes when the ledger is missing.
 
 `POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (delete the comments and content reports from before comments were removed, drop public lists, follows, clear `createdBy` on paper stubs, profile and handle, the private user tree, newsletter KV, then Auth last). The private user tree includes the saved plain-words summaries (`summaries`) and their history rows (`summaryHistory`); the sweep reads document names only, 80 per request, so a page of summaries is not downloaded just to be deleted. Replies other accounts wrote under a deleted comment stay. Every request also needs a recent sign-in: when the verified token's `auth_time` is missing or more than 240 s old, the route answers 401 `AUTH_RECENT_LOGIN_REQUIRED` before it deletes anything. Identity Toolkit refuses to delete the Auth account for a sign-in that is not recent (`CREDENTIAL_TOO_OLD_LOGIN_AGAIN`), and Auth is the last stage, so without this check that refusal arrived after the data was gone. Firebase does not document its window; it is commonly reported as five minutes. The settings dialog signs the user in again with a popup just before the first request. A deletion that runs past the window stops with the same 401 while `users/{uid}`, the newsletter and Auth are still there, and the next request after a new sign-in continues it. This is a **new** route: deploy the Worker before the frontend.
 
@@ -277,29 +279,13 @@ answer can be served.
 pages are public, so demanding a session would make those branches run, fail locally and be
 swallowed. They take the same trade `/openalex/*` does — origin gate, edge
 cache, and a **global** per-minute ceiling reserved only after a cache miss
-(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` and `/recommendations` share
-the Semantic Scholar ceiling with `/sources/s2` because all three spend the same provider allowance;
+(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` shares
+the Semantic Scholar ceiling with `/sources/s2` because both spend the same provider allowance;
 the browser's old per-tab limiter counted per caller, so N tabs were N times the limit.
-
-`/recommendations` was the For You feed's personal retrieval before the paper corpus ranked the feed by its own vectors; it stays for the bundles published before it (see Paper store). It takes `POST { positive, negative }`:
-up to 10 Semantic Scholar ids of papers the reader liked, saved or read at length, and up to 10 they
-rejected, each `ARXIV:`, `DOI:`, `PMID:` or a 40-character corpus hash. One malformed id refuses the
-request with `400 INVALID_EXAMPLES` before anything is spent. The ids are sorted and deduplicated,
-sent to Semantic Scholar's `POST /recommendations/v1/papers`, and the answer is reduced to
-`{ papers: [{ arxivId, doi }] }`, in Semantic Scholar's order and without the papers that carry
-neither; the browser fetches the papers themselves from arXiv and OpenAlex. When none of the
-positive examples is in Semantic Scholar's corpus it answers 400 `No positive paper examples given`
-(measured 2026-10-17), which the route returns as an empty list cached for two minutes; any other
-refusal is relayed like `/related`'s. The answer is the reader's own: it requires a Firebase ID
-token, its edge-cache key carries the verified uid beside the examples, and it leaves the Worker as
-`private, no-store`. Those bundles make one request each time the interaction profile loads, about
-one interest: the category of an example drawn at random, so each interest comes up as often as the
-reader gives examples of it.
 
 `/share/*` answers HTML, not JSON: the page a crawler reads for a shared link
 (`worker/share-pages.ts`). `vercel.json`
-rewrites crawler user agents from `/public/{paper,list,user,entity}/…` here (profiles are gone, so
-`/share/user/…` answers the not-found page), so the routes are
+rewrites crawler user agents from `/public/{paper,list,entity}/…` here, so the routes are
 public, GET and HEAD only, and need no `Origin`: they sit ahead of every Origin gate. Each answers
 the deployed shell (`https://papertok.app/index.html`, kept five minutes) with the page's own
 head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a page whose source
@@ -331,8 +317,8 @@ does this now, not only Scopus.
 
 The key's introductory rate limit is **1 RPS**, and Semantic Scholar applies it per second: of
 five requests in one second, one is answered and four refused at once, with no `retry-after`
-(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2`, `/related` and
-`/recommendations`) is the same average and no say over which second, so under it the three routes
+(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2` and `/related`)
+is the same average and no say over which second, so both routes
 keep a one-a-second beat
 (`worker/upstream-pace.ts`): a caller takes the first free second in the shared ledger and sleeps
 for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
@@ -477,10 +463,10 @@ client-disconnect behavior remains owned by `handlePaperRewrite`.
 The Worker limits AI usage per user and globally per UTC day with atomic reservations in the
 `RequestQuotaLedger` Durable Object. A reservation is consumed before contacting the provider,
 so concurrent tabs cannot exceed the configured limit and failed provider calls fail safely.
-Nothing uses the `KimiBudgetLedger` Durable Object; its class is still exported only so that a
-later, separate change can delete it with a `deleted_classes` migration.
+Migration `v5` deletes the retired `KimiBudgetLedger` class. The current
+`RequestQuotaLedger` remains bound and unchanged.
 
-Routes backed by PaperTok provider credentials (`/related`, `/recommendations`,
+Routes backed by PaperTok provider credentials (`/related`,
 `/citation-graph`, `/sources/core`, `/sources/physics`, and `/sources/scopus`) require a valid
 Firebase ID token. They also reserve an atomic per-user and global request allowance per UTC
 minute through `RequestQuotaLedger`. Cache keys are built only from validated, output-affecting
@@ -495,7 +481,7 @@ variable is set. Nothing is verified here — the signature check stays with `ac
 a string that could not have been issued by Firebase no longer costs an upstream call. The screen
 runs after the identity cache, which only ever holds verified identities.
 
-The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`, `/lists/attribute`)
+The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
 allowance (`PUBLIC_LIST_USER_DAILY_LIMIT`, `PUBLIC_LIST_GLOBAL_DAILY_LIMIT`) is reserved, so a
 malformed body cannot consume one. Failures that did reach Firestore still consume theirs, which is
@@ -548,3 +534,20 @@ Workers Logs moves to Cloudflare Observability pricing. Read the lines in the Cl
 under Workers & Pages → `papertok-report-api` → Observability, or live with `npx wrangler tail`.
 Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: without it, every
 `wrangler deploy` switches Workers Logs off, whatever the dashboard says.
+
+## Retired storage and deployment
+
+Migration `0008_remove_unused_harvest_tables.sql` removes `paper_categories` and
+`harvest_state`, which the corpus no longer reads. Apply pending D1 migrations
+before deploying the Worker. The old `papers` and `paper_vectors` tables remain
+because the harvest still imports their records into the corpus.
+
+List publication writes the public document, owner and private pointer atomically.
+It no longer writes profile showcases or refreshes legacy pinned cards. Account
+deletion still removes stored profile and showcase data. The rules accept a legacy
+`onProfile` field so editing an existing list continues to work.
+
+`SCOPUS_VIEW` optionally pins the Elsevier search view to `COMPLETE` or `STANDARD`.
+Without it, `scopus-api.ts` tries `COMPLETE`, then `STANDARD`, then the upstream
+default for the configured fallback statuses. A pinned view is not retried with
+another view. Set it only on the Worker; it does not enable Scopus discovery.

@@ -9,8 +9,7 @@
 // Declaring the intent here gives it a versioned home next to its reason, and
 // lets `vite build` refuse a bundle that disagrees with it.
 export const DECLARED_DEPLOY_FLAGS = Object.freeze({
-  // Off by measurement, not by omission. STATE.md, «Scopus: estudio cerrado»
-  // (2026-08-22): of 75 Scopus papers across three fields, OpenAlex already
+  // On 2026-08-22, of 75 Scopus papers across three fields, OpenAlex already
   // held 75, so Scopus contributes nothing as a discovery source. Without an
   // institutional token it is also served the STANDARD view, so its records
   // arrive with no abstract — `/health/scopus` reports `hasAbstract: false` —

@@ -35,7 +35,7 @@
       "destination": "https://eu.i.posthog.com/:path"
     },
     {
-      "source": "/public/:kind(paper|list|user|entity)/:rest*",
+      "source": "/public/:kind(paper|list|entity)/:rest*",
       "has": [
         {
           "type": "header",

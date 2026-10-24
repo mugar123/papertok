@@ -21,7 +21,7 @@ function scenario() {
   let account: { uid: string; email: string; emailVerified: boolean } | null = { uid: 'primary', email: 'reader@example.com', emailVerified: true };
   const holder = { email: 'alice@usal.es', emailVerified: true, getIdToken: async () => 'verified-secondary-token' } as User;
   const options: NonNullable<Parameters<typeof sendInstitutionVerification>[1]> = {
-    isDemo: false, apiBase: 'https://worker.test', origin: 'https://papertok.test',
+    apiBase: 'https://worker.test', origin: 'https://papertok.test',
     currentUser: () => account,
     storage: {
       getItem: key => saved.get(key) ?? null,

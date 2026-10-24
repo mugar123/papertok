@@ -8,7 +8,6 @@ import { useAuth } from '../context/AuthContext.tsx';
 import { useAnalyticsConsent } from '../context/AnalyticsContext.tsx';
 import { useFeed } from '../context/FeedContext.tsx';
 import { useLanguage } from '../context/LanguageContext.tsx';
-import { IS_DEMO } from '../services/firebase.ts';
 import { readListsHoldingPaper, writeListMembership } from '../services/paperListMembership.ts';
 import { savedPaperDocRef } from '../services/savedPaperStore.ts';
 import { buildSavedPaperPayload } from '../utils/savedPaperPayload.ts';
@@ -52,13 +51,13 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
     // landing on a marked paper always finds the copy to complete (PAP-60, D6).
     await markThenConfirm({
       alreadySaved: latest.savedPaperIds.has(id),
-      issued: user && !IS_DEMO
+      issued: user
         ? setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true })
         : null,
       mark: () => latest.markSaved(paper),
       unmark: () => latest.unmarkSaved(paper),
       confirm: async () => {
-        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
+        if (user) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
       },
     });
     // Not awaited: Read later flips in the same tick and its write never
@@ -87,8 +86,8 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
       void unmarkSaved(paper);
       let held: OwnList[] | null;
       try {
-        held = user && !IS_DEMO ? await readListsHoldingPaper(user.uid, paper.id) : [];
-        if (held && user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
+        held = user ? await readListsHoldingPaper(user.uid, paper.id) : [];
+        if (held && user) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
       } catch {
         void markSaved(paper);
         toast.error('Could not remove this paper');

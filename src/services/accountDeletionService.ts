@@ -1,6 +1,6 @@
 interface DeletionPayload { code?: string; complete?: boolean; stage?: string }
 interface DeletionOperations {
-  isDemo?: boolean; request?: typeof authenticatedWorkerFetch; apiBase?: string;
+  request?: typeof authenticatedWorkerFetch; apiBase?: string;
   getToken?: () => Promise<string>; currentUid?: () => string | null | undefined;
 }
 
@@ -13,7 +13,7 @@ interface DeletionOperations {
  * confirms, retries 202s, and signs the tab out when the session is already
  * dead.
  */
-import { auth, IS_DEMO } from './firebase.ts';
+import { auth } from './firebase.ts';
 import { authenticatedWorkerFetch } from './workerApiClient.ts';
 
 export class AccountDeletionError extends Error {
@@ -31,7 +31,6 @@ const MAX_SLICES = 40;
 
 function operations(overrides: DeletionOperations = {}) {
   return {
-    isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     request: overrides.request || authenticatedWorkerFetch,
     apiBase: overrides.apiBase === undefined
       ? import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '')
@@ -82,7 +81,6 @@ async function postSlice(api: ReturnType<typeof operations>) {
  */
 export async function deleteAccount(confirmedUid: string, overrides?: DeletionOperations) {
   const api = operations(overrides);
-  if (api.isDemo) throw new AccountDeletionError('ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO', 400);
   // Only the account that confirmed may be deleted. The caller passes its uid
   // because the session can switch while the sign-in window is open. Each
   // slice sends a token for whoever is signed in at that moment, so the loop

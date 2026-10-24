@@ -1164,7 +1164,6 @@
 /* The two rows under the prose. Same line box, so the reservation stays one
    rule rather than a stack of magic numbers. */
 .ehc-wiki-skeleton-toggle { width: 96px; }
-.ehc-wiki-skeleton-links { width: 168px; }
 
 .ehc-wiki-skeleton span {
   position: relative;
@@ -1643,7 +1642,6 @@
 .explorer-skeleton .ehc-info .ex-skel-sub::after { animation-delay: 0.06s; }
 .explorer-skeleton .ehc-stats-grid .ex-skel::after { animation-delay: 0.21s; }
 .explorer-skeleton .ex-skel-follow::after { animation-delay: 0.24s; }
-.explorer-skeleton .ex-skel-tab::after { animation-delay: 0.3s; }
 .explorer-skeleton .ex-skel-search::after { animation-delay: 0.33s; }
 
 /* The list picks the wave up where the chrome left it, instead of restarting
@@ -1668,7 +1666,6 @@
 
 /* The chrome that always arrives, at the heights it arrives at, so the list
    below does not move when it does. */
-.ex-skel-tab { width: 58px; height: 15px; }
 .ex-skel-search { width: 100%; height: 38px; border-radius: var(--radius-md); }
 
 /* Header shapes, so the hero does not jump either. */
@@ -2502,12 +2499,6 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-}
-
-.orcid-tl-icon--work {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-default);
 }
 
 .orcid-tl-icon--edu {

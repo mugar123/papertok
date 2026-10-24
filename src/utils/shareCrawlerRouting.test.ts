@@ -59,10 +59,10 @@ async function shareRewrite() {
   return { config, index, rule: config.rewrites[index] };
 }
 
-test('public pages reach the Worker share route, one path for all four kinds', async () => {
+test('public pages reach the Worker share route, one path for the three current kinds', async () => {
   const { rule } = await shareRewrite();
   assert.ok(rule, 'the crawler rewrite is gone');
-  assert.equal(rule.source, '/public/:kind(paper|list|user|entity)/:rest*');
+  assert.equal(rule.source, '/public/:kind(paper|list|entity)/:rest*');
   assert.equal(rule.destination, 'https://api.papertok.app/share/:kind/:rest*');
 });
 

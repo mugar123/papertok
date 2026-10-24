@@ -16,7 +16,7 @@ export type PublicListPayload = ReturnType<typeof sanitizePublicList>;
  * This module is pure — no Firebase, no DOM, no network — because BOTH sides
  * of the write need it: the browser uses it for the optimistic UI, and the
  * Cloudflare Worker uses it as the real validation gate before it commits to
- * Firestore with the service identity (F11 in docs/plan/04-PHASES.md).
+ * Firestore with the service identity (worker/public-list-api.ts).
  *
  * Keeping it in one file is the point. Publishing used to be validated in
  * `firestore.rules`, which could not express it: the rules engine stops at

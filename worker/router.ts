@@ -32,9 +32,9 @@ import { handleCitationGraph } from './citation-graph.ts';
 import { handleOpenAccess } from './open-access.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { PaperStoreError } from './paper-store.ts';
-import { handleCorpusFeed, handleStoreFeed } from './paper-feed.ts';
+import { handleCorpusFeed } from './paper-feed.ts';
 import { handlePdfProxy } from './pdf-proxy.ts';
-import { handlePersonalRecommendations, handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
+import { handleRelated, handleSemanticScholar } from './semantic-scholar.ts';
 import { handleScopus, isScopusEgressConfigured } from './scopus-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { handleShareRoute } from './share-route.ts';
@@ -70,7 +70,6 @@ const PROTECTED_PROVIDER_PATHS = new Set([
 const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze<Record<string, string>>({
   '/sources/s2': '2',
   '/related': '2',
-  '/recommendations': '2',
 });
 const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
 
@@ -369,30 +368,8 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       );
     }
   }
-  // The one provider route asked with a body, so it is routed ahead of the
-  // GET-only gate below. Like the protected routes after that gate, it checks
-  // the reader's identity before anything else.
-  if (url.pathname === '/recommendations') {
-    let identity: VerifiedIdentity;
-    try {
-      identity = await verifyFirebaseIdentity(request, env);
-    } catch (error) {
-      captureWorkerException(error);
-      return providerAuthFailure(error, origin, env);
-    }
-    try {
-      return await handlePersonalRecommendations(request, env, identity);
-    } catch (error) {
-      captureWorkerException(error);
-      console.error('Personal recommendations failed', error);
-      return upstreamFailureResponse('/recommendations', error as ProviderError, origin, env, 'Recommendations unavailable');
-    }
-  }
-  // The feed's papers from the paper corpus (worker/paper-feed.ts): `/store/papers`,
-  // and `/store/feed` for bundles published before it. Asked with a body, so
-  // routed ahead of the GET-only gate below; personal, so they check the
-  // reader's identity first and are never cached.
-  if (url.pathname === '/store/papers' || url.pathname === '/store/feed') {
+  // The personal corpus feed checks identity and is never cached.
+  if (url.pathname === '/store/papers') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     let identity: VerifiedIdentity;
@@ -404,9 +381,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     }
     const headers = { ...corsHeaders(origin, env), 'cache-control': 'private, no-store' };
     try {
-      const answer = url.pathname === '/store/papers'
-        ? await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined)
-        : await handleStoreFeed(request, env, identity);
+      const answer = await handleCorpusFeed(request, env, identity, context ? work => context.waitUntil(work) : undefined);
       return json(answer, 200, headers);
     } catch (error) {
       if (error instanceof PaperStoreError) {

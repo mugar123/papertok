@@ -8,7 +8,7 @@ import type { ReactElement } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { IS_DEMO, db } from '../../services/firebase.ts';
+import { db } from '../../services/firebase.ts';
 import {
   collection,
   getDocs,
@@ -188,16 +188,6 @@ function ListMenu({ title, trigger, actions }: { title: string; trigger: ReactEl
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function demoGet<T>(key: string, fallback: T): T {
-  try { const v = localStorage.getItem(`papertok_${key}`); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
-}
-
-function demoSet(key: string, value: unknown) {
-  try { localStorage.setItem(`papertok_${key}`, JSON.stringify(value)); }
-  catch (err) { console.error('Error in demoSet', err); }
 }
 
 async function copyText(value: string) {
@@ -535,10 +525,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       };
 
       try {
-        if (IS_DEMO) {
-          if (active) setLists(demoGet<OwnList[]>('lists', []));
-          return;
-        }
 
         // A bounded page, never the whole collection: this and the save modal
         // were the last two raw `collection(...)` reads in the client.
@@ -633,19 +619,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     setPendingPaperIds(new Set());
 
     if (missingIds.length === 0) {
-      failedMetadataRequests.current.delete(list.id);
-      return;
-    }
-
-    if (IS_DEMO) {
-      const demoPapers = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
-      const requestedPapers: Record<string, Partial<Paper>> = {};
-      missingIds.forEach((paperId) => {
-        if (demoPapers[paperId]) {
-          requestedPapers[paperId] = paperLegacyAdapter({ id: paperId, ...demoPapers[paperId] });
-        }
-      });
-      setSavedPapers((current) => ({ ...current, ...requestedPapers }));
       failedMetadataRequests.current.delete(list.id);
       return;
     }
@@ -960,7 +933,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     };
   }, []);
   useEffect(() => {
-    if (IS_DEMO || !user?.uid) return;
+    if (!user?.uid) return;
     const userId = user.uid;
     const missingIds = [...new Set(displayLists.flatMap((list) => (list.paperIds || []).slice(0, 2)))]
       .filter((paperId) => paperId && !getPaper(paperId)?.title && !previewAsked.current.has(`${userId}:${paperId}`));
@@ -1072,7 +1045,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * not persisting at all.
    */
   useEffect(() => {
-    if (IS_DEMO || !user?.uid || !listsHeardFromServer.current) return;
+    if (!user?.uid || !listsHeardFromServer.current) return;
     saveStoredLists(user.uid, lists);
   }, [user?.uid, lists]);
 
@@ -1110,23 +1083,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const handleCreateList = async (name: string, icon: string, color: string, { isPublic = false } = {}) => {
     const listId = `list_${Date.now()}`;
     const newList = { id: listId, name, emoji: icon, color, paperIds: [], createdAt: new Date().toISOString() };
-    if (IS_DEMO) {
-      const allLists = demoGet<OwnList[]>('lists', []);
-      allLists.push(newList);
-      demoSet('lists', allLists);
-    } else {
-      // Public from the start: published empty; the Worker writes the share id
-      // onto the list. A failed publish leaves it private, and says so.
-      await writeNewList(newList, {
-        isPublic,
-        write: (list) => setDoc(doc(db, 'users', user!.uid, 'lists', listId), list),
-        publish: () => publishPublicList({ listId, title: name, language: 'en', papers: [] }),
-        onPublishFailed: (publishError) => {
-          console.error('The new list could not be published', publishError);
-          toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
-        },
-      });
-    }
+    // Public from the start: published empty; the Worker writes the share id
+    // onto the list. A failed publish leaves it private, and says so.
+    await writeNewList(newList, {
+      isPublic,
+      write: (list) => setDoc(doc(db, 'users', user!.uid, 'lists', listId), list),
+      publish: () => publishPublicList({ listId, title: name, language: 'en', papers: [] }),
+      onPublishFailed: (publishError) => {
+        console.error('The new list could not be published', publishError);
+        toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
+      },
+    });
     setLists((prev) => [...prev, newList]);
     setCreatedListId(listId);
   };
@@ -1150,17 +1117,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     const edit = { name: fields.name, emoji: fields.icon, color: fields.color };
     const editedAt = new Date();
 
-    if (IS_DEMO) {
-      const allLists = demoGet<OwnList[]>('lists', []);
-      demoSet('lists', allLists.map(item => (
-        item.id === listId ? { ...item, ...edit, updatedAt: editedAt.toISOString() } : item
-      )));
-    } else {
-      await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
-        ...edit,
-        updatedAt: serverTimestamp(),
-      });
-    }
+    await updateDoc(doc(db, 'users', user!.uid, 'lists', listId), {
+      ...edit,
+      updatedAt: serverTimestamp(),
+    });
 
     setLists((prev) => prev.map(item => (
       item.id === listId ? { ...item, ...edit, updatedAt: editedAt } : item
@@ -1170,16 +1130,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const handleDeleteList = async (listId: string) => {
     if (PRIVATE_LIST_IDS.has(listId)) return;
     const list = lists.find(candidate => candidate.id === listId);
-    if (IS_DEMO) {
-      const allLists = demoGet<OwnList[]>('lists', []).filter((l) => l.id !== listId);
-      localStorage.setItem('papertok_lists', JSON.stringify(allLists));
-    } else {
-      if (list?.publicShareId) {
-        await unpublishPublicList(list.publicShareId, list.id);
-        cancelPublicListSync(publicListSyncKey(user!.uid, listId));
-      }
-      await deleteDoc(doc(db, 'users', user!.uid, 'lists', listId));
+    if (list?.publicShareId) {
+      await unpublishPublicList(list.publicShareId, list.id);
+      cancelPublicListSync(publicListSyncKey(user!.uid, listId));
     }
+    await deleteDoc(doc(db, 'users', user!.uid, 'lists', listId));
     setLists((prev) => prev.filter((l) => l.id !== listId));
     if (expandedList === listId) setExpandedList(null);
   };
@@ -1216,26 +1171,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     // removal happened, and the sync would publish a list the account never
     // agreed to.
     let editedAt: Date | null = null;
-    if (IS_DEMO) {
-      const allLists = demoGet<OwnList[]>('lists', []);
-      const idx = allLists.findIndex((l) => l.id === listId);
-      if (idx !== -1) {
-        allLists[idx].paperIds = (allLists[idx].paperIds || []).filter((id) => id !== paperId);
-        demoSet('lists', allLists);
-      }
-    } else {
-      try {
-        const listRef = doc(db, 'users', user!.uid, 'lists', listId);
-        await updateDoc(listRef, {
-          paperIds: arrayRemove(paperId),
-          // The mark the background sync looks for (P25). Every edit leaves
-          // it; nothing else here decides when the public copy is rebuilt.
-          updatedAt: serverTimestamp(),
-        });
-        editedAt = new Date();
-      } catch (err) {
-        console.error('Error removing paper from custom list:', err);
-      }
+    try {
+      const listRef = doc(db, 'users', user!.uid, 'lists', listId);
+      await updateDoc(listRef, {
+        paperIds: arrayRemove(paperId),
+        // The mark the background sync looks for (P25). Every edit leaves
+        // it; nothing else here decides when the public copy is rebuilt.
+        updatedAt: serverTimestamp(),
+      });
+      editedAt = new Date();
+    } catch (err) {
+      console.error('Error removing paper from custom list:', err);
     }
     setLists((prev) => prev.map((list) => {
       if (list.id !== listId) return list;
@@ -1311,10 +1257,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   };
 
   const handlePublishList = async (list: OwnList, papers: PublicPaperInput[]) => {
-    if (IS_DEMO) {
-      setShareFeedback({ listId: list.id, state: 'unsupported' });
-      return;
-    }
 
     setShareFeedback({ listId: list.id, state: 'loading' });
     const input = {
@@ -1407,7 +1349,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    * opened. Best-effort: a failed read leaves the check to the dirty stamp.
    */
   useEffect(() => {
-    if (IS_DEMO || !expandedList) return undefined;
+    if (!expandedList) return undefined;
     const list = lists.find((entry) => entry.id === expandedList);
     if (!list?.publicShareId || expandedList in publicSnapshots) return undefined;
 
@@ -1449,7 +1391,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
    */
   const queuedSyncs = useRef(new Map<string, string>());
   useEffect(() => {
-    if (IS_DEMO || !user || !expandedList) return;
+    if (!user || !expandedList) return;
     // Never from a seed. A list read back from this device's storage carries
     // the name it had when the tab last closed, and republishing THAT would
     // push a stale title onto the page strangers read — the seed is for
@@ -1669,10 +1611,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       )}
                       {isCustomList && (() => {
                         const listActions = [
-                          ...(IS_DEMO ? [] : [list.publicShareId
+                          ...([list.publicShareId
                             ? { id: 'share', label: 'Share', hint: 'Send or copy the public link', Icon: ShareNetwork, disabled: shareBusy, onSelect: () => handleShareList(list) }
                             : { id: 'publish', label: 'Publish & share', hint: 'Anyone with the link can read it', Icon: GlobeHemisphereWest, disabled: shareBusy || pendingPaperIds.size > 0, onSelect: () => handlePublishList(list, publicPapers) }]),
-                          ...(!IS_DEMO && list.publicShareId && !shareBusy
+                          ...(list.publicShareId && !shareBusy
                             ? [{ id: 'unpublish', label: 'Stop sharing', hint: 'The public link stops working', Icon: LinkBreak, onSelect: () => handleUnpublishList(list) }]
                             : []),
                           { id: 'edit', label: 'Edit list', hint: 'Name, icon and colour', Icon: PencilSimple, onSelect: () => setEditing(list) },
@@ -1687,13 +1629,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       })()}
                     </div>
                   )}
-                  {isCustomList && IS_DEMO && (
-                    <span className="lists-share-demo-note">
-                      {'Public sharing is unavailable in demo mode.'}
-                    </span>
-                  )}
                 </header>
-                {isCustomList && !IS_DEMO && (
+                {isCustomList && (
                 <p className="lists-expanded-meta">
                   {list.publicShareId ? (
                     <span

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   applyInstitutionWorksFallback,
   calculateEntityRecentImpact,
-  calculateInstitutionRecentImpact,
   deduplicateProjectParticipants,
   getRecentImpactConfig,
   getRecentImpactPeriod,
@@ -48,7 +47,7 @@ test('scores field-normalized recent institutional impact on a ten-point scale',
     ...Array.from({ length: 30 }, () => ({ fwci: 1 })),
     ...Array.from({ length: 20 }, () => ({ fwci: 2 })),
   ];
-  const impact = calculateInstitutionRecentImpact(works);
+  const impact = calculateEntityRecentImpact(works);
 
   assert.equal(impact.available, true);
   assert.equal(impact.score, 5.8);
@@ -59,7 +58,7 @@ test('scores field-normalized recent institutional impact on a ten-point scale',
 });
 
 test('does not publish an impact score from an undersized sample', () => {
-  assert.deepEqual(calculateInstitutionRecentImpact(
+  assert.deepEqual(calculateEntityRecentImpact(
     Array.from({ length: 49 }, () => ({ fwci: 3 })),
   ), {
     available: false,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildSavedPaperPayload, canStoreSavedPaper } from './savedPaperPayload.ts';
+import { buildSavedPaperPayload } from './savedPaperPayload.ts';
 
 const SAVED_AT = '2026-08-27T10:00:00.000Z';
 const full = {
@@ -114,12 +114,6 @@ test('the abstract stands in for a missing summary', () => {
 test('an untitled paper is stored under its id rather than refused', () => {
   const payload = buildSavedPaperPayload({ id: '2608.20071' }, SAVED_AT);
   assert.equal(payload.title, '2608.20071');
-  assert.equal(canStoreSavedPaper({ id: '2608.20071' }), true);
-
-  // Every reader already treats `title === id` as "no title yet", so this
-  // claims nothing it should not.
-  assert.equal(canStoreSavedPaper({}), false, 'no id and no title is nothing to write');
-  assert.equal(canStoreSavedPaper(null), false);
 });
 
 /**
