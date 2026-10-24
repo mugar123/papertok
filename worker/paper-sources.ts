@@ -25,6 +25,7 @@ import { handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
 import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
+import { OPENALEX_LEAF_VENUES } from './openalex-leaf-venues.generated.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -317,8 +318,19 @@ export const WORKING_PAPER_SERIES_IDS = [
 // sensor materials, biomass conversion and tissue scaffolds among them.
 const AREA_LANE_LEFT_OUT: Readonly<Record<string, readonly string[]>> = { eess: ['2204'] };
 
+/**
+ * The works filter of a leaf's venue lane (PAP-104): the OpenAlex sources its
+ * labelled sample found on target, sorted, and the types and topic or author
+ * filter the sample asked with. Null when the leaf has no venue lane.
+ */
+export function openAlexVenueFilterForLeaf(leaf: string) {
+  if (!Object.hasOwn(OPENALEX_LEAF_VENUES, leaf)) return null;
+  const { sources, filters } = OPENALEX_LEAF_VENUES[leaf];
+  return [`primary_location.source.id:${sources.join('|')}`, ...filters].join(',');
+}
+
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-areas' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-venues' | 'openalex-areas' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
   | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
 // `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
@@ -499,6 +511,23 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
+  // The newest articles of the journals, and for computer science the
+  // proceedings, whose labelled sample stood for a leaf (PAP-104), filed under
+  // the leaf as a topic lane's are. One request a page names all the lane's
+  // sources. With or without an abstract, as the area lanes take them; the
+  // sources are the curated list, so neither `is_core` nor the series filter
+  // applies. On 2026-10-23 the lanes held 0.2 (stat.ML) to 22 (mech.thermo)
+  // articles a day. Physics of Fluids dates each issue, about 390 articles, by
+  // its first day: three pages a night keep a whole issue, where one would
+  // keep its newest 200.
+  'openalex-venues': {
+    firstPages: 5, dailyPages: 3, dated: true, overlapDays: 14,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      openAlexVenueFilterForLeaf(lane),
+      windowFilter(),
+      'is_retracted:false',
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
+  },
   // The newest journal articles of a whole area, filed under the area. On
   // 2026-10-23 a page of 200 with an abstract held the last one or two days of
   // each area but finance's nine: about 22 (finance) to 370 (electrical
@@ -572,6 +601,7 @@ export function categoryLaneJobs(): LaneJob[] {
     ...ARXIV_LABEL_LEAVES.map(leaf => ({ source: 'arxiv-search' as const, lane: leaf.id })),
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
     ...LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
+    ...LEAVES.filter(leaf => openAlexVenueFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-venues' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
     ...AREA_LANE_AREAS.map(area => ({ source: 'openalex-areas' as const, lane: areaLane(area) })),
   ];

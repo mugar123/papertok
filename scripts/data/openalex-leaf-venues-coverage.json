@@ -1,0 +1,2206 @@
+[
+  {
+    "leaf": "astro-ph.CO",
+    "label": "Cosmology",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S120662888": "7/11",
+      "S2898356015": "3/4"
+    },
+    "sources": [
+      "S120662888",
+      "S2898356015"
+    ]
+  },
+  {
+    "leaf": "astro-ph.EP",
+    "label": "Earth and Planetary Astrophysics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S172501725": "7/7",
+      "S4210170572": "4/4",
+      "S4210222121": "4/4",
+      "S105500771": "0/0",
+      "S153084011": "0/0"
+    },
+    "sources": [
+      "S172501725",
+      "S4210170572",
+      "S4210222121"
+    ]
+  },
+  {
+    "leaf": "astro-ph.GA",
+    "label": "Astrophysics of Galaxies",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10026"
+    ],
+    "bySource": {
+      "S195663288": "2/3",
+      "S1980519": "3/4",
+      "S205231332": "7/7",
+      "S100695177": "0/0",
+      "S4210224606": "1/1"
+    },
+    "sources": [
+      "S195663288",
+      "S1980519",
+      "S205231332",
+      "S4210224606"
+    ]
+  },
+  {
+    "leaf": "astro-ph.SR",
+    "label": "Solar and Stellar Astrophysics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10251"
+    ],
+    "bySource": {
+      "S195663288": "0/0",
+      "S1980519": "6/7",
+      "S205231332": "8/8",
+      "S39223014": "0/0"
+    },
+    "sources": [
+      "S1980519",
+      "S205231332"
+    ]
+  },
+  {
+    "leaf": "chemeng.bio",
+    "label": "Bioengineering",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S151564723": "6/6",
+      "S173328182": "0/0",
+      "S168210271": "0/0",
+      "S54167817": "5/5",
+      "S171368329": "4/4",
+      "S182099265": "0/0",
+      "S186451451": "0/0",
+      "S137312515": "0/0"
+    },
+    "sources": [
+      "S151564723",
+      "S171368329",
+      "S54167817"
+    ]
+  },
+  {
+    "leaf": "chemeng.energy",
+    "label": "Energy & Batteries",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S2898305631": "0/0",
+      "S2502627819": "4/4",
+      "S2764414965": "3/3",
+      "S2764528046": "0/1",
+      "S2764728150": "0/0",
+      "S177147899": "7/7",
+      "S2500128275": "0/0",
+      "S4210241147": "0/0"
+    },
+    "sources": [
+      "S177147899",
+      "S2502627819",
+      "S2764414965"
+    ]
+  },
+  {
+    "leaf": "chemeng.metal",
+    "label": "Metallurgy",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S64016596": "0/0",
+      "S105962883": "0/0",
+      "S165830345": "1/1",
+      "S68503223": "0/0",
+      "S154732359": "5/5",
+      "S63511553": "0/0",
+      "S143946080": "0/0",
+      "S34395325": "9/9"
+    },
+    "sources": [
+      "S154732359",
+      "S165830345",
+      "S34395325"
+    ]
+  },
+  {
+    "leaf": "chemeng.nano",
+    "label": "Nanotechnology",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S7822423": "0/0",
+      "S206811868": "3/5",
+      "S142331907": "0/0",
+      "S2504426957": "2/2",
+      "S194298869": "1/3",
+      "S4210185061": "4/4",
+      "S4210169526": "1/1",
+      "S4210215939": "0/0"
+    },
+    "sources": [
+      "S194298869",
+      "S206811868",
+      "S2504426957",
+      "S4210169526",
+      "S4210185061"
+    ]
+  },
+  {
+    "leaf": "chemeng.sep",
+    "label": "Separation Technologies",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S69753523": "7/7",
+      "S119469986": "1/1",
+      "S86512602": "0/1",
+      "S197355279": "4/4",
+      "S24000496": "2/2",
+      "S4210204796": "0/0",
+      "S4210225683": "0/0"
+    },
+    "sources": [
+      "S119469986",
+      "S197355279",
+      "S24000496",
+      "S69753523"
+    ]
+  },
+  {
+    "leaf": "civil.mat",
+    "label": "Construction Materials",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S186020892": "2/2",
+      "S123887920": "0/0",
+      "S29980478": "6/6",
+      "S20715302": "0/0",
+      "S111427844": "4/4",
+      "S187103194": "1/2",
+      "S31518343": "1/1",
+      "S2764881959": "0/0"
+    },
+    "sources": [
+      "S111427844",
+      "S186020892",
+      "S187103194",
+      "S29980478",
+      "S31518343"
+    ]
+  },
+  {
+    "leaf": "civil.trans",
+    "label": "Transportation",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S159637997": "2/2",
+      "S96305778": "1/1",
+      "S64511102": "3/4",
+      "S45181156": "3/4",
+      "S130252234": "1/1",
+      "S145575934": "2/3",
+      "S186558940": "0/0",
+      "S62009534": "0/0"
+    },
+    "sources": [
+      "S130252234",
+      "S145575934",
+      "S159637997",
+      "S45181156",
+      "S64511102",
+      "S96305778"
+    ]
+  },
+  {
+    "leaf": "civil.urban",
+    "label": "Urban Planning",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S79990064": "3/3",
+      "S200299299": "1/1",
+      "S132076093": "2/2",
+      "S59780895": "1/1",
+      "S127305097": "0/0",
+      "S104597489": "1/1",
+      "S4210191690": "0/3",
+      "S4210181853": "3/4"
+    },
+    "sources": [
+      "S104597489",
+      "S132076093",
+      "S200299299",
+      "S4210181853",
+      "S59780895",
+      "S79990064"
+    ]
+  },
+  {
+    "leaf": "cond-mat.mes-hall",
+    "label": "Mesoscale and Nanoscale Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10083|T10382|T10657"
+    ],
+    "bySource": {
+      "S4210237713": "10/10",
+      "S24807848": "2/2",
+      "S143846845": "1/1",
+      "S4210229423": "2/2",
+      "S23074404": "0/0",
+      "S4210185653": "0/0"
+    },
+    "sources": [
+      "S143846845",
+      "S24807848",
+      "S4210229423",
+      "S4210237713"
+    ]
+  },
+  {
+    "leaf": "cond-mat.mtrl-sci",
+    "label": "Materials Science",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S2786256796": "7/7",
+      "S4210232664": "1/1",
+      "S64016596": "0/0",
+      "S105962883": "0/0",
+      "S26018076": "5/6",
+      "S103895331": "1/1"
+    },
+    "sources": [
+      "S103895331",
+      "S26018076",
+      "S2786256796",
+      "S4210232664"
+    ]
+  },
+  {
+    "leaf": "cond-mat.quant-gas",
+    "label": "Quantum Gases",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10425"
+    ],
+    "bySource": {
+      "S164566984": "10/11",
+      "S24807848": "0/0",
+      "S137042341": "0/0",
+      "S148121101": "1/1",
+      "S4210195687": "2/2",
+      "S4210237713": "1/1"
+    },
+    "sources": [
+      "S148121101",
+      "S164566984",
+      "S4210195687",
+      "S4210237713"
+    ]
+  },
+  {
+    "leaf": "cond-mat.soft",
+    "label": "Soft Condensed Matter",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S34211650": "2/4",
+      "S32106766": "7/7",
+      "S5407052014": "3/4"
+    },
+    "sources": [
+      "S32106766",
+      "S34211650",
+      "S5407052014"
+    ]
+  },
+  {
+    "leaf": "cond-mat.str-el",
+    "label": "Strongly Correlated Electrons",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S4210221747": "11/15"
+    },
+    "sources": [
+      "S4210221747"
+    ]
+  },
+  {
+    "leaf": "cond-mat.supr-con",
+    "label": "Superconductivity",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10037"
+    ],
+    "bySource": {
+      "S4210237713": "6/7",
+      "S24807848": "3/4",
+      "S93909106": "4/4",
+      "S139340696": "0/0",
+      "S4210221747": "0/0",
+      "S89963981": "0/0"
+    },
+    "sources": [
+      "S24807848",
+      "S4210237713",
+      "S93909106"
+    ]
+  },
+  {
+    "leaf": "cs.AI",
+    "label": "Artificial Intelligence",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S196139623": "3/7",
+      "S139930977": "7/8",
+      "S4210191458": "0/0",
+      "S4306419999": "0/0",
+      "S4306417597": "0/0"
+    },
+    "sources": [
+      "S139930977",
+      "S196139623"
+    ]
+  },
+  {
+    "leaf": "cs.CL",
+    "label": "Computation and Language",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4363608652": "0/0",
+      "S4363608991": "0/0",
+      "S4363608774": "0/0",
+      "S2729999759": "0/0",
+      "S155526855": "6/6",
+      "S4404676627": "5/6",
+      "S4306418011": "0/0",
+      "S4306424877": "3/3"
+    },
+    "sources": [
+      "S155526855",
+      "S4306424877",
+      "S4404676627"
+    ]
+  },
+  {
+    "leaf": "cs.CR",
+    "label": "Cryptography and Security",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4363608815": "0/0",
+      "S4210233669": "0/0",
+      "S4306421123": "0/0",
+      "S4306420590": "0/0",
+      "S4210174050": "2/2",
+      "S133795288": "0/0",
+      "S12529635": "12/13",
+      "S4210207404": "0/0"
+    },
+    "sources": [
+      "S12529635",
+      "S4210174050"
+    ]
+  },
+  {
+    "leaf": "cs.DB",
+    "label": "Databases",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4210226185": "0/0",
+      "S4387289859": "9/10",
+      "S78926909": "3/3",
+      "S90119964": "2/2",
+      "S4210210321": "0/0"
+    },
+    "sources": [
+      "S4387289859",
+      "S78926909",
+      "S90119964"
+    ]
+  },
+  {
+    "leaf": "cs.DC",
+    "label": "Distributed Computing",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S97130795": "0/0",
+      "S157146593": "4/4",
+      "S139349430": "0/0",
+      "S7407086807": "0/0",
+      "S4210174069": "0/0",
+      "S4363608557": "0/0",
+      "S4210174133": "9/11"
+    },
+    "sources": [
+      "S157146593",
+      "S4210174133"
+    ]
+  },
+  {
+    "leaf": "cs.DS",
+    "label": "Data Structures and Algorithms",
+    "status": "insufficient-sample",
+    "sampleSize": 13,
+    "onTarget": 13,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S7407087723": "0/0",
+      "S4210175768": "0/0",
+      "S4363608728": "0/0",
+      "S4306420974": "0/0",
+      "S137348503": "5/5",
+      "S89324355": "8/8"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "cs.GR",
+    "label": "Graphics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S185367456": "3/3",
+      "S84775595": "0/0",
+      "S67831204": "6/11",
+      "S137436721": "1/1",
+      "S7407085878": "0/0"
+    },
+    "sources": [
+      "S137436721",
+      "S185367456",
+      "S67831204"
+    ]
+  },
+  {
+    "leaf": "cs.GT",
+    "label": "Computer Science and Game Theory",
+    "status": "insufficient-sample",
+    "sampleSize": 11,
+    "onTarget": 9,
+    "precision": 0.8181818181818182,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4363608973": "0/0",
+      "S4210173995": "5/5",
+      "S132210109": "3/4",
+      "S2502731256": "1/2"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "cs.HC",
+    "label": "Human-Computer Interaction",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4363607743": "0/0",
+      "S7407087746": "0/0",
+      "S4210183893": "10/10",
+      "S89276529": "5/5",
+      "S4210190811": "0/0"
+    },
+    "sources": [
+      "S4210183893",
+      "S89276529"
+    ]
+  },
+  {
+    "leaf": "cs.IR",
+    "label": "Information Retrieval",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4363608773": "0/0",
+      "S7407085931": "0/0",
+      "S4363608885": "0/0",
+      "S7407086088": "0/0",
+      "S4394735545": "11/12",
+      "S4387284325": "3/3"
+    },
+    "sources": [
+      "S4387284325",
+      "S4394735545"
+    ]
+  },
+  {
+    "leaf": "cs.LG",
+    "label": "Machine Learning",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S118988714": "0/0",
+      "S62148650": "9/10",
+      "S199944782": "0/0",
+      "S121920818": "5/5",
+      "S4363606243": "0/0",
+      "S4306419644": "0/0",
+      "S4306419637": "0/0",
+      "S4363608767": "0/0"
+    },
+    "sources": [
+      "S121920818",
+      "S62148650"
+    ]
+  },
+  {
+    "leaf": "cs.MM",
+    "label": "Multimedia",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4363608757": "0/0",
+      "S4363607799": "0/0",
+      "S4306419706": "0/0",
+      "S137030581": "0/0",
+      "S19610489": "11/14",
+      "S112262039": "1/1"
+    },
+    "sources": [
+      "S112262039",
+      "S19610489"
+    ]
+  },
+  {
+    "leaf": "cs.NE",
+    "label": "Neural and Evolutionary Computing",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S93787993": "0/0",
+      "S38677346": "0/0",
+      "S2764346689": "6/6",
+      "S47930974": "1/1",
+      "S4210221532": "3/5",
+      "S207023548": "2/3",
+      "S4363608932": "0/0"
+    },
+    "sources": [
+      "S207023548",
+      "S2764346689",
+      "S4210221532",
+      "S47930974"
+    ]
+  },
+  {
+    "leaf": "cs.PL",
+    "label": "Programming Languages",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4210216081": "11/11",
+      "S41449414": "1/1",
+      "S12266929": "2/2",
+      "S7407086162": "1/1"
+    },
+    "sources": [
+      "S12266929",
+      "S41449414",
+      "S4210216081",
+      "S7407086162"
+    ]
+  },
+  {
+    "leaf": "cs.RO",
+    "label": "Robotics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S144620930": "0/0",
+      "S73484101": "4/4",
+      "S4210169774": "1/1",
+      "S4210213233": "6/6",
+      "S151299380": "4/4",
+      "S133768115": "0/0",
+      "S4210217939": "0/0",
+      "S4363608614": "0/0"
+    },
+    "sources": [
+      "S151299380",
+      "S4210169774",
+      "S4210213233",
+      "S73484101"
+    ]
+  },
+  {
+    "leaf": "cs.SI",
+    "label": "Social and Information Networks",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4387284482": "0/0",
+      "S2764891196": "3/4",
+      "S3035517252": "3/4",
+      "S2504380752": "4/5",
+      "S2530642067": "0/0",
+      "S2898299116": "0/0",
+      "S26186134": "1/2"
+    },
+    "sources": [
+      "S2504380752",
+      "S26186134",
+      "S2764891196",
+      "S3035517252"
+    ]
+  },
+  {
+    "leaf": "cs.SY",
+    "label": "Systems and Control",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S184954342": "0/0",
+      "S51360982": "1/1",
+      "S133363738": "0/0",
+      "S4306422535": "0/0",
+      "S56603566": "3/3",
+      "S156578089": "11/11",
+      "S4210221977": "0/0",
+      "S4210168941": "0/0"
+    },
+    "sources": [
+      "S156578089",
+      "S51360982",
+      "S56603566"
+    ]
+  },
+  {
+    "leaf": "econ.EM",
+    "label": "Econometrics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S127742747": "1/1",
+      "S18095783": "1/2",
+      "S33519306": "1/1",
+      "S49389958": "10/11"
+    },
+    "sources": [
+      "S127742747",
+      "S18095783",
+      "S33519306",
+      "S49389958"
+    ]
+  },
+  {
+    "leaf": "econ.GN",
+    "label": "General Economics",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S158011328": "0/0",
+      "S165087003": "0/1",
+      "S170166683": "0/0",
+      "S180061323": "5/5",
+      "S198098467": "1/1",
+      "S203860005": "2/2",
+      "S23254222": "0/0",
+      "S4210174288": "0/0",
+      "S42893225": "0/0",
+      "S45992627": "1/2",
+      "S6711363": "0/0",
+      "S88935262": "0/2",
+      "S95323914": "0/2",
+      "S95464858": "0/0",
+      "S96919139": "0/0"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "econ.TH",
+    "label": "Theoretical Economics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S10997704": "0/0",
+      "S149131268": "2/2",
+      "S202934171": "5/5",
+      "S579031": "6/6",
+      "S94044085": "1/2"
+    },
+    "sources": [
+      "S149131268",
+      "S202934171",
+      "S579031",
+      "S94044085"
+    ]
+  },
+  {
+    "leaf": "eess.IV",
+    "label": "Image and Video Processing",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4210173141": "0/0",
+      "S115173108": "0/0",
+      "S4210233665": "0/0",
+      "S58069681": "0/0",
+      "S116571295": "9/11",
+      "S152600803": "4/4",
+      "S4210223844": "0/0"
+    },
+    "sources": [
+      "S116571295",
+      "S152600803"
+    ]
+  },
+  {
+    "leaf": "eess.SP",
+    "label": "Signal Processing",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S168680287": "0/0",
+      "S120629676": "0/0",
+      "S42167783": "0/0",
+      "S154637859": "6/9",
+      "S64117906": "4/6",
+      "S4363607879": "0/0",
+      "S4363607788": "0/0"
+    },
+    "sources": [
+      "S154637859",
+      "S64117906"
+    ]
+  },
+  {
+    "leaf": "eess.SY",
+    "label": "Systems and Control",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S184954342": "0/0",
+      "S51360982": "1/1",
+      "S133363738": "0/0",
+      "S4306422535": "0/0",
+      "S56603566": "3/3",
+      "S156578089": "11/11",
+      "S4210221977": "0/0",
+      "S4210168941": "0/0"
+    },
+    "sources": [
+      "S156578089",
+      "S51360982",
+      "S56603566"
+    ]
+  },
+  {
+    "leaf": "eess.electro",
+    "label": "Electronics & Microelectronics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S83637746": "0/0",
+      "S162355128": "4/4",
+      "S19887683": "3/3",
+      "S116977442": "4/5",
+      "S37538908": "1/2",
+      "S4210210374": "0/0",
+      "S4210168112": "0/0",
+      "S4210231368": "0/1"
+    },
+    "sources": [
+      "S116977442",
+      "S162355128",
+      "S19887683",
+      "S37538908"
+    ]
+  },
+  {
+    "leaf": "eess.telecom",
+    "label": "Telecommunications",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S196647941": "0/0",
+      "S63459445": "0/0",
+      "S90422530": "0/0",
+      "S147316732": "0/0",
+      "S4306419201": "0/0",
+      "S4210205019": "0/0",
+      "S4363605306": "15/15"
+    },
+    "sources": [
+      "S4363605306"
+    ]
+  },
+  {
+    "leaf": "gr-qc",
+    "label": "General Relativity and Quantum Cosmology",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S171172751": "13/14",
+      "S146652483": "0/0",
+      "S63240003": "1/1"
+    },
+    "sources": [
+      "S171172751",
+      "S63240003"
+    ]
+  },
+  {
+    "leaf": "hep-ex",
+    "label": "High Energy Physics - Experiment",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "authors_count:>99"
+    ],
+    "bySource": {
+      "S187585107": "10/10",
+      "S4210238307": "1/1",
+      "S94052278": "1/1",
+      "S173952182": "3/3",
+      "S24807848": "0/0",
+      "S959143335": "0/0"
+    },
+    "sources": [
+      "S173952182",
+      "S187585107",
+      "S4210238307",
+      "S94052278"
+    ]
+  },
+  {
+    "leaf": "hep-ph",
+    "label": "High Energy Physics - Phenomenology",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10048|T10224|T10527|T10921|T11090",
+      "authors_count:<100"
+    ],
+    "bySource": {
+      "S187585107": "4/4",
+      "S4210238307": "10/11",
+      "S94052278": "0/0",
+      "S173952182": "0/0",
+      "S4210194812": "0/0"
+    },
+    "sources": [
+      "S187585107",
+      "S4210238307"
+    ]
+  },
+  {
+    "leaf": "hep-th",
+    "label": "High Energy Physics - Theory",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S187585107": "11/15",
+      "S4210194812": "0/0",
+      "S4210238095": "0/0"
+    },
+    "sources": [
+      "S187585107"
+    ]
+  },
+  {
+    "leaf": "math-ph",
+    "label": "Mathematical Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S100601982": "0/0",
+      "S158241587": "2/4",
+      "S99746170": "4/5",
+      "S27783554": "6/6",
+      "S118162903": "0/0",
+      "S98685034": "0/0"
+    },
+    "sources": [
+      "S158241587",
+      "S27783554",
+      "S99746170"
+    ]
+  },
+  {
+    "leaf": "math.AG",
+    "label": "Algebraic Geometry",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 9,
+    "precision": 0.6,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S167509673": "0/0",
+      "S4210177002": "0/0",
+      "S4210195918": "4/5",
+      "S66563395": "5/10"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "math.AP",
+    "label": "Analysis of PDEs",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S2477993565": "2/3",
+      "S136982523": "3/3",
+      "S185232611": "2/2",
+      "S138240904": "0/0",
+      "S2898435970": "0/0",
+      "S74141806": "5/7",
+      "S61246407": "0/0"
+    },
+    "sources": [
+      "S136982523",
+      "S185232611",
+      "S2477993565",
+      "S74141806"
+    ]
+  },
+  {
+    "leaf": "math.CA",
+    "label": "Classical Analysis and ODEs",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S35093870": "0/0",
+      "S35440848": "1/2",
+      "S179905963": "0/1",
+      "S77852275": "9/12"
+    },
+    "sources": [
+      "S35440848",
+      "S77852275"
+    ]
+  },
+  {
+    "leaf": "math.DG",
+    "label": "Differential Geometry",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S23326474": "0/2",
+      "S198157528": "3/3",
+      "S100028386": "10/10"
+    },
+    "sources": [
+      "S100028386",
+      "S198157528"
+    ]
+  },
+  {
+    "leaf": "math.FA",
+    "label": "Functional Analysis",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S7365561": "5/7",
+      "S178734419": "0/0",
+      "S76385772": "3/5",
+      "S90281530": "1/1",
+      "S161157516": "0/0",
+      "S37340297": "0/0",
+      "S4210216644": "1/2"
+    },
+    "sources": [
+      "S4210216644",
+      "S7365561",
+      "S76385772",
+      "S90281530"
+    ]
+  },
+  {
+    "leaf": "math.GR",
+    "label": "Group Theory",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 7,
+    "precision": 0.4666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S151314372": "4/4",
+      "S58492650": "0/2",
+      "S23260266": "1/6",
+      "S4210183405": "0/1",
+      "S4210228216": "2/2"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "math.GT",
+    "label": "Geometric Topology",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S50220091": "4/6",
+      "S106486924": "0/0",
+      "S45912524": "3/5",
+      "S55337115": "3/3",
+      "S71154276": "1/1"
+    },
+    "sources": [
+      "S45912524",
+      "S50220091",
+      "S55337115",
+      "S71154276"
+    ]
+  },
+  {
+    "leaf": "math.LO",
+    "label": "Logic",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S177675236": "6/6",
+      "S172477885": "0/0",
+      "S29890666": "5/5",
+      "S130801046": "2/2",
+      "S188076996": "0/0",
+      "S78544662": "0/0",
+      "S172351290": "1/1",
+      "S30880287": "1/1"
+    },
+    "sources": [
+      "S130801046",
+      "S172351290",
+      "S177675236",
+      "S29890666",
+      "S30880287"
+    ]
+  },
+  {
+    "leaf": "math.MP",
+    "label": "Mathematical Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S100601982": "0/0",
+      "S158241587": "7/9",
+      "S27783554": "5/6",
+      "S118162903": "0/0"
+    },
+    "sources": [
+      "S158241587",
+      "S27783554"
+    ]
+  },
+  {
+    "leaf": "math.NA",
+    "label": "Numerical Analysis",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S203348814": "2/2",
+      "S4210205683": "1/1",
+      "S102439543": "0/0",
+      "S201897549": "0/0",
+      "S165512578": "6/7",
+      "S108887460": "3/4",
+      "S16958353": "0/0",
+      "S151550017": "1/1"
+    },
+    "sources": [
+      "S108887460",
+      "S151550017",
+      "S165512578",
+      "S203348814",
+      "S4210205683"
+    ]
+  },
+  {
+    "leaf": "math.NT",
+    "label": "Number Theory",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S40813394": "1/1",
+      "S141074886": "5/5",
+      "S125230230": "5/6",
+      "S2478343494": "0/0",
+      "S4210215925": "1/1",
+      "S169946948": "1/2",
+      "S4387284347": "0/0"
+    },
+    "sources": [
+      "S125230230",
+      "S141074886",
+      "S169946948",
+      "S40813394",
+      "S4210215925"
+    ]
+  },
+  {
+    "leaf": "math.OC",
+    "label": "Optimization and Control",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S928796702": "4/4",
+      "S897311980": "1/1",
+      "S193920097": "1/1",
+      "S55826652": "5/5",
+      "S52430896": "0/0",
+      "S39243548": "2/2",
+      "S142457147": "2/2",
+      "S103047102": "0/0"
+    },
+    "sources": [
+      "S142457147",
+      "S193920097",
+      "S39243548",
+      "S55826652",
+      "S897311980",
+      "S928796702"
+    ]
+  },
+  {
+    "leaf": "math.PR",
+    "label": "Probability",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S40212770": "10/11",
+      "S105693234": "0/0",
+      "S9093621": "0/0",
+      "S182850260": "1/2",
+      "S4210228960": "0/0",
+      "S23873141": "0/0",
+      "S160779208": "1/1",
+      "S180803011": "1/1"
+    },
+    "sources": [
+      "S160779208",
+      "S180803011",
+      "S182850260",
+      "S40212770"
+    ]
+  },
+  {
+    "leaf": "math.ST",
+    "label": "Statistics Theory",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S119757635": "10/11",
+      "S989097277": "1/1",
+      "S72071028": "1/2",
+      "S2734669121": "0/0",
+      "S4210183802": "1/1"
+    },
+    "sources": [
+      "S119757635",
+      "S4210183802",
+      "S72071028",
+      "S989097277"
+    ]
+  },
+  {
+    "leaf": "mech.acoustics",
+    "label": "Acoustics & Vibrations",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S99182027": "2/2",
+      "S11296630": "0/0",
+      "S971171794": "8/8",
+      "S4210179158": "1/3",
+      "S46035623": "0/0",
+      "S4210234889": "0/0",
+      "S168745376": "2/2"
+    },
+    "sourceSamples": {
+      "S11296630": "9/15"
+    },
+    "sources": [
+      "S168745376",
+      "S4210179158",
+      "S971171794",
+      "S99182027"
+    ]
+  },
+  {
+    "leaf": "mech.auto",
+    "label": "Automotive Engineering",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S59320183": "2/4",
+      "S16239639": "7/7",
+      "S93626530": "0/0",
+      "S53651343": "3/3",
+      "S4210178771": "0/1",
+      "S2764835558": "0/0",
+      "S4210208336": "0/0",
+      "S4210225447": "0/0"
+    },
+    "sources": [
+      "S16239639",
+      "S53651343",
+      "S59320183"
+    ]
+  },
+  {
+    "leaf": "mech.cad",
+    "label": "CAD & Simulation",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S4210171473": "0/0",
+      "S135221619": "0/0",
+      "S173178594": "0/0",
+      "S40006715": "8/8",
+      "S165651092": "2/2",
+      "S145843112": "2/2",
+      "S89333158": "1/1",
+      "S111482492": "2/2"
+    },
+    "sources": [
+      "S111482492",
+      "S145843112",
+      "S165651092",
+      "S40006715",
+      "S89333158"
+    ]
+  },
+  {
+    "leaf": "mech.dyn",
+    "label": "Dynamics & Robotics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S6785741": "3/4",
+      "S108863518": "0/0",
+      "S198805599": "0/0",
+      "S73930687": "0/0",
+      "S138681734": "0/0",
+      "S73484101": "4/4",
+      "S4210213233": "6/6",
+      "S2764443376": "1/1"
+    },
+    "sourceSamples": {
+      "S138681734": "11/15"
+    },
+    "sources": [
+      "S138681734",
+      "S2764443376",
+      "S4210213233",
+      "S6785741",
+      "S73484101"
+    ]
+  },
+  {
+    "leaf": "mech.solid",
+    "label": "Solid Mechanics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S105775785": "0/1",
+      "S189344224": "2/2",
+      "S10186584": "1/1",
+      "S17983605": "2/2",
+      "S71623918": "2/2",
+      "S197285952": "3/6",
+      "S176710131": "1/1",
+      "S124014869": "0/0"
+    },
+    "sources": [
+      "S10186584",
+      "S176710131",
+      "S17983605",
+      "S189344224",
+      "S197285952",
+      "S71623918"
+    ]
+  },
+  {
+    "leaf": "mech.thermo",
+    "label": "Thermodynamics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 12,
+    "precision": 0.8,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S90999920": "0/0",
+      "S129676613": "6/8",
+      "S128740003": "2/2",
+      "S118246204": "4/4",
+      "S4210206986": "0/0",
+      "S186745480": "0/0",
+      "S201183278": "0/0",
+      "S130017051": "0/1"
+    },
+    "sources": [
+      "S118246204",
+      "S128740003",
+      "S129676613"
+    ]
+  },
+  {
+    "leaf": "nucl-ex",
+    "label": "Nuclear Experiment",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "authors_count:>9"
+    ],
+    "bySource": {
+      "S4210168441": "8/8",
+      "S4210173186": "3/5",
+      "S62159105": "1/1",
+      "S78376336": "1/1"
+    },
+    "sources": [
+      "S4210168441",
+      "S4210173186",
+      "S62159105",
+      "S78376336"
+    ]
+  },
+  {
+    "leaf": "nucl-th",
+    "label": "Nuclear Theory",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S4210168441": "6/6",
+      "S4210173186": "0/0",
+      "S62159105": "0/0",
+      "S190936833": "1/2",
+      "S78376336": "4/7",
+      "S37308595": "0/0"
+    },
+    "sources": [
+      "S190936833",
+      "S4210168441",
+      "S78376336"
+    ]
+  },
+  {
+    "leaf": "physics.atom-ph",
+    "label": "Atomic Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article",
+      "primary_topic.id:T10523|T11993"
+    ],
+    "bySource": {
+      "S164566984": "9/9",
+      "S108417319": "3/3",
+      "S174148793": "0/0",
+      "S2737579866": "3/3",
+      "S24807848": "0/0"
+    },
+    "sources": [
+      "S108417319",
+      "S164566984",
+      "S2737579866"
+    ]
+  },
+  {
+    "leaf": "physics.bio-ph",
+    "label": "Biological Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S98085912": "5/8",
+      "S728652": "3/4",
+      "S200539529": "1/2",
+      "S4387291267": "1/1"
+    },
+    "sources": [
+      "S200539529",
+      "S4387291267",
+      "S728652",
+      "S98085912"
+    ]
+  },
+  {
+    "leaf": "physics.comp-ph",
+    "label": "Computational Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S148709879": "6/8",
+      "S142305363": "4/6",
+      "S34010870": "0/0",
+      "S4210199036": "0/1"
+    },
+    "sources": [
+      "S142305363",
+      "S148709879"
+    ]
+  },
+  {
+    "leaf": "physics.flu-dyn",
+    "label": "Fluid Dynamics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S152000018": "12/12",
+      "S22862804": "0/0",
+      "S4210213036": "3/3",
+      "S138356703": "0/0",
+      "S105578824": "0/0",
+      "S169493037": "0/0"
+    },
+    "sourceSamples": {
+      "S22862804": "14/15"
+    },
+    "sources": [
+      "S152000018",
+      "S22862804",
+      "S4210213036"
+    ]
+  },
+  {
+    "leaf": "physics.optics",
+    "label": "Optics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S4210197940": "1/1",
+      "S178776955": "6/6",
+      "S134390580": "4/4",
+      "S120392215": "2/2",
+      "S2498964232": "2/2",
+      "S2764698263": "0/0"
+    },
+    "sources": [
+      "S120392215",
+      "S134390580",
+      "S178776955",
+      "S2498964232",
+      "S4210197940"
+    ]
+  },
+  {
+    "leaf": "physics.plasm-ph",
+    "label": "Plasma Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S66354037": "0/0",
+      "S133992056": "11/13",
+      "S75093782": "0/0",
+      "S11702923": "0/0",
+      "S57082650": "2/2",
+      "S2898486120": "0/0"
+    },
+    "sources": [
+      "S133992056",
+      "S57082650"
+    ]
+  },
+  {
+    "leaf": "q-fin.GN",
+    "label": "General Finance",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S131117787": "3/4",
+      "S149240962": "5/5",
+      "S170137484": "2/2",
+      "S193228710": "0/0",
+      "S5353659": "4/4"
+    },
+    "sourceSamples": {
+      "S193228710": "6/8"
+    },
+    "sources": [
+      "S131117787",
+      "S149240962",
+      "S170137484",
+      "S193228710",
+      "S5353659"
+    ]
+  },
+  {
+    "leaf": "q-fin.MF",
+    "label": "Mathematical Finance",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S133335107": "4/4",
+      "S172526255": "5/5",
+      "S75627377": "6/6"
+    },
+    "sources": [
+      "S133335107",
+      "S172526255",
+      "S75627377"
+    ]
+  },
+  {
+    "leaf": "q-fin.PM",
+    "label": "Portfolio Management",
+    "status": "rejected",
+    "sampleSize": 15,
+    "onTarget": 4,
+    "precision": 0.26666666666666666,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S143806524": "3/12",
+      "S162525099": "1/3"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "q-fin.PR",
+    "label": "Pricing of Securities",
+    "status": "insufficient-sample",
+    "sampleSize": 9,
+    "onTarget": 6,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S100711025": "4/6",
+      "S173901576": "2/3"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "q-fin.RM",
+    "label": "Risk Management",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S116483603": "4/7",
+      "S198325475": "6/8"
+    },
+    "sources": [
+      "S116483603",
+      "S198325475"
+    ]
+  },
+  {
+    "leaf": "q-fin.TR",
+    "label": "Trading and Market Microstructure",
+    "status": "insufficient-sample",
+    "sampleSize": 4,
+    "onTarget": 3,
+    "precision": 0.75,
+    "withAbstractOnly": false,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S127646213": "3/4"
+    },
+    "sources": []
+  },
+  {
+    "leaf": "quant-ph",
+    "label": "Quantum Physics",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 15,
+    "precision": 1,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article"
+    ],
+    "bySource": {
+      "S4210226432": "8/8",
+      "S4210195673": "3/3",
+      "S2738600312": "1/1",
+      "S4210177720": "3/3",
+      "S92819544": "0/0"
+    },
+    "sources": [
+      "S2738600312",
+      "S4210177720",
+      "S4210195673",
+      "S4210226432"
+    ]
+  },
+  {
+    "leaf": "stat.AP",
+    "label": "Applications",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S112778392": "0/0",
+      "S185328345": "0/0",
+      "S2764642956": "2/3",
+      "S185969502": "0/0",
+      "S17114410": "8/8",
+      "S2765037494": "3/4"
+    },
+    "sources": [
+      "S17114410",
+      "S2764642956",
+      "S2765037494"
+    ]
+  },
+  {
+    "leaf": "stat.CO",
+    "label": "Computation",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 10,
+    "precision": 0.6666666666666666,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S5437875": "4/8",
+      "S132362803": "1/1",
+      "S167961193": "0/0",
+      "S2489169438": "0/0",
+      "S2911293512": "5/6"
+    },
+    "sources": [
+      "S132362803",
+      "S2911293512",
+      "S5437875"
+    ]
+  },
+  {
+    "leaf": "stat.ME",
+    "label": "Methodology",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 11,
+    "precision": 0.7333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S4394736638": "0/0",
+      "S145009937": "1/1",
+      "S172180718": "0/0",
+      "S8265502": "0/0",
+      "S55189604": "3/3",
+      "S150263959": "0/0",
+      "S12967704": "7/11"
+    },
+    "sources": [
+      "S12967704",
+      "S145009937",
+      "S55189604"
+    ]
+  },
+  {
+    "leaf": "stat.ML",
+    "label": "Machine Learning",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 13,
+    "precision": 0.8666666666666667,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S118988714": "0/0",
+      "S4210229561": "12/13",
+      "S4306418075": "0/0",
+      "S2734669121": "1/2"
+    },
+    "sources": [
+      "S2734669121",
+      "S4210229561"
+    ]
+  },
+  {
+    "leaf": "stat.TH",
+    "label": "Theory",
+    "status": "passed",
+    "sampleSize": 15,
+    "onTarget": 14,
+    "precision": 0.9333333333333333,
+    "withAbstractOnly": true,
+    "filters": [
+      "type:article|conference-paper"
+    ],
+    "bySource": {
+      "S119757635": "12/12",
+      "S997959834": "0/0",
+      "S72071028": "1/2",
+      "S989097277": "1/1",
+      "S25707077": "0/0"
+    },
+    "sources": [
+      "S119757635",
+      "S72071028",
+      "S989097277"
+    ]
+  }
+]

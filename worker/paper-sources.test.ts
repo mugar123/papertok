@@ -5,8 +5,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
-import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
@@ -490,6 +490,155 @@ test("an area's journal lane asks one page of 200 a night, and two on its first 
   assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [['1', '200'], ['2', '200']]);
   await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-areas', lane: 'area:physics' });
   assert.equal(urls.length, 3, 'a later run reads the newest page only');
+});
+
+// ─── Journal articles of a leaf's venues (PAP-104) ───
+
+const venueLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-venues').map(job => job.lane);
+const sourcesOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_location.source.id:'))!.slice('primary_location.source.id:'.length).split('|');
+const venueRequest = { page: 1, since: '', waits: { seconds: 0 } };
+
+// OpenAlex W7221756071 and W7222586136 as returned to the econ.EM and econ.TH
+// samples on 2026-10-23 (trimmed, abstract shortened, author made up): closed
+// articles, the second without an abstract in OpenAlex.
+const journalArticle = (id: string, doi: string, title: string, date: string, source: { id: string; display_name: string }, abstract: string | null) => ({
+  id: `https://openalex.org/${id}`,
+  doi: `https://doi.org/${doi}`,
+  title,
+  type: 'article',
+  publication_date: date,
+  publication_year: 2026,
+  authorships: [{ author: { id: 'https://openalex.org/A5000000104', display_name: 'Ana Economist' }, institutions: [] }],
+  abstract_inverted_index: abstract ? invertedIndex(abstract) : null,
+  primary_location: {
+    is_oa: false,
+    landing_page_url: `https://doi.org/${doi}`,
+    version: 'publishedVersion',
+    is_published: true,
+    source: { id: `https://openalex.org/${source.id}`, display_name: source.display_name, type: 'journal', is_core: true },
+  },
+  locations: [],
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  cited_by_count: 0,
+});
+const JBES = { id: 'S18095783', display_name: 'Journal of Business and Economic Statistics' };
+const ECONOMIC_THEORY = { id: 'S579031', display_name: 'Economic Theory' };
+const gmmArticle = journalArticle('W7221756071', '10.1080/07350015.2026.2743244', 'The Efficiency vs. Pricing Accuracy Trade-Off in GMM Estimation of Multifactor Linear Asset Pricing Models', '2026-10-14', JBES,
+  'Even though a multifactor linear asset pricing model can be written equivalently in Beta or Stochastic Discount Factor form, the two representations need not deliver the same inferential properties.');
+const paretoArticle = journalArticle('W7222586136', '10.1007/s00199-026-01757-6', 'Generalizing the Pareto principle with endogenous populations', '2026-10-15', ECONOMIC_THEORY, null);
+
+test('a leaf the venue gate admitted asks OpenAlex for the sources its sample found on target, as the sample asked, with or without an abstract', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  const reviews = gateFile('openalex-venue-reviews.json');
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  // Sorted. cs.AI leaves out the AAAI, IJCAI and AAMAS proceedings and
+  // cond-mat.supr-con three journals, none with an article among the sample's
+  // 15 newest; q-fin.GN takes the Journal of Financial and Quantitative
+  // Analysis on a sample of its own, 6 of 8 on target.
+  const asked = {
+    'econ.EM': [['S127742747', 'S18095783', 'S33519306', 'S49389958'], ['type:article']],
+    'q-fin.GN': [['S131117787', 'S149240962', 'S170137484', 'S193228710', 'S5353659'], ['type:article']],
+    'cs.AI': [['S139930977', 'S196139623'], ['type:article|conference-paper']],
+    'cond-mat.supr-con': [['S24807848', 'S4210237713', 'S93909106'], ['type:article', 'primary_topic.id:T10037']],
+    'hep-ex': [['S173952182', 'S187585107', 'S4210238307', 'S94052278'], ['type:article', 'authors_count:>99']],
+  };
+  for (const [leaf, [sources, sampledFilters]] of Object.entries(asked)) {
+    assert.ok(venueLanes().includes(leaf), `${leaf} has a venue lane in the nightly harvest`);
+    await SOURCES['openalex-venues'].fetchPage(env, { ...venueRequest, lane: leaf });
+    const filters = filtersOf(urls.at(-1)!);
+    const sampled = new URL(reviews.leaves[leaf].sample.query).searchParams.get('filter')!.split(',');
+    assert.deepEqual(sourcesOf(filters), sources, leaf);
+    assert.ok(sources.every(id => sourcesOf(sampled).includes(id)), `${leaf} asks only for sources its sample asked for`);
+    assert.deepEqual(filters.slice(1).sort(), [...sampledFilters, 'from_publication_date:2026-07-26', 'is_retracted:false', 'to_publication_date:2026-10-24'].sort(), leaf);
+    assert.ok(sampledFilters.every(filter => sampled.includes(filter)), `${leaf} filters as its sample did`);
+    assert.equal(urls.at(-1)!.searchParams.get('sort'), 'publication_date:desc');
+  }
+});
+
+test('a leaf whose venue sample fell short of the gate, or that has none, sends no venue request', () => {
+  const coverage = gateFile('openalex-leaf-venues-coverage.json') as Array<{ leaf: string; status: string; sampleSize: number; onTarget: number }>;
+  const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf);
+  // econ.GN's 15 newest articles, asked as the lane asks, without
+  // has_abstract, were 9 on target: two Journal of Political Economy articles
+  // without an abstract were doubted. cs.DS's sources held 13 recent articles
+  // with an abstract, cs.GT's 11.
+  const short = [['econ.GN', 'rejected'], ['math.AG', 'rejected'], ['math.GR', 'rejected'], ['q-fin.PM', 'rejected'], ['cs.DS', 'insufficient-sample'], ['cs.GT', 'insufficient-sample'], ['q-fin.PR', 'insufficient-sample'], ['q-fin.TR', 'insufficient-sample']];
+  for (const [leaf, status] of short) {
+    assert.equal(statusOf(leaf)?.status, status, leaf);
+    assert.equal(openAlexVenueFilterForLeaf(leaf), null, leaf);
+    assert.ok(!venueLanes().includes(leaf), leaf);
+  }
+  assert.deepEqual([statusOf('econ.GN')?.onTarget, statusOf('econ.GN')?.sampleSize], [9, 15]);
+  for (const leaf of ['q-fin.ST', 'med.onco', 'constructor']) assert.equal(openAlexVenueFilterForLeaf(leaf), null, `${leaf} was never sampled`);
+  assert.deepEqual(venueLanes().sort(), coverage.filter(row => row.status === 'passed').map(row => row.leaf).sort());
+});
+
+test("a venue lane's articles reach the readers of its leaf alone, a paywalled one marked Subscription and one without an abstract saying it has none", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  const { env } = relay(t, url => {
+    const sources = sourcesOf(filtersOf(url));
+    return { results: [...(sources.includes(JBES.id) ? [gmmArticle] : []), ...(sources.includes(ECONOMIC_THEORY.id) ? [paretoArticle] : [])] };
+  });
+  const { binding } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  await harvestLane(store, { source: 'openalex-venues', lane: 'econ.EM' });
+  await harvestLane(store, { source: 'openalex-venues', lane: 'econ.TH' });
+  const page = await readFeedPage(store, parseFeedRequest({ categories: ['econ.EM', 'econ.TH'] }));
+  assert.deepEqual(page.map(paper => [paper.id, paper._fetchedFor]), [['openalex:W7222586136', ['econ.TH']], ['openalex:W7221756071', ['econ.EM']]]);
+  for (const paper of page) {
+    // What the card's Subscription label reads (paper-status.ts): an explicit
+    // `false`, and no arXiv copy or PDF to call it open.
+    assert.deepEqual([paper.openAccess, paper.arxivId, paper.pdfUrl], [false, undefined, null], paper.id);
+    assert.equal(paper.peerReviewed, true, `${paper.id}: a journal article, by the review rule`);
+    assert.equal(paper.workingPaper, undefined);
+  }
+  assert.equal(hasUsableAIAbstract(page[0].abstract), false, 'its abstract stays unknown');
+  assert.equal(page[0].abstract, 'No abstract available.');
+  assert.equal(hasUsableAIAbstract(page[1].abstract), true);
+  // A reader of a leaf without a venue lane gets neither.
+  assert.deepEqual(await readFeedPage(store, parseFeedRequest({ categories: ['econ.GN'] })), []);
+});
+
+// The nightly run harvests the venue lanes before the series, so a journal
+// article and its working paper that arrive the same night meet in this order.
+test('a working paper the series lists after its journal article from a venue lane joins the reviewed journal row', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  // The NBER version of the same paper, typed `report` as OpenAlex types them.
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const { env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(NBER.id) ? [workingPaper] : sourcesOf(filtersOf(url)).includes(JBES.id) ? [gmmArticle] : [] }));
+  const { binding, db } = testD1();
+  const jobs = categoryLaneJobs().filter(job => (job.source === 'openalex-venues' && job.lane === 'econ.EM') || job.source === 'openalex-series');
+  assert.deepEqual(jobs.map(job => job.source), ['openalex-venues', 'openalex-series']);
+  for (const job of jobs) await harvestLane({ ...env, PAPER_STORE: binding }, job);
+  const works = db.prepare('SELECT paper FROM works').all().map(row => JSON.parse(String((row as { paper: string }).paper)));
+  assert.equal(works.length, 1);
+  assert.deepEqual([works[0].doi, works[0].peerReviewed, works[0].workingPaper], ['10.1080/07350015.2026.2743244', true, undefined]);
+  const lanes = db.prepare('SELECT lane FROM work_lanes ORDER BY lane').all().map(row => (row as { lane: string }).lane);
+  assert.deepEqual(lanes.filter(lane => !lane.startsWith('author:')), ['econ.EM', 'series:working-papers']);
+});
+
+// The cost: up to five pages of 200 on a lane's first night and three on a
+// later one, one request a page for all of a leaf's sources.
+test("a venue lane reads five pages on its first night and three at most after, and every category lane's first night fits the categories' share", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  const full = (page: number) => Array.from({ length: 200 }, (_, index) => ({
+    ...gmmArticle, id: `https://openalex.org/W${page}${String(index).padStart(3, '0')}`, doi: `https://doi.org/10.1/${page}.${index}`, title: `Econometrics of asset pricing, part ${page}-${index}`,
+  }));
+  // econ.EM's sources list a full page of 200 each time; econ.TH's one article.
+  const { urls, env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(JBES.id) ? full(Number(url.searchParams.get('page'))) : [paretoArticle] }));
+  const { binding } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  await harvestLane(store, { source: 'openalex-venues', lane: 'econ.EM' });
+  assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [1, 2, 3, 4, 5].map(page => [String(page), '200']));
+  t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
+  await harvestLane(store, { source: 'openalex-venues', lane: 'econ.EM' });
+  assert.equal(urls.length, 8, 'a later night reads three pages at most');
+  await harvestLane(store, { source: 'openalex-venues', lane: 'econ.TH' });
+  assert.equal(urls.length, 9, 'a page short of 200 is the last');
+  // Every OpenAlex category lane's first night, in units of one list call a
+  // page, within the 3,000 the category lanes may spend a night.
+  const firstNight = categoryLaneJobs().filter(job => job.source.startsWith('openalex-')).reduce((sum, job) => sum + SOURCES[job.source].firstPages, 0);
+  assert.ok(firstNight <= 3_000, `${firstNight} units`);
 });
 
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
