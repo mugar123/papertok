@@ -495,7 +495,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   pubmed: {
     // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology,
     // and two of nine 40-page steps ran out of the Worker's 30 s of CPU.
-    firstPages: 10, dailyPages: 10, backfillPages: 20, dated: true, overlapDays: 3,
+    firstPages: 10, dailyPages: 10, backfillPages: 5, dated: true, overlapDays: 3,
     fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
@@ -735,7 +735,11 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       if (!(error instanceof SourceRefused)) console.warn(`Backfill of ${source} ${lane} stopped at page ${page}`, error);
       break;
     }
-    stored += await ingestPapers(env, result.items, { now });
+    try {
+      stored += await ingestPapers(env, result.items, { now });
+    } catch (error) {
+      throw new Error(`Backfill ${source} ${lane} page ${page} could not store ${result.items.length} records: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
     const done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
     await save(done ? null : page + 1);
     if (done) break;

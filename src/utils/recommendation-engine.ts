@@ -4,10 +4,9 @@ import type { FollowInput } from './following.ts';
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { leavesForOpenAlexTopic } from './area-accent.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
-import { accessStatusForPaper } from './paper-status.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
-export interface RecentProperties { preprint: number; published: number; openAccess: number; subscription: number; journal: number; conference: number; }
+export interface RecentProperties { preprint: number; published: number; journal: number; conference: number; }
 export interface RecommendationContext {
   weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[] | null; followedAuthors?: string[];
   followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>;
@@ -296,7 +295,7 @@ function conceptWeight(score: number | undefined) {
 }
 
 const NEUTRAL_RECENT_PROPS = Object.freeze({
-  preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0,
+  preprint: 0, published: 0, journal: 0, conference: 0,
 });
 
 // Everything a score needs that does NOT move with the recent window: the
@@ -436,11 +435,10 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     isExploration,
 
     // What the diversity rule tests. Reading it off the paper is trivial, but
-    // keeping it here means the per-iteration work is six comparisons and
+    // keeping it here means the per-iteration work is four comparisons and
     // nothing else.
     isPreprint: paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint',
     isPublished: paper.publicationStatus === 'published',
-    access: accessStatusForPaper(paper),
     isJournal: paper.sourceType === 'journal' || paper.journal,
     isConference: paper.sourceType === 'conference' || paper.conference,
 
@@ -458,10 +456,6 @@ function diversityBoostFor(stable: StableScore, recentPropsCount: Partial<Recent
 
   if (recentPropsCount.published! >= 4 && stable.isPreprint) diversityBoost += 10;
   if (recentPropsCount.preprint! >= 4 && stable.isPublished) diversityBoost += 10;
-
-  // Unknown access is neither: it is no alternative to either kind of run.
-  if (recentPropsCount.subscription! >= 3 && stable.access === 'open') diversityBoost += 8;
-  if (recentPropsCount.openAccess! >= 4 && stable.access === 'subscription') diversityBoost += 5;
 
   if (recentPropsCount.conference! >= 3 && stable.isJournal) diversityBoost += 8;
   if (recentPropsCount.journal! >= 4 && stable.isConference) diversityBoost += 5;
@@ -542,15 +536,11 @@ export function applyRecommendationScore<T extends Partial<Paper>>(paper: T, con
 }
 
 function countRecentProperties(papers: Partial<Paper>[]) {
-  const counts = { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
+  const counts = { preprint: 0, published: 0, journal: 0, conference: 0 };
 
   papers.forEach((paper) => {
     if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') counts.preprint += 1;
     else if (paper.publicationStatus === 'published') counts.published += 1;
-
-    const access = accessStatusForPaper(paper);
-    if (access === 'open') counts.openAccess += 1;
-    else if (access === 'subscription') counts.subscription += 1;
 
     if (paper.sourceType === 'journal' || paper.journal) counts.journal += 1;
     if (paper.sourceType === 'conference' || paper.conference) counts.conference += 1;
@@ -584,7 +574,7 @@ export function trimScoredCandidatePool<T extends Partial<Paper>>(papers: T[], o
   const scorePaper = options.scorePaper;
   if (typeof scorePaper === 'function') {
     const emptyRecent = {
-      preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0,
+      preprint: 0, published: 0, journal: 0, conference: 0,
     };
     list.forEach((paper) => scorePaper(paper, emptyRecent));
   }

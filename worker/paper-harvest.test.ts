@@ -105,6 +105,50 @@ test("a followed lanes' run embeds its own lanes' papers and leaves the rest to 
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM work_vectors').get() as { n: number }).n, 2);
 });
 
+test('open and closed articles are embedded before backfill and maintenance without repeating unchanged text', async t => {
+  providers(t);
+  const { env, db, texts } = corpus();
+  await ingestPapers(env, [true, false].map((openAccess, index) => ({
+    paper: { ...paper(`2610.3000${index + 1}`, openAccess ? 'Open article' : 'Closed article'), openAccess, arxivId: undefined },
+    lanes: ['cs.CL'],
+  })));
+  let observed = false;
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (name.startsWith('backfill ')) {
+      assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+      observed = true;
+      return true;
+    }
+    return name.startsWith('evict ');
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(observed, true);
+  assert.deepEqual(texts.map(value => value.split('\n')[0]).sort(), ['Closed article', 'Open article']);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+});
+
+test('an enriched batch is usable before the next batch starts, without embedding later records early', async t => {
+  providers(t);
+  const { env, db, texts } = corpus();
+  await ingestPapers(env, Array.from({ length: 501 }, (_, index) => ({
+    paper: paper(`2610.${40_000 + index}`, `Research result ${index}`), lanes: ['cs.CL'],
+  })));
+  let observed = false;
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (name !== 'enrich 1') return false;
+    assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 500);
+    observed = true;
+    return true;
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(observed, true);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 501);
+  assert.equal(texts.length, 501);
+  assert.equal(new Set(texts).size, 501);
+});
+
 test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, and the nightly refresh still has its 700", async t => {
   const asked = providers(t);
   const { env, db } = corpus();
