@@ -167,9 +167,13 @@ async function settlesWithin(work: Promise<unknown>, ms: number) {
 }
 
 const LOOKUP_MAX_IDS = 30;
+// A page's request with the reader's follows, which the app sends as stored,
+// and the 3,200-character `seen` filter: room for about 140 followed authors.
+// Past it, a 413 leaves the feed without the follows' papers.
+const MAX_BODY_BYTES = 20_480;
 
 function readBody<T>(request: Request) {
-  return readBoundedJson<T>(request, 16_384, {
+  return readBoundedJson<T>(request, MAX_BODY_BYTES, {
     tooLarge: () => new PaperStoreError('PAYLOAD_TOO_LARGE', 413),
     invalid: () => new PaperStoreError('INVALID_JSON', 400),
   });

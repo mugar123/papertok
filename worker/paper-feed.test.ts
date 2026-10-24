@@ -219,6 +219,22 @@ test('an app that sends the filter without asking to skip seen papers keeps page
   assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen, notable: 3 })).papers), ids(papers.slice(15, 30)));
 });
 
+test('a reader who follows a hundred and twenty entities still gets their follows with the filter', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  await ingestPapers(env, [{ paper: paper('2610.70001', "A followed author's paper", 1), lanes: ['author:A5000000000'] }]);
+  // As the app sends its follows' page (fetchCorpusPage): every follow as it
+  // is stored, its likes and what the reader has seen.
+  const follows = Array.from({ length: 120 }, (_, index) => ({
+    type: 'author', canonicalId: `https://openalex.org/A${5_000_000_000 + index}`, displayName: `Followed author number ${index}`, metadata: {},
+  }));
+  const positiveIds = Array.from({ length: 24 }, (_, index) => `openalex:W${7_000_000_000 + index}`);
+  const seen = feedSeenFilter(Array.from({ length: 2_000 }, (_, index) => `2610.${String(index).padStart(5, '0')}`));
+  const body = { categories: [], follows, positiveIds, page: 0, pageSize: 6, order: 'recent', seen, skipsSeen: true };
+  assert.ok(JSON.stringify(body).length > 16_384, 'the request is longer than the 16 KB the route took before the filter');
+  assert.deepEqual(ids((await ask(body)).papers), ['2610.70001']);
+});
+
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {
