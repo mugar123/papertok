@@ -930,13 +930,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             
             // Combine rest and new papers
             const combinedRest = [...newGraphPapers, ...restFiltered];
-            
-            // Re-rank the unread queue using weighted shuffle
-            const reRankedRest = diversifiedWeightedShuffle(combinedRest, {
+
+            // Re-rank the unread queue using weighted shuffle; the notable
+            // cards keep their places, as in reRankFeed.
+            const reRankedRest = placeNotableCards(diversifiedWeightedShuffle(combinedRest.filter(p => !p._notable), {
               scorePaper: calculateAndAttachScore,
               weights: recommendationWeights.current,
               initialPapers: locked,
-            });
+            }), combinedRest.filter(p => p._notable), locked);
             logRankingBatch('graph expansion', reRankedRest);
             
             return [...locked, ...reRankedRest];

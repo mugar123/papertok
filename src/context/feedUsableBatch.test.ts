@@ -981,6 +981,26 @@ test('a re-rank reorders the cards after the reader and leaves every notable car
   }
 });
 
+test('the related papers a like brings join the cards after the reader, and every notable card keeps its place', async () => {
+  const shown = placeNotableCards(records('card', 42), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
+  const state = { papers: shown };
+  const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
+    feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
+    fetchCorpusPage: async () => records('related', 5),
+    likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
+    sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
+    setPapers: (update: (previous: FeedRecord[]) => FeedRecord[]) => { state.papers = update(state.papers); },
+    splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref('card-3'),
+    // The queue's new order, reversed, stands in for the ranking's.
+    diversifiedWeightedShuffle: (queue: FeedRecord[]) => [...queue].reverse(),
+    calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
+  }) as (paper: FeedRecord) => Promise<void>;
+  await expand(shown[3]);
+  assert.deepEqual(state.papers.filter(paper => paper.id.startsWith('related-')).length, 5, 'the five related papers are in the feed');
+  assert.equal(state.papers.length, 50);
+  assert.deepEqual(notableAt(state.papers), [[14, 'notable-0'], [29, 'notable-1'], [44, 'notable-2']]);
+});
+
 // The reader saved a notable paper elsewhere: the feed leaves it out, and the
 // corpus, which offers unseen notable papers in one order, must not keep
 // sending it in a place another one could take.
