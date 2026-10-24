@@ -138,7 +138,7 @@ test('Connect stays disabled but focusable until its window can open inside the 
   assert.match(connect, /focusableWhenDisabled=\{preparing\}/);
   assert.match(connect, /aria-describedby=\{preparing \? `\$\{preparingId\}-\$\{method\.id\}` : undefined\}/);
   assert.match(jsx, /\{linking === method\.id \|\| preparing\s*\? <CircleNotch\b/);
-  // "Preparing sign-in…" shows in the row it holds, under its description,
+  // "Preparing sign-in…" shows in the row it holds, under the method's name,
   // rather than between the ruled rows.
   const content = jsx.match(/<div className="settings-row-content">\s*<h3 className="settings-method-name">[\s\S]*?\n\s*<\/div>/)?.[0] ?? '';
   assert.match(content, /\{!method\.linked && <PreparingNote id=\{`\$\{preparingId\}-\$\{method\.id\}`\} preparing=\{preparing\} \/>\}/);

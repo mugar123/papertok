@@ -250,26 +250,27 @@
   grid-column: 1;
 }
 
-/* ── Sign-in methods: the provider's own mark, its account, the action ── */
+/* ── Sign-in methods and the university: one line each, the mark and name
+   on the left, the account or action on the right. The name keeps its width
+   and a long address ends in an ellipsis, on a phone too. ── */
+.settings-row.settings-row-inline {
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 56px;
+}
+
+.settings-row.settings-row-inline > :last-child {
+  justify-self: end;
+}
+
 .settings-method-name {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.settings-method-actions {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-
 .settings-account-id {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--space-2);
+  position: relative;
+  max-width: 100%;
   overflow: hidden;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -279,7 +280,9 @@
 }
 
 .settings-account-dot {
-  flex: 0 0 auto;
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: middle;
   width: 7px;
   height: 7px;
   border-radius: var(--radius-full);
@@ -648,14 +651,8 @@
     row-gap: var(--space-3);
   }
 
-  .settings-row > .settings-row-action,
-  .settings-row > .settings-method-actions {
+  .settings-row > .settings-row-action {
     justify-self: start;
-  }
-
-  .settings-method-actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
   }
 }
 

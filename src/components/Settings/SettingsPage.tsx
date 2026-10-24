@@ -136,8 +136,6 @@ const SETTINGS_COPY = {
   connectedAs: 'Connected as ',
   connected: 'Connected',
   onlyMethod: 'Your only way to sign in, so it cannot be disconnected.',
-  methodLinked: 'You can sign in with it.',
-  methodUnlinked: 'Connect it and you can sign in with it as well as the way you sign in today.',
   connectShort: 'Connect',
   connect: (label: string) => `Connect ${label}`,
   connecting: (label: string) => `Connecting ${label}…`,
@@ -277,25 +275,19 @@ function ProfileAccountPage() {
         <div className="settings-list">
           {/* Every way in, the ones in use included. A method that is the
               only way in cannot be disconnected: the account would have no
-              door. */}
+              door, and its row says so to assistive technology. */}
           {methods.map(method => (
-            <div key={method.id} className="settings-row">
+            <div key={method.id} className="settings-row settings-row-inline">
               <div className="settings-row-content">
                 <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
-                <p>
-                  {method.linked
-                    ? (onlyMethod ? copy.onlyMethod : copy.methodLinked)
-                    : copy.methodUnlinked}
-                </p>
                 {!method.linked && <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} />}
               </div>
               {method.linked ? (
-                <span className="settings-method-actions">
-                  <span className="settings-account-id">
-                    <span className="settings-account-dot" aria-hidden="true" />
-                    <span className="visually-hidden">{copy.connectedAs}</span>
-                    {identityFor(method.providerId) || copy.connected}
-                  </span>
+                <span className="settings-account-id">
+                  <span className="settings-account-dot" aria-hidden="true" />
+                  <span className="visually-hidden">{copy.connectedAs}</span>
+                  {identityFor(method.providerId) || copy.connected}
+                  {onlyMethod && <span className="visually-hidden">{`. ${copy.onlyMethod}`}</span>}
                 </span>
               ) : (
                 <Button
@@ -316,13 +308,20 @@ function ProfileAccountPage() {
               )}
             </div>
           ))}
-          <div className="settings-row">
-            <div className="settings-row-content">
-              <div className="settings-row-title-line">
-                <h3>{copy.institution}</h3>
-                {institution && <InstitutionPill institution={institution} />}
-              </div>
-              <p>{institution ? copy.institutionLinked(institution.name) : copy.institutionDescription}</p>
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="settings-university-heading">
+        <SectionHeading
+          id="settings-university-heading"
+          title={copy.institution}
+          description={institution ? copy.institutionLinked(institution.name) : copy.institutionDescription}
+        />
+        <div className="settings-list">
+          <div className="settings-row settings-row-inline">
+            <div className="settings-row-content settings-row-title-line">
+              <h3 className="settings-method-name"><GraduationCap size={16} aria-hidden="true" />{copy.institution}</h3>
+              {institution && <InstitutionPill institution={institution} />}
             </div>
             <RowAction
               Icon={institution ? GearSix : LinkSimple}
