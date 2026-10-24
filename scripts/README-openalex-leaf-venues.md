@@ -26,10 +26,11 @@ node scripts/generate-openalex-leaf-venues.ts --check
 | `leaves` | Per taxonomy leaf: `sample`, the leaf's labelled sample, and optionally `sourceSamples`, samples of one of its sources each |
 
 A sample holds `capturedAt`, the `query` as sent without the sampler's
-address (cs.DS's was derived, below), every returned work (`id`, `type`, `title`, `publication_date`,
-`source`, and `primary_topic` when the query filtered on topics) and one label
-per work: `on-target`, `off-target`, or `uncertain: true` without a label for a
-call the labeller doubted, which counts as a miss.
+address (cs.DS's was derived, below), every returned work (`id`, `type`,
+`title`, `publication_date`, `source`, and `primary_topic` when the query
+filtered on topics) and one label per work: `on-target`, `off-target`, or
+`uncertain: true` without a label for a call the labeller doubted, which
+counts as a miss.
 
 ## The gate
 
@@ -95,10 +96,13 @@ lists a tied date oldest record first, so an article indexed late in the month
 comes after the rest of its issue. A lane with under 200 articles in 90 days
 asks once a night, one with under 400 twice. From the curators' 90-day counts,
 the 79 lanes ask about 132 list calls a night, 237 at most, and 151 on their
-first night. They spend from the 3,000 of the harvest's 4,000 units a day that
-the category lanes share with the weekly notable lanes: with the topic lanes
-(195 at most), the area lanes (9) and the working-paper series (4), a night's
-category calls are at most 445, and the notable lanes add 39 one night a week.
+first night. cs.SY and eess.SY send the same request, which the relay answers
+from its store the second time. The lanes spend from the 3,000 of the
+harvest's 4,000 units a day that the category lanes share with the weekly
+notable lanes: with the topic lanes (195 at most), the area lanes (9) and the
+working-paper series (4), a night's category calls are at most 445, and the
+notable lanes add 39 one night a week.
+
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
 which spend what the lanes leave of the nightly run's 3,700 units. Every 14
 days the refresh asks OpenAlex again for a stored paper's counts, 50 papers a
@@ -107,8 +111,6 @@ calls a night. Each enrichment of an OpenAlex record, refreshes included, asks
 Crossref for its DOI's type, 20 DOIs a call: about 95 calls a night, and about
 1,080 for the about 21,600 articles of the lanes' first night, which the
 embedding passes also take.
-cs.SY and eess.SY send the same request, which the relay answers from its
-store the second time.
 
 ## The 2026-10-23 and 2026-10-24 samples
 
@@ -122,9 +124,10 @@ dropped is not recorded here. cs.DS's query was derived, not sent: from the 14
 works a six-source request returned, its curator removed the one of the older
 Symposium on Discrete Algorithms ID (S4306420974), a 2000 paper a repository
 re-dated, and the five-source query recorded returns the other 13, since that
-request held every work in the window. q-fin.PM, q-fin.PR, q-fin.RM and q-fin.TR have no
-curated list: their samples asked for the candidate journals the curator
-weighed and did not recommend, and record why those leaves have no lane.
+request held every work in the window. q-fin.PM, q-fin.PR, q-fin.RM and
+q-fin.TR have no curated list: their samples asked for the candidate journals
+the curator weighed and did not recommend, and record why those leaves have no
+lane.
 Economics and finance were sampled with and without `has_abstract:true`; their
 evidence is the sample asked as the lane asks. Every other sample asked
 `has_abstract:true`, so its labeller saw only articles with an abstract; the
