@@ -2,6 +2,11 @@
 
 <!-- State the problem and resulting behavior. Keep one objective. -->
 
+## Authorized decisions
+
+<!-- List each decision from "Decisions that need authorization" in AGENTS.md: what
+changed, its impact and who authorized it. Write "None" when there is no such decision. -->
+
 ## Documentation
 
 <!-- Write one of the following, with a concrete explanation:

@@ -73,6 +73,11 @@ comparison against display copy.
 The `pr-body` check requires a Review section, but cannot tell whether a review ran or what it
 covered.
 
+## Authorized decisions are not checked
+
+Nothing checks that a PR containing a decision that needs authorization lists it, or that the
+named person approved it. The `pr-body` check does not require the section.
+
 ## Workflow actions pinned to a commit
 
 Every `uses:` in `.github/workflows` is pinned to a 40-character SHA today, by convention.
