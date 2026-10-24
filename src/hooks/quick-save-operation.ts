@@ -3,6 +3,9 @@
  * button already shows what the reader asked for, and the operation reads
  * the state it settles, so a second one could not tell which way to go.
  */
+/** The list picker's Undo toast for a paper; any later save of the paper retires it. */
+export const pickerUndoToastId = (paperId: string) => `save-to-list:${paperId}`;
+
 export function runOneAtATime(inFlight: Set<string>, id: string, operation: () => Promise<void>) {
   if (inFlight.has(id)) return Promise.resolve();
   inFlight.add(id);

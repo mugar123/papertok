@@ -46,6 +46,7 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
+import { pickerUndoToastId } from '../../hooks/quick-save-operation.ts';
 import {
   ownListsAreFresh,
   ownListsCache,
@@ -495,7 +496,7 @@ export default function SaveToListModal({
     if (savingRef.current || saving || !hasWrites) return;
     savingRef.current = true;
     // An earlier save's Undo would replay a diff this save is about to change.
-    toast.dismiss(`save-to-list:${paper.id}`);
+    toast.dismiss(pickerUndoToastId(paper.id));
     const finalTags = effectiveTags;
     const { toAdd, toRemove } = diffListSelection([...initialListIds], [...pendingListIds]);
     const metadataChanged = note !== baseline.note
@@ -591,12 +592,12 @@ export default function SaveToListModal({
           : destinations.length <= 2 ? `Saved to ${destinations.join(' and ')}`
             : `Saved to ${destinations[0]} and ${destinations.length - 1} more`,
         {
-          id: `save-to-list:${paper.id}`,
+          id: pickerUndoToastId(paper.id),
           action: {
             label: 'Undo',
             onClick: () => {
               undo()
-                .then((undone) => { if (undone) toast.success('Save undone', { id: `save-to-list:${paper.id}` }); })
+                .then((undone) => { if (undone) toast.success('Save undone', { id: pickerUndoToastId(paper.id) }); })
                 .catch(() => toastError('Could not undo this change'));
             },
           },

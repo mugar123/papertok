@@ -1237,6 +1237,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
     <FeedLandmark nodeRef={setSwipeNode} landmark={landmark}>
+      {/* A refresh can start from the navbar tab, away from the pill. */}
+      <span className="visually-hidden" role="status">
+        {isRefreshing ? 'Refreshing papers…' : refreshDone ? 'Papers updated' : ''}
+      </span>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"
