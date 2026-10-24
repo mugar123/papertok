@@ -411,7 +411,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
       semanticScholarKeyConfigured: Boolean(env.SEMANTIC_SCHOLAR_API_KEY),
       emailConfigured: Boolean(
         env.NOTIFICATION_STORE
-        && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
+        && env.RESEND_API_KEY && env.RESEND_FROM_EMAIL,
       ),
       publishingConfigured: isServiceAccountConfigured(env),
       // The `[version_metadata]` binding: which deploy is answering. `tag` is

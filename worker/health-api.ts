@@ -15,9 +15,7 @@ const OPENALEX_BUDGET_UNAVAILABLE_CACHE_SECONDS = 10;
 
 export async function handleEmailHealth(request: Request, env: WorkerEnv) {
   const origin = request.headers.get('origin') || '';
-  // Brevo shares one rate limit between this probe and real delivery, so the
-  // answer is served from the edge cache like its Scopus and OpenAlex
-  // siblings: hammering the route cannot make the digests fail.
+  // Keep provider probes off the hot path and share the result at the edge.
   const cacheKey = canonicalCacheKey(request);
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);

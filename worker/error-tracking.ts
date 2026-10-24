@@ -54,6 +54,10 @@ export function captureWorkerException(error: unknown, operation: Operation = 'h
   report(error, { operation });
 }
 
+export function captureEmailSendLimit() {
+  report(new Error('Email send limit reached'), { operation: 'schedule', email_limit: 'reached' });
+}
+
 export function captureWorkerResponseFailure(status: number) {
   if (status < 500 || invocations.getStore()?.reported) return;
   report(new Error('Worker returned a server error'), { operation: 'http', http_status: status });

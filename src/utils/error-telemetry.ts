@@ -1,6 +1,6 @@
 // What an anonymous PostHog `$exception` event keeps: the error type, where in
 // our code it happened, the release its bundle was built for, and allowlisted
-// operation and status labels. Messages,
+// operation, status and email-limit labels. Messages,
 // variables, source lines and every other property stay home. Shared by the
 // browser (`sanitizeAnalyticsCapture`) and the Worker (`worker/error-tracking.ts`).
 
@@ -79,5 +79,6 @@ export function sanitizeExceptionProperties(properties: Record<string, unknown>)
     ...(typeof properties.$release_id === 'string' && BUILD_ID.test(properties.$release_id) ? { $release_id: properties.$release_id } : {}),
     ...(OPERATIONS.has(properties.operation as string) ? { operation: properties.operation } : {}),
     ...(typeof status === 'number' && status >= 500 && status < 600 ? { http_status: status } : {}),
+    ...(properties.email_limit === 'reached' ? { email_limit: 'reached' } : {}),
   };
 }
