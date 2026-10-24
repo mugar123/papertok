@@ -77,7 +77,7 @@ const ids = (papers: Paper[]) => papers.map(paper => paper.id);
 const asBooks = (books: Set<string>) => ({ applyKnownPublicationTypes: (papers: Paper[]) => papers.map(paper => (books.has(paper.id) ? card(paper.id, 'book') : paper)) });
 
 for (const past of [1, 2]) {
-  test(`a notable card the reader passed stays behind them when books before it leave a restored snapshot (${past} card${past > 1 ? 's' : ''} past it)`, () => {
+  test(`a notable card the reader passed stays behind them when cards before it are books in a restored snapshot (${past} card${past > 1 ? 's' : ''} past it)`, () => {
     const saved = placeNotableCards(Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), [notable('notable-0'), notable('notable-1')]);
     assert.equal(saved[14].id, 'notable-0');
     const readerAt = 14 + past;
@@ -88,6 +88,24 @@ for (const past of [1, 2]) {
     const at = resumeIndex({ papers: restored, savedPaperId: saved[readerAt].id, savedIndex: readerAt });
     assert.ok(ids(restored).indexOf('notable-0') < at, 'the notable card the reader saw does not come again');
     assert.deepEqual(ids(restored.slice(at)), ids(saved.slice(readerAt)), 'the cards from the reader on keep their saved order');
+  });
+}
+
+// Crossref has since called the reader's own card a book, and a card before
+// it. Left out, their card was not there to come back to, and FeedContainer
+// fell back to its saved index in the shorter list: a card past the next one.
+for (const readerAt of [12, 13]) {
+  test(`the reader comes back to their card when it and a card before it are books in a restored snapshot (card ${readerAt + 1})`, () => {
+    const saved = placeNotableCards(Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), [notable('notable-0'), notable('notable-1')]);
+    const reader = saved[readerAt].id;
+    const { readFeedSnapshot, writeFeedSnapshot } = snapshots(asBooks(new Set(['card-5', reader])), { paperId: reader, index: readerAt });
+    writeFeedSnapshot('test-user', 'cs.AI', { papers: saved, page: 2, hasMore: true });
+    const restored: Paper[] = readFeedSnapshot('test-user', 'cs.AI').papers;
+    const at = resumeIndex({ papers: restored, savedPaperId: reader, savedIndex: readerAt });
+    assert.equal(restored[at]?.id, reader, 'they come back to their card');
+    // The cards they met, then the restored list after their card.
+    const met = [...saved.slice(0, readerAt + 1), ...restored.slice(at + 1)];
+    assert.deepEqual(met.flatMap((paper, index) => (paper._notable ? [index + 1] : [])), [15, 30]);
   });
 }
 

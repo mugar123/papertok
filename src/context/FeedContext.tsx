@@ -188,16 +188,15 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
       return null;
     }
     // A card can be saved before Crossref answered, or kept because the reader
-    // was on it. Nothing is on screen before a restore, so a book known now
-    // leaves. The reader comes back to their card (resumedCardIndex). A book
-    // they met, theirs included, still counts towards the next notable card,
-    // so the cards after it move up; after their card, the next card takes a
-    // book's place (keepNotablePlaces).
+    // was on it. The reader comes back to their card (resumedCardIndex), and
+    // as with a late answer (dropUnreachedPublications), only a book after it
+    // leaves: the next card takes its place (keepNotablePlaces). The cards
+    // they met stay, books included, so their card keeps its id and index.
     const papers = applyKnownPublicationTypes(snapshot.papers);
     const met = resumedCardIndex(papers) + 1;
     const ahead = papers.slice(met).filter(isFeedPublication);
     return { ...snapshot, papers: [
-      ...papers.slice(0, met).filter(isFeedPublication),
+      ...papers.slice(0, met),
       ...keepNotablePlaces(papers.slice(met), ahead.filter(paper => !paper._notable), ahead.filter(paper => paper._notable)),
     ] };
   } catch {
