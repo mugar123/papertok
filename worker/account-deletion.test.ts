@@ -346,7 +346,7 @@ test('a share published after the publicLists stage is still deleted through its
       admin.documents[`publicLists/${lateShare}`] = { title: 'Late' };
     }
     return getDocument(segments);
-  }) as typeof admin.getDocument;
+  });
 
   let result;
   for (let i = 0; i < 12; i += 1) {
