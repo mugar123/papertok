@@ -17,20 +17,30 @@
   text-align: left;
 }
 
+.delete-account-sheet {
+  padding-inline: var(--space-4);
+}
+
+.delete-account-sheet .delete-account-actions {
+  padding-bottom: var(--space-5);
+}
+
 .delete-account-close {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
 }
 
-.delete-account-dialog h2 {
+.delete-account-dialog h2,
+.delete-account-sheet h2 {
   margin: 0 1.5rem 0.75rem 0;
   font-family: var(--font-serif);
   font-size: 1.45rem;
   line-height: 1.25;
 }
 
-.delete-account-dialog p {
+.delete-account-dialog p,
+.delete-account-sheet p {
   margin: 0 0 0.75rem;
   color: var(--text-secondary);
   font-size: 0.925rem;

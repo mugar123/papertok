@@ -14,7 +14,10 @@ const read = (name: string|URL) => readFile(new URL(name, import.meta.url), 'utf
 test('deleting an account is confirmed in an AlertDialog that nothing dismisses while it works', async () => {
   const jsx = await read('./DeleteAccountDialog.tsx');
   assert.match(jsx, /from '\.\.\/ui\/alert-dialog\.tsx'/);
-  assert.match(jsx, /<AlertDialog\s+open=\{open\}\s+onOpenChange=\{handleOpenChange\}\s+onOpenChangeComplete=\{\(isOpen\) => \{ if \(!isOpen\) onClose\(\); \}\}/);
+  assert.match(jsx, /<AlertDialog\s+open=\{open\}\s+onOpenChange=\{handleOpenChange\}\s+onOpenChangeComplete=\{handleOpenChangeComplete\}/);
+  // On a phone the same confirmation is a bottom Drawer under the same rules.
+  assert.match(jsx, /<Drawer\s+open=\{open\}\s+onOpenChange=\{handleOpenChange\}\s+onOpenChangeComplete=\{handleOpenChangeComplete\}\s+disablePointerDismissal\s*>/);
+  assert.match(jsx, /<DrawerContent\s+role="alertdialog"/);
   assert.doesNotMatch(jsx, /useDialogFocus|role="dialog"|aria-modal=/);
   assert.match(jsx, /const handleOpenChange = \(nextOpen: boolean\) => \{\s*if \(working\) return;\s*setOpen\(nextOpen\);/);
   assert.equal((jsx.match(/\bonClose\(\)/g) ?? []).length, 1, 'onClose reaches the parent from exactly one place');
