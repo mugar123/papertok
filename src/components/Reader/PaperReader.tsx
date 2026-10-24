@@ -512,7 +512,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
         onRequest: () => {
           requested = true;
           setStage('source');
-          trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
+          void trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader', paper_id: paper.id, paper_title: paper.title });
         },
         onMeta: (nextMeta) => {
           replayed = nextMeta.cached === true;
@@ -551,7 +551,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       });
       if (caught instanceof PaperRewriteError && caught.code === 'AI_CANCELLED') return;
       if (caught instanceof PaperRewriteError && caught.code === 'AI_QUOTA_EXHAUSTED') {
-        trackEvent('ai_limit_reached', { feature: 'rewrite', scope: caught.quota?.scope });
+        void trackEvent('ai_limit_reached', { feature: 'rewrite', scope: caught.quota?.scope });
       }
       // The whole error, not only its code: `quota.scope` is what tells the
       // reader's own ceiling from the provider's, and those need opposite advice.
@@ -570,7 +570,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
       // can show the refund rather than a use the reader never actually spent.
       // Without a request, as when the saved summary could not be read, there
       // is nothing to refund.
-      if (requested) fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
+      if (requested) void fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
     }
   }, [paper, trackEvent, uid]);
 
@@ -590,7 +590,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     // pending, not swallowed.
     const timerId = setTimeout(() => {
       requestedRewriteRef.current = requestKey;
-      load(level);
+      void load(level);
     }, 0);
     return () => clearTimeout(timerId);
   }, [level, load, paper, supportsRewrite]);
@@ -632,7 +632,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   // second reading.
   const paperTitle = paper.title;
   const reportReaderTime = useEffectEvent((seconds: number, id: string, title: string | undefined) => {
-    trackEvent('reader_time', { level, seconds, paper_id: id, paper_title: title });
+    void trackEvent('reader_time', { level, seconds, paper_id: id, paper_title: title });
   });
   useEffect(() => {
     let visibleSince: number | null = document.hidden ? null : Date.now();
@@ -685,7 +685,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   useEffect(() => {
     if (!uid) return undefined;
     const controller = new AbortController();
-    fetchRemainingAIUses({ signal: controller.signal }).then(fresh => {
+    void fetchRemainingAIUses({ signal: controller.signal }).then(fresh => {
       // Only when nothing better has arrived: a rewrite that started while this
       // was in flight already reported a newer number on its `meta` line.
       if (fresh) setQuota(current => current ?? fresh);
@@ -1059,7 +1059,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
   const writeAgain = () => {
     // The button leaves the page while the new rewrite streams in.
     titleRef.current?.focus();
-    load(level, { rewriteOf: { sections, meta: meta! } });
+    void load(level, { rewriteOf: { sections, meta: meta! } });
   };
   // A failed attempt brings the button back beside the reason the alert reads
   // out, so focus returns to it from the title it waited on.
@@ -1075,7 +1075,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     titleRef.current?.focus();
     // A saved summary that could not be read is looked up again. A forced
     // retry skips that lookup and could write a new copy over the saved one.
-    load(level, { force: shownError !== 'AI_SAVED_SUMMARY_READ_FAILED' });
+    void load(level, { force: shownError !== 'AI_SAVED_SUMMARY_READ_FAILED' });
   };
   const retryOffered = shownStatus === 'error' && canRetry;
   useEffect(() => {
@@ -1126,11 +1126,11 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
               <Select
                 items={PAPER_REWRITE_LEVELS.map(option => ({ value: option.id, label: option.label }))}
                 value={level}
-                onValueChange={(next) => { if (next) setLevel(next as ReadingLevel); }}
+                onValueChange={(next) => { if (next) setLevel(next); }}
               >
                 <SelectTrigger size="sm" className="rd-level-select" aria-label={copy.level}>
                   {(() => {
-                    const LevelIcon = LEVEL_ICONS[level as keyof typeof LEVEL_ICONS];
+                    const LevelIcon = LEVEL_ICONS[level];
                     return LevelIcon && <LevelIcon size={15} aria-hidden="true" />;
                   })()}
                   <SelectValue />
@@ -1385,7 +1385,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
                 {shownStatus === 'incomplete' && (
                   <p className="rd-notice" role="alert">
                     {copy.incomplete}
-                    <Button size="sm" onClick={() => load(level, { force: true })}>
+                    <Button size="sm" onClick={() => { void load(level, { force: true }); }}>
                       <ArrowClockwise size={14} aria-hidden="true" />
                       {copy.retry}
                     </Button>
@@ -1410,7 +1410,7 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             onFilter={setAnnotationFilter}
             thinking={annotations.busy === 'asking'}
             onFocus={goToPassage}
-            onRemove={annotations.remove}
+            onRemove={(id) => { void annotations.remove(id); }}
             labelFor={annotationLabel}
             copy={copy}
           />
@@ -1434,9 +1434,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
             unlimited={Boolean(quota?.unlimited)}
             canAsk={canSpendUse}
             busy={annotations.busy === 'saving'}
-            onHighlight={annotations.highlight}
-            onSaveNote={annotations.saveNote}
-            onAsk={askAboutPassage}
+            onHighlight={() => { void annotations.highlight(); }}
+            onSaveNote={(note) => { void annotations.saveNote(note); }}
+            onAsk={() => { void askAboutPassage(); }}
             onClose={annotations.dismiss}
           />
         )}

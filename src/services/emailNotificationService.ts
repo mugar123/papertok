@@ -184,7 +184,7 @@ export function buildNotificationPreferencesPayload(preferences: NotificationPre
     // English only: a preference saved as 'es' before the interface went
     // English-only must not keep the emails in Spanish.
     language: 'en',
-    follows: follows.slice(0, 40).map(follow => serializeFollowForNotifications(follow as Partial<FollowEntity>)),
+    follows: follows.slice(0, 40).map(follow => serializeFollowForNotifications(follow)),
     previewItems: previewItems.slice(0, 20).map(paper => serializeUpdateForNotifications(paper)),
   };
 }

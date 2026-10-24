@@ -258,7 +258,7 @@ function ProfileAccountPage() {
     } catch {
       // The Auth user may already be gone; the tab still has to leave.
     }
-    navigate('/feed');
+    void navigate('/feed');
   };
 
   const identityFor = (providerId: string) => {
@@ -302,7 +302,7 @@ function ProfileAccountPage() {
                   variant="outline"
                   size="sm"
                   className="settings-row-action"
-                  onClick={() => handleLink(method)}
+                  onClick={() => { void handleLink(method); }}
                   disabled={Boolean(linking) || preparing}
                   focusableWhenDisabled={preparing}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
@@ -377,9 +377,9 @@ function PrivacyPage() {
             className="settings-toggle"
             checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
             aria-label={copy.analyticsToggleLabel}
-            onCheckedChange={checked => updateAnalyticsConsent(
+            onCheckedChange={checked => { void updateAnalyticsConsent(
               checked ? ANALYTICS_CONSENT.ANONYMOUS : ANALYTICS_CONSENT.DENIED,
-            )}
+            ); }}
           />
         </Label>
         {/* Turning this on also turns analytics on; off leaves it anonymous. */}
@@ -392,9 +392,9 @@ function PrivacyPage() {
             className="settings-toggle"
             checked={analyticsConsent === ANALYTICS_CONSENT.DETAILED}
             aria-label={copy.detailedAnalyticsLabel}
-            onCheckedChange={checked => updateAnalyticsConsent(
+            onCheckedChange={checked => { void updateAnalyticsConsent(
               checked ? ANALYTICS_CONSENT.DETAILED : ANALYTICS_CONSENT.ANONYMOUS,
-            )}
+            ); }}
           />
         </Label>
       </div>
@@ -416,7 +416,7 @@ function DiscoveryPage() {
     return Object.entries(INTEREST_AREAS)
       .map(([id, area]) => {
         const count = Object.keys(area.subcategories).filter(key => selected.has(key)).length;
-        return count > 0 ? { id, label: area!.label, accent: area.gradient, count } : null;
+        return count > 0 ? { id, label: area.label, accent: area.gradient, count } : null;
       })
       .filter(Boolean);
   }, [userPreferences]);
@@ -435,7 +435,7 @@ function DiscoveryPage() {
                   : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
               </p>
             </div>
-            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
+            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => { if (isPhone) setIsFollowingOpen(true); else void navigate('/settings/following'); }} />
           </div>
 
           <div className="settings-row">
@@ -492,7 +492,7 @@ function ReadingPage() {
           className="settings-levels"
           aria-label={copy.aiLevelLabel}
           value={readingPreferences.aiExplanationLevel}
-          onValueChange={handleLevelChange}
+          onValueChange={(level: ReadingLevel) => { void handleLevelChange(level); }}
           // Busy, not disabled: disabling the radio that holds focus dropped a
           // keyboard user onto <body>. handleLevelChange ignores a choice made
           // while another is saving.

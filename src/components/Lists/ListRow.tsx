@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { HTMLMotionProps } from 'framer-motion';
 import type { Paper } from '../../models/Paper.ts';
 import { useId, useState } from 'react';
@@ -62,7 +62,7 @@ export function PaperListRow({ paper, style, ...props }: Omit<ListRowProps, 'met
   return (
     <ListRow
       {...props}
-      style={{ ...style, '--area-accent': areaAccentForPaper(paper) } as CSSProperties}
+      style={{ ...style, '--area-accent': areaAccentForPaper(paper) }}
       meta={[
         (paper.categories?.length ?? 0) > 0 && getCategoryLabel(paper.categories![0]),
         paper.year ? String(paper.year) : null,
@@ -140,7 +140,7 @@ export function ListRowAuthors({ paper, onNavigate }: { paper: Partial<Paper>; o
               </>
             );
             return (
-              <li key={index} style={{ '--i': index } as CSSProperties}>
+              <li key={index} style={{ '--i': index }}>
                 {path
                   ? (
                     <Link

@@ -31,7 +31,7 @@ export function useEntitySearch(enabled: boolean, knownPapers: Paper[], section:
     const snapshot = await search.ask(scope);
     if (controller.signal.aborted) return;
     const count = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
-    trackEvent('search_performed', { search_type: scope, result_count: count, has_results: count > 0, query: term });
+    void trackEvent('search_performed', { search_type: scope, result_count: count, has_results: count > 0, query: term });
   }, [trackEvent]);
 
   const startSearch = useEffectEvent((term: string) => performSearch(term, knownPapers, section));

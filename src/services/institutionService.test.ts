@@ -217,23 +217,33 @@ test('cleanup failure cannot hide a successful institution write', async () => {
   assert.deepEqual(s.cleanup, ['signOut']);
 });
 
-test('the callback credential is removed before routing and analytics can see it', async () => {
-  const { spawnSync } = await import('node:child_process');
-  const moduleUrl = new URL('./institutionService.ts', import.meta.url).href;
-  for (const path of ['/institution/verify', '/institution/verify/']) {
-    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
-      import assert from 'node:assert/strict';
-      globalThis.location = { pathname: ${JSON.stringify(path)}, href: 'https://papertok.test${path}?oobCode=private-test-proof&state=test' };
-      let address;
-      globalThis.history = { state: null, replaceState(_state, _title, next) { address = next; } };
-      const { institutionVerificationLink } = await import(${JSON.stringify(moduleUrl)});
-      assert.equal(address, '/institution/verify');
-      assert.equal(institutionVerificationLink.includes('private-test-proof'), true);
-    `], { encoding: 'utf8' });
-    assert.equal(child.status, 0, child.stderr);
+test('the callback credential is removed before routing and analytics can see it', async t => {
+  const previousLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+  const previousHistory = Object.getOwnPropertyDescriptor(globalThis, 'history');
+  t.after(() => {
+    if (previousLocation) Object.defineProperty(globalThis, 'location', previousLocation);
+    else delete (globalThis as Partial<typeof globalThis>).location;
+    if (previousHistory) Object.defineProperty(globalThis, 'history', previousHistory);
+    else delete (globalThis as Partial<typeof globalThis>).history;
+  });
+
+  for (const [index, path] of ['/institution/verify', '/institution/verify/'].entries()) {
+    let address: string | undefined;
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { pathname: path, href: `https://papertok.test${path}?oobCode=private-test-proof&state=test` },
+    });
+    Object.defineProperty(globalThis, 'history', {
+      configurable: true,
+      value: { state: null, replaceState(_state: unknown, _title: string, next: string) { address = next; } },
+    });
+    // The module takes the credential when it is evaluated, so each address
+    // loads a fresh instance of it.
+    const { institutionVerificationLink }: typeof import('./institutionService.ts') = await import(`./institutionService.ts?address=${index}`);
+    assert.equal(address, '/institution/verify');
+    assert.equal(institutionVerificationLink.includes('private-test-proof'), true);
   }
 });
-
 
 test('uncertain delivery keeps the request usable if its email arrives', async () => {
   for (const failure of ['network', 'provider']) {

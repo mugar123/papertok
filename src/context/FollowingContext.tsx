@@ -11,7 +11,7 @@ export interface FollowingContextValue {
   toggleFollow: (entity: FollowInput) => Promise<boolean>;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { FollowingContext } from './contexts.ts';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -209,7 +209,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
     const missingLegacy = migrateLegacyAuthors(followedAuthors)
       .filter((legacy) => !followsEntity(followedEntities, legacy));
 
-    (async () => {
+    void (async () => {
       try {
         await Promise.all(missingLegacy.map((legacy) => setDoc(
           doc(followsCollection, createFollowKey(legacy.type, legacy.canonicalId)),
@@ -247,7 +247,7 @@ export function FollowingProvider({ children }: PropsWithChildren) {
       institutionLocalizationPending.current.add(`${userId}:${followKey}`);
     });
 
-    Promise.all(candidates.map(async (follow) => {
+    void Promise.all(candidates.map(async (follow) => {
       const followKey = follow.followKey || createFollowKey(follow.type, follow.canonicalId);
       const pendingKey = `${userId}:${followKey}`;
       try {
@@ -311,14 +311,14 @@ export function FollowingProvider({ children }: PropsWithChildren) {
         }
         else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
       }
-      trackEvent('follow_change', {
+      void trackEvent('follow_change', {
         entity_type: entity.type,
         action: wasFollowing ? 'remove' : 'add',
         surface: 'other',
         entity_id: entity.canonicalId,
         entity_name: entity.displayName,
       });
-      if (!wasFollowing) markActivation();
+      if (!wasFollowing) void markActivation();
       return !wasFollowing;
     } catch (toggleError) {
       setFollowedEntities(previous);

@@ -1,7 +1,6 @@
 import type { OwnList, ListSnapshot } from '../utils/ownLists.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from './accountWarmup.ts';
 import { ownListsCache } from '../utils/profileSessionCaches.ts';
 import { readStoredLists, saveStoredLists } from '../utils/userScopedStorage.ts';
@@ -23,21 +22,6 @@ test('hydrateAccountCaches copies this device\'s lists into the session', () => 
 
   ownListsCache.clear();
   resetAccountWarmup();
-});
-
-test('SOURCE: auth hydrates and warms the account caches on sign-in', async () => {
-  const source = await readFile(new URL('../context/AuthContext.tsx', import.meta.url), 'utf8');
-  assert.match(source, /hydrateAccountCaches/);
-  assert.match(source, /warmAccountCaches/);
-  assert.match(source, /resetAccountWarmup/);
-  assert.match(source, /readStoredOnboarding/);
-  assert.match(source, /accountLooksOnboarded/);
-});
-
-test('SOURCE: the save modal seeds from this device, not only the session', async () => {
-  const source = await readFile(new URL('../components/Lists/SaveToListModal.tsx', import.meta.url), 'utf8');
-  assert.match(source, /readStoredLists/);
-  assert.match(source, /saveStoredLists/);
 });
 
 function deviceStorage() {

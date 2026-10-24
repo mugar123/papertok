@@ -22,8 +22,8 @@ export default class GlobalErrorBoundary extends React.Component<React.PropsWith
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ errorInfo });
     console.error("Uncaught error:", error, errorInfo);
-    trackAppCrash();
-    captureAppException(error);
+    void trackAppCrash();
+    void captureAppException(error);
   }
 
   render() {

@@ -18,7 +18,7 @@ export const buttonVariants = cva(
         outline: 'border border-[var(--border-ink)] bg-card text-foreground hover:bg-secondary',
         // The two patterned buttons (button.css). They draw the eye, so they are
         // asked for by name and only where design.md allows them — the landing
-        // and the onboarding — which buttonPatterns.test.ts holds to a list.
+        // and the onboarding — which the papertok/patterned-buttons lint rule holds to a list.
         // Engraved: a hatched ink frame around a spot-yellow plate; hover and press fill the hatch.
         engraved: 'btn-engraved [transition:--hatch_90ms_steps(3,end),scale_120ms_var(--ease-out-expo)]',
         // Halftone: a paper plate over a 1-bit checker shadow offset 4px down-right.

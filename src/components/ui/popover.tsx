@@ -19,10 +19,6 @@ function PopoverTrigger(props: ComponentProps<typeof PopoverPrimitive.Trigger>) 
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
-function PopoverClose(props: ComponentProps<typeof PopoverPrimitive.Close>) {
-  return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
-}
-
 /** The popup's name (an `<h2>`); Base UI points `aria-labelledby` at it. */
 function PopoverTitle(props: ComponentProps<typeof PopoverPrimitive.Title>) {
   return <PopoverPrimitive.Title data-slot="popover-title" {...props} />;
@@ -80,7 +76,6 @@ function PopoverContent({
 
 export {
   Popover,
-  PopoverClose,
   PopoverContent,
   PopoverDescription,
   PopoverTitle,

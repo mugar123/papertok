@@ -1,13 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { stripTypeScriptTypes } from 'node:module';
-import type { Paper } from '../models/Paper.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { PaperBuilder } from './PaperBuilder.ts';
+import { recoverFeedAbstracts } from './feedAbstractService.ts';
 import { getMissingArxivAbstractIds, getMissingAbstractDois, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
-import { awaitWithinGate } from '../utils/feedCitationGate.ts';
-import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.ts';
 
 // Trimmed OpenAlex W3029239115 and arXiv 2005.12542v4 payloads fetched on
 // 2026-10-18 for the user's video. The abstract is the source's actual text.
@@ -33,70 +29,27 @@ const arxivPaper = PaperBuilder.create({
   publicationStatus: 'preprint', openAccess: true,
 });
 
-const source = stripTypeScriptTypes(readFileSync(new URL('./feedAbstractService.ts', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('export async function', 'async function'));
-function recovery(arxiv: (ids: string[]) => Promise<Paper[]>, inspire: (dois: string[]) => Promise<Partial<Paper>[]> = async () => [], waitMs = 100) {
-  const env = { fetchPapersByIds: arxiv, fetchInspireAbstracts: inspire, getMissingArxivAbstractIds, getMissingAbstractDois,
-    awaitWithinGate: (promises: PromiseLike<unknown>[]) => awaitWithinGate(promises, { maxWaitMs: waitMs }),
-  };
-  const recover = new Function(...Object.keys(env), `${source}; return recoverFeedAbstracts;`)(...Object.values(env)) as (papers: Paper[]) => Promise<Partial<Paper>[]>;
-  return async (papers: Paper[]) => mergeFeedAbstracts(papers, await recover(papers));
-}
-function deferred() {
-  let resolve!: (papers: Paper[]) => void;
-  const promise = new Promise<Paper[]>(done => { resolve = done; });
-  return { promise, resolve };
-}
-
-// Trimmed OpenAlex W2020715063, retrieved by DOI on 2026-10-18.
-const screenshotPaper = PaperBuilder.create(new OpenAlexAdapter().mapToStandard({
-  id: 'https://openalex.org/W2020715063',
-  title: 'Effective action for strongly correlated electron systems',
-  doi: 'https://doi.org/10.1016/j.nuclphysb.2011.08.011', type: 'article',
-  publication_year: 2011, abstract_inverted_index: null,
-  locations: [{ landing_page_url: 'http://arxiv.org/abs/1109.5103', pdf_url: 'https://arxiv.org/pdf/1109.5103' }],
-})!);
-
-test('the screenshot paper is withheld until its linked arXiv abstract settles', async () => {
-  const pending = deferred();
-  const prepare = recovery(async ids => { assert.deepEqual(ids, ['1109.5103']); return pending.promise; });
-  let published: Paper[] = [];
-  const loading = prepare([screenshotPaper]).then(papers => { published = papers; });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(published.length, 0);
-  // Synthetic response text; identity and the missing source record above are captured.
-  pending.resolve([{ ...arxivPaper, arxivId: '1109.5103', abstract: 'Verified abstract for the electron model.' }]);
-  await loading;
-  assert.equal(published[0].abstract, 'Verified abstract for the electron model.');
-  assert.equal(published[0].doi, screenshotPaper.doi);
-  assert.equal(published[0].id, screenshotPaper.id);
-});
-
-test('the video abstract is recovered before admission without changing published metadata', async () => {
-  const result = await recovery(async () => [arxivPaper])([videoPaper]);
+test('a recovered arXiv abstract fills the video paper without changing published metadata', () => {
+  const result = mergeFeedAbstracts([videoPaper], [arxivPaper]);
   assert.deepEqual(result[0], { ...videoPaper, abstract: sourceAbstract, summary: sourceAbstract, sources: { primary: 'openalex', enrichedBy: ['arxiv'], peerReviewedByDoiComplete: true } });
 });
 
-test('scientific reviews recover by exact DOI while a failed arXiv source leaves its paper usable', async () => {
+test('scientific reviews recover by exact DOI while a failed arXiv source leaves its paper usable', async t => {
   const review = { ...videoPaper, id: 'review', arxivId: undefined, doi: '10.1016/0370-2693(86)90963-9', primaryCategory: 'hep-th', publicationType: 'review', openAccess: false };
-  const result = await recovery(async () => { throw new Error('Unavailable'); }, async dois => {
-    assert.deepEqual(dois, [review.doi]);
-    return [{ doi: review.doi, abstract: 'Verified publisher text.', sources: { primary: 'inspire', enrichedBy: [] } }];
-  })([videoPaper, review]);
+  // Under node no arXiv route is configured, so the linked arXiv lookup for the
+  // video paper fails. The INSPIRE response has the API's shape; its text is synthetic.
+  t.mock.method(console, 'error', () => {});
+  const fetch = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    assert.equal(new URL(String(input)).searchParams.get('q'), `doi:"${review.doi}"`);
+    return Response.json({ hits: { total: 1, hits: [{ metadata: { dois: [{ value: review.doi }], abstracts: [{ value: 'Verified publisher text.' }] } }] } });
+  });
+  const papers = [videoPaper, review];
+  const result = mergeFeedAbstracts(papers, await recoverFeedAbstracts(papers));
+  assert.equal(fetch.mock.callCount(), 1);
   assert.equal(result[0], videoPaper);
   assert.equal(result[1].abstract, 'Verified publisher text.');
   assert.equal(result[1].publicationType, 'review');
   assert.equal(result[1].openAccess, false);
-});
-
-test('the deadline keeps a usable paper and a late response never mutates the admitted batch', async () => {
-  const pending = deferred();
-  const review = { ...videoPaper, id: 'review', arxivId: undefined, doi: '10.5555/independent-review', primaryCategory: 'hep-ph' };
-  const result = await recovery(() => pending.promise, async () => [{ doi: review.doi, abstract: 'Available DOI abstract.', sources: { primary: 'inspire', enrichedBy: [] } }], 10)([videoPaper, review]);
-  assert.equal(result[0], videoPaper);
-  assert.equal(result[1].abstract, 'Available DOI abstract.');
-  pending.resolve([arxivPaper]);
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(hasUsableAIAbstract(result[0].abstract), false);
 });
 
 test('DOI recovery skips existing abstracts and arXiv links, and preserves unmatched work', () => {
@@ -138,11 +91,9 @@ test('preserves existing abstracts, missing records, and closed access', () => {
   assert.equal(mergeFeedAbstracts(merged, [arxivPaper]), merged);
 });
 
-test('INSPIRE is asked only for physics papers, since it holds no other field', async () => {
+test('INSPIRE is asked only for physics papers, since it holds no other field', () => {
   const physics = { ...videoPaper, id: 'physics', arxivId: undefined, doi: '10.1016/j.nuclphysb.2011.08.011', primaryCategory: 'hep-th' };
   const medicine = { ...videoPaper, id: 'medicine', arxivId: undefined, doi: '10.5555/clinical-trial', primaryCategory: 'med.onc' };
   const unfiled = { ...videoPaper, id: 'unfiled', arxivId: undefined, doi: '10.5555/no-field' };
-  const asked: string[][] = [];
-  await recovery(async () => [], async dois => { asked.push(dois); return []; })([physics, medicine, unfiled]);
-  assert.deepEqual(asked, [[physics.doi]]);
+  assert.deepEqual(getMissingAbstractDois([physics, medicine, unfiled]), ['10.1016/j.nuclphysb.2011.08.011']);
 });

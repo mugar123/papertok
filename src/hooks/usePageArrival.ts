@@ -24,10 +24,9 @@ import { createContext, useCallback, useContext } from 'react';
  * from the right height — the page snaps into shape while it flies in, and
  * animates from then on.
  *
- * It lives in its own module, with no component and no JSX, for the reason
- * `contextIdentity.test.ts` enforces: a `createContext()` sharing a module with
- * a component is re-created by Fast Refresh, and consumers holding the previous
- * object silently read the default.
+ * It lives in its own module, with no component and no JSX, because a
+ * `createContext()` sharing a module with a component is re-created by Fast
+ * Refresh, and consumers holding the previous object silently read the default.
  */
 const NOT_ARRIVING = () => false;
 

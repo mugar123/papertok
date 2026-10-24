@@ -233,7 +233,7 @@ function mountPanel() {
     body!.style.display = collapsed ? 'none' : '';
     hide.textContent = collapsed ? 'Show' : 'Hide';
   });
-  bar.append(title, count, button('Copy', copy), button('Share', share), button('Clear', () => { log.length = 0; render(); }), hide);
+  bar.append(title, count, button('Copy', () => { void copy(); }), button('Share', () => { void share(); }), button('Clear', () => { log.length = 0; render(); }), hide);
   panel.append(bar, body);
   document.body.appendChild(panel);
 }

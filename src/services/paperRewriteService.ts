@@ -245,6 +245,23 @@ export function toRewriteError(error: unknown, { cancelled = false } = {}) {
   return new PaperRewriteError('AI_UNAVAILABLE');
 }
 
+/**
+ * What a stream that ended with sections may be kept as. A stream cut short is
+ * still worth showing, but must not be cached or saved as if it were the whole
+ * paper. Memory keeps it only if the account has not changed since the request,
+ * and the account only if its saved copy was read (`keepInAccount`).
+ */
+export function rewriteKeeping({ failed, done, sectionCount, sameAccount, keepInAccount }: {
+  failed: boolean;
+  done: { sectionCount?: number; truncated?: boolean } | null;
+  sectionCount: number;
+  sameAccount: boolean;
+  keepInAccount: boolean;
+}) {
+  const incomplete = failed || !done || done.sectionCount !== sectionCount || done.truncated === true;
+  return { incomplete, cache: !incomplete && sameAccount, save: !incomplete && keepInAccount };
+}
+
 export async function rewritePaper(paper: RewritePaperInput, level = 'university', {
   force = false,
   regenerate = false,
@@ -405,23 +422,23 @@ export async function rewritePaper(paper: RewritePaperInput, level = 'university
     if (sections.length === 0) throw new PaperRewriteError('AI_INVALID_RESPONSE');
 
     const result: RewriteResult = { meta: meta || { level, language: rewriteLanguage }, sections };
-    // A stream cut short is still worth showing, but must not be cached as if
-    // it were the whole paper.
-    const terminal = completion as Extract<RewriteEvent, { type: 'done' }> | null;
-    const incomplete = Boolean(streamError) || !terminal
-      || terminal.sectionCount !== sections.length || terminal.truncated === true;
-    if (!incomplete) {
-      if (cacheAccount === rewriteCacheAccount) rewriteCache.set(cacheKey, result);
-      if (keepInAccount) {
-        void saveSummary(uid, paper, level, {
-          sections,
-          model: result.meta.model || '',
-          sourceBasis: result.meta.sourceBasis || '',
-          promptVersion: result.meta.promptVersion || '',
-        }, getRewritablePdfUrl(paper));
-      }
+    const keeping = rewriteKeeping({
+      failed: Boolean(streamError),
+      done: completion,
+      sectionCount: sections.length,
+      sameAccount: cacheAccount === rewriteCacheAccount,
+      keepInAccount,
+    });
+    if (keeping.cache) rewriteCache.set(cacheKey, result);
+    if (keeping.save) {
+      void saveSummary(uid, paper, level, {
+        sections,
+        model: result.meta.model || '',
+        sourceBasis: result.meta.sourceBasis || '',
+        promptVersion: result.meta.promptVersion || '',
+      }, getRewritablePdfUrl(paper));
     }
-    return { ...result, incomplete };
+    return { ...result, incomplete: keeping.incomplete };
   } catch (error) {
     const failure = toRewriteError(error, { cancelled: Boolean(signal?.aborted) });
     if (sections.length > 0 && failure.code !== 'AI_CANCELLED') {

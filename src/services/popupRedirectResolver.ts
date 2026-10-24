@@ -25,6 +25,7 @@ interface AuthInternals {
  */
 export function deferPopupRedirectResolver(resolver: PopupRedirectResolver) {
   if (typeof resolver !== 'function') return undefined;
+  // eslint-disable-next-line no-restricted-syntax -- Firebase publishes PopupRedirectResolver and Auth without the members above
   const Resolver = resolver as unknown as new () => FirebaseResolver;
   class DeferredPopupRedirectResolver extends Resolver {
     // Firebase's own answer, kept for preparePopupRedirectResolver: true on
@@ -36,6 +37,7 @@ export function deferPopupRedirectResolver(resolver: PopupRedirectResolver) {
       return false;
     }
   }
+  // eslint-disable-next-line no-restricted-syntax -- Firebase publishes PopupRedirectResolver and Auth without the members above
   return DeferredPopupRedirectResolver as unknown as PopupRedirectResolver;
 }
 
@@ -65,6 +67,7 @@ const LOAD_WAIT_MS = 10_000;
  * from the start.
  */
 export function preparePopupRedirectResolver(auth: Auth): PopupReadiness {
+  // eslint-disable-next-line no-restricted-syntax -- Firebase publishes PopupRedirectResolver and Auth without the members above
   const resolver = (auth as unknown as AuthInternals)._popupRedirectResolver;
   const listeners = new Set<() => void>();
   let ready = true;
@@ -77,7 +80,7 @@ export function preparePopupRedirectResolver(auth: Auth): PopupReadiness {
       listeners.clear();
     };
     const deadline = setTimeout(release, LOAD_WAIT_MS);
-    auth.authStateReady()
+    void auth.authStateReady()
       .then(() => resolver._initialize(auth))
       // Firebase forgets a failed load, so the popup tries again at the press
       // and reports the error itself.

@@ -3,12 +3,11 @@ import assert from 'node:assert/strict';
 import { findInstitutionServices, knownInstitutionServices } from './institutionAccessService.ts';
 import { fakeIdToken } from '../test-support/firebaseIdToken.ts';
 
-// The client against the Worker's own route and its store. The Worker is
-// loaded by path because its modules type-check under the Worker's
-// configuration, with Cloudflare's types, which this file's does not have.
-const load = (path: string) => import(new URL(path, import.meta.url).href);
-const { default: worker } = await load('../../worker/index.ts') as { default: { fetch(request: Request, env: Record<string, unknown>): Promise<Response> } };
-const { SERVICE_CATALOGUE } = await load('../../worker/institution-services.ts') as { SERVICE_CATALOGUE: ReadonlyArray<{ id: string; issn: string }> };
+// The client against the Worker's own route and its store. The Worker's modules
+// type-check only with Cloudflare's types, which this file's configuration does
+// not have, so they load through a URL that TypeScript does not resolve.
+const { default: worker } = await import(new URL('../../worker/index.ts', import.meta.url).href) as { default: { fetch(request: Request, env: Record<string, unknown>): Promise<Response> } };
+const { SERVICE_CATALOGUE } = await import(new URL('../../worker/institution-services.ts', import.meta.url).href) as { SERVICE_CATALOGUE: ReadonlyArray<{ id: string; issn: string }> };
 
 const API = 'https://api.papertok.test';
 const PROJECT_ID = 'papertok-168df';

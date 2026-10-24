@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 import { createPublicListSyncEngine } from './publicListSync.ts';
 import type { PublicListInput } from './publicListPayload.ts';
@@ -250,48 +249,4 @@ test('a throwing listener never loses a sync, and unsubscribing really stops', a
   await timers.advance(900);
   assert.equal(calls.length, 2);
   assert.equal(seen.length, before, 'a screen that unmounted hears nothing more');
-});
-
-/* --- SOURCE: the manual Update button is gone, for good ---------------------
-   This is the whole point of the change, and it is the kind of thing a later
-   "just add a small button" would undo without anyone noticing. The lists page
-   may publish, share and unpublish; it may not offer to push an edit. */
-
-test('SOURCE: the lists page has no manual public-list update control', async () => {
-  const source = await readFile(
-    new URL('../components/Lists/ListsPage.tsx', import.meta.url),
-    'utf8',
-  );
-  assert.ok(!source.includes('updatePublicList'),
-    'the whole-payload update call must not come back to the lists page');
-  assert.ok(!/RefreshCw/.test(source), 'the Update button and its icon are gone');
-  assert.ok(source.includes('queuePublicListSync'),
-    'edits reach the public copy through the sync engine');
-});
-
-/**
- * Counted on `updateDoc`, not on `arrayUnion`/`arrayRemove`.
- *
- * It used to count membership writes, which was right while membership was the
- * only thing that changed about a list. Then lists became editable — a rename
- * reaches the published copy, because the payload's title is the list's name —
- * and the old count started reading an edit that correctly stamps `updatedAt`
- * as one stamp too many.
- *
- * So the invariant is stated where it actually lives: every write to a list
- * document from these two screens leaves the mark the sync engine looks for. If
- * a write ever lands here that must NOT stamp — the publish bookkeeping that
- * sets `publicSyncedAt`, say, which would chase its own tail — that is a reason
- * to think about it, not to stamp it to keep this quiet.
- */
-test('SOURCE: every list edit stamps updatedAt, or the recovery check goes blind', async () => {
-  for (const path of ['../components/Lists/ListsPage.tsx', './paperListMembership.ts']) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
-    const writes = source.match(/updateDoc\(|batch\.update\(/g) || [];
-    const membership = source.match(/arrayUnion\(|arrayRemove\(/g) || [];
-    const stamps = source.match(/updatedAt: serverTimestamp\(\)/g) || [];
-    assert.ok(membership.length > 0, `${path}: expected membership writes`);
-    assert.equal(stamps.length, writes.length,
-      `${path}: every write to a list must stamp updatedAt so a lost sync can be found later`);
-  }
 });

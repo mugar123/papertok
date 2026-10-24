@@ -66,7 +66,7 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
         <>
           <ShareHeading className="pc-menu-heading">{'Share'}</ShareHeading>
           <div className="pc-menu-group pc-menu-share">
-            <button type="button" className="pc-menu-link" aria-label={`Copy link ${shown}`} onClick={pick(() => copyLink({ url, onShared, method: 'clipboard', message: 'Link copied', position }))}>
+            <button type="button" className="pc-menu-link" aria-label={`Copy link ${shown}`} onClick={pick(() => { void copyLink({ url, onShared, method: 'clipboard', message: 'Link copied', position }); })}>
               <LinkSimple size={16} aria-hidden="true" />
               <span>{shown}</span>
               <Copy size={16} aria-hidden="true" />
@@ -79,7 +79,7 @@ export default function PaperMenu({ title, url, onShared, actions, trigger, open
                       <Icon size={18} aria-hidden="true" />
                     </a>
                   ) : (
-                    <button type="button" className="pc-menu-net" aria-label={`${name}, copies the link`} title={name} onClick={pick(() => copyLink({ url, onShared, method: id, message: INSTAGRAM_NOTE, position }))}>
+                    <button type="button" className="pc-menu-net" aria-label={`${name}, copies the link`} title={name} onClick={pick(() => { void copyLink({ url, onShared, method: id, message: INSTAGRAM_NOTE, position }); })}>
                       <Icon size={18} aria-hidden="true" />
                     </button>
                   )}

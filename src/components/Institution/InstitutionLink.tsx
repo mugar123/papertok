@@ -86,13 +86,13 @@ export default function InstitutionLink({
       if (needsUniversityProof(email)) {
         await sendInstitutionVerification(email);
         setPending(pendingInstitutionVerification());
-        setEmail!('');
+        setEmail('');
         toast.success('Verification email sent');
         setFeedback({ tone: 'success', text: COPY.inbox });
         pendingFocus.current = null;
       } else {
         await linkInstitution(email);
-        setEmail!('');
+        setEmail('');
         setFeedback({ tone: 'success', text: COPY.linkedNow });
       }
     } catch (error) {
@@ -140,7 +140,7 @@ export default function InstitutionLink({
       <div className={`institution-link is-linked${justLinked ? ' is-just-linked' : ''}`}>
         <InstitutionPill institution={institution} />
         <p className="institution-link-copy">{COPY.linked(institution.name)}{linkedNote ? ` ${linkedNote}` : ''}</p>
-        <Button ref={unlinkRef} type="button" variant="outline" size="sm" onClick={handleUnlink} disabled={busy}>
+        <Button ref={unlinkRef} type="button" variant="outline" size="sm" onClick={() => { void handleUnlink(); }} disabled={busy}>
           {busy ? COPY.unlinking : COPY.unlink}
         </Button>
         <InstitutionServices institution={institution} />
@@ -150,7 +150,7 @@ export default function InstitutionLink({
   }
 
   return (
-    <form id={formId} className="institution-link" onSubmit={handleSubmit} noValidate aria-busy={busy || undefined}>
+    <form id={formId} className="institution-link" onSubmit={(event) => { void handleSubmit(event); }} noValidate aria-busy={busy || undefined}>
       <Label htmlFor={inputId}>{COPY.email}</Label>
       <div className="institution-link-field">
         <Input
@@ -165,7 +165,7 @@ export default function InstitutionLink({
           placeholder={COPY.placeholder}
           value={pending?.email ?? email}
           onChange={(event) => {
-            setEmail!(event.target.value);
+            setEmail(event.target.value);
             if (feedback?.tone === 'error') setFeedback(null);
           }}
           readOnly={busy || Boolean(pending)}

@@ -200,13 +200,13 @@ function AppContent() {
   useEffect(() => {
     if (!authArrivalKey) return
     offerAuthReturn(arrivalReturnTo)
-    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+    void navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
   }, [authArrivalKey, arrivalReturnTo, navigate, location.pathname, location.search])
   // Once the session exists, the trip ends where it began — once per trip.
   useEffect(() => {
     if (!user || authLoading) return
     const destination = takeAuthReturn()
-    if (destination) navigate(destination, { replace: true })
+    if (destination) void navigate(destination, { replace: true })
   }, [user, authLoading, navigate])
 
   // A new account created from a public page's door has nowhere to go: those
@@ -219,7 +219,7 @@ function AppContent() {
   useEffect(() => {
     if (!user || authLoading || onboardingComplete || profileLoadError) return
     if (!isPublicRoute(location.pathname)) return
-    navigate('/onboarding', { replace: true, state: { returnTo: `${location.pathname}${location.search}` } })
+    void navigate('/onboarding', { replace: true, state: { returnTo: `${location.pathname}${location.search}` } })
   }, [user, authLoading, onboardingComplete, profileLoadError, location.pathname, location.search, navigate])
 
   // Warm the chunks a session is most likely to need next — the overlays any

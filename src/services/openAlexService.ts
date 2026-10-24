@@ -1058,7 +1058,7 @@ export async function getEntityById(type: string | undefined, id: string | undef
   const cachedEntity = readOpenAlexPersistent<Entity>(persistentCacheKey, ENTITY_CACHE_TTL_MS);
   if (cachedEntity && !cachedEntity.stale) {
     return type === 'institution'
-      ? enrichInstitutionWithRor(cachedEntity.data as OpenAlexInstitution)
+      ? enrichInstitutionWithRor(cachedEntity.data)
       : cachedEntity.data;
   }
 
@@ -1103,7 +1103,7 @@ export async function getEntityById(type: string | undefined, id: string | undef
       return persistEntity(await rorPromise);
     } catch (err) {
       const staleEntity = readStaleEntity();
-      if (staleEntity) return enrichInstitutionWithRor(staleEntity as OpenAlexInstitution, await rorPromise);
+      if (staleEntity) return enrichInstitutionWithRor(staleEntity, await rorPromise);
       const rorFallback = await rorPromise;
       if (rorFallback) return persistEntity(rorFallback);
       console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
@@ -1144,7 +1144,7 @@ export async function getEntityById(type: string | undefined, id: string | undef
     }
 
     if (type === 'institution') {
-      data = (await enrichInstitutionWithRor(data as OpenAlexInstitution))!;
+      data = (await enrichInstitutionWithRor(data))!;
     }
     
     // If it's a concept, translate back to Spanish
@@ -1166,7 +1166,7 @@ export async function getEntityById(type: string | undefined, id: string | undef
     const staleEntity = readStaleEntity();
     if (staleEntity) {
       return type === 'institution'
-        ? enrichInstitutionWithRor(staleEntity as OpenAlexInstitution)
+        ? enrichInstitutionWithRor(staleEntity)
         : staleEntity;
     }
     console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);

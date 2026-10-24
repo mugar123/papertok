@@ -2,7 +2,6 @@ import type { Paper, PaperAuthor } from '../models/Paper.ts';
 import type { OpenAlexAuthor, OpenAlexWork } from './adapters/openAlexTypes.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from './europePmcRecords.ts';
 import { openAlexClient, writeOpenAlexPersistent } from './openAlexClient.ts';
@@ -29,6 +28,7 @@ import {
   fetchPaperByWorkId,
   fetchPapersByDois,
   getAuthorProfileExact,
+  getAuthorsByEntity,
   getLocalTopicEntity,
   getWorksByEntity,
   isOpenAlexEnrichmentId,
@@ -345,8 +345,8 @@ test('adds localized ROR institution names to author profiles', async () => {
       }],
     });
 
-    assert.equal(author!.institutionData!.localized_names!.en, 'University of Salamanca');
-    assert.equal(author!.last_known_institutions![0].localized_names!.en, 'University of Salamanca');
+    assert.equal(author.institutionData!.localized_names!.en, 'University of Salamanca');
+    assert.equal(author.last_known_institutions![0].localized_names!.en, 'University of Salamanca');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -735,13 +735,32 @@ test('a works page and an authors page persist as what the Explorer shows, not a
   assert.deepEqual(authors, { authors: [{ id: 'A1', display_name: 'Ada', works_count: 2, cited_by_count: 0, h_index: 5, institution: 'Uni', concepts: [1, 2, 3] }], total: 9 });
 });
 
-test('SOURCE: the works and authors requests persist through persistentSlim under versioned keys', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const code = await readFile(new URL('./openAlexService.ts', import.meta.url), 'utf8');
-  assert.match(code, /const worksCacheKey = `entity-works-v4:/);
-  assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
-  assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
-  assert.match(code, /persistentKey: authorsCacheKey,[\s\S]*?persistentSlim: slimAuthorsPage,/);
+test('the works and authors requests persist the pages the Explorer shows, not the raw responses', async () => {
+  const previousStorage = openAlexClient.storage;
+  const previousStore = openAlexClient.persistentStore;
+  const realFetch = openAlexClient.fetchImpl;
+  const memory = new Map<string, string>();
+  openAlexClient.storage = { getItem: (k) => memory.get(k) ?? null, setItem: (k, v) => memory.set(k, v) };
+  openAlexClient.persistentStore = null;
+  openAlexClient.fetchImpl = async (url) => Response.json(String(url).includes('/authors?')
+    ? { meta: { count: 1 }, results: [{ id: 'https://openalex.org/A7000000002', display_name: 'Ada', works_count: 2, summary_stats: { h_index: 5 }, x_concepts: [] }] }
+    : { meta: { count: 1 }, results: [{ id: 'https://openalex.org/W7000000002', title: 'A persisted paper', abstract_inverted_index: { Persisted: [0], text: [1] } }] });
+  try {
+    await getWorksByEntity('author', 'A7000000002', 'cited_by_count:desc', 1, '', {}, 'Ada');
+    await getAuthorsByEntity('institution', 'I7000000002', 1, '', 'Uni');
+    await Promise.resolve();
+
+    const entries = Object.values(JSON.parse(memory.get('papertok_openalex_cache_v1')!) as Record<string, { data: unknown }>).map(entry => entry.data);
+    assert.deepEqual(entries.map(data => Object.keys(data as object).sort().join(',')).sort(), ['authors,total', 'papers,total']);
+    const serialized = JSON.stringify(entries);
+    assert.doesNotMatch(serialized, /abstract_inverted_index|summary_stats/);
+    assert.match(serialized, /"title":"A persisted paper"/);
+    assert.match(serialized, /"h_index":5/);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+    openAlexClient.storage = previousStorage;
+    openAlexClient.persistentStore = previousStore;
+  }
 });
 
 // The previous release built this page with `peerReviewed: true` on the FEDS
@@ -994,16 +1013,23 @@ test('the mapped authorships are capped, in authorship order', () => {
   assert.ok(JSON.stringify(mapped!.enrichment).length < 20_000, 'and the entry stays far under the persistent cap');
 });
 
-test('SOURCE: the enrichment request asks OpenAlex for the authorships', async () => {
+test('the enrichment request asks OpenAlex for the authorships', async () => {
   // Without this field the ids never reach the browser at all, and the card
   // has to send the reader through the name door. OpenAlex refuses subfield
   // selection (`authorships.author.id` answers 400), so it is all or nothing.
-  const source = (await readFile(new URL('../utils/openAlexWork.ts', import.meta.url), 'utf8'))
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
-  const select = source.match(/const OPENALEX_ENRICHMENT_SELECT = \[([\s\S]*?)\]\.join/);
-  assert.ok(select, 'the select list is still a literal array');
-  assert.ok(/'authorships'/.test(select[1]), 'authorships is in the select list');
+  const realFetch = openAlexClient.fetchImpl;
+  const urls: string[] = [];
+  openAlexClient.fetchImpl = async (url) => {
+    urls.push(String(url));
+    return Response.json({ results: [] });
+  };
+  try {
+    await enrichPapersBatch(['W7000000003']);
+    assert.equal(urls.length, 1);
+    assert.ok(new URL(urls[0]).searchParams.get('select')!.split(',').includes('authorships'), urls[0]);
+  } finally {
+    openAlexClient.fetchImpl = realFetch;
+  }
 });
 
 // The Explorer's category filter used to send OpenAlex legacy concepts for

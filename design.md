@@ -392,7 +392,7 @@ checker shadow) draw the eye, and a pattern on every screen stops being one.
 welcome/onboarding foot; `halftone` is the landing's account button, its
 theme switch and the Privacy button beside it. Never more than one engraved
 button on a screen, never on icon buttons inside the app, never in dense
-screens (feed, reader, explorer, settings, dialogs). `buttonPatterns.test.js` holds the list; a new place is a
+screens (feed, reader, explorer, settings, dialogs). The `papertok/patterned-buttons` lint rule holds the list; a new place is a
 design decision, made here and there together. The label always sits on a
 solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 `src/components/ui/button.css`).
@@ -604,8 +604,8 @@ bug this pattern exists to prevent.
 - **`createContext` must not share a module with a component.** A module that
   defines a component is a Fast Refresh boundary; re-evaluating it mints a new
   context that mounted consumers aren't holding. Put `createContext` in its own
-  component-free module (see `toggle-group-context.js`,
-  `button-variants.js`). Enforced by `src/context/contextIdentity.test.js`.
+  component-free module (see `toggle-group-context.ts`,
+  `button-variants.ts`). The lint rejects `createContext` in a `.tsx` file.
 
 ---
 

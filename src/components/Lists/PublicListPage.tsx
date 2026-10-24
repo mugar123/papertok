@@ -158,10 +158,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
     try {
       const outcome = await shareOrCopyLink({ url, title: publicList?.title, copy: copyText });
       if (outcome === 'shared') {
-        trackEvent('share', { method: 'native', content_type: 'list', surface: 'lists' });
+        void trackEvent('share', { method: 'native', content_type: 'list', surface: 'lists' });
         setShareState(null);
       } else if (outcome === 'copied') {
-        trackEvent('share', { method: 'clipboard', content_type: 'list', surface: 'lists' });
+        void trackEvent('share', { method: 'clipboard', content_type: 'list', surface: 'lists' });
         setShareState('copied');
         restingState();
       } else {
@@ -181,7 +181,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
     return {
       route: getPublicListPath(shareId),
       title: publicList ? {
-        en: `${publicList!.title} | PaperTok public list`,
+        en: `${publicList.title} | PaperTok public list`,
       } : {
         en: 'Public reading list | PaperTok',
       },
@@ -293,7 +293,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
             <button
               type="button"
               className="public-list-share"
-              onClick={handleShare}
+              onClick={() => { void handleShare(); }}
               data-state={shareState || 'idle'}
             >
               {/* Keyed, so the swap plays the glyph's short arrival. */}

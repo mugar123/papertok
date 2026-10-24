@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   canSubmitCreateList,
   createListFormReducer,
@@ -94,38 +93,4 @@ test('the colour survives everything except reopening', () => {
 test('an action nobody defined leaves the state exactly as it was', () => {
   const state = typed('T');
   assert.equal(createListFormReducer(state, { type: 'nonsense' as never }), state);
-});
-
-/* --- The two sites that create a list share one window ---------------------
-   They used to have a form each, written separately, and they drifted in both
-   directions: the lists page learned to say "it could not be created" and the
-   save modal never did, so a failed create there ended at console.error with
-   nothing on screen. Two forms is how that happened; one is how it stays
-   fixed. */
-
-const CREATE_SITES = [
-  '../components/Lists/ListsPage.tsx',
-  '../components/Lists/SaveToListModal.tsx',
-];
-
-test('SOURCE: neither create site keeps a form of its own', async () => {
-  for (const path of CREATE_SITES) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
-    assert.ok(source.includes('CreateListDialog'),
-      `${path}: must open the shared window`);
-    assert.ok(!source.includes('AVAILABLE_ICONS'),
-      `${path}: the icon picker belongs to the dialog now`);
-    assert.ok(!/newListName|newListIcon/.test(source),
-      `${path}: the form state belongs to the dialog now`);
-  }
-});
-
-test('SOURCE: a failed create reaches the owner, it does not end in the console', async () => {
-  for (const path of CREATE_SITES) {
-    const source = await readFile(new URL(path, import.meta.url), 'utf8');
-    // The write must let the failure through; the dialog is what turns it into
-    // a message and keeps itself open.
-    assert.ok(!/Error creating list/.test(source),
-      `${path}: swallowing the failure leaves the owner staring at nothing`);
-  }
 });

@@ -5,7 +5,7 @@
    rendered — the save bar, the discard confirmation, the inline error, the tag
    chips, the loading skeleton, the retry button — had no rule at all and
    shipped bare, while eight rules for a deleted inline create-list form were
-   still being served. `listsStyles.test.js` now fails on that drift.
+   still being served.
 
    Language: design.md. An overlay surface (ink scrim + a white sheet with a
    hairline border and a short drop), structure from rules rather than shadows,

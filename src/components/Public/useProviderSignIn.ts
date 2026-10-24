@@ -32,14 +32,14 @@ export function useProviderSignIn(surface: string) {
     latest.current = attempt;
     setPendingProvider(method);
     setCollision(null);
-    trackEvent('select_content', { content_type: 'signup_cta', surface, method });
+    void trackEvent('select_content', { content_type: 'signup_cta', surface, method });
     try {
       const result = await (method === 'google' ? signInWithGoogle : signInWithGitHub)();
-      trackEvent('auth_result', { method, surface, result: 'success' });
-      trackEvent(result?.isNewUser ? 'sign_up' : 'login', { method });
+      void trackEvent('auth_result', { method, surface, result: 'success' });
+      void trackEvent(result?.isNewUser ? 'sign_up' : 'login', { method });
     } catch (signInError) {
       const code = (signInError as { code?: string } | null)?.code || 'other';
-      trackEvent('auth_result', {
+      void trackEvent('auth_result', {
         method, surface,
         result: code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' ? 'cancelled' : 'error',
         error_code: code,

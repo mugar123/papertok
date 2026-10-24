@@ -532,11 +532,33 @@ test('the persistent store is read from storage once, and reads hand out copies'
   }
 });
 
-test('SOURCE: a write from another tab lets go of the remembered store', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const code = await readFile(new URL('./openAlexClient.ts', import.meta.url), 'utf8');
-  assert.match(code, /window\.addEventListener\('storage', \(event\) => \{\s*if \(event\.key === null \|\| event\.key === STORAGE_KEY\) this\.forgetPersistentStore\(\);/);
-  assert.match(code, /this\.storage === window\.localStorage/, 'only the real localStorage has other tabs');
+test('a write from another tab lets go of the remembered store', t => {
+  const values = new Map<string, string>();
+  const localStorage = {
+    getItem: (key: string) => (values.has(key) ? values.get(key)! : null),
+    setItem: (key: string, value: string) => values.set(key, value),
+  };
+  const browserWindow = Object.assign(new EventTarget(), { localStorage });
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: browserWindow });
+  t.after(() => {
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else delete (globalThis as Partial<typeof globalThis>).window;
+  });
+
+  const client = new OpenAlexClient({ storage: localStorage, now: () => 1000 });
+  client.writePersistent('enrichment:a', { citations: 3 });
+  assert.deepEqual(client.readPersistent('enrichment:a')!.data, { citations: 3 });
+
+  // Another tab writes the blob; the browser tells this one with a `storage` event.
+  values.set('papertok_openalex_cache_v1', JSON.stringify({ 'enrichment:a': { data: { citations: 7 }, savedAt: 900 } }));
+  browserWindow.dispatchEvent(Object.assign(new Event('storage'), { key: 'papertok_openalex_cache_v1' }));
+  assert.deepEqual(client.readPersistent('enrichment:a')!.data, { citations: 7 });
+
+  // Another tab clears storage: the event names no key.
+  values.clear();
+  browserWindow.dispatchEvent(Object.assign(new Event('storage'), { key: null }));
+  assert.equal(client.readPersistent('enrichment:a'), null);
 });
 
 test('a burst of writes reaches storage once, on the next microtask', async () => {

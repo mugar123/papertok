@@ -105,7 +105,7 @@ export default function NudgeHost() {
 
   const handleSettings = useCallback(() => {
     close('email-down');
-    navigate('/settings/notifications');
+    void navigate('/settings/notifications');
   }, [close, navigate]);
 
   // Emptied first so a second refusal is announced too: a live region speaks
@@ -139,8 +139,8 @@ export default function NudgeHost() {
               <span role="status" className="nudge-status">{consentSaveFailed ? copy.consent.saveFailed : ''}</span>
             </>
           )}
-          action={{ label: copy.consent.allow, onClick: () => answerConsent(ANALYTICS_CONSENT.DETAILED) }}
-          secondaryAction={{ label: copy.consent.anonymous, onClick: () => answerConsent(ANALYTICS_CONSENT.ANONYMOUS) }}
+          action={{ label: copy.consent.allow, onClick: () => { void answerConsent(ANALYTICS_CONSENT.DETAILED); } }}
+          secondaryAction={{ label: copy.consent.anonymous, onClick: () => { void answerConsent(ANALYTICS_CONSENT.ANONYMOUS); } }}
         />
       ) : picked === 'email-down' && emailCopy && (
         <NudgePanel

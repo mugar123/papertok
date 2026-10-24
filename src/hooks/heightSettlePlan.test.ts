@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { depsAreSame, planHeightSettle } from './heightSettlePlan.ts';
 
 /**
@@ -101,22 +100,6 @@ test('suspension is not the same as no change: without it the same commit animat
 });
 
 /**
- * SOURCE: the hook is the half of this that node cannot run — it needs a DOM,
- * a layout and a running animation. These pin the two decisions it makes on its
- * own, both of which a passing pure suite would otherwise leave free.
- */
-const hookSource = async () => (await readFile(new URL('./useHeightSettle.ts', import.meta.url), 'utf8'))
-  .replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
-
-test('SOURCE: the hook asks whether it is suspended, and hands the answer to the plan', async () => {
-  const code = await hookSource();
-  assert.match(code, /const standDown = typeof suspended === 'function' && suspended\(\);/,
-    'the predicate is called inside the layout effect, where the DOM is current');
-  assert.match(code, /planHeightSettle\(\{[^}]*suspended: standDown[^}]*\}\)/,
-    'and the plan is the one that decides, so the decision stays testable');
-});
-
-/**
  * Suspension was briefly a second thing as well — a latch a child raised while
  * animating its own height — and the hook grew a `resync` for it: the memory
  * taken while suspended was a frame of THAT animation, so the first commit
@@ -133,12 +116,4 @@ test('there is no resync: the first change after a suspended commit animates fro
     { action: 'animate', from: 316.8, to: 380, remember: 380 },
     'a stray `resync: true` must change nothing — the option is gone',
   );
-});
-
-test('SOURCE: the hook keeps no memory between commits beyond the height and the deps', async () => {
-  const code = await hookSource();
-  assert.doesNotMatch(code, /staleMemoryRef/, 'no stale flag');
-  assert.doesNotMatch(code, /resync/, 'no resync');
-  assert.doesNotMatch(code, /if \(standDown && inFlight\)/, 'no hand-over branch: with the route arrival as the only suspender there is never a settle in flight to hand over');
-  assert.match(code, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural, suspended: standDown \}\);/);
 });

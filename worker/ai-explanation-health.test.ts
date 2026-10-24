@@ -36,7 +36,7 @@ test('/health/ai checks that NaN serves the configured model, not merely that th
   const healthy = await checkAIProviderHealth({
     AI_PROVIDER: 'nan',
     NAN_API_KEY: 'sk-test-key',
-    AI: { toMarkdown: async (): Promise<import('./paper-text.ts').PaperTextConversion> => ({} as import('./paper-text.ts').PaperTextConversion) } as WorkerEnv['AI'],
+    AI: { toMarkdown: async (): Promise<import('./paper-text.ts').PaperTextConversion> => ({} as import('./paper-text.ts').PaperTextConversion) },
   });
   assert.equal(healthy.provider, 'nan');
   assert.equal(healthy.model, 'deepseek-v4-flash');

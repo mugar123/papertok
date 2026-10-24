@@ -8,8 +8,7 @@
 
    Underneath that, thirty-five class names the component rendered had no rule
    at all — `lists-eyebrow`, `lists-subtitle`, `lists-badge`, the whole expanded
-   header, every skeleton. They rendered as bare elements, which is the exact
-   failure `listsStyles.test.js` was written for next door.
+   header, every skeleton. They rendered as bare elements.
 
    Structure here is hairline rules, counts are mono, titles are serif, and a
    list's colour arrives as `--list-accent` from `listColors.js`. Inside an open

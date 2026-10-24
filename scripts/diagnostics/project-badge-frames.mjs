@@ -14,7 +14,7 @@
 // working directory by default); PORT=9234 picks another debugging port,
 // ORIGIN another dev server. No dependencies; Node >= 22 for the global
 // WebSocket. The 2026-09-06 numbers this recorded are in the comment on the
-// slot in PaperCard.jsx and in paperCardArrival.test.js.
+// slot in PaperCard.jsx.
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -1,6 +1,5 @@
-import type { CSSProperties, PointerEvent, UIEvent } from 'react';
+import type { PointerEvent, UIEvent } from 'react';
 import type { Paper } from '../../models/Paper.ts';
-import type { PaperCardProps } from './PaperCard.tsx';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -40,7 +39,9 @@ function clipFrom(origin: HTMLElement) {
  * they left. Nothing is shown until every paper has been classified
  * (similarFeedService.ts, PAP-50); until then the layer is a skeleton.
  */
-export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, onSaveToList }: Pick<PaperCardProps, 'onOpenPdf' | 'onSaveToList'> & {
+export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, onSaveToList }: {
+  onOpenPdf?: (paper: Paper) => void;
+  onSaveToList?: (paper: Paper) => void;
   anchor: Paper;
   origin: HTMLElement;
   onClosed: () => void;
@@ -230,7 +231,7 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
         finalFocus={() => (origin.isConnected ? origin : true)}
         aria-label={`Papers similar to ${anchor.title}`}
         data-dropped-by={routeLeft ? 'route' : droppedBy}
-        style={{ '--similar-origin': originClip } as CSSProperties}
+        style={{ '--similar-origin': originClip }}
         onScrollCapture={followScroll}
       >
         <header

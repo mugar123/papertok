@@ -9,6 +9,7 @@
     "tests/**/*.ts",
     "scripts/**/*.ts",
     "*.config.ts",
+    "eslint-rules/**/*.ts",
     "src/types/**/*.d.ts"
   ],
   "exclude": [
