@@ -276,8 +276,9 @@ the voice of an index set by hand.
 - **Label** (600, 0.6875rem, tracking 0.06em, uppercase): every small mono
   label — `font: var(--mono-label); letter-spacing: var(--mono-track);`.
   A status badge (Settings' `.settings-status`: On, Off, Checking,
-  Unavailable) keeps the label's size and weight in sentence case, without the
-  tracking: it reads as a word, not a heading.
+  Unavailable) and the institution badge (`.institution-pill`) keep the
+  label's size and weight in their own case, without the tracking: they read
+  as a word or a name, not a heading.
 
 The scale tokens are `--fs-xs … --fs-5xl`, weights `--fw-regular … bold`, line
 heights `--lh-tight / normal / relaxed`.
