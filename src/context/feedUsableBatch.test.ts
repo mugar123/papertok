@@ -981,6 +981,33 @@ test('a re-rank reorders the cards after the reader and leaves every notable car
   }
 });
 
+// The reader saved a notable paper elsewhere: the feed leaves it out, and the
+// corpus, which offers unseen notable papers in one order, must not keep
+// sending it in a place another one could take.
+test('a notable paper the reader already saved is left out once, and the next pages ask past it', async t => {
+  t.mock.method(console, 'log', () => {});
+  const order = ['saved-classic', 'notable-a', 'notable-b', 'notable-c'];
+  const asked: Array<{ notable?: number; seen?: Set<string> }> = [];
+  const { state, env, run } = feed();
+  env.savedPaperIdsRef.current = new Set(['saved-classic']);
+  Object.assign(env, {
+    // Thirty cards a page, then the unseen notable papers asked for.
+    fetchCorpusPage: async (request: { page: number; notable?: number; seen?: Set<string> }) => {
+      asked.push({ notable: request.notable, seen: new Set(request.seen) });
+      const unseen = order.filter(id => !request.seen?.has(id)).slice(0, request.notable ?? 0);
+      return [...records(`corpus-${request.page}`, 30), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))];
+    },
+  });
+  await run(true);
+  await run(false);
+  // The first page's one notable paper was the saved one; the second page's
+  // two places both get one.
+  assert.deepEqual(asked.map(request => request.notable), [1, 2]);
+  assert.deepEqual(notableAt(state.papers), [[44, 'notable-a'], [59, 'notable-b']]);
+  assert.equal(asked[1].seen?.has('saved-classic'), true, 'the corpus is told the reader knows it');
+  assert.ok(!state.papers.some(paper => paper.id === 'saved-classic'));
+});
+
 // A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).
 // The corpus may not have embedded that paper yet: the request says to wait
 // for it, which the feed's own pages never do.

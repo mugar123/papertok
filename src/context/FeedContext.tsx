@@ -1398,6 +1398,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
+      // A notable paper the feed does not show, one the reader liked, saved,
+      // read or dismissed elsewhere, joins the session's seen papers: the
+      // corpus offers unseen notable papers in one order, and would send it
+      // again in every page's place.
+      newPapers.forEach(paper => { if (paper._notable && !isAvailablePaper(paper)) sessionSeenPapers.current.add(paper.id); });
 
       // No paper on this page can be shown: try a later page before showing
       // seen papers again. Notable cards alone count as none: they take only
