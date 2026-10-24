@@ -954,8 +954,8 @@ test('a notable card the reader viewed is not offered again, however many cards 
 // A first screen of 21 cards and a later page of 31, placed as the loader
 // places them: notable cards 15th, 30th and 45th of 55.
 function feedWithNotableCards() {
-  const card = (id: string, index: number) => ({ ...paperRecord(id), primaryCategory: ['cs.CV', 'cs.LG', 'cs.AI'][index % 3] });
-  const notable = (id: string) => ({ ...paperRecord(id), _notable: true });
+  const card = (id: string, index: number): FeedRecord => ({ ...paperRecord(id), primaryCategory: ['cs.CV', 'cs.LG', 'cs.AI'][index % 3] });
+  const notable = (id: string): FeedRecord => ({ ...paperRecord(id), _notable: true });
   const first = placeNotableCards(Array.from({ length: 21 }, (_, index) => card(`first-${index}`, index)), [notable('notable-0')]);
   return [...first, ...placeNotableCards(Array.from({ length: 31 }, (_, index) => card(`later-${index}`, index)), [notable('notable-1'), notable('notable-2')], first)];
 }
