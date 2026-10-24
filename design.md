@@ -422,7 +422,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 
 ### Navigation
 - **Navbar:** flat paper bar, 64px, a hairline under it. Tabs are Inter with the
-  active one marked by a sliding yellow rule (the brand thread). The search bar
+  active one marked by a sliding yellow rule (the brand thread). Pressing the
+  active feed tab reloads that feed, and on a touch screen a sideways swipe on
+  the feed moves between For you and Following. The search bar
   sits on paper and takes Ink Wash on hover; ⌘K / Ctrl+K or `/` opens the
   command palette, which grows from its own centre.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
@@ -454,7 +456,8 @@ reduced motion. No counts until per-paper totals exist; the names stay in the
 DOM for assistive tech and in a native `title`. Save puts the paper in Read
 later at once, with an "Add to list" toast; a second press takes it out of
 Read later and every list, with Undo. On a touch screen, holding Save for half
-a second opens the list picker instead, saved or not. Connections is a toggle:
+a second opens the list picker instead, saved or not. Saving from the picker
+confirms with a toast that offers Undo. Connections is a toggle:
 wider than a phone it swaps the abstract for the citation map until it is pressed again; on
 a phone it opens the map as a sheet. Similar papers opens a feed of
 recommended papers in a full-screen layer that grows out of the button and
@@ -469,6 +472,13 @@ topics and funding are ruled rows, the field's rule in its ink and its topics'
 in a lighter one. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it.
+
+Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
+institution, project or topic can be followed: the Explorer header, beside a
+Share glyph drawn the same way in the neutral rail, and search results. It is
+an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
+40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
+like Like and Save; "Follow" is its name and its `title` says Following once on.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square

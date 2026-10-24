@@ -29,7 +29,7 @@ export interface DeliveryDraftInput {
 
 export type Delivery = ReturnType<typeof sanitizeDelivery>;
 export type DeliveryDraft = NonNullable<ReturnType<typeof sanitizeDraft>>;
-interface LedgerMeta { committed?: unknown; reserved?: unknown }
+interface LedgerMeta { committed?: unknown; reserved?: unknown; limitAlerted?: unknown }
 export interface DeliveryReservation {
   status: string;
   attempts?: number;
@@ -67,6 +67,7 @@ export interface DeliveryLedgerResult {
   draft?: DeliveryDraft;
   delivery?: Delivery;
   code?: string;
+  alert?: boolean;
 }
 
 const MAX_RESERVATION_ID_LENGTH = 220;
@@ -163,6 +164,7 @@ function normalizeMeta(value: LedgerMeta | null = {}) {
   return {
     committed: positiveInteger(value?.committed),
     reserved: positiveInteger(value?.reserved),
+    limitAlerted: value?.limitAlerted === true,
   };
 }
 
@@ -250,6 +252,8 @@ function applyReservationAction(metaInput: LedgerMeta | null | undefined, existi
       };
     }
     if (meta.committed + meta.reserved >= limit) {
+      const alert = !meta.limitAlerted;
+      meta.limitAlerted = true;
       return {
         status: 200,
         meta,
@@ -260,6 +264,7 @@ function applyReservationAction(metaInput: LedgerMeta | null | undefined, existi
           committed: meta.committed,
           reserved: meta.reserved,
           limit,
+          alert,
         },
       };
     }
@@ -381,6 +386,7 @@ export function applyEmailDeliveryLedgerAction(currentState: DeliveryLedgerState
   const nextState = {
     committed: outcome.meta.committed,
     reserved: outcome.meta.reserved,
+    limitAlerted: outcome.meta.limitAlerted,
     reservations: { ...state.reservations },
   };
   if (outcome.deleteReservation) delete nextState.reservations[reservationId];

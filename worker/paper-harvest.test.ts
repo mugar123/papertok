@@ -11,13 +11,13 @@ import { arxivRecordPaper } from './paper-sources.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
-// The Workflow's steps run in place: a step's callback is called once, a sleep
+// The Workflow's steps run in place: a failed callback retries within its limit, a sleep
 // is recorded and returns at once. `fail` names the steps that fail past their
-// retries; `skipLanes` answers the category lanes' steps as if every lane were
-// done, for a daily run whose lanes the test does not exercise. An attempt
-// running past `timeoutMs` is stopped, as a Workflow stops one past its
-// timeout and leaves its work unfinished, and the step is tried again within
-// its retries.
+// retries; `skipLanes` answers the category and notable lanes' steps as if
+// every lane were done, for a daily run whose lanes the test does not
+// exercise. An attempt running past `timeoutMs` is stopped, as a Workflow
+// stops one past its timeout and leaves its work unfinished, and the step is
+// tried again within its retries.
 function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: { fail?: (name: string) => boolean; skipLanes?: boolean; timeoutMs?: number } = {}) {
   const steps: string[] = [];
   const sleeps: Array<number | string> = [];
@@ -25,11 +25,18 @@ function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: 
     async do(name: string, ...rest: unknown[]) {
       steps.push(name);
       if (fail(name)) throw new Error(`${name} failed past its retries`);
-      if (skipLanes && /^categories: lanes \d+$/.test(name)) return Number.MAX_SAFE_INTEGER;
+      if (skipLanes && /^(categories|notable): lanes \d+$/.test(name)) return null;
       const callback = rest.at(-1) as () => Promise<unknown>;
-      if (!timeoutMs) return callback();
       const retries = rest.length > 1 ? (rest[0] as { retries?: { limit: number } }).retries?.limit ?? 0 : 0;
       for (let attempt = 0; ; attempt += 1) {
+        if (!timeoutMs) {
+          try {
+            return await callback();
+          } catch (error) {
+            if (attempt >= retries) throw error;
+            continue;
+          }
+        }
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timedOut = new Promise<'timed out'>(resolve => { timer = setTimeout(resolve, timeoutMs, 'timed out'); });
         const result = await Promise.race([callback(), timedOut]).finally(() => clearTimeout(timer));
@@ -103,6 +110,50 @@ test("a followed lanes' run embeds its own lanes' papers and leaves the rest to 
   await runPaperHarvest(env, followRun(['author:A1']), step);
   assert.deepEqual(texts.map(text => text.split('\n')[0]).sort(), ['A paper by the followed author', 'Another paper by the followed author']);
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM work_vectors').get() as { n: number }).n, 2);
+});
+
+test('open and closed articles are embedded before backfill and maintenance without repeating unchanged text', async t => {
+  providers(t);
+  const { env, db, texts } = corpus();
+  await ingestPapers(env, [true, false].map((openAccess, index) => ({
+    paper: { ...paper(`2610.3000${index + 1}`, openAccess ? 'Open article' : 'Closed article'), openAccess, arxivId: undefined },
+    lanes: ['cs.CL'],
+  })));
+  let observed = false;
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (name.startsWith('backfill ')) {
+      assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+      observed = true;
+      return true;
+    }
+    return name.startsWith('evict ');
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(observed, true);
+  assert.deepEqual(texts.map(value => value.split('\n')[0]).sort(), ['Closed article', 'Open article']);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+});
+
+test('an enriched batch is usable before the next batch starts, without embedding later records early', async t => {
+  providers(t);
+  const { env, db, texts } = corpus();
+  await ingestPapers(env, Array.from({ length: 501 }, (_, index) => ({
+    paper: paper(`2610.${40_000 + index}`, `Research result ${index}`), lanes: ['cs.CL'],
+  })));
+  let observed = false;
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (name !== 'enrich 1') return false;
+    assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 500);
+    observed = true;
+    return true;
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(observed, true);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 501);
+  assert.equal(texts.length, 501);
+  assert.equal(new Set(texts).size, 501);
 });
 
 test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, and the nightly refresh still has its 700", async t => {
@@ -489,7 +540,7 @@ test('a followed lane harvested after rejected nights is asked again the night a
 
 // A lane that holds its step past the timeout never reaches the harvest's own
 // error handling.
-test("a followed lane that stops its step has had its turn: the step's retry harvests the lanes after it", async t => {
+test("a followed lane that stops its step exhausts bounded retries, then the other lanes are harvested", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T02:30:00Z') });
   const asked = providers(t, url => (url.searchParams.get('search') === 'a search that hangs' ? new Promise<Response>(() => {}) : undefined));
   const { env, db } = corpus();
@@ -502,19 +553,102 @@ test("a followed lane that stops its step has had its turn: the step's retry har
   await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true, timeoutMs: 3_000 }).step);
   const refreshed = db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-follows' ORDER BY lane").all().map(row => (row as { lane: string }).lane);
   assert.deepEqual(refreshed, authors);
+  // The mock keeps one isolate alive, so the relay's pending-request cache
+  // shares the hung fetch across the step's retries.
   assert.deepEqual(searchesAsked(asked), ['a search that hangs']);
+  assert.equal(db.prepare("SELECT retry_at FROM followed_lanes WHERE lane = 'query:a search that hangs'").get()?.retry_at, '2026-10-22T00:00:00.000Z');
 });
 
-test('a lane step that fails past its retries passes over its lanes, not the rest of the run', async t => {
+test('a lane that exhausts its step retries does not skip healthy lanes after it', async t => {
   providers(t);
   const { env, db } = corpus();
   const lanes = Array.from({ length: 7 }, (_, index) => `author:A${index + 1}`);
-  // The first step, five lanes, times out every time.
+  // The first lane times out every time.
   const { step, steps } = workflowStep({ fail: name => name === 'followed: lanes 0' });
   await runPaperHarvest(env, followRun(lanes), step);
   const harvested = db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-follows' ORDER BY lane").all().map(row => (row as { lane: string }).lane);
-  assert.deepEqual(harvested, ['author:A6', 'author:A7']);
+  assert.deepEqual(harvested, ['author:A2', 'author:A3', 'author:A4', 'author:A5', 'author:A6', 'author:A7']);
   assert.ok(steps.includes('embed 0'), 'the run goes on to embed');
+});
+
+for (const nightly of [false, true]) {
+  test(`a transient D1 memory error retries a ${nightly ? 'nightly' : 'new'} followed lane and stores its paper`, async t => {
+    providers(t, url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter')?.startsWith('author.id:A1,')
+      ? Response.json({ results: [openAlexWork(1)] }) : undefined);
+    const { env, db } = corpus();
+    db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)')
+      .run('author:A1', new Date().toISOString(), new Date().toISOString());
+    const binding = env.PAPER_STORE!;
+    const batch = binding.batch.bind(binding);
+    let attempts = 0;
+    t.mock.method(binding, 'batch', async (statements: D1PreparedStatement[]) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('D1_ERROR: out of memory: SQLITE_NOMEM');
+      return batch(statements);
+    });
+    const { step } = workflowStep({ skipLanes: true });
+    await runPaperHarvest(env, nightly ? dailyRun() : followRun(['author:A1']), step);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM work_lanes WHERE lane = 'author:A1'").get()?.n, 1);
+    assert.equal(db.prepare("SELECT retry_at FROM followed_lanes WHERE lane = 'author:A1'").get()?.retry_at, null);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 1);
+  });
+}
+
+for (const status of [200, 400]) {
+  test(`a failed turn write retries without repeating a provider's ${status} outcome`, async t => {
+    let asks = 0;
+    providers(t, url => {
+      if (!url.searchParams.get('filter')?.startsWith('author.id:A1,')) return undefined;
+      asks += 1;
+      return Response.json(status === 200 ? { results: [openAlexWork(1)] } : { error: 'Invalid query' }, { status });
+    });
+    const { env, db } = corpus();
+    db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)')
+      .run('author:A1', new Date().toISOString(), new Date().toISOString());
+    const binding = env.PAPER_STORE!;
+    const prepare = binding.prepare.bind(binding);
+    let writes = 0;
+    t.mock.method(binding, 'prepare', (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith('UPDATE followed_lanes SET failed_turns')) return statement;
+      const bind = statement.bind.bind(statement);
+      t.mock.method(statement, 'bind', (...values: unknown[]) => {
+        const bound = bind(...values);
+        const run = bound.run.bind(bound);
+        t.mock.method(bound, 'run', async () => {
+          writes += 1;
+          if (writes <= 2) throw new Error('D1_ERROR: out of memory: SQLITE_NOMEM');
+          return run();
+        });
+        return bound;
+      });
+      return statement;
+    });
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    assert.equal(asks, 1);
+    assert.equal(writes, 3);
+    assert.equal(db.prepare("SELECT failed_turns FROM followed_lanes WHERE lane = 'author:A1'").get()?.failed_turns, status === 200 ? 0 : 1);
+    assert.equal(db.prepare("SELECT count(*) AS n FROM lane_state WHERE lane = 'author:A1'").get()?.n, status === 200 ? 1 : 0);
+  });
+}
+
+test('exhausted D1 retries preserve the followed turn and continue with healthy lanes', async t => {
+  const { env, db } = corpus();
+  providers(t, url => url.searchParams.get('filter')?.startsWith('author.id:A1,')
+    ? Response.json({ results: [openAlexWork(1)] }) : undefined);
+  for (const lane of ['author:A1', 'author:A2']) {
+    db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)')
+      .run(lane, new Date().toISOString(), new Date().toISOString());
+  }
+  let attempts = 0;
+  t.mock.method(env.PAPER_STORE!, 'batch', async () => {
+    attempts += 1;
+    throw new Error('D1_ERROR: out of memory: SQLITE_NOMEM');
+  });
+  await runPaperHarvest(env, followRun(['author:A1', 'author:A2']), workflowStep().step);
+  assert.equal(attempts, 3);
+  assert.deepEqual({ ...db.prepare("SELECT failed_turns, retry_at FROM followed_lanes WHERE lane = 'author:A1'").get() }, { failed_turns: 0, retry_at: null });
+  assert.deepEqual(db.prepare('SELECT lane FROM lane_state').all().map(row => row.lane), ['author:A2']);
 });
 
 test("arXiv's 503 is waited out as asked, but a long pause or one 503 after another ends the set, not the run", async t => {

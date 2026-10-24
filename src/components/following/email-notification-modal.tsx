@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import {
   Check,
   CheckCircle,
@@ -26,10 +27,11 @@ const ERROR_COPY = {
     EMAIL_AUTH_REQUIRED: 'Sign in again to configure email updates.',
     EMAIL_ADDRESS_NOT_VERIFIED: 'Confirm your email address with your sign-in provider before enabling email updates.',
     EMAIL_PROVIDER_AUTH_FAILED: 'The email provider rejected the configured credential.',
-    EMAIL_SENDER_NOT_VERIFIED: 'The Brevo sender has not been verified yet.',
+    EMAIL_SENDER_NOT_VERIFIED: 'The email sender domain has not been verified yet.',
     EMAIL_PROVIDER_LIMIT: 'The sending limit has temporarily been reached.',
+    EMAIL_PROVIDER_RATE_LIMIT: 'Resend is limiting requests for now. Try again in a few minutes.',
     EMAIL_TEST_RATE_LIMIT: 'Wait one minute before sending another test.',
-    EMAIL_TEST_RECIPIENT_RESTRICTED: 'Resend is in test mode and can only send to the account owner. A verified domain is required for other recipients.',
+    EMAIL_TEST_RECIPIENT_RESTRICTED: 'Resend rejected this recipient. Check that the sender domain is verified.',
     EMAIL_DATA_LOADING: 'We are still loading what you follow. Try again in a few seconds.',
     EMAIL_FOLLOWS_REQUIRED: 'Follow at least one topic, author, institution, or project before enabling emails.',
     EMAIL_SEND_FAILED: 'The test email could not be sent.',
@@ -154,32 +156,22 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
       <div className="email-notification-body" data-base-ui-swipe-ignore="">
         {!loading && !health.available && (
           <div className="email-notification-provider-warning">
-            <strong>{'Sending requires configuration'}</strong>
+            <strong>{'Email updates unavailable'}</strong>
             <span>{health.code === 'EMAIL_PROVIDER_AUTH_FAILED'
               ? ('The email provider did not accept the saved credential.')
               : health.code === 'EMAIL_SENDER_NOT_VERIFIED'
-                ? ('Brevo does not yet recognize the configured sender as active.')
+                ? ('Resend has not verified the configured sender domain yet.')
+                : health.code === 'EMAIL_SENDER_STATUS_UNKNOWN'
+                  ? ('PaperTok cannot confirm the sender domain with the current Resend key.')
                 : ('The email provider is not available right now.')}</span>
           </div>
         )}
-        {!loading && health.available && health.provider === 'resend' && health.senderMode === 'resend-test' && (
-          <div className="email-notification-provider-warning is-info">
-            <strong>{'Resend test mode'}</strong>
-            <span>{'Without a verified domain, Resend will only deliver email to the account owner.'}</span>
-          </div>
-        )}
-        {!loading && health.available && health.provider === 'resend' && health.permissionLimited && health.senderMode !== 'resend-test' && (
-          <div className="email-notification-provider-warning is-info">
-            <strong>{'Restricted sending key'}</strong>
-            <span>{'The Resend credential only has sending permission, so the domain status cannot be checked here. Sending still works normally.'}</span>
-          </div>
-        )}
         {!loading && notificationDataReady && !hasFollows && (
-          <div className="email-notification-provider-warning is-info">
-            <strong>{'Nothing followed yet'}</strong>
+          <div className="email-notification-provider-warning is-follows">
+            <strong><Link to="/settings/following" onClick={onClose}>{'Nothing followed yet'}</Link></strong>
             <span>{emailDigestPending
               ? 'You asked for the digest when you joined. It starts on its own with your first follow: a topic, author, institution, or project.'
-              : 'Follow a topic, author, institution, or project so PaperTok can prepare relevant email updates.'}</span>
+              : 'Follow a topic, author or institution to get updates.'}</span>
           </div>
         )}
         <div className="email-notification-toggle-row">
@@ -220,11 +212,6 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           </div>
         </div>
 
-        <div className="email-notification-schedule">
-          <Clock size={16} aria-hidden="true" />
-          <span>{'Every Monday morning, only when there are updates.'}</span>
-        </div>
-
         {/* The sheet keeps this line's room, so a result does not lift the
             whole sheet; it is also where the result is announced. */}
         <div className="email-notification-feedback-slot" role="status">
@@ -235,6 +222,11 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             </motion.p>
           )}
           </AnimatePresence>
+        </div>
+
+        <div className="email-notification-schedule">
+          <Clock size={16} aria-hidden="true" />
+          <span>{'Prepared on Mondays when there are updates. Delivery may take longer if sending is limited.'}</span>
         </div>
       </div>
 

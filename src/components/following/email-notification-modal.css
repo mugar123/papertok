@@ -65,34 +65,47 @@
 
 .email-notification-provider-warning {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0 0 18px;
-  padding: 11px 12px;
-  border-left: 2px solid #ff8a5c;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 2px;
+  margin: 0 -22px 18px;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--tint-amber-line);
   background: var(--tint-amber-bg);
+}
+
+.email-notification-provider-warning:first-child {
+  margin-top: -20px;
+}
+
+.email-notification-provider-warning + .email-notification-provider-warning {
+  margin-top: -18px;
 }
 
 .email-notification-provider-warning strong { color: var(--tint-amber-fg); font-size: 12px; }
 .email-notification-provider-warning span { color: var(--text-secondary); font-size: 12px; }
 .email-notification-provider-warning.is-info {
-  border-left-color: var(--accent-primary);
+  border-bottom-color: var(--border-subtle);
   background: var(--bg-secondary);
 }
 
-
-.email-notification-provider-warning:not(.is-info) {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 8px;
-  row-gap: 2px;
-  margin: -20px -22px 18px;
-  padding: 10px 22px;
-  border-left: 0;
-  border-bottom: 1px solid var(--tint-amber-line);
+.email-notification-provider-warning a {
+  color: inherit;
+  font-weight: var(--fw-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .email-notification-provider-warning.is-info strong { color: var(--gradient-physics); }
+
+.email-notification-provider-warning.is-follows {
+  border-bottom-color: var(--tint-violet-line);
+  background: var(--tint-violet-bg);
+}
+
+.email-notification-provider-warning.is-follows strong {
+  color: var(--tint-violet-fg);
+}
 
 .email-notification-toggle-row,
 .email-notification-count {
@@ -151,9 +164,9 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-top: 20px;
-  padding: 11px 12px;
-  border-left: 2px solid var(--border-ink);
+  margin: 20px -22px -20px;
+  padding: 10px 22px;
+  border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   background: var(--bg-secondary);
   font-size: 12px;
@@ -239,9 +252,14 @@
   padding: 20px var(--space-4) var(--space-2);
 }
 
-.email-notification-sheet .email-notification-provider-warning:not(.is-info) {
-  margin: -20px calc(-1 * var(--space-4)) 18px;
-  padding: 10px var(--space-4);
+.email-notification-sheet .email-notification-provider-warning {
+  margin-inline: calc(-1 * var(--space-4));
+  padding-inline: var(--space-4);
+}
+
+.email-notification-sheet .email-notification-schedule {
+  margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-2));
+  padding-inline: var(--space-4);
 }
 
 .email-notification-sheet .email-notification-feedback-slot {

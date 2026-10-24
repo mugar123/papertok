@@ -8,7 +8,6 @@ import {
   pickExplorationCategories,
   scorePaperForRecommendation,
   trimScoredCandidatePool,
-  type RecentProperties,
 } from './recommendation-engine.ts';
 import {
   createEmptyInteractionProfile,
@@ -614,36 +613,28 @@ test('a reader who has liked nothing yet ranks the cards as if they carried no t
   assert.deepEqual(scoresOf(pool), scoresOf(pool.map(card => ({ ...card, primaryTopic: undefined }))));
 });
 
-// PAP-92. A PubMed card without a PMC copy leaves its access unknown, and the
-// diversity rule read anything not open as paywalled: a run of such cards
-// counted as paywalled and boosted open cards, and after a run of open cards
-// they were boosted as the paywalled alternative.
-test('a card whose access is unknown counts as neither open nor paywalled for variety', () => {
+test('access status changes neither scores nor shuffled recommendations after open or closed cards', () => {
   const card = (id: string, openAccess?: boolean) => ({
-    id, primaryCategory: `med.${id}`, publicationStatus: 'published' as const, published: '2026-07-01T00:00:00Z', openAccess,
+    id, primaryCategory: `med.${id}`, publicationStatus: 'published' as const,
+    published: '2026-07-01T00:00:00Z', abstract: 'A study of clinical outcomes.', openAccess, _dynamicScore: 0,
   });
-  const recent = ['u1', 'u2', 'u3', 'u4', 'u5'].map(id => card(id));
-  const pool = [card('open', true), card('closed', false), card('unknown')];
-  const boost = (paper: ReturnType<typeof card>, recentPropsCount: Partial<RecentProperties>) => (
-    scorePaperForRecommendation(paper, { now: NOW, recentPropsCount }).diversityBoost);
-  let firstWindow: Partial<RecentProperties> | undefined;
-  const firstBoosts: Record<string, number> = {};
-  diversifiedWeightedShuffle(pool, {
-    initialPapers: recent,
-    random: () => 0,
-    scorePaper: (paper, recentPropsCount) => {
-      firstWindow ??= { ...recentPropsCount };
-      firstBoosts[paper.id] ??= boost(paper, recentPropsCount);
-    },
-  });
-  assert.equal(firstWindow?.openAccess, 0);
-  assert.equal(firstWindow?.subscription, 0);
-  assert.deepEqual(firstBoosts, { open: 0, closed: 0, unknown: 0 });
-
-  const afterOpen = { openAccess: 4 };
-  assert.ok(boost(card('closed', false), afterOpen) > 0, 'a paywalled card is the alternative to a run of open ones');
-  assert.equal(boost(card('unknown'), afterOpen), 0);
-  const afterPaywalled = { subscription: 3 };
-  assert.ok(boost(card('open', true), afterPaywalled) > 0, 'an open card is the alternative to a run of paywalled ones');
-  assert.equal(boost(card('unknown'), afterPaywalled), 0);
+  const pool = [card('one', true), card('two', false), card('three')];
+  const recommend = (access?: boolean, previousAccess?: boolean) => {
+    const scores: number[] = [];
+    const ranked = diversifiedWeightedShuffle(pool.map(paper => ({ ...paper, openAccess: access })), {
+      initialPapers: ['a', 'b', 'c', 'd', 'e'].map(id => card(id, previousAccess)),
+      random: () => 0.4,
+      scorePaper: (paper, recentPropsCount) => {
+        const result = scorePaperForRecommendation(paper, { now: NOW, recentPropsCount });
+        scores.push(result.total);
+        paper._dynamicScore = result.total;
+      },
+    });
+    return { ids: ranked.map(paper => paper.id), scores };
+  };
+  const open = recommend(true);
+  assert.deepEqual(open.ids, ['two', 'one', 'three']);
+  for (const access of [true, false, undefined]) {
+    for (const previousAccess of [true, false, undefined]) assert.deepEqual(recommend(access, previousAccess), open);
+  }
 });

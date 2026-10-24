@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { Paper } from '../models/paper.ts';
 import { OpenAlexAdapter } from './adapters/open-alex-adapter.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from './feed-publication-service.ts';
+import { placeNotableCards } from '../utils/feed-enrichment.ts';
 import { isFeedPublication } from './feed-publication-rules.ts';
 import { dribblingFetch } from '../test-support/deadline-harness.ts';
 
@@ -318,4 +319,50 @@ test('a reported card that is no longer listed leaves every card in place, since
   assert.equal(dropUnreachedPublications(papers, classified, '10.5555/replaced-card'), papers);
   assert.deepEqual(dropUnreachedPublications(papers, classified, null).map(work => work.id), papers.filter((_, index) => index !== 6).map(work => work.id));
   assert.deepEqual(dropUnreachedPublications(papers, classified, papers[5].id), papers);
+});
+
+// One feed card in 15 is notable (placeNotableCards). A book taken out between
+// two notable cards left 14 cards between them until the next re-rank, which
+// a reader who does not stop on a card may never cause.
+test('a book left out after the reader leaves the notable cards after it fifteen cards apart, the other cards in their order', () => {
+  const notable = (id: string): Paper => ({ ...paper(`10.5555/${id}`), _notable: true });
+  const others = Array.from({ length: 45 }, (_, index) => paper(`10.5555/card-${index}`));
+  const papers = placeNotableCards(others, ['notable-0', 'notable-1', 'notable-2'].map(notable));
+  const notableAt = (list: Paper[]) => list.flatMap((work, index) => (work._notable ? [index] : []));
+  assert.deepEqual(notableAt(papers), [14, 29, 44]);
+  // The reader is on the fourth card; Crossref calls the twenty-first other card a book.
+  const kept = dropUnreachedPublications(papers, [paper(others[20].doi!, 'book')], others[3].id);
+  assert.deepEqual(notableAt(kept), [14, 29, 44]);
+  assert.deepEqual(kept.filter(work => !work._notable).map(work => work.id), others.filter((_, index) => index !== 20).map(work => work.id));
+});
+
+// With no card reported, the reader is on the first card: after a refresh, or
+// in a tab where For You has no place yet. A snapshot restored on another page
+// reports the card FeedContainer will open on (feedUsableBatch.test.ts).
+test('with no card reported, a book taken out leaves the notable cards fifteen cards apart from the first card on', () => {
+  const notable = (id: string): Paper => ({ ...paper(`10.5555/${id}`), _notable: true });
+  const others = Array.from({ length: 45 }, (_, index) => paper(`10.5555/card-${index}`));
+  const papers = placeNotableCards(others, ['notable-0', 'notable-1', 'notable-2'].map(notable));
+  const notableAt = (list: Paper[]) => list.flatMap((work, index) => (work._notable ? [index] : []));
+  const kept = dropUnreachedPublications(papers, [paper(others[5].doi!, 'book')], null);
+  assert.deepEqual(notableAt(kept), [14, 29, 44]);
+  assert.deepEqual(kept.filter(work => !work._notable).map(work => work.id), others.filter((_, index) => index !== 5).map(work => work.id));
+});
+
+// The reader met the card they dismissed, and it has left the list. Counted
+// on the list, the notable card after a book came one place later: the
+// sixteenth card they met.
+test('after a dismissal, a book left out after the reader leaves the next notable card the fifteenth they meet', () => {
+  const notable = (id: string): Paper => ({ ...paper(`10.5555/${id}`), _notable: true });
+  const others = Array.from({ length: 45 }, (_, index) => paper(`10.5555/card-${index}`));
+  const shown = placeNotableCards(others, ['notable-0', 'notable-1', 'notable-2'].map(notable));
+  // The reader dismissed the card after the first notable one, and is on the next.
+  const dismissedAt = 15;
+  const listed = shown.filter((_, index) => index !== dismissedAt);
+  const reader = shown[dismissedAt + 1];
+  // Crossref calls a card after them a book.
+  const kept = dropUnreachedPublications(listed, [paper(others[25].doi!, 'book')], reader.id);
+  assert.ok(!kept.some(work => work.id === others[25].id));
+  const met = [...shown.slice(0, dismissedAt + 2), ...kept.slice(kept.indexOf(reader) + 1)];
+  assert.deepEqual(met.flatMap((work, index) => (work._notable ? [index + 1] : [])), [15, 30, 45]);
 });

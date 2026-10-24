@@ -127,6 +127,10 @@ a session can finish, lints the files changed on the branch and in the working t
 For large features or recommendation changes, open an issue first so the behavior and success
 criteria can be discussed.
 
+Changes listed in [decisions that need authorization](AGENTS.md#decisions-that-need-authorization),
+such as a new ranking rule or a new agent skill, need a person to approve their impact. Record
+each approval in the PR's `## Authorized decisions` section.
+
 ## Documentation maintenance
 
 [ARCHITECTURE.md](ARCHITECTURE.md#documentation-owners) identifies the primary

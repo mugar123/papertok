@@ -1580,7 +1580,6 @@ export default function EntityExplorer({
           disabled={entityFollowPending}
           followLabel={'Follow'}
           followingLabel={'Following'}
-          compact={isPhone}
         />
       )}
       {publicEntityUrl && (
@@ -1591,14 +1590,9 @@ export default function EntityExplorer({
           align="start"
           links={usesSheet ? [] : heroLinks}
           onShared={(method) => { void trackEvent('share', { method, content_type: analyticsEntityType, surface: 'explorer' }); }}
-          trigger={isPhone ? (
-            <Button variant="outline" size="icon-sm" className="ehc-share" aria-label="Share">
-              <ShareNetwork size={16} aria-hidden="true" />
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" className="ehc-share">
-              <ShareNetwork size={16} aria-hidden="true" />
-              {'Share'}
+          trigger={(
+            <Button variant="ghost" size="icon-sm" className="ehc-share" aria-label="Share" title="Share">
+              <ShareNetwork size={20} aria-hidden="true" />
             </Button>
           )}
         />
@@ -2356,6 +2350,14 @@ export default function EntityExplorer({
                   {authorInstitutionNavigationError && (
                     <p className="ehc-author-institution-error" role="alert">{authorInstitutionNavigationError}</p>
                   )}
+                </div>
+              )}
+              {type === 'author' && !authorInstitutionDisplayName && (
+                <div className="ehc-author-institution-wrap">
+                  <span className="ehc-author-institution ehc-author-institution--unknown">
+                    <Buildings size={15} aria-hidden="true" />
+                    <span>{'Unknown institution'}</span>
+                  </span>
                 </div>
               )}
               {topConcepts.length > 0 && type !== 'author' && (

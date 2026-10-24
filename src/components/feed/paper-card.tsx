@@ -72,6 +72,7 @@ import {
   Package,
   Planet,
   Prohibit,
+  Quotes,
   Sigma,
   Intersect,
   Sparkle,
@@ -166,7 +167,7 @@ import {
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
-import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from '../../utils/motion-curves.ts';
+import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';
 
 /** An author's name in its grid cell: ellipsed when it does not fit, and only
@@ -1376,17 +1377,7 @@ const PaperCard = memo(function PaperCard({
   const likeIconRef = useRef<HTMLSpanElement | null>(null);
   const saveIconRef = useRef<HTMLSpanElement | null>(null);
   const pulse = (icon: HTMLSpanElement | null, on: boolean) => {
-    const svg = icon?.querySelector('svg');
-    if (!svg || prefersReducedMotion) return;
-    svg.getAnimations().forEach((running) => running.cancel());
-    svg.animate(
-      [
-        { transform: 'scale(1)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
-        { transform: on ? 'scale(1.16)' : 'scale(0.9)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
-        { transform: 'scale(1)' },
-      ],
-      { duration: 260 },
-    );
+    if (!prefersReducedMotion) pulseIcon(icon?.querySelector('svg'), on);
   };
   const handleLike = (liking: boolean) => {
     if (publicMode) {
@@ -1943,9 +1934,19 @@ const PaperCard = memo(function PaperCard({
               </span>
             </>
           )}
-          {paper.year ? (
+          {/* Why the feed placed this paper in a notable card's place; the
+              year and the count after it are the paper's own. */}
+          {paper._notable && (
             <>
               {(categoryLabel || hasFollowedAuthor) && <span className="pc-meta-dot">·</span>}
+              <span className="pc-notable-badge">
+                <Quotes size={12} aria-hidden="true" /> {'Highly cited'}
+              </span>
+            </>
+          )}
+          {paper.year ? (
+            <>
+              {(categoryLabel || hasFollowedAuthor || paper._notable) && <span className="pc-meta-dot">·</span>}
               <span className="pc-date">{paper.year}</span>
             </>
           ) : null}
@@ -1955,7 +1956,7 @@ const PaperCard = memo(function PaperCard({
               {/* El modificador es lo que le da a este punto el mismo fundido
                   que al chip: los dos montan juntos, y cuando el
                   enriquecimiento se pasa del techo montan tarde juntos. */}
-              {(categoryLabel || hasFollowedAuthor || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
+              {(categoryLabel || hasFollowedAuthor || paper._notable || paper.year) ? <span className="pc-meta-dot pc-meta-dot--citations">·</span> : null}
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
@@ -1963,13 +1964,13 @@ const PaperCard = memo(function PaperCard({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(event) => event.stopPropagation()}
-                  aria-label={`${paper.citationCount} ${'citations on Scopus'}`}
+                  aria-label={`${paper.citationCount!.toLocaleString('en-US')} ${'citations on Scopus'}`}
                 >
-                  {paper.citationCount} {'citations on Scopus'}
+                  {paper.citationCount!.toLocaleString('en-US')} {'citations on Scopus'}
                 </a>
               ) : (
                 <span className="pc-citations">
-                  {paper.citationCount} {'citations'}
+                  {paper.citationCount!.toLocaleString('en-US')} {'citations'}
                 </span>
               )}
             </>
@@ -2131,7 +2132,7 @@ const PaperCard = memo(function PaperCard({
             ) : abstractLoading ? (
               // The feed is still asking a source for the missing abstract.
               // Saying so means the words that arrive replace a stated wait,
-              // not a "No abstract" the reader has already read.
+              // not a "No abstract available" the reader has already read.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2159,7 +2160,7 @@ const PaperCard = memo(function PaperCard({
                 <EmptyState
                   as="p"
                   art={<Petri pose="blankPage" className="pc-abstract-empty-petri" />}
-                  title={'No abstract'}
+                  title={'No abstract available'}
                 >
                   {"This paper's record has no abstract."}
                 </EmptyState>

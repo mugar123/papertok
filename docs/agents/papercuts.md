@@ -26,6 +26,18 @@ checks them now:
 - The feed retries a `FEED_LOAD_FAILED` first page once; `completeOnboarding` sets the flag only
   after `confirmOnboardingWrite` resolves. The decisions are tested in `src/context/`; the
   ordering inside the context is not.
+- The notable cards (PAP-99): `loadPapers` asks the corpus with the session's seen set and
+  `notableRequest` for its largest page, marks the `notablePassedOver` papers viewed, joins the
+  page on the list as it is when the page arrives, and adds a notable card to the seen set only
+  once it has a place; the restore stands `restoredReaderCardId` in for the visible card;
+  `markNotInterested` takes the card out with `withoutDismissedCard` and keeps
+  `notablePlaceAfterDismissal`'s card for the next page, the snapshot carries it and the account
+  change clears it; view and skip events carry `notable`. The
+  decisions are tested in `src/context/`; the wiring inside the context is not.
+- `PaperCard` shows "Highly cited" on a notable card before the paper's own year and citation
+  count, and groups every citation count with `toLocaleString('en-US')`.
+- `FeedContainer` keys For You's place by the account (`forYouScrollKey`), and `App` clears
+  every feed's place when the account changes (`feedResumeMemory.clear`).
 - The router keeps `useTransitions={false}` and keys the provider tree on `accountScopeKey`.
 - Every route `app.tsx` declares is matched by the `vercel.json` rewrite and normalizes to a
   named analytics path; the sitemap and `robots.txt` agree on protected routes.
@@ -61,6 +73,11 @@ comparison against display copy.
 
 The `pr-body` check requires a Review section, but cannot tell whether a review ran or what it
 covered.
+
+## Authorized decisions are not checked
+
+Nothing checks that a PR containing a decision that needs authorization lists it, or that the
+named person approved it. The `pr-body` check does not require the section.
 
 ## Workflow actions pinned to a commit
 

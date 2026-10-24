@@ -3,6 +3,9 @@ import type { Paper } from '../models/paper.ts';
 /** A page of papers shown before, carried by a load that skipped past it. */
 type SeenFallback = { page: number; papers: Paper[] };
 
+// The papers a page of the feed asks the corpus for.
+export const PAGE_SIZE = 15;
+
 // Limits the automatic fetch depth, so a load cannot walk the corpus forever.
 const AUTO_FETCH_PAGE_CEILING = 10;
 
@@ -15,30 +18,47 @@ export function canFetchNextPage(candidateCount: number, currentPage: number) {
 }
 
 /**
+ * Whether a page has no paper the feed can show (`available`). Notable cards
+ * alone count as none: they take only their places among other cards
+ * (joinNotablePage), and the corpus sends them unseen even when the reader saw
+ * every other paper on the page.
+ */
+export function showsNoPaper(available: Paper[]) {
+  return available.every(paper => paper._notable);
+}
+
+/**
  * A page none of whose papers can be shown. An entirely excluded page still
  * proves the corpus has results, so the load goes one page on (not more: the
  * corpus ranks the same way on every load, so a longer move would pass over
  * papers not yet shown). It carries the first page of papers shown before but
  * never liked, saved, read or dismissed (`shownBeforeHere` on this page), which
  * is shown again when no later page has an unseen paper: the feed is never
- * empty because everything was seen.
+ * empty because everything was seen. A notable card is never shown twice, so
+ * the carried papers leave them out; this page's unseen notable cards
+ * (`notableHere`) take their places among the papers shown again.
  */
-export function planUnshowablePage({ candidateCount, currentPage, seenFallback, shownBeforeHere, reset = false, excludedCount = 0 }: {
+export function planUnshowablePage({ candidateCount, currentPage, seenFallback, shownBeforeHere, notableHere = [], reset = false, excludedCount = 0 }: {
   candidateCount: number;
   currentPage: number;
   seenFallback: SeenFallback | undefined;
   shownBeforeHere: Paper[];
+  notableHere?: Paper[];
   reset?: boolean;
   excludedCount?: number;
 }) {
-  const shownBefore = seenFallback ?? (shownBeforeHere.length > 0 ? { page: currentPage, papers: shownBeforeHere } : undefined);
+  const seenHere = shownBeforeHere.filter(paper => !paper._notable);
+  const shownBefore = seenFallback ?? (seenHere.length > 0 ? { page: currentPage, papers: seenHere } : undefined);
   // The server cannot see the client's full curated sets or Bloom filter.
   // Restart once without soft exclusions when they leave no usable fallback.
   if (reset && excludedCount > 0 && !shownBefore) return { kind: 'relax-exclusions', page: 0 } as const;
   if (canFetchNextPage(candidateCount, currentPage)) {
     return { kind: 'next-page', page: currentPage + 1, seenFallback: shownBefore } as const;
   }
-  if (shownBefore) return { kind: 'show-seen', papers: shownBefore.papers } as const;
+  if (shownBefore) {
+    const papers = [...shownBefore.papers, ...notableHere];
+    return { kind: 'show-seen', papers } as const;
+  }
   return { kind: 'show-none' } as const;
 }
 

@@ -202,6 +202,10 @@ export interface Paper {
   _fetchedFor?: string[];
   // Request-scoped semantic relevance in [-1, 1], including explicit rejections.
   _semanticScore?: number;
+  // Set by the corpus on a notable paper it adds to a page, which the feed
+  // places (placeNotableCards): one of the most-cited papers of the reader's
+  // categories, which the card says it is.
+  _notable?: boolean;
   _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;
   _isPersonalCandidate?: boolean;
