@@ -33,15 +33,16 @@ export const CORPUS_DAYS = 90;
 // A liked paper the feed ranks by stays this long after a reader last did.
 export const KEEP_LIKED_DAYS = 30;
 export const FEED_CANDIDATE_LIMIT = 4_000;
-// At least this many of every JOURNAL_FLOOR_WINDOW ranks are articles of an
-// area's journal lane while the asked lanes hold any, and more where the
-// ranking puts more (PAP-107). OpenAlex dates an article by its day alone,
-// mostly the day before the harvest, and that day sorts as its midnight, so
-// newest first the night's articles ranked behind a busy reader's whole day
-// of arXiv preprints.
+// The feed's page of corpus cards (FeedContext's PAGE_SIZE), and a request's
+// page when it names none.
+const FEED_PAGE_SIZE = 15;
+// At least this many of each page of the feed are articles of an area's
+// journal lane while the asked lanes hold any, and more where the ranking
+// puts more (PAP-107). OpenAlex dates an article by its day alone, mostly the
+// day before the harvest, and that day sorts as its midnight, so newest first
+// the night's articles ranked behind a busy reader's whole day of arXiv
+// preprints.
 const JOURNAL_FLOOR = 3;
-// The feed's page of corpus cards (FeedContext's PAGE_SIZE).
-const JOURNAL_FLOOR_WINDOW = 15;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
@@ -730,8 +731,12 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (!ranking) {
     const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
     const shown = new Set(served.map(candidate => candidate?.workId));
-    // Floored after the ranks served, so its windows start where a page does.
-    ranking = [...served, ...withJournalFloor((await rankCandidates(db, lanes, query, now)).filter(candidate => !shown.has(candidate.workId)))];
+    const ranked = (await rankCandidates(db, lanes, query, now)).filter(candidate => !shown.has(candidate.workId));
+    // Floored after the ranks served, so its windows start where a page does,
+    // and only for the feed's page: the app's exploration asks 2 to 8 cards of
+    // nearby categories, whose area lanes are the feed's own, and floored they
+    // would repeat the articles the feed's pages have placed.
+    ranking = [...served, ...(query.pageSize === FEED_PAGE_SIZE ? withJournalFloor(ranked) : ranked)];
     const through = (query.page + 1) * query.pageSize;
     await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through }).catch(error => console.warn('Feed ranking not cached', error));
   }
@@ -783,11 +788,11 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
 }
 
 /**
- * The order with at least JOURNAL_FLOOR area-lane articles in each window of
- * JOURNAL_FLOOR_WINDOW ranks while any are left. The articles a window is
- * owed take its last ranks; every other candidate keeps its order. A journal
- * article filed under a leaf (a topic lane, PubMed) shares the leaf's lane
- * with its preprints, so only the area lanes' articles count here.
+ * The order with at least JOURNAL_FLOOR area-lane articles in each page of
+ * FEED_PAGE_SIZE ranks while any are left. The articles a page is owed take
+ * its last ranks; every other candidate keeps its order. A journal article
+ * filed under a leaf (a topic lane, PubMed) shares the leaf's lane with its
+ * preprints, so only the area lanes' articles count here.
  */
 function withJournalFloor(ranked: RankedCandidate[]) {
   const articles: number[] = [];
@@ -797,11 +802,11 @@ function withJournalFloor(ranked: RankedCandidate[]) {
   const floored: RankedCandidate[] = [];
   let [article, other, inWindow] = [0, 0, 0];
   while (floored.length < ranked.length) {
-    const slot = floored.length % JOURNAL_FLOOR_WINDOW;
+    const slot = floored.length % FEED_PAGE_SIZE;
     if (slot === 0) inWindow = 0;
     const owed = Math.min(JOURNAL_FLOOR - inWindow, articles.length - article);
     const takesArticle = article < articles.length
-      && (other === others.length || owed >= JOURNAL_FLOOR_WINDOW - slot || articles[article] < others[other]);
+      && (other === others.length || owed >= FEED_PAGE_SIZE - slot || articles[article] < others[other]);
     if (takesArticle) inWindow += 1;
     floored.push(ranked[takesArticle ? articles[article++] : others[other++]]);
   }
@@ -859,7 +864,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     follows,
     positiveIds,
     page: Math.max(0, Math.floor(Number(body?.page) || 0)),
-    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE),
+    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
   };
 }

@@ -1,5 +1,6 @@
 import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
 import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
+import type { KeptRanking, RankingCache } from './paper-store.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -514,6 +515,58 @@ test("at least 3 of every 15 cards are the area's journal articles while its lan
   assert.deepEqual(await page(0, [likedPreprint.id]), { preprints: preprintIds.slice(0, 12), articles: articleIds.slice(0, 3) });
   // By one that puts the articles first, all five lead: the floor has no maximum.
   assert.deepEqual(await page(0, [likedArticle.id]), { preprints: preprintIds.slice(0, 10), articles: articleIds });
+});
+
+// 30 preprints of the last 30 hours, and 9 older articles of the physics area's lane.
+async function preprintsAndArticles() {
+  const store = corpus();
+  const preprints = Array.from({ length: 30 }, (_, index) => ({
+    ...arxivRecord, id: `2610.${40001 + index}`, arxivId: `2610.${40001 + index}`, title: `Quantum error correction, finding ${index + 1}`,
+    allCategories: ['quant-ph'], categories: ['quant-ph'], primaryCategory: 'quant-ph', published: new Date(NOW - (index + 1) * 3_600_000).toISOString(),
+  }));
+  const articles = Array.from({ length: 9 }, (_, index) => mapOpenAlexWork({
+    ...physicsWork, id: `https://openalex.org/W91000${index + 1}`, doi: `https://doi.org/10.7566/jpsj.96.${index + 1}`,
+    title: `Spectroscopy of layered crystals, part ${index + 1}`, publication_date: `2026-10-${20 - index}`,
+  })!);
+  await ingestPapers(store.env, [
+    ...preprints.map(paper => ({ paper, lanes: [] })),
+    ...articles.map(paper => ({ paper, lanes: ['area:physics'] })),
+  ], { now: NOW });
+  return { ...store, preprintIds: preprints.map(paper => paper.id), articleIds: articles.map(paper => paper.id) };
+}
+
+// The app's exploration asks 2 to 8 cards of nearby categories at a random
+// page (FeedContext), which reads the same area lanes as the feed's page.
+test("a page of another size than the feed's 15 cards is ranked as it is: the floor holds the feed's own page", async () => {
+  const { env, preprintIds, articleIds } = await preprintsAndArticles();
+  const ids = async (page: number, pageSize: number) => (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], page, pageSize }), { now: NOW }))
+    .map(item => item.id);
+  const pages = async (count: number, pageSize: number) => (await Promise.all(Array.from({ length: count }, (_, page) => ids(page, pageSize)))).flat();
+  // Newest first, the 30 preprints come before every article.
+  assert.deepEqual(await pages(6, 5), preprintIds);
+  assert.deepEqual(await pages(3, 8), preprintIds.slice(0, 24));
+  assert.deepEqual((await ids(0, 15)).filter(id => id.startsWith('openalex:')), articleIds.slice(0, 3));
+});
+
+test("each page of a ranking ranked again after the ranks served keeps the floor, and no paper comes back", async () => {
+  const { env, preprintIds, articleIds } = await preprintsAndArticles();
+  // As the corpus feed keeps an order until its follow-up work ends: the ranks served only.
+  const kept = new Map<string, KeptRanking>();
+  const cache: RankingCache = {
+    get: async key => kept.get(key) ?? null,
+    put: async (key, ranking) => { kept.set(key, { ranks: ranking.ranks.slice(0, ranking.served), served: ranking.served, final: false }); },
+  };
+  const page = async (number: number) => (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], page: number }), { now: NOW, cache }))
+    .map(item => item.id);
+  const first = await page(0);
+  // A preprint the harvest files before the next page.
+  const newest = { ...arxivRecord, id: '2610.49999', arxivId: '2610.49999', title: 'Quantum error correction, the newest finding', allCategories: ['quant-ph'], categories: ['quant-ph'], primaryCategory: 'quant-ph', published: new Date(NOW - 1_800_000).toISOString() };
+  await ingestPapers(env, [{ paper: newest, lanes: [] }], { now: NOW });
+  const [second, third] = [await page(1), await page(2)];
+  const articlesOf = (ids: string[]) => ids.filter(id => id.startsWith('openalex:'));
+  assert.deepEqual([first, second, third].map(articlesOf), [articleIds.slice(0, 3), articleIds.slice(3, 6), articleIds.slice(6)]);
+  assert.deepEqual(second.slice(0, 1), [newest.id], 'the paper that arrived starts the next page');
+  assert.deepEqual([...first, ...second, ...third].sort(), [...preprintIds, newest.id, ...articleIds].sort(), 'every paper once');
 });
 
 // An area's lane lists articles without an abstract too (PAP-107); the mapper
