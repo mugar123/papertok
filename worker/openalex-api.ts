@@ -304,7 +304,7 @@ export function openAlexCostFor(target: URL): OpenAlexBudget {
 // An edge miss: the shared store first, then -- and only then -- a reservation
 // and the call. Resolves without an origin so that everyone waiting on the
 // same miss can put their own on.
-async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest: boolean): Promise<RelayedAnswer> {
+async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest: HarvestAsk | null): Promise<RelayedAnswer> {
   const key = await sharedKey(cacheKey);
   const shared = await readShared(env, key);
   if (shared) {
@@ -320,9 +320,21 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest
   const cost = openAlexCostFor(target);
   // The harvest spends its own share of the day whatever it asks for, so the
   // shares closed by readers' searches and card batches do not stop it.
-  if (harvest) cost.tier = 'feed';
+  if (harvest) {
+    cost.tier = 'feed';
+    cost.part = harvest.part;
+    cost.newFollow = harvest.newFollow;
+  }
   if (cost.units > 0) {
-    const budget = await reserveOpenAlexBudget(env, '', cost, now);
+    // A ledger the harvest cannot reach answers it as one that cannot answer,
+    // with nothing sent to OpenAlex: the harvest tells that from OpenAlex
+    // failing (paper-sources.ts `askRoute`). A reader's request still fails
+    // as the router answers any other throw.
+    const budget = await reserveOpenAlexBudget(env, '', cost, now).catch((error: unknown) => {
+      if (!harvest) throw error;
+      console.warn('OpenAlex ledger unreachable for the harvest', error);
+      return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, { 'cache-control': 'no-store' }) };
+    });
     if (budget.error) return { status: budget.error.status, body: await budget.error.text(), headers: budget.error.headers, budgetRefusal: true };
   }
 
@@ -353,20 +365,24 @@ async function relayMiss(target: URL, cacheKey: Request, env: WorkerEnv, harvest
 }
 
 export function handleOpenAlex(request: Request, env: WorkerEnv) {
-  return relayOpenAlex(request, env, false);
+  return relayOpenAlex(request, env, null);
 }
+
+// What a billed harvest miss spends: the new follows' share for a run a new
+// follow started, otherwise the nightly run's, and the part of it a lane names.
+export type HarvestAsk = Pick<OpenAlexBudget, 'part' | 'newFollow'>;
 
 /**
  * The relay as the paper harvest asks it in-process: the same validation,
  * cache keys, shared store and reading, but a billed miss reserves the
- * harvest's share of the day (`feed`, `OPENALEX_HARVEST_DAILY_UNITS`) rather
- * than a reader's tier.
+ * harvest's share of the day (`feed`, `OPENALEX_HARVEST_DAILY_UNITS`) that
+ * `ask` names rather than a reader's tier.
  */
-export function handleHarvestOpenAlex(request: Request, env: WorkerEnv) {
-  return relayOpenAlex(request, env, true);
+export function handleHarvestOpenAlex(request: Request, env: WorkerEnv, ask: HarvestAsk = {}) {
+  return relayOpenAlex(request, env, ask);
 }
 
-async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: boolean) {
+async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestAsk | null) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -381,7 +397,8 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: boolean)
   // A request joins a miss in flight whatever its own tier: joining spends no
   // unit. It does not take that miss's budget refusal, because one URL can be
   // asked under two tiers -- the harvest spends `feed` where a reader spends the
-  // URL's own -- and a reader's closed tier used to end a harvest run's
+  // URL's own, and two of the harvest's lanes can spend two shares or parts of it --
+  // and a reader's closed tier used to end a harvest run's
   // enrichment. Whoever waited on a refused miss starts again under its own
   // tier, one at a time, so a URL still has at most one reservation and one
   // call in flight. OpenAlex's own refusal is its answer and is shared. The

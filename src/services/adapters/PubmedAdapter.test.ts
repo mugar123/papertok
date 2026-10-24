@@ -39,18 +39,17 @@ test('arXiv keeps the preprint default the builder used to hand everyone', () =>
   assert.equal(paper.publicationType, 'preprint');
 });
 
-// On 2026-10-21 the labels searched in title and abstract (`[tiab]`) returned
-// mostly reviews and papers that only name the discipline, and page 0 fell
-// below main for molecular biology and neuroscience. In every field the labels
-// also match Methods in Molecular Biology, whose chapters arrive a volume at a
-// time and are dropped from the feed, so they would empty the lane; the query
-// leaves the series out by ISSN. Records dated after today stay out as well.
-test('the feed query searches each label in every field, without the protocol series, up to today', (t) => {
+// On 2026-10-24 the labels searched as phrases in every field matched
+// affiliations and journal names, which the category check drops, and next to
+// nothing for a label joined by "&". The query asks for the check's own terms
+// in title and abstract, still without the protocol series or records dated
+// after today.
+test("the harvest query searches each category's terms in title and abstract, without the protocol series, up to today", (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T15:00:00Z') });
 
   assert.equal(
-    pubmedCategoryQuery(['bio.gen', 'bio.mol', 'med.psych']),
-    '("Genetics" OR "Molecular Biology" OR "Psychiatry & Mental Health") AND 1800/01/01:2026/10/20[dp] NOT ("1064-3745"[is] OR "1940-6029"[is])',
+    pubmedCategoryQuery(['med.pubh']),
+    '("public health"[tiab] OR "epidemiology"[tiab] OR "population health"[tiab] OR "disease burden"[tiab] OR "health policy"[tiab] OR "healthcare access"[tiab]) AND 1800/01/01:2026/10/20[dp] NOT ("1064-3745"[is] OR "1940-6029"[is])',
   );
 });
 
