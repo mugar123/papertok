@@ -270,12 +270,22 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // the reader to this page with the query intact rather than to a dead link.
   // The search effect below already keys on `query`, so seeding it is the
   // whole of the wiring.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
   const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState<string | null>(null);
-  const [activeSearchFilter, setActiveSearchFilter] = useState<SearchScopeId>('all');
+  const [activeSearchFilter, setActiveSearchFilter] = useState<SearchScopeId>(() => {
+    const scope = searchParams.get('scope');
+    return SEARCH_FILTER_OPTIONS.find(option => option.id === scope)?.id ?? 'all';
+  });
+  // The search and its scope live in the address too (replaced, never
+  // pushed), so Back from a result's page finds them again rather than an
+  // empty search.
+  useEffect(() => {
+    const term = query.trim();
+    setSearchParams(term ? { q: term, ...(activeSearchFilter !== 'all' && { scope: activeSearchFilter }) } : {}, { replace: true });
+  }, [query, activeSearchFilter, setSearchParams]);
   const [searchIssue, setSearchIssue] = useState<ReturnType<typeof describeSearchOutage>>(null);
 
   const [paperResults, setPaperResults] = useState<SearchResults['papers']>([]);
@@ -719,6 +729,14 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     });
   };
 
+  // Back to wherever the search was opened from, as the Explorer's Back does;
+  // For you only when the search is the first page in the tab.
+  const handleBack = () => {
+    const historyIndex = window.history.state?.idx;
+    if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
+    else navigate('/feed');
+  };
+
   const clearSearch = () => {
     updateQuery('', null, 'all');
   };
@@ -738,7 +756,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
           <button
             type="button"
             className="search-back-btn"
-            onClick={() => navigate('/feed')}
+            onClick={handleBack}
             aria-label={'Back'}
           >
             <ArrowLeft size={22} />
