@@ -276,6 +276,12 @@ export const WORKING_PAPER_SERIES_IDS = [
   'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
 ];
 
+// Subfields an area lane leaves out although the area's label covers them,
+// because the area's arXiv readers do not read them: Biomedical Engineering
+// was 60 of electrical engineering's 200 newest articles on 2026-10-23,
+// sensor materials, biomass conversion and tissue scaffolds among them.
+const AREA_LANE_LEFT_OUT: Readonly<Record<string, readonly string[]>> = { eess: ['2204'] };
+
 export type SourceName =
   | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-areas' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
   | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
@@ -453,6 +459,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexLabelFilterForArea(lane.slice('area:'.length)),
+      ...(AREA_LANE_LEFT_OUT[lane.slice('area:'.length)] || []).map(id => `primary_topic.subfield.id:!${id}`),
       windowFilter(),
       'type:article',
       'is_retracted:false',

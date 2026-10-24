@@ -431,14 +431,17 @@ test("an area's journal lane asks OpenAlex for the core journal articles labelle
 
   // Engineering is read as electrical engineering unless a subfield names
   // mechanical or civil work, and Economics as economics unless it is finance:
-  // each lane asks for what its label reads, and no paper twice.
+  // each lane asks for what its label reads, and no paper twice. Electrical
+  // engineering's lane also leaves out Biomedical Engineering (2204), 60 of its
+  // 200 newest on 2026-10-23: sensor materials, biomass conversion, tissue
+  // scaffolds and cancer nanomedicine among them.
   const areaFilters = async (lane: string) => {
     await SOURCES['openalex-areas'].fetchPage(env as never, { lane, page: 1, since: '' });
     return filtersOf(urls.at(-1)!).filter(filter => filter.startsWith('primary_topic.')).sort();
   };
   assert.deepEqual(await areaFilters('area:eess'), [
     'primary_topic.field.id:22',
-    ...['2202', '2203', '2205', '2206', '2210', '2211', '2212', '2215'].map(id => `primary_topic.subfield.id:!${id}`),
+    ...['2202', '2203', '2204', '2205', '2206', '2210', '2211', '2212', '2215'].map(id => `primary_topic.subfield.id:!${id}`),
   ]);
   assert.deepEqual(await areaFilters('area:mech'), ['primary_topic.subfield.id:2202|2203|2206|2210|2211']);
   assert.deepEqual(await areaFilters('area:econ'), ['primary_topic.field.id:20', 'primary_topic.subfield.id:!2003']);
@@ -466,9 +469,12 @@ test("an area's journal lane leaves out the working-paper series OpenAlex lists 
   }
 });
 
-test('the areas the feed fills from arXiv get a journal lane; medicine and biology, whose every leaf PubMed serves, do not', () => {
+// Statistics' label covers OpenAlex's Decision Sciences: of its 200 newest
+// articles on 2026-10-23, 107 were operations research and 40 information
+// systems, all labelled Statistics.
+test('the areas the feed fills from arXiv get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
   const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
-  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin', 'area:stat']);
+  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
 });
 
 // The cost of the lanes: one list call an area a night, two on a lane's first run.
