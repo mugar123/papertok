@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { Paper } from '../models/Paper.ts';
 import { OpenAlexAdapter } from './adapters/OpenAlexAdapter.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from './feedPublicationService.ts';
+import { placeNotableCards } from '../utils/feedEnrichment.ts';
 import { isFeedPublication } from './feedPublicationRules.ts';
 import { dribblingFetch } from '../test-support/deadlineHarness.ts';
 
@@ -318,4 +319,19 @@ test('a reported card that is no longer listed leaves every card in place, since
   assert.equal(dropUnreachedPublications(papers, classified, '10.5555/replaced-card'), papers);
   assert.deepEqual(dropUnreachedPublications(papers, classified, null).map(work => work.id), papers.filter((_, index) => index !== 6).map(work => work.id));
   assert.deepEqual(dropUnreachedPublications(papers, classified, papers[5].id), papers);
+});
+
+// One feed card in 15 is notable (placeNotableCards). A book taken out between
+// two notable cards left 14 cards between them until the next re-rank, which
+// a reader who does not stop on a card may never cause.
+test('a book left out after the reader leaves the notable cards after it fifteen cards apart, the other cards in their order', () => {
+  const notable = (id: string): Paper => ({ ...paper(`10.5555/${id}`), _notable: true });
+  const others = Array.from({ length: 45 }, (_, index) => paper(`10.5555/card-${index}`));
+  const papers = placeNotableCards(others, ['notable-0', 'notable-1', 'notable-2'].map(notable));
+  const notableAt = (list: Paper[]) => list.flatMap((work, index) => (work._notable ? [index] : []));
+  assert.deepEqual(notableAt(papers), [14, 29, 44]);
+  // The reader is on the fourth card; Crossref calls the twenty-first other card a book.
+  const kept = dropUnreachedPublications(papers, [paper(others[20].doi!, 'book')], others[3].id);
+  assert.deepEqual(notableAt(kept), [14, 29, 44]);
+  assert.deepEqual(kept.filter(work => !work._notable).map(work => work.id), others.filter((_, index) => index !== 20).map(work => work.id));
 });

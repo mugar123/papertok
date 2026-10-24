@@ -177,8 +177,10 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
       return null;
     }
     // A card can be saved before Crossref answered, or kept because the reader
-    // was on it. Nothing is on screen before a restore, so a book known now leaves.
-    return { ...snapshot, papers: applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication) };
+    // was on it. Nothing is on screen before a restore, so a book known now
+    // leaves, and the notable cards go back to their places (placeNotableCards).
+    const papers = applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication);
+    return { ...snapshot, papers: placeNotableCards(papers.filter(paper => !paper._notable), papers.filter(paper => paper._notable)) };
   } catch {
     return null;
   }

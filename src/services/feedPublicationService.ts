@@ -1,4 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
+import { placeNotableCards } from '../utils/feedEnrichment.ts';
 import { normalizeDoi } from '../utils/publicNavigation.ts';
 import { isFeedPublication, withCrossrefType } from './feedPublicationRules.ts';
 
@@ -25,6 +26,8 @@ let nextRequestAt = 0;
  * before the scroll reports it as visible. With no card reported, before the
  * first scroll or after a refresh, the reader is on the first card. A reported
  * card that is no longer listed leaves their place unknown: nothing is removed.
+ * The notable cards after the kept ones go back to their places
+ * (placeNotableCards): a removed card does not count towards the next one.
  */
 export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[], classified: Partial<Paper>[], visiblePaperId: string | null) {
   const visible = papers.findIndex(paper => paper.id === visiblePaperId);
@@ -32,7 +35,10 @@ export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[],
   const excluded = new Set(classified.filter(paper => !isFeedPublication(paper)).map(paper => paper.id));
   const lastReached = Math.max(0, visible) + 1;
   const kept = papers.filter((paper, index) => index <= lastReached || !excluded.has(paper.id));
-  return kept.length === papers.length ? papers : kept;
+  if (kept.length === papers.length) return papers;
+  const reached = kept.slice(0, lastReached + 1);
+  const unreached = kept.slice(lastReached + 1);
+  return [...reached, ...placeNotableCards(unreached.filter(paper => !paper._notable), unreached.filter(paper => paper._notable), reached)];
 }
 
 // Results outlive the tab, so a reopened app does not ask Crossref again for
