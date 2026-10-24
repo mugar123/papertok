@@ -17,7 +17,7 @@
       "Edit(/worker-configuration.d.ts)",
       "Edit(/.dev.vars*)",
       "Edit(/.env.local)",
-      "Edit(/.env.sentry-build-plugin)"
+      "Edit(/.env.posthog-cli)"
     ]
   },
   "hooks": {
