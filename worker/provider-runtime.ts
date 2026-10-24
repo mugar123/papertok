@@ -511,6 +511,9 @@ export function safeSourceQuery(value: unknown) {
 // agree with the other nine. PubMed and Semantic Scholar were read straight from
 // the browser in batches of 25, and capping them at the 10 the domain sources use
 // would quietly shrink every result set that migrates here.
+// The last page a source route serves; a later one is answered as this one.
+export const SOURCE_MAX_PAGE = 100;
+
 export function sourceRequestContext(request: Request, env: WorkerEnv, { limitFallback = 8, limitMax = 10 } = {}) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
@@ -520,7 +523,7 @@ export function sourceRequestContext(request: Request, env: WorkerEnv, { limitFa
   return {
     requestUrl,
     origin,
-    page: getSafeLimit(requestUrl.searchParams.get('page'), 1, 100),
+    page: getSafeLimit(requestUrl.searchParams.get('page'), 1, SOURCE_MAX_PAGE),
     limit: getSafeLimit(requestUrl.searchParams.get('limit'), limitFallback, limitMax),
     sort: requestUrl.searchParams.get('sort') === 'recent' ? 'recent' : 'relevance',
   };

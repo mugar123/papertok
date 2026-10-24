@@ -4,7 +4,7 @@ import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, evictExpired } from './paper-store.ts';
-import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 
 // arXiv announces at 20:00 US Eastern; by 02:30 UTC the day's records are listed.
@@ -264,6 +264,10 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
+  // A step a lane: its pages stay within one invocation's D1 queries.
+  for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
+    await phase(`backfill ${job.source} ${job.lane}`, () => step.do(`backfill ${job.source} ${job.lane}`, LANE_STEP, () => backfillLane(env, job)));
+  }
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
   await phase('evict', () => step.do('evict', async () => {
     await evictExpired(env, started);

@@ -31,7 +31,7 @@ export type EmbeddingEnv = {
 export const CORPUS_DAYS = 90;
 // A liked paper the feed ranks by stays this long after a reader last did.
 export const KEEP_LIKED_DAYS = 30;
-const FEED_CANDIDATE_LIMIT = 4_000;
+export const FEED_CANDIDATE_LIMIT = 4_000;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;

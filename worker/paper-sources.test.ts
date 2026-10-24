@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
-import { KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
@@ -287,6 +287,132 @@ test('a lane pages until the source reaches what the last run had, and records h
   assert.deepEqual(urls.map(url => url.searchParams.get('page')), ['1', '2'], 'the second page reached the overlap before the last run');
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM works').get() as { n: number }).n, 201);
   assert.deepEqual(db.prepare('SELECT harvested_through FROM lane_state').all().map(row => (row as { harvested_through: string }).harvested_through), ['2026-10-21T05:21:00.000Z']);
+});
+
+// Synthetic E-utilities answers: 41 full pages of zoology papers printed this
+// month, then a page printed before the corpus window, or this month's papers
+// without end. The clock stands still and the pauses between pages end at once.
+function pubmedListing(t: import('node:test').TestContext, { endless = false } = {}) {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void) => {
+    queueMicrotask(callback);
+    return 0;
+  });
+  const terms: string[] = [];
+  const realFetch = globalThis.fetch;
+  const realCaches = (globalThis as TestGlobals).caches;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    if (url.pathname.endsWith('/efetch.fcgi')) return new Response('<PubmedArticleSet></PubmedArticleSet>', { headers: { 'content-type': 'text/xml' } });
+    if (url.pathname.endsWith('/esearch.fcgi')) {
+      terms.push(url.searchParams.get('term')!);
+      const page = Number(url.searchParams.get('retstart')) / 50 + 1;
+      const idlist = page > 42 && !endless ? [] : Array.from({ length: 50 }, (_, index) => String(100_000 + page * 100 + index));
+      return Response.json({ esearchresult: { count: '2100', idlist } });
+    }
+    const ids = url.searchParams.get('id')!.split(',');
+    return Response.json({ result: Object.fromEntries(ids.map(uid => [uid, {
+      uid,
+      title: `Animal behavior of the hedgehog, study ${uid}`,
+      pubdate: Number(uid) >= 104_200 && !endless ? '2026 Mar 1' : '2026 Oct 1',
+      pubtype: ['Journal Article'],
+      articleids: [{ idtype: 'pubmed', value: uid }],
+    }])) });
+  }) as typeof fetch;
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    if (realCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = realCaches;
+  });
+  return { terms, env: { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding } as unknown as WorkerEnv };
+}
+
+test("a PubMed lane's backfill reads back from where the last run stopped, in a listing that ends at the day it began", async t => {
+  const { terms, env } = pubmedListing(t);
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const job = { source: 'pubmed', lane: 'bio.zoo' } as const;
+  const backfill = () => db.prepare('SELECT backfill_until, backfill_page FROM lane_state').get();
+
+  assert.equal(await backfillLane(store, job), 0, 'not before the daily harvest has run the lane');
+  assert.equal(terms.length, 0);
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+
+  await backfillLane(store, job);
+  assert.equal(terms.length, 40);
+  assert.ok(terms.every(term => term.endsWith(' AND hasabstract AND 1800/01/01:2026/10/24[edat]')));
+  assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
+
+  t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
+  terms.length = 0;
+  await backfillLane(store, job);
+  assert.equal(terms.length, 2, 'pages 41 and 42, where the listing passed the corpus window');
+  assert.ok(terms.every(term => term.endsWith('1800/01/01:2026/10/24[edat]')), 'the listing still ends at the first day');
+  assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: null });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM work_lanes WHERE lane = 'bio.zoo'").get() as { n: number }).n, 41 * 50);
+
+  terms.length = 0;
+  await backfillLane(store, job);
+  assert.equal(terms.length, 0, 'a finished backfill asks nothing more');
+});
+
+test("a refused page ends the lane's backfill for the run, which goes on from that page next run", async t => {
+  const { terms, env } = pubmedListing(t);
+  const { binding, db } = testD1();
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+  await backfillLane({ ...env, PUBMED_GLOBAL_MINUTE_LIMIT: '5', PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 5, "the minute's five");
+  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 6);
+});
+
+for (const failure of ['answers with an error', 'cannot be reached'] as const) {
+  test(`a backfill whose quota ledger ${failure} asks PubMed nothing and ends at its page, where the next run goes on`, async t => {
+    const { terms, env } = pubmedListing(t);
+    t.mock.method(console, 'warn', () => {});
+    const ledger = env.REQUEST_QUOTA_LEDGER!;
+    let down = true;
+    const failing = {
+      idFromName: (name: string) => ledger.idFromName(name),
+      get: (id: Parameters<typeof ledger.get>[0]) => ({
+        fetch: async (url: string, init?: RequestInit) => {
+          if (down && failure === 'cannot be reached') throw new Error('the ledger cannot be reached');
+          if (down) return new Response('down', { status: 500 });
+          return ledger.get(id).fetch(url, init);
+        },
+      }),
+    } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+    const { binding, db } = testD1();
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through, backfill_until, backfill_page) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z', '2026-10-24', 7)").run();
+    const store = { ...env, REQUEST_QUOTA_LEDGER: failing, PAPER_STORE: binding } as never;
+    const job = { source: 'pubmed', lane: 'bio.zoo' } as const;
+    assert.equal(await backfillLane(store, job), 0);
+    assert.equal(terms.length, 0);
+    assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 7);
+    down = false;
+    await backfillLane(store, job);
+    assert.equal(terms.length, 36, 'pages 7 to 42, where the listing passed the corpus window');
+  });
+}
+
+test("a backfill ends at the last page the PubMed route serves, which answers any later one with it", async t => {
+  const { terms, env } = pubmedListing(t, { endless: true });
+  const { binding, db } = testD1();
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through, backfill_until, backfill_page) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z', '2026-10-20', 95)").run();
+  await backfillLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 6, 'pages 95 to 100');
+  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number | null }).backfill_page, null);
+});
+
+test('a backfill stops once its lane holds as many papers as the feed reads', async t => {
+  const { terms, env } = pubmedListing(t);
+  const { binding, db } = testD1();
+  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+  const insert = db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('bio.zoo', ?, '2026-10-20')");
+  for (let id = 1; id <= FEED_CANDIDATE_LIMIT; id += 1) insert.run(id);
+  await backfillLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 0);
+  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number | null }).backfill_page, null);
 });
 
 test("a followed project's lane asks OpenAIRE by its id, with the funder only for a bare grant code, then OpenAlex by DOI", async t => {
