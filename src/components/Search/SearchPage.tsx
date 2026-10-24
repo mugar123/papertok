@@ -964,7 +964,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {projectResults.map((project) => (
                   <ListRow
                     key={project.id}
-                    meta={['Project', project.funder]}
                     title={getProjectDisplayName(project)}
                     onOpen={() => navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`)}
                     actions={(
@@ -976,8 +975,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                       />
                     )}
                   >
-                    {project.budget! > 0 && (
-                      <p className="list-row-byline">{(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!); } catch { return `${project.budget!.toLocaleString(locale)} €`; } })()}</p>
+                    {(project.funder || project.budget! > 0) && (
+                      <p className="list-row-byline">
+                        {[
+                          project.funder,
+                          project.budget! > 0 && (() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!); } catch { return `${project.budget!.toLocaleString(locale)} €`; } })(),
+                        ].filter(Boolean).join(' · ')}
+                      </p>
                     )}
                   </ListRow>
                 ))}
@@ -990,7 +994,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {conceptResults.map((concept) => (
                   <ListRow
                     key={concept.id}
-                    meta={['Topic', concept._localTopic ? concept.parent_display_name : concept.field_display_name]}
                     title={concept.display_name}
                     onOpen={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`)}
                     actions={(
@@ -1012,7 +1015,11 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         onToggle={handleToggleFollow}
                       />
                     )}
-                  />
+                  >
+                    {(concept._localTopic ? concept.parent_display_name : concept.field_display_name) && (
+                      <p className="list-row-byline">{concept._localTopic ? concept.parent_display_name : concept.field_display_name}</p>
+                    )}
+                  </ListRow>
                 ))}
               </div>
             )}
