@@ -5,36 +5,47 @@
   --career-gap: var(--space-5);
 }
 
+/* The negative top margin takes back the extra height of the toggle, so
+   the title stays where the card's padding puts it. */
+.career-head { display: flex; align-items: center; gap: var(--space-3); min-height: 28px; margin: -6px 0 var(--space-3); }
 .career-title {
-  margin: 0 0 var(--space-3);
+  flex: 1;
+  margin: 0;
   font: 600 0.75rem/1.3 var(--font-mono);
   color: var(--text-secondary);
+}
+.career-frame {
+  /* The list takes its new height at once and the frame follows it; until it
+     has, records past its edge are clipped instead of drawn over the legend. */
+  overflow-y: clip;
 }
 .career-years { font: 500 11px/1.4 var(--font-mono); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 
 /* Three shared rows: records above, the line, records below. Each stop is a
    column on the parent's rows (subgrid), so the line stays level however
-   much text a stop carries; stops alternate above and below the line. A
-   career wider than the card scrolls across, with stops as wide as
-   `--career-stop` (set inline) so the edge cuts the next one through. */
+   much text a stop carries; stops alternate above and below the line. */
 .career-line {
+  position: relative;
   display: grid; grid-auto-flow: column; grid-auto-columns: var(--career-stop, minmax(86px, 1fr));
   grid-template-rows: auto 16px auto; gap: var(--space-2) var(--career-gap);
   /* Room inside the scroll box for the focus ring of the stops at its edges. */
   margin: 0 calc(-1 * var(--space-1)); padding: var(--space-1) var(--space-1) var(--space-3); list-style: none;
+  /* An open long career is wider than the card, and so is a folded one on a
+     phone narrower than three stops: either scrolls across. Open, stops are
+     `--career-stop` wide (set inline), so the edge cuts the next one through. */
+  /* No scroll snapping: Safari re-snaps to the last stop it rested on when the
+     fold opens, so the open line would land scrolled to its middle. */
   overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain;
 }
+/* A line that folds keeps the same rows folded and open: each side holds
+   the tallest record a stop can show (years, two lines of organisation, two
+   of role), so opening or closing never moves the line up or down. */
+.career-line[data-foldable] { grid-template-rows: minmax(93px, auto) 16px minmax(93px, auto); }
 .career-stop {
   grid-row: 1 / span 3; display: grid; grid-template-rows: subgrid;
   min-width: 0;
 }
 .career-axis { position: relative; grid-row: 2; height: 16px; }
-/* The line, from each dot's centre across the gap to the next dot's, so
-   nothing runs past the last stop. Drawn under the dot, which comes later. */
-.career-stop:not(:last-child) .career-axis::before {
-  content: ''; position: absolute; top: 7px; left: 8px; right: calc(-1 * (var(--career-gap) + 8px)); height: 2px;
-  border-radius: var(--radius-full); background: var(--text-primary);
-}
 /* A filled dot centred on the line (7px down the 16px axis); the present
    gets a halo. Keyed on data-kind / data-current so the legend matches. */
 .career-dot {
@@ -53,12 +64,44 @@
   font: 600 14px/1.3 var(--font-body); color: var(--text-primary);
 }
 @media (hover: hover) and (pointer: fine) { .career-org:hover { text-decoration: underline; } }
-.career-org:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .career-role { font-size: 13px; line-height: 1.35; color: var(--text-secondary); }
 /* Two lines each, then an ellipsis; the whole record is in the tooltip. */
 .career-clamp {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
 }
+
+/* The line, from the first dot's centre to the last one's, so nothing runs
+   past the present. Positioned in the grid, it takes the area of the stop it
+   starts from (set inline) without taking a cell, and reaches on across the
+   gap to the next dot. Drawn under the dots, which come later. */
+.career-rail {
+  position: absolute; grid-row: 2; top: 7px; left: 8px; right: calc(-1 * (var(--career-gap) + 8px)); height: 2px;
+  border-radius: var(--radius-full); background: var(--text-primary); pointer-events: none;
+}
+/* After the fold, a dashed segment stands for the records it hides. */
+.career-rail.is-dashed { background: repeating-linear-gradient(90deg, var(--text-tertiary) 0 4px, transparent 4px 8px); border-radius: 0; }
+
+/* Where the fold stands, a gray dot in a ring, with a gap of the card's
+   ground between: a stop that stands for others, not a record of its own.
+   When the fold opens it travels to the first record it hides (a shared
+   layoutId) and takes that record's colour. */
+.career-fold-dot {
+  --dot: var(--text-tertiary);
+  grid-row: 2; top: 1px; left: 1px; width: 14px; height: 14px;
+  border: 1.5px solid var(--text-primary); box-sizing: border-box;
+  /* The gap is painted with the card, so the line underneath stops at the ring. */
+  background: radial-gradient(circle, var(--dot) 0 3.5px, var(--bg-card) 4px);
+}
+.career-line[data-opened] .career-dot { transition: background-color var(--motion-sheet) var(--ease-out); }
+@starting-style {
+  .career-line[data-opened] .career-dot { background: var(--text-tertiary); }
+}
+.career-toggle {
+  min-height: 28px; padding: 0 var(--space-2); border: 0; background: none; cursor: pointer;
+  font-size: 12px; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) { .career-toggle:hover { color: var(--text-primary); } }
+:is(.career-org, .career-toggle):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .career-legend {
   display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
@@ -67,3 +110,4 @@
 }
 .career-legend li { display: inline-flex; align-items: center; gap: var(--space-2); }
 .career-legend-mark { position: relative; width: 22px; height: 16px; flex: 0 0 auto; }
+
