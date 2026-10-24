@@ -60,21 +60,23 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
   assert.deepEqual(papers, [STORED]);
 });
 
-test('a page sends what the reader has seen as the filter the Worker reads, and asks for notable papers only with it', async () => {
+test('a page sends what the reader has seen as the filter the Worker reads, asks it to skip those papers, and asks for notable papers only with it', async () => {
   const { asked, options } = harness(answered([]));
   const seen = new Set(['2610.00001', 'openalex:W2107743791']);
   await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 2 }, options);
   await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 0 }, options);
   await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, notable: 2 }, options);
-  const [withNotable, seenOnly, without] = asked.map(entry => entry.body as { seen?: string; notable?: number });
+  const [withNotable, seenOnly, without] = asked.map(entry => entry.body as { seen?: string; skipsSeen?: boolean; notable?: number });
   assert.equal(withNotable.notable, 2);
   for (const body of [withNotable, seenOnly]) {
     const read = readFeedSeenFilter(body.seen);
     assert.ok(['2610.00001', 'openalex:W2107743791'].every(id => hasSeenPaper(read, id)));
     assert.equal(hasSeenPaper(read, 'openalex:W2493916176'), false);
+    // Bundles that send the filter only for notable papers do not ask, and keep page numbers.
+    assert.equal(body.skipsSeen, true, 'the Worker is asked to pass over the seen papers');
   }
   assert.ok(!('notable' in seenOnly), 'a page that asks for no notable papers says nothing of them');
-  assert.ok(!('seen' in without) && !('notable' in without), 'a page that says nothing of what was seen asks for no notable papers');
+  assert.ok(!('seen' in without) && !('skipsSeen' in without) && !('notable' in without), 'a page that says nothing of what was seen asks for no notable papers');
 });
 
 test('a page returns whether the Worker passed over the papers the filter holds', async () => {

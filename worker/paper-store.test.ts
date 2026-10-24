@@ -645,8 +645,9 @@ test("with twelve categories asked, a notable lane holding more than its listing
 // ─── A reload in one request ───
 
 // The filter holds the papers earlier sessions showed the reader. A page that
-// sends it walks the reader's ranking from its start past the filter, so a
-// reload needs no request per page the reader has seen (PAP-103).
+// sends it and asks to skip them walks the reader's ranking from its start
+// past the filter, so a reload needs no request per page the reader has seen
+// (PAP-103).
 test('a page that says what the reader has seen holds the next papers of their ranking they have not, whatever page it names, and its notable ones after them', async () => {
   const { env } = corpus();
   await ingestPapers(env, recentPapers(100), { now: NOW });
@@ -654,7 +655,7 @@ test('a page that says what the reader has seen holds the next papers of their r
   // Five pages and the notable card among them, and two papers of the sixth page.
   const seen = feedSeenFilter([...recentIds(0, 75), ...recentIds(77, 79), NOTABLE[0].id!]);
   for (const page of [0, 4]) {
-    const answer = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page, pageSize: 15, seen, notable: 3 }), { now: NOW });
+    const answer = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], page, pageSize: 15, seen, skipsSeen: true, notable: 3 }), { now: NOW });
     assert.deepEqual(answer.map(paper => paper.id), [...recentIds(75, 77), ...recentIds(79, 92), NOTABLE[1].id, NOTABLE[2].id], `page ${page}`);
     assert.deepEqual(answer.map(paper => paper._notable === true), [...Array(15).fill(false), true, true]);
   }
@@ -675,7 +676,7 @@ test('a reader who has seen a thousand papers of their ranking costs a few reads
   db.exec('COMMIT');
   const trips = roundTrips(t, env.PAPER_STORE!);
   const seen = feedSeenFilter(Array.from({ length: 1_000 }, (_, index) => paperId(index + 1)));
-  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen }), { now: NOW });
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen, skipsSeen: true }), { now: NOW });
   assert.deepEqual(page.map(paper => paper.id), Array.from({ length: 15 }, (_, index) => paperId(1_001 + index)));
   const idReads = trips.filter(trip => trip.some(sql => sql.includes("paper ->> '$.id'"))).length;
   assert.ok(idReads <= 4, `${idReads} reads of stored ids for 1,015 ranks`);

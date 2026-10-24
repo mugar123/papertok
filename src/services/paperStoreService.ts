@@ -14,11 +14,11 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
-  // The papers the reader has seen: a Worker that skips them answers with the
-  // next papers of the reader's ranking they have not seen, whatever `page`
-  // says (`skipsSeen`). With it, how many notable papers of its categories the
-  // page may add after its own: only unseen ones, for the app to place
-  // (placeNotableCards).
+  // The papers the reader has seen, sent with `skipsSeen`: a Worker that skips
+  // them answers with the next papers of the reader's ranking they have not
+  // seen, whatever `page` says, and says `skipsSeen` too. With it, how many
+  // notable papers of its categories the page may add after its own: only
+  // unseen ones, for the app to place (placeNotableCards).
   seen?: Iterable<string>;
   notable?: number;
   /**
@@ -53,7 +53,9 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  * `skipsSeen` says the Worker passed over the papers in `seen`; Workers
- * before it page by number.
+ * before it page by number. A request asks for it explicitly, so a Worker
+ * that skips seen papers pages by number for bundles that send `seen` only
+ * for notable papers.
  */
 export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   return askStore({
@@ -68,7 +70,7 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
-    ...(seen ? { seen: feedSeenFilter(seen), ...(notable > 0 ? { notable } : {}) } : {}),
+    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
   }, options);
 }

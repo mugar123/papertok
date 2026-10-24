@@ -671,9 +671,12 @@ export interface FeedQuery {
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
-  // The papers the reader has seen (`feedSeenFilter`): the page passes over
-  // them. Without it, `page` names the page, and no notable papers come.
+  // The papers the reader has seen (`feedSeenFilter`). Without it, no notable
+  // papers come.
   seen: BloomFilter | null;
+  // The page passes over the papers `seen` holds (PAP-103). Without it, `page`
+  // names the page: apps that send `seen` only for notable papers page by number.
+  skipsSeen: boolean;
   // How many unseen notable papers the page adds after its own, at most.
   notable: number;
 }
@@ -714,8 +717,8 @@ export interface RankingCache {
  * order with nothing left to serve is not final: the lanes may be about to
  * fill.
  *
- * With `seen`, the page is the first papers of the order the filter does not
- * hold, whatever `page` says, so a reload needs one request however many
+ * With `skipsSeen`, the page is the first papers of the order the filter does
+ * not hold, whatever `page` says, so a reload needs one request however many
  * pages the reader saw before (PAP-103); a false positive passes over a paper
  * the reader has not seen. When the order holds none, the page is the one
  * `page` names, papers the reader has seen, rather than none.
@@ -738,7 +741,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notable = ranked.notable;
   }
   const [own, unseen] = await Promise.all([
-    query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize) : null,
+    query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize) : null,
     // After the page's own papers, for the app to place: one it leaves out is
     // still unseen, so a later page offers it again.
     query.seen && query.notable > 0 ? unseenRanks(db, notable, query.seen, query.notable) : null,
@@ -868,7 +871,7 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
 
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
-  seen?: unknown; notable?: unknown; waitForLikes?: unknown;
+  seen?: unknown; skipsSeen?: unknown; notable?: unknown; waitForLikes?: unknown;
 }
 
 export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
@@ -896,6 +899,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
     seen,
+    skipsSeen: seen !== null && body?.skipsSeen === true,
     notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
   };
 }

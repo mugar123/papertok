@@ -178,8 +178,9 @@ function readBody<T>(request: Request) {
 /**
  * `POST /store/papers`: a page of corpus papers for the reader's categories,
  * follows and likes, or with `ids`, the corpus's copies of those papers. A
- * page asked with `seen` says `skipsSeen`: it passed over the papers the
- * filter holds, so the app has no later page to try for unseen ones.
+ * page asked with `seen` and `skipsSeen` says `skipsSeen`: it passed over the
+ * papers the filter holds, so the app has no later page to try for unseen
+ * ones.
  */
 export async function handleCorpusFeed(
   request: Request,
@@ -253,7 +254,7 @@ export async function handleCorpusFeed(
   ]).then(async ([waiting, added]) => {
     if (kept?.[1].final && cache && !waiting && !added) await cache.put(...kept);
   }).catch(error => console.warn('Paper store follow-up failed', error)));
-  return { papers, ...(query.seen ? { skipsSeen: true as const } : {}) };
+  return { papers, ...(query.skipsSeen ? { skipsSeen: true as const } : {}) };
 }
 
 /**

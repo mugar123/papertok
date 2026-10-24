@@ -169,12 +169,12 @@ test("a reload is one request for the reader's next unseen papers, and the next 
   await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
   // Two pages an earlier session showed.
   const shown = ids(papers.slice(0, 30));
-  const reload = await ask({ categories: ['cs.CL'], page: 0, pageSize: 15, seen: feedSeenFilter(shown) });
+  const reload = await ask({ categories: ['cs.CL'], page: 0, pageSize: 15, seen: feedSeenFilter(shown), skipsSeen: true });
   assert.deepEqual(ids(reload.papers), ids(papers.slice(30, 45)));
   assert.equal(reload.skipsSeen, true, 'the answer says the filter was applied');
   // Whatever the lanes hold now, the next page reads the order the reload kept.
   db.exec('DELETE FROM work_lanes');
-  const next = await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen: feedSeenFilter([...shown, ...ids(reload.papers)]) });
+  const next = await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen: feedSeenFilter([...shown, ...ids(reload.papers)]), skipsSeen: true });
   assert.deepEqual(ids(next.papers), ids(papers.slice(45, 60)));
   // Each filter is its request's own: both read one kept order, which holds neither.
   assert.equal(entries.size, 1);
@@ -187,7 +187,7 @@ test("a reader who has seen every paper of their ranking gets the page they aske
   const { env, ask } = store();
   const papers = recent(20);
   await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
-  const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen) });
+  const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true });
   // All but two seen: those two, with no seen paper added.
   const twoLeft = await ask(request(0, ids(papers.slice(0, 18))));
   assert.deepEqual([ids(twoLeft.papers), twoLeft.skipsSeen], [ids(papers.slice(18)), true]);
@@ -201,6 +201,22 @@ test("a reader who has seen every paper of their ranking gets the page they aske
   const numbered = await ask({ categories: ['cs.CL'], page: 1, pageSize: 15 }, 'reader-2');
   assert.deepEqual(ids(numbered.papers), ids(papers.slice(15)));
   assert.equal('skipsSeen' in numbered, false);
+});
+
+// The bundles of PAP-99's second part send the filter with every main page,
+// for notable papers only, and go one page on while a page holds no unseen
+// paper. They do not add the papers they leave out to it.
+test('an app that sends the filter without asking to skip seen papers keeps page numbers', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(45);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  // The first page, all seen.
+  const seen = feedSeenFilter(ids(papers.slice(0, 15)));
+  const first = await ask({ categories: ['cs.CL'], page: 0, pageSize: 15, seen, notable: 3 });
+  assert.deepEqual(ids(first.papers), ids(papers.slice(0, 15)), 'the page it names');
+  assert.equal('skipsSeen' in first, false, 'so the app goes one page on');
+  assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen, notable: 3 })).papers), ids(papers.slice(15, 30)));
 });
 
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
