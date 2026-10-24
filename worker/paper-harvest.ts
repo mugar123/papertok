@@ -1,6 +1,7 @@
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
+import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, evictExpired } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SourceRefused, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
@@ -23,18 +24,16 @@ const ENRICH_STEPS = 150;
 // followed search costs ten units, an entity one, of the 700 a day the
 // nightly refresh of followed lanes may spend (paper-sources.ts); once they
 // are spent, the run's other OpenAlex followed lanes wait and keep their turn.
-// A harvest that fails otherwise is the lane's turn too, and the lane is due
-// again only after FAILED_TURN_NIGHTS (`harvestFollowedLane`).
+// A harvest that fails otherwise is the lane's turn too (`harvestFollowedLane`).
 // Neither asking for a lane again nor following new ones moves a lane ahead of
 // one due earlier, so lanes one account follows after another reader's lane
 // was refreshed, however many, wait behind it.
 const FOLLOWED_LANES_PER_RUN = 400;
-// The nights a followed lane waits after its first, second, third and later
-// failed turns in a row. One failure (a timeout, a provider's 5xx) costs the
-// lane its turn and no more. A lane that keeps failing, such as a search
-// OpenAlex answers with a 400, which still spends its ten units, is asked less
-// and less often, but at least once a week, so one that recovers waits a week
-// at most.
+// The nights a followed lane waits after its provider rejected its request
+// the first, second, third and later times in a row. A lane that keeps being
+// rejected, such as a search OpenAlex answers with a 400, which still spends
+// its ten units, is asked less and less often, but at least once a week,
+// behind every lane harvested before its retry date.
 const FAILED_TURN_NIGHTS = [1, 2, 4, 7];
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
@@ -63,14 +62,27 @@ export async function harvestStart(db: D1Database, set: string, now = Date.now()
   return (row?.harvested_through || daysFromNow(-CORPUS_DAYS, now)).slice(0, 10);
 }
 
+// From the start of the UTC day `nights` from now, so that day's nightly run finds the lane due.
+const dueAfter = (nights: number) => `${daysFromNow(nights).slice(0, 10)}T00:00:00.000Z`;
+
+// A provider that answered the lane's own request with a 4xx other than 429
+// rejected the request itself, as OpenAlex rejects a search it cannot parse.
+function rejectsLane(error: unknown) {
+  const status = Number((error as UpstreamError)?.status);
+  return status >= 400 && status < 500 && status !== 429;
+}
+
 /**
  * A followed lane's turn in the run that started at `run`. The turn is
- * recorded as failed before the harvest starts, so a lane whose step stops
- * mid-lane past its timeout has had it too, and the step's retry passes the
- * lane over: a lane has one turn a run. A harvest clears the failures. A
- * refusal (`SourceRefused`: a spent share, part or day, a pace beat, or a
- * ledger that cannot answer) puts back what was there, so the lane keeps its
- * turn.
+ * recorded before the harvest starts, as a lane due again from the start of
+ * the next UTC day: a lane whose step stops mid-lane past its timeout has had
+ * it too, and the step's retry passes the lane over, so a lane has one turn a
+ * run. A harvest clears the record. A refusal (`SourceRefused`: a spent share,
+ * part or day, a pace beat, or a ledger that cannot answer) puts back what was
+ * there, so the lane keeps its turn. A 5xx, a timeout or a provider's own 429
+ * says nothing about the lane, so it costs the turn and no more, and an outage
+ * of any length leaves no wait behind it. A rejected request (`rejectsLane`)
+ * adds a wait for each rejection in a row (`FAILED_TURN_NIGHTS`).
  */
 async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
   const db = env.PAPER_STORE!;
@@ -80,15 +92,17 @@ async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
   if (turns.retry_at && Date.parse(turns.retry_at) > run) return 0;
   const record = (failed: number, retryAt: string | null) => db.prepare('UPDATE followed_lanes SET failed_turns = ?, retry_at = ? WHERE lane = ?')
     .bind(failed, retryAt, job.lane).run();
-  const failed = turns.failed_turns + 1;
-  // From the start of that UTC day, so the nightly run of that day finds it due.
-  await record(failed, `${daysFromNow(FAILED_TURN_NIGHTS[Math.min(failed, FAILED_TURN_NIGHTS.length) - 1]).slice(0, 10)}T00:00:00.000Z`);
+  await record(turns.failed_turns, dueAfter(1));
   try {
     const stored = await harvestLane(env, job);
     await record(0, null);
     return stored;
   } catch (error) {
     if (error instanceof SourceRefused) await record(turns.failed_turns, turns.retry_at);
+    else if (rejectsLane(error)) {
+      const failed = turns.failed_turns + 1;
+      await record(failed, dueAfter(FAILED_TURN_NIGHTS[Math.min(failed, FAILED_TURN_NIGHTS.length) - 1]));
+    }
     throw error;
   }
 }

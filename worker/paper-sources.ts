@@ -3,6 +3,7 @@ import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Harvested, StoreEnv } from './paper-store.ts';
 import type { HarvestAsk } from './openalex-api.ts';
+import type { UpstreamError } from './provider-runtime.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
@@ -247,8 +248,16 @@ async function askRoute(handler: RouteHandler, path: string, params: Record<stri
     const answer = await response.clone().json().catch(() => null) as { code?: unknown } | null;
     if (answer?.code === 'PROVIDER_QUOTA_NOT_CONFIGURED') throw new SourceRefused(path, LEDGER_REFUSAL_SECONDS);
   }
-  if (!response.ok) throw new Error(`${path} answered ${response.status}`);
+  if (!response.ok) throw answeredError(path, response.status);
   return response;
+}
+
+// The status travels on the error: a followed lane's harvest tells a request
+// the provider rejected from a provider that failed (paper-harvest.ts).
+function answeredError(name: string, status: number) {
+  const error: UpstreamError = new Error(`${name} answered ${status}`);
+  error.status = status;
+  return error;
 }
 
 // A refusal that names a short wait is waited out, twice at most a page, and
@@ -402,7 +411,7 @@ async function openAireProjectDois(lane: string) {
   url.searchParams.set(project.includes('::') ? 'openaireProjectID' : 'projectID', project);
   if (funder && !project.includes('::')) url.searchParams.set('funder', funder);
   const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 10_000);
-  if (!response.ok) throw new Error(`OpenAIRE answered ${response.status}`);
+  if (!response.ok) throw answeredError('OpenAIRE', response.status);
   type Pid = { '@classname'?: string; $?: unknown };
   const payload = await response.json() as { response?: { results?: { result?: unknown } } };
   const rows = [payload?.response?.results?.result || []].flat() as Array<{ metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: Pid | Pid[] } } } }>;

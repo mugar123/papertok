@@ -5,8 +5,9 @@
 -- from before this migration take the time they were last written.
 ALTER TABLE followed_lanes ADD COLUMN registered_at TEXT;
 UPDATE followed_lanes SET registered_at = requested_at;
--- A lane's turns that failed in a row, and when it is due again after the
--- last of them (paper-harvest.ts `harvestFollowedLane`). A harvest clears
--- both; `lane_state.harvested_through` stays where the last harvest got to.
+-- How many times in a row a provider rejected a lane's request, and when a
+-- lane whose last turn failed is due again (paper-harvest.ts
+-- `harvestFollowedLane`). A harvest clears both;
+-- `lane_state.harvested_through` stays where the last harvest got to.
 ALTER TABLE followed_lanes ADD COLUMN failed_turns INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE followed_lanes ADD COLUMN retry_at TEXT;
