@@ -984,6 +984,17 @@ test('a re-rank reorders the cards after the reader and leaves every notable car
   }
 });
 
+// A re-rank orders the cards after the reader's next three. Three cards before
+// a notable last card, that card is all there is: placed among no other
+// cards, it had no place and left the list (62ed02ee).
+test('a re-rank with only a notable card after the reader leaves the list as it is', () => {
+  const shown = placeNotableCards(records('card', 42), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
+  assert.equal(shown.at(-1)?.id, 'notable-2');
+  const { state, reRankFeed } = reRanking(shown, shown.at(-4)!.id);
+  reRankFeed(null);
+  assert.deepEqual(state.papers, shown);
+});
+
 test('the related papers a like brings join the cards after the reader, and every notable card keeps its place', async () => {
   const shown = placeNotableCards(records('card', 42), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
   const state = { papers: shown };
