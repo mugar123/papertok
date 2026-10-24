@@ -156,7 +156,7 @@ test('a notable card the reader has not reached stays ahead of them in a restore
   assert.deepEqual(ids(restored), ids(saved), 'with no book to leave, the restore keeps the saved list');
 });
 
-// The re-rank locks the reader's card and the three after it, so a notable
+// The re-rank locks the reader's card and the two after it, so a notable
 // card one place early among them stayed there: the reader met it fourteenth.
 test('a book known at the restore after the reader leaves its place to the next card, so the notable card is still the fifteenth they meet', () => {
   const saved = placeNotableCards(Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), [notable('notable-0')]);

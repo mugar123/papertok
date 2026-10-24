@@ -1007,9 +1007,9 @@ test('a re-rank reorders the cards after the reader and leaves every notable car
   }
 });
 
-// A re-rank orders the cards after the reader's next three. Three cards before
-// a notable last card, that card is all there is: placed among no other
-// cards, it had no place and left the list (62ed02ee).
+// A re-rank orders the cards after the reader's card and the two after it.
+// Three cards before a notable last card, that card is all there is: placed
+// among no other cards, it had no place and left the list (62ed02ee).
 test('a re-rank with only a notable card after the reader leaves the list as it is', () => {
   const shown = placeNotableCards(records('card', 42), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
   assert.equal(shown.at(-1)?.id, 'notable-2');
@@ -1049,7 +1049,7 @@ test('Not interested on a card leaves the next notable card the fifteenth the re
 // the reader is on. After a reload on another page, a late Crossref answer
 // had no card: the books left and the other cards kept their order, so a
 // notable card came one place early, and stayed there when it was among the
-// cards the next re-rank locks (the reader's and the three after it).
+// cards the next re-rank locks (the reader's card and the two after it).
 test('after a reload on another page, a late book leaves each notable card the fifteenth the reader meets, through the next re-rank', async t => {
   t.mock.method(console, 'log', () => {});
   const withText = (paper: FeedRecord) => ({ ...paper, abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } });
