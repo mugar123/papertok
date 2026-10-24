@@ -15,6 +15,7 @@ function storageHarness() {
   };
   return {
     values,
+    alarm: () => alarm,
     storage: {
       transaction: <T>(callback: (transaction: LedgerTransaction) => Promise<T>) => callback(transaction),
       getAlarm: async () => alarm,
@@ -51,6 +52,69 @@ test('reserves subject and global quota atomically', async () => {
   assert.deepEqual(await third.json<QuotaReading>(), {
     accepted: false, scope: 'user', subjectUsage: 2, globalUsage: 2,
   });
+});
+
+test('cached requests spend subject quota while misses reserve and release their separate global amount', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const call = (action: string, globalAmount: number) => ledger.fetch(new Request('https://internal', {
+    method: 'POST', body: JSON.stringify({
+      action, subjectKey: 'a'.repeat(64), subjectLimit: 3, globalLimit: 1, globalAmount,
+    }),
+  })).then(response => response.json<QuotaReading>());
+  assert.deepEqual(await call('reserve', 1), {
+    accepted: true, subjectUsage: 1, globalUsage: 1, remaining: 2,
+  });
+  assert.deepEqual(await call('reserve', 0), {
+    accepted: true, subjectUsage: 2, globalUsage: 1, remaining: 1,
+  });
+  assert.deepEqual(await call('release', 0), {
+    released: true, subjectUsage: 1, globalUsage: 1, remaining: 2,
+  });
+  assert.deepEqual(await call('reserve', 1), {
+    accepted: false, scope: 'global', subjectUsage: 1, globalUsage: 1,
+  });
+});
+
+test('a short retention deadline replaces the default alarm and later requests cannot extend it', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T12:00:00Z') });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const call = (expiresAt?: number) => ledger.fetch(new Request('https://internal', {
+    method: 'POST', body: JSON.stringify({
+      action: 'reserve', subjectKey: 'a'.repeat(64), subjectLimit: 30, globalLimit: 120, expiresAt,
+    }),
+  }));
+  assert.equal((await call()).status, 200);
+  assert.equal(harness.alarm(), Date.parse('2026-10-27T12:00:00Z'));
+  assert.equal((await call(Date.parse('2026-10-24T12:02:00Z'))).status, 200);
+  assert.equal(harness.alarm(), Date.parse('2026-10-24T12:02:00Z'));
+  assert.equal((await call(Date.parse('2026-10-24T12:03:00Z'))).status, 200);
+  assert.equal((await call()).status, 200);
+  assert.equal(harness.alarm(), Date.parse('2026-10-24T12:02:00Z'));
+  await ledger.alarm();
+  assert.equal(harness.values.size, 0);
+});
+
+test('invalid global amounts and expiry deadlines do not write quota state', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T12:00:00Z') });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  for (const extra of [
+    { globalAmount: -1 }, { globalAmount: null }, { globalAmount: 0.5 },
+    { expiresAt: Date.now() }, { expiresAt: Date.now() + 4 * 24 * 60 * 60 * 1000 },
+    { expiresAt: 'tomorrow' }, { expiresAt: null },
+  ]) {
+    const response = await ledger.fetch(new Request('https://internal', {
+      method: 'POST', body: JSON.stringify({
+        action: 'reserve', subjectKey: 'a'.repeat(64), subjectLimit: 30, globalLimit: 120, ...extra,
+      }),
+    }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { code: 'INVALID_REQUEST' });
+  }
+  assert.equal(harness.values.size, 0);
+  assert.equal(harness.alarm(), null);
 });
 
 test('quota client hashes the user identity before sending it to storage', async () => {

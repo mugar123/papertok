@@ -376,6 +376,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [editing, setEditing] = useState<OwnList | null>(null);
   const [removing, setRemoving] = useState<RowTarget | null>(null);
   const [createdListId, setCreatedListId] = useState<string | null>(null);
+  const [foldersArrived, setFoldersArrived] = useState(false);
   const [removalOpen, setRemovalOpen] = useState(false);
   const [deletingList, setDeletingList] = useState<OwnList | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1499,7 +1500,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           owner is already reading is not a loading state, and announcing it
           puts a spinner over a finished screen. Same rule as the save modal. */}
       {loading && !expandedList && lists.length === 0 && (
-        <div className="lists-inline-status" aria-live="polite">
+        <div className="lists-inline-status is-loading" aria-live="polite">
           <div className="lists-loading-spinner" />
           <span>{'Updating personal lists...'}</span>
         </div>
@@ -1524,7 +1525,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
         initial={false}
         mode="wait"
         custom={expandedList || pendingOpen ? 1 : -1}
-        onExitComplete={() => window.scrollTo({ top: 0, behavior: 'instant' })}
+        onExitComplete={() => { window.scrollTo({ top: 0, behavior: 'instant' }); setFoldersArrived(true); }}
       >
       {expandedList ? (
         <motion.div key="list" className="lists-expanded" {...listViewMotion}>
@@ -1887,7 +1888,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
           </header>
           <div className="lists-grid">
             <AnimatePresence initial={false} mode="popLayout">
-            {displayLists.map((list) => {
+            {displayLists.map((list, index) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
               const behindIds = (list.paperIds || []).slice(0, 2).reverse();
@@ -1899,9 +1900,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                 animate={{ opacity: 1, transform: 'scale(1)' }}
                 transition={isNew ? { ...cardMotion.transition, delay: 0.14 } : cardMotion.transition}
                 key={list.id}
-                className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
+                className={`list-card${accent ? '' : ' list-card--uncoloured'}${foldersArrived || isNew ? '' : ' list-card--arrive'}`}
                 onClick={() => enterList(list)}
-                style={accent ? { '--list-accent': accent } : undefined}
+                style={{ ...(accent && { '--list-accent': accent }), '--arrive-index': Math.min(index, 3) }}
               >
                 <div className="list-card-preview">
                   <svg className="list-card-folder" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={FOLDER_BACK} /></svg>

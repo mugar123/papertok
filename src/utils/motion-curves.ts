@@ -6,6 +6,10 @@ export const EASE_IN_OUT = Object.freeze([0.77, 0, 0.175, 1] as const); // --eas
 export const EASE_DRAWER = Object.freeze([0.32, 0.72, 0, 1] as const); // --ease-drawer
 export const EASE_OUT_QUAD = Object.freeze([0.25, 0.46, 0.45, 0.94] as const); // --ease-out-quad
 
+// The CSS duration tokens, in seconds for framer-motion.
+export const MOTION_BASE_S = 0.2; // --motion-base
+export const MOTION_SHEET_S = 0.3; // --motion-sheet
+
 // A box whose size `auto` cannot interpolate: it travels from the size it had
 // (`from`, measured before the change) to the one it lands on, unless the two
 // match. `width` travels across, any other property down. `extra` rides on
@@ -16,5 +20,18 @@ export function animateSize(element: Pick<HTMLElement, 'offsetWidth' | 'offsetHe
   element.animate(
     [{ [property]: `${from}px`, ...extra }, { [property]: `${to}px`, ...extra }],
     { duration, easing: `cubic-bezier(${ease.join(', ')})` },
+  );
+}
+
+export function pulseIcon(svg: Element | null | undefined, on: boolean) {
+  if (!svg) return;
+  svg.getAnimations().forEach((running) => running.cancel());
+  svg.animate(
+    [
+      { transform: 'scale(1)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+      { transform: on ? 'scale(1.16)' : 'scale(0.9)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+      { transform: 'scale(1)' },
+    ],
+    { duration: 260 },
   );
 }

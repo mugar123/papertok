@@ -4,7 +4,7 @@ import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired } from './paper-store.ts';
-import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 
@@ -36,13 +36,8 @@ const FOLLOWED_LANES_PER_RUN = 400;
 // its ten units, is asked less and less often: from its fourth rejection, no
 // sooner than 7 nights later, then behind every lane harvested before that date.
 const FAILED_TURN_NIGHTS = [1, 2, 4, 7];
-// Lanes a step works through before handing the rest to the next one, well
-// inside its timeout and D1's 1,000 queries per invocation (a lane is at most
-// about 125): a lane that has started finishes within the step.
-const LANE_STEP_BUDGET_MS = 3 * 60_000;
-const LANES_PER_STEP = 5;
-// Sixty pages per lane per run, split into short steps so historical reads
-// release their Worker and D1 resources between groups of five pages.
+// Sixty pages per lane per run, split into five-page steps so a retry replays
+// only one bounded group of historical reads.
 const BACKFILL_STEPS = 12;
 // A followed lane no request has written in this long (paper-feed.ts) is no
 // longer harvested.
@@ -80,84 +75,72 @@ function rejectsLane(error: unknown) {
   return LANE_REJECTIONS.has(Number((error as UpstreamError)?.status));
 }
 
+// D1 failures belong to the Workflow's bounded retries, not the provider's
+// refusal policy. Passing them over can leave a lane's papers unprocessed.
+function isD1Error(error: unknown) {
+  return error instanceof Error && error.message.startsWith('D1_');
+}
+
+interface FollowedTurn { failedTurns: number | null; retryAt: string | null }
+
 /**
- * A followed lane's turn in the run that started at `run`. The turn is
- * recorded before the harvest starts, as a lane due again from the start of
- * the next UTC day: a lane whose step stops mid-lane past its timeout has had
- * it too, and the step's retry passes the lane over, so a lane has one turn a
- * run. A harvest clears the record. A refusal (`SourceRefused`: a spent share,
- * part or day, a pace beat, a quota ledger that answers with an error, or one
- * the OpenAlex relay cannot reach) puts back what was there, so the lane keeps
- * its turn. A 5xx, a timeout, a provider's own 429 or another 4xx that is not
- * about the lane's request says nothing about the lane, so it costs the turn
- * and no more, and an outage of any length leaves no wait behind it. A
- * rejected request (`rejectsLane`) adds a wait for each rejection in a row
- * (`FAILED_TURN_NIGHTS`).
+ * Harvest a due followed lane. Its outcome is persisted by a separate
+ * Workflow step so a failed bookkeeping write does not repeat the provider
+ * request or mark an unfinished harvest as served.
  */
-async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
+async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number): Promise<FollowedTurn | null> {
   const db = env.PAPER_STORE!;
   const turns = await db.prepare('SELECT failed_turns, retry_at FROM followed_lanes WHERE lane = ?').bind(job.lane)
     .first<{ failed_turns: number; retry_at: string | null }>();
-  if (!turns) return harvestLane(env, job);
-  if (turns.retry_at && Date.parse(turns.retry_at) > run) return 0;
-  const record = (failed: number, retryAt: string | null) => db.prepare('UPDATE followed_lanes SET failed_turns = ?, retry_at = ? WHERE lane = ?')
-    .bind(failed, retryAt, job.lane).run();
-  await record(turns.failed_turns, dueAfter(1));
+  if (!turns) {
+    await harvestLane(env, job);
+    return null;
+  }
+  if (turns.retry_at && Date.parse(turns.retry_at) > run) return null;
   try {
-    const stored = await harvestLane(env, job);
-    await record(0, null);
-    return stored;
+    await harvestLane(env, job);
+    return { failedTurns: 0, retryAt: null };
   } catch (error) {
-    if (error instanceof SourceRefused) await record(turns.failed_turns, turns.retry_at);
-    else if (rejectsLane(error)) {
+    if (isD1Error(error)) throw error;
+    console.warn(`Harvest of ${job.source} ${job.lane} failed`, error);
+    if (error instanceof SourceRefused) return null;
+    if (rejectsLane(error)) {
       const failed = turns.failed_turns + 1;
-      await record(failed, dueAfter(FAILED_TURN_NIGHTS[Math.min(failed, FAILED_TURN_NIGHTS.length) - 1]));
+      return { failedTurns: failed, retryAt: dueAfter(FAILED_TURN_NIGHTS[Math.min(failed, FAILED_TURN_NIGHTS.length) - 1]) };
     }
-    throw error;
+    return { failedTurns: turns.failed_turns, retryAt: dueAfter(1) };
   }
-}
-
-/**
- * Harvests lanes in order until the step's budget is spent, and returns how
- * many it went through. A lane that fails is logged and passed over: the
- * other lanes, and every other source, stay served. A source that refuses
- * for longer than a lane may wait (a spent daily budget, a minute's ceiling
- * still full after the lane waited one out) is passed over for the rest of
- * the step. Followed lanes, harvested by the run that started at
- * `followedRun`, each take their turn (`harvestFollowedLane`).
- */
-export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], followedRun?: number, budgetMs = LANE_STEP_BUDGET_MS, started = Date.now()) {
-  const refused = new Set<string>();
-  let processed = 0;
-  for (const job of jobs) {
-    if (processed >= LANES_PER_STEP || (processed > 0 && Date.now() - started > budgetMs)) break;
-    processed += 1;
-    if (refused.has(job.source)) continue;
-    try {
-      await (followedRun === undefined ? harvestLane(env, job) : harvestFollowedLane(env, job, followedRun));
-    } catch (error) {
-      if (error instanceof SourceRefused) refused.add(job.source);
-      console.warn(`Harvest of ${job.source} ${job.lane} failed`, error);
-    }
-  }
-  return processed;
 }
 
 async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jobs: LaneJob[], followedRun?: number) {
-  let remaining = jobs;
-  // Step names are the replay keys, so each round gets its own number.
-  for (let round = 0; remaining.length > 0; round += 1) {
-    let processed = LANES_PER_STEP;
+  // Separate replay keys: one failed lane must not repeat or discard other
+  // lanes' completed work. Steps can share an invocation's CPU allowance.
+  for (const [round, job] of jobs.entries()) {
+    let turn: FollowedTurn | null = null;
     try {
-      processed = await step.do(`${label}: lanes ${round}`, LANE_STEP, () => harvestLanes(env, remaining, followedRun));
+      turn = await step.do(`${label}: lanes ${round}`, LANE_STEP, async () => {
+        if (followedRun !== undefined) return harvestFollowedLane(env, job, followedRun);
+        try {
+          await harvestLane(env, job);
+        } catch (error) {
+          if (isD1Error(error)) throw error;
+          console.warn(`Harvest of ${job.source} ${job.lane} failed`, error);
+        }
+        return null;
+      });
     } catch (error) {
-      // Past its retries (a lane that keeps timing out): the lanes the step
-      // may have reached are passed over, and harvested again tomorrow. A
-      // followed lane that timed out has had its turn, and the retries pass
-      // it over rather than time out on it again.
-      console.error(`Harvest of ${label} lanes ${round} failed; passing over ${LANES_PER_STEP} lanes`, error);
+      console.error(`Harvest of ${job.source} ${job.lane} failed past its step retries`, error);
+      // A database outage does not spend a followed lane's turn. A hard
+      // stop such as a CPU limit does, after the bounded retries are spent.
+      if (followedRun !== undefined && !isD1Error(error)) turn = { failedTurns: null, retryAt: dueAfter(1) };
     }
-    remaining = remaining.slice(processed);
+    if (turn) {
+      const outcome = turn;
+      await phase(`record ${label} lane ${round}`, () => step.do(`${label}: result ${round}`, PAGE_STEP, async () => {
+        await env.PAPER_STORE!.prepare('UPDATE followed_lanes SET failed_turns = COALESCE(?, failed_turns), retry_at = ? WHERE lane = ?')
+          .bind(outcome.failedTurns, outcome.retryAt, job.lane).run();
+      }));
+    }
   }
 }
 
@@ -215,13 +198,14 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
 /**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
- * lanes readers follow, and embeddings before historical reads or maintenance.
- * Each enriched batch is embedded before the next one; backfill has a final
- * embedding pass within the same daily budget. Eviction follows them, and last
- * the filing of the areas' journal articles under leaves, which reads the
- * vectors. A run for newly followed lanes (`payload.lanes`) harvests those
- * within the new follows' share of OpenAlex and embeds only their papers: the
- * rest of the corpus is the daily run's to embed.
+ * notable lanes due their weekly listing, the lanes readers follow, and
+ * embeddings before historical reads or maintenance. Each enriched batch is
+ * embedded before the next one; backfill has a final embedding pass within the
+ * same daily budget. Eviction follows them, and last the filing of the areas'
+ * journal articles under leaves, which reads the vectors. A run for newly
+ * followed lanes (`payload.lanes`) harvests those within the new follows' share
+ * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
+ * run's to embed.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
@@ -270,6 +254,8 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
+  // Before eviction, which drops a notable paper two weeks after its last listing.
+  await phase('notable lanes', async () => runLaneJobs(env, step, 'notable', await step.do('notable lanes', () => notableLaneJobs(db, started))));
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
 
   await phase('enrich', async () => {
@@ -283,7 +269,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
     }
   });
   await phase('embed', () => embedAll(env, step));
-  // Steps of a lane's backfillPages each, within an invocation's CPU and D1 queries.
+  // Each retry replays at most the lane's backfillPages allowance.
   for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
     for (let round = 0; round < BACKFILL_STEPS; round += 1) {
       const name = `backfill ${job.source} ${job.lane}${round ? ` ${round}` : ''}`;

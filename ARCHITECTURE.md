@@ -131,7 +131,11 @@ candidate limits and ranking rules.
 [paper-store-service.ts](src/services/paper-store-service.ts) requests corpus
 pages. [FeedContext](src/context/feed-context.tsx) combines their semantic signal
 with the [recommendation engine](src/utils/recommendation-engine.ts), manages
-interactions and preserves the unread queue. Other feed modes and guest flows
+interactions and preserves the unread queue.
+[feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives one card in
+fifteen to an unseen notable paper the corpus adds after a page; the
+[paper-store contract](worker/README.md#paper-store) says how they are chosen
+and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
 live arXiv and OpenAlex results and applies search relevance.

@@ -4,7 +4,11 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { ruleTransform } from '../../utils/nav-rule.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
+import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
+import type { Icon } from '@phosphor-icons/react';
+import type { FeedTab, FeedTabKey } from '../../utils/feed-tabs.ts';
 import { MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
+import { FEED_TABS } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
 import { shouldOpenSearchOnSlash } from './search-shortcut.ts';
 
@@ -71,6 +75,34 @@ function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string,
  */
 let navbarHasArrived = false;
 
+const TAB_ICONS: Record<FeedTabKey, Icon> = { home: Stack, following: UserCheck };
+
+function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRelease }: {
+  tab: FeedTab;
+  active: boolean;
+  onTabClick: (event: MouseEvent<HTMLAnchorElement>, tab: FeedTab) => void;
+  onTabPress: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => void;
+  onTabLift: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => void;
+  onTabRelease: () => void;
+}) {
+  const TabIcon = TAB_ICONS[tab.key];
+  return (
+    <NavLink
+      to={tab.path}
+      end
+      data-tab={tab.key}
+      className={`navbar-link ${active ? 'active' : ''}`}
+      onClick={(event) => onTabClick(event, tab)}
+      onPointerDown={(event) => onTabPress(event, tab)}
+      onPointerUp={(event) => onTabLift(event, tab)}
+      onPointerCancel={onTabRelease}
+    >
+      <TabIcon size={15} aria-hidden="true" />
+      {tab.label}
+    </NavLink>
+  );
+}
+
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
   const { user } = useAuth();
   const [arriving, setArriving] = useState(() => !navbarHasArrived);
@@ -82,7 +114,8 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     navbarHasArrived = true;
     setArriving(false);
   };
-  const { setFeedMode } = useFeed();
+  const { setFeedMode, refreshFeed, isRefreshing } = useFeed();
+  const followingUpdates = useFollowingUpdates();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -99,8 +132,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [onOpenSearch]);
 
-  const isFollowingActive = pathname === '/following';
-  const isHomeActive = pathname === '/feed';
   // Which tab is current is the pathname, and nothing else. This used to also
   // require `feedMode === 'top'`, from a time when this feed had more than one
   // mode; `feedMode` has had exactly one reachable value since — FeedContext
@@ -114,7 +145,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   // mode is ever added, this line and that `aria-current` have to be revisited
   // together: a `className` callback suppresses the appended class, but nothing
   // in NavLink's plain API gates `aria-current`.
-  const activeTab = isHomeActive ? 'home' : isFollowingActive ? 'following' : '';
+  const activeTab = FEED_TABS.find(tab => tab.path === pathname)?.key ?? '';
   const linksRef = useRef<HTMLDivElement | null>(null);
   /**
    * The press is remembered only to decide, on `pointerup`, whether the finger
@@ -133,11 +164,18 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
    * is, so the mark slowed, sped up and eased again — the glitch the reader
    * saw. One measurement, one curve.
    */
-  const touchRef = useRef<{ tab: string; x: number; y: number; at: number } | null>(null);
+  const touchRef = useRef<{ tab: FeedTabKey; x: number; y: number; at: number } | null>(null);
   const handledRef = useRef(0);
-  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: string) => {
+  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => {
     if (event.button !== 0 || event.pointerType !== 'touch') return;
-    touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
+    touchRef.current = { tab: tab.key, x: event.clientX, y: event.clientY, at: Date.now() };
+  };
+  /** For you starts from its top mode; pressing the tab you are already on reloads its feed. */
+  const chooseTab = (tab: FeedTab) => {
+    if (tab.key === 'home') setFeedMode('top');
+    if (pathname !== tab.path) return;
+    if (tab.key === 'following') void followingUpdates.refresh();
+    else if (!isRefreshing) void refreshFeed();
   };
   const releasePress = () => {
     touchRef.current = null;
@@ -162,20 +200,25 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
    * synthesise one, or react-router would push the same route twice and Back
    * would need two presses.
    */
-  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: string, to: string) => {
+  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => {
     const start = touchRef.current;
     touchRef.current = null;
-    if (event.pointerType !== 'touch' || !start || start.tab !== tab) return;
+    if (event.pointerType !== 'touch' || !start || start.tab !== tab.key) return;
     if (Date.now() - start.at > 1500) return;
     if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
     handledRef.current = Date.now();
-    if (tab === 'home') setFeedMode('top');
-    if (pathname !== to) void navigate(to);
+    chooseTab(tab);
+    if (pathname !== tab.path) void navigate(tab.path);
   };
-  const swallowSynthesisedClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (Date.now() - handledRef.current > 1500) return;
-    handledRef.current = 0;
-    event.preventDefault();
+  const handleTabClick = (event: MouseEvent<HTMLAnchorElement>, tab: FeedTab) => {
+    if (Date.now() - handledRef.current <= 1500) {
+      handledRef.current = 0;
+      event.preventDefault();
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (pathname === tab.path) event.preventDefault();
+    chooseTab(tab);
   };
   const rule = useActiveTabRule(linksRef, activeTab, activeTab);
 
@@ -245,32 +288,17 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
               nothing nested under /feed could ever mark this tab. React Router
               runs this onClick before its own and navigates unless it was
               defaultPrevented, so the mode reset rides along unchanged. */}
-          <NavLink
-            to="/feed"
-            end
-            data-tab="home"
-            className={`navbar-link ${isHomeActive ? 'active' : ''}`}
-            onClick={(event) => { swallowSynthesisedClick(event); setFeedMode('top'); }}
-            onPointerDown={(event) => pressTab(event, 'home')}
-            onPointerUp={(event) => liftTab(event, 'home', '/feed')}
-            onPointerCancel={releasePress}
-          >
-            <Stack size={15} aria-hidden="true" />
-            {'For you'}
-          </NavLink>
-
-          <NavLink
-            to="/following"
-            data-tab="following"
-            className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
-            onClick={swallowSynthesisedClick}
-            onPointerDown={(event) => pressTab(event, 'following')}
-            onPointerUp={(event) => liftTab(event, 'following', '/following')}
-            onPointerCancel={releasePress}
-          >
-            <UserCheck size={15} aria-hidden="true" />
-            {'Following'}
-          </NavLink>
+          {FEED_TABS.map(tab => (
+            <FeedTabLink
+              key={tab.key}
+              tab={tab}
+              active={pathname === tab.path}
+              onTabClick={handleTabClick}
+              onTabPress={pressTab}
+              onTabLift={liftTab}
+              onTabRelease={releasePress}
+            />
+          ))}
         </div>
 
         <div className="navbar-right">

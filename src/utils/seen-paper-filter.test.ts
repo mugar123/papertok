@@ -10,8 +10,10 @@ import {
   addSeenPaper,
   createSeenFilter,
   deserializeSeenFilter,
+  feedSeenFilter,
   hasSeenPaper,
   isSeenFilterEmpty,
+  readFeedSeenFilter,
   serializeSeenFilter,
 } from './seen-paper-filter.ts';
 import type { BloomFilter } from 'bloomfilter';
@@ -95,4 +97,24 @@ test('degrades to empty rather than throwing on a corrupt payload', () => {
   // Right encoding, wrong number of bits: rejected instead of silently
   // answering with a filter that reports false negatives.
   assert.equal(deserializeSeenFilter(btoa('abcd')), null);
+});
+
+test('a feed request carries the seen papers in a few kilobytes, and the Worker reads back every one of them', () => {
+  const seen = Array.from({ length: 2000 }, (_, index) => paperId(index));
+  const encoded = feedSeenFilter(seen);
+  // One size whatever it holds, well inside the 16 KB a feed request may be.
+  assert.equal(feedSeenFilter([]).length, encoded.length);
+  assert.ok(encoded.length <= 4096, `${encoded.length} characters`);
+
+  const read = readFeedSeenFilter(encoded);
+  assert.ok(seen.every(id => hasSeenPaper(read, id)), 'no seen paper reads as unseen');
+  let falsePositives = 0;
+  for (let index = 0; index < 20000; index += 1) {
+    if (hasSeenPaper(read, `arxiv:99${String(index).padStart(6, '0')}`)) falsePositives += 1;
+  }
+  assert.ok(falsePositives / 20000 < 0.02, `${falsePositives} unseen papers read as seen`);
+
+  assert.equal(readFeedSeenFilter(encoded.slice(4)), null, 'cut short');
+  assert.equal(readFeedSeenFilter(`${encoded.slice(0, -4)}@@@@`), null, 'not base64');
+  assert.equal(readFeedSeenFilter(serializeSeenFilter(fill(createSeenFilter(), 1))), null, "the profile's filter is another size");
 });

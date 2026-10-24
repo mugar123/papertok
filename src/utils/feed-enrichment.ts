@@ -99,6 +99,102 @@ export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined
   return sources.primary !== 'openalex' && !(sources.enrichedBy || []).includes('openalex');
 }
 
+// One feed card in NOTABLE_EVERY is a notable paper the reader has not seen,
+// when one is left (Pablo, 2026-10-23): the last card of every NOTABLE_EVERY,
+// counted from the last notable card shown, or from the feed's first card.
+// The corpus adds unseen ones after a page's own papers (worker/paper-store.ts)
+// and the app places them, so the count holds whatever size a page is.
+export const NOTABLE_EVERY = 15;
+
+// The index of the last notable place in `cards`: the last notable card, or
+// `notableAfter`, the card just before a notable card the reader met and
+// dismissed. The reader met that place, so the count goes on from it.
+const lastNotablePlace = (cards: ReadonlyArray<Partial<Paper>>, notableAfter: string | null) => Math.max(
+  cards.findLastIndex(paper => paper?._notable),
+  notableAfter === null ? -1 : cards.findIndex(paper => paper?.id === notableAfter),
+);
+
+// The cards since the last notable place, up to the next one: when more have
+// passed, the next card takes that place, late rather than a place later.
+const cardsSinceNotable = (cardsBefore: ReadonlyArray<Partial<Paper>>, notableAfter: string | null) => Math.min(
+  NOTABLE_EVERY - 1,
+  cardsBefore.length - 1 - lastNotablePlace(cardsBefore, notableAfter),
+);
+
+// The first of the feed's `cards` a page's notable places may move: after the
+// last notable place and the `reached` first cards, those the reader is on or
+// about to reach.
+const firstMovable = (cards: ReadonlyArray<Partial<Paper>>, reached: number, notableAfter: string | null) => Math.max(
+  Math.min(reached, cards.length),
+  lastNotablePlace(cards, notableAfter) + 1,
+);
+
+/**
+ * How many notable places a page of up to `others` other cards has after the
+ * feed's `cardsBefore` (`joinNotablePage`): a place follows every
+ * NOTABLE_EVERY - 1 other cards.
+ */
+export function notablePlaces(cardsBefore: ReadonlyArray<Partial<Paper>>, others: number, reached = cardsBefore.length, notableAfter: string | null = null) {
+  const from = firstMovable(cardsBefore, reached, notableAfter);
+  return Math.floor((cardsSinceNotable(cardsBefore.slice(0, from), notableAfter) + cardsBefore.length - from + Math.max(0, others)) / (NOTABLE_EVERY - 1));
+}
+
+/**
+ * The page shown after the feed's `cardsBefore`: every other card, in order,
+ * with the notable cards (`_notable`), in theirs, at the places: every
+ * NOTABLE_EVERY-th card since the last notable one, the place right after the
+ * page's last card included, and the page's first card when the feed has
+ * passed a place. A place with no notable card left takes the next other
+ * card, and a notable card with no place is left out.
+ */
+export function placeNotableCards<T extends Partial<Paper>>(others: T[], notable: T[], cardsBefore: ReadonlyArray<Partial<Paper>> = [], notableAfter: string | null = null) {
+  const since = cardsSinceNotable(cardsBefore, notableAfter);
+  const left = [...notable];
+  const page: T[] = [];
+  const atPlace = () => (since + page.length + 1) % NOTABLE_EVERY === 0;
+  for (const paper of others) {
+    if (atPlace() && left.length) page.push(left.shift()!);
+    page.push(paper);
+  }
+  if (others.length && atPlace() && left.length) page.push(left.shift()!);
+  return page;
+}
+
+/**
+ * The feed's `cards` with a page joined (`placeNotableCards`). The other
+ * cards after the last notable place, past the `reached` ones, are placed
+ * again before the page's: related papers a like inserted, or a notable book
+ * that left, can leave a place among them with no notable card, and the
+ * page's first notable card takes it. `notableAfter` is the card just before
+ * a notable card the reader met and dismissed (`lastNotablePlace`).
+ */
+export function joinNotablePage<T extends Partial<Paper>>(cards: T[], others: T[], notable: T[], reached = cards.length, notableAfter: string | null = null) {
+  const from = firstMovable(cards, reached, notableAfter);
+  const before = cards.slice(0, from);
+  return [...before, ...placeNotableCards([...cards.slice(from), ...others], notable, before, notableAfter)];
+}
+
+/**
+ * `cards` with their other cards replaced by `others` and their notable cards
+ * by `notable`, each in order, in the places of their kind. A notable place
+ * already counts the cards the reader meets before it, and a count of the list
+ * can miss one: a card the reader dismissed leaves the list, not their count.
+ * A notable place with no notable card left takes the next other card. Once
+ * the other cards run out, no place after them is filled, so a notable card
+ * there leaves; other cards left over follow the last place.
+ */
+export function keepNotablePlaces<T extends Partial<Paper>>(cards: T[], others: T[], notable: T[]) {
+  const otherCards = [...others];
+  const notableCards = [...notable];
+  const kept: T[] = [];
+  for (const card of cards) {
+    if (card._notable && notableCards.length) kept.push(notableCards.shift()!);
+    else if (otherCards.length) kept.push(otherCards.shift()!);
+    else break;
+  }
+  return [...kept, ...otherCards];
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
