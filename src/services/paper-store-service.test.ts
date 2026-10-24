@@ -136,8 +136,9 @@ test('a full positive and followed profile still fits with long rejection IDs an
   assert.ok(body.negativeIds.length < 24);
 });
 
-// The seen filter is 3,200 characters whatever it holds, and the Worker reads
-// at most 16 KiB of a request: the exclusions and rejections make room for it.
+// The seen filter is 3,200 characters whatever it holds, and the app keeps a
+// request under 16,000 bytes, which a Worker before the 20,480-byte cap takes
+// too: the exclusions and rejections make room for it.
 test('a page asking for notable papers with a full profile keeps the whole seen filter below the request body limit', async () => {
   const { asked, options } = harness(answered([]));
   const ids = Array.from({ length: 24 }, (_, index) => `10.1234/${index}${'a'.repeat(283)}`);

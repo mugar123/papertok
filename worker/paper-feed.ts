@@ -224,9 +224,10 @@ async function settlesWithin(work: Promise<unknown>, ms: number) {
 }
 
 const LOOKUP_MAX_IDS = 30;
-// A page's request with the reader's follows, which the app sends as stored,
-// and the 3,200-character `seen` filter: room for about 140 followed authors.
-// Past it, a 413 leaves the feed without the follows' papers.
+// The app keeps a page's request under 16,000 bytes and sends the 20 follows
+// the page reads. Bundles before that send every follow as stored: with the
+// 3,200-character `seen` filter, this holds about 130 followed authors, and
+// past it a 413 leaves their feed without the follows' papers.
 const MAX_BODY_BYTES = 20_480;
 
 function readBody<T>(request: Request) {

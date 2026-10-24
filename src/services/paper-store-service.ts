@@ -51,8 +51,9 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
 /**
  * A page of the paper corpus (worker/paper-store.ts): every source the feed
  * reads, harvested, merged and enriched once a day in the Worker, here ranked
- * by the reader's liked and saved papers. Categories are the app's; follows
- * are sent as they are stored, and the Worker decides how each is served.
+ * by the reader's liked and saved papers. Categories are the app's; the
+ * follows the Worker reads are sent as they are stored, and the Worker
+ * decides how each is served.
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  * `skipsSeen` says the Worker passed over the papers in `seen`; Workers

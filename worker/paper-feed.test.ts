@@ -508,8 +508,9 @@ test('a reader who follows a hundred and twenty entities still gets their follow
   rankingCaches(t);
   const { env, ask } = store();
   await ingestPapers(env, [{ paper: paper('2610.70001', "A followed author's paper", 1), lanes: ['author:A5000000000'] }]);
-  // As the app sends its follows' page (fetchCorpusPage): every follow as it
-  // is stored, its likes and what the reader has seen.
+  // As a bundle from before the app sent only the follows the page reads
+  // sends its follows' page: every follow as stored, its likes and what the
+  // reader has seen.
   const follows = Array.from({ length: 120 }, (_, index) => ({
     type: 'author', canonicalId: `https://openalex.org/A${5_000_000_000 + index}`, displayName: `Followed author number ${index}`, metadata: {},
   }));
