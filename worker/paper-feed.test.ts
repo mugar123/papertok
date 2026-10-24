@@ -633,6 +633,35 @@ for (const [removed, name] of dropped) {
   });
 }
 
+// A kept order holds the ids of its first 600 ranks; the corpus then drops 400
+// works the reader's filter leaves unseen (an eviction, or folds, within the
+// order's 15 minutes). The request chooses the page size and the filter, so it
+// can make the walk land on exactly those works.
+for (const pageSize of [1, 15, 30]) {
+  test(`a page of ${pageSize} past 400 works the corpus dropped behind the kept order costs a few reads, whatever its size`, async t => {
+    rankingCaches(t);
+    const { env, db, ask } = store();
+    const papers = recent(700);
+    await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+    const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize, seen: feedSeenFilter(seen), skipsSeen: true });
+    await ask(request(0, []));
+    // A page whose walk leaves the ids of the first 600 ranks on the kept order.
+    await ask(request(1, ids(papers.slice(0, 590))));
+    for (const item of papers.slice(100, 500)) removeWork(db, item.id);
+    const binding = env.PAPER_STORE as D1Database;
+    const prepare = binding.prepare.bind(binding);
+    const statements: string[] = [];
+    t.mock.method(binding, 'prepare', (sql: string) => {
+      statements.push(sql);
+      return prepare(sql);
+    });
+    const answer = await ask(request(2, ids(papers.slice(0, 100))));
+    assert.deepEqual(ids(answer.papers), ids(papers.slice(500, 500 + pageSize)));
+    const workReads = statements.filter(sql => sql.startsWith('SELECT id, paper, kept_until')).length;
+    assert.ok(workReads <= 2 && statements.length <= 6, `${statements.length} statements, ${workReads} of them reads of works`);
+  });
+}
+
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {

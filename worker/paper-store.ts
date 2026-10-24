@@ -959,17 +959,18 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
  * seen, in order, how many ranks the walk took to find them (`end`), and
  * whether it read paper ids (`read`). The filter holds the ids the app was
  * served, so a candidate's is read from its row, unless a walk already left
- * it on the candidate (`paperId`): 200 ranks the first time and twice as many
- * each time after, so a reader who has seen a few thousand papers costs a
- * few reads.
+ * it on the candidate (`paperId`) and the walk trusts it (not `recheck`):
+ * 200 ranks the first time and twice as many each time after, so a reader
+ * who has seen a few thousand papers costs a few reads, and a whole ranking
+ * at most six.
  */
-async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, from = 0) {
+async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, { from = 0, recheck = false } = {}) {
   const unseen: RankedCandidate[] = [];
   let end = from;
   let read = false;
   for (let size = 200; end < ranks.length && unseen.length < wanted; size *= 2) {
     const chunk = ranks.slice(end, end + size);
-    const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && candidate.paperId === undefined);
+    const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && (recheck ? candidate.paperId !== '' : candidate.paperId === undefined));
     if (unread.length) {
       const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
         .bind(JSON.stringify(unread.map(candidate => candidate.workId))).all<{ id: number; paper_id: string | null }>();
@@ -990,21 +991,21 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
  * Takes out of `walk` the candidates whose work `works` lacks, and walks
  * `ranks` on for as many, reading their rows into `works`. A page left those
  * ids on the kept order before the corpus dropped the work; each loses its
- * id, so no later page reads it again or counts it as a paper.
+ * id, so no later page reads it again or counts it as a paper. The ids left
+ * on the ranks after them can name dropped works too, so the walk on reads
+ * them again rather than trust them: one more walk however many works the
+ * corpus dropped, not one per page of them. A work dropped between that walk
+ * and the read of its row leaves the page one paper short.
  */
 async function walkPastDropped(db: D1Database, walk: Awaited<ReturnType<typeof unseenRanks>>, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, works: Map<number, WorkRow>) {
-  for (;;) {
-    const dropped = walk.unseen.filter(candidate => !works.has(candidate.workId));
-    if (dropped.length === 0) return;
-    for (const candidate of dropped) candidate.paperId = '';
-    walk.unseen = walk.unseen.filter(candidate => works.has(candidate.workId));
-    walk.read = true;
-    const more = await unseenRanks(db, ranks, seen, wanted - walk.unseen.length, walk.end);
-    walk.end = more.end;
-    if (more.unseen.length === 0) return;
-    (await readWorks(db, more.unseen.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
-    walk.unseen.push(...more.unseen);
-  }
+  const found = walk.unseen.filter(candidate => works.has(candidate.workId));
+  if (found.length === walk.unseen.length) return;
+  const more = await unseenRanks(db, ranks, seen, wanted - found.length, { from: walk.end, recheck: true });
+  (await readWorks(db, more.unseen.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
+  for (const candidate of [...walk.unseen, ...more.unseen]) if (!works.has(candidate.workId)) candidate.paperId = '';
+  walk.unseen = [...found, ...more.unseen.filter(candidate => works.has(candidate.workId))];
+  walk.end = more.end;
+  walk.read = true;
 }
 
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
