@@ -3492,8 +3492,8 @@ const pdfRelay = (target: string, env: WorkerEnv, upstream: typeof fetch, origin
   upstream,
   () => reportApi.fetch(new Request(
     `https://papertok-report-api.example/pdf?url=${encodeURIComponent(target)}`,
-    { headers: origin ? { origin } : {} },
-  ), env),
+    { headers: { ...(origin ? { origin } : {}), 'cf-connecting-ip': '192.0.2.1' } },
+  ), { PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes', ...env }),
 );
 const pdfUpstream = (calls: string[]) => async (url: RequestInfo | URL) => {
   calls.push(String(url));
