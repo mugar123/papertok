@@ -223,6 +223,11 @@ const FOLLOWED_PER_PAGE = 6;
 // RANDOM_EXPLORATION from random ones when the reader is bored.
 const NEARBY_EXPLORATION_MAX = 8;
 const RANDOM_EXPLORATION = 2;
+// Notable papers a page asks for beyond its places. The corpus leaves out the
+// papers in the seen filter and the likes and saves it ranks by, not every
+// paper the reader liked, saved, read or dismissed: the feed drops those
+// (isAvailablePaper), and a spare takes the place.
+const NOTABLE_SPARE = 2;
 
 /**
  * Papers of the reader's follows from the paper corpus: the Worker serves an
@@ -1299,9 +1304,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             order: queryMode,
             // Unseen notable papers for the places of the largest page this
             // load can show: the corpus's fifteen, the follows' six and, after
-            // the first screen, up to ten exploration cards (STEP 5).
+            // the first screen, up to ten exploration cards (STEP 5); and the
+            // spares. A page has one place at least.
             seen: sessionSeenPapers.current,
-            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION)),
+            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION)) + NOTABLE_SPARE,
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);

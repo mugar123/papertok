@@ -38,7 +38,7 @@ const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_PAGE_SIZE = 30;
-// Notable papers a page adds: more than the app's largest page has places for (three).
+// Notable papers a page adds: the app's largest page asks for its three places and two spares.
 const FEED_MAX_NOTABLE = 5;
 const FEED_MAX_PAGE = 100;
 const DEFAULT_FEED_USER_MINUTE_LIMIT = 60;
