@@ -2,13 +2,14 @@
 // than to scale, like a metro line. Stops take turns above and below the line;
 // long text is clamped to two lines, with the full record in the tooltip. A
 // career longer than the card fits keeps its first stop and its most recent
-// ones, and folds the middle into a "+N more" stop that opens in place.
+// ones, and folds the middle into a "+N more" stop; the button in the
+// card's corner opens it in place and folds it again.
 //
 // The line is drawn as one segment per pair of neighbouring stops, keyed by
 // the stop it starts from, so each segment travels and stretches with its two
 // dots (`layout`). A segment the line no longer has shrinks away; a new one
 // grows in once the dots have arrived.
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, Ref } from 'react';
 import { AnimatePresence, MotionConfig, animate, motion, useReducedMotion } from 'framer-motion';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, MOTION_SHEET_S } from '../../utils/motion-curves.ts';
@@ -93,17 +94,15 @@ function Station({ ref, id, stop, at, side, column, onOrganization }: {
   );
 }
 
-function Fold({ ref, id, hidden, side, column, onOpen, openRef }: {
-  ref?: Ref<HTMLLIElement>; id: string; hidden: CareerStop[]; side: Side; column: number; onOpen: () => void; openRef: Ref<HTMLButtonElement>;
+// The fold shows the years it holds; the card's corner button opens it.
+function Fold({ ref, id, hidden, side, column }: {
+  ref?: Ref<HTMLLIElement>; id: string; hidden: CareerStop[]; side: Side; column: number;
 }) {
   const span = foldYears(hidden);
   return (
     <motion.li ref={ref} initial={false} exit={{ opacity: 0, transition: FADE_AWAY }} className="career-stop" data-side={side} style={{ gridColumn: column }}>
       <motion.div layoutId={`${id}-fold`} layout="position" className="career-body">
         {span && <span className="career-years">{span}</span>}
-        <button type="button" ref={openRef} className="career-fold-open" onClick={onOpen}>
-          {`+${hidden.length} more`}
-        </button>
       </motion.div>
     </motion.li>
   );
@@ -139,16 +138,6 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
   const listRef = useRef<HTMLOListElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const reduce = useReducedMotion();
-  const fewerRef = useRef<HTMLButtonElement | null>(null);
-  const foldRef = useRef<HTMLButtonElement | null>(null);
-  const refocus = useRef(false);
-  // Opening or closing the fold removes the button that was pressed: focus
-  // goes to the control that now does the opposite.
-  useEffect(() => {
-    if (!refocus.current) return;
-    refocus.current = false;
-    (expanded ? fewerRef : foldRef).current?.focus();
-  }, [expanded]);
   // The list changes height at once when the fold opens or closes; the card
   // follows it on the dots' clock, so its edge and what is below move with
   // the dots instead of jumping. The first size is taken as it is.
@@ -196,7 +185,6 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
   const opening = useRef<DOMRect | null>(null);
   const [closing, setClosing] = useState<Offsets | null>(null);
   const setFold = (open: boolean) => {
-    refocus.current = true;
     if (open) {
       if (!reduce) opening.current = listRef.current?.querySelector('.career-fold-dot')?.getBoundingClientRect() ?? null;
       setExpanded(true);
@@ -205,6 +193,14 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
     if (reduce) {
       setClosing(null);
       setExpanded(false);
+      return;
+    }
+    // A line scrolled across travels back to its start first: closing it
+    // where it is would snap the scroll to 0 as the line shrinks, and every
+    // stop would jump by that much in one frame.
+    const list = listRef.current;
+    if (list && list.scrollLeft > 0) {
+      animate(list.scrollLeft, 0, { ...MOVE, onUpdate: (left) => { list.scrollLeft = left; }, onComplete: () => setFold(false) });
       return;
     }
     // Back into the fold: each record measures how far it is from where the
@@ -250,14 +246,16 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
       <section className="career" aria-labelledby={`${id}-title`}>
         <header className="career-head">
           <h2 id={`${id}-title`} className="career-title">Career</h2>
-          {expanded && tooLong && (
-            <button type="button" ref={fewerRef} className="career-fewer" onClick={() => setFold(false)}>Show fewer</button>
+          {tooLong && (
+            <button type="button" className="career-toggle" aria-expanded={expanded} aria-controls={`${id}-line`} onClick={() => setFold(!expanded)}>
+              {expanded ? 'Show fewer' : `+${hidden.length} more`}
+            </button>
           )}
         </header>
         {/* Stops render once the width is known, before the first paint, so a
             long career starts folded. */}
-        <div ref={bodyRef}>
-          <motion.ol layoutScroll ref={listRef} className="career-line" data-opened={expanded || undefined}>
+        <div ref={bodyRef} className="career-frame">
+          <motion.ol layoutScroll ref={listRef} id={`${id}-line`} className="career-line" data-foldable={tooLong || undefined} data-opened={expanded || undefined}>
             {capacity !== Infinity && (
               <>
                 <AnimatePresence initial={false}>
@@ -277,7 +275,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
                 )}
                 <AnimatePresence initial={false} mode="popLayout" custom={closing}>
                   {shown.map((at, i) => (at === 'fold'
-                    ? <Fold key="fold" id={id} hidden={hidden} side={sideOf(at, i)} column={i + 1} onOpen={() => setFold(true)} openRef={foldRef} />
+                    ? <Fold key="fold" id={id} hidden={hidden} side={sideOf(at, i)} column={i + 1} />
                     : <Station key={at} id={id} stop={career[at]} at={at} side={sideOf(at, i)} column={i + 1} onOrganization={onOrganization} />))}
                 </AnimatePresence>
               </>

@@ -13,9 +13,9 @@
   animation: settle var(--motion-base) linear backwards;
 }
 
-/* The negative top margin takes back the extra height of "Show fewer", so
+/* The negative top margin takes back the extra height of the toggle, so
    the title stays where the card's padding puts it. */
-.career-head { display: flex; align-items: center; gap: var(--space-3); min-height: 28px; margin: -6px 0 var(--space-4); }
+.career-head { display: flex; align-items: center; gap: var(--space-3); min-height: 28px; margin: -6px 0 var(--space-3); }
 .career-title {
   flex: 1;
   margin: 0;
@@ -23,6 +23,11 @@
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
   color: var(--text-tertiary);
+}
+.career-frame {
+  /* The list takes its new height at once and the frame follows it; until it
+     has, records past its edge are clipped instead of drawn over the legend. */
+  overflow-y: clip;
 }
 .career-years { font: 500 11px/1.4 var(--font-mono); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 
@@ -34,14 +39,20 @@
   display: grid; grid-auto-flow: column; grid-auto-columns: minmax(86px, 1fr);
   grid-template-rows: auto 16px auto; gap: var(--space-2) var(--career-gap);
   /* Room inside the scroll box for the focus ring of the stops at its edges. */
-  margin: calc(-1 * var(--space-1)); padding: var(--space-1) var(--space-1) var(--space-3); list-style: none;
+  margin: 0 calc(-1 * var(--space-1)); padding: var(--space-1) var(--space-1) var(--space-3); list-style: none;
   /* An open long career is wider than the card, and so is a folded one on a
      phone narrower than three stops: either scrolls across. */
-  overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain;
+  /* No scroll snapping: Safari re-snaps to the last stop it rested on when the
+     fold opens, so the open line would land scrolled to its middle. */
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain;
 }
+/* A line that folds keeps the same rows folded and open: each side holds
+   the tallest record a stop can show (years, two lines of organisation, two
+   of role), so opening or closing never moves the line up or down. */
+.career-line[data-foldable] { grid-template-rows: minmax(93px, auto) 16px minmax(93px, auto); }
 .career-stop {
   grid-row: 1 / span 3; display: grid; grid-template-rows: subgrid;
-  min-width: 0; scroll-snap-align: start;
+  min-width: 0;
 }
 .career-axis { position: relative; grid-row: 2; height: 16px; }
 /* A filled dot centred on the line (7px down the 16px axis); the present
@@ -95,17 +106,12 @@
 @starting-style {
   .career-line[data-opened] .career-dot { background: var(--text-tertiary); }
 }
-.career-fold-open {
-  align-self: flex-start; min-height: 28px; padding: 0 var(--space-3); border-radius: var(--radius-full);
-  border: 1px dashed var(--border-default); background: var(--bg-card);
-  font: 600 12px/1 var(--font-body); color: var(--text-primary); cursor: pointer;
-}
-@media (hover: hover) and (pointer: fine) { .career-fold-open:hover { border-style: solid; } }
-.career-fewer {
+.career-toggle {
   min-height: 28px; padding: 0 var(--space-2); border: 0; background: none; cursor: pointer;
   font-size: 12px; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 2px;
 }
-:is(.career-org, .career-fold-open, .career-fewer):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .career-toggle:hover { color: var(--text-primary); } }
+:is(.career-org, .career-toggle):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .career-legend {
   display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
