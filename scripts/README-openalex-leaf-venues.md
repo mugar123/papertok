@@ -99,6 +99,14 @@ first night. They spend from the 3,000 of the harvest's 4,000 units a day that
 the category lanes share with the weekly notable lanes: with the topic lanes
 (195 at most), the area lanes (9) and the working-paper series (4), a night's
 category calls are at most 445, and the notable lanes add 39 one night a week.
+The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
+which spend what the lanes leave of the nightly run's 3,700 units. Every 14
+days the refresh asks OpenAlex again for a stored paper's counts, 50 papers a
+call: the lanes' about 274 new articles a day, kept 90 days, come to about 33
+calls a night. Each enrichment of an OpenAlex record, refreshes included, asks
+Crossref for its DOI's type, 20 DOIs a call: about 95 calls a night, and about
+1,080 for the about 21,600 articles of the lanes' first night, which the
+embedding passes also take.
 cs.SY and eess.SY send the same request, which the relay answers from its
 store the second time.
 
