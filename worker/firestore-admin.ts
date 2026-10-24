@@ -178,7 +178,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
       const url = `https://firestore.googleapis.com/v1/${documentName(projectId, segments)}`;
       const response = await authorizedFetch(url, { method: 'GET' });
       if (response.status === 404) return null;
-      const payload = await response.json<Partial<FirestoreDocument>>().catch(() => ({} as Partial<FirestoreDocument>));
+      const payload = await response.json<Partial<FirestoreDocument>>().catch((): Partial<FirestoreDocument> => ({}));
       if (!response.ok) {
         throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502, payload?.error?.status || '');
       }
@@ -347,7 +347,7 @@ export function createFirestoreAdmin(env: WorkerEnv, { fetchImpl = fetch, now = 
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ writes }),
       });
-      const payload = await response.json<FirestoreFailure & { commitTime?: string; writeResults?: unknown[] }>().catch(() => ({} as FirestoreFailure));
+      const payload = await response.json<FirestoreFailure & { commitTime?: string; writeResults?: unknown[] }>().catch((): FirestoreFailure & { commitTime?: string; writeResults?: unknown[] } => ({}));
       if (!response.ok) {
         const status = payload?.error?.status || '';
         // A failed precondition is the caller's problem (already published,

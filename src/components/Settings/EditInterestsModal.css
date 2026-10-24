@@ -42,7 +42,6 @@
 
 .eim-header-text p {
   font-family: var(--font-body);
-  font-size: var(--fs-md);
   color: var(--text-secondary);
   margin: 0;
 }

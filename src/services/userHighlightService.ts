@@ -101,7 +101,7 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     paragraphIndex,
     normalizeHighlightQuote(quote),
   ]
-    .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex as number, normalizeHighlightQuote(endQuote)])
+    .concat(endParagraphIndex === undefined ? [] : [endParagraphIndex, normalizeHighlightQuote(endQuote)])
     .concat(kind === 'ai' ? ['ai'] : []).join('|');
 
   // FNV-1a: short, stable, and enough to separate selections within one paper.

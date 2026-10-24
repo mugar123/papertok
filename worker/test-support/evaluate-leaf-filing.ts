@@ -13,11 +13,38 @@
 // leaf centroids or more. Centroids here are taken over every arXiv paper with
 // a vector, where the harvest takes each leaf's newest 500.
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { getAllLeafCategories } from '../../src/data/categoryTaxonomy.ts';
 import { areaCentroids, closestLeaf, evaluateLeafFiling, leafCentroids, ruleFiles } from '../leaf-filing.ts';
 import { AREA_LANE_AREAS, areaLane, readVector } from '../paper-store.ts';
+
+export function evaluateStoreCopy(path: string, rules: Array<{ similarity: number; margin: number }>) {
+  const db = path.endsWith('.sql') ? new DatabaseSync(':memory:') : new DatabaseSync(path, { readOnly: true });
+  try {
+    if (path.endsWith('.sql')) db.exec(readFileSync(path, 'utf8'));
+    const leaves = getAllLeafCategories().filter(leaf => AREA_LANE_AREAS.includes(leaf.area)).map(leaf => leaf.id);
+    const samples = (db.prepare(`SELECT w.paper ->> 'primaryCategory' AS leaf, v.embedding FROM works w
+      JOIN work_vectors v ON v.work_id = w.id
+      WHERE w.paper ->> 'arxivId' IS NOT NULL AND w.paper ->> 'primaryCategory' IN (SELECT value FROM json_each(?))
+      ORDER BY w.id`).all(JSON.stringify(leaves)) as Array<{ leaf: string; embedding: Uint8Array }>)
+      .map(row => ({ leaf: row.leaf, vector: readVector(row.embedding) }));
+
+    const centroids = leafCentroids(samples);
+    const areaLanes = AREA_LANE_AREAS.flatMap(area => {
+      const own = areaCentroids(area, centroids);
+      if (own.size < 2) return [];
+      const closest = (db.prepare('SELECT v.embedding FROM work_lanes l JOIN work_vectors v ON v.work_id = l.work_id WHERE l.lane = ?')
+        .all(areaLane(area)) as Array<{ embedding: Uint8Array }>).map(row => closestLeaf(readVector(row.embedding), own));
+      return rules.map(rule => ({ area, ...rule, papers: closest.length, filed: closest.filter(paper => ruleFiles(paper, rule)).length }));
+    });
+    return { arxiv: evaluateLeafFiling(samples, rules), areaLanes };
+  } finally {
+    db.close();
+  }
+}
 
 const usage = 'Usage: node worker/test-support/evaluate-leaf-filing.ts <store.sqlite | store.sql> [--similarity 0.4,0.5] [--margin 0.05,0.1]';
 
@@ -33,31 +60,15 @@ function numbers(text: string | undefined, fallback: number[]) {
   return parsed;
 }
 
-const { values, positionals } = parseArgs({
-  allowPositionals: true,
-  options: { similarity: { type: 'string' }, margin: { type: 'string' } },
-});
-if (positionals.length !== 1) fail('Name one copy of the paper store.');
-const rules = numbers(values.similarity, [0.3, 0.4, 0.5, 0.6, 0.7])
-  .flatMap(similarity => numbers(values.margin, [0.02, 0.05, 0.1, 0.15, 0.2]).map(margin => ({ similarity, margin })));
+function main() {
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
+    options: { similarity: { type: 'string' }, margin: { type: 'string' } },
+  });
+  if (positionals.length !== 1) fail('Name one copy of the paper store.');
+  const rules = numbers(values.similarity, [0.3, 0.4, 0.5, 0.6, 0.7])
+    .flatMap(similarity => numbers(values.margin, [0.02, 0.05, 0.1, 0.15, 0.2]).map(margin => ({ similarity, margin })));
+  process.stdout.write(`${JSON.stringify(evaluateStoreCopy(positionals[0], rules), null, 1)}\n`);
+}
 
-const [path] = positionals;
-const db = path.endsWith('.sql') ? new DatabaseSync(':memory:') : new DatabaseSync(path, { readOnly: true });
-if (path.endsWith('.sql')) db.exec(readFileSync(path, 'utf8'));
-
-const leaves = getAllLeafCategories().filter(leaf => AREA_LANE_AREAS.includes(leaf.area)).map(leaf => leaf.id);
-const samples = (db.prepare(`SELECT w.paper ->> 'primaryCategory' AS leaf, v.embedding FROM works w
-  JOIN work_vectors v ON v.work_id = w.id
-  WHERE w.paper ->> 'arxivId' IS NOT NULL AND w.paper ->> 'primaryCategory' IN (SELECT value FROM json_each(?))
-  ORDER BY w.id`).all(JSON.stringify(leaves)) as Array<{ leaf: string; embedding: Uint8Array }>)
-  .map(row => ({ leaf: row.leaf, vector: readVector(row.embedding) }));
-
-const centroids = leafCentroids(samples);
-const areaLanes = AREA_LANE_AREAS.flatMap(area => {
-  const own = areaCentroids(area, centroids);
-  if (own.size < 2) return [];
-  const closest = (db.prepare('SELECT v.embedding FROM work_lanes l JOIN work_vectors v ON v.work_id = l.work_id WHERE l.lane = ?')
-    .all(areaLane(area)) as Array<{ embedding: Uint8Array }>).map(row => closestLeaf(readVector(row.embedding), own));
-  return rules.map(rule => ({ area, ...rule, papers: closest.length, filed: closest.filter(paper => ruleFiles(paper, rule)).length }));
-});
-process.stdout.write(`${JSON.stringify({ arxiv: evaluateLeafFiling(samples, rules), areaLanes }, null, 1)}\n`);
+if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) main();

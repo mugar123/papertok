@@ -13,7 +13,6 @@
   ],
   "exclude": [
     "src/services/paperFigureService.test.ts",
-    "src/components/Institution/publisherLogos.test.ts",
     "src/utils/aiExplanation.test.ts"
   ]
 }

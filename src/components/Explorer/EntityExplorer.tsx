@@ -108,13 +108,15 @@ import Petri from '../Onboarding/Petri.tsx';
 import { ExplorerEmptyState } from './ExplorerEmptyState.tsx';
 import ExplorerGuestGate from './ExplorerGuestGate.tsx';
 import { pickEmptyVariant } from './explorerEmptyVariant.ts';
+import { explorerAuthorIdentityUnverified, explorerFollowEntity } from './explorerFollowEntity.ts';
+import { projectEntityFromLookup, projectLookupFunder } from './explorerProjectEntity.ts';
+import { authorsSentinelMounted, papersFootReport, papersSentinelMounted } from './explorerListFoot.ts';
 import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation.ts';
 import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.ts';
 import { settleWithin } from '../../utils/asyncTiming.ts';
 import { fetchTopicPapers } from '../../services/topicRetrievalService.ts';
 import { loadEntityWikiInfo } from '../../services/wikiService.ts';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
-import { getProjectDisplayName } from '../../utils/entityMetadata.ts';
 import { getUiErrorMessage } from '../../utils/errorMessages.ts';
 import { safeExternalUrl } from '../../utils/externalUrl.ts';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.ts';
@@ -550,11 +552,11 @@ export default function EntityExplorer({
   const navigateToEntity = useCallback((nextType: string, nextId: string, handover: HandoverEntity | null = null) => {
     if (publicMode) {
       const publicPath = getPublicEntityPath(nextType, nextId);
-      if (publicPath) navigate(publicPath);
+      if (publicPath) void navigate(publicPath);
       return;
     }
     const entityForNext = handover ? handoverFromSearchRow(nextType, handover) : null;
-    navigate(
+    void navigate(
       `/explorer/${nextType}/${encodeURIComponent(nextId)}`,
       entityForNext ? { state: { entity: entityForNext, entityType: nextType } } : undefined,
     );
@@ -572,8 +574,8 @@ export default function EntityExplorer({
   }, [id, searchParams, type]);
   const handleBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
-    if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
-    else navigate('/feed');
+    if (Number.isInteger(historyIndex) && historyIndex > 0) void navigate(-1);
+    else void navigate('/feed');
   }, [navigate]);
   // The first visit to Authors requests the list and keeps it from then on, so
   // a return to the tab finds the rows rather than a second skeleton. The
@@ -681,7 +683,7 @@ export default function EntityExplorer({
     const viewKey = `${type}:${id}`;
     if (viewedEntityRef.current === viewKey) return;
     viewedEntityRef.current = viewKey;
-    trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
+    void trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
   }, [analyticsEntityType, entity, id, trackEvent, type]);
 
   // Every control a visitor can push that needs an account goes through here:
@@ -691,7 +693,7 @@ export default function EntityExplorer({
   // `reason` tells the sign-in dialog why it opened (authPromptCopy.js); the
   // wall at the foot of the list passes none and gets the general door.
   const requestAccount = useCallback((reason?: string) => {
-    trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
+    void trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
     onAuthRequired(reason);
   }, [analyticsEntityType, onAuthRequired, trackEvent]);
   // What a guest's search button covers, in the placeholder's own words.
@@ -750,42 +752,11 @@ export default function EntityExplorer({
 
   // An author page reached by a name that neither an id nor the paper could
   // confirm (utils/entityExplorer.js): its results may be several people's.
-  const authorIdentityUnverified = Boolean(entity) && !authorIdentityVerified({ type, routeId: id, entity });
-  const followEntity = useMemo<FollowInput | null>(() => {
-    // A name-only author may be several people; following "them" would follow
-    // whichever one the search returned.
-    if (!entity || authorIdentityUnverified || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
-    // An entity we cannot name cannot be followed. A follow is compared by id
-    // and then by name, so any word standing in for a missing name becomes a
-    // key shared with every other entity the page could not name — and the
-    // second one followed would resolve the click against the first. Nothing
-    // stands in here: with no name there is no identity, and no heart.
-    const displayName = type === 'institution' ? entityOfficialName : entityDisplayName;
-    if (!displayName) return null;
-    const followType = type === 'concept' ? 'topic' : type;
-    const metadata = entity._queryTopic
-      ? {
-          query: entity.metadata?.query || entity.query,
-          source: entity.metadata?.source || 'free-text',
-          categoryIds: entity.metadata?.categoryIds || entity.categoryIds || [],
-        }
-      : {
-          funder: entity.funder,
-          categoryIds: entity.categoryIds,
-          localizedNames: type === 'institution' ? entity.localized_names : undefined,
-        };
-    return {
-      type: followType as FollowInput['type'],
-      id: entity.id || entity.code || id,
-      displayName,
-      source: type === 'project' ? 'openaire' : type === 'concept' || type === 'topic' ? 'papertok' : 'openalex',
-      externalIds: {
-        orcid: entity.orcid,
-        ror: entity.ror,
-      },
-      metadata,
-    };
-  }, [authorIdentityUnverified, entity, entityDisplayName, entityOfficialName, id, type]);
+  const authorIdentityUnverified = explorerAuthorIdentityUnverified({ type, routeId: id, entity });
+  const followEntity = useMemo<FollowInput | null>(() => explorerFollowEntity({
+    type, routeId: id, entity, authorIdentityUnverified,
+    officialName: entityOfficialName, displayName: entityDisplayName,
+  }), [authorIdentityUnverified, entity, entityDisplayName, entityOfficialName, id, type]);
   const entityIsFollowing = Boolean(!publicMode && followEntity && isFollowing(followEntity));
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
 
@@ -806,7 +777,7 @@ export default function EntityExplorer({
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
-    return () => clearTimeout(timer!);
+    return () => clearTimeout(timer);
   }, [type, id, visitKey]);
 
   useEffect(() => {
@@ -831,7 +802,7 @@ export default function EntityExplorer({
 
     async function loadEntity() {
       setEntityError(null);
-      const bornWith = handedEntity || cachedEntity;
+      const bornWith: ExplorerEntity | null = handedEntity || cachedEntity;
       if (bornWith) {
         setEntity(bornWith);
         setIsLoadingEntity(false);
@@ -852,7 +823,7 @@ export default function EntityExplorer({
         setWikiInfo(null);
       }
       setOrcidInfo(null);
-      setIsLoadingOrcid(type === 'author' && Boolean((bornWith as ExplorerEntity | null)?.orcid || extractOrcid(id)));
+      setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
       setIsExperienceOpen(true);
       setExperienceToggled(false);
       setExpandedSummary(false);
@@ -883,7 +854,7 @@ export default function EntityExplorer({
 
       if (type === 'project') {
         const name = searchParams.get('name') || '';
-        const funder = searchParams.get('funder') || '';
+        const funder = projectLookupFunder(searchParams.get('funder'));
 
         if (name) {
           // The pill already knows the project's name and funder: paint the
@@ -896,56 +867,12 @@ export default function EntityExplorer({
         // Fetch detailed info
         const details = await getProjectDetails(id, { funder });
         if (isCancelled) return;
-        if (details) {
-           const displayName = getProjectDisplayName(details);
-           setEntity({
-             id: id,
-             code: details.id || id,
-             openaireId: details.openaireId,
-             display_name: displayName,
-             type: 'project',
-             funder: details.funder,
-             fundingStream: details.fundingStream,
-             summary: details.summary,
-             startDate: details.startDate,
-             endDate: details.endDate,
-             budget: details.budget,
-             fundedAmount: details.fundedAmount,
-             currency: details.currency,
-             callIdentifier: details.callIdentifier,
-             contractType: details.contractType,
-             subjects: details.subjects,
-             participants: details.participants,
-             measures: details.measures,
-             openAccess: details.openAccess,
-             websiteUrl: details.websiteUrl,
-           });
-        } else {
-          // The lookup failed (bad response, parse miss, or thrown error): the
-          // hero is already painted (with the pill's name) or was never
-          // optimistic (no name at all). Either way, land an entity with no
-          // _detailsPending so the reserved summary and two stat cells stop
-          // shimmering forever instead of settling — keep the pill's name if
-          // there was one.
-          //
-          // With no name in the URL either, the entity keeps none. A raw
-          // `snsf________::daa28096…` is not a title, but neither is a
-          // stand-in word a name: `display_name` is what the follow identity
-          // is built from, and one stand-in shared by every nameless project
-          // made them all the same follow — following one deleted another's
-          // document. The hero falls back to the page's own label for the type
-          // where it renders the title, in whichever language is on at that
-          // moment. And when the route id is an OpenAIRE id it is the one
-          // useful thing left to offer: the empty state's link out, which is
-          // worth most in exactly this case.
-          setEntity({
-            id,
-            openaireId: id.includes('::') ? id : undefined,
-            display_name: name,
-            type: 'project',
-            funder,
-          });
-        }
+        // A failed lookup (bad response, parse miss, or thrown error) still
+        // lands an entity with no _detailsPending, so the reserved summary and
+        // two stat cells settle instead of shimmering forever; it keeps the
+        // pill's name if there was one and never a stand-in
+        // (explorerProjectEntity.ts says why).
+        setEntity(projectEntityFromLookup({ routeId: id, name, funder, details }));
         if (!isCancelled) setIsLoadingEntity(false);
         return;
       }
@@ -1191,7 +1118,7 @@ export default function EntityExplorer({
         const resolvedId = entity!.id || id;
 
         if (type === 'project') {
-           const res = await getPapersByProject(resolvedId, page, { funder: searchParams.get('funder') || entity!.funder || '' });
+           const res = await getPapersByProject(resolvedId, page, { funder: projectLookupFunder(searchParams.get('funder'), entity!.funder) });
            arxivIds = res.arxivIds;
            dois = res.dois || [];
            // OpenAIRE's total counts every publication of the project, with or
@@ -1419,7 +1346,7 @@ export default function EntityExplorer({
       setIsLoadingPapers(false);
       setIsFetchingMore(continuing);
     }
-    loadPapers();
+    void loadPapers();
     // No cleanup: a request is superseded by key, above, and cancelled on
     // unmount, below — not by the next render of the same request.
   }, [afterPageArrival, type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey, publicMode, requestNextPapersPage]);
@@ -1477,7 +1404,7 @@ export default function EntityExplorer({
       setIsLoadingAuthors(false);
       setIsFetchingMoreAuthors(false);
     }
-    loadAuthors();
+    void loadAuthors();
     return () => { isCancelled = true; };
   }, [type, id, entity, authorsPage, debouncedSearch, authorsOpened, authorsReloadKey]);
 
@@ -1583,16 +1510,13 @@ export default function EntityExplorer({
     const observer = new IntersectionObserver(
       (entries) => {
         if (activeTab === 'papers') {
-          // A new observer reports the foot where it already is, so a page
-          // that left it on screen asks again at once: that request is the
-          // list's own, and the reader's only once the foot had gone. Only
-          // while no page loads: the skeleton of a new list pushes the old
-          // foot off screen without the reader moving.
-          if (!entries[0].isIntersecting) {
-            if (!isLoadingPapers && !isFetchingMore) papersFootHiddenRef.current = true;
-          } else if (hasMore && !isLoadingPapers && !isFetchingMore) {
-            requestNextPapersPage(papersFootHiddenRef.current);
-          }
+          // On whose behalf the foot asks: explorerListFoot.ts.
+          const report = papersFootReport({
+            isIntersecting: entries[0].isIntersecting, hasMore, isLoading: isLoadingPapers, isFetchingMore,
+            footHidden: papersFootHiddenRef.current,
+          });
+          if (report === 'left') papersFootHiddenRef.current = true;
+          else if (report) requestNextPapersPage(report === 'reader');
         } else if (entries[0].isIntersecting && activeTab === 'authors' && hasMoreAuthors && !isLoadingAuthors && !isFetchingMoreAuthors) {
           setAuthorsPage(p => p + 1);
         }
@@ -1634,7 +1558,7 @@ export default function EntityExplorer({
               side="bottom"
           align="start"
           links={usesSheet ? [] : heroLinks}
-          onShared={(method) => trackEvent('share', { method, content_type: analyticsEntityType, surface: 'explorer' })}
+          onShared={(method) => { void trackEvent('share', { method, content_type: analyticsEntityType, surface: 'explorer' }); }}
           trigger={isPhone ? (
             <Button variant="outline" size="icon-sm" className="ehc-share" aria-label="Share">
               <ShareNetwork size={16} aria-hidden="true" />
@@ -1955,7 +1879,7 @@ export default function EntityExplorer({
     }] : []),
   ] : isOpenAlexTopic ? [
     ...(safeExternalUrl(entity.ids?.wikipedia) ? [{
-      href: safeExternalUrl(entity.ids?.wikipedia)!,
+      href: safeExternalUrl(entity.ids?.wikipedia),
       rel: 'noopener noreferrer',
       Icon: Globe,
       title: 'Wikipedia',
@@ -2059,7 +1983,7 @@ export default function EntityExplorer({
       key={`${p.name}-${p.country || i}`}
       type="button"
       className="project-participant-card"
-      onClick={() => openParticipantInstitution(p)}
+      onClick={() => { void openParticipantInstitution(p); }}
       disabled={resolvingParticipant === p.name}
       aria-label={`${'Open institution profile for'} ${p.name}`}
     >
@@ -2089,7 +2013,7 @@ export default function EntityExplorer({
               <button
                 type="button"
                 className="pc-share-row"
-                onClick={() => openParticipantInstitution(p)}
+                onClick={() => { void openParticipantInstitution(p); }}
                 disabled={resolvingParticipant === p.name}
                 aria-label={`${'Open institution profile for'} ${p.name}`}
               >
@@ -2404,7 +2328,7 @@ export default function EntityExplorer({
                   <button
                     type="button"
                     className="ehc-author-institution"
-                    onClick={openAuthorInstitution}
+                    onClick={() => { void openAuthorInstitution(); }}
                     disabled={isResolvingAuthorInstitution}
                     title={'View institution'}
                   >
@@ -2506,9 +2430,10 @@ export default function EntityExplorer({
                         <button
                           type="button"
                           className="orcid-item-org orcid-item-org--link"
-                          onClick={async () => {
-                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
+                          onClick={() => {
+                            void findInstitution({ rorUrl: emp.ror, name: emp.organization }).then((inst) => {
+                              if (inst) navigateToEntity('institution', inst.id);
+                            });
                           }}
                           title={`${'Find and view profile for'} ${emp.organization}`}
                         >
@@ -2607,9 +2532,10 @@ export default function EntityExplorer({
                         <button
                           type="button"
                           className="orcid-item-org orcid-item-org--link"
-                          onClick={async () => {
-                            const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
+                          onClick={() => {
+                            void findInstitution({ rorUrl: edu.ror, name: edu.organization }).then((inst) => {
+                              if (inst) navigateToEntity('institution', inst.id);
+                            });
                           }}
                           title={`${'Find and view profile for'} ${edu.organization}`}
                         >
@@ -2778,7 +2704,9 @@ export default function EntityExplorer({
                   leaving it on the page would make the two-row preview a coat
                   of paint over a list that kept loading itself. The wall below
                   takes its place. */}
-              {!publicMode && !papersAwaitReader && hasMore && rowsSettled && (filteredPapers.length > 0 || isFetchingMore) && (
+              {papersSentinelMounted({
+                publicMode, awaitingReader: papersAwaitReader, hasMore, rowsSettled, rows: filteredPapers.length, isFetchingMore,
+              }) && (
                 <div ref={observerRef} className="ehc-sentinel">
                   <Petri pose="flask" className={isFetchingMore ? 'petri-loader' : undefined} />
                   <span>{isFetchingMore
@@ -2896,7 +2824,9 @@ export default function EntityExplorer({
             )}
 
             {/* Same reason as the publications sentinel above. */}
-            {!publicMode && hasMoreAuthors && (entityAuthors.length > 0 || isFetchingMoreAuthors) && (
+            {authorsSentinelMounted({
+              publicMode, hasMore: hasMoreAuthors, rows: entityAuthors.length, isFetchingMore: isFetchingMoreAuthors,
+            }) && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
                 <Petri pose="flask" className={isFetchingMoreAuthors ? 'petri-loader' : undefined} />
                 <span>{isFetchingMoreAuthors
@@ -2980,7 +2910,7 @@ export default function EntityExplorer({
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
             isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
-            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaperToView(paper)}

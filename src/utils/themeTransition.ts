@@ -38,7 +38,7 @@ function prefersReducedMotion() {
 
 const PLAIN_CLASS = 'theme-switch-plain';
 
-export function runThemeSwitch(commit: () => void | Promise<void>) {
+export function runThemeSwitch(commit: () => void) {
   const route = pickThemeRoute({
     reducedMotion: prefersReducedMotion(),
     hasViewTransitions: typeof document.startViewTransition === 'function',

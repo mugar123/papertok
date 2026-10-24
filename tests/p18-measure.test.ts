@@ -26,7 +26,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc, writeBatch, serverTimestamp, setLogLevel } from 'firebase/firestore';
-import type { FirebaseFirestore } from '@firebase/firestore-types';
 
 setLogLevel('silent');
 
@@ -219,7 +218,7 @@ const listBody = (papers: ReturnType<typeof minimalPaper>[]) => ({
 /** The write the app made: the three-document batch publishPublicList() commits. */
 async function realPublish(env: Awaited<ReturnType<typeof initializeTestEnvironment>>, papers: ReturnType<typeof minimalPaper>[]) {
   await env.clearFirestore();
-  await env.withSecurityRulesDisabled(async (context: { firestore: () => FirebaseFirestore; }) => {
+  await env.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'users', ALICE, 'lists', LIST_ID), {
       id: LIST_ID, name: 'My list', paperIds: [], createdAt: new Date(),
     });

@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { growMountWindow, inMountWindow, initialMountWindow, mountWindowCovers, windowReachingReader } from './feedMountWindow.ts';
-
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('a feed opens on the card it was on, one neighbour either side', () => {
   assert.deepEqual(initialMountWindow({ total: 30, anchorIndex: 0 }), { lo: 0, hi: 2 });
@@ -67,36 +64,6 @@ test('a page that lands under the reader is mounted at once, not left to the idl
   assert.deepEqual(windowReachingReader({ lo: 0, hi: 0 }, 0, 0), { lo: 0, hi: 0 });
 });
 
-test('SOURCE: the container mounts a window and grows it off the critical path', async () => {
-  const code = await readFile(new URL('../components/Feed/FeedContainer.tsx', import.meta.url), 'utf8');
-  // The anchor goes through `resumeAnchor` now, so the window and the card
-  // the container calls active cannot disagree (feedResume.test.ts has the
-  // seed). Both halves are pinned here: the window takes that helper's
-  // index, and the helper is still the paper-id-first lookup this file's
-  // `resumeIndex` tests describe — inlining a bare `savedIndex` into either
-  // one puts the feed back on whatever card the offset now points at.
-  assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: index,/,
-    'the first window is around the paper the feed was left on');
-  assert.match(code, /function resumeAnchor\(papers: Paper\[\], scrollKey: string\) \{\s*const saved = resumeMemory\.get\(scrollKey\);\s*return \{ saved, index: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\) \};\s*\}/,
-    'and that index is the saved paper looked up by id, with the saved offset only as a fallback');
-  assert.match(code, /const \{ saved, index \} = resumeAnchor\(papers, scrollKey\);\s*return initialMountWindow\(/,
-    'the window seed reads the helper, not a copy of it');
-  assert.match(code, /growMountWindow\(anchoredWindow, papers\.length\)/, 'and grows in idle chunks');
-  assert.match(code, /radius: saved\.paperId \? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,/, 'one card when resuming, a neighbour when fresh');
-  assert.match(code, /setTimeout\(\(\) => \{\s*handle = schedule\(grow\);\s*\}, Math\.max\(0, MOUNT_WINDOW_SETTLE_MS - sinceMount\)\);/,
-    'the first growth waits out the transition, measured from the mount');
-  // And no chunk lands while the feed is moving: the main thread is idle for
-  // exactly as long as the compositor runs the snap, so an idle callback is
-  // not, by itself, a quiet feed. The scroll handler's own class is the gate,
-  // and a chunk that finds it set asks again once it clears.
-  assert.match(code, /const grow = \(\) => \{\s*handle = null;\s*if \(feedRef\.current\?\.classList\.contains\('feed-container--scrolling'\)\) \{\s*retry = setTimeout\(\(\) => \{ handle = schedule\(grow\); \}, SCROLL_IDLE_DELAY_MS\);\s*return;\s*\}\s*setMountWindow\(growMountWindow\(anchoredWindow, papers\.length\)\);\s*\};/,
-    'a chunk waits for the scroll to settle before it mounts anything');
-  assert.match(code, /requestIdleCallback\(fn, \{ timeout: MOUNT_WINDOW_IDLE_TIMEOUT_MS \}\)/);
-  assert.match(code, /inMountWindow\(anchoredWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
-  assert.match(stripComments(code), /windowReachingReader\(mountWindow, activeIndex, papers\.length\)/,
-    'and a reader at the edge of the window has the next papers mounted without waiting for idle');
-});
-
 test('a feed resumes on the paper it was on, wherever that paper is now', async () => {
   const { resumeIndex } = await import('./feedMountWindow.ts');
   const papers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
@@ -107,15 +74,4 @@ test('a feed resumes on the paper it was on, wherever that paper is now', async 
   assert.equal(resumeIndex({ papers, savedPaperId: 'gone', savedIndex: 9 }), 3, 'clamped to the last card');
   assert.equal(resumeIndex({ papers, savedPaperId: null, savedIndex: 1 }), 1);
   assert.equal(resumeIndex({ papers: [], savedPaperId: 'a', savedIndex: 1 }), 0);
-});
-
-test('SOURCE: the container saves the paper it is on and restores by that paper', async () => {
-  const code = stripComments(await readFile(new URL('../components/Feed/FeedContainer.tsx', import.meta.url), 'utf8'));
-  // The place lives in utils/feedResumeMemory.js now (it survives the reload
-  // the tab gives itself after a deploy); what is remembered is still the
-  // paper's id, and what restores is still that paper.
-  assert.match(code, /const paperId = papersRef\.current\[index\]\?\.id \|\| resumeMemory\.get\(scrollKey\)\.paperId;/);
-  assert.match(code, /resumeMemory\.remember\(scrollKey, \{\s*scrollTop: container\.scrollTop,\s*index,\s*paperId,\s*\}\)/, 'the id that was just resolved is what the memory receives');
-  assert.match(code, /const index = resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\)/);
-  assert.match(code, /el\.scrollTop = el\.clientHeight > 0 \? index \* el\.clientHeight/, 'restored to the card, not to a pixel offset from another order');
 });

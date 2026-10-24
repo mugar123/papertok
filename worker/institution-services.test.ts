@@ -291,7 +291,7 @@ const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
 test('the Hawaiʻi system is refused rather than listed from Mānoa\'s library', async () => {
   const stub = upstreams();
   await assert.rejects(
-    lookupInstitutionServices({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR } as InstitutionQuery, { fetchImpl: stub.fetchImpl }),
+    lookupInstitutionServices({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }, { fetchImpl: stub.fetchImpl }),
     error => (error as Error & { code?: string; status?: number }).code === 'INSTITUTION_NOT_SUPPORTED' && (error as Error & { code?: string; status?: number }).status === 404,
   );
   assert.equal(stub.calls.length, 0);

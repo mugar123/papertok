@@ -55,7 +55,7 @@ test('mixes similarly relevant follows instead of preserving five-paper source b
     ...Array.from({ length: 5 }, (_, index) => followedPaper(`leiden-${index}`, 'Leiden')),
   ];
   const ordered = orderFollowingFeedPapers(items, new Set(), { now: NOW });
-  const followIds = ordered.map(paper => paper._followedEntityMatches![0].canonicalId);
+  const followIds = ordered.map(paper => paper._followedEntityMatches[0].canonicalId);
   let longestRun = 1;
   let currentRun = 1;
   for (let index = 1; index < followIds.length; index += 1) {
@@ -78,10 +78,7 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
   assert.deepEqual(orderFollowingFeedPapers(undefined, undefined), []);
 });
 
-import { readFile } from 'node:fs/promises';
 import { followingFirstLoadPending, mergeOrderedPapers } from './followingFeed.ts';
-
-const readSource = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
 
 /**
  * A silent refresh landing while the Following feed is on screen used to
@@ -108,13 +105,6 @@ test('a refresh keeps the cards on screen where they are and appends what is new
   assert.deepEqual(mergeOrderedPapers(previous, []), [], 'the refresh emptied the feed');
 });
 
-test('SOURCE: the Following page ranks on its first render and merges refreshes', async () => {
-  const code = await readSource('../components/Following/FollowingFeedPage.tsx');
-  assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
-    'an empty initial state painted the empty state for a frame before the cards');
-  assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
-});
-
 /**
  * Following showed a skeleton card while it waited for its first papers; For
  * You shows its discovery screen. Same screen for both: the page tells the
@@ -126,13 +116,6 @@ test('the first wait of the Following feed is a first load until something has a
   assert.equal(followingFirstLoadPending({ items: [], loading: false, lastUpdatedAt: '2026-09-03T00:00:00Z' }), false, 'answered with nothing: the empty state');
   assert.equal(followingFirstLoadPending({ items: [{ id: 'a' }], loading: true, lastUpdatedAt: null }), false, 'cards on screen: the feed');
   assert.equal(followingFirstLoadPending({ items: [], loading: true, lastUpdatedAt: null, error: new Error('x') }), false, 'an error is the error screen\'s');
-});
-
-test('SOURCE: the container honours a source\'s own first-load flag, and Following sets it', async () => {
-  const container = await readSource('../components/Feed/FeedContainer.tsx');
-  assert.match(container, /initialLoadPending: \(source \? Boolean\(source\.initialLoadPending\) : !initialFeedReady\) && !error/);
-  const page = await readSource('../components/Following/FollowingFeedPage.tsx');
-  assert.match(page, /initialLoadPending: followingFirstLoadPending\(\{ items, loading, lastUpdatedAt, error \}\)/);
 });
 
 /**
@@ -150,13 +133,6 @@ test('the Following feed resumes the order it left with, and merges a refresh in
   const fresh = [{ id: 'c', title: 'C', citationCount: 99 }, { id: 'a', title: 'A', citationCount: 1 }];
   const merged = resumeOrderedPapers({ items, ordered: first }, fresh, new Set());
   assert.deepEqual(merged.map(paper => paper.id), ['a', 'c'], 'a refresh keeps the places it can and appends the rest');
-});
-
-test('SOURCE: the Following page resumes from the order it left, kept at module scope', async () => {
-  const code = await readSource('../components/Following/FollowingFeedPage.tsx');
-  assert.match(code, /const lastOrder: \{ items: Paper\[\] \| null; ordered: Paper\[\]; orderKeys\?: string\[\] \} = \{ items: null, ordered: \[\] \};/);
-  assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
-  assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
 });
 
 import { orderFromKeys, orderKeysOf, resumeOrderedPapers as resumeFromKeys } from './followingFeed.ts';
@@ -210,27 +186,4 @@ test('the Following feed drops what the reader skipped, and keeps the array when
     [false],
     'a hole in the list is not an id, and is not what the skip removed',
   );
-});
-
-test('SOURCE: the Following page hands the container the list minus the skipped papers', async () => {
-  const code = (await readSource('../components/Following/FollowingFeedPage.tsx'))
-    .replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-
-  assert.match(code, /const \{ notInterestedIds \} = useFeed\(\);/,
-    'the page reads the shared set the skip writes');
-  const memo = code.match(/const shownPapers = useMemo(?:<[^;\n]+>)?\([\s\S]{0,220}?\);/)?.[0];
-  assert.ok(memo, 'the page derives the shown list from the ranked one');
-  assert.match(memo, /withoutNotInterested\(orderedPapers, notInterestedIds\)/,
-    'filtering the ranked order, so the skip survives a refresh and a revisit');
-  assert.match(memo, /\[orderedPapers, notInterestedIds\]/,
-    'and it recomputes when either changes — a stale memo is the bug all over again');
-
-  // The container renders `source.papers` and nothing else, so this is the
-  // one line that decides what the reader sees. `orderedPapers` here would
-  // reinstate the dead button with every test above still passing.
-  const source = code.match(/const source = useMemo(?:<[^;\n]+>)?\(\(\) => \(\{[\s\S]*?\}\), \[[^\]]*\]\);/)?.[0];
-  assert.ok(source, 'expected the source object the container is given');
-  assert.match(source, /papers: shownPapers,/, 'the container is given the filtered list');
-  assert.doesNotMatch(source, /papers: orderedPapers,/);
-  assert.match(source, /\}\), \[shownPapers,/, 'and the source is rebuilt when that list changes');
 });

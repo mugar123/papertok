@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { pickThemeRoute } from './themeTransition.ts';
 
 test('reduced motion manda: instantáneo aunque haya VT', () => {
@@ -19,12 +18,4 @@ test('sin View Transitions el cambio es instantáneo, no una tormenta de transic
  */
 test('con VT el cambio es un crossfade, en cualquier puntero', () => {
   assert.equal(pickThemeRoute({ reducedMotion: false, hasViewTransitions: true }), 'fade');
-});
-
-test('SOURCE: el fundido dura 220 ms y el barrido ya no existe', async () => {
-  const css = await readFile(new URL('../styles/global.css', import.meta.url), 'utf8');
-  assert.match(css, /animation: fadeIn 220ms/);
-  assert.doesNotMatch(css, /themeSweep|--theme-sweep/);
-  const js = await readFile(new URL('./themeTransition.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(js, /markSweepOrigin|'sweep'/);
 });

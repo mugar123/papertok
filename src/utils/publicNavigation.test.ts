@@ -8,8 +8,8 @@ import {
   getPublicEntityUrl,
   getPublicPaperPath,
   getPublicPaperUrl,
-  getSharedListPath,
-  getSharedListUrl,
+  getPublicListPath,
+  getPublicListUrl,
   getSiteRootUrl,
   getViteBasePath,
   parsePaperKey,
@@ -130,7 +130,7 @@ test('an id nobody can open is still no key at all', () => {
  * fragment went away, and the reason this fixture keeps a base that is not `/`.
  */
 test('builds shared-list paths and absolute share URLs with the Vite base', () => {
-  assert.equal(getSharedListPath('list/with spaces'), '/public/list/list%2Fwith%20spaces');
+  assert.equal(getPublicListPath('list/with spaces'), '/public/list/list%2Fwith%20spaces');
   assert.equal(
     getPublicEntityUrl('topic', 'astro-ph.CO', URL_OPTIONS),
     'https://example.test/papertok/public/entity/topic/astro-ph.CO',
@@ -144,7 +144,7 @@ test('builds shared-list paths and absolute share URLs with the Vite base', () =
     `https://example.test/papertok/public/paper/${encodePaperKey({ arxivId: '2401.12345' })}`,
   );
   assert.equal(
-    getSharedListUrl('reading-list', URL_OPTIONS),
+    getPublicListUrl('reading-list', URL_OPTIONS),
     'https://example.test/papertok/public/list/reading-list',
   );
   assert.equal(
@@ -172,7 +172,7 @@ test('every share URL the app mints is a real path, with no fragment anywhere in
   const urls = [
     getPublicPaperUrl({ arxivId: '2401.12345' }, undefined, LIVE),
     getPublicEntityUrl('topic', 'astro-ph.CO', LIVE),
-    getSharedListUrl('reading-list', LIVE),
+    getPublicListUrl('reading-list', LIVE),
     getAbsoluteShareUrl('/public/entity/topic/astro-ph.CO', LIVE),
   ];
 

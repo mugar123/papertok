@@ -9,7 +9,7 @@ export interface EmailNotificationsContextValue {
   sendTest: (preferences?: NotificationPreferences) => Promise<Awaited<ReturnType<typeof sendEmailNotificationTest>>>;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { EmailNotificationsContext } from './contexts.ts';
 import { useAuth } from './AuthContext.tsx';
@@ -80,7 +80,7 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     if (!userId) return undefined;
     let cancelled = false;
     loadedForUser.current = userId;
-    Promise.allSettled([getEmailNotificationPreferences(), getEmailNotificationHealth()])
+    void Promise.allSettled([getEmailNotificationPreferences(), getEmailNotificationHealth()])
       .then(([preferencesResult, healthResult]) => {
         if (cancelled) return;
         if (preferencesResult.status === 'fulfilled') {
@@ -112,10 +112,10 @@ export function EmailNotificationsProvider({ children }: PropsWithChildren) {
     const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
     setPreferences(normalized);
     if (normalized.enabled !== wasEnabled) {
-      trackEvent('newsletter_change', {
+      void trackEvent('newsletter_change', {
         action: normalized.enabled ? 'subscribe' : 'unsubscribe',
       });
-      if (normalized.enabled) markActivation();
+      if (normalized.enabled) void markActivation();
     }
     return normalized;
   }, [language, markActivation, trackEvent, userEmail]);

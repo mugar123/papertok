@@ -1,4 +1,3 @@
-import type { Paper } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -79,7 +78,7 @@ function journalArticle(id: string, extra: Partial<OpenAlexWork> = {}) {
       field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
     },
     ...extra,
-  } as OpenAlexWork)!;
+  })!;
 }
 
 const PHYSICS_RULE = { physics: { similarity: 0.8, margin: 0.2 } };
@@ -91,9 +90,9 @@ test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers oth
   await arxivPapers(store, 'astro-ph.GA', 3, 2, 200);
   // A record another source filed under quant-ph, naming the category itself
   // as PubMed and bioRxiv records name theirs, but no arXiv paper.
-  const stray = Array.from({ length: 80 }, (_, index) => ({ ...journalArticle(`W9${index}`), primaryCategory: 'quant-ph' }) as Partial<Paper>);
+  const stray = Array.from({ length: 80 }, (_, index) => ({ ...journalArticle(`W9${index}`), primaryCategory: 'quant-ph' }));
   await ingestPapers(store.env, stray.map(paper => ({ paper, lanes: ['quant-ph'] })), { now: NOW });
-  stray.forEach((paper, index) => store.setVector(`id:${paper.id!.toLowerCase()}`, vector({ 5: 1 }, 300 + index)));
+  stray.forEach((paper, index) => store.setVector(`id:${paper.id.toLowerCase()}`, vector({ 5: 1 }, 300 + index)));
 
   // Only filing reads them, and only in an area with a rule: the shipped rules have none.
   assert.equal(await storeLeafCentroids(store.env, NOW), 0);

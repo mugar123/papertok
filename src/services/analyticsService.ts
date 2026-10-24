@@ -3,7 +3,7 @@ import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '..
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
-interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: string, params?: Record<string, unknown>) => Promise<unknown> }
+interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | (() => number); track?: (eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => Promise<unknown> }
 
 // Two transports with different jobs. Vercel Web Analytics counts visits,
 // pages and countries; AnalyticsProvider renders its <Analytics /> and sends the
@@ -26,56 +26,6 @@ export const ANALYTICS_CONSENT = Object.freeze({
   ANONYMOUS: 'granted',
   DENIED: 'denied',
 });
-
-export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
-  'acquisition_view',
-  'paper_view',
-  'paper_open',
-  'search_performed',
-  'follow_change',
-  'save_change',
-  'share',
-  'login',
-  'sign_up',
-  'tutorial_begin',
-  'tutorial_complete',
-  'activation',
-  'newsletter_change',
-  'day_7_return',
-  'select_content',
-  // The reader added by the light redesign. `trackProductEvent` returns false on
-  // the first line for a name that is not here, so an unregistered event is not
-  // a smaller event — it is no event at all, with nothing at the call site to
-  // say so. Both of these shipped instrumented and silent.
-  'paper_rewrite',
-  'reader_open',
-  'paper_rewrite_result',
-  'auth_prompt_view',
-  'auth_result',
-  'paper_highlight',
-  // Annotating a passage and taking the reading away are the two ends of what
-  // the reader is for: one says the rewrite was worth marking up, the other
-  // that it was worth keeping. Neither is measurable from `paper_rewrite`.
-  'paper_annotation',
-  'paper_export',
-  // How the For You feed is landing, one event per twenty cards: of those
-  // cards, how many were skipped, read past the reader's own median dwell,
-  // liked and saved. Counts only; no paper, topic or account travels with it.
-  'feed_engagement',
-  // A failure the reader is left looking at: the error boundary's screen or the
-  // feed's "Error loading papers". Only the kind travels, never the error.
-  'app_error',
-  // A reader who ran out of AI uses for the day asked for more than the product
-  // gives away, which is the clearest demand signal it has. `scope` keeps that
-  // apart from the provider's own budget running out, which is an outage.
-  'ai_limit_reached',
-  // Likes from every surface. `feed_engagement` counts only the For You feed's.
-  'like_change',
-  // How long a card was on screen, and how long the reader stayed open: the
-  // time spent per paper, which no count of views can give.
-  'paper_dwell',
-  'reader_time',
-]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 const ANALYTICS_ACTIVATION_KEY = 'papertok_analytics_activation_at';
@@ -178,7 +128,10 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
 // reader who opted in to detailed analytics, and is dropped otherwise.
 const PAPER_DETAIL = { paper_id: 'detail', paper_title: 'detail' };
 
-const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> = Object.freeze({
+// The registry of product events: an event name the app emits must be a key
+// here. `trackProductEvent` only accepts these keys, so an unregistered name
+// fails the type check instead of being silently dropped.
+const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // Sent once per browser session, so `activation_age` turns it into a
   // retention curve without an identifier: unset before activation, then how
   // long ago this browser activated.
@@ -197,26 +150,50 @@ const EVENT_PARAMETER_SCHEMAS: Readonly<Record<string, Record<string, string>>> 
   newsletter_change: { action: 'newsletter_action' },
   day_7_return: {},
   select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber', method: 'method' },
+  // The reader added by the light redesign. Its events (`paper_rewrite` through
+  // `paper_highlight`) shipped instrumented and silent before they were
+  // registered here: an unregistered event is not a smaller event, it is no
+  // event at all.
   paper_rewrite: { level: 'rewrite_level', surface: 'surface', ...PAPER_DETAIL },
   reader_open: { surface: 'surface' },
   paper_rewrite_result: { level: 'rewrite_level', surface: 'surface', result: 'rewrite_result', cached: 'boolean', duration_ms: 'duration', error_code: 'rewrite_error' },
   auth_prompt_view: { reason: 'auth_reason', surface: 'surface' },
   auth_result: { method: 'method', surface: 'surface', result: 'auth_result', error_code: 'auth_error' },
   paper_highlight: { level: 'rewrite_level', surface: 'surface', ...PAPER_DETAIL },
+  // Annotating a passage and taking the reading away are the two ends of what
+  // the reader is for: one says the rewrite was worth marking up, the other
+  // that it was worth keeping. Neither is measurable from `paper_rewrite`.
   // `origin` is what separates a note the reader wrote from an answer they
   // asked for — the second costs one of the day's AI uses and the first is free,
   // so counting them together would hide which one people actually want.
   paper_annotation: { level: 'rewrite_level', surface: 'surface', origin: 'annotation_origin', ...PAPER_DETAIL },
   paper_export: { level: 'rewrite_level', surface: 'surface', format: 'export_format', notes: 'boundedNumber', ...PAPER_DETAIL },
+  // How the For You feed is landing, one event per twenty cards: of those
+  // cards, how many were skipped, read past the reader's own median dwell,
+  // liked and saved. Counts only; no paper, topic or account travels with it.
   feed_engagement: {
     cards: 'boundedNumber', skips: 'boundedNumber', deep_reads: 'boundedNumber', likes: 'boundedNumber', saves: 'boundedNumber',
   },
+  // A failure the reader is left looking at: the error boundary's screen or the
+  // feed's "Error loading papers". Only the kind travels, never the error.
   app_error: { kind: 'app_error_kind' },
+  // A reader who ran out of AI uses for the day asked for more than the product
+  // gives away, which is the clearest demand signal it has. `scope` keeps that
+  // apart from the provider's own budget running out, which is an outage.
   ai_limit_reached: { feature: 'ai_feature', scope: 'ai_quota_scope' },
+  // Likes from every surface. `feed_engagement` counts only the For You feed's.
   like_change: { action: 'action', ...PAPER_DETAIL },
+  // How long a card was on screen, and how long the reader stayed open: the
+  // time spent per paper, which no count of views can give.
   paper_dwell: { surface: 'surface', position: 'boundedNumber', seconds: 'seconds', ...PAPER_DETAIL },
   reader_time: { level: 'rewrite_level', seconds: 'seconds', ...PAPER_DETAIL },
-});
+}) satisfies Readonly<Record<string, Record<string, string>>>;
+
+export type ProductAnalyticsEvent = keyof typeof EVENT_PARAMETER_SCHEMAS;
+
+function isProductAnalyticsEvent(eventName: unknown): eventName is ProductAnalyticsEvent {
+  return typeof eventName === 'string' && Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName);
+}
 
 // A card or the reader left open in a forgotten tab is not four hours of reading.
 const MAX_TRACKED_SECONDS = 4 * 60 * 60;
@@ -327,7 +304,7 @@ export function normalizeAnalyticsPath(pathname = '/') {
 export function sanitizeAnalyticsLocation(pathname: string|undefined, browserLocation: Pick<Location, 'origin'> | undefined = globalThis.location) {
   const pagePath = normalizeAnalyticsPath(pathname);
   try {
-    const origin = new URL(browserLocation?.origin as string).origin;
+    const origin = new URL(browserLocation?.origin).origin;
     if (!/^https?:$/.test(new URL(origin).protocol)) return pagePath;
     return `${origin}${pagePath}`;
   } catch {
@@ -364,7 +341,7 @@ export function sanitizeAnalyticsEventUrl(url: unknown) {
 }
 
 export function sanitizeProductEventParams(eventName: string | number, params: Record<string, unknown> = {}, consent = readAnalyticsConsent()) {
-  const schema = EVENT_PARAMETER_SCHEMAS[eventName];
+  const schema: Readonly<Record<string, string>> | undefined = isProductAnalyticsEvent(eventName) ? EVENT_PARAMETER_SCHEMAS[eventName] : undefined;
   if (!schema || !params || typeof params !== 'object' || Array.isArray(params)) return {};
 
   return Object.entries(schema).reduce<Record<string, unknown>>((safeParams, [key, type]) => {
@@ -561,18 +538,27 @@ export function sanitizeVercelEvent<T extends { url: string }>(event: T | null, 
 function loadAnalyticsClient() {
   analyticsClient ??= import('posthog-js')
     .then(({ posthog }) => {
-      posthog.init(POSTHOG_PROJECT_TOKEN, POSTHOG_OPTIONS);
-      applyConsent(posthog, readAnalyticsConsent());
+      startAnalyticsClient(posthog, readAnalyticsConsent());
       return posthog;
     })
     .catch(() => null);
   return analyticsClient;
 }
 
+type ConsentControls = Pick<PostHog, 'has_opted_in_capturing' | 'opt_in_capturing' | 'opt_out_capturing'>;
+
+// Starts a freshly loaded PostHog: cookieless and anonymous, then opted in only
+// when the reader chose detailed analytics. The client arrives from the lazy
+// import above, like the one `applyConsent` receives.
+export function startAnalyticsClient(client: ConsentControls & { init(token: string, config: Partial<PostHogConfig>): unknown }, consent: Consent) {
+  client.init(POSTHOG_PROJECT_TOKEN, POSTHOG_OPTIONS);
+  applyConsent(client, consent);
+}
+
 // PostHog keeps its own copy of the choice; this keeps it equal to ours. Both
 // transitions reset PostHog's identity (posthog-js does it on the switch), so
 // nothing recorded at one level is linked to the other.
-function applyConsent(client: PostHog, consent: Consent) {
+function applyConsent(client: ConsentControls, consent: Consent) {
   const detailed = consent === ANALYTICS_CONSENT.DETAILED;
   if (detailed === client.has_opted_in_capturing()) return;
   if (detailed) client.opt_in_capturing({ captureEventName: false });
@@ -635,7 +621,7 @@ export async function trackPageView(pathname: string) {
   return sendAnalyticsEvent('$pageview', { $current_url: url });
 }
 
-export async function trackProductEvent(eventName: string, params: Record<string, unknown> = {}) {
+export async function trackProductEvent(eventName: ProductAnalyticsEvent, params: Record<string, unknown> = {}) {
   if (!Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName)) return false;
   const consent = readAnalyticsConsent();
   if (consent === ANALYTICS_CONSENT.DENIED) return false;

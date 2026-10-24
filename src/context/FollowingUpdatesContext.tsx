@@ -12,7 +12,7 @@ export interface FollowingUpdatesContextValue {
   markSeen: (paper: string | Partial<Paper>) => void;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useCallback, useContext, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { FollowingUpdatesContext } from './contexts.ts';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';

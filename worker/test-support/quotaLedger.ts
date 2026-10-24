@@ -23,7 +23,7 @@ export function inMemoryQuotaLedger() {
           getAlarm: async () => alarm,
           setAlarm: async (value: number | Date) => { alarm = Number(value); },
           deleteAll: async () => values.clear(),
-        } as RequestQuotaLedger['state']['storage'] }));
+        } }));
       }
       return {
         fetch: async (url, init) => {

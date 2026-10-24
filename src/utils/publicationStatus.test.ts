@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   arxivCommentSaysPublished,
   openAlexIsWorkingPaper,
@@ -8,6 +7,10 @@ import {
   openAlexPublicationStatus,
   semanticScholarIsPreprint,
 } from './publicationStatus.ts';
+import { arxivPaper } from '../services/arxivRecords.ts';
+import { slimWorksPage } from '../services/openAlexService.ts';
+import { SemanticScholarAdapter } from '../services/adapters/SemanticScholarAdapter.ts';
+import { mapOpenAlexEnrichmentWork, mapOpenAlexWork } from './openAlexWork.ts';
 
 // Chapters and accepted papers labelled «Preprint» (audit 2026-09-23, issue
 // 12a): of 31 recent chapters in the guest's six computing categories, 23
@@ -196,23 +199,26 @@ test('a Semantic Scholar review is an article, not a preprint', () => {
   assert.equal(semanticScholarIsPreprint(undefined), false);
 });
 
-// The four mappers use the rules above (convention ce139ce: comments stripped).
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8').then(stripComments);
+// The mappers that build a card label it by these rules, so a chapter or an
+// accepted paper is not a preprint on one surface and published on another.
+test('the arXiv, OpenAlex and Semantic Scholar mappers label a paper by these rules', () => {
+  const accepted = arxivPaper({
+    arxivId: '2607.02734', title: 'T', abstract: 'A', authors: ['Ada Lovelace'], doi: '', journalRef: '',
+    comment: 'Accepted at the 40th AAAI Conference on Artificial Intelligence',
+    published: '2026-07-03', allCategories: ['cs.LG'], primaryCategory: 'cs.LG',
+  });
+  assert.equal(accepted.publicationStatus, 'published', 'arXiv: the comment says it is accepted');
 
-test('SOURCE: arXiv, OpenAlex and Semantic Scholar mappers read their status from these rules', async () => {
-  const arxiv = await read('../services/arxivRecords.ts');
-  assert.match(arxiv, /const isPublishedInArxiv = !!\(doi \|\| journalRef \|\| arxivCommentSaysPublished\(comment\)\);/);
+  // A chapter whose best copy sits in a repository.
+  const chapter = {
+    id: 'https://openalex.org/W1',
+    type: 'book-chapter',
+    primary_location: { is_published: false, source: { type: 'repository' } },
+  };
+  assert.equal(slimWorksPage({ results: [chapter] }).papers[0].publicationStatus, 'published', 'OpenAlex search and explorer');
+  assert.equal(mapOpenAlexWork(chapter)?.publicationStatus, 'published', 'OpenAlex lanes');
+  assert.equal(mapOpenAlexEnrichmentWork(chapter)?.enrichment.publicationStatus, 'published', 'OpenAlex enrichment');
 
-  const service = await read('../services/openAlexService.ts');
-  const format = service.slice(service.indexOf('function formatOpenAlexWorkAsPaper('), service.indexOf('function formatOpenAlexWorkAsPaper(') + 3000);
-  assert.match(format, /publicationStatus: openAlexPublicationStatus\(work\),/);
-  const work = await read('./openAlexWork.ts');
-  const enrichment = work.slice(work.indexOf('export function mapOpenAlexEnrichmentWork('), work.indexOf('export function mapOpenAlexEnrichmentWork(') + 3000);
-  assert.match(enrichment, /publicationStatus: openAlexPublicationStatus\(work\),/);
-  assert.match(work, /const publicationStatus = openAlexPublicationStatus\(work\);/);
-
-  const s2 = await read('../services/adapters/SemanticScholarAdapter.ts');
-  assert.match(s2, /const isPreprint = semanticScholarIsPreprint\(raw\.publicationTypes\);/);
-  assert.doesNotMatch(s2, /includes\('review'\)/);
+  const review = new SemanticScholarAdapter().mapToStandard({ paperId: 'abc', publicationTypes: ['Review'] });
+  assert.equal(review.publicationStatus, 'published', 'Semantic Scholar: a review is not a preprint');
 });

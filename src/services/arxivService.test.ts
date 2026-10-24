@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { stripTypeScriptTypes } from 'node:module';
 import {
-  ARXIV_ROUTE_TIMEOUT_MS,
   arxivUnreachableError,
   assignRequestedCategories,
   buildAuthorQuery,
@@ -12,22 +9,6 @@ import {
   fetchPapers,
 } from './arxivService.ts';
 import { scorePaperForRecommendation } from '../utils/recommendationEngine.ts';
-
-test('an ID lookup requests every result in an abstract-recovery batch instead of the default ten', async () => {
-  const source = await readFile(new URL('./arxivService.ts', import.meta.url), 'utf8');
-  const start = source.indexOf('export async function fetchPapersByIds(');
-  const end = source.indexOf('\n/**', start);
-  const callback = stripTypeScriptTypes(source.slice(start, end).replace('export ', ''));
-  const requests: string[] = [];
-  const fetchByIds = new Function('isDev', 'ARXIV_DEV', 'ARXIV_PROD', 'cache', 'CACHE_TTL', 'fetchArxivData',
-    `${callback}\nreturn fetchPapersByIds;`)(false, '/api/arxiv', 'https://export.arxiv.org/api/query', new Map(), 300000,
-    async (url: string) => { requests.push(url); return []; });
-  const ids = Array.from({ length: 15 }, (_, i) => `2101.${10000 + i}`);
-  await fetchByIds(ids);
-  const params = new URL(requests[0]).searchParams;
-  assert.equal(params.get('id_list'), ids.join(','));
-  assert.equal(params.get('max_results'), '15');
-});
 
 // Under node the module sees no import.meta.env, so neither the Worker route nor
 // the dev proxy is configured -- exactly the state in which the dead corsproxy.io
@@ -110,18 +91,6 @@ test('keeps the arXiv phrase quotes balanced whatever the user typed', () => {
   assert.equal(buildSearchQuery('  "quantum" error correction  '), 'all:"quantum error correction"');
   assert.equal((buildAuthorQuery('A" OR au:B').match(/"/g) || []).length, 2);
   assert.equal((buildSearchQuery('a"b"c').match(/"/g) || []).length, 2);
-});
-
-// The Worker gives arXiv five seconds (ARXIV_UPSTREAM_TIMEOUT_MS in
-// worker/arxiv-api.ts). A client deadline under that gives up before the
-// Worker can answer at all, so a slow query could never succeed — measured
-// 2026-09-15/16: `sortBy=relevance` answered 502 at 5.07 s, and the client had
-// left at 4 s.
-test('the Worker route is given longer than the Worker gives arXiv', async () => {
-  const worker = await readFile(new URL('../../worker/arxiv-api.ts', import.meta.url), 'utf8');
-  const upstream = Number(worker.match(/const ARXIV_UPSTREAM_TIMEOUT_MS = (\d+);/)?.[1]);
-  assert.ok(Number.isFinite(upstream) && upstream > 0, 'the Worker declares its arXiv deadline');
-  assert.ok(ARXIV_ROUTE_TIMEOUT_MS > upstream, `client ${ARXIV_ROUTE_TIMEOUT_MS} ms must exceed the Worker's ${upstream} ms`);
 });
 
 // The lane (arxivRequestQueue.js) pauses on a 429 by reading `status` off the

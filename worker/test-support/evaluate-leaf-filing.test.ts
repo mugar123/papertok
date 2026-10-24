@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import { quantize } from '../paper-store.ts';
+import { evaluateStoreCopy } from './evaluate-leaf-filing.ts';
 
 // A synthetic store export: arXiv papers of two physics leaves, and three
 // journal articles in the physics area lane, with vectors along fixed axes.
@@ -36,20 +36,8 @@ function storeExport(t: import('node:test').TestContext) {
   return file;
 }
 
-const run = (...args: string[]) => spawnSync(process.execPath, ['worker/test-support/evaluate-leaf-filing.ts', ...args], {
-  cwd: new URL('../../', import.meta.url), encoding: 'utf8',
-});
-
 test('the evaluation reads a store export: held-out arXiv papers per area and rule, and what each rule would file of the area lanes', t => {
-  const result = run(storeExport(t), '--similarity', '0.5', '--margin', '0.3');
-  assert.equal(result.status, 0, result.stderr);
-  const { arxiv, areaLanes } = JSON.parse(result.stdout);
+  const { arxiv, areaLanes } = evaluateStoreCopy(storeExport(t), [{ similarity: 0.5, margin: 0.3 }]);
   assert.deepEqual(arxiv, [{ area: 'physics', similarity: 0.5, margin: 0.3, papers: 28, filed: 28, correct: 28 }]);
   assert.deepEqual(areaLanes, [{ area: 'physics', similarity: 0.5, margin: 0.3, papers: 3, filed: 1 }]);
-});
-
-test('the evaluation names what it needs when it is not given a store export', () => {
-  const result = run();
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /Usage: node worker\/test-support\/evaluate-leaf-filing\.ts <store\.sqlite \| store\.sql>/);
 });

@@ -271,7 +271,7 @@ function parseProjectFromResult(result: OpenAireResult): Project | null {
         }
 
         return {
-          id: rel.to!["$"],
+          id: rel.to["$"],
           code: rel.code?.["$"],
           acronym: acronym,
           title: title,

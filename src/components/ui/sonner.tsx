@@ -1,4 +1,4 @@
-import type { ComponentProps, CSSProperties } from 'react';
+import type { ComponentProps } from 'react';
 
 import { CheckCircle, CircleNotch, Info, Warning, XCircle } from '@phosphor-icons/react';
 import { Toaster as Sonner } from 'sonner';
@@ -36,7 +36,7 @@ function Toaster(props: ComponentProps<typeof Sonner>) {
         '--normal-text': 'var(--text-primary)',
         '--normal-border': 'var(--border-default)',
         '--border-radius': 'var(--radius-lg)',
-      } as CSSProperties}
+      }}
       toastOptions={{ style: { fontFamily: 'var(--font-body)' } }}
       {...props}
     />

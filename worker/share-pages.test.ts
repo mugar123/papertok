@@ -125,11 +125,11 @@ function memoryCache() {
   return {
     stored,
     async match(request: Request<unknown,CfProperties<unknown>>) {
-      const hit = stored.get(String((request as Request).url));
+      const hit = stored.get(String((request).url));
       return hit ? hit.clone() : undefined;
     },
     async put(request: Request<unknown,CfProperties<unknown>>, response: Response) {
-      stored.set(String((request as Request).url), response.clone());
+      stored.set(String((request).url), response.clone());
     },
   };
 }
@@ -148,18 +148,18 @@ function shareRequest(path: string, { method = 'GET', language }: { method?: str
 
 test('a share path names its kind, its identity and the public page it stands for', () => {
   const paper = paperRoute();
-  assert.equal(paper!.kind, 'paper');
-  assert.deepEqual(paper!.identity, { type: 'doi', value: '10.1145/3555174' });
-  assert.equal(paper!.canonicalPath, `/public/paper/${DOI_KEY}`);
+  assert.equal(paper.kind, 'paper');
+  assert.deepEqual(paper.identity, { type: 'doi', value: '10.1145/3555174' });
+  assert.equal(paper.canonicalPath, `/public/paper/${DOI_KEY}`);
 
   const list = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`)) as Extract<ShareRoute, { kind: 'list' }>;
-  assert.equal(list!.kind, 'list');
-  assert.equal(list!.canonicalPath, `/public/list/${SHARE_ID}`);
+  assert.equal(list.kind, 'list');
+  assert.equal(list.canonicalPath, `/public/list/${SHARE_ID}`);
 
   const author = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931')) as Extract<ShareRoute, { kind: 'entity' }>;
-  assert.equal(author!.kind, 'entity');
-  assert.equal(author!.type, 'author');
-  assert.equal(author!.canonicalPath, '/public/entity/author/A5018713931');
+  assert.equal(author.kind, 'entity');
+  assert.equal(author.type, 'author');
+  assert.equal(author.canonicalPath, '/public/entity/author/A5018713931');
 });
 
 test('a share path that cannot name a page is refused before anything is fetched', () => {

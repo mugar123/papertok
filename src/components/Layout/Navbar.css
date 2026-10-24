@@ -191,7 +191,7 @@
      Since 2026-09-05 all three are anchors (Navbar.jsx), so this reconciles
      nothing today: --lh-normal is 1.5 and the body already applies it, which
      is exactly what an anchor inherits. It stays as a defensive pin against
-     that drift returning, and navbarChrome.test.js holds it there. */
+     that drift returning. */
   line-height: var(--lh-normal);
   border: none;
   border-radius: var(--radius-md);

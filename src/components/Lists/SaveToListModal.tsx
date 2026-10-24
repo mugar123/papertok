@@ -29,6 +29,8 @@ import { useLanguage } from '../../context/LanguageContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { getIcon } from '../../utils/icons.ts';
 import CreateListDialog from './CreateListDialog.tsx';
+import { saveModalCloseRequest } from './saveModalCloseRequest.ts';
+import { writeNewList } from './writeNewList.ts';
 import ScientificText from '../ScientificText.ts';
 import { ArrowLeft, BookOpen, Check, ListPlus, LockSimple, Note, Plus, Tag, X } from '@phosphor-icons/react';
 import { libraryTags, suggestTags } from '../../utils/tagSuggestions.ts';
@@ -91,7 +93,7 @@ function demoSet(key: string, value: unknown) {
  * every close path (✕, backdrop, Escape) funnels through `requestClose`,
  * which swaps the save bar for a discard confirmation while changes exist.
  *
- * Structural contract, pinned by saveOrganizeModel.test.ts: the ONLY
+ * Structural contract (no test holds it; see docs/agents/papercuts.md): the ONLY
  * handlers that write are `handleCreateList` (its own explicit button; it
  * creates an EMPTY list — the paper joins it on Save) and `handleSave`, and
  * they are defined last, after every write-free handler.
@@ -129,7 +131,7 @@ export default function SaveToListModal({
   // session cache the lists page also reads, and revalidates behind it. Membership is the one thing that is NOT cached — it is per paper, so
   // it is derived here from the cached lists.
   const seededLists = user?.uid
-    ? (ownListsCache.get(user!.uid) ?? readStoredLists(user!.uid))
+    ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
     : null;
   const seededMembership = useMemo(
     () => listsHolding(seededLists, paper.id),
@@ -249,7 +251,7 @@ export default function SaveToListModal({
 
     const fromFirestore = async () => readOwnLists(
       await getDocs(query(
-        collection(db, 'users', user!.uid, 'lists'),
+        collection(db, 'users', user.uid, 'lists'),
         limit(OWN_LISTS_PAGE_SIZE),
       )),
       paper.id,
@@ -290,7 +292,7 @@ export default function SaveToListModal({
      * one `apply`, and no state set synchronously inside the effect.
      */
     const fromFreshCache = () => {
-      const cached = ownListsCache.get(user!.uid);
+      const cached = ownListsCache.get(user.uid);
       // `cached: true` is what stops `apply` from renewing the freshness
       // window with data it did not fetch — otherwise the window would keep
       // extending itself and the lists would never be re-read at all.
@@ -301,7 +303,7 @@ export default function SaveToListModal({
     };
     const readLists = IS_DEMO
       ? fromDemo
-      : (ownListsAreFresh(user!.uid) ? fromFreshCache : fromFirestore);
+      : (ownListsAreFresh(user.uid) ? fromFreshCache : fromFirestore);
 
     patientRead(readLists, {
       attempts: 3,
@@ -437,17 +439,12 @@ export default function SaveToListModal({
    */
   const closeDialog = () => (embedded ? onClose() : setOpen(false));
 
-  // `explicit` is the X. Once the discard prompt is on screen, pressing it
-  // again is the answer to that prompt, not a second question: it closes and
-  // drops the changes, as Discard would. Escape and the scrim stay guarded — a
-  // stray press outside the window must not cost somebody their note.
-  const requestClose = ({ explicit = false } = {}) => {
-    if (saving || !open) return;
-    if (dirty && !(explicit && confirmingDiscard)) {
-      setConfirmingDiscard(true);
-      return;
-    }
-    closeDialog();
+  // The guard itself (saveModalCloseRequest.ts): the X answers an open discard
+  // prompt, Escape and the scrim never do.
+  const requestClose = (reason: string) => {
+    const outcome = saveModalCloseRequest({ reason, saving, open, dirty, confirmingDiscard });
+    if (outcome === 'confirmDiscard') setConfirmingDiscard(true);
+    else if (outcome === 'close') closeDialog();
   };
 
   // Base UI's own dismissals — Escape, a press on the scrim, the X — arrive as
@@ -456,7 +453,7 @@ export default function SaveToListModal({
   // way the native dialog's `onCancel` was intercepted before.
   const onCancel = (eventDetails: Parameters<NonNullable<ComponentProps<typeof Dialog>['onOpenChange']>>[1] | Parameters<NonNullable<ComponentProps<typeof Drawer>['onOpenChange']>>[1]) => {
     eventDetails.cancel();
-    requestClose({ explicit: eventDetails.reason === 'close-press' });
+    requestClose(eventDetails.reason);
   };
   useLayoutEffect(() => {
     if (!closeGuardRef) return undefined;
@@ -491,19 +488,18 @@ export default function SaveToListModal({
       demoSet('lists', allLists);
     } else {
       const listRef = doc(db, 'users', user!.uid, 'lists', listId);
-      await setDoc(listRef, newList);
       // Public from the start: published empty, the Worker writes the share id
       // onto the list; Save's sync then fills it with this paper.
       // A failed publish leaves the list private, and says so.
-      if (isPublic) {
-        try {
-          const { shareId } = await publishPublicList({ listId, title: name, language: 'en', papers: [] });
-          Object.assign(newList, { publicShareId: shareId, publicSyncedAt: new Date() });
-        } catch (publishError) {
+      await writeNewList(newList, {
+        isPublic,
+        write: (list) => setDoc(listRef, list),
+        publish: () => publishPublicList({ listId, title: name, language: 'en', papers: [] }),
+        onPublishFailed: (publishError) => {
           console.error('The new list could not be published', publishError);
           toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
-        }
-      }
+        },
+      });
     }
 
     createdLists.current = [...createdLists.current, newList];
@@ -560,7 +556,7 @@ export default function SaveToListModal({
         }
         demoSet('lists', allLists);
         if (savesPaper) {
-          markSaved(paper);
+          void markSaved(paper);
           const allSaved = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
           allSaved[paper.id] = {
             title: paper.title, authors: paper.authors?.slice(0, 5),
@@ -600,7 +596,7 @@ export default function SaveToListModal({
           // The other order left an orphan whenever this write was refused:
           // "saved" everywhere, a paper in no list, and a Save that could
           // never succeed again because markSaved saw it as already saved.
-          markSaved(paper);
+          void markSaved(paper);
         }
 
         // `updatedAt` rides along on every list write. It is what tells a
@@ -616,9 +612,9 @@ export default function SaveToListModal({
       if (unsavesPaper) await unmarkSaved(paper);
 
       const paperDetail = { paper_id: paper.id, paper_title: paper.title };
-      toAdd.forEach(() => trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }));
-      toRemove.forEach(() => trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }));
-      if (savesPaper) markActivation();
+      toAdd.forEach(() => { void trackEvent('save_change', { action: 'add', surface: 'lists', ...paperDetail }); });
+      toRemove.forEach(() => { void trackEvent('save_change', { action: 'remove', surface: 'lists', ...paperDetail }); });
+      if (savesPaper) void markActivation();
 
       closeDialog();
     } catch (err) {
@@ -964,7 +960,7 @@ export default function SaveToListModal({
             ) : (
               <Button
                 className="save-modal-save"
-                onClick={handleSave}
+                onClick={() => { void handleSave(); }}
                 disabled={!hasWrites || saving}
               >
                 {saving ? copy.saving : copy.save}

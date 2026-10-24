@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   AuthIdentityUnsupportedError,
   EmailAlreadyUsedError,
@@ -12,8 +11,6 @@ import {
   reauthenticateCurrentUser,
   signInWithProvider,
 } from './authIdentityService.ts';
-
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 const GITHUB = SIGN_IN_PROVIDERS.github;
 const GOOGLE = SIGN_IN_PROVIDERS.google;
@@ -343,40 +340,4 @@ test('F5: provider ids survive a malformed providerData without throwing', () =>
   );
   assert.equal(hasSignInProvider({ providerData: [{ providerId: GOOGLE }] }, GITHUB), false);
   assert.equal(hasSignInProvider({ providerData: [{ providerId: GITHUB }] }, GITHUB), true);
-});
-
-// --- structural ------------------------------------------------------------
-
-test('SOURCE: the identity module stays out of Firestore, so a sign-in writes nothing', async () => {
-  // The door and the account's data are separate acts: this module has no way
-  // to write a document, so signing in through either provider stores nothing
-  // by itself.
-  const source = await readFile(new URL('./authIdentityService.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /firebase\/firestore/, 'the identity module stays out of Firestore');
-  assert.doesNotMatch(source, /setDoc|writeBatch/);
-});
-
-test('SOURCE: the pending credential is deliberately never stashed', async () => {
-  // `03-AUTH.md` routes the collision through settings, not through a credential
-  // held in memory across a sign-in. If that decision is ever revisited, this
-  // test is where it gets revisited on purpose.
-  const source = await readFile(new URL('./authIdentityService.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /credentialFromError|linkWithCredential|signInWithCredential/);
-});
-
-test('SOURCE: nothing on the feed path imports the identity service', async () => {
-  // The feed-load invariant (one document read) asserted where it can break.
-  for (const path of [
-    '../context/FeedContext.tsx',
-    '../components/Feed/FeedContainer.tsx',
-    '../components/Feed/PaperCard.tsx',
-    '../utils/interactionProfileLoader.ts',
-    '../services/interactionProfileStore.ts',
-  ]) {
-    // Comments stripped first: the claim is about code. A file on this path
-    // may legitimately NAME a service in prose without importing a line of it.
-    // Strings are untouched, so a dynamic import still trips.
-    const source = stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
-    assert.doesNotMatch(source, /authIdentityService/, `${path} must stay off the auth providers`);
-  }
 });

@@ -3,13 +3,13 @@ import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import { INTEREST_AREAS } from '../../data/categories.ts';
-import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Button } from '../ui/button.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../ui/select.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.tsx';
 import { Toggle } from '../ui/toggle.tsx';
+import { interestsSaveRefusal } from './interestsSaveRefusal.ts';
 import './SettingsSheet.css';
 import './EditInterestsModal.css';
 
@@ -74,12 +74,9 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   };
 
   const handleSave = async () => {
-    if (selected.size === 0) {
-      toast.error('Select at least one research area.', { id: 'eim-error' });
-      return;
-    }
-    if (selected.size > USER_PREFERENCES_MAX) {
-      toast.error(`At most ${USER_PREFERENCES_MAX} interests: drop ${selected.size - USER_PREFERENCES_MAX}.`, { id: 'eim-error' });
+    const refusal = interestsSaveRefusal(selected.size);
+    if (refusal) {
+      toast.error(refusal, { id: 'eim-error' });
       return;
     }
     setIsSaving(true);
@@ -142,7 +139,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
       </span>
       <Button
         size="lg"
-        onClick={handleSave}
+        onClick={() => { void handleSave(); }}
         disabled={isSaving}
         aria-busy={isSaving ? 'true' : undefined}
       >

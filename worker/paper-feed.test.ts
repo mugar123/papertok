@@ -66,7 +66,7 @@ test("the bundles from before the corpus get a full page of arXiv papers, which 
       subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
       field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
     },
-  } as Parameters<typeof mapOpenAlexWork>[0])!);
+  })!);
   await ingestPapers(env, [
     ...preprints.map(item => ({ paper: item, lanes: [] })),
     ...articles.map(item => ({ paper: item, lanes: ['area:cs'] })),
@@ -199,7 +199,7 @@ test('the page answers before a liked paper without a vector is embedded, and th
     const url = new URL(String(input instanceof Request ? input.url : input));
     if (url.hostname === 'identitytoolkit.googleapis.com') return Response.json({ users: [{ localId: 'reader-1' }] });
     throw new Error(`unexpected request to ${url.hostname}`);
-  }) as typeof fetch;
+  });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
     globalThis.fetch = realFetch;
@@ -253,7 +253,7 @@ test('a liked paper arXiv answers after 2 s is still filed by the lookup after t
     arxivAsked += 1;
     await new Promise(resolve => setTimeout(resolve, 3_000));
     return new Response(SLOW_LIKE, { headers: { 'content-type': 'application/atom+xml' } });
-  }) as typeof fetch;
+  });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
     globalThis.fetch = realFetch;
@@ -306,7 +306,7 @@ test("the lookup after the page files what arXiv sends at the end of the route's
     arxivAsked += 1;
     await new Promise(resolve => setTimeout(resolve, ARXIV_UPSTREAM_TIMEOUT_MS - 100));
     return new Response(SLOW_LIKE, { headers: { 'content-type': 'application/atom+xml' } });
-  }) as typeof fetch;
+  });
   (globalThis as TestGlobals).caches = { default: {
     match: async (key: Request) => {
       if (new URL(key.url).pathname.startsWith('/cache/arxiv')) await new Promise(resolve => setTimeout(resolve, cacheReadMs));

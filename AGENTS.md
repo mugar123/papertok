@@ -18,18 +18,24 @@ been loaded when the session started at the root. Worker configuration also foll
   permission to repair the repository.
 - Challenge a proposed design when a concrete tradeoff or simpler solution warrants it.
   Continue authorized work without asking again for routine, reversible decisions.
-- Before planning or implementing code, read and use [Ponytail](.agents/skills/ponytail/SKILL.md).
-  Default to `full` unless the user chooses another mode. Before handing off any repository
-  change, read and use [Ponytail Review](.agents/skills/ponytail-review/SKILL.md) and
-  [Repo QA](.agents/skills/repo-qa/SKILL.md). A review must cover the final diff, including
-  untracked files; loading a skill alone is not evidence that its review ran.
+- Before handing off any repository change, choose and run checks with
+  [Repo QA](.agents/skills/repo-qa/SKILL.md), and have the final diff, including untracked
+  files, reviewed with [Review](.agents/skills/review/SKILL.md) in a context that did not
+  write it (the `reviewer` subagent in Claude Code). Loading a skill is not evidence that
+  it ran; report who reviewed and what they found.
 - For bugs, failures or regressions, use [Diagnosing bugs](.agents/skills/diagnosing-bugs/SKILL.md).
   For user-facing copy, comments, documentation or PR text, use
-  [Unslop](.agents/skills/unslop/SKILL.md). Read only skills relevant to the task. If discovery
-  omits a required skill, open its linked source rather than reconstructing it from memory.
+  [Unslop](.agents/skills/unslop/SKILL.md). When the user corrects the same kind of mistake
+  twice, use [Correct](.agents/skills/correct/SKILL.md) to turn it into a check. Read only
+  skills relevant to the task. If discovery omits a required skill, open its linked source
+  rather than reconstructing it from memory.
 
 ## Ownership and complexity
 
+- Take the first option that completes the task: leave out what nothing requires, reuse the
+  existing owner, use the platform or an installed dependency's API, and only then write the
+  smallest clear code for what remains. A shorter diff that hides a bug or removes a
+  boundary is not simpler.
 - Before adding a helper, validator, state or dependency, inspect its existing owner and
   consumers. Add a layer only for a current requirement; fewer lines do not justify moving
   behavior into the wrong layer or hiding it in a dense expression.
@@ -43,7 +49,31 @@ been loaded when the session started at the root. Worker configuration also foll
   invalid credentials, malformed required data or unexpected errors into success, invented
   metadata or unexplained empty results. Preserve useful degraded states and retry paths.
 - Fix lint findings at their cause. Do not evade a rule with renames, wrappers, suppressions
-  or weaker assertions, timeouts, baselines or file coverage.
+  or weaker assertions, timeouts, baselines or file coverage. A disable directive is only for a
+  constraint a dependency or platform imposes: one line, with the reason after `--`.
+- Do not edit `eslint.config.ts`, `knip.jsonc`, tsconfig files, CI workflows or
+  `.claude/settings.json` to make a check pass. Changing what a gate enforces needs the user's
+  explicit approval, and a new rule lands with every existing violation fixed.
+
+## Rules the checks enforce
+
+| Rule | Enforced by |
+| --- | --- |
+| Tests call the code and assert its result; they never match source text | [lint: no-restricted-syntax] in `src`, `worker` and `proxy` tests |
+| Application code does not launder types with `as unknown as` | [lint: no-restricted-syntax] |
+| A promise is awaited, or its rejection is handled | [lint: @typescript-eslint/no-floating-promises], [lint: @typescript-eslint/no-misused-promises] |
+| The frontend never imports Worker or proxy code; the Worker never imports UI or client SDKs | [lint: no-restricted-imports] |
+| Every disable directive states its reason, and an unused one fails | [lint: @eslint-community/eslint-comments/require-description] |
+| Focus stays visible: no `outline: none` without a recorded replacement, no ring in `--brand-orange`, the global ring outside every `@layer` | [lint: papertok/no-focus-ring-removal], [lint: papertok/no-brand-orange-focus-ring], [lint: papertok/focus-ring-unlayered] |
+| Text and focus tokens keep WCAG contrast in both themes; every colour token has a dark value | [lint: papertok/token-contrast], [lint: papertok/dark-theme-parity] |
+| Every `var(--token)` in a stylesheet resolves, and stylesheets load nothing from other origins | [lint: papertok/defined-custom-properties], [lint: papertok/no-external-css-urls] |
+| Overlays come from `src/components/ui`; patterned buttons appear only where design.md allows | [lint: no-restricted-syntax], [lint: papertok/patterned-buttons] |
+| A context is created in a component-free `.ts` module, never beside a component | [lint: no-restricted-syntax] in `.tsx` files |
+| No unused files, exports or dependencies | knip in `npm run check` |
+| Generated bindings and local secrets are not hand-edited; editing a gate file asks first | `.claude/settings.json` permission rules |
+
+Everything else in these files is enforced by review. Classes of mistakes that keep recurring
+without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
 
 ## Scientific and product decisions
 

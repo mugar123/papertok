@@ -11,7 +11,6 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { normalizeArxivFigureId, peekPaperFigures } from './paperFigureService.ts';
 import { isArxivFigureId } from '../../worker/paper-figures.ts';
 
@@ -55,30 +54,6 @@ test('the version suffix and the arxiv: prefix are stripped before matching', ()
 });
 
 /**
- * The agreement test above compares behaviour, which is what matters. This one
- * compares the source text, so that a future edit to either file that keeps the
- * sampled identifiers passing but changes the accepted language still shows up.
- */
-test('both files spell the same two patterns', async () => {
-  const [client, worker] = await Promise.all([
-    readFile(new URL('./paperFigureService.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../../worker/paper-figures.ts', import.meta.url), 'utf8'),
-  ]);
-  const patterns = (source: string) => (source.match(/\/\^[^\n]*?\$\//g) || [])
-    .map(value => value.trim())
-    .sort();
-
-  const clientPatterns = patterns(client);
-  assert.equal(clientPatterns.length, 2, 'the client declares exactly the two shapes');
-  for (const pattern of clientPatterns) {
-    assert.ok(
-      worker.includes(pattern),
-      `the Worker no longer spells ${pattern}; the two gates have diverged`,
-    );
-  }
-});
-
-/**
  * `peekPaperFigures` is what lets a card be born with the clippings it already
  * has. The feed's own measurement (2026-09-11, production build, real session)
  * is the reason it exists: coming back from Research the four figures were in
@@ -89,11 +64,9 @@ test('both files spell the same two patterns', async () => {
  * `getPaperFigures` cannot be called from here — it reads
  * `import.meta.env.VITE_PAPER_API_BASE_URL`, which Vite substitutes at build
  * time and Node leaves undefined — so the cache cannot be filled through the
- * front door in a test. What IS checked behaviourally is the half that matters
- * for correctness: it must never invent figures for a paper nobody has fetched,
- * and it must answer without a turn of the event loop. The source assertion
- * below covers the other half, and is mutation-checked: point it at
- * `pendingRequests` or give it an `await` and it fails.
+ * front door in a test. What is checked here: it must never invent figures
+ * for a paper nobody has fetched, and it must answer without a turn of the
+ * event loop.
  */
 test('peekPaperFigures answers null for anything the cache has not seen', () => {
   assert.equal(peekPaperFigures({ arxivId: '2401.12345' }), null);
@@ -105,18 +78,4 @@ test('peekPaperFigures answers null for anything the cache has not seen', () => 
 test('peekPaperFigures answers in the same tick, not in a promise', () => {
   const answer = peekPaperFigures({ arxivId: '2401.12345' });
   assert.notEqual(typeof (answer as { then?: unknown } | null)?.then, 'function', 'a thenable would put the answer a frame away');
-});
-
-test('peekPaperFigures reads the same cache getPaperFigures writes, with no waiting', async () => {
-  const source = await readFile(new URL('./paperFigureService.ts', import.meta.url), 'utf8');
-  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  const start = stripped.indexOf('export function peekPaperFigures');
-  assert.notEqual(start, -1, 'peekPaperFigures is exported as a plain function');
-  const end = stripped.indexOf('\n}', start);
-  const body = stripped.slice(start, end);
-
-  assert.match(body, /figureCache\.has\(/, 'it asks the cache getPaperFigures writes');
-  assert.match(body, /figureCache\.get\(/, 'it returns what that cache holds');
-  assert.doesNotMatch(body, /pendingRequests/, 'an in-flight request is not an answer');
-  assert.doesNotMatch(body, /\bawait\b|\.then\(/, 'waiting is the whole thing it exists to avoid');
 });

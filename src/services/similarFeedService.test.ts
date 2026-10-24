@@ -81,7 +81,7 @@ test('waits a bounded time: providers that never answer leave nothing to show, n
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const never = () => new Promise<never>(() => {});
   let outcome: Awaited<ReturnType<typeof classifySimilarPapers>> | null = null;
-  classifySimilarPapers([arxivPaper, biorxivPaper], { fetchArxiv: never, enrich: never, fetchByDois: never })
+  void classifySimilarPapers([arxivPaper, biorxivPaper], { fetchArxiv: never, enrich: never, fetchByDois: never })
     .then(value => { outcome = value; });
 
   const drain = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };

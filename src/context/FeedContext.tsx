@@ -46,7 +46,7 @@ export interface FeedContextValue {
   trackPdfBounce: (paper: Paper) => Promise<void>;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
 import { IS_DEMO, db } from '../services/firebase.ts';
@@ -72,10 +72,10 @@ import { reRankHoldMs } from '../utils/feedReRankTiming.ts';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
-  removeLegacySeenPaperIds,
   saveProfileDriftCheckedAt,
-  saveSeenPaperIds,
 } from '../utils/userScopedStorage.ts';
+import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feedViewedPapers.ts';
+import { canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage } from './feedPagination.ts';
 import { readStoredClassification, storedClassification } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
 import { savedPaperDocRef } from '../services/savedPaperStore.ts';
@@ -376,21 +376,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // A card counts as seen once it was on screen: the dwell and the skip the
   // card reports call this. A card a load only brought in stays in
   // sessionSeenPapers, which dies with the page, so the next load may show it.
-  // The list kept across loads is read back before it is written, so a second
-  // tab's views are not overwritten. A card that reports after the account
-  // changed was viewed by the account that owned it, not by the new one.
-  // Signing out sweeps the account's storage before React unmounts the card,
-  // whose cleanup then reports while activeUserId is still that account's;
-  // Firebase already names nobody, so that report does not write the list back.
   const markPaperViewed = useCallback((paperId: string, viewerId: string | null | undefined) => {
-    const userId = activeUserId.current;
-    if ((viewerId || null) !== userId) return;
-    sessionSeenPapers.current.add(paperId);
-    if (auth.currentUser?.uid !== userId) return;
-    const viewed = readSeenPaperIds(userId);
-    viewed.delete(paperId);
-    viewed.add(paperId);
-    saveSeenPaperIds(userId, viewed);
+    recordCardView(paperId, viewerId, {
+      activeUserId: activeUserId.current,
+      signedInUid: auth.currentUser?.uid,
+      sessionSeen: sessionSeenPapers.current,
+    });
   }, []);
 
   // What this account viewed on any device, as its aggregate has it, is passed
@@ -736,7 +727,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
     };
     const fillable = openAbstractWait(setAbstractWaits, waiting, [openAlex, europePmc, recovery].filter(request => request !== null));
-    openAlex?.then((records) => {
+    void openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
       const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
@@ -746,21 +737,21 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const shown = papersRef.current;
       keepLateTopicsRef.current(cardsGivenTopic(shown, enrich(shown)));
     });
-    iCite?.then((metrics) => {
+    void iCite?.then((metrics) => {
       if (!metrics || Object.keys(metrics).length === 0) return;
       update(current => mergeICiteEnrichment(current, metrics));
     });
-    europePmc?.then((records) => {
+    void europePmc?.then((records) => {
       if (!records || records.size === 0) return;
       const loading = fillable();
       update(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading));
     });
-    recovery?.then((records) => {
+    void recovery?.then((records) => {
       if (records.length === 0) return;
       const loading = fillable();
       update(current => preserveFeedAbstracts(current, mergeFeedAbstracts(current, records), loading));
     });
-    publications.then((classified) => {
+    void publications.then((classified) => {
       update(current => dropUnreachedPublications(current, classified, visiblePaperIdRef.current));
     });
   }, [scheduleFeedSnapshotWrite]);
@@ -944,16 +935,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid || null;
     const sessionId = ++feedSessionId.current;
 
-    // Before the list is read: on an account's first load it starts from the
-    // list this browser kept before.
-    removeLegacySeenPaperIds(null, userId);
     activeUserId.current = userId;
-    sessionSeenPapers.current = readSeenPaperIds(userId);
+    sessionSeenPapers.current = seenPapersForAccount(userId);
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
     // profile that merely failed to load leaves them alone.
-    if (loadedProfileUserId.current && loadedProfileUserId.current !== userId) {
+    if (leavesLoadedAccount(loadedProfileUserId.current, userId)) {
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
@@ -1150,7 +1138,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     };
 
-    loadInteractions();
+    void loadInteractions();
 
     return () => {
       cancelled = true;
@@ -1371,9 +1359,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const corePapers = Array.from(uniqueMap.values());
         newPapers = corePapers;
 
-        // An empty first page is not the end of the feed: a corpus with nothing
-        // for these interests is not ready, which is an error with a retry.
-        if (reset && newPapers.length === 0 && !seenFallback) {
+        if (isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
           throw new Error('The paper store has no papers for these interests yet.');
         }
       } else {
@@ -1397,18 +1383,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !savedPaperIdsRef.current.has(p.id) &&
           !isKnownPaper(p.id)
         );
-        // The first such page this load reached is shown again when no later
-        // page has an unseen paper: the feed is never empty because
-        // everything was seen.
-        const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? { page: currentPage, papers: bypassSeen } : undefined);
-        if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
-          // One page on, not more: the corpus ranks the same way on every
-          // load, so a longer move would pass over papers not yet shown.
-          const nextPageToFetch = currentPage + 1;
+        const plan = planUnshowablePage({ candidateCount: newPapers.length, currentPage, seenFallback, shownBeforeHere: bypassSeen });
+        if (plan.kind === 'next-page') {
+          const nextPageToFetch = plan.page;
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: shownBefore });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1422,9 +1403,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           setTimeout(loadNextPage, 0);
           return;
         }
-        if (shownBefore) {
+        if (plan.kind === 'show-seen') {
           console.log('No later page has a paper the reader has not seen; showing seen papers again.');
-          filtered = shownBefore.papers;
+          filtered = plan.papers;
         }
       }
 
@@ -1464,12 +1445,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const existingIds = new Set(shown.map((p) => p.id));
         return [...shown, ...filtered.filter((p) => !existingIds.has(p.id))];
       };
-      // When an empty or failed page left this load showing the seen papers
-      // it carried, the feed goes on from the page after theirs: the pages
-      // this load skipped past may hold papers the reader has not seen.
-      const resumeAfter = newPapers.length === 0 ? seenFallback?.page : undefined;
-      const nextPage = (resumeAfter ?? currentPage) + 1;
-      const nextHasMore = newPapers.length > 0 || resumeAfter !== undefined;
+      const { nextPage, hasMore: nextHasMore } = pageAfterLoad(newPapers.length, currentPage, seenFallback);
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
 
@@ -1508,10 +1484,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // the list this load found: a card removed since can skip a
       // continuation, which the scroll sentinel then makes up for, and a card
       // inserted since can ask for one page more.
-      if (addPage(papers).length < PAGE_SIZE && newPapers.length > 0 && currentPage < 10) {
+      if (addPage(papers).length < PAGE_SIZE && canFetchNextPage(newPapers.length, currentPage)) {
         setTimeout(() => {
           if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-            loadPapersRef.current?.(false, activeMode, nextPage);
+            void loadPapersRef.current?.(false, activeMode, nextPage);
           }
         }, 0);
       }
@@ -1526,7 +1502,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           autoRetryUsedRef.current = true;
           setTimeout(() => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
+              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
             }
           }, 2500);
         }
@@ -1645,7 +1621,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-      loadPapers(true, null);
+      void loadPapers(true, null);
     }, 0);
     return () => clearTimeout(refreshTimer);
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
@@ -1734,7 +1710,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
   const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current) loadPapers(false);
+    if (hasMore && !feedLoadInFlight.current) void loadPapers(false);
   }, [hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
@@ -1749,7 +1725,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // the stored page no longer follows the cards on screen.
     setTimeout(() => {
       if (stored.requestId === feedRequestId.current && stored.sessionId === feedSessionId.current) {
-        loadPapersRef.current?.(...stored.args);
+        void loadPapersRef.current?.(...stored.args);
       }
     }, 0);
   }, [loadPapers]);
@@ -1784,7 +1760,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {
       boredomLevel.current = 0;
-      traverseAndExpandNetwork(paper);
+      void traverseAndExpandNetwork(paper);
     }
     
     if (isCurrentlyLiked) {
@@ -2032,7 +2008,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid;
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
-    traverseAndExpandNetwork(paper);
+    void traverseAndExpandNetwork(paper);
 
     recordProfileEvent({
       paperId: paper.id,
@@ -2150,7 +2126,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
       
       // Expand network via OpenAlex
-      traverseAndExpandNetwork(paper);
+      void traverseAndExpandNetwork(paper);
     }
 
     const nextSaved = new Set(savedPaperIdsRef.current);

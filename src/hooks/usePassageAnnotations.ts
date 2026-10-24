@@ -1,11 +1,12 @@
 import type { Paper } from '../models/Paper.ts';
 import type { UserHighlight } from '../services/userHighlightService.ts';
+import type { ProductAnalyticsEvent } from '../services/analyticsService.ts';
 export interface PassageSelection { sectionId: string; paragraphIndex: number; quote: string; endParagraphIndex?: number; endQuote?: string; text?: string; context?: string; quoteStart?: number; quoteEnd?: number; anchor?: { left: number; top: number; bottom: number; right: number } }
 export type PassageAnnotation = Omit<UserHighlight, 'paperTitle'> & { paperTitle?: string; fresh?: boolean; unsaved?: boolean };
 interface AnnotationOptions {
   uid?: string | null; paper?: Partial<Paper> | null; paperId: string; level: string; language: string;
   onQuota?: (remaining: number) => void;
-  trackEvent?: (name: string, params: Record<string, unknown>) => unknown;
+  trackEvent?: (name: ProductAnalyticsEvent, params: Record<string, unknown>) => unknown;
 }
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -81,7 +82,7 @@ export function usePassageAnnotations({
   useEffect(() => {
     if (!uid || !paperId) return undefined;
     let active = true;
-    listUserHighlights(uid, paperId).then(stored => {
+    void listUserHighlights(uid, paperId).then(stored => {
       if (active) setLoaded(stored);
     });
     return () => { active = false; };

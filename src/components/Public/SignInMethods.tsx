@@ -24,7 +24,7 @@ export default function SignInMethods() {
           variant="outline"
           size="lg"
           className="auth-provider w-full"
-          onClick={() => handleSignIn('google')}
+          onClick={() => { void handleSignIn('google'); }}
           disabled={preparing}
           focusableWhenDisabled
           aria-describedby={preparing ? preparingId : undefined}
@@ -42,7 +42,7 @@ export default function SignInMethods() {
           variant="outline"
           size="lg"
           className="auth-provider w-full"
-          onClick={() => handleSignIn('github')}
+          onClick={() => { void handleSignIn('github'); }}
           disabled={preparing}
           focusableWhenDisabled
           aria-describedby={preparing ? preparingId : undefined}

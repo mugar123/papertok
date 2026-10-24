@@ -344,7 +344,7 @@ async function checkNanHealth(env: WorkerEnv) {
     if (!response.ok) {
       return { provider, model, paperText, configured: true, available: false, code: classifyNanError(response.status) };
     }
-    const payload = await response.json<{ data?: Array<{ id?: unknown }> }>().catch(() => ({} as { data?: Array<{ id?: unknown }> }));
+    const payload = await response.json<{ data?: Array<{ id?: unknown }> }>().catch((): { data?: Array<{ id?: unknown }> } => ({}));
     const served = Array.isArray(payload?.data) && payload.data.some(entry => entry?.id === model);
     return {
       provider,
@@ -369,7 +369,7 @@ const HEALTH_CHECKS: Partial<Record<string, typeof checkGeminiHealth | typeof ch
 export async function checkAIProviderHealth(env: WorkerEnv): Promise<{ provider: string; model: string; configured: boolean; available: boolean; code: string | null; paperText?: boolean }> {
   const provider = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
   return HEALTH_CHECKS[provider]
-    ? HEALTH_CHECKS[provider]!(env)
+    ? HEALTH_CHECKS[provider](env)
     : { provider, model: '', configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
 }
 

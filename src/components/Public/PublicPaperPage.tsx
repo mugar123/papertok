@@ -56,7 +56,11 @@ export default function PublicPaperPage({
   onOpenPdf,
   onSaveToList,
   isAuthenticated = false,
-}: Pick<PaperCardProps, 'onAuthRequired' | 'onOpenPdf' | 'onSaveToList'> & { isAuthenticated?: boolean }) {
+}: Pick<PaperCardProps, 'onAuthRequired'> & {
+  onOpenPdf?: (paper: Paper) => void;
+  onSaveToList?: (paper: Paper) => void;
+  isAuthenticated?: boolean;
+}) {
   const { paperKey = '' } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -239,8 +243,8 @@ export default function PublicPaperPage({
 
   const goBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
-    if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
-    else navigate('/feed');
+    if (Number.isInteger(historyIndex) && historyIndex > 0) void navigate(-1);
+    else void navigate('/feed');
   }, [navigate]);
 
   const retry = useCallback(() => setAttempt(current => current + 1), []);
@@ -250,7 +254,7 @@ export default function PublicPaperPage({
     isRead: readPaperIds.has(candidate.id),
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
   const handleOpenPdf = useCallback((candidate: Paper) => {
-    if (isAuthenticated) trackPdfOpened(candidate);
+    if (isAuthenticated) void trackPdfOpened(candidate);
     onOpenPdf?.(candidate);
   }, [isAuthenticated, onOpenPdf, trackPdfOpened]);
 
@@ -276,7 +280,7 @@ export default function PublicPaperPage({
             <ArrowLeft size={20} />
           </button>
           <div className="public-paper-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
-          <button type="button" className="public-paper-nav-button" onClick={() => navigate('/feed')} aria-label={text(COPY.home)} title={text(COPY.home)}>
+          <button type="button" className="public-paper-nav-button" onClick={() => { void navigate('/feed'); }} aria-label={text(COPY.home)} title={text(COPY.home)}>
             <House size={19} />
           </button>
         </nav>
@@ -318,9 +322,9 @@ export default function PublicPaperPage({
         >
           <PaperCard
             paper={paper as Paper}
-            isLiked={isAuthenticated && likedPaperIds.has(paper.id!)}
-            isSaved={isAuthenticated && savedPaperIds.has(paper.id!)}
-            isRead={isAuthenticated && readPaperIds.has(paper.id!)}
+            isLiked={isAuthenticated && likedPaperIds.has(paper.id)}
+            isSaved={isAuthenticated && savedPaperIds.has(paper.id)}
+            isRead={isAuthenticated && readPaperIds.has(paper.id)}
             onLike={toggleLike}
             onNotInterested={markNotInterested}
             onMarkAsRead={markAsRead}
@@ -353,7 +357,7 @@ export default function PublicPaperPage({
               <Button variant="outline" onClick={goBack}>
                 <ArrowLeft size={16} aria-hidden="true" /> {text(COPY.back)}
               </Button>
-              <Button variant="outline" onClick={() => navigate('/feed')}>
+              <Button variant="outline" onClick={() => { void navigate('/feed'); }}>
                 <House size={16} aria-hidden="true" /> {text(COPY.home)}
               </Button>
             </>
