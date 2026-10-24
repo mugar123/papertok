@@ -37,7 +37,7 @@ export const FEED_CANDIDATE_LIMIT = 4_000;
 // page when it names none.
 const FEED_PAGE_SIZE = 15;
 // At least this many of each page of the feed are articles of an area's
-// journal lane while the asked lanes hold any, and more where the ranking
+// journal lane while the area lanes hold any, and more where the ranking
 // puts more (PAP-107). OpenAlex dates an article by its day alone, mostly the
 // day before the harvest, and that day sorts as its midnight, so newest first
 // the night's articles ranked behind a busy reader's whole day of arXiv
