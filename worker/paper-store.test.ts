@@ -420,7 +420,7 @@ test("a reader of economics also gets the working-paper series, filed under none
 });
 
 // PAP-107: a journal article of a whole area, as its OpenAlex lane lists it.
-const physicsJournalArticle = mapOpenAlexWork({
+const physicsWork = {
   id: 'https://openalex.org/W7223244690',
   doi: 'https://doi.org/10.7566/jpsj.95.111002',
   title: 'High-harmonic Generation Spectroscopy in van der Waals Materials',
@@ -436,7 +436,8 @@ const physicsJournalArticle = mapOpenAlexWork({
     subfield: { id: 'https://openalex.org/subfields/3107', display_name: 'Atomic and Molecular Physics, and Optics' },
     field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
   },
-} as Parameters<typeof mapOpenAlexWork>[0])!;
+} as Parameters<typeof mapOpenAlexWork>[0];
+const physicsJournalArticle = mapOpenAlexWork(physicsWork)!;
 
 test("a reader of any leaf of an area is served the area's journal articles, filed under none of their leaves, and eviction keeps them while the lane lists them", async () => {
   const { env, db } = corpus();
@@ -471,6 +472,47 @@ test("the follows' page reads no area lane: its categories stand for followed to
     follows: [{ type: 'topic', canonicalId: 'T10017', displayName: 'Quantum error correction' }],
   }), { now: NOW });
   assert.deepEqual(followed.map(item => [item.id, item._fetchedFor]), [['2610.00021', ['quant-ph']]]);
+});
+
+// An area's journal articles are dated by their issue, the day before the
+// harvest at the latest, so newest first a reader's whole arXiv day ranks
+// ahead of them (PAP-107 cold-reader measurement, 2026-10-23).
+test("at least 3 of every 15 cards are the area's journal articles while its lane holds any, and more where they rank higher", async () => {
+  const { env, db } = corpus();
+  const preprints = Array.from({ length: 20 }, (_, index) => ({
+    ...arxivRecord, id: `2610.${30001 + index}`, arxivId: `2610.${30001 + index}`, title: `Quantum error correction, result ${index + 1}`,
+    allCategories: ['quant-ph'], categories: ['quant-ph'], primaryCategory: 'quant-ph', published: new Date(NOW - (index + 1) * 3_600_000).toISOString(),
+  }));
+  // 2026-10-21 to 2026-10-17: older than every preprint above.
+  const articles = Array.from({ length: 5 }, (_, index) => mapOpenAlexWork({
+    ...physicsWork, id: `https://openalex.org/W90000${index + 1}`, doi: `https://doi.org/10.7566/jpsj.95.${index + 1}`,
+    title: `Spectroscopy of van der Waals materials, part ${index + 1}`, publication_date: `2026-10-${21 - index}`,
+  })!);
+  // Liked papers outside the asked lanes, one like the preprints, one like the articles.
+  const likedPreprint = { ...arxivRecord, id: '2610.11112', arxivId: '2610.11112', title: 'A liked paper like the preprints' };
+  const likedArticle = { ...arxivRecord, id: '2610.11113', arxivId: '2610.11113', title: 'A liked paper like the articles' };
+  await ingestPapers(env, [
+    ...[...preprints, likedPreprint, likedArticle].map(paper => ({ paper, lanes: [] })),
+    ...articles.map(paper => ({ paper, lanes: ['area:physics'] })),
+  ], { now: NOW });
+  const embed = (id: string, values: number[]) => db.prepare('INSERT INTO work_vectors (work_id, embedding) SELECT work_id, ? FROM work_keys WHERE key = ?')
+    .run(Buffer.from(quantize(values).buffer), `id:${id.toLowerCase()}`);
+  [...preprints, likedPreprint].forEach(paper => embed(paper.id, [1, 0]));
+  [...articles, likedArticle].forEach(paper => embed(paper.id, [0, 1]));
+
+  const page = async (number: number, positiveIds: string[] = []) => {
+    const ids = (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], page: number, positiveIds }), { now: NOW })).map(item => item.id);
+    return { preprints: ids.filter(id => !id.startsWith('openalex:')), articles: ids.filter(id => id.startsWith('openalex:')) };
+  };
+  const preprintIds = preprints.map(paper => paper.id);
+  const articleIds = articles.map(paper => paper.id);
+  // Newest first: the 12 newest preprints and the 3 newest articles, then the rest.
+  assert.deepEqual(await page(0), { preprints: preprintIds.slice(0, 12), articles: articleIds.slice(0, 3) });
+  assert.deepEqual(await page(1), { preprints: preprintIds.slice(12), articles: articleIds.slice(3) });
+  // By a like that puts every preprint first, the same.
+  assert.deepEqual(await page(0, [likedPreprint.id]), { preprints: preprintIds.slice(0, 12), articles: articleIds.slice(0, 3) });
+  // By one that puts the articles first, all five lead: the floor has no maximum.
+  assert.deepEqual(await page(0, [likedArticle.id]), { preprints: preprintIds.slice(0, 10), articles: articleIds });
 });
 
 test('two writers filing one paper at once meet on one row, and a short title joins nothing', async () => {
