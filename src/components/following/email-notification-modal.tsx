@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
+import { emailServiceState } from '../../utils/email-health.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Label } from '../ui/label.tsx';
@@ -136,11 +137,11 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
     }
   };
 
-  const toggleDisabled = loading || (!health.available && !draft.enabled) || (!hasFollows && !draft.enabled);
+  const emailService = emailServiceState(health);
+  const toggleDisabled = loading || (emailService === 'down' && !draft.enabled) || (!hasFollows && !draft.enabled);
   const optionsDisabled = !draft.enabled || loading;
-  // The Worker refused to run the check, so nothing is known about the provider.
-  const statusUnknown = !loading && health.code === 'HEALTH_PROBE_LIMITED';
-  const providerDown = !loading && !health.available && !statusUnknown;
+  const statusUnknown = !loading && emailService === 'unknown';
+  const providerDown = !loading && emailService === 'down';
 
   // On a phone the same content is a bottom sheet, like the other sheets
   // Settings opens; the handle and a swipe take the place of the X.
@@ -160,7 +161,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
         {statusUnknown && (
           <div className="email-notification-provider-warning is-info">
             <strong>{'Email status unknown'}</strong>
-            <span>{'PaperTok could not check the email service just now. Reload the page in a few minutes to check again.'}</span>
+            <span>{'PaperTok could not check the email service just now. You can still change these settings. Reload the page in a few minutes to check again.'}</span>
           </div>
         )}
         {providerDown && (
@@ -244,7 +245,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           type="button"
           className={`email-notification-test ${testState === 'sending' ? 'is-sending' : ''} ${testState === 'sent' ? 'is-sent' : ''}`}
           onClick={() => { void handleTest(); }}
-          disabled={saving || testing || loading || !notificationDataReady || !hasFollows || !health.available || testState === 'sent'}
+          disabled={saving || testing || loading || !notificationDataReady || !hasFollows || emailService === 'down' || testState === 'sent'}
           aria-live="polite"
           aria-busy={testState === 'sending'}
         >
@@ -264,7 +265,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             )}
           </AnimatePresence>
         </button>
-        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (!health.available || !hasFollows))}>
+        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (emailService === 'down' || !hasFollows))}>
           {saving
             ? ('Saving...')
             : ('Save changes')}
