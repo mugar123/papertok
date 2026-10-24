@@ -11,10 +11,6 @@ type AnnotationPosition = { sectionId?: string; paragraphIndex?: number };
 
 export const ANNOTATION_FILTERS = Object.freeze(['all', 'mine', 'ai']);
 
-export function isAnnotationFilter(value: string) {
-  return ANNOTATION_FILTERS.includes(value);
-}
-
 /**
  * Where each section sits in the rewrite, by id. Annotations carry a
  * `sectionId` and a `paragraphIndex` but nothing that says which section comes

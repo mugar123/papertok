@@ -127,7 +127,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
           return;
         }
         console.error('Error loading public list:', error);
-        if (active) setStatus(error?.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');
+        if (active) setStatus('error');
       });
     return () => {
       active = false;
@@ -208,8 +208,6 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
     stalledBody: 'This is taking unusually long. We are still trying in the background.',
     offlineTitle: 'Still opening this list',
     offlineBody: 'There seems to be no connection. It will open on its own when it comes back.',
-    unsupportedTitle: 'Public lists are unavailable in demo mode',
-    unsupportedBody: 'Open this link in the full PaperTok app.',
     retry: 'Try again',
     papers: (count: number) => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     updated: (date: string) => `Updated ${date}`,
@@ -226,21 +224,19 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
 
   if (status !== 'ready') {
     // 'loading', 'slow' and 'offline' are all still waits: they keep the
-    // spinner and the read behind them running. Only the other three are
+    // spinner and the read behind them running. Only the other two are
     // outcomes, and only 'error' is worth a Try again.
     const waiting = status === 'loading' || status === 'slow'
       || status === 'offline' || status === 'stalled';
     const stateCopy = status === 'not-found'
       ? [copy.notFoundTitle, copy.notFoundBody]
-      : status === 'unsupported'
-        ? [copy.unsupportedTitle, copy.unsupportedBody]
-        : status === 'error'
-          ? [copy.errorTitle, copy.errorBody]
-          : status === 'stalled'
+      : status === 'error'
+        ? [copy.errorTitle, copy.errorBody]
+        : status === 'stalled'
             ? [copy.stalledTitle, copy.stalledBody]
-            : status === 'offline'
+          : status === 'offline'
               ? [copy.offlineTitle, copy.offlineBody]
-              : status === 'slow'
+            : status === 'slow'
                 ? [copy.slowTitle, copy.slowBody]
                 : [copy.loading, ''];
     return (

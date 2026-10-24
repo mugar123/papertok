@@ -4,7 +4,6 @@ import {
   createFollowEntity,
   createFollowKey,
   followsEntity,
-  getFollowingStorageKey,
   migrateLegacyAuthors,
   normalizeFollowId,
 } from './following.ts';
@@ -22,8 +21,7 @@ test('matches by id and falls back to normalized display name', () => {
   assert.equal(followsEntity(followed, { type: 'author' as const, id: 'legacy:jose', name: 'Jose Garcia' }), true);
 });
 
-test('creates isolated storage keys and migrates unique legacy authors', () => {
-  assert.notEqual(getFollowingStorageKey('one'), getFollowingStorageKey('two'));
+test('migrates unique legacy authors', () => {
   const migrated = migrateLegacyAuthors(['Ada Lovelace', 'Ada Lovelace']);
   assert.equal(migrated.length, 1);
   assert.deepEqual(createFollowEntity(migrated[0])?.type, 'author');

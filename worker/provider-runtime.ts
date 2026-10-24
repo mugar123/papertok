@@ -177,7 +177,7 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // makes: origin gate plus edge cache plus a global per-minute ceiling reserved
 // only after a cache miss.
 //
-// `/related` and `/recommendations` share the `s2` namespace with `/sources/s2`
+// `/related` shares the `s2` namespace with `/sources/s2`
 // on purpose. All three spend the same Semantic Scholar allowance, and a
 // ceiling that only covered one of them would leave alive exactly the failure
 // this replaces -- a limiter that counts per caller instead of per provider.
@@ -200,7 +200,6 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
-  '/recommendations': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
 
 // The key is built from the values the handler is about to send upstream, never
@@ -349,7 +348,7 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
 // proposes the current second or a later one, so it would refuse to re-grant
 // one already elapsed. That is safe only because no gate runs after an
 // accepted beat today -- the paced routes, `/sources/s2`, `/related` and
-// `/recommendations`, never pass `openAlexBudget` -- but a route that combined both would leak
+// never pass `openAlexBudget` -- but a route that combined both would leak
 // this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;

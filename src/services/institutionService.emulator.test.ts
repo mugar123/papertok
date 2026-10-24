@@ -25,8 +25,7 @@ test('emulator: email proof preserves the primary UID, rejects reuse and invalid
   const saved = new Map<string, string>();
   const writes: { uid: string; path: string }[] = [];
   const options: NonNullable<Parameters<typeof sendInstitutionVerification>[1]> = {
-    apiBase: 'https://worker.test', origin: 'http://localhost:5173', isDemo: false,
-    currentUser: () => primary.currentUser,
+    apiBase: 'https://worker.test', origin: 'http://localhost:5173', currentUser: () => primary.currentUser,
     secondaryAuth: () => secondary,
     storage: {
       getItem: key => saved.get(key) ?? null,

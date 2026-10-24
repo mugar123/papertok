@@ -3,10 +3,8 @@
 `tests/firestore.rules.test.ts` runs the real `firestore.rules` against the
 Firestore emulator and asserts on what the rules engine actually decides.
 
-Some tests under `src/` read the rules file as text
-(`savedPaperPayload.test.ts`, `accountOnboarding.test.ts`,
-`publicListService.test.ts`). Those catch a clause being deleted; they cannot
-catch a clause that was never written. This suite exists to close that gap.
+`npm test` runs Node tests under `src/`, `worker/`, `proxy/`, `scripts/`
+and `eslint-rules/`. This suite separately checks Firestore authorization.
 
 ## Running
 
@@ -15,7 +13,7 @@ npm run test:rules
 ```
 
 That wraps `firebase emulators:exec`, so the emulator starts and stops around
-the run. It is deliberately outside the `npm test` glob (`src/**`, `worker/**`),
+the run. It is deliberately outside the `npm test` glob,
 because it needs the emulator and would otherwise fail in environments without
 one. If `FIRESTORE_EMULATOR_HOST` is unset the file throws rather than
 reporting a pass without evaluating a single rule.
@@ -48,8 +46,7 @@ denial messages can mention the limit for unrelated reasons, so only `allowed`
 is a reliable signal when a test measures headroom.
 
 Publishing a list exceeded this budget with one realistic paper, which is why
-the Worker writes public lists; `tests/p18-measure.test.js` keeps that
-measurement. `P19: the heaviest highlight a reader can write is a clean allow`
+the Worker writes public lists. `P19: the heaviest highlight a reader can write is a clean allow`
 and `P20: an AI annotation at full length is still a clean allow` write the
 largest highlight the rules admit. If a change to `firestore.rules` makes either
 fail, the highlights rule has run out of budget.

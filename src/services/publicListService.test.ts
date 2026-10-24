@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises';
 import {
   PUBLIC_LIST_LIMITS,
   PublicListRequestError,
-  PublicListUnsupportedError,
   publishPublicList,
   readPublicList,
   sanitizePublicList,
@@ -48,7 +47,6 @@ function fakeApi(overrides: { responses?: Response[]; api?: ListApi } = {}) {
   return {
     requests,
     api: {
-      isDemo: false,
       apiBase: 'https://worker.test',
       rest: {
         getDocument: async <T>(): Promise<{ exists: false; id: string; data: null } | { exists: true; id: string; data: T }> => ({
@@ -325,23 +323,6 @@ test('a malformed share id or list id never reaches the network', async () => {
   assert.equal(requests.length, 0);
 });
 
-test('returns a clear unsupported error in demo mode, on every path', async () => {
-  const shareId = '07070707070707070707070707070707';
-  const isUnsupported = (error: { code: string; }) => error instanceof PublicListUnsupportedError
-    && error.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
-  const { api, requests } = fakeApi({ api: { isDemo: true } });
-
-  await assert.rejects(() => readPublicList(shareId, {}, api), isUnsupported);
-  await assert.rejects(
-    () => publishPublicList({ listId: 'l1', title: 'T', papers: [] }, api), isUnsupported,
-  );
-  await assert.rejects(
-    () => syncPublicList(shareId, { listId: 'l1', title: 'T', paperIds: [] }, api), isUnsupported,
-  );
-  await assert.rejects(() => unpublishPublicList(shareId, 'l1', api), isUnsupported);
-  assert.equal(requests.length, 0, 'demo mode must not reach the Worker either');
-});
-
 test('Firestore rules keep public lists readable and shut to every client', async () => {
   const rules = await readFile(new URL('../../firestore.rules', import.meta.url), 'utf8');
   const publicListRule = rules.match(/match \/publicLists\/\{shareId\}[\s\S]*?\n\s{4}}/)?.[0] || '';
@@ -386,7 +367,7 @@ function restReader(fetchImpl: typeof fetch) {
       return fetchImpl(url, init);
     },
   });
-  return { requests, api: { isDemo: false, apiBase: 'https://worker.test', rest } };
+  return { requests, api: { apiBase: 'https://worker.test', rest } };
 }
 
 const SHARE_ID = '07070707070707070707070707070707';

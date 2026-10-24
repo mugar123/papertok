@@ -15,7 +15,6 @@ interface IdentityOperations {
   popupReauthenticate?(user: IdentityUser, provider: unknown): Promise<unknown>;
   credentialReauthenticate?(user: IdentityUser, credential: OAuthCredential): Promise<unknown>;
   additionalUserInfo?(result: { user: IdentityUser }): { isNewUser: boolean } | null;
-  isDemo?: boolean;
   currentUser?: IdentityUser | null;
 }
 
@@ -51,22 +50,13 @@ import {
   reauthenticateWithPopup,
   signInWithPopup,
 } from 'firebase/auth';
-import { auth, emulatorGoogleCredential, githubProvider, googleProvider, IS_DEMO } from './firebase.ts';
+import { auth, emulatorGoogleCredential, githubProvider, googleProvider } from './firebase.ts';
 
 /** Firebase provider ids, used as-is: they are what `providerData` reports. */
 export const SIGN_IN_PROVIDERS = Object.freeze({
   google: 'google.com',
   github: 'github.com',
 });
-
-export class AuthIdentityUnsupportedError extends Error {
-  declare code: string;
-  constructor() {
-    super('Sign-in providers are unavailable in demo mode.');
-    this.name = 'AuthIdentityUnsupportedError';
-    this.code = 'AUTH_PROVIDERS_UNSUPPORTED_IN_DEMO';
-  }
-}
 
 /**
  * The address already opens an account through some other door. Carries the
@@ -117,12 +107,7 @@ function operations(overrides: IdentityOperations = {}): Required<Omit<IdentityO
     popupReauthenticate: overrides.popupReauthenticate || reauthenticateWithPopup,
     credentialReauthenticate: overrides.credentialReauthenticate || reauthenticateWithCredential,
     additionalUserInfo: overrides.additionalUserInfo || getAdditionalUserInfo,
-    isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
   };
-}
-
-function requireSupported(api: ReturnType<typeof operations>) {
-  if (api.isDemo) throw new AuthIdentityUnsupportedError();
 }
 
 function requireProvider(api: ReturnType<typeof operations>, providerId: string) {
@@ -156,7 +141,6 @@ export function hasSignInProvider(user: { providerData?: Array<Pick<User['provid
  */
 export async function signInWithProvider(providerId: string, overrides?: IdentityOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const provider = requireProvider(api, providerId);
 
   try {
@@ -184,7 +168,6 @@ export async function signInWithProvider(providerId: string, overrides?: Identit
  */
 export async function linkSignInProvider(providerId: string, overrides?: IdentityOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const provider = requireProvider(api, providerId);
   const user = overrides?.currentUser === undefined
     ? api.authentication?.currentUser
@@ -229,7 +212,6 @@ export async function linkSignInProvider(providerId: string, overrides?: Identit
  */
 export async function reauthenticateCurrentUser(overrides?: IdentityOperations) {
   const api = operations(overrides);
-  requireSupported(api);
   const user = api.authentication?.currentUser;
   if (!user) throw new Error('Authentication is required to confirm the sign-in.');
 

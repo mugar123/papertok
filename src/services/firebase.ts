@@ -5,8 +5,6 @@ declare const window: { location: { href: string }; history: { state: unknown; r
  * Live project configuration for PaperTok
  */
 
-export const IS_DEMO = false;
-
 import type { PopupReadiness } from './popupRedirectResolver.ts';
 import { initializeApp } from 'firebase/app';
 import {
@@ -59,11 +57,8 @@ const auth = initializeAuth(app, {
   popupRedirectResolver,
 });
 // Whether a Google or GitHub window would open inside the press
-// (usePopupReady). Demo mode opens no popups, so it loads nothing and no
-// control waits.
-const popupReadiness: PopupReadiness = IS_DEMO
-  ? { ready: true, subscribe: () => () => {} }
-  : preparePopupRedirectResolver(auth);
+// (usePopupReady).
+const popupReadiness: PopupReadiness = preparePopupRedirectResolver(auth);
 
 const googleProvider = new GoogleAuthProvider();
 const githubProvider = new GithubAuthProvider();

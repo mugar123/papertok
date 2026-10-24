@@ -14,10 +14,8 @@ import {
   createEmptyInteractionProfile,
   curatedIds,
   deserializeInteractionProfile,
-  interactionProfileNeedsRebuild,
   isPaperKnown,
   lacksLearnedAffinities,
-  positiveExamples,
   readProfileSignals,
   recordInteractionEvent,
   seedLearnedAffinities,
@@ -213,7 +211,7 @@ test('undoing a rejection gives back everything it took', () => {
   };
   recordInteractionEvent(profile, { ...rejection, kind: 'like' }, NOW);
   recordInteractionEvent(profile, { ...rejection, kind: 'notInterested' }, NOW);
-  assert.deepEqual(positiveExamples(profile), [], 'a rejected paper is no example');
+  assert.deepEqual([...profile.positives], [], 'a rejected paper is no example');
 
   recordInteractionEvent(profile, { ...rejection, kind: 'undoNotInterested' }, NOW);
   const signals = readProfileSignals(profile, NOW);
@@ -221,7 +219,7 @@ test('undoing a rejection gives back everything it took', () => {
   assertClose(signals.categoryAffinities['cs.CL'], 5, 'only the like is left on the category');
   assertClose(signals.conceptAffinities['C-benchmarks'], 5);
   assertClose(signals.authorAffinities.A1, 5);
-  assert.deepEqual(positiveExamples(profile).map(example => example.id), ['p'], 'still liked, so an example again');
+  assert.deepEqual([...profile.positives].map(example => example.id), ['p'], 'still liked, so an example again');
 });
 
 test('reproduces the affinities of the full subcollection scan', () => {
@@ -332,13 +330,11 @@ test('a document from another schema version is rejected so it gets rebuilt', ()
   );
 
   assert.ok(deserializeInteractionProfile(stored));
-  assert.equal(interactionProfileNeedsRebuild(stored), false);
 
   assert.equal(deserializeInteractionProfile({ ...stored, schemaVersion: 0 }), null);
-  assert.equal(interactionProfileNeedsRebuild({ ...stored, schemaVersion: 0 }), true);
-  assert.equal(interactionProfileNeedsRebuild({ ...stored, affinities: '{oops' }), true);
-  assert.equal(interactionProfileNeedsRebuild(null), true);
-  assert.equal(interactionProfileNeedsRebuild({}), true);
+  assert.equal(deserializeInteractionProfile({ ...stored, affinities: '{oops' }), null);
+  assert.equal(deserializeInteractionProfile(null), null);
+  assert.equal(deserializeInteractionProfile({}), null);
 });
 
 test('overflowing a curated cap moves the oldest ids into the seen filter', () => {
@@ -417,7 +413,7 @@ test('likes, saves and long reads become examples, newest first; undoing or reje
   recordInteractionEvent(profile, { paperId: 'read', kind: 'viewTime', category: 'q-bio.NC', viewTime: 30 }, NOW);
   recordInteractionEvent(profile, { paperId: 'saved', kind: 'save', category: 'quant-ph' }, NOW);
 
-  assert.deepEqual(positiveExamples(profile), [
+  assert.deepEqual([...profile.positives], [
     { id: 'saved', category: 'quant-ph' },
     { id: 'read', category: 'q-bio.NC' },
     { id: 'liked', category: 'cs.AI' },
@@ -425,12 +421,12 @@ test('likes, saves and long reads become examples, newest first; undoing or reje
 
   recordInteractionEvent(profile, { paperId: 'liked', kind: 'unlike', category: 'cs.AI' }, NOW);
   recordInteractionEvent(profile, { paperId: 'read', kind: 'notInterested', category: 'q-bio.NC' }, NOW);
-  assert.deepEqual(positiveExamples(profile), [{ id: 'saved', category: 'quant-ph' }]);
+  assert.deepEqual([...profile.positives], [{ id: 'saved', category: 'quant-ph' }]);
 
   // Still liked, so still an example after the save is undone.
   recordInteractionEvent(profile, { paperId: 'saved', kind: 'like', category: 'quant-ph' }, NOW);
   recordInteractionEvent(profile, { paperId: 'saved', kind: 'unsave', category: 'quant-ph' }, NOW);
-  assert.deepEqual(positiveExamples(profile), [{ id: 'saved', category: 'quant-ph' }]);
+  assert.deepEqual([...profile.positives], [{ id: 'saved', category: 'quant-ph' }]);
 });
 
 test('a rebuild recovers the examples and the exposure from the documents', () => {
@@ -441,7 +437,7 @@ test('a rebuild recovers the examples and the exposure from the documents', () =
   ];
   const profile = buildProfileFromInteractionDocuments(documents, { now: NOW });
 
-  assert.deepEqual(positiveExamples(profile), [{ id: 'liked', category: 'cs.AI' }]);
+  assert.deepEqual([...profile.positives], [{ id: 'liked', category: 'cs.AI' }]);
   assert.deepEqual(readProfileSignals(profile, NOW).categoryExposure, {
     'cs.AI': { shown: 2, engaged: 1 },
     'cs.LG': { shown: 1, engaged: 0 },
@@ -535,7 +531,8 @@ test('the learned maps, the examples, the exposure and the median survive a relo
   assert.ok(Math.abs(after.authorAffinities.A1 - before.authorAffinities.A1) < 1e-3);
   assert.deepEqual(after.categoryExposure, before.categoryExposure);
   assert.equal(after.dwellMedianSeconds, before.dwellMedianSeconds);
-  assert.deepEqual(positiveExamples(reloaded), positiveExamples(profile));
+  assert.ok(reloaded);
+  assert.deepEqual([...reloaded.positives], [...profile.positives]);
 });
 
 test('an aggregate stored before the examples existed takes its likes and saves as examples', () => {
@@ -548,7 +545,8 @@ test('an aggregate stored before the examples existed takes its likes and saves 
   legacy.cooldowns = { 'cs.LG': NOW };
 
   const reloaded = deserializeInteractionProfile({ ...stored, affinities: JSON.stringify(legacy) });
-  assert.deepEqual(positiveExamples(reloaded), [
+  assert.ok(reloaded);
+  assert.deepEqual([...reloaded.positives], [
     { id: 'liked', category: '' },
     { id: 'saved', category: '' },
   ]);

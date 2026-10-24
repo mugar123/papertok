@@ -11,7 +11,7 @@ import type { OwnList, ListSnapshot } from '../utils/ownLists.ts';
  */
 
 import { collection, getDocs, limit, query } from 'firebase/firestore';
-import { IS_DEMO, auth, db } from './firebase.ts';
+import { auth, db } from './firebase.ts';
 import { queryIsAuthoritative } from '../utils/cacheAuthority.ts';
 import { OWN_LISTS_PAGE_SIZE } from '../utils/ownLists.ts';
 import { ownListsCache, rememberOwnLists, reviseOwnLists } from '../utils/profileSessionCaches.ts';
@@ -46,7 +46,7 @@ export async function warmAccountCaches(uid: string, {
   readLists = defaultReadLists,
   currentUid = () => auth.currentUser?.uid,
 }: { storage?: Parameters<typeof readStoredLists>[1]; readLists?: (uid: string) => Promise<ListSnapshot>; currentUid?: () => string | null | undefined } = {}) {
-  if (!uid || IS_DEMO || warmed.has(uid)) return;
+  if (!uid || warmed.has(uid)) return;
   warmed.add(uid);
   hydrateAccountCaches(uid, { storage });
   // Signing out does not cancel a read already in flight. Whatever lands

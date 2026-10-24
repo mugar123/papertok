@@ -5,7 +5,6 @@ import {
   buildSectionOrder,
   countAnnotations,
   filterAnnotations,
-  isAnnotationFilter,
   sortAnnotations,
 } from './annotationOrder.ts';
 
@@ -71,8 +70,6 @@ test('a highlight you wrote on is still yours', () => {
 test('an unknown filter shows everything rather than nothing', () => {
   const items = [{ id: 'a', kind: 'user' }];
   assert.equal(filterAnnotations(items, 'nonsense').length, 1);
-  assert.equal(isAnnotationFilter('nonsense'), false);
-  assert.equal(isAnnotationFilter('ai'), true);
 });
 
 test('each filter is counted with the rule that filters it', () => {

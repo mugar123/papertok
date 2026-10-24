@@ -4,7 +4,7 @@ import type { OwnList } from '../../utils/ownLists.ts';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { IS_DEMO, db } from '../../services/firebase.ts';
+import { db } from '../../services/firebase.ts';
 import { savedPaperDocRef } from '../../services/savedPaperStore.ts';
 import { collection, getDocs, doc, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.ts';
@@ -70,17 +70,6 @@ const LISTS_WAITING = ['loading', 'slow', 'offline'];
  * screen, so past the budget the modal says so and offers the button.
  */
 const LISTS_STOPPED = ['stalled', 'unavailable'];
-
-// Demo storage helpers
-function demoGet<T>(key: string, fallback: T): T {
-  try {
-    const v = localStorage.getItem(`papertok_${key}`);
-    return v ? JSON.parse(v) : fallback;
-  } catch { return fallback; }
-}
-function demoSet(key: string, value: unknown) {
-  localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
-}
 
 /**
  * Confirm-on-save. Everything in this modal — list membership, Read later,
@@ -241,14 +230,6 @@ export default function SaveToListModal({
     // The retry loop outlives the promise; closing the modal must end it.
     const controller = new AbortController();
 
-    const fromDemo = () => {
-      const stored = demoGet<OwnList[]>('lists', []);
-      const inLists = new Set(stored
-        .filter((list) => list.paperIds?.includes(paper.id))
-        .map((list) => list.id));
-      return { lists: stored, inLists, authoritative: true };
-    };
-
     const fromFirestore = async () => readOwnLists(
       await getDocs(query(
         collection(db, 'users', user.uid, 'lists'),
@@ -301,9 +282,7 @@ export default function SaveToListModal({
         authoritative: true, cached: true,
       };
     };
-    const readLists = IS_DEMO
-      ? fromDemo
-      : (ownListsAreFresh(user.uid) ? fromFreshCache : fromFirestore);
+    const readLists = (ownListsAreFresh(user.uid) ? fromFreshCache : fromFirestore);
 
     patientRead(readLists, {
       attempts: 3,
@@ -482,25 +461,19 @@ export default function SaveToListModal({
       paperIds: [], createdAt: new Date().toISOString(),
     };
 
-    if (IS_DEMO) {
-      const allLists = demoGet<OwnList[]>('lists', []);
-      allLists.push(newList);
-      demoSet('lists', allLists);
-    } else {
-      const listRef = doc(db, 'users', user!.uid, 'lists', listId);
-      // Public from the start: published empty, the Worker writes the share id
-      // onto the list; Save's sync then fills it with this paper.
-      // A failed publish leaves the list private, and says so.
-      await writeNewList(newList, {
-        isPublic,
-        write: (list) => setDoc(listRef, list),
-        publish: () => publishPublicList({ listId, title: name, language: 'en', papers: [] }),
-        onPublishFailed: (publishError) => {
-          console.error('The new list could not be published', publishError);
-          toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
-        },
-      });
-    }
+    const listRef = doc(db, 'users', user!.uid, 'lists', listId);
+    // Public from the start: published empty, the Worker writes the share id
+    // onto the list; Save's sync then fills it with this paper.
+    // A failed publish leaves the list private, and says so.
+    await writeNewList(newList, {
+      isPublic,
+      write: (list) => setDoc(listRef, list),
+      publish: () => publishPublicList({ listId, title: name, language: 'en', papers: [] }),
+      onPublishFailed: (publishError) => {
+        console.error('The new list could not be published', publishError);
+        toastError('List created, but still private', { description: 'It could not be published. Make it public from My lists.' });
+      },
+    });
 
     createdLists.current = [...createdLists.current, newList];
     setLists((previous) => mergeCreatedLists(previous, [newList]));
@@ -544,68 +517,44 @@ export default function SaveToListModal({
     setSaving(true);
     setSaveError(false);
     try {
-      if (IS_DEMO) {
-        const allLists = demoGet<OwnList[]>('lists', []);
-        for (const list of allLists) {
-          if (toAdd.includes(list.id)) {
-            list.paperIds = [...new Set([...(list.paperIds || []), paper.id])];
-          }
-          if (toRemove.includes(list.id)) {
-            list.paperIds = (list.paperIds || []).filter(id => id !== paper.id);
-          }
-        }
-        demoSet('lists', allLists);
-        if (savesPaper) {
-          void markSaved(paper);
-          const allSaved = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
-          allSaved[paper.id] = {
-            title: paper.title, authors: paper.authors?.slice(0, 5),
-            primaryCategory: paper.primaryCategory, published: paper.published,
-            arxivId: paper.arxivId, summary: (paper.summary || paper.abstract)?.substring(0, 500),
-            doi: paper.doi, landingPageUrl: paper.landingPageUrl,
-          };
-          demoSet('savedPapersData', allSaved);
-        }
-      } else {
-        // A list created in this window while the read had not landed is
-        // folded into the cache first, or the membership written below would
-        // be recorded against a list the cache has never heard of.
-        const cached = ownListsCache.get(user!.uid);
-        if (cached) reviseOwnLists(user!.uid, mergeCreatedLists(cached, createdLists.current));
-        /**
-         * The paper's document FIRST, before any list is told about it.
-         *
-         * The order used to be the other way round, and that is how a list ends
-         * up holding an id with nothing behind it: the `arrayUnion` landed, the
-         * `setDoc` was refused, and the row rendered as a bare arXiv id for
-         * good — no later read can produce a document that was never written.
-         * Writing the paper first means a refusal costs the owner an error
-         * message and nothing else.
-         *
-         * Still sequential and still retry-safe: `setDoc` merges, `arrayUnion`
-         * of a present id and `arrayRemove` of an absent one are no-ops, so
-         * pressing Save again redoes only what is missing.
-         */
-        if (savesPaper) {
-          await setDoc(
-            savedPaperDocRef(user!.uid, paper.id),
-            buildSavedPaperPayload(paper, new Date().toISOString()),
-            { merge: true },
-          );
-          // The aggregate learns of the save only once the document exists.
-          // The other order left an orphan whenever this write was refused:
-          // "saved" everywhere, a paper in no list, and a Save that could
-          // never succeed again because markSaved saw it as already saved.
-          void markSaved(paper);
-        }
-
-        // `updatedAt` rides along on every list write. It is what tells a
-        // later visit that an edit happened here, so a sync lost to a closed
-        // tab or a dead connection can still be found and replayed (P25).
-        const listById = (listId: string) => lists.find(entry => entry.id === listId) ?? { id: listId };
-        await writeListMembership({ uid: user!.uid, paper, lists: toAdd.map(listById), added: true, language });
-        await writeListMembership({ uid: user!.uid, paper, lists: toRemove.map(listById), added: false, language });
+      // A list created in this window while the read had not landed is
+      // folded into the cache first, or the membership written below would
+      // be recorded against a list the cache has never heard of.
+      const cached = ownListsCache.get(user!.uid);
+      if (cached) reviseOwnLists(user!.uid, mergeCreatedLists(cached, createdLists.current));
+      /**
+       * The paper's document FIRST, before any list is told about it.
+       *
+       * The order used to be the other way round, and that is how a list ends
+       * up holding an id with nothing behind it: the `arrayUnion` landed, the
+       * `setDoc` was refused, and the row rendered as a bare arXiv id for
+       * good — no later read can produce a document that was never written.
+       * Writing the paper first means a refusal costs the owner an error
+       * message and nothing else.
+       *
+       * Still sequential and still retry-safe: `setDoc` merges, `arrayUnion`
+       * of a present id and `arrayRemove` of an absent one are no-ops, so
+       * pressing Save again redoes only what is missing.
+       */
+      if (savesPaper) {
+        await setDoc(
+          savedPaperDocRef(user!.uid, paper.id),
+          buildSavedPaperPayload(paper, new Date().toISOString()),
+          { merge: true },
+        );
+        // The aggregate learns of the save only once the document exists.
+        // The other order left an orphan whenever this write was refused:
+        // "saved" everywhere, a paper in no list, and a Save that could
+        // never succeed again because markSaved saw it as already saved.
+        void markSaved(paper);
       }
+
+      // `updatedAt` rides along on every list write. It is what tells a
+      // later visit that an edit happened here, so a sync lost to a closed
+      // tab or a dead connection can still be found and replayed (P25).
+      const listById = (listId: string) => lists.find(entry => entry.id === listId) ?? { id: listId };
+      await writeListMembership({ uid: user!.uid, paper, lists: toAdd.map(listById), added: true, language });
+      await writeListMembership({ uid: user!.uid, paper, lists: toRemove.map(listById), added: false, language });
 
       if (readLaterChanged) await toggleReadLater(paper);
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });

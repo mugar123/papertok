@@ -49,7 +49,7 @@ export interface FeedContextValue {
 /* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
-import { IS_DEMO, db } from '../services/firebase.ts';
+import { db } from '../services/firebase.ts';
 import { getDoc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAnalyticsConsent } from './AnalyticsContext.tsx';
 import { useAuth } from './AuthContext.tsx';
@@ -201,17 +201,6 @@ function writeFeedSnapshot(userId: string | null | undefined, signature: string,
   } catch {
     // A full browser storage quota must never block the feed.
   }
-}
-
-// ── Demo mode storage helpers ──
-function demoGet<T>(key: string, fallback: T): T {
-  try {
-    const v = localStorage.getItem(`papertok_${key}`);
-    return v ? JSON.parse(v) : fallback;
-  } catch { return fallback; }
-}
-function demoSet(key: string, value: unknown) {
-  localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
 }
 
 // How many papers the followed entities add to a page.
@@ -415,7 +404,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // authors. Called before the re-rank it feeds, so that re-rank sees it.
   const recordProfileEvent = useCallback((event: InteractionEvent, paper?: Partial<Paper> | null) => {
     const userId = user?.uid;
-    if (!userId || IS_DEMO) return;
+    if (!userId) return;
     recordInteractionEvent(interactionProfile.current, paper ? { ...event, ...paperAffinitySignals(paper) } : event);
     profileSignals.current = readProfileSignals(interactionProfile.current);
     if (!interactionProfileHydrated.current) return;
@@ -504,7 +493,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   const ensurePersonalLibrary = useCallback(async () => {
     const userId = user?.uid;
-    if (!userId || IS_DEMO) return;
+    if (!userId) return;
     const status = personalLibraryStatus.current;
     // Keyed by generation as well as account: an attempt made before the profile
     // arrived saw no ids, and must not latch the library shut for the session.
@@ -662,7 +651,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
    */
   const keepLateTopics = useCallback((cards: Paper[]) => {
     const userId = user?.uid;
-    if (!userId || IS_DEMO) return;
+    if (!userId) return;
     cards.forEach((card) => {
       const { primaryTopic } = storedClassification(card);
       const paperId = withInteractionId(card).id;
@@ -957,25 +946,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (!userId) {
       return () => {
         if (feedSessionId.current === sessionId) feedSessionId.current += 1;
-        activeUserId.current = null;
-      };
-    }
-
-    if (IS_DEMO) {
-      const timeoutId = setTimeout(() => {
-        if (cancelled) return;
-        setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
-        setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
-        setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
-        setReadPaperIds(new Set(demoGet('readPaperIds', [])));
-        setPersonalLibrary(demoGet(`readingLibrary_${userId}`, {}));
-        setRecommendationProfileUserId(userId);
-      }, 0);
-      return () => {
-        cancelled = true;
-        clearTimeout(timeoutId);
-        if (feedSessionId.current === sessionId) feedSessionId.current += 1;
-        feedRequestId.current += 1;
         activeUserId.current = null;
       };
     }
@@ -1665,9 +1635,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // mergeFreshFeedPage keeps the cards through the visible one and lands
       // the fresh ranking below them. reRankFeed() above changes papers
       // whenever it reorders anything, changing loadPapers' identity — so this
-      // effect's cleanup usually clears the timer before it fires. Pre-existing
-      // race, documented in STATE.md's 2026-09-07 entry; keepThroughVisible
-      // makes both outcomes safe, so it's not dead code.
+      // effect's cleanup can clear the timer before it fires. keepThroughVisible
+      // preserves the visible cards if the refresh does run.
       const refreshTimer = setTimeout(
         () => loadPapers(true, null, undefined, { keepThroughVisible: true }),
         0,
@@ -1782,17 +1751,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setLikedPaperIds(newLiked);
     reRankFeed(paper.id);
 
-    if (IS_DEMO) {
-      demoSet('likedPaperIds', Array.from(newLiked));
-      // Store paper metadata for lists
-      const allSaved = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
-      allSaved[paper.id] = {
-        title: paper.title, authors: paper.authors?.slice(0, 3),
-        primaryCategory: paper.primaryCategory, published: paper.published,
-        arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
-      };
-      demoSet('savedPapersData', allSaved);
-    } else if (userId) {
+    if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -1844,9 +1803,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     reRankFeed(successorId || paper.id);
 
-    if (IS_DEMO) {
-      demoSet('notInterestedIds', Array.from(newNotInterested));
-    } else if (userId) {
+    if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -1886,9 +1843,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       category: paper.primaryCategory,
     }, paper);
 
-    if (IS_DEMO) {
-      demoSet('notInterestedIds', Array.from(newNotInterested));
-    } else if (userId) {
+    if (userId) {
       try {
         await updateDoc(interactionDocRef(userId, paper.id), { notInterested: deleteField() });
       } catch (err) {
@@ -1911,45 +1866,33 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         ...current,
         [paper.id]: { ...current[paper.id], paperId: paper.id, paper: storedPaper, readAt },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
+
       return next;
     });
 
     // The card stays where it is: the reader marked it read, they did not ask
     // for it to vanish. `readPaperIdsRef` keeps it out of the next load.
 
-    if (IS_DEMO) {
-      demoSet('readPaperIds', Array.from(newRead));
-      // Save metadata for the list
-      const allSaved = demoGet<Record<string, Partial<Paper>>>('savedPapersData', {});
-      allSaved[paper.id] = {
-        title: paper.title, authors: paper.authors?.slice(0, 3),
-        primaryCategory: paper.primaryCategory, published: paper.published,
-        arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
-      };
-      demoSet('savedPapersData', allSaved);
-    } else {
-      try {
-        
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'read',
-          category: paper.primaryCategory,
-          timestamp: readAt,
-        });
-        const ref = interactionDocRef(userId, paper.id);
-        await setDoc(ref, definedFields({
-          read: true,
-          paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
-          paperCategory: paper.primaryCategory,
-          timestamp: readAt,
-          readAt,
-          paper: storedPaper,
-          deviceType: getDeviceInfo().type,
-        }), { merge: true });
-      } catch (err) {
-        console.error('Error saving read status:', err);
-      }
+    try {
+
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: 'read',
+        category: paper.primaryCategory,
+        timestamp: readAt,
+      });
+      const ref = interactionDocRef(userId, paper.id);
+      await setDoc(ref, definedFields({
+        read: true,
+        paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
+        paperCategory: paper.primaryCategory,
+        timestamp: readAt,
+        readAt,
+        paper: storedPaper,
+        deviceType: getDeviceInfo().type,
+      }), { merge: true });
+    } catch (err) {
+      console.error('Error saving read status:', err);
     }
   }, [withInteractionId, recordProfileEvent, user?.uid]);
 
@@ -1990,7 +1933,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       scheduleReRank(paper.id);
     }
 
-    if (userId && !IS_DEMO) {
+    if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -2017,7 +1960,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     reRankFeed(paper.id);
 
-    if (userId && !IS_DEMO) {
+    if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -2056,7 +1999,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // must not pay a synchronous re-rank per card it crosses.
     scheduleReRank(skippedPapers[skippedPapers.length - 1].id);
 
-    if (userId && !IS_DEMO) {
+    if (userId) {
       try {
         const batch = writeBatch(db);
         const deviceType = getDeviceInfo().type;
@@ -2091,7 +2034,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     reRankFeed(paper.id);
 
-    if (userId && !IS_DEMO) {
+    if (userId) {
       try {
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
@@ -2141,11 +2084,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     // Saving is the strongest positive signal; react immediately like the rest.
     reRankFeed(paperId);
-
-    if (IS_DEMO) {
-      demoSet('savedPaperIds', Array.from(nextSaved));
-      return;
-    }
 
     if (userId) {
       try {
@@ -2207,11 +2145,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }, paper);
     reRankFeed(paperId);
 
-    if (IS_DEMO) {
-      demoSet('savedPaperIds', Array.from(nextSaved));
-      return;
-    }
-
     if (userId) {
       try {
         await setDoc(interactionDocRef(userId, paperId), {
@@ -2233,23 +2166,19 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     setPersonalLibrary((current) => {
       if (!current[paperId]) return current;
       const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
-      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
+
       return next;
     });
 
-    if (IS_DEMO) {
-      demoSet('readPaperIds', Array.from(newRead));
-    } else {
-      try {
-        recordProfileEvent({ paperId, kind: 'unread' });
-        const ref = interactionDocRef(userId, paperId);
-        await updateDoc(ref, {
-          read: deleteField(),
-          readAt: deleteField(),
-        });
-      } catch (err) {
-        console.error('Error unmarking read status:', err);
-      }
+    try {
+      recordProfileEvent({ paperId, kind: 'unread' });
+      const ref = interactionDocRef(userId, paperId);
+      await updateDoc(ref, {
+        read: deleteField(),
+        readAt: deleteField(),
+      });
+    } catch (err) {
+      console.error('Error unmarking read status:', err);
     }
   }, [recordProfileEvent, user?.uid]);
 
@@ -2272,30 +2201,28 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           updatedAt,
         },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
+
       return next;
     });
 
-    if (!IS_DEMO) {
-      try {
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'readLater',
-          value: nextValue,
-          category: paper.primaryCategory,
-          timestamp: updatedAt,
-        });
-        await setDoc(interactionDocRef(userId, paper.id), definedFields({
-          readLater: nextValue,
-          paper: storedPaper,
-          paperTitle: paper.title,
-          paperAuthors: paper.authors?.slice(0, 3) || [],
-          paperCategory: paper.primaryCategory || '',
-          libraryUpdatedAt: updatedAt,
-        }), { merge: true });
-      } catch (err) {
-        console.error('Error updating read later:', err);
-      }
+    try {
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: 'readLater',
+        value: nextValue,
+        category: paper.primaryCategory,
+        timestamp: updatedAt,
+      });
+      await setDoc(interactionDocRef(userId, paper.id), definedFields({
+        readLater: nextValue,
+        paper: storedPaper,
+        paperTitle: paper.title,
+        paperAuthors: paper.authors?.slice(0, 3) || [],
+        paperCategory: paper.primaryCategory || '',
+        libraryUpdatedAt: updatedAt,
+      }), { merge: true });
+    } catch (err) {
+      console.error('Error updating read later:', err);
     }
     return nextValue;
   }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
@@ -2320,30 +2247,28 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           updatedAt,
         },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
+
       return next;
     });
 
-    if (!IS_DEMO) {
-      try {
-        recordProfileEvent({
-          paperId: paper.id,
-          kind: 'metadata',
-          category: paper.primaryCategory,
-          timestamp: updatedAt,
-        });
-        await setDoc(interactionDocRef(userId, paper.id), definedFields({
-          note: note.trim(),
-          tags: normalizedTags,
-          paper: storedPaper,
-          paperTitle: paper.title,
-          paperAuthors: paper.authors?.slice(0, 3) || [],
-          paperCategory: paper.primaryCategory || '',
-          libraryUpdatedAt: updatedAt,
-        }), { merge: true });
-      } catch (err) {
-        console.error('Error saving reading metadata:', err);
-      }
+    try {
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: 'metadata',
+        category: paper.primaryCategory,
+        timestamp: updatedAt,
+      });
+      await setDoc(interactionDocRef(userId, paper.id), definedFields({
+        note: note.trim(),
+        tags: normalizedTags,
+        paper: storedPaper,
+        paperTitle: paper.title,
+        paperAuthors: paper.authors?.slice(0, 3) || [],
+        paperCategory: paper.primaryCategory || '',
+        libraryUpdatedAt: updatedAt,
+      }), { merge: true });
+    } catch (err) {
+      console.error('Error saving reading metadata:', err);
     }
   }, [withInteractionId, recordProfileEvent, user?.uid]);
 

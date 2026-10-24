@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LIST_COLORS,
-  listColorIsEditable,
   listColorVarById,
   randomListColorId,
   resolveListColor,
@@ -63,12 +62,4 @@ test('the random colour is always one the picker can show', () => {
   for (let i = 0; i < 200; i += 1) {
     assert.ok(LIST_COLORS.includes(randomListColorId()));
   }
-});
-
-test('only the owner-made lists offer to be recoloured', () => {
-  assert.equal(listColorIsEditable('list_1'), true);
-  for (const id of ['__favorites__', '__read__', '__read_later__']) {
-    assert.equal(listColorIsEditable(id), false, `${id} has no colour to edit`);
-  }
-  assert.equal(listColorIsEditable(undefined), false);
 });

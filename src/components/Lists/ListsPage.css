@@ -607,7 +607,6 @@
   border-width: 2px;
 }
 
-.lists-share-demo-note,
 .lists-share-limit-note {
   color: var(--text-tertiary);
   font-size: var(--fs-xs);

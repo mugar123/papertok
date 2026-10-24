@@ -47,7 +47,6 @@
   --accent-primary-hover: #3e4a6b;
   --accent-primary-glow: rgba(29, 43, 83, 0.12);
   --accent-secondary: #1a5fd0;
-  --accent-secondary-glow: rgba(26, 95, 208, 0.16);
 
   /* Brand marks — the yellow only ever sits behind or beside ink. */
   --brand-yellow: #ffd21e;
@@ -87,9 +86,7 @@
   --accent-sky-line: #c2e0f2;
 
   --accent-like: #d92d20;
-  --accent-like-glow: rgba(217, 45, 32, 0.16);
   --accent-save: #b45309;
-  --accent-save-glow: rgba(180, 83, 9, 0.16);
   --accent-success: #067647;
   --accent-danger: #d92d20;
 
@@ -147,7 +144,6 @@
   --gradient-bio: #15803d;      /* green */
 
   --gradient-brand: #1d2b53;
-  --gradient-brand-hover: #3e4a6b;
 
   /* ── List colours ──
      The palette a list is painted with. Deliberately NOT the `--gradient-*`
@@ -166,8 +162,7 @@
 
      The result is a tighter contrast band than the field inks manage on their
      own — 5.2:1 to 6.0:1 against white, against their 4.9:1 to 7.6:1 — so every
-     colour carries a 3px rule and a 20px icon equally well. Regenerate with
-     scripts/list-palette.mjs rather than by hand. */
+     colour carries a 3px rule and a 20px icon equally well. Keep the palette within these contrast and gamut bounds. */
   --list-ochre: #a14f16;
   --list-olive: #7b6816;
   --list-green: #2d7d17;
@@ -195,7 +190,6 @@
   --fs-xl: 1.25rem;
   --fs-2xl: 1.5rem;
   --fs-3xl: 1.875rem;
-  --fs-4xl: 2.25rem;
   --fs-5xl: 3rem;
 
   --fw-regular: 400;
@@ -205,7 +199,6 @@
 
   --lh-tight: 1.2;
   --lh-normal: 1.5;
-  --lh-relaxed: 1.7;
 
   /* Mono metadata is always uppercase-ish and tightly tracked. */
   --mono-label: 600 0.6875rem/1 var(--font-mono);
@@ -223,7 +216,6 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
   --space-16: 4rem;
-  --space-20: 5rem;
   --space-24: 6rem;
 
   /* ── Border Radius ──
@@ -246,13 +238,11 @@
   --shadow-lg: none;
   --shadow-xl: none;
   --shadow-glow-primary: 0 0 0 3px var(--accent-primary-glow);
-  --shadow-glow-secondary: 0 0 0 3px var(--accent-secondary-glow);
 
   /* ── Transitions ── */
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
   --transition-slow: 320ms ease;
-  --transition-spring: 500ms cubic-bezier(0.16, 1, 0.3, 1);
   /* The arrival curve the app already runs on — rise, settle, the
      explorer's error — as a token, so the route transition names it instead
      of adding one more copy of the literal. */
@@ -295,11 +285,8 @@
   --unfold-close: 200ms;
 
   /* ── Z-index ── */
-  --z-base: 1;
   --z-nav: 100;
-  --z-modal: 200;
   --z-overlay: 300;
-  --z-toast: 400;
 
   /* ── Safe-area insets ──
      With viewport-fit=cover the notch and the home indicator become our
@@ -389,7 +376,6 @@
   --accent-primary-hover: #d2ccbc;
   --accent-primary-glow: rgba(244, 236, 216, 0.16);
   --accent-secondary: #6ea4ff;
-  --accent-secondary-glow: rgba(110, 164, 255, 0.22);
 
   /* Brand yellow, brand orange and `--text-on-brand` are not redefined: they
      are the same mark on both sides. The soft yellow is a surface, though, so
@@ -417,9 +403,7 @@
   --accent-sky-line: #274253;
 
   --accent-like: #fe7461;
-  --accent-like-glow: rgba(254, 116, 97, 0.24);
   --accent-save: #ec864a;
-  --accent-save-glow: rgba(236, 134, 74, 0.24);
   --accent-success: #5fbb87;
   --accent-danger: #fe7461;
 
@@ -468,7 +452,6 @@
   --gradient-bio: #57b66f;      /* green */
 
   --gradient-brand: #f4ecd8;
-  --gradient-brand-hover: #d2ccbc;
 
   /* ── List colours ──
      The same eight hues at oklch L 0.68, so the family still reads as one

@@ -13,8 +13,7 @@ const AFFINITY_DEAD_BAND = 2;
  * then the second of each, and so on. A plain stable sort kept the list's
  * own order, which is the taxonomy's, so an account seeded with physics,
  * electrical and mechanical engineering asked for five physics categories
- * and no engineering at all until its interactions said otherwise
- * (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 3).
+ * and no engineering at all until its interactions said otherwise.
  *
  * Ids outside the schema (a followed topic that maps to no area) keep their
  * relative order in a group of their own.

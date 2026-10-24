@@ -41,13 +41,12 @@ export interface AuthContextValue {
   toggleFollowAuthor: (authorName: string) => Promise<void>;
   updateReadingPreferences: (updates: Partial<ReadingPreferences>) => Promise<ReadingPreferences>;
   retryProfileLoad: () => void;
-  isDemo: boolean;
 }
 
 /* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts.ts';
-import { IS_DEMO, auth, db } from '../services/firebase.ts';
+import { auth, db } from '../services/firebase.ts';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import {
   SIGN_IN_PROVIDERS,
@@ -76,22 +75,11 @@ import { confirmOnboardingWrite, profileReadOutcome } from './profileLoad.ts';
 import { writeOptimistically } from './optimisticWrite.ts';
 import { clearRewriteCache } from '../services/paperRewriteService.ts';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.ts';
-import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.ts';
+import { readGuestInterests } from '../utils/guestInterests.ts';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.ts';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
-
-// ── Demo mode storage helpers ──
-function demoGet<T>(key: string, fallback: T): T {
-  try {
-    const v = localStorage.getItem(`papertok_${key}`);
-    return v ? JSON.parse(v) : fallback;
-  } catch { return fallback; }
-}
-function demoSet(key: string, value: unknown) {
-  localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
-}
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<AppUser | null>(null);
@@ -118,22 +106,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [profileReloadKey, setProfileReloadKey] = useState(0);
 
   useEffect(() => {
-    if (IS_DEMO) {
-      const demoTimeout = setTimeout(() => {
-        // Demo mode: check if user has "logged in" before
-        const demoUser = demoGet<AppUser | null>('user', null);
-        if (demoUser) {
-          setUser(demoUser);
-          setOnboardingComplete(demoGet('onboardingComplete', false));
-          setUserPreferences(demoGet('selectedCategories', null));
-          setFollowedAuthors(demoGet('followedAuthors', []));
-          setReadingPreferences(normalizeReadingPreferences(demoGet('readingPreferences', {})));
-          setSignInProviders(providerIdsOf(demoUser));
-        }
-        setLoading(false);
-      }, 0);
-      return () => clearTimeout(demoTimeout);
-    }
 
     let authChangeId = 0;
     let disposed = false;
@@ -262,21 +234,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // (both sign-in buttons below) inherits that stability.
   const signInWith = useCallback(async (providerId: string) => {
     setError(null);
-    if (IS_DEMO) {
-      setTimeout(() => {
-        const demoUser = {
-          uid: 'demo-user-123',
-          displayName: 'Demo User',
-          email: 'demo@papertok.app',
-          photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-          providerData: [{ providerId }],
-        };
-        setUser(demoUser);
-        setSignInProviders(providerIdsOf(demoUser));
-        demoSet('user', demoUser);
-      }, 500);
-      return { isNewUser: false, providerId };
-    }
+
     try {
       return await signInWithProvider(providerId);
     } catch (err) {
@@ -340,19 +298,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // recreate a function whose only reactive read is the id.
   const signOut = useCallback(async () => {
     const signingOutUserId = user?.uid;
-    if (IS_DEMO) {
-      setUser(null);
-      setOnboardingComplete(false);
-      setUserPreferences(null);
-      setFollowedAuthors([]);
-      setReadingPreferences(DEFAULT_READING_PREFERENCES);
-      setEmailDigestPending(false);
-      setSignInProviders([]);
-      setInstitution(null);
-      localStorage.removeItem('papertok_user');
-      clearGuestInterests();
-      return;
-    }
+
     try {
       await firebaseSignOut(auth);
       closeAccountSession(signingOutUserId);
@@ -366,30 +312,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // while the write was still in flight, so a refused write — a list over the
   // rules' cap, a rule that changed under the client — failed against an
   // unmounted page, left no local memory either, and the next reload asked
-  // the same questions again: an onboarding that never ended
-  // (docs/AUDITORIA-ONBOARDING-INTERESES-2026-09-16.md, hallazgo 4). Now the
+  // the same questions again. The
   // failure reaches handleFinish's catch, on screen, with the pick intact.
   const completeOnboarding = useCallback(async (preferences: string[]) => {
     const guestAnswer = readGuestInterests();
     const guestLevel = guestAnswer?.readingLevel;
-    // Only an explicit yes reaches the account; demo mode has no Worker to
-    // subscribe with, so it never records one.
-    const guestEmailDigest = !IS_DEMO && guestAnswer?.emailDigest === true;
+    // Only an explicit yes reaches the account.
+    const guestEmailDigest = guestAnswer?.emailDigest === true;
     const guestReading = guestLevel
       ? normalizeReadingPreferences({ ...readingPreferences, aiExplanationLevel: guestLevel })
       : null;
-    if (IS_DEMO) {
-      demoSet('selectedCategories', preferences);
-      demoSet('onboardingComplete', true);
-      if (guestReading) {
-        demoSet('readingPreferences', guestReading);
-        setReadingPreferences(guestReading);
-      }
-      clearGuestInterests();
-      setUserPreferences(preferences);
-      setOnboardingComplete(true);
-      return;
-    }
 
     const userId = user?.uid;
     if (userId) {
@@ -432,11 +364,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const updatePreferences = useCallback(async (newPreferences: string[]) => {
     setUserPreferences(newPreferences);
 
-    if (IS_DEMO) {
-      demoSet('selectedCategories', newPreferences);
-      return;
-    }
-
     const userId = user?.uid;
     if (userId) {
       await setDoc(doc(db, 'users', userId), {
@@ -447,16 +374,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [user?.uid]);
 
   // Needs the previous list itself, not just its owner's id: the new array is
-  // both written to Firestore and (in demo mode) to storage in this same call,
+  // written to Firestore in this same call,
   // so a functional state update alone would not hand it back for that.
   const toggleFollowAuthor = useCallback(async (authorName: string) => {
     const { next, patch } = toggleFollowedAuthor(followedAuthors, authorName);
     setFollowedAuthors(next);
-
-    if (IS_DEMO) {
-      demoSet('followedAuthors', next);
-      return;
-    }
 
     const userId = user?.uid;
     if (userId) {
@@ -476,10 +398,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       startedBy: userId,
       signedInUid: () => auth.currentUser?.uid,
       write: async (next) => {
-        if (IS_DEMO) {
-          demoSet('readingPreferences', next);
-          return;
-        }
+
         if (userId) {
           await setDoc(doc(db, 'users', userId), {
             readingPreferences: next,
@@ -493,7 +412,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // since decided for themselves), so a later unsubscribe is never undone.
   const settleEmailDigestOptIn = useCallback(async () => {
     const userId = user?.uid;
-    if (!userId || IS_DEMO) return;
+    if (!userId) return;
     await setDoc(doc(db, 'users', userId), { emailDigestOptIn: deleteField() }, { merge: true });
     if (auth.currentUser?.uid === userId) setEmailDigestPending(false);
   }, [user?.uid]);
@@ -531,7 +450,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
     toggleFollowAuthor,
     updateReadingPreferences,
     retryProfileLoad,
-    isDemo: IS_DEMO,
   }), [
     completeOnboarding, completeInstitutionVerification, emailDigestPending, error, followedAuthors, institution, linkInstitution,
     linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
