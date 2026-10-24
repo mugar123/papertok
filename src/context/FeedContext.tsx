@@ -178,9 +178,10 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
     }
     // A card can be saved before Crossref answered, or kept because the reader
     // was on it. Nothing is on screen before a restore, so a book known now
-    // leaves, and the notable cards go back to their places (placeNotableCards).
-    const papers = applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication);
-    return { ...snapshot, papers: placeNotableCards(papers.filter(paper => !paper._notable), papers.filter(paper => paper._notable)) };
+    // leaves, and the other cards keep their order: the reader comes back to
+    // their card by its id (FeedContainer), and a notable card placed again
+    // here could cross it. The next re-rank places the ones after it again.
+    return { ...snapshot, papers: applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication) };
   } catch {
     return null;
   }
