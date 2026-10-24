@@ -13,11 +13,11 @@ import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 // The Workflow's steps run in place: a step's callback is called once, a sleep
 // is recorded and returns at once. `fail` names the steps that fail past their
-// retries; `skipLanes` answers the category lanes' steps as if every lane were
-// done, for a daily run whose lanes the test does not exercise. An attempt
-// running past `timeoutMs` is stopped, as a Workflow stops one past its
-// timeout and leaves its work unfinished, and the step is tried again within
-// its retries.
+// retries; `skipLanes` answers the category and notable lanes' steps as if
+// every lane were done, for a daily run whose lanes the test does not
+// exercise. An attempt running past `timeoutMs` is stopped, as a Workflow
+// stops one past its timeout and leaves its work unfinished, and the step is
+// tried again within its retries.
 function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: { fail?: (name: string) => boolean; skipLanes?: boolean; timeoutMs?: number } = {}) {
   const steps: string[] = [];
   const sleeps: Array<number | string> = [];
@@ -25,7 +25,7 @@ function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: 
     async do(name: string, ...rest: unknown[]) {
       steps.push(name);
       if (fail(name)) throw new Error(`${name} failed past its retries`);
-      if (skipLanes && /^categories: lanes \d+$/.test(name)) return Number.MAX_SAFE_INTEGER;
+      if (skipLanes && /^(categories|notable): lanes \d+$/.test(name)) return Number.MAX_SAFE_INTEGER;
       const callback = rest.at(-1) as () => Promise<unknown>;
       if (!timeoutMs) return callback();
       const retries = rest.length > 1 ? (rest[0] as { retries?: { limit: number } }).retries?.limit ?? 0 : 0;

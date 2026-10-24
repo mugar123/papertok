@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { clearUserScopedStorage, readSeenPaperIds, saveSeenPaperIds } from '../utils/user-scoped-storage.ts';
+import { MAX_VIEWED_IDS, createEmptyInteractionProfile, deserializeInteractionProfile, recordInteractionEvent, serializeInteractionProfile, viewedIds } from '../utils/interaction-profile.ts';
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -72,6 +73,29 @@ test('an account\'s first load starts from the list this browser kept before the
   storage.setItem('papertok_seenIds:account-b', JSON.stringify(['b-before-release']));
   assert.deepEqual([...seenPapersForAccount('account-b', storage)], ['b-before-release']);
   assert.equal(storage.getItem('papertok_seenIds:account-b'), null);
+});
+
+// The corpus offers a reader's unseen notable papers in one fixed order. Had
+// a viewed notable card left the seen set with the 500-id viewed ring, the
+// corpus would offer it again before any the reader never saw: in the
+// re-review's probe, 100 notable places showed 34 distinct papers.
+test('a notable card the reader viewed is in the seen set the next load starts from, however many cards they viewed after it', () => {
+  const storage = memoryStorage();
+  const account = { activeUserId: 'test-user', signedInUid: 'test-user', sessionSeen: new Set<string>() };
+  const aggregate = createEmptyInteractionProfile();
+  // A card's dwell, as trackViewTime reports it: to this browser's list and to the account's aggregate.
+  const view = (paperId: string, notable = false) => {
+    recordCardView(paperId, 'test-user', account, storage);
+    recordInteractionEvent(aggregate, { paperId, kind: 'viewTime', category: 'cs.AI', viewTime: 4, notable });
+  };
+  view('notable-viewed', true);
+  for (let index = 0; index < MAX_VIEWED_IDS; index += 1) view(`viewed-after-${index}`);
+
+  // The next load: what this browser kept, and what the stored aggregate carries over.
+  const seen = seenPapersForAccount('test-user', storage);
+  assert.equal(seen.has('notable-viewed'), false, "this browser's list keeps the last 500");
+  viewedIds(deserializeInteractionProfile(serializeInteractionProfile(aggregate))).forEach(paperId => seen.add(paperId));
+  assert.equal(seen.has('notable-viewed'), true, 'the corpus is told the reader saw it');
 });
 
 test('the previous account\'s papers are cleared on a switch or a sign-out, not on a reload of the same account', () => {

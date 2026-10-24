@@ -4,7 +4,7 @@ import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired } from './paper-store.ts';
-import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 
@@ -215,13 +215,14 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
 /**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
- * lanes readers follow, and embeddings before historical reads or maintenance.
- * Each enriched batch is embedded before the next one; backfill has a final
- * embedding pass within the same daily budget. Eviction follows them, and last
- * the filing of the areas' journal articles under leaves, which reads the
- * vectors. A run for newly followed lanes (`payload.lanes`) harvests those
- * within the new follows' share of OpenAlex and embeds only their papers: the
- * rest of the corpus is the daily run's to embed.
+ * notable lanes due their weekly listing, the lanes readers follow, and
+ * embeddings before historical reads or maintenance. Each enriched batch is
+ * embedded before the next one; backfill has a final embedding pass within the
+ * same daily budget. Eviction follows them, and last the filing of the areas'
+ * journal articles under leaves, which reads the vectors. A run for newly
+ * followed lanes (`payload.lanes`) harvests those within the new follows' share
+ * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
+ * run's to embed.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
   if (!env.PAPER_STORE) throw new Error('PAPER_STORE is not bound');
@@ -270,6 +271,8 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
+  // Before eviction, which drops a notable paper two weeks after its last listing.
+  await phase('notable lanes', async () => runLaneJobs(env, step, 'notable', await step.do('notable lanes', () => notableLaneJobs(db, started))));
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
 
   await phase('enrich', async () => {

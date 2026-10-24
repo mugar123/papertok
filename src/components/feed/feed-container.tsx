@@ -52,7 +52,7 @@ import {
 import Petri from '../onboarding/petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feed-loading-state.ts';
-import { createFeedResumeMemory } from '../../utils/feed-resume-memory.ts';
+import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
 import './feed-container.css';
@@ -64,8 +64,9 @@ import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 // the index is only as good as the order it was taken from, and Following's
 // order can move between two visits. The memory writes through to
 // sessionStorage once the scroll settles, so it outlives the reload the tab
-// gives itself after a deploy (utils/feed-resume-memory.ts).
-const resumeMemory = createFeedResumeMemory();
+// gives itself after a deploy (utils/feed-resume-memory.ts). FeedContext reads
+// For You's place from the same memory.
+const resumeMemory = feedResumeMemory;
 
 /**
  * The card a feed opens on, and the memory row that answer came out of.
@@ -234,9 +235,11 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  * `endCard` is a node the source appends as one more snap item once the feed
  * has genuinely run out — same height, same snapping, same swipe.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey: surfaceKey, landmark = null }: FeedContainerProps) {
   const feed = useFeed();
   const { user } = useAuth();
+  // For You's place is the account's (forYouScrollKey).
+  const scrollKey = surfaceKey ?? forYouScrollKey(user?.uid);
   const { trackEvent } = useAnalyticsConsent();
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
