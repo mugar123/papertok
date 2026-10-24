@@ -11,19 +11,21 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\
  * explorerOverlays.test.ts pins).
  */
 
-test('the Follow control is a Toggle drawn like Like and Save: an outline whose icon fills once on and pulses on the press', async () => {
+test('the Follow control is a Toggle drawn like Like and Save: an icon alone that fills once on and pulses on the press', async () => {
   const jsx = await read('./follow-toggle.tsx');
   const css = stripComments(await read('./follow-toggle.css'));
-  assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{cn\('follow-toggle', compact && 'follow-toggle--compact', className\)\}\s+pressed=\{pressed\}/);
+  assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{cn\('follow-toggle', className\)\}\s+pressed=\{pressed\}\s+aria-label=\{followLabel\}/);
   // Always an icon: a plus to follow, a filled minus once followed.
   assert.match(jsx, /pressed\s*\? <UserCircleMinus [^>]*weight="fill" aria-hidden="true" \/>\s*: <UserCirclePlus [^>]*aria-hidden="true" \/>/);
   // The feed's pulse, on the icon's box (the glyph is swapped mid-pulse),
   // and none under reduced motion.
   assert.match(jsx, /if \(!reducedMotion\) pulseIcon\(iconRef\.current, !pressed\);/);
-  // On stays the outline of off, not the toggle's ink fill.
-  assert.match(css, /\.follow-toggle,\s*\.follow-toggle\[data-pressed\] \{[^}]*background: var\(--bg-card\);/);
-  assert.match(css, /\.follow-toggle \{[^}]*transition:[^;]*background[^;]*transform 0\.16s ease-out;/);
+  // On keeps the bare ground of off, not the toggle's ink fill.
+  assert.match(css, /\.follow-toggle,\s*\.follow-toggle\[data-pressed\] \{[^}]*background: transparent;/);
+  // The feed's look: the glyph in its own colour on bare ground.
+  assert.match(css, /--rail: var\(--accent-sky\);[^}]*color: var\(--rail\);/);
+  assert.match(css, /\.follow-toggle \{[^}]*transition:[^;]*background[^;]*transform 160ms var\(--ease-out\);/);
   const squeeze = css.match(/\.follow-toggle:active:not\(:disabled\) \{([^}]*)\}/);
-  assert.match(squeeze?.[1] || '', /transform: scale\(0\.97\);/);
+  assert.match(squeeze?.[1] || '', /transform: scale\(var\(--press-scale\)\);/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.follow-toggle:active:not\(:disabled\) \{\s*transform: none;/);
 });

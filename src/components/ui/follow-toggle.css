@@ -1,25 +1,31 @@
 /* The Follow control (follow-toggle.tsx), one look wherever something can be
-   followed: the outline button of Share beside it, drawn like the feed's Like
-   and Save. Off, its icon is an outline; on (`data-pressed`, written by Base
-   UI with `aria-pressed`), the icon fills and the label says Following, on
-   the same outline rather than the toggle's own pressed fill. The fixed
-   min-width keeps it from jumping between its two labels. */
+   followed: the feed's Like and Save (Feed/PaperCard.css, `.pc-side-icon`).
+   A glyph alone in its own colour, a wash of that colour on hover; off, the
+   glyph is an outline, on (`data-pressed`, written by Base UI with
+   `aria-pressed`) it fills, on the same bare ground rather than the toggle's
+   own pressed fill. */
 .follow-toggle,
 .follow-toggle[data-pressed] {
-  border: 1px solid var(--border-ink);
-  background: var(--bg-card);
-  color: var(--text-primary);
+  --rail: var(--accent-sky);
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--rail);
 }
 
 .follow-toggle {
-  min-width: 124px;
-  gap: 8px;
-  font-weight: var(--fw-semibold);
-  transition: background var(--transition-fast), transform 0.16s ease-out;
+  transition: background var(--transition-fast), transform 160ms var(--ease-out);
 }
 
-/* The icon pulses on its own (motionCurves.ts, `pulseIcon`); its box keeps
-   the swell from nudging the label. */
+.follow-toggle svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* The icon pulses on its own (motionCurves.ts, `pulseIcon`). */
 .follow-toggle-icon {
   display: inline-grid;
   place-items: center;
@@ -28,19 +34,13 @@
 @media (hover: hover) and (pointer: fine) {
   .follow-toggle:hover,
   .follow-toggle[data-pressed]:hover {
-    background: var(--bg-secondary);
+    background: color-mix(in srgb, var(--rail) 10%, transparent);
+    color: var(--rail);
   }
 }
 
-.follow-toggle--compact {
-  min-width: 0;
-  width: 32px;
-  padding: 0;
-}
-
-/* Press feedback: the catalog's squeeze, cheap on a 32px box. */
 .follow-toggle:active:not(:disabled) {
-  transform: scale(0.97);
+  transform: scale(var(--press-scale));
 }
 
 @media (prefers-reduced-motion: reduce) {

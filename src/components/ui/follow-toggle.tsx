@@ -8,18 +8,18 @@ import { pulseIcon } from '../../utils/motionCurves.ts';
 import { Toggle } from './toggle.tsx';
 import './follow-toggle.css';
 
-type FollowToggleProps = StyledProps<typeof Toggle> & { followLabel: string; followingLabel: string; compact?: boolean };
+type FollowToggleProps = StyledProps<typeof Toggle> & { followLabel: string; followingLabel: string };
 
 /**
  * The one Follow control: authors, institutions, projects and topics in the
  * Explorer. An on/off state, so a Toggle (`aria-pressed`), drawn like the
- * feed's Like and Save: an outline button whose icon fills once on and
- * pulses on the press. Pressing it again unfollows. `compact` keeps only the
- * icon, with the label as its name.
+ * feed's Like and Save: an icon alone, outlined to follow and filled once
+ * followed, that pulses on the press. Pressing it again unfollows. The
+ * follow label is its name; the tooltip says which state it is in.
  *
  * The labels come from the caller, which owns the language.
  */
-export function FollowToggle({ pressed, followLabel, followingLabel, compact = false, className, onClick, ...props }: FollowToggleProps) {
+export function FollowToggle({ pressed, followLabel, followingLabel, className, onClick, ...props }: FollowToggleProps) {
   const iconRef = useRef<HTMLSpanElement | null>(null);
   const reducedMotion = useReducedMotion();
   const handleClick: NonNullable<FollowToggleProps['onClick']> = (event) => {
@@ -30,18 +30,18 @@ export function FollowToggle({ pressed, followLabel, followingLabel, compact = f
   return (
     <Toggle
       variant="outline"
-      className={cn('follow-toggle', compact && 'follow-toggle--compact', className)}
+      className={cn('follow-toggle', className)}
       pressed={pressed}
-      aria-label={compact ? followLabel : undefined}
+      aria-label={followLabel}
+      title={pressed ? followingLabel : followLabel}
       onClick={handleClick}
       {...props}
     >
       <span className="follow-toggle-icon" ref={iconRef}>
         {pressed
-          ? <UserCircleMinus size={compact ? 18 : 16} weight="fill" aria-hidden="true" />
-          : <UserCirclePlus size={compact ? 18 : 16} aria-hidden="true" />}
+          ? <UserCircleMinus size={20} weight="fill" aria-hidden="true" />
+          : <UserCirclePlus size={20} aria-hidden="true" />}
       </span>
-      {!compact && <span>{pressed ? followingLabel : followLabel}</span>}
     </Toggle>
   );
 }
