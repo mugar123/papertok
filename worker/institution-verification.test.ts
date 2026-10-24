@@ -193,17 +193,22 @@ test('verification emails stop at twenty a UTC day, so the digest keeps the rest
   // and the weekly digest was refused until the next UTC day (DeepSec d3fa072522).
   const h = harness(t);
   h.env.EMAIL_DAILY_SEND_LIMIT = '100';
-  // One instant, so no request lands in another UTC day. The ID token is
-  // checked against this clock too.
-  const startedAt = Date.now();
-  t.mock.method(Date, 'now', () => startedAt);
+  // Each round is a new UTC minute, so only the day's ceiling can refuse. The
+  // clock starts at a fixed noon before the ID token's expiry, and five rounds
+  // stay inside that UTC day.
+  let clock = Date.UTC(2026, 9, 24, 12);
+  t.mock.method(Date, 'now', () => clock);
   const outcomes: Record<string, number> = {};
-  for (let account = 0; account < 100; account += 1) {
-    h.setIdentity(`account-${account}`);
-    const response = await worker.fetch(request({ email: `student-${account}@comunidadunir.net`, nonce: crypto.randomUUID() }), h.env);
-    const { code = 'sent' } = await response.json<{ code?: string }>();
-    outcomes[`${response.status} ${code}`] = (outcomes[`${response.status} ${code}`] || 0) + 1;
+  for (let round = 0; round < 5; round += 1) {
+    for (let account = 0; account < 20; account += 1) {
+      h.setIdentity(`account-${account}`);
+      const response = await worker.fetch(request({ email: `student-${account}-${round}@comunidadunir.net`, nonce: crypto.randomUUID() }), h.env);
+      const { code = 'sent' } = await response.json<{ code?: string }>();
+      outcomes[`${response.status} ${code}`] = (outcomes[`${response.status} ${code}`] || 0) + 1;
+    }
+    clock += 61_000;
   }
+  assert.equal(new Date(clock).toISOString().slice(0, 10), '2026-10-24');
   assert.deepEqual(outcomes, { '200 sent': 20, '429 INSTITUTION_VERIFICATION_LIMIT': 80 });
   assert.equal(h.generated.length, 20);
   assert.equal(h.messages.length, 20);
