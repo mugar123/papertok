@@ -192,7 +192,8 @@
   width: 200px;
 }
 
-.navbar-page-menu .account-menu-item[aria-current='page'] {
+.navbar-page-menu .account-menu-item[aria-current='page'],
+.navbar-page-sheet .pc-share-row[aria-current='page'] {
   font-weight: var(--fw-semibold);
 }
 

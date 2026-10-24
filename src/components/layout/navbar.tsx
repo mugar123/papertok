@@ -7,6 +7,9 @@ import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { CaretDown, Check, MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
 import AccountMenu from './account-menu.tsx';
+import '../feed/share-panel.css';
+import useIsPhone from '../../hooks/use-is-phone.ts';
+import { Drawer, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import { shouldOpenSearchOnSlash } from './search-shortcut.ts';
 
 // The palette's chord is shown the way this keyboard spells it (search-shortcut.ts takes both).
@@ -76,6 +79,69 @@ const PAGE_PICKER_TABS = [
   { to: '/feed', label: 'For you', Icon: Stack },
   { to: '/following', label: 'Following', Icon: UserCheck },
 ];
+
+/**
+ * The tabs as a menu on /search, where the field takes their place below
+ * 768px (navbar.css hides it above). A phone gets a drawer of thumb-sized
+ * rows, as the scope picker beside it does.
+ */
+function PagePicker({ search }: { search: string }) {
+  const isPhone = useIsPhone();
+  const [open, setOpen] = useState(false);
+  const trigger = (
+    <>
+      {'Search'}
+      <CaretDown size={12} aria-hidden="true" />
+    </>
+  );
+  if (isPhone) {
+    const close = () => setOpen(false);
+    return (
+      <Drawer open={open} onOpenChange={setOpen}>
+        <DrawerTrigger className="navbar-page-picker" aria-label={'Search, switch page'}>{trigger}</DrawerTrigger>
+        <DrawerContent className="pc-share-sheet navbar-page-sheet">
+          <DrawerHandle />
+          <DrawerTitle render={<h2 />} className="pc-share-sheet-title">{'Go to'}</DrawerTitle>
+          <ul className="pc-share-list">
+            {PAGE_PICKER_TABS.map(({ to, label, Icon }) => (
+              <li key={to}>
+                <Link to={to} className="pc-share-row" onClick={close}>
+                  <Icon size={20} aria-hidden="true" /> {label}
+                </Link>
+              </li>
+            ))}
+            <li>
+              <Link to={`/search${search}`} className="pc-share-row" aria-current="page" onClick={close}>
+                <MagnifyingGlass size={20} aria-hidden="true" /> {'Search'}
+                <Check size={18} aria-hidden="true" className="navbar-page-menu-check" />
+              </Link>
+            </li>
+          </ul>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+  return (
+    <Menu.Root>
+      <Menu.Trigger className="navbar-page-picker" aria-label={'Search, switch page'}>{trigger}</Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner className="account-menu-positioner" align="start" sideOffset={8}>
+          <Menu.Popup className="account-menu navbar-page-menu">
+            {PAGE_PICKER_TABS.map(({ to, label, Icon }) => (
+              <Menu.LinkItem key={to} className="account-menu-item" closeOnClick render={<Link to={to} />}>
+                <Icon size={17} aria-hidden="true" /> {label}
+              </Menu.LinkItem>
+            ))}
+            <Menu.LinkItem className="account-menu-item" closeOnClick aria-current="page" render={<Link to={`/search${search}`} />}>
+              <MagnifyingGlass size={17} aria-hidden="true" /> {'Search'}
+              <Check size={15} aria-hidden="true" className="navbar-page-menu-check" />
+            </Menu.LinkItem>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
 
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, onSearchSlot }: { onOpenSearch?: () => void; searchOpen?: boolean; onSearchSlot?: (node: HTMLDivElement | null) => void }) {
   const { user } = useAuth();
@@ -221,37 +287,13 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
           <span className="navbar-brand-word">Paper<span>Tok</span></span>
         </button>
 
+        {onSearchPage && <PagePicker search={location.search} />}
+
         {/* Open, the bar holds the state it put the reader in. Without it you
             clicked a bar and a sheet appeared somewhere else, with nothing
             connecting the two — and closing left nothing behind either. The
             transition is already on the element, so the state fades in and out
             rather than snapping. */}
-        {/* On a phone the field takes the tabs' place, so the tabs move into
-            this picker (hidden on wider screens, where the tabs show). */}
-        {onSearchPage && (
-          <Menu.Root>
-            <Menu.Trigger className="navbar-page-picker" aria-label={'Search, switch page'}>
-              {'Search'}
-              <CaretDown size={12} aria-hidden="true" />
-            </Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Positioner className="account-menu-positioner" align="start" sideOffset={8}>
-                <Menu.Popup className="account-menu navbar-page-menu">
-                  {PAGE_PICKER_TABS.map(({ to, label, Icon }) => (
-                    <Menu.LinkItem key={to} className="account-menu-item" closeOnClick render={<Link to={to} />} onClick={to === '/feed' ? () => setFeedMode('top') : undefined}>
-                      <Icon size={17} aria-hidden="true" /> {label}
-                    </Menu.LinkItem>
-                  ))}
-                  <Menu.LinkItem className="account-menu-item" closeOnClick aria-current="page" render={<Link to={`/search${location.search}`} />}>
-                    <MagnifyingGlass size={17} aria-hidden="true" /> {'Search'}
-                    <Check size={15} aria-hidden="true" className="navbar-page-menu-check" />
-                  </Menu.LinkItem>
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-        )}
-
         {onSearchPage ? (
           <div className="navbar-search-slot" ref={attachSearchSlot} />
         ) : (

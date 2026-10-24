@@ -426,8 +426,8 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
   sits on paper and takes Ink Wash on hover; ⌘K / Ctrl+K or `/` opens the
   command palette, which grows from its own centre. On `/search` the bar holds
   the search page's own field and scope instead, and the shortcut focuses it;
-  on a phone that field takes the tabs' place, and the tabs move into a
-  "Search" picker beside the mark.
+  below 768px that field takes the tabs' place, and the tabs move into a
+  "Search" picker beside the mark: a drawer on a phone, a menu up to 768px.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 
