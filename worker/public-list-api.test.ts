@@ -42,8 +42,8 @@ function ledger(capacity = 10): TestNamespace {
           used <= capacity ? { accepted: true } : { accepted: false },
         ), { status: 200 });
       },
-    })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    })),
+  };
 }
 
 function envWith(overrides = {}) {
@@ -778,7 +778,7 @@ test('F12: updating an attributed list refreshes its showcase card in the SAME c
 
   const showcase = writes[2];
   assert.match(showcase.update!.name, new RegExp(`profileLists/${UID}$`));
-  const cards = fieldsOf(showcase!).lists;
+  const cards = fieldsOf(showcase).lists;
   assert.deepEqual(cards!.map(card => [card.shareId, card.title, card.paperCount]), [
     [OTHER_SHARE, 'Otra', 2],
     [SHARE, 'Relatividad', 19],
@@ -1028,7 +1028,7 @@ test('F12: attributing a published list adds its card and mirrors onProfile', as
   assert.deepEqual(result, { shareId: SHARE, attributed: true });
   const [mirror, showcase] = admin.commits[0];
   assert.deepEqual(fieldsOf(mirror), { onProfile: true });
-  assert.deepEqual(fieldsOf(showcase!).lists, [{
+  assert.deepEqual(fieldsOf(showcase).lists, [{
     shareId: SHARE, title: 'Relatividad', emoji: 'Star', paperCount: 19,
     publishedAt: new Date(NOW - 9000),
   }]);
@@ -1042,7 +1042,7 @@ test('F12: de-attributing removes the card and flips the mirror', async () => {
   assert.deepEqual(result, { shareId: SHARE, attributed: false });
   const [mirror, showcase] = admin.commits[0];
   assert.deepEqual(fieldsOf(mirror), { onProfile: false });
-  assert.deepEqual(fieldsOf(showcase!).lists!.map(card => card.shareId), [OTHER_SHARE]);
+  assert.deepEqual(fieldsOf(showcase).lists!.map(card => card.shareId), [OTHER_SHARE]);
 });
 
 test('F12: asking for what is already true is success and heals the mirror', async () => {

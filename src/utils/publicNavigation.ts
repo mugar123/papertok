@@ -1,5 +1,3 @@
-declare const window: { location?: { origin?: string } };
-
 import type { Paper } from '../models/Paper.ts';
 export interface ShareOptions { origin?: string; base?: string; includeName?: boolean; name?: string | null; paperKey?: string; }
 interface EntityInput { type?: string; id?: string; canonicalId?: string; code?: string; externalId?: string; displayName?: string; }
@@ -72,9 +70,9 @@ export function getViteBasePath(base = VITE_BASE_URL) {
 }
 
 function getRuntimeOrigin() {
-  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
-  if (typeof globalThis !== 'undefined' && (globalThis as typeof globalThis & { location?: { origin?: string } }).location?.origin) return (globalThis as typeof globalThis & { location?: { origin?: string } }).location!.origin!;
-  return DEFAULT_PUBLIC_ORIGIN;
+  // The Worker imports this module too, and its global scope may have no location.
+  const { location } = globalThis as { location?: { origin?: string } };
+  return location?.origin || DEFAULT_PUBLIC_ORIGIN;
 }
 
 function normalizeOrigin(origin: string) {
@@ -358,8 +356,8 @@ export function getPublicPaperUrl(typeOrPaper: PaperInput, identifier?: string |
   return path ? getAbsoluteShareUrl(path, input.options) : null;
 }
 
-export function getSharedListPath(listOrId: ListInput, options?: ShareOptions): string | null;
-export function getSharedListPath(listOrId: ListInput) {
+export function getPublicListPath(listOrId: ListInput, options?: ShareOptions): string | null;
+export function getPublicListPath(listOrId: ListInput) {
   const listId = listOrId && typeof listOrId === 'object'
     ? listOrId.shareId || listOrId.id || listOrId.token
     : listOrId;
@@ -368,13 +366,7 @@ export function getSharedListPath(listOrId: ListInput) {
   return `${PUBLIC_ROUTE_PREFIX}/list/${encodePathSegment(identifier)}`;
 }
 
-export function getSharedListUrl(listOrId: ListInput, options: ShareOptions = {}) {
-  const path = getSharedListPath(listOrId, options);
+export function getPublicListUrl(listOrId: ListInput, options: ShareOptions = {}) {
+  const path = getPublicListPath(listOrId, options);
   return path ? getAbsoluteShareUrl(path, options) : null;
 }
-
-export const getPublicListPath = getSharedListPath;
-export const getPublicListUrl = getSharedListUrl;
-export const getEntityShareUrl = getPublicEntityUrl;
-export const getPaperShareUrl = getPublicPaperUrl;
-export const getListShareUrl = getSharedListUrl;

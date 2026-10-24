@@ -44,6 +44,8 @@ import useIsPhone from '../../hooks/useIsPhone.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { authorDisplayName } from '../../utils/explorerPaths.ts';
 import { readRecentSearches, updateRecentSearches } from './recentSearches.ts';
+import type { RecentOwner } from './recentSearchOwner.ts';
+import { recentsShownTo, shouldRememberQuery } from './recentSearchOwner.ts';
 import { Toggle } from '../ui/toggle.tsx';
 
 const COPY = {
@@ -108,8 +110,8 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const [selectedValue, setSelectedValue] = useState('');
   const [manualSelection, setManualSelection] = useState(false);
   const [activeSection, setActiveSection] = useState<'all' | typeof SECTIONS[number]>('all');
-  const [recentOwner, setRecentOwner] = useState<{ uid?: string; queries: string[] }>({ queries: [] });
-  const recents = recentOwner.uid === uid ? recentOwner.queries : [];
+  const [recentOwner, setRecentOwner] = useState<RecentOwner>({ queries: [] });
+  const recents = recentsShownTo(recentOwner, uid);
 
   // Whether the palette is closing because a row was picked. Picking is not
   // dismissing: the reader is being answered, not getting out of the way, so
@@ -128,9 +130,10 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   const [pendingEntity, setPendingEntity] = useState<string | null | undefined>(null);
 
   const rememberQuery = useEffectEvent(() => {
-    if (!uid || recentOwner.uid !== uid || !typedQuery.current || !hasSearched
-      || resultsTerm !== query.trim() || totalResults === 0 || isPending
-      || (activeSection !== 'all' && results[activeSection].length === 0)) return;
+    if (!shouldRememberQuery({
+      uid, ownerUid: recentOwner.uid, typed: typedQuery.current, hasSearched,
+      resultsTerm, query, totalResults, isPending, activeSection, results,
+    })) return;
     setRecentOwner({ uid, queries: updateRecentSearches(uid, query) });
   });
 
@@ -145,7 +148,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
   // the last pick would give a plain Escape the picked exit instead of the
   // dismiss. Calling the setter synchronously is exactly the point — before
   // paint, same as `reset()` beside it — so the rule is off for this effect.
-  /* eslint-disable react-hooks/set-state-in-effect */
+  /* eslint-disable react-hooks/set-state-in-effect -- the reset must land before the opening frame is painted */
   useLayoutEffect(() => {
     if (open) {
       reset();
@@ -175,7 +178,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     // Router state, when there is any: the public paper page paints a paper
     // handed to it and treats its own fetch as an upgrade, so a row the palette
     // has already fetched opens without a second wait.
-    navigate(path, state ? { state } : undefined);
+    void navigate(path, state ? { state } : undefined);
   }, [navigate, onOpenChange]);
 
   const follow = useCallback(async (event: MouseEvent, entity: FollowInput) => {
@@ -233,7 +236,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
     return (
       <Toggle
         className={`sc-follow ${following ? 'is-following' : ''}`}
-        onClick={(event) => follow(event, entity)}
+        onClick={(event) => { void follow(event, entity); }}
         disabled={pending}
         pressed={following}
         aria-label={following ? copy.following : copy.follow}
@@ -336,7 +339,7 @@ export default function SearchCommand({ open, onOpenChange, finalFocus }: { open
         value={`project-${project.id}`}
         onSelect={() => go(
           `/explorer/project/${encodeURIComponent(project.id!)}`
-          + `?name=${encodeURIComponent((project.acronym || project.title)!)}`
+          + `?name=${encodeURIComponent((project.acronym || project.title))}`
           + `&funder=${encodeURIComponent(project.funder || '')}`,
         )}
       >

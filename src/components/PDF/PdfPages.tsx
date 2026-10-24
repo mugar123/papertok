@@ -59,7 +59,7 @@ export default function PdfPages({ src, title, onUnavailable }: { src: string; t
     });
     return () => {
       cancelled = true;
-      task.destroy();
+      void task.destroy();
     };
     // `onUnavailable` is a stable callback in PDFViewer; were it not, a new
     // one would reload the document, never miss a failure.
@@ -159,7 +159,7 @@ function PdfPage({ doc, root, number, count, placeholderRatio }: { doc: PDFDocum
     };
 
     const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) draw();
+      if (entry.isIntersecting) void draw();
       else release();
     }, { root, rootMargin: RENDER_MARGIN });
     observer.observe(node);

@@ -17,18 +17,9 @@ import { USER_PREFERENCES_MAX } from '../../utils/accountOnboarding.ts';
 import { Button } from '../ui/button.tsx';
 import { toastError } from '../ui/toast.ts';
 import Petri from './Petri.tsx';
+import { onboardingSaveError, onboardingSteps } from './onboardingSteps.ts';
 import PetriStamp from './PetriStamp.tsx';
 import './OnboardingFlow.css';
-
-// The account's first screens, drawn in the welcome's layout (WelcomeShell),
-// one per screen: the areas, the topics within them, and the university
-// library. They are asked only of a reader who did not answer them on the
-// welcome (an account opened from a shared link). A reader who did gets one
-// screen that saves the answer on arrival and stays only to offer a retry.
-function onboardingSteps({ asksTopics }: { asksTopics: boolean }) {
-  return asksTopics ? ['topics', 'subtopics', 'university'] : ['finish'];
-}
-
 
 const COPY = {
   progress: 'Progress',
@@ -131,11 +122,11 @@ export default function OnboardingFlow() {
   const [arrivedOnboarded] = useState(onboardingComplete);
 
   useEffect(() => {
-    if (onboardingComplete) navigate(returnTo, { replace: true });
+    if (onboardingComplete) void navigate(returnTo, { replace: true });
   }, [onboardingComplete, navigate, returnTo]);
 
   useEffect(() => {
-    if (!arrivedOnboarded) trackEvent('tutorial_begin', { language });
+    if (!arrivedOnboarded) void trackEvent('tutorial_begin', { language });
   }, [arrivedOnboarded, language, trackEvent]);
 
   const goTo = (nextIndex: number) => {
@@ -203,20 +194,14 @@ export default function OnboardingFlow() {
     setProfileError(null);
     try {
       await completeOnboarding(preferences);
-      trackEvent('tutorial_complete', { language });
-      markActivation();
+      void trackEvent('tutorial_complete', { language });
+      void markActivation();
       if (guestAnswer?.institutionEmail) void verifyGuestUniversity(guestAnswer.institutionEmail);
-      navigate(returnTo, { replace: true });
+      void navigate(returnTo, { replace: true });
     } catch (err) {
-      if ((err as { code?: string } | null)?.code === 'ONBOARDING_WRITE_TIMEOUT') {
-        // completeOnboarding's write is a merge-set of the same fields, so
-        // the reader's own retry is the whole recovery — nothing to do here
-        // but tell them why the button stopped spinning.
-        setProfileError('Still saving. Check your connection and try again.');
-      } else {
-        console.error('Error saving preferences:', err);
-        setProfileError('Could not save. Try again.');
-      }
+      const failure = onboardingSaveError(err);
+      if (failure.unexpected) console.error('Error saving preferences:', err);
+      setProfileError(failure.message);
       setSaving(false);
     }
   };

@@ -1,7 +1,6 @@
 import type { AnimationEvent, PropsWithChildren, ReactNode, UIEvent } from 'react';
 import type { MotionProps, Variants } from 'framer-motion';
 import type { Paper } from '../../models/Paper.ts';
-import type { PaperCardProps } from './PaperCard.tsx';
 
 interface FeedSource {
   papers: Paper[];
@@ -18,7 +17,9 @@ interface FeedSource {
   emptyState?: ReactNode;
   initialLoadPending?: boolean;
 }
-interface FeedContainerProps extends Pick<PaperCardProps, 'onOpenPdf' | 'onSaveToList'> {
+interface FeedContainerProps {
+  onOpenPdf?: (paper: Paper) => void;
+  onSaveToList?: (paper: Paper) => void;
   source?: FeedSource | null;
   scrollKey?: string;
   landmark?: { label: string; heading: string } | null;
@@ -77,10 +78,6 @@ const resumeMemory = feedResumeMemory;
  * (`MOUNT_WINDOW_RESUME_RADIUS` is 0) carrying `data-active="false"`, which
  * paints complete for a frame and then blanks and refades the whole card
  * body the moment the scroll event lands (PaperCard.css).
- *
- * The restore effect below keeps its own inline read of the same two lines
- * rather than calling this: feedResume.test.ts pins that exact text as the
- * contract for reporting the visible paper before the profile re-rank.
  */
 function resumeAnchor(papers: Paper[], scrollKey: string) {
   const saved = resumeMemory.get(scrollKey);
@@ -89,9 +86,9 @@ function resumeAnchor(papers: Paper[], scrollKey: string) {
 /** Depth of the band under the navbar in which the mouse asks for the pill. */
 const REFRESH_HOVER_BAND_PX = 120;
 // How long the feed takes to dip out of sight when a refresh starts. The same
-// 180ms is written in FeedContainer.css (`.feed-container--refreshing`), and
-// feedRefresh.test.ts holds the two together: everything this number is used
-// for here is about waiting until the cover is actually down.
+// 180ms is written in FeedContainer.css (`.feed-container--refreshing`); change
+// both together. Everything this number is used for here is about waiting
+// until the cover is actually down.
 const REFRESH_DIP_MS = 180;
 // The beat between "Mark as read" and the feed moving on: the menu leaves
 // first (the dialog's 150ms; the phone drawer is nine tenths down by then), so
@@ -276,7 +273,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   const handleViewTime = useCallback((paper: Paper, seconds: number) => {
     source?.onPaperViewed?.(paper);
-    trackViewTime(paper, seconds);
+    void trackViewTime(paper, seconds);
   }, [source, trackViewTime]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   // El scroller, además de en el ref: el oyente del hover (más abajo) tiene
@@ -584,7 +581,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [landReturn, source, undoNotInterested]);
 
   const handleNotInterested = useCallback((paper: Paper) => {
-    beginSkipExit(paper?.id, () => markNotInterested(paper));
+    beginSkipExit(paper?.id, () => { void markNotInterested(paper); });
     toast('Marked as not interested', {
       action: { label: 'Undo', onClick: () => handleUndoNotInterested(paper) },
     });
@@ -604,12 +601,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   useLayoutEffect(() => {
     if (restoreAttemptedRef.current || papers.length === 0) return;
     restoreAttemptedRef.current = true;
-    const saved = resumeMemory.get(scrollKey);
     // The paper the reader was on, wherever it is in this order. Reported to
     // the context here, not left to the scroll event the programmatic
     // scrollTop fires later: the profile load's re-rank must find the anchor
     // already set.
-    const index = resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index });
+    const { saved, index } = resumeAnchor(papers, scrollKey);
     reportVisiblePaper?.(papers[index]?.id ?? null);
     // The other resume shape: a reload restores its place before the papers
     // have arrived, so the seed above could only answer 0. This runs in a
@@ -920,7 +916,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [doneHold, pillOnScreen]);
 
   const handleOpenPdf = useCallback((paper: Paper) => {
-    trackPdfOpened(paper);
+    void trackPdfOpened(paper);
     onOpenPdf!(paper);
   }, [onOpenPdf, trackPdfOpened]);
 
@@ -989,15 +985,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
    * `activeIndex` in any form. Nothing visual depends on it (clips enter
    * through an IntersectionObserver at 15% and the `appear` arrival has no condition),
    * so a value that lands a frame or two late makes nothing flicker.
-   * feedScrollPriority.test.ts pins that the card takes no active flag.
    *
-   * El `setActiveIndex` del efecto de resume NO va en transición: allí el valor
-   * tiene que estar puesto antes de que la ventana de montaje decida, o la
-   * tarjeta a la que se vuelve monta sola y refunde su cuerpo entero.
-   *
-   * El comentario vive aquí arriba, y no dentro, porque feedResume.test.ts
-   * acota el cuerpo de este handler a 32 líneas y `stripComments` deja las
-   * líneas en blanco: el handler ya estaba justo en ese tope.
+   * The resume effect's `setActiveIndex` is NOT a transition: there the value
+   * must be set before the mount window decides, or the card the reader
+   * returns to mounts alone and fades its whole body in again.
    */
   const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
@@ -1046,7 +1037,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   useEffect(() => {
-    if (feedFailed) trackEvent('app_error', { kind: 'feed_load_failed' });
+    if (feedFailed) void trackEvent('app_error', { kind: 'feed_load_failed' });
   }, [feedFailed, trackEvent]);
 
   // Pull-to-refresh, touch only, and only where the pill exists: a source

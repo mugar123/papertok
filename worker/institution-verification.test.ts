@@ -58,7 +58,7 @@ function harness(t: TestContext) {
           setAlarm: async () => {}, deleteAll: async () => values.clear(),
         } }));
       }
-      return quotas.get(key)!.fetch(new Request(url as string, init));
+      return quotas.get(key)!.fetch(new Request(url, init));
     } }),
   };
   const env: WorkerEnv = {

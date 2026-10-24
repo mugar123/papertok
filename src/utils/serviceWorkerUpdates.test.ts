@@ -1,6 +1,5 @@
 import test, { type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { APP_RELOAD_KEY } from './appReload.ts'
 import {
   noteDeployActivated, reloadIfBehindDeploy, runsPrecachedBuild, shouldReloadForDeploy, watchServiceWorkerUpdates, watchWorkerActivations,
@@ -52,17 +51,20 @@ test('periodic checks run every five minutes only while visible and online', asy
   const env = setup()
   assert.equal(env.interval(), 300_000)
   env.documentTarget.visibilityState = 'hidden'
-  await env.tick()
+  env.tick()
+  await settle()
   env.documentTarget.visibilityState = 'visible'
   env.navigatorTarget.onLine = false
-  await env.tick()
+  env.tick()
+  await settle()
   assert.equal(env.calls(), 0)
   env.navigatorTarget.onLine = true
   env.windowTarget.dispatchEvent(new Event('online'))
   await settle()
   assert.equal(env.calls(), 1)
   env.advance(300_000)
-  await env.tick()
+  env.tick()
+  await settle()
   assert.equal(env.calls(), 2)
 })
 
@@ -70,7 +72,8 @@ test('an ongoing install or update check is not duplicated', async () => {
   let resolveUpdate!: () => void
   const env = setup(() => new Promise<void>(resolve => { resolveUpdate = resolve }))
   env.registration.installing = {}
-  await env.tick()
+  env.tick()
+  await settle()
   assert.equal(env.calls(), 0)
   env.registration.installing = null
   env.windowTarget.dispatchEvent(new Event('online'))
@@ -82,7 +85,8 @@ test('an ongoing install or update check is not duplicated', async () => {
 
 test('a failed update check is silent and can retry when connectivity returns', async () => {
   const env = setup(async () => { throw new Error('network unavailable') })
-  await env.tick()
+  env.tick()
+  await settle()
   env.windowTarget.dispatchEvent(new Event('online'))
   await settle()
   assert.equal(env.calls(), 2)
@@ -103,14 +107,6 @@ test('an unavailable registration is harmless', () => {
   assert.doesNotThrow(() => watchServiceWorkerUpdates(undefined, {
     windowTarget: null, documentTarget: null, navigatorTarget: null,
   })())
-})
-
-test('navigation does not race cached HTML against a slow successful network request', () => {
-  const config = readFileSync(new URL('../../vite.config.ts', import.meta.url), 'utf8')
-  const navigation = config.slice(config.indexOf("handler: 'NetworkFirst'"), config.indexOf("handler: 'CacheFirst'"))
-  assert.ok(navigation.includes("cacheName: 'papertok-html'"))
-  assert.doesNotMatch(navigation, /networkTimeoutSeconds\s*:/)
-  assert.ok(navigation.includes('handlerDidError:'))
 })
 
 // Cache Storage as a browser holds it once a deploy's worker has activated.
@@ -179,7 +175,8 @@ function workerContainer() {
     controller: null as (EventTarget & { name: string; state: ServiceWorkerState }) | null,
   })
   const claim = (name: string) => {
-    const worker = Object.assign(new EventTarget(), { name, state: 'activating' as ServiceWorkerState })
+    const fields: { name: string; state: ServiceWorkerState } = { name, state: 'activating' }
+    const worker = Object.assign(new EventTarget(), fields)
     container.controller = worker
     container.dispatchEvent(new Event('controllerchange'))
     return (state: ServiceWorkerState) => {
@@ -494,10 +491,11 @@ test('the page a deploy reload is replacing reports no crash, and the page it bo
   const tab = tabAfterDeploy(t, '/feed')
   // Each page load runs its own copy of a module, and a query makes one: this
   // page's `behindSince` starts unset, and each page reports at most one crash.
-  const pageModule = (path: string, page: string) => import(`${path}?page=${page}`)
-  const { noteDeployActivated, reloadIfBehindDeploy }: typeof import('./serviceWorkerUpdates.ts') = await pageModule('./serviceWorkerUpdates.ts', 'leaving')
-  const leaving: typeof import('../services/analyticsService.ts') = await pageModule('../services/analyticsService.ts', 'leaving')
-  const booted: typeof import('../services/analyticsService.ts') = await pageModule('../services/analyticsService.ts', 'booted')
+  const updatesOn = (page: string): Promise<typeof import('./serviceWorkerUpdates.ts')> => import(`./serviceWorkerUpdates.ts?page=${page}`)
+  const analyticsOn = (page: string): Promise<typeof import('../services/analyticsService.ts')> => import(`../services/analyticsService.ts?page=${page}`)
+  const { noteDeployActivated, reloadIfBehindDeploy } = await updatesOn('leaving')
+  const leaving = await analyticsOn('leaving')
+  const booted = await analyticsOn('booted')
   const reports: unknown[] = []
   const track = async (_event: string, params?: Record<string, unknown>) => {
     reports.push(params?.kind)

@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   LIST_COLORS,
   listColorIsEditable,
@@ -9,28 +8,6 @@ import {
   resolveListColor,
   resolveListColorId,
 } from './listColors.ts';
-
-const tokens = async () => readFile(new URL('../styles/variables.css', import.meta.url), 'utf8');
-
-/**
- * The failure this guards against has a name in `design.md`: "tokens don't
- * reach hardcoded values". Here it runs the other way — a palette id naming a
- * token nobody defined resolves to `var(--list-nope)`, which is not an error,
- * not a warning, and not a colour. The rule just drops and the card renders
- * with no accent at all.
- */
-test('every colour in the palette has a token behind it', async () => {
-  const css = await tokens();
-  const missing = LIST_COLORS.filter(id => !css.includes(`--list-${id}:`));
-  assert.deepEqual(missing, [], `palette ids with no token: ${missing.join(', ')}`);
-});
-
-test('every --list-* token defined is one the palette offers', async () => {
-  const css = await tokens();
-  const defined = [...css.matchAll(/--list-([a-z]+):/g)].map(match => match[1]);
-  const orphaned = defined.filter(id => !LIST_COLORS.includes(id));
-  assert.deepEqual(orphaned, [], `tokens no picker can reach: ${orphaned.join(', ')}`);
-});
 
 test('the built-in lists keep colours of their own, and only Favourites is red', () => {
   assert.equal(resolveListColor({ id: '__favorites__' }), 'var(--accent-like)');

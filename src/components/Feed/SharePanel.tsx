@@ -24,7 +24,7 @@ export default function SharePanel({ title, url, onShared, trigger, heading = 'S
   const shown = url.replace(/^https?:\/\//, '');
   // Either surface closes on a pick, so a copy confirms in a toast; on a phone
   // it comes in at the top, clear of the thumb and of the sheet leaving below.
-  const copy = (method: string, message: string, position?: ExternalToast['position']) => copyLink({ url, onShared, method, message, position });
+  const copy = (method: string, message: string, position?: ExternalToast['position']) => { void copyLink({ url, onShared, method, message, position }); };
   return (
     <RailMenu
       title={heading}

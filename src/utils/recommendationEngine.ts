@@ -113,8 +113,8 @@ function topReasons(parts: Record<string, number>) {
 // string for the two callers that do, with no flag to keep in sync.
 //
 // One looker is silent, so it is named here rather than left to be found by
-// profiling: writeFeedSnapshot (FeedContext) JSON.stringifies the persisted
-// papers, and since the property is enumerable that serialisation invokes the
+// profiling: writeFeedSnapshot (context/feedSnapshot.ts) JSON.stringifies the
+// persisted papers, and since the property is enumerable that serialisation invokes the
 // getter on every _debugScore it walks -- up to FEED_SNAPSHOT_MAX_PAPERS of
 // them per write. That is deliberate: the round trip has to yield the same
 // string it always did, or a restored snapshot would stop matching a fresh

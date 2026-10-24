@@ -15,7 +15,9 @@ dist
 # stops being committed. This negation is what keeps it tracked.
 !.env.example
 .DS_Store
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/agents/
 lint_output.txt
 
 # Firestore emulator artefacts (npm run test:rules)

@@ -128,7 +128,7 @@ function useFollowedView() {
   };
   const finishUnfollow = (isOpen: boolean) => {
     if (isOpen) return;
-    if (released && unfollowing) handleUnfollow(unfollowing);
+    if (released && unfollowing) void handleUnfollow(unfollowing);
     setReleased(false);
     setUnfollowing(null);
   };
@@ -312,8 +312,8 @@ export default function FollowingSettingsPage() {
   // Reachable from Settings and from the profile's "Siguiendo" counter; back
   // returns to whichever one it was. The fallback covers a direct URL load.
   const goBack = () => {
-    if (location.key !== 'default') navigate(-1);
-    else navigate('/settings/discovery');
+    if (location.key !== 'default') void navigate(-1);
+    else void navigate('/settings/discovery');
   };
   const view = useFollowedView();
   const { language, followedByType, activeType, setSelectedType } = view;
@@ -357,7 +357,7 @@ export default function FollowingSettingsPage() {
           </nav>
 
           <div className="following-settings-content">
-            <FollowedList view={view} onExplore={() => navigate('/search')} />
+            <FollowedList view={view} onExplore={() => { void navigate('/search'); }} />
           </div>
         </div>
       </div>
@@ -393,7 +393,7 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
       onOpenChangeComplete={(isOpen) => {
         if (isOpen || !pendingPath) return;
         setPendingPath(null);
-        navigate(pendingPath);
+        void navigate(pendingPath);
       }}
     >
       <DrawerContent className={`settings-sheet is-tall${returning ? ' is-returning' : ''}`} overlayClassName="settings-sheet-backdrop">
@@ -401,7 +401,7 @@ export function FollowingSheet({ open, onOpenChange }: { open: boolean; onOpenCh
         <div className="settings-sheet-head">
           <DrawerTitle render={<h2 />}>{'Follows'}</DrawerTitle>
           <p>{followSummary(view)}</p>
-          <Select value={activeType} onValueChange={value => setSelectedType(value as string)}>
+          <Select value={activeType} onValueChange={value => setSelectedType(value)}>
             <SelectTrigger aria-label={'Type of followed content'} className="settings-sheet-switcher">
               <span className="settings-sheet-switcher-icon"><activeTab.Icon size={18} weight="fill" aria-hidden="true" /></span>
               <span className="settings-sheet-switcher-copy">

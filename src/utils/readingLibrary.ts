@@ -29,7 +29,7 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     authors: (paper.authors || []).slice(0, STORED_AUTHOR_CAP),
     ...storedClassification(paper),
     published: paper.published || paper.publicationDate || '',
-    year: paper.year || (paper.published ? new Date(paper.published!).getFullYear() : null),
+    year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
     summary: paper.summary?.substring(0, STORED_SUMMARY_CAP) || '',
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
@@ -49,7 +49,7 @@ function cleanBibValue(value: unknown) {
 
 function citationKey(paper: Partial<Paper>, index = 0) {
   const firstAuthor = authorName(paper.authors?.[0]).split(/\s+/).pop() || 'Paper';
-  const year = paper.year || (paper.published ? new Date(paper.published!).getFullYear() : 'nd');
+  const year = paper.year || (paper.published ? new Date(paper.published).getFullYear() : 'nd');
   const titleWord = (paper.title || '').replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).find(word => word.length > 3) || 'Research';
   return `${firstAuthor}${year}${titleWord}${index || ''}`.replace(/[^a-zA-Z0-9]/g, '');
 }

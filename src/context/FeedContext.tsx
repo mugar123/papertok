@@ -4,8 +4,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { CuratedSetName, InteractionDocumentData, InteractionEvent, InteractionProfile, ProfileSignals } from '../utils/interactionProfile.ts';
 import type { ProfileLoadResult } from '../utils/interactionProfileLoader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendationEngine.ts';
-// `savedAt` is set only on a snapshot read back from storage.
-interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean; savedAt?: number }
+import type { FeedSnapshot } from './feedSnapshot.ts';
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
 export interface LibraryEntry {
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
@@ -46,7 +45,7 @@ export interface FeedContextValue {
   trackPdfBounce: (paper: Paper) => Promise<void>;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect, startTransition } from 'react';
 import { FeedContext } from './contexts.ts';
 import { IS_DEMO, db } from '../services/firebase.ts';
@@ -67,17 +66,17 @@ import {
   pickExplorationCategories,
   readRecommendationWeights,
 } from '../utils/recommendationEngine.ts';
-import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 import { reRankHoldMs } from '../utils/feedReRankTiming.ts';
-import { feedResumeMemory, forYouScrollKey } from '../utils/feedResumeMemory.ts';
-import { resumeIndex } from '../utils/feedMountWindow.ts';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
-  removeLegacySeenPaperIds,
   saveProfileDriftCheckedAt,
-  saveSeenPaperIds,
 } from '../utils/userScopedStorage.ts';
+import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feedViewedPapers.ts';
+import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feedPagination.ts';
+import { cardsBeforePage, joinFeedPage, notablePassedOver, notableRequest, reRankAfterReader } from './feedNotableCards.ts';
+import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feedSnapshot.ts';
+import { corpusOrder, leanAfterEngaging } from './feedTemporalLean.ts';
 import { readStoredClassification, storedClassification } from '../models/Paper.ts';
 import { serializeLibraryPaper } from '../utils/readingLibrary.ts';
 import { savedPaperDocRef } from '../services/savedPaperStore.ts';
@@ -111,16 +110,13 @@ import {
   abstractsInFlight,
   cardsGivenTopic,
   getOpenAlexEnrichmentId,
-  joinNotablePage,
-  keepNotablePlaces,
   mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
-  notablePlaces,
   preserveFeedAbstracts,
 } from '../utils/feedEnrichment.ts';
 import { resolveWithin, settleWithin } from '../utils/asyncTiming.ts';
-import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
+import { classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
 import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
@@ -135,7 +131,6 @@ import { abstractWaitIds, openAbstractWait, type AbstractWaits } from '../utils/
 // instead of riding in the boot graph of every route.
 const loadTopicRetrieval = () => import('../services/topicRetrievalService.ts');
 
-const PAGE_SIZE = 15;
 // How many of the reader's ranked categories a page asks the corpus for.
 const MAIN_CATEGORIES = 10;
 // How long exploration and the follows may hold a page: past it, the page is
@@ -161,81 +156,9 @@ const PERSONAL_LIBRARY_MAX_RECORDS = 600;
 // this cadence it is a rounding error, and drift only appears after a session
 // that could not write the aggregate at all.
 const PROFILE_DRIFT_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
-const FEED_SNAPSHOT_TTL_MS = 15 * 60 * 1000;
-const FEED_SNAPSHOT_MAX_PAPERS = PAGE_SIZE * 2;
 
 function feedPreferenceSignature(preferences: string[] | null) {
   return [...(preferences || [])].sort().join('|');
-}
-
-function feedSnapshotKey(userId: string | null | undefined, signature: string) {
-  return `papertok_feed_snapshot_${encodeURIComponent(userId || 'guest')}_${encodeURIComponent(signature)}`;
-}
-
-// The card the account's For You opens on in this tab, from the place
-// FeedContainer keeps across a reload (feedResumeMemory): -1 when the tab has
-// none there and For You opens on the first card, and null when the reader
-// left it past every card of `papers`.
-function resumedCardIndex(userId: string | null, papers: Paper[]) {
-  const place = feedResumeMemory.get(forYouScrollKey(userId));
-  if (!place.paperId) return -1;
-  if (place.index >= papers.length && !papers.some(paper => paper.id === place.paperId)) return null;
-  return resumeIndex({ papers, savedPaperId: place.paperId, savedIndex: place.index });
-}
-
-function readFeedSnapshot(userId: string | null | undefined, signature: string): (FeedSnapshot & { savedAt: number }) | null {
-  if (!userId || !signature) return null;
-  try {
-    const snapshot = JSON.parse(localStorage.getItem(feedSnapshotKey(userId, signature)) || 'null');
-    if (!snapshot || snapshot.publicationPolicy !== 3 || Date.now() - snapshot.savedAt > FEED_SNAPSHOT_TTL_MS || !Array.isArray(snapshot.papers)) {
-      return null;
-    }
-    // A card can be saved before Crossref answered, or kept because the reader
-    // was on it. The reader comes back to their card (resumedCardIndex), and
-    // as with a late answer (dropUnreachedPublications), only a book after it
-    // leaves: the next card takes its place (keepNotablePlaces). The cards
-    // they met stay, books included, so their card keeps its id and index.
-    const papers = applyKnownPublicationTypes(snapshot.papers);
-    const reader = resumedCardIndex(userId, papers);
-    // The snapshot keeps the list's first cards (FEED_SNAPSHOT_MAX_PAPERS), and
-    // the reader left past them: it would open on one they met. It goes, with
-    // their place, and For You loads again from its first card.
-    if (reader === null) {
-      localStorage.removeItem(feedSnapshotKey(userId, signature));
-      feedResumeMemory.remember(forYouScrollKey(userId));
-      feedResumeMemory.persist(forYouScrollKey(userId));
-      return null;
-    }
-    const met = reader + 1;
-    const ahead = papers.slice(met).filter(isFeedPublication);
-    return { ...snapshot, papers: [
-      ...papers.slice(0, met),
-      ...keepNotablePlaces(papers.slice(met), ahead.filter(paper => !paper._notable), ahead.filter(paper => paper._notable)),
-    ] };
-  } catch {
-    return null;
-  }
-}
-
-function writeFeedSnapshot(userId: string | null | undefined, signature: string, snapshot: FeedSnapshot) {
-  if (!userId || !signature || !snapshot?.papers?.length) return;
-  try {
-    const papers = snapshot.papers.slice(0, FEED_SNAPSHOT_MAX_PAPERS).map(paper => {
-      const snapshotPaper = { ...paper };
-      delete snapshotPaper.raw;
-      return snapshotPaper;
-    });
-    localStorage.setItem(feedSnapshotKey(userId, signature), JSON.stringify({
-      ...snapshot,
-      papers,
-      publicationPolicy: 3,
-      // A restored page updated by late answers keeps its expiry: the
-      // fifteen minutes count from when its page was loaded.
-      savedAt: snapshot.savedAt ?? Date.now(),
-    }));
-  } catch {
-    // A full browser storage quota must never block the feed.
-  }
 }
 
 // ── Demo mode storage helpers ──
@@ -256,11 +179,6 @@ const FOLLOWED_PER_PAGE = 6;
 // RANDOM_EXPLORATION from random ones when the reader is bored.
 const NEARBY_EXPLORATION_MAX = 8;
 const RANDOM_EXPLORATION = 2;
-// Notable papers a page asks for beyond its places. The corpus leaves out the
-// papers in the seen filter and the likes and saves it ranks by, not every
-// paper the reader liked, saved, read or dismissed: the feed drops those
-// (isAvailablePaper), and a spare takes the place.
-const NOTABLE_SPARE = 2;
 
 /**
  * Papers of the reader's follows from the paper corpus: the Worker serves an
@@ -392,10 +310,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
-  // -1 (classic) to +1 (recent). Likes, saves and long reads move it toward
-  // recent for a paper a week old or less, toward classic for one a year old
-  // or more. A notable card's leave it as it is: the feed chose that card for
-  // its citations, and it is years old by that choice.
+  // -1 (classic) to +1 (recent): likes, saves and long reads move it
+  // (leanAfterEngaging).
   const temporalPreference = useRef(0);
   const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
   const recommendationWeights = useRef(initialRecommendationWeights);
@@ -426,21 +342,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // card reports call this. So does a load for a notable paper it passes over
   // because the reader already knew it. A card a load only brought in stays in
   // sessionSeenPapers, which dies with the page, so the next load may show it.
-  // The list kept across loads is read back before it is written, so a second
-  // tab's views are not overwritten. A card that reports after the account
-  // changed was viewed by the account that owned it, not by the new one.
-  // Signing out sweeps the account's storage before React unmounts the card,
-  // whose cleanup then reports while activeUserId is still that account's;
-  // Firebase already names nobody, so that report does not write the list back.
   const markPaperViewed = useCallback((paperId: string, viewerId: string | null | undefined) => {
-    const userId = activeUserId.current;
-    if ((viewerId || null) !== userId) return;
-    sessionSeenPapers.current.add(paperId);
-    if (auth.currentUser?.uid !== userId) return;
-    const viewed = readSeenPaperIds(userId);
-    viewed.delete(paperId);
-    viewed.add(paperId);
-    saveSeenPaperIds(userId, viewed);
+    recordCardView(paperId, viewerId, {
+      activeUserId: activeUserId.current,
+      signedInUid: auth.currentUser?.uid,
+      sessionSeen: sessionSeenPapers.current,
+    });
   }, []);
 
   // What this account viewed on any device, as its aggregate has it, is passed
@@ -788,7 +695,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
     };
     const fillable = openAbstractWait(setAbstractWaits, waiting, [openAlex, europePmc, recovery].filter(request => request !== null));
-    openAlex?.then((records) => {
+    void openAlex?.then((records) => {
       if (!records || Object.keys(records).length === 0) return;
       const loading = fillable();
       const enrich = (current: Paper[]) => preserveFeedAbstracts(current, mergeOpenAlexEnrichment(current, records), loading);
@@ -798,21 +705,21 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const shown = papersRef.current;
       keepLateTopicsRef.current(cardsGivenTopic(shown, enrich(shown)));
     });
-    iCite?.then((metrics) => {
+    void iCite?.then((metrics) => {
       if (!metrics || Object.keys(metrics).length === 0) return;
       update(current => mergeICiteEnrichment(current, metrics));
     });
-    europePmc?.then((records) => {
+    void europePmc?.then((records) => {
       if (!records || records.size === 0) return;
       const loading = fillable();
       update(current => preserveFeedAbstracts(current, mergeEuropePmcEnrichment(current, records), loading));
     });
-    recovery?.then((records) => {
+    void recovery?.then((records) => {
       if (records.length === 0) return;
       const loading = fillable();
       update(current => preserveFeedAbstracts(current, mergeFeedAbstracts(current, records), loading));
     });
-    publications.then((classified) => {
+    void publications.then((classified) => {
       update(current => dropUnreachedPublications(current, classified, visiblePaperIdRef.current));
     });
   }, [scheduleFeedSnapshotWrite]);
@@ -828,22 +735,18 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // paper when there is one, and the visible one always — a reload puts
       // the reader deep in the list, and the profile load's anchorless
       // re-rank used to shuffle that card away (2026-09-04).
-      const { locked, queue } = splitFeedForReRank(prevPapers, {
-        anchorPaperIds: [sourcePaperId, visiblePaperIdRef.current],
-      });
-      // The notable cards keep their places, which also count the cards the
-      // reader met that left the list; the ranking orders the other cards.
-      const others = queue.filter(paper => !paper._notable);
-      if (others.length === 0) return prevPapers;
+      // The notable cards keep their places; the ranking orders the other cards.
+      const reRanked = reRankAfterReader(prevPapers, [sourcePaperId, visiblePaperIdRef.current], (others, locked) => (
+        diversifiedWeightedShuffle(others, {
+          scorePaper: calculateAndAttachScore,
+          weights: recommendationWeights.current,
+          initialPapers: locked,
+        })
+      ));
+      if (!reRanked) return prevPapers;
+      logRankingBatch('rerank queue', reRanked.queue);
 
-      const newQueue = keepNotablePlaces(queue, diversifiedWeightedShuffle(others, {
-        scorePaper: calculateAndAttachScore,
-        weights: recommendationWeights.current,
-        initialPapers: locked,
-      }), queue.filter(paper => paper._notable));
-      logRankingBatch('rerank queue', newQueue);
-
-      return [...locked, ...newQueue];
+      return [...reRanked.locked, ...reRanked.queue];
     }));
   }, [calculateAndAttachScore]);
 
@@ -961,29 +864,20 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // The corpus fetch above is a network round trip: the reader may
             // have swiped on while it was in flight, so the paper the
             // interaction named is no longer where they are. Anchor on the
-            // deeper of the two (final review, 2026-09-04).
-            const { locked, queue: rest } = splitFeedForReRank(current, {
-              anchorPaperIds: [paper.id, visiblePaperIdRef.current],
-            });
+            // deeper of the two (final review, 2026-09-04). The new papers join
+            // the unread queue, which the weighted shuffle re-ranks; the
+            // notable cards keep their places, as in reRankFeed.
+            const reRanked = reRankAfterReader(current, [paper.id, visiblePaperIdRef.current], (others, locked) => (
+              diversifiedWeightedShuffle(others, {
+                scorePaper: calculateAndAttachScore,
+                weights: recommendationWeights.current,
+                initialPapers: locked,
+              })
+            ), newGraphPapers);
+            if (!reRanked) return current;
+            logRankingBatch('graph expansion', reRanked.queue);
 
-            // Deduplicate against rest of the queue
-            const restFiltered = rest.filter(rp => !newGraphPapers.some(ng => ng.id === rp.id));
-            
-            // Combine rest and new papers
-            const combinedRest = [...newGraphPapers, ...restFiltered];
-
-            // Re-rank the unread queue using weighted shuffle; the notable
-            // cards keep their places, as in reRankFeed, and the other cards
-            // that do not fit before the last place follow it. A place they
-            // pass has no notable card until the next page (joinNotablePage).
-            const reRankedRest = keepNotablePlaces(rest, diversifiedWeightedShuffle(combinedRest.filter(p => !p._notable), {
-              scorePaper: calculateAndAttachScore,
-              weights: recommendationWeights.current,
-              initialPapers: locked,
-            }), combinedRest.filter(p => p._notable));
-            logRankingBatch('graph expansion', reRankedRest);
-            
-            return [...locked, ...reRankedRest];
+            return [...reRanked.locked, ...reRanked.queue];
           });
           
           console.log(`[Recommender] Inserted ${newGraphPapers.length} related papers into the feed.`);
@@ -1002,16 +896,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid || null;
     const sessionId = ++feedSessionId.current;
 
-    // Before the list is read: on an account's first load it starts from the
-    // list this browser kept before.
-    removeLegacySeenPaperIds(null, userId);
     activeUserId.current = userId;
-    sessionSeenPapers.current = readSeenPaperIds(userId);
+    sessionSeenPapers.current = seenPapersForAccount(userId);
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
     // profile that merely failed to load leaves them alone.
-    if (loadedProfileUserId.current && loadedProfileUserId.current !== userId) {
+    if (leavesLoadedAccount(loadedProfileUserId.current, userId)) {
       setLikedPaperIds(new Set<string>());
       setNotInterestedIds(new Set<string>());
       setSavedPaperIds(new Set<string>());
@@ -1208,7 +1099,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     };
 
-    loadInteractions();
+    void loadInteractions();
 
     return () => {
       cancelled = true;
@@ -1265,13 +1156,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
     const currentPage = pageOverride ?? (reset ? 0 : page);
-    // The cards this page follows: those through the visible one when a
-    // refresh keeps the reader's place, none on a plain reset.
-    const cardsBefore = !reset ? papers
-      : keepThroughVisible ? mergeFreshFeedPage(papers, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
-    // The cards the reader is on or about to reach, which a page's notable
-    // places do not move (joinNotablePage): those a re-rank locks.
-    const reachedCards = (cards: Paper[]) => splitFeedForReRank(cards, { anchorPaperIds: [visiblePaperIdRef.current] }).locked.length;
+    // How the page joins the list, with the card the reader is on when it does.
+    const pageJoin = () => ({ reset, keepThroughVisible, visiblePaperId: visiblePaperIdRef.current });
+    const cardsBefore = cardsBeforePage(papers, pageJoin());
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1306,10 +1193,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const rankedPreferences = rankPreferences([...userPreferences, ...followedTopicIds], profileSignals.current.categoryAffinities);
 
         // ─── STEP 2: Choose query mode based on temporal preference ───
-        // Relevance order is for a reader whose views lean to older papers: the
-        // corpus ranks their page by likeness alone, without the recency that
-        // separates near ties for everyone else.
-        const queryMode = (temporalPreference.current || 0) < -0.3 ? 'relevance' : 'recent';
+        const queryMode = corpusOrder(temporalPreference.current || 0);
         const positiveIds = selectSemanticProfilePositiveIds(
           curatedIds(interactionProfile.current, 'liked'),
           curatedIds(interactionProfile.current, 'saved'),
@@ -1348,7 +1232,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // the first screen, up to ten exploration cards (STEP 5); and the
             // spares. A page has one place at least.
             seen: sessionSeenPapers.current,
-            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), reachedCards(cardsBefore)) + NOTABLE_SPARE,
+            notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current),
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
@@ -1442,9 +1326,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const corePapers = Array.from(uniqueMap.values());
         newPapers = corePapers;
 
-        // An empty first page is not the end of the feed: a corpus with nothing
-        // for these interests is not ready, which is an error with a retry.
-        if (reset && newPapers.length === 0 && !seenFallback) {
+        if (isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
           throw new Error('The paper store has no papers for these interests yet.');
         }
       } else {
@@ -1455,40 +1337,29 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
-      // A notable paper the feed does not show, one the reader liked, saved,
-      // read or dismissed elsewhere, joins the seen papers this browser keeps:
-      // the corpus offers unseen notable papers in one order, and would send
-      // it again in a place of every page and every session.
-      newPapers.forEach(paper => { if (paper._notable && !isAvailablePaper(paper)) markPaperViewed(paper.id, activeUserId.current); });
+      // A notable paper the feed does not show counts as viewed.
+      notablePassedOver(newPapers, isAvailablePaper).forEach(paper => markPaperViewed(paper.id, activeUserId.current));
 
       // No paper on this page can be shown: try a later page before showing
-      // seen papers again. Notable cards alone count as none: they take only
-      // their places among other cards (joinNotablePage), and the corpus
-      // sends them unseen even when the reader saw every other paper on the page.
-      if (filtered.every(paper => paper._notable)) {
-        // Shown before, but never liked, saved, read or dismissed. A notable
-        // card is never shown twice.
+      // seen papers again.
+      if (showsNoPaper(filtered)) {
+        // Shown before, but never liked, saved, read or dismissed.
         const bypassSeen = newPapers.filter((p) =>
           isFeedPublication(p) &&
-          !p._notable &&
           !notInterestedIdsRef.current.has(p.id) && 
           !readPaperIdsRef.current.has(p.id) &&
           !likedPaperIdsRef.current.has(p.id) &&
           !savedPaperIdsRef.current.has(p.id) &&
           !isKnownPaper(p.id)
         );
-        // The first such page this load reached is shown again when no later
-        // page has an unseen paper: the feed is never empty because
-        // everything was seen.
-        const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? { page: currentPage, papers: bypassSeen } : undefined);
-        if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
-          // One page on, not more: the corpus ranks the same way on every
-          // load, so a longer move would pass over papers not yet shown.
-          const nextPageToFetch = currentPage + 1;
+        // `filtered` holds only this page's unseen notable cards now.
+        const plan = planUnshowablePage({ candidateCount: newPapers.length, currentPage, seenFallback, shownBeforeHere: bypassSeen, notableHere: filtered });
+        if (plan.kind === 'next-page') {
+          const nextPageToFetch = plan.page;
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: shownBefore });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1502,11 +1373,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           setTimeout(loadNextPage, 0);
           return;
         }
-        if (shownBefore) {
+        if (plan.kind === 'show-seen') {
           console.log('No later page has a paper the reader has not seen; showing seen papers again.');
-          // This page's unseen notable cards, the only papers left in
-          // `filtered`, take their places among them.
-          filtered = [...shownBefore.papers, ...filtered];
+          filtered = plan.papers;
         }
       }
 
@@ -1534,27 +1403,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       filtered.forEach(p => sessionSeenPapers.current.add(p.id));
 
       // The page joins the list as it is now, not `papers` as this load found
-      // it: while the page loaded, late answers may have filled or removed
-      // cards on screen, and a network expansion may have inserted some. The
-      // notable places are counted on that list too: a place it has passed
-      // with no notable card, after the cards the reader reached, takes the
-      // page's first one.
-      // A follow change refreshes the ranking but the reader keeps their
-      // place: the cards through the visible one stay, the fresh page lands
-      // below them (mergeFreshFeedPage). A plain reset still replaces all.
-      const addPage = (shown: Paper[]) => {
-        const kept = !reset ? shown
-          : keepThroughVisible ? mergeFreshFeedPage(shown, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
-        const keptIds = new Set(kept.map(p => p.id));
-        const isNew = (p: Paper) => !keptIds.has(p.id);
-        return joinNotablePage(kept, filtered.filter(isNew), notableCards.filter(isNew), reachedCards(kept));
-      };
-      // When an empty or failed page left this load showing the seen papers
-      // it carried, the feed goes on from the page after theirs: the pages
-      // this load skipped past may hold papers the reader has not seen.
-      const resumeAfter = newPapers.length === 0 ? seenFallback?.page : undefined;
-      const nextPage = (resumeAfter ?? currentPage) + 1;
-      const nextHasMore = newPapers.length > 0 || resumeAfter !== undefined;
+      // it (joinFeedPage). A follow change refreshes the ranking but the
+      // reader keeps their place: the cards through the visible one stay, the
+      // fresh page lands below them. A plain reset still replaces all.
+      const addPage = (shown: Paper[]) => joinFeedPage(shown, filtered, notableCards, pageJoin());
+      const { nextPage, hasMore: nextHasMore } = pageAfterLoad(newPapers.length, currentPage, seenFallback);
       const snapshotUserId = activeUserId.current;
       const preferenceSignature = feedPreferenceSignature(userPreferences);
 
@@ -1595,10 +1448,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // the list this load found: a card removed since can skip a
       // continuation, which the scroll sentinel then makes up for, and a card
       // inserted since can ask for one page more.
-      if (addPage(papers).length < PAGE_SIZE && newPapers.length > 0 && currentPage < 10) {
+      if (addPage(papers).length < PAGE_SIZE && canFetchNextPage(newPapers.length, currentPage)) {
         setTimeout(() => {
           if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-            loadPapersRef.current?.(false, activeMode, nextPage);
+            void loadPapersRef.current?.(false, activeMode, nextPage);
           }
         }, 0);
       }
@@ -1613,7 +1466,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           autoRetryUsedRef.current = true;
           setTimeout(() => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
+              void loadPapersRef.current?.(true, activeMode, undefined, { keepThroughVisible });
             }
           }, 2500);
         }
@@ -1648,7 +1501,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // Only the feed reports the card the reader is on, and a reload can open
     // another page. Until it reports, the card it will open on stands in, so a
     // late book and a re-rank keep each card on its side of the reader.
-    visiblePaperIdRef.current ??= snapshot.papers[resumedCardIndex(activeUserId.current, snapshot.papers) ?? -1]?.id ?? null;
+    visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
     setPapers(snapshot.papers);
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);
@@ -1736,7 +1589,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         setPage(0);
         setHasMore(true);
       }
-      loadPapers(true, null);
+      void loadPapers(true, null);
     }, 0);
     return () => clearTimeout(refreshTimer);
   }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, restoreFeedSnapshot, user?.uid, userPreferences]);
@@ -1825,7 +1678,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
   const loadMore = useCallback(() => {
-    if (hasMore && !feedLoadInFlight.current) loadPapers(false);
+    if (hasMore && !feedLoadInFlight.current) void loadPapers(false);
   }, [hasMore, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
@@ -1840,7 +1693,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // the stored page no longer follows the cards on screen.
     setTimeout(() => {
       if (stored.requestId === feedRequestId.current && stored.sessionId === feedSessionId.current) {
-        loadPapersRef.current?.(...stored.args);
+        void loadPapersRef.current?.(...stored.args);
       }
     }, 0);
   }, [loadPapers]);
@@ -1875,7 +1728,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
     if (!isCurrentlyLiked) {
       boredomLevel.current = 0;
-      traverseAndExpandNetwork(paper);
+      void traverseAndExpandNetwork(paper);
     }
     
     if (isCurrentlyLiked) {
@@ -1884,12 +1737,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       newLiked.add(paper.id);
       countEngagement(paperInput.id, { likes: 1 });
 
-      // Update temporal preference
-      if (!paper._notable) {
-        const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-        if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
-        else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
-      }
+      temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.1);
     }
     recordProfileEvent({
       paperId: paper.id,
@@ -2097,10 +1945,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // and in the PAP-86 audit's model of a signed-in session those walks were
     // about a tenth of its OpenAlex units (modelled, not measured). A like, a
     // save or an opened PDF still expands the graph.
-    if (timeInSeconds >= 10 && !paper._notable) {
-      const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
-      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.05);
+    if (timeInSeconds >= 10) {
+      temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.05);
     }
     if (timeInSeconds >= 3.0) {
       // Off the snap path: the reader is settled on this card, not watching
@@ -2126,7 +1972,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const userId = user?.uid;
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
-    traverseAndExpandNetwork(paper);
+    void traverseAndExpandNetwork(paper);
 
     recordProfileEvent({
       paperId: paper.id,
@@ -2240,14 +2086,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     boredomLevel.current = 0;
     // Attempt to update temporal preference
     if (paper) {
-      if (!paper._notable) {
-        const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-        if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
-        else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
-      }
+      temporalPreference.current = leanAfterEngaging(temporalPreference.current, paper, 0.15);
 
       // Expand network via OpenAlex
-      traverseAndExpandNetwork(paper);
+      void traverseAndExpandNetwork(paper);
     }
 
     const nextSaved = new Set(savedPaperIdsRef.current);

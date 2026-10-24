@@ -563,7 +563,7 @@ async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string 
     return 0;
   }
   const vectors = await embedTexts(env, texts);
-  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index]! }] : []));
+  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index] }] : []));
   // Two parameters a row, under D1's hundred per statement.
   const statements = [];
   for (let start = 0; start < embedded.length; start += 50) {
@@ -623,7 +623,7 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string) 
  * embedded ranks by recency alone, below the ones that are, so a reader is
  * never left without papers while the store catches up.
  */
-export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent' as keyof typeof RECENCY_WEIGHT } = {}) {
+export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent' }: { now?: number; order?: keyof typeof RECENCY_WEIGHT } = {}) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
   const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
   return rows

@@ -63,7 +63,7 @@ export default function PrivacyPopover({ className = '' }) {
             it, and an `aria-label` as well would be read out twice. */}
         <Label className="privacy-popover-switch">
           {COPY.toggle}
-          <Switch checked={consent !== ANALYTICS_CONSENT.DENIED} onCheckedChange={choose} />
+          <Switch checked={consent !== ANALYTICS_CONSENT.DENIED} onCheckedChange={(checked) => { void choose(checked); }} />
         </Label>
         {/* Only the failure is announced; the note beside it is not news. */}
         <p className={`privacy-popover-status${saveFailed ? ' is-failed' : ''}`}>

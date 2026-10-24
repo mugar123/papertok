@@ -26,19 +26,21 @@ export async function awaitWithinGate<T>(promises: Array<PromiseLike<T> | T>, { 
   const list = Array.isArray(promises) ? promises : [];
   if (list.length === 0) return [];
 
-  const slots = list.map((promise) => {
-    const slot: { value: Awaited<T> | null; settled: boolean; done?: Promise<void>; closed?: boolean } = { value: null, settled: false };
-    slot.done = Promise.resolve(promise).then(
+  const slots: Array<{ value: Awaited<T> | null; settled: boolean; closed: boolean }> = list.map(
+    () => ({ value: null, settled: false, closed: false }),
+  );
+  const arrivals = list.map((promise, index) => {
+    const slot = slots[index];
+    return Promise.resolve(promise).then(
       (value) => { if (!slot.closed) { slot.value = value; slot.settled = true; } },
       () => { slot.settled = true; },
     );
-    return slot;
   });
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const cap = new Promise((resolve) => { timer = setTimeout(resolve, maxWaitMs); });
   try {
-    await Promise.race([Promise.all(slots.map((slot) => slot.done)), cap]);
+    await Promise.race([Promise.all(arrivals), cap]);
   } finally {
     clearTimeout(timer);
   }

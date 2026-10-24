@@ -95,7 +95,7 @@ export default function InstitutionVerification() {
             )}
             <Button ref={returnRef} variant={done || stopped ? 'default' : 'outline'} disabled={busy} focusableWhenDisabled onClick={() => {
               cancelInstitutionVerification();
-              navigate(destination, { replace: true });
+              void navigate(destination, { replace: true });
             }}>
               {done ? 'Continue to PaperTok'
                 : !stopped ? 'Cancel verification'

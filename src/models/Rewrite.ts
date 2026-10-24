@@ -53,7 +53,7 @@ export function toRewriteSection(value: unknown): RewriteSection | null {
     kind: text(source.kind),
     heading: text(source.heading),
     originalHeading: text(source.originalHeading),
-    paragraphs: paragraphs as string[],
+    paragraphs: paragraphs,
     highlights,
   };
 }

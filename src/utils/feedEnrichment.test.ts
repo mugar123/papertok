@@ -234,7 +234,7 @@ test('a card is loading only while a request that can supply its abstract is run
     { id: 'physics-doi', doi: '10.1016/j.nuclphysb.2011.08.011', primaryCategory: 'hep-th', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } },
     { id: 'medicine-doi', doi: '10.5555/clinical-trial', primaryCategory: 'med.onc', abstract: '', sources: { primary: 'openalex', enrichedBy: [] } },
     { id: 'with-text', pmid: '456', abstract: 'Publisher text.', sources: { primary: 'pubmed', enrichedBy: [] } },
-  ].map(paper => ({ title: `Synthetic paper ${paper.id}`, authors: [], ...paper }) as Paper);
+  ].map(paper => ({ title: `Synthetic paper ${paper.id}`, authors: [], ...paper }));
   const all = { openAlex: true, europePmc: true, recovery: true };
   assert.deepEqual([...abstractsInFlight(papers, all)], ['pubmed', 'linked', 'physics-doi']);
   assert.deepEqual([...abstractsInFlight(papers, { ...all, recovery: false })], ['pubmed']);

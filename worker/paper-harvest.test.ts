@@ -57,7 +57,7 @@ function providers(t: import('node:test').TestContext, answer: (url: URL) => Res
     const url = new URL(String(input instanceof Request ? input.url : input));
     asked.push(url);
     return answer(url) ?? Response.json({ results: [] });
-  }) as typeof fetch;
+  });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
     globalThis.fetch = realFetch;

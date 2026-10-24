@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    // Deployed to Deno Deploy on its own (proxy/README.md).
+    "proxy/scopus-proxy.ts",
+    // Loaded by the service worker through importScripts (vite.config.ts).
+    "public/sw-html-warm.js",
+    // Linked from privacy.html, a second Vite page.
+    "src/legal/privacy.css",
+    // Maintained scripts run by hand (CONTRIBUTING.md).
+    "scripts/*.{ts,js,mjs}"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "treatConfigHintsAsErrors": true,
+  "ignore": [".agents/**", "scripts/diagnostics/**"],
+  "ignoreDependencies": [
+    // Pinned to a patched release for @firebase/firestore's transitive copy.
+    "protobufjs",
+    // `cloudflare:workers` is a Workers runtime module, not a package.
+    "cloudflare",
+    // Ambient Deno types for proxy/tsconfig.json.
+    "@types/deno",
+    // Installed by whoever runs the optional admin backfill (CONTRIBUTING.md).
+    "firebase-admin"
+  ],
+  // `npm run test:rules` uses a globally installed firebase-tools (tests/README.md).
+  "ignoreBinaries": ["firebase"]
+}

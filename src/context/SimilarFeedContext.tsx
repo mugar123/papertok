@@ -1,6 +1,5 @@
 import type { PropsWithChildren } from 'react';
 import type { Paper } from '../models/Paper.ts';
-import type { PaperCardProps } from '../components/Feed/PaperCard.tsx';
 
 import { useCallback, useMemo, useState } from 'react';
 import SimilarFeedLayer from '../components/Feed/SimilarFeedLayer.tsx';
@@ -18,7 +17,10 @@ export interface SimilarFeedContextValue {
  * layer, and the layer keeps the pill it first grew from: closing always
  * folds back into the card the reader left.
  */
-export function SimilarFeedProvider({ children, onOpenPdf, onSaveToList }: PropsWithChildren<Pick<PaperCardProps, 'onOpenPdf' | 'onSaveToList'>>) {
+export function SimilarFeedProvider({ children, onOpenPdf, onSaveToList }: PropsWithChildren<{
+  onOpenPdf?: (paper: Paper) => void;
+  onSaveToList?: (paper: Paper) => void;
+}>) {
   const [layer, setLayer] = useState<{ anchor: Paper; origin: HTMLElement } | null>(null);
   const openSimilar = useCallback((anchor: Paper, origin: HTMLElement) => {
     setLayer(current => (current ? { ...current, anchor } : { anchor, origin }));

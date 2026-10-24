@@ -7,20 +7,20 @@ export interface PaperCardProps {
   isLiked?: boolean;
   isSaved?: boolean;
   isRead?: boolean;
-  onLike?: (paper: Paper) => void;
-  onNotInterested?: (paper: Paper) => void;
-  onMarkAsRead?: (paper: Paper) => void;
-  onUnmarkAsRead?: (paperId: string) => void;
-  trackViewTime?: (paper: Paper, seconds: number) => void;
-  trackSkip?: (paper: Paper) => void;
-  onOpenPdf?: (paper: Paper) => void;
-  onSaveToList?: (paper: Paper) => void;
+  onLike?: (paper: Paper) => void | Promise<void>;
+  onNotInterested?: (paper: Paper) => void | Promise<void>;
+  onMarkAsRead?: (paper: Paper) => void | Promise<void>;
+  onUnmarkAsRead?: (paperId: string) => void | Promise<void>;
+  trackViewTime?: (paper: Paper, seconds: number) => void | Promise<void>;
+  trackSkip?: (paper: Paper) => void | Promise<void>;
+  onOpenPdf?: (paper: Paper) => void | Promise<void>;
+  onSaveToList?: (paper: Paper) => void | Promise<void>;
   /**
    * Holding Save on a touch screen. Where a tap on Save already opens the list
    * picker it does the same; the feed, whose tap quick-saves to Read later,
    * passes the picker here.
    */
-  onPickList?: (paper: Paper) => void;
+  onPickList?: (paper: Paper) => void | Promise<void>;
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
@@ -570,7 +570,7 @@ const PaperCard = memo(function PaperCard({
       return () => { active = false; };
     }
 
-    findOpenAccessCopy(paper.doi).then(openCopy => {
+    void findOpenAccessCopy(paper.doi).then(openCopy => {
       if (active && openCopy) setResolvedAccess({ paperId: paper.id, copy: openCopy });
     });
 
@@ -591,7 +591,7 @@ const PaperCard = memo(function PaperCard({
     }
     if (requests.length === 0) return () => { active = false; };
 
-    Promise.allSettled(requests).then(results => {
+    void Promise.allSettled(requests).then(results => {
       if (!active) return;
       const remoteResources = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
       setLinkedResources({
@@ -607,10 +607,10 @@ const PaperCard = memo(function PaperCard({
     // Every stretch on screen is reported, skips included, so the time per
     // paper averages over what was seen and not only over what was read.
     const reportViewTime = (seconds: number) => {
-      if (seconds >= 1.0) trackViewTime(paper, seconds);
-      else if (seconds > 0.1) trackSkip(paper);
+      if (seconds >= 1.0) void trackViewTime(paper, seconds);
+      else if (seconds > 0.1) void trackSkip(paper);
       if (seconds > 0.1) {
-        trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
+        void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
       }
     };
     const observer = new IntersectionObserver(
@@ -622,7 +622,7 @@ const PaperCard = memo(function PaperCard({
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (analyticsViewedPaperRef.current !== paperViewKey) {
             analyticsViewedPaperRef.current = paperViewKey;
-            trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
+            void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
           }
           if (!viewStartTime.current) viewStartTime.current = Date.now();
         } else {
@@ -657,7 +657,7 @@ const PaperCard = memo(function PaperCard({
     // keeps a fetch off the frames the card is still arriving on. One that was
     // born with them has nothing to wait for and nothing to ask.
     if (!isCardSettled || figures.length > 0) return () => { active = false; };
-    getPaperFigures(paper).then(found => {
+    void getPaperFigures(paper).then(found => {
       // Four is what the margins hold either side of the sheet.
       if (active && found.length > 0) setFigures(found.slice(0, 4));
     });
@@ -748,7 +748,7 @@ const PaperCard = memo(function PaperCard({
   useEffect(() => {
     let isMounted = true;
     if (!isCardIdle || !paper) return;
-    getProjectForPaper(paper.arxivId, paper.doi).then(proj => {
+    void getProjectForPaper(paper.arxivId, paper.doi).then(proj => {
       if (isMounted && proj) {
         setProject(proj);
       }
@@ -1189,7 +1189,7 @@ const PaperCard = memo(function PaperCard({
   }, []);
 
   const selectRelatedPaper = useCallback((relatedPaper: Paper) => {
-    trackEvent('select_content', {
+    void trackEvent('select_content', {
       content_type: 'paper',
       surface: analyticsSurface,
       position,
@@ -1206,7 +1206,7 @@ const PaperCard = memo(function PaperCard({
       : prepareRelatedPaper(relatedPaper);
     const requestId = relatedHydrationRequestRef.current + 1;
     relatedHydrationRequestRef.current = requestId;
-    Promise.resolve(preparation).then(preparedPaper => {
+    void Promise.resolve(preparation).then(preparedPaper => {
       if (relatedHydrationRequestRef.current !== requestId || relatedCardClosingRef.current) return;
       setSelectedRelatedPaper((preparedPaper || relatedPaper) as Paper);
       setPendingRelatedPaper(null);
@@ -1234,10 +1234,10 @@ const PaperCard = memo(function PaperCard({
       return;
     }
     if (isRead) {
-      onUnmarkAsRead(paper.id);
+      void onUnmarkAsRead(paper.id);
       return;
     }
-    onMarkAsRead(paper);
+    void onMarkAsRead(paper);
   };
 
   // Get area info for the gradient background
@@ -1292,7 +1292,7 @@ const PaperCard = memo(function PaperCard({
     const path = publicMode
       ? getPublicEntityPath(topic.type, topic.id)
       : topicExplorerPath(topic);
-    trackEvent('select_content', {
+    void trackEvent('select_content', {
       content_type: topic.type === 'concept' ? 'topic' : topic.type,
       surface: analyticsSurface,
       position,
@@ -1363,7 +1363,7 @@ const PaperCard = memo(function PaperCard({
           lastTap.current = now;
           return;
         }
-        onLike(paper);
+        void onLike(paper);
         // One timer per card: a second double tap restarts it instead of
         // letting the first one cut the new heart short.
         clearTimeout(heartTimer.current!);
@@ -1396,7 +1396,7 @@ const PaperCard = memo(function PaperCard({
     }
     // The button is its own feedback (the icon fills); the big heart is the
     // double tap's, not a second celebration on every like (2026-10-15).
-    onLike(paper);
+    void onLike(paper);
     pulse(likeIconRef.current, liking);
   };
 
@@ -1415,7 +1415,8 @@ const PaperCard = memo(function PaperCard({
   // The slot swap only grows the card downward: pinned on the press, before
   // the panel changes the column's height (see pinSheet).
   useEffect(() => {
-    if (isCardIdle && hasRelated && !isPhone && !publicMode) RelatedPapersSheet.preload();
+    // A failed preload is retried by the lazy render that opens the sheet.
+    if (isCardIdle && hasRelated && !isPhone && !publicMode) RelatedPapersSheet.preload().catch(() => {});
   }, [isCardIdle, hasRelated, isPhone, publicMode]);
 
   const toggleRelated = (next: boolean) => {
@@ -1434,7 +1435,7 @@ const PaperCard = memo(function PaperCard({
       requireAuthentication('not_interested');
       return;
     }
-    onNotInterested(paper);
+    void onNotInterested(paper);
   };
 
   // Created once, so a re-render between the hold and its click keeps the
@@ -1443,7 +1444,7 @@ const PaperCard = memo(function PaperCard({
   useEffect(() => {
     pickListRef.current = () => {
       if (publicMode) requireAuthentication('save');
-      else onPickList(paper);
+      else void onPickList(paper);
     };
   }, [onPickList, paper, publicMode, requireAuthentication]);
   const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
@@ -1457,7 +1458,7 @@ const PaperCard = memo(function PaperCard({
       requireAuthentication('save');
       return;
     }
-    onSaveToList(paper);
+    void onSaveToList(paper);
     pulse(saveIconRef.current, saving);
   };
 
@@ -1499,7 +1500,7 @@ const PaperCard = memo(function PaperCard({
       push('record', 'forward');
       setCheckingLibraryFor(`${paperId}|${domain}`);
     }, LIBRARY_CHECKING_DELAY_MS);
-    findInstitutionAccess(paper.doi, institution).then(access => {
+    void findInstitutionAccess(paper.doi, institution).then(access => {
       clearTimeout(slow);
       if (!active) return;
       const entitled = access?.status === 'entitled';
@@ -1550,7 +1551,7 @@ const PaperCard = memo(function PaperCard({
           : paper.doi
             ? 'doi'
             : 'other';
-    trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
+    void trackEvent('paper_open', { surface: analyticsSurface, destination, position, paper_id: paper.id, paper_title: paper.title });
 
     // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
     // la cascada daba por bueno el primer candidato con URL: si el navegador la
@@ -1558,7 +1559,7 @@ const PaperCard = memo(function PaperCard({
     // este botón ofrece -- el clic terminaba ahí, en silencio.
     const openBestTarget = (openCopy: OpenCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy, libraryAccess), {
       inline: (target) => {
-        onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
+        void onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
         return true;
       },
       external: (url) => openExternalUrl(url),
@@ -1612,7 +1613,7 @@ const PaperCard = memo(function PaperCard({
   // `method` vocabulary, which has no network names.
   const handleShared = (method: string) => {
     const reported = method === 'clipboard' || method === 'instagram' ? 'clipboard' : 'other';
-    trackEvent('share', { method: reported, content_type: 'paper', surface: analyticsSurface });
+    void trackEvent('share', { method: reported, content_type: 'paper', surface: analyticsSurface });
   };
   // What the button says from the paper's own record.
   const recordActionLabel = resolvedOpenCopy
@@ -1660,7 +1661,7 @@ const PaperCard = memo(function PaperCard({
   const readAction = (
     <Button
       className={`pc-action-read${isResolvingAccess ? ' is-resolving' : ''}`}
-      onClick={handleOpenPaper}
+      onClick={(event) => { void handleOpenPaper(event); }}
       disabled={isResolvingAccess}
       aria-label={primaryActionLabel}
       data-push={actionPush?.dir}
@@ -1704,8 +1705,8 @@ const PaperCard = memo(function PaperCard({
     // identifier is the OpenAIRE id, which names one project.
     const path = publicMode
       ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
-      : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder!)}&arxivId=${paperId}`;
-    trackEvent('select_content', {
+      : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+    void trackEvent('select_content', {
       content_type: 'project',
       surface: analyticsSurface,
       position,
@@ -2057,7 +2058,7 @@ const PaperCard = memo(function PaperCard({
                           className="pc-authors-list-item pc-author-link"
                           onClick={(e) => {
                             e.stopPropagation();
-                            trackEvent('select_content', {
+                            void trackEvent('select_content', {
                               content_type: 'author',
                               surface: analyticsSurface,
                               position,
@@ -2438,7 +2439,7 @@ const PaperCard = memo(function PaperCard({
                   // scrim.
                   if (path) setAuthorsSheetLeaving(true);
                   setShowAuthorsModal(false);
-                  trackEvent('select_content', {
+                  void trackEvent('select_content', {
                     content_type: 'author',
                     surface: analyticsSurface,
                     position,

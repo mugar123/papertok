@@ -657,7 +657,7 @@ function streamRequestFailed(error: unknown) {
  * PDF's, so "the attached paper" is still what it rewrites.
  */
 async function requestNanStream({ env, paper, level, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   const prompt = buildRewritePrompt(paper, level);
   const content = source.text
     ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
@@ -691,7 +691,7 @@ async function requestNanStream({ env, paper, level, source, model, signal }: Mo
 }
 
 async function requestGeminiStream({ env, paper, level, language, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   let upstream;
   try {
     upstream = await fetch(

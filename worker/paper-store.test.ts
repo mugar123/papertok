@@ -549,7 +549,7 @@ test("a page that asks for notable papers gets the unseen ones of the reader's c
 
 test('a reader who has seen every notable paper, a request that does not say what was seen or one that asks for none gets none', async () => {
   const { env } = await notableCorpus();
-  const seenAll = feedSeenFilter(NOTABLE.map(paper => paper.id!));
+  const seenAll = feedSeenFilter(NOTABLE.map(paper => paper.id));
   for (const query of [{ seen: seenAll, notable: 3 }, { notable: 3 }, { seen: feedSeenFilter([]) }]) {
     const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 30, ...query }), { now: NOW });
     assert.deepEqual(page.map(paper => paper.id), recentIds(0, 30));
@@ -633,11 +633,11 @@ test("with twelve categories asked, a notable lane holding more than its listing
   await ingestPapers(env, [...listing, ...droppedOut].map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
   // The reader has seen the lane's hundred newest papers: the 60 that dropped
   // out and the listing's 40 latest.
-  const seen = [...droppedOut, ...listing.slice(60)].map(paper => paper.id!);
+  const seen = [...droppedOut, ...listing.slice(60)].map(paper => paper.id);
   const categories = ['cs.LG', 'cs.AI', 'cs.CL', 'cs.CV', 'cs.NE', 'cs.IR', 'cs.RO', 'stat.ML', 'math.OC', 'q-bio.NC', 'eess.SP', 'econ.EM'];
   const page = await readFeedPage(env, parseFeedRequest({ categories, pageSize: 15, seen: feedSeenFilter(seen), notable: 3 }), { now: NOW });
-  const offered = page.filter(paper => paper._notable).map(paper => paper.id!);
-  const unseenListing = listing.slice(0, 60).map(paper => paper.id!);
+  const offered = page.filter(paper => paper._notable).map(paper => paper.id);
+  const unseenListing = listing.slice(0, 60).map(paper => paper.id);
   assert.equal(offered.length, 3, 'the three asked for');
   assert.ok(offered.every(id => unseenListing.includes(id)), `${offered} are papers of the listing the reader has not seen`);
 });

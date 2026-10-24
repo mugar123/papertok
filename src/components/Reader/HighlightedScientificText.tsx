@@ -163,7 +163,7 @@ export default function HighlightedScientificText({ children, highlights = [], p
   useEffect(() => {
     if (!hasMath || getKatex()) return undefined;
     let active = true;
-    loadKatex().then(loaded => {
+    void loadKatex().then(loaded => {
       if (active && loaded) rerender();
     });
     return () => { active = false; };

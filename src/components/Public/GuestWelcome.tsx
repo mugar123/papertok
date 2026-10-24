@@ -477,7 +477,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                     variant="outline"
                     size="lg"
                     className="w-full"
-                    onClick={() => signIn('github')}
+                    onClick={() => { void signIn('github'); }}
                     disabled={preparing}
                     focusableWhenDisabled
                     aria-describedby={preparing ? preparingId : undefined}
@@ -489,7 +489,7 @@ export default function GuestWelcome({ onSignIn }: { onSignIn?: () => void }) {
                     variant="outline"
                     size="lg"
                     className="w-full"
-                    onClick={() => signIn('google')}
+                    onClick={() => { void signIn('google'); }}
                     disabled={preparing}
                     focusableWhenDisabled
                     aria-describedby={preparing ? preparingId : undefined}

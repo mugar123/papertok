@@ -23,12 +23,19 @@ as `VITE_*` values.
 npm run check
 ```
 
-This runs the secret scan, ESLint, TypeScript checks, Node tests, Vite build and
-Worker dry-run. Run `npm run test:rules` separately with Java and firebase-tools
-as described in [`tests/README.md`](tests/README.md).
+This runs the secret scan, ESLint (with type-aware rules), knip, TypeScript checks, Node
+tests, Vite build and Worker dry-run. Run `npm run test:rules` separately with Java and
+firebase-tools as described in [`tests/README.md`](tests/README.md). CI runs the same
+commands; a pull request also needs a filled-in Verification and Review section in its
+description (`.github/workflows/pr-body.yml`).
+
+ESLint and knip findings are fixed, not recorded or suppressed. A disable directive is only
+for a constraint a dependency or platform imposes, on one line, with its reason after `--`.
+knip reports unused files, exports and dependencies; `knip.jsonc` lists the entry points it
+cannot discover and the reason for each.
 
 The check also runs on Windows, in PowerShell or cmd. `.gitattributes` checks text files out
-with LF, which some source tests expect. A working tree checked out before that file existed
+with LF, which some fixture tests expect. A working tree checked out before that file existed
 keeps its CRLF files, and so can one that later checks out an older branch; each worktree has
 its own. If `git ls-files --eol` lists any `w/crlf` file, refresh the working tree you are in.
 `git reset --hard` discards uncommitted changes, so commit or stash them first:
@@ -54,7 +61,7 @@ still compile the application; TypeScript does not emit a second build.
 | `tsconfig.json` | Frontend sources; DOM, React and Vite |
 | `tsconfig.test.json` | Frontend tests; Node 22, DOM and Vite |
 | `worker/tsconfig.json` | Worker sources; Wrangler-generated bindings and runtime |
-| `worker/tsconfig.test.json` | Worker tests and three frontend tests that import Worker modules; Node 22 and Wrangler runtime types |
+| `worker/tsconfig.test.json` | Worker tests and two frontend tests that import Worker modules; Node 22 and Wrangler runtime types |
 | `tsconfig.node.json` | Rules tests, maintained scripts and root tool configs; Node 22 |
 | `proxy/tsconfig.json` | Proxy sources; Deno and Web Worker APIs |
 | `proxy/tsconfig.test.json` | Proxy tests; Node 22 and Deno |
@@ -75,9 +82,9 @@ the same Node runtime without a separate TypeScript loader.
 
 Use explicit relative extensions such as `./helper.ts` and `import type` for
 types. Enums, value namespaces and parameter properties are rejected. Node does
-not execute `.tsx`; tests import modules without JSX or inspect component source
-as text. Update source-reading paths and extension filters with every rename,
-and verify those assertions with a failing control mutation. Deliberately
+not execute `.tsx`, so behavior that needs a test lives in a `.ts` module the
+test imports. Tests never read source files and match their text: ESLint rejects
+it, and a structural rule over source belongs in `eslint.config.ts`. Deliberately
 incomplete or invalid test inputs retain their original values: local type
 assertions describe the fixture boundary, not runtime validation.
 
@@ -97,6 +104,16 @@ Remaining JavaScript has a separate execution or ownership boundary:
 `firebase-admin`; `scripts/diagnostics/` contains manual probes;
 and `.agents/skills/impeccable/scripts/` is vendored code. These files are outside
 the application TypeScript configs. Existing JavaScript lint coverage remains.
+
+## Coding agents
+
+Agent instructions live in [`AGENTS.md`](AGENTS.md) and the skills in `.agents/skills/`.
+`.claude/settings.json` applies to every Claude Code session in the repository: it blocks
+recording ESLint suppressions, asks before an edit to a file that defines a check
+(`eslint.config.ts`, `eslint-rules/`, `knip.jsonc`, `package.json`, tsconfig files,
+workflows, the hook scripts), refuses edits to generated bindings and local secrets, and, before
+a session can finish, lints the files changed on the branch and in the working tree.
+`.claude/agents/reviewer.md` reviews a diff in a context that did not write it.
 
 ## Pull Request Scope
 

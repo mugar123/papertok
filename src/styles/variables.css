@@ -26,8 +26,7 @@
      the PDF conversions ship an alpha channel — while their ink is black,
      because it was drawn for a white page. Theming the plate therefore does not
      theme the ink on it; it only takes the paper away and leaves black on
-     near-black. Anything that frames a figure we did not draw belongs here.
-     `paperCardFigureContrast.test.js` composites the two and holds the result. */
+     near-black. Anything that frames a figure we did not draw belongs here. */
   --bg-figure-plate: #ffffff;
   /* "Glass" now means a faint ink wash: light surfaces read better with a
      tint of the text color than with translucent white. */
@@ -58,8 +57,8 @@
      as a golden box on every field and every palette row (user feedback,
      2026-08-29), and the indicator's job is "you are here", not "look at me".
      Ink is the app's own marking vocabulary (--border-ink) and holds ~17:1 on
-     every surface, far past the 3:1 of WCAG 1.4.11 — contrast.test.js keeps
-     measuring it. Same value as --border-ink on purpose, declared separately
+     every surface, far past the 3:1 of WCAG 1.4.11 — the papertok/token-contrast
+     lint rule keeps measuring it. Same value as --border-ink on purpose, declared separately
      because the two flip for different reasons. */
   --focus-ring: #1d2b53;
   /* Ink, in both themes. The yellow is the one surface whose value does not
@@ -396,7 +395,7 @@
      are the same mark on both sides. The soft yellow is a surface, though, so
      it becomes the darkest amber that still reads as the same wash. */
   --brand-yellow-soft: #35290b;
-  /* The brand yellow, as a literal so contrast.test.js can measure it:
+  /* The brand yellow, as a literal so papertok/token-contrast can measure it:
      9.8:1 on the dark soft wash. */
   --text-on-brand-soft: #ffd21e;
   /* Paper-on-ink, mirroring the light side's ink-on-paper: the orange ring is

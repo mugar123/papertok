@@ -24,7 +24,7 @@ export function normalizeFollowId(value: unknown) {
 }
 
 export function createFollowKey(type: string, canonicalId: unknown) {
-  const safeType = SUPPORTED_FOLLOW_TYPES.has(type!) ? type : 'entity';
+  const safeType = SUPPORTED_FOLLOW_TYPES.has(type) ? type : 'entity';
   const safeId = normalizeFollowId(canonicalId) || normalizeFollowText(canonicalId) || 'unknown';
   return `${safeType}_${safeId}`.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 240);
 }

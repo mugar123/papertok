@@ -55,9 +55,8 @@ test('a local topic row hands nothing over; the page already resolves it better 
  * `rankInstitutionsByProminence` (openAlexService.js) returns ROR candidates
  * unenriched on two expected paths — a single candidate, or the prominence
  * fetch failing or coming back empty — so a handed institution can carry no
- * counts at all. `explorerReservation.test.ts` pins
- * `.ehc-stats-grid:empty { display: none; }`, so a countless hero reserves a
- * zero-height stats grid that then grows when the fetch lands.
+ * counts at all. `.ehc-stats-grid:empty { display: none; }` then reserves a
+ * zero-height stats grid that grows when the fetch lands.
  */
 test('an institution row without counts hands nothing over; the page reserves what it cannot paint yet', () => {
   const bare = { id: 'https://openalex.org/I173304897', display_name: 'Harvard University', country_code: 'US', ror: 'https://ror.org/03vek6s52', works_count: null, cited_by_count: null, summary_stats: null };

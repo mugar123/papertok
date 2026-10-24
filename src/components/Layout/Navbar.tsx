@@ -170,7 +170,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
     handledRef.current = Date.now();
     if (tab === 'home') setFeedMode('top');
-    if (pathname !== to) navigate(to);
+    if (pathname !== to) void navigate(to);
   };
   const swallowSynthesisedClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (Date.now() - handledRef.current > 1500) return;
@@ -197,7 +197,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           type="button"
           className="navbar-brand"
           onClick={() => {
-            if (location.pathname !== '/feed') navigate('/feed');
+            if (location.pathname !== '/feed') void navigate('/feed');
           }}
         >
           <span className="navbar-brand-mark" aria-hidden="true">

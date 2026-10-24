@@ -294,8 +294,8 @@ export function readPubmedPayload(
         if (enrichment.abstract) paper.abstract = enrichment.abstract;
         // Full names, ORCIDs and affiliations ride with the card's
         // authors (names unchanged) so an author link can say who.
-        if ((enrichment.authors?.length as number) > 0) paper.authors = mergePubmedAuthors(paper.authors, enrichment.authors);
-        if ((enrichment.categories?.length as number) > 0) {
+        if ((enrichment.authors?.length) > 0) paper.authors = mergePubmedAuthors(paper.authors, enrichment.authors);
+        if ((enrichment.categories?.length) > 0) {
           paper.categories = enrichment.categories;
           paper.keywords = enrichment.categories;
         }

@@ -1,7 +1,7 @@
 export type ReadingLevel = 'beginner' | 'university' | 'researcher';
 
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
-  aiExplanationLevel: 'university' as ReadingLevel,
+  aiExplanationLevel: 'university',
   language: 'en',
   languagePreferenceSet: false,
 });

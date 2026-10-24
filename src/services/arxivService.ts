@@ -8,7 +8,7 @@ type ArxivFetchError = Error & { status?: number; retryAfterMs?: number };
  */
 
 const isDev = import.meta.env?.DEV === true;
-import CATEGORIES from '../data/categories.ts';
+import { CATEGORIES } from '../data/categories.ts';
 import { withRequestDeadline } from '../utils/requestDeadline.ts';
 import { arxivPaper, isArxivCategory } from './arxivRecords.ts';
 import { createArxivRequestQueue } from './arxivRequestQueue.ts';
@@ -283,8 +283,6 @@ export async function fetchPapers(categoriesOrQuery: string | string[], start = 
   }
 }
 
-export function getPdfUrl(arxivId: string) { return `https://arxiv.org/pdf/${arxivId}`; }
-export function getAbsUrl(arxivId: string) { return `https://arxiv.org/abs/${arxivId}`; }
 export function clearCache() { cache.clear(); }
 
 // arXiv's query grammar takes a phrase between double quotes, so a `"` inside

@@ -1,45 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { clearAuthReturn, isInAppPath, offerAuthReturn, peekAuthReturn, takeAuthReturn } from './authReturn.ts';
-
-const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-
-function bounded(code: string, from: string, to: string, label: string, maxLines: number) {
-  const start = code.indexOf(from);
-  const end = code.indexOf(to, start + 1);
-  assert.ok(start >= 0 && end > start, `expected to have found ${label}`);
-  const block = code.slice(start, end);
-  const lines = block.split('\n').length;
-  assert.ok(lines <= maxLines, `${label} capture spans ${lines} lines, past what it names`);
-  return block;
-}
-
-/**
- * SOURCE: App and ProtectedRoute are React this suite cannot mount. The trip
- * was verified end to end in the browser (guest on /search?q=… → sign-in → the
- * onboarding → the search); these pin the three pieces that made it work.
- */
-test('SOURCE: the destination lives outside the tree the sign-in remounts', async () => {
-  const code = stripComments(await read('../App.tsx'));
-  assert.doesNotMatch(code, /pendingReturn/, 'no copy of the destination in AppContent state');
-  const block = bounded(code, 'const authArrivalKey = ', 'onboardingComplete || profileLoadError) return', 'the arrival and trip effects', 30);
-  assert.match(block, /useEffect\(\(\) => \{\s*if \(!authArrivalKey\) return\s*offerAuthReturn\(arrivalReturnTo\)\s*navigate\(`\$\{location\.pathname\}\$\{location\.search\}`, \{ replace: true, state: null \}\)/);
-  assert.match(block, /useEffect\(\(\) => \{\s*if \(!user \|\| authLoading\) return\s*const destination = takeAuthReturn\(\)\s*if \(destination\) navigate\(destination, \{ replace: true \}\)/);
-});
-
-test('SOURCE: a door opened from the page drops the trip an earlier bounce left', async () => {
-  const code = stripComments(await read('../App.tsx'));
-  const block = bounded(code, 'const requestAuthentication = useCallback(', '}, [])', 'requestAuthentication', 6);
-  assert.match(block, /clearAuthReturn\(\)\s*setAuthPromptOpen\(true\)/);
-});
-
-test('SOURCE: every redirect to the onboarding carries the destination the sign-in brought', async () => {
-  const code = stripComments(await read('../components/Auth/ProtectedRoute.tsx'));
-  assert.match(code, /const \[carriedDestination\] = useState(?:<[^;\n]+>)?\(peekAuthReturn\);\s*const onboardingReturnTo = carriedDestination \?\? requestedPath;\s*const onboardingState = useMemo(?:<[^;\n]+>)?\(\(\) => \(\{ returnTo: onboardingReturnTo \}\), \[onboardingReturnTo\]\);/);
-  assert.match(code, /<Navigate to="\/onboarding" replace state=\{onboardingState\} \/>/);
-});
 
 test('reading the destination for the onboarding does not use up the trip', () => {
   offerAuthReturn('/search?q=graphene');

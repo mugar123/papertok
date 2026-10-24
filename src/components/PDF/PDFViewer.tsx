@@ -59,7 +59,7 @@ export default function PDFViewer({ paper, onClose, closeRef = null }: { paper: 
     if (!open) return;
     const elapsed = (Date.now() - startTimeRef.current!) / 1000;
     if (elapsed < 5) {
-      trackPdfBounce(paper);
+      void trackPdfBounce(paper);
     }
     setOpen(false);
   }, [open, paper, trackPdfBounce]);
