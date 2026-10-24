@@ -956,6 +956,47 @@ test("a notable lane's weekly listing renews its papers' counts, so the enrichme
   assert.deepEqual(typed.sort(), ['doi:10.5555/joined-the-hundred', 'doi:10.5555/left-the-hundred']);
 });
 
+test("a notable lane's listing renews only the papers it returned, though the corpus keeps one it dropped for longer", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // Synthetic variants of the recorded work. A recent article is kept 90 days
+  // from its date, past the listing's 14.
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
+  const newcomer = { ...plsiWork, id: 'https://openalex.org/W1000000002', doi: 'https://doi.org/10.5555/joined-the-hundred', title: 'An article that has joined the most-cited hundred' };
+  let listing: unknown[] = [plsiWork, recent];
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  // That night's enrichment.
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  // A week on, the listing names the older one again and a new one, not the recent one.
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  listing = [plsiWork, newcomer];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000003': enriched,
+    'openalex:W1000000002': null,
+  });
+
+  // A listing that returns nothing renews nothing.
+  t.mock.timers.setTime(next + 7 * DAY);
+  listing = [];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next + 7 * DAY);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000003': enriched,
+    'openalex:W1000000002': null,
+  });
+});
+
 test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {
   const { binding, db } = testD1();
   const now = Date.parse('2026-10-30T02:40:00Z');
