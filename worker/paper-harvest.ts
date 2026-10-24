@@ -67,8 +67,9 @@ const dueAfter = (nights: number) => `${daysFromNow(nights).slice(0, 10)}T00:00:
 
 // The statuses that reject a lane's own request, as OpenAlex answers a search
 // it cannot parse with a 400. A followed lane's text and ids travel in the
-// query of a path every lane shares, so any other 4xx (a 401 or 403 refusing
-// our key or client, a 404 for a path gone, a 429) answers every lane alike.
+// query of a path every lane shares, so any other 4xx answers every lane
+// alike: a 401 or 403 refusing our key or client, a 404 for a path that is
+// gone, a 429.
 const LANE_REJECTIONS = new Set([400, 414, 422]);
 
 function rejectsLane(error: unknown) {
