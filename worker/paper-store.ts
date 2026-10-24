@@ -750,18 +750,19 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
     notable = ranked.notable;
   }
+  const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   const [own, unseen] = await Promise.all([
     query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize) : null,
     // After the page's own papers, for the app to place: one it leaves out is
-    // still unseen, so a later page offers it again.
-    query.seen && query.notable > 0 ? unseenRanks(db, notable, query.seen, query.notable) : null,
+    // still unseen, so a later page offers it again. Read beside the walk; a
+    // page that can have no paper of its own reads none.
+    query.seen && query.notable > 0 && (query.skipsSeen ? ranking.some(candidate => candidate !== null) : named.length > 0)
+      ? unseenRanks(db, notable, query.seen, query.notable)
+      : null,
   ]);
   const { ranked, through } = own?.unseen.length
     ? { ranked: own.unseen, through: own.end }
-    : {
-      ranked: ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null),
-      through: (query.page + 1) * query.pageSize,
-    };
+    : { ranked: named, through: (query.page + 1) * query.pageSize };
   if (rankedAgain) {
     await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
       .catch(error => console.warn('Feed ranking not cached', error));

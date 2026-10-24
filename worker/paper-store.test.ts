@@ -682,6 +682,16 @@ test('a reader who has seen a thousand papers of their ranking costs a few reads
   assert.ok(idReads <= 4, `${idReads} reads of stored ids for 1,015 ranks`);
 });
 
+test('a page that skips seen papers and has no candidate of its own reads no notable papers', async t => {
+  const { env } = corpus();
+  // A category whose notable lane is filed and whose recent papers are not yet.
+  await ingestPapers(env, NOTABLE.map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  const trips = roundTrips(t, env.PAPER_STORE!);
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen: feedSeenFilter([]), skipsSeen: true, notable: 3 }), { now: NOW });
+  assert.deepEqual(page, []);
+  assert.ok(!trips.some(trip => trip.some(sql => sql.includes("paper ->> '$.id'"))), 'no stored id is read for notable papers the page would not carry');
+});
+
 test('a seen-paper filter the app did not write is refused', () => {
   // A filter of another size, here twice as many bits, is not the app's either.
   for (const seen of ['', 'not a filter', 42, feedSeenFilter([]).slice(1), feedSeenFilter([]).repeat(2)]) {
