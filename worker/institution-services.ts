@@ -665,7 +665,10 @@ export async function lookupInstitutionServices(
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
   const key = await servicesStoreKey({ domain, entityId, rorId }, env);
-  const failureKey = new Request(`https://papertok.internal/cache${INSTITUTION_SERVICES_PATH}/resolver-failed/${key}`);
+  // The resolver's own key: without GetFTR's key the ids are left out, since
+  // only GetFTR gets them, so the library's readers share it whatever ids they send.
+  const resolverKey = await servicesStoreKey({ domain, rorId }, {});
+  const failureKey = new Request(`https://papertok.internal/cache${INSTITUTION_SERVICES_PATH}/resolver-failed/${resolverKey}`);
   // An edge cache that cannot be read remembers nothing.
   const resolverFailing = Boolean(resolver && failures && await failures.match(failureKey).catch(() => undefined));
   const stored: StoredVerdicts = (store && await store.get<StoredVerdicts>(key, 'json')) || {};

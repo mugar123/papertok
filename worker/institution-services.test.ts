@@ -742,6 +742,21 @@ test('a remembered resolver failure leaves the stored verdicts in a partial list
   assert.equal(store.values.get(key), JSON.stringify(record));
 });
 
+test('a failing resolver is remembered for its library whatever institution ids readers send', async () => {
+  const edge = edgeCache();
+  const store = memoryStore();
+  const down = () => new Response('down', { status: 503 });
+  const ask = (entityId: string) => requestServices(new URLSearchParams({ domain: 'usal.es', entityId }).toString(), { edge, store, env: GETFTR_ENV, resolver: down });
+  const failed = await ask(ENTITY_ID);
+  assert.equal(failed.response.status, 502);
+  assert.ok(failed.calls.includes('eu01.alma.exlibrisgroup.com'));
+  // Another id is a record of its own and goes to GetFTR, but not to the same resolver.
+  const other = await ask('https://idp.example.org/other');
+  assert.equal(other.response.status, 502);
+  assert.ok(other.calls.includes('entitlements.prod.getft.io'));
+  assert.equal(other.calls.filter(host => host === 'eu01.alma.exlibrisgroup.com').length, 0);
+});
+
 test('a GetFTR stall until the deadline does not mark the resolver it left no time as failing', async (t) => {
   // The request's deadline: a stalled GetFTR runs it out, the clock reaching
   // 12 s as the signal aborts. As on the platform, an aborted signal sends nothing.
