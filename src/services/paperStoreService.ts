@@ -10,6 +10,8 @@ export interface CorpusPageRequest {
   categories?: string[];
   follows?: FollowEntity[];
   positiveIds?: string[];
+  negativeIds?: string[];
+  excludedIds?: string[];
   page: number;
   pageSize: number;
   order?: string;
@@ -45,8 +47,8 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
-  return askStore({
+export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
+  const body = {
     categories,
     follows: follows.map(({ type, canonicalId, displayName, metadata }) => ({
       type,
@@ -55,11 +57,22 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
       metadata: { query: metadata?.query, funder: metadata?.funder },
     })),
     positiveIds,
+    ...(negativeIds.length ? { negativeIds: negativeIds.slice(0, 24) } : {}),
+    excludedIds: [...new Set(excludedIds)].slice(0, 200),
     page,
     pageSize,
     order,
     ...(waitForLikes ? { waitForLikes } : {}),
-  }, options);
+  };
+  while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();
+  // Trim new signals before they can push the existing request over 16 KiB.
+  // Trim rejections first so the exclusion snapshot stays stable as they change.
+  while (new TextEncoder().encode(JSON.stringify(body)).byteLength > 16_000) {
+    if (body.negativeIds?.length) body.negativeIds.pop();
+    else if (body.excludedIds.length) body.excludedIds.pop();
+    else break;
+  }
+  return askStore({ ...body, ...(body.excludedIds.length ? {} : { excludedIds: undefined }) }, options);
 }
 
 /**

@@ -97,6 +97,7 @@ export interface PaperRecommendationScore {
   recency: number;
   classicBoost: number;
   semantic: number;
+  corpusSimilarity: number;
   learnedAuthor: number;
   sessionInterest: number;
   citations: number;
@@ -199,6 +200,8 @@ export interface Paper {
   // Ranking credit only: it says why the card was fetched, not what the paper
   // is, so it is never shown or stored as the paper's classification.
   _fetchedFor?: string[];
+  // Request-scoped semantic relevance in [-1, 1], including explicit rejections.
+  _semanticScore?: number;
   _type?: 'followed' | 'graph' | 'personal' | 'exploit' | 'exploration';
   _isGraphCandidate?: boolean;
   _isPersonalCandidate?: boolean;
