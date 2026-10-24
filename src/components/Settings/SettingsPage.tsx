@@ -98,6 +98,9 @@ const SETTINGS_COPY = {
   viewAll: 'View all',
   viewAllFollowing: 'View all you follow',
   interests: 'Interests',
+  selectedOne: 'selected subcategory',
+  selectedMany: 'selected subcategories',
+  trainFeed: 'used to train your feed',
   selectedAreas: 'Selected areas',
   edit: 'Edit',
   editInterests: 'Edit interests',
@@ -434,9 +437,13 @@ function DiscoveryPage() {
             <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
           </div>
 
-          <div className="settings-row settings-row-inline">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <h3>{copy.interests} ({selectedInterestCount})</h3>
+              <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">{selectedInterestCount}</span></h3>
+              <p>
+                {selectedInterestCount}{' '}
+                {selectedInterestCount === 1 ? copy.selectedOne : copy.selectedMany} {copy.trainFeed}
+              </p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
             {selectedAreas.length > 0 && (
