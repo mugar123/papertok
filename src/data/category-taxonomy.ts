@@ -3,7 +3,7 @@
  * Complete mapping of scientific areas to arXiv categories.
  *
  * Plain data and plain lookups, and nothing imported: the Worker reads this
- * file too (the email digest inks each paper with its field), and a Worker
+ * file too (the email digest names the known fields), and a Worker
  * has no use for React. The interface imports `categories.ts`, which attaches
  * each area's icon to these same records.
  */

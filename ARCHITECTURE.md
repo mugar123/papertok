@@ -50,8 +50,8 @@ flowchart TD
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
-- [worker/instrumentation.ts](worker/instrumentation.ts) wraps the Worker and
-  bound Durable Objects and harvest Workflow with Sentry.
+- [worker/instrumentation.ts](worker/instrumentation.ts) reports errors from
+  the Worker, bound Durable Objects and harvest Workflow to PostHog.
   [worker/index.ts](worker/index.ts) handles requests and schedules;
   [router.ts](worker/router.ts) dispatches HTTP routes.
   Route and handler checks enforce methods, origins and identity as applicable.

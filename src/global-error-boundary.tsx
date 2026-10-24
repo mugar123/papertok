@@ -1,6 +1,5 @@
 import React from 'react';
-import { trackAppCrash } from './services/analytics-service.ts';
-import { captureAppException } from './services/error-tracking.ts';
+import { captureAppException, trackAppCrash } from './services/analytics-service.ts';
 
 const COPY = {
   title: 'Something went wrong',
