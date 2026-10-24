@@ -167,14 +167,14 @@ async function pendingRows(db: D1Database, limit: number, now: number): Promise<
 /**
  * Enriches up to `limit` stored papers, newest first: the ones never enriched,
  * then OpenAlex's misses whose wait is over, then counts older than
- * REFRESH_DAYS. Returns how many it went through: 0 once none are waiting or
- * OpenAlex will not answer this run. A source that fails leaves its fields
+ * REFRESH_DAYS. Returns the processed works for immediate embedding, and
+ * whether OpenAlex stopped the pass. A source that fails leaves its fields
  * unknown; a paper waiting for OpenAlex is not marked done without it.
  */
 export async function enrichPending(env: EnrichEnv, limit: number, now = Date.now()) {
   const db = database(env);
   const rows = await pendingRows(db, limit, now);
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) return { workIds: [], stop: true };
   const papers = rows.map(row => JSON.parse(row.paper) as Paper);
   const asksOpenAlex = rows.map((row, index) => (row.refresh || needsOpenAlexEnrichment(papers[index])) && Boolean(getOpenAlexEnrichmentId(papers[index])));
 
@@ -223,5 +223,5 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     await db.batch(chunks(marks, 200).map(chunk => db.prepare(`UPDATE works SET enriched_at = ?, enrich_misses = j.value ->> 'misses'
       FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(new Date(now).toISOString(), JSON.stringify(chunk))));
   }
-  return openAlexAnswered ? rows.length : 0;
+  return { workIds: rows.map(row => row.id), stop: !openAlexAnswered };
 }
