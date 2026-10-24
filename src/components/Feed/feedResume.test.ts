@@ -28,8 +28,9 @@ function bounded(code: string, from: string, to: string, label: string, maxLines
  */
 test('SOURCE: the container keeps its place in a memory that survives a reload', async () => {
   const code = stripComments(await read('./FeedContainer.tsx'));
-  assert.match(code, /import \{ createFeedResumeMemory, FOR_YOU_SCROLL_KEY \} from '\.\.\/\.\.\/utils\/feedResumeMemory\.ts';/);
-  assert.match(code, /const resumeMemory = createFeedResumeMemory\(\);/, 'one memory, at module scope, shared by every surface');
+  assert.match(code, /import \{ feedResumeMemory, forYouScrollKey \} from '\.\.\/\.\.\/utils\/feedResumeMemory\.ts';/);
+  assert.match(code, /const resumeMemory = feedResumeMemory;/, 'one memory, at module scope, shared by every surface');
+  assert.match(code, /const scrollKey = surfaceKey \?\? forYouScrollKey\(user\?\.uid\);/, "For You's place is the account's");
   assert.doesNotMatch(code, /savedScrollByKey|savedIndexByKey|savedPaperIdByKey/, 'the three bare maps are gone');
 
   const handler = bounded(code, 'const handleScroll = useCallback(', '}, [reportVisiblePaper, schedulePendingSkipFlush, scrollKey]);', 'the scroll handler', 32);

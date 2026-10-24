@@ -1,3 +1,5 @@
+import { SIGNED_OUT_ACCOUNT } from './accountScope.ts';
+
 type FeedResume = { scrollTop: number; index: number; paperId: string | null };
 
 /**
@@ -21,8 +23,9 @@ type FeedResume = { scrollTop: number; index: number; paperId: string | null };
  */
 export const FEED_RESUME_STORAGE_PREFIX = 'papertok_feed_resume:';
 // For You's place, which FeedContext also reads: a restore on another page
-// learns from it the card the reader comes back to.
-export const FOR_YOU_SCROLL_KEY = 'forYou';
+// learns from it the card the reader comes back to. It names the account, so
+// another account's feed never opens on it.
+export const forYouScrollKey = (account: string | null | undefined) => `forYou:${account || SIGNED_OUT_ACCOUNT}`;
 
 const NOWHERE = Object.freeze({ scrollTop: 0, index: 0, paperId: null });
 
@@ -87,5 +90,23 @@ export function createFeedResumeMemory({ storage = defaultStorage() }: { storage
     }
   };
 
-  return { get, remember, persist };
+  // Every place goes, the stored ones too: another account's feeds open on
+  // their first card.
+  const clear = () => {
+    entries.clear();
+    seeded.clear();
+    if (!storage) return;
+    try {
+      Object.keys(storage).filter(key => key.startsWith(FEED_RESUME_STORAGE_PREFIX)).forEach(key => storage.removeItem(key));
+    } catch {
+      // A storage that refuses keeps its places; For You's names its account,
+      // so another account still does not read it.
+    }
+  };
+
+  return { get, remember, persist, clear };
 }
+
+// The places of this tab's feeds: FeedContainer keeps them, FeedContext reads
+// For You's, and App clears them when the account changes.
+export const feedResumeMemory = createFeedResumeMemory();

@@ -16,7 +16,7 @@ import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
 import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 import { resumeIndex } from '../utils/feedMountWindow.ts';
-import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, FOR_YOU_SCROLL_KEY } from '../utils/feedResumeMemory.ts';
+import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, forYouScrollKey } from '../utils/feedResumeMemory.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
@@ -42,9 +42,9 @@ const restoreCallback = componentCallback('restoreFeedSnapshot', 'followShownPap
 // FeedContainer stored for For You in this tab, if any.
 const snapshotHelpers = stripTypeScriptTypes(source.slice(source.indexOf('function feedSnapshotKey('), source.indexOf('// ── Demo mode storage helpers')));
 function forYouPlace(place: { paperId: string; index: number } | null) {
-  const session = new Map(place ? [[`${FEED_RESUME_STORAGE_PREFIX}${FOR_YOU_SCROLL_KEY}`, JSON.stringify(place)]] : []);
+  const session = new Map(place ? [[`${FEED_RESUME_STORAGE_PREFIX}${forYouScrollKey('test-user')}`, JSON.stringify(place)]] : []);
   const storage = { getItem: (key: string) => session.get(key) ?? null, setItem: (key: string, value: string) => { session.set(key, value); }, removeItem: (key: string) => { session.delete(key); } };
-  return { createFeedResumeMemory: () => createFeedResumeMemory({ storage }), FOR_YOU_SCROLL_KEY, resumeIndex, keepNotablePlaces };
+  return { feedResumeMemory: createFeedResumeMemory({ storage }), forYouScrollKey, resumeIndex, keepNotablePlaces };
 }
 const notInterestedCallback = componentCallback('markNotInterested', 'withInteractionId, reRankFeed, recordProfileEvent, user?.uid');
 const refreshCallback = componentCallback('refreshFeed', '');
