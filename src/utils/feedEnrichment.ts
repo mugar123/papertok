@@ -139,6 +139,27 @@ export function placeNotableCards<T extends Partial<Paper>>(others: T[], notable
   return page;
 }
 
+/**
+ * `cards` with their other cards replaced by `others` and their notable cards
+ * by `notable`, each in order, in the places of their kind. A notable place
+ * already counts the cards the reader meets before it, and a count of the list
+ * can miss one: a card the reader dismissed leaves the list, not their count.
+ * A notable place with no notable card left takes the next other card. Once
+ * the other cards run out, no place after them is filled, so a notable card
+ * there leaves; other cards left over follow the last place.
+ */
+export function keepNotablePlaces<T extends Partial<Paper>>(cards: T[], others: T[], notable: T[]) {
+  const otherCards = [...others];
+  const notableCards = [...notable];
+  const kept: T[] = [];
+  for (const card of cards) {
+    if (card._notable && notableCards.length) kept.push(notableCards.shift()!);
+    else if (otherCards.length) kept.push(otherCards.shift()!);
+    else break;
+  }
+  return [...kept, ...otherCards];
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);

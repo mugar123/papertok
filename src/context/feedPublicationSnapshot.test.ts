@@ -5,8 +5,9 @@ import { stripTypeScriptTypes } from 'node:module';
 import type { Paper } from '../models/Paper.ts';
 import { applyKnownPublicationTypes } from '../services/feedPublicationService.ts';
 import { isFeedPublication } from '../services/feedPublicationRules.ts';
-import { placeNotableCards } from '../utils/feedEnrichment.ts';
+import { keepNotablePlaces, placeNotableCards } from '../utils/feedEnrichment.ts';
 import { resumeIndex } from '../utils/feedMountWindow.ts';
+import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, FOR_YOU_SCROLL_KEY } from '../utils/feedResumeMemory.ts';
 
 const source = readFileSync(new URL('./FeedContext.tsx', import.meta.url), 'utf8');
 const start = source.indexOf('function feedSnapshotKey(');
@@ -14,14 +15,19 @@ const end = source.indexOf('// ── Demo mode storage helpers', start);
 assert.ok(start >= 0 && end > start);
 const helpers = stripTypeScriptTypes(source.slice(start, end));
 type Publications = Pick<typeof import('../services/feedPublicationService.ts'), 'applyKnownPublicationTypes'>;
-function snapshots(publications: Publications = { applyKnownPublicationTypes }) {
+// `place` is the card For You was left on in this tab, as FeedContainer stores it.
+function snapshots(publications: Publications = { applyKnownPublicationTypes }, place: { paperId: string; index: number } | null = null) {
   const stored = new Map<string, string>();
   const storage = { getItem: (key: string) => stored.get(key) || null, setItem: (key: string, value: string) => stored.set(key, value) };
+  const session = new Map(place ? [[`${FEED_RESUME_STORAGE_PREFIX}${FOR_YOU_SCROLL_KEY}`, JSON.stringify(place)]] : []);
+  const sessionStorage = { getItem: (key: string) => session.get(key) ?? null, setItem: (key: string, value: string) => { session.set(key, value); }, removeItem: (key: string) => { session.delete(key); } };
   const helpersFor = new Function(
     'localStorage', 'FEED_SNAPSHOT_TTL_MS', 'FEED_SNAPSHOT_MAX_PAPERS', 'applyKnownPublicationTypes', 'isFeedPublication',
+    'createFeedResumeMemory', 'FOR_YOU_SCROLL_KEY', 'resumeIndex', 'keepNotablePlaces',
     `${helpers}; return { feedSnapshotKey, readFeedSnapshot, writeFeedSnapshot };`,
   );
-  return { stored, ...helpersFor(storage, 15 * 60 * 1000, 30, publications.applyKnownPublicationTypes, isFeedPublication) };
+  return { stored, ...helpersFor(storage, 15 * 60 * 1000, 30, publications.applyKnownPublicationTypes, isFeedPublication,
+    () => createFeedResumeMemory({ storage: sessionStorage }), FOR_YOU_SCROLL_KEY, resumeIndex, keepNotablePlaces) };
 }
 
 test('old unchecked snapshots are refreshed, while current snapshots preserve scientific reviews and account isolation', () => {
@@ -64,19 +70,19 @@ test('a book Crossref confirmed after its card was saved is left out when the sn
 
 // One feed card in 15 is notable (placeNotableCards). After a reload the reader
 // is back on the card they left, found by its id (resumeIndex, as FeedContainer
-// restores it).
+// restores it from the place it stored for the tab).
 const card = (id: string, publicationType = 'article'): Paper => ({ id, title: `Synthetic paper ${id}`, abstract: '', authors: [], publicationType, sources: { primary: 'openalex', enrichedBy: [] } });
 const notable = (id: string): Paper => ({ ...card(id), _notable: true });
 const ids = (papers: Paper[]) => papers.map(paper => paper.id);
+const asBooks = (books: Set<string>) => ({ applyKnownPublicationTypes: (papers: Paper[]) => papers.map(paper => (books.has(paper.id) ? card(paper.id, 'book') : paper)) });
 
 for (const past of [1, 2]) {
   test(`a notable card the reader passed stays behind them when books before it leave a restored snapshot (${past} card${past > 1 ? 's' : ''} past it)`, () => {
-    // Crossref has since called two cards the reader passed books.
-    const books = new Set(['card-3', 'card-5']);
-    const { readFeedSnapshot, writeFeedSnapshot } = snapshots({ applyKnownPublicationTypes: papers => papers.map(paper => (books.has(paper.id) ? card(paper.id, 'book') : paper)) });
     const saved = placeNotableCards(Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), [notable('notable-0'), notable('notable-1')]);
     assert.equal(saved[14].id, 'notable-0');
     const readerAt = 14 + past;
+    // Crossref has since called two cards the reader passed books.
+    const { readFeedSnapshot, writeFeedSnapshot } = snapshots(asBooks(new Set(['card-3', 'card-5'])), { paperId: saved[readerAt].id, index: readerAt });
     writeFeedSnapshot('test-user', 'cs.AI', { papers: saved, page: 2, hasMore: true });
     const restored: Paper[] = readFeedSnapshot('test-user', 'cs.AI').papers;
     const at = resumeIndex({ papers: restored, savedPaperId: saved[readerAt].id, savedIndex: readerAt });
@@ -85,16 +91,35 @@ for (const past of [1, 2]) {
   });
 }
 
-// The reader dismissed the notable card at 14. The re-rank that followed placed
-// the next one at 29, the fifteenth place after the dismissed card's.
+// The reader dismissed the notable card at 14, and the next one kept its place:
+// the thirtieth card they meet, the list's twenty-ninth.
 test('a notable card the reader has not reached stays ahead of them in a restored snapshot', () => {
-  const { readFeedSnapshot, writeFeedSnapshot } = snapshots({ applyKnownPublicationTypes: papers => papers });
-  const saved = [...Array.from({ length: 29 }, (_, index) => card(`card-${index}`)), notable('notable-1')];
+  const { readFeedSnapshot, writeFeedSnapshot } = snapshots({ applyKnownPublicationTypes: papers => papers }, { paperId: 'card-16', index: 16 });
+  const saved = [...Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), notable('notable-1')];
   writeFeedSnapshot('test-user', 'cs.AI', { papers: saved, page: 2, hasMore: true });
   const restored: Paper[] = readFeedSnapshot('test-user', 'cs.AI').papers;
   const at = resumeIndex({ papers: restored, savedPaperId: 'card-16', savedIndex: 16 });
   assert.ok(ids(restored).indexOf('notable-1') > at, 'the reader still reaches it');
   assert.deepEqual(ids(restored), ids(saved), 'with no book to leave, the restore keeps the saved list');
+});
+
+// The re-rank locks the reader's card and the three after it, so a notable
+// card one place early among them stayed there: the reader met it fourteenth.
+test('a book known at the restore after the reader leaves its place to the next card, so the notable card is still the fifteenth they meet', () => {
+  const saved = placeNotableCards(Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), [notable('notable-0')]);
+  assert.equal(saved[14].id, 'notable-0');
+  // The reader left on the twelfth card; Crossref has since called the
+  // fourteenth a book.
+  const readerAt = 11;
+  const { readFeedSnapshot, writeFeedSnapshot } = snapshots(asBooks(new Set(['card-13'])), { paperId: 'card-11', index: readerAt });
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: saved, page: 2, hasMore: true });
+  const restored: Paper[] = readFeedSnapshot('test-user', 'cs.AI').papers;
+  assert.ok(!ids(restored).includes('card-13'));
+  const at = resumeIndex({ papers: restored, savedPaperId: 'card-11', savedIndex: readerAt });
+  assert.equal(at, readerAt, 'they come back to their card');
+  // The cards they met, then the restored list after their card.
+  const met = [...saved.slice(0, readerAt + 1), ...restored.slice(at + 1)];
+  assert.deepEqual(met.flatMap((paper, index) => (paper._notable ? [index + 1] : [])), [15]);
 });
 
 test('late answers to a restored snapshot keep its save time, while a newly loaded page starts its fifteen minutes', t => {

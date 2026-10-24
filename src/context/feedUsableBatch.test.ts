@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 import { resolveWithin } from '../utils/asyncTiming.ts';
-import { abstractsInFlight, notablePlaces, placeNotableCards, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
+import { abstractsInFlight, keepNotablePlaces, notablePlaces, placeNotableCards, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { createEmptyInteractionProfile, deserializeInteractionProfile, MAX_VIEWED_IDS, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds, type InteractionEvent } from '../utils/interactionProfile.ts';
 import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
@@ -15,6 +15,8 @@ import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPubl
 import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
 import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
+import { resumeIndex } from '../utils/feedMountWindow.ts';
+import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, FOR_YOU_SCROLL_KEY } from '../utils/feedResumeMemory.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
@@ -36,6 +38,14 @@ function componentCallback(name: string, deps: string) {
 }
 const followCallback = componentCallback('followShownPapers', 'scheduleFeedSnapshotWrite');
 const restoreCallback = componentCallback('restoreFeedSnapshot', 'followShownPapers');
+// The module's snapshot helpers, which the restore runs with, and the place
+// FeedContainer stored for For You in this tab, if any.
+const snapshotHelpers = stripTypeScriptTypes(source.slice(source.indexOf('function feedSnapshotKey('), source.indexOf('// ── Demo mode storage helpers')));
+function forYouPlace(place: { paperId: string; index: number } | null) {
+  const session = new Map(place ? [[`${FEED_RESUME_STORAGE_PREFIX}${FOR_YOU_SCROLL_KEY}`, JSON.stringify(place)]] : []);
+  const storage = { getItem: (key: string) => session.get(key) ?? null, setItem: (key: string, value: string) => { session.set(key, value); }, removeItem: (key: string) => { session.delete(key); } };
+  return { createFeedResumeMemory: () => createFeedResumeMemory({ storage }), FOR_YOU_SCROLL_KEY, resumeIndex, keepNotablePlaces };
+}
 const notInterestedCallback = componentCallback('markNotInterested', 'withInteractionId, reRankFeed, recordProfileEvent, user?.uid');
 const refreshCallback = componentCallback('refreshFeed', '');
 const ref = <T>(current: T) => ({ current });
@@ -120,7 +130,10 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     Object.assign(env, { papers: state.papers, page: state.page, loading: state.loading });
     return build(callback, withCorpusStandIn(withFollowUp()))(...args);
   };
-  const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }) => build(restoreCallback, withFollowUp())(snapshot, 'top', 'cs.AI');
+  const restore = (snapshot: { papers: FeedRecord[]; page: number; hasMore: boolean }, place: { paperId: string; index: number } | null = null) => {
+    const scope = { ...withFollowUp(), ...forYouPlace(place) };
+    return new Function(...Object.keys(scope), `${snapshotHelpers}\nreturn (${restoreCallback});`)(...Object.values(scope))(snapshot, 'top', 'cs.AI');
+  };
   // Not interested in demo mode: nothing written to Firestore, no re-rank.
   const dismiss = (paper: FeedRecord) => build(notInterestedCallback, {
     ...env, user: null, IS_DEMO: true, demoSet: () => {}, withInteractionId: <T>(value: T) => value,
@@ -961,14 +974,21 @@ test('a notable card the reader viewed is not offered again, however many cards 
 // runs it, with the queue's new order standing in for the ranking's: reversed.
 function reRanking(papers: FeedRecord[], visible: string) {
   const state = { papers };
-  const reRankFeed = callbackIn(componentCallback('reRankFeed', 'calculateAndAttachScore'), {
+  const scope = {
     startTransition: (update: () => void) => update(),
     setPapers: (update: (previous: FeedRecord[]) => FeedRecord[]) => { state.papers = update(state.papers); },
-    splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref(visible),
+    splitFeedForReRank, keepNotablePlaces, visiblePaperIdRef: ref<string | null>(visible),
     diversifiedWeightedShuffle: (queue: FeedRecord[]) => [...queue].reverse(),
     calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
-  }) as (sourcePaperId: string | null) => void;
-  return { state, reRankFeed };
+  };
+  const reRankFeed = callbackIn(componentCallback('reRankFeed', 'calculateAndAttachScore'), scope) as (sourcePaperId: string | null) => void;
+  // Not interested on the card the reader is on, in demo mode: nothing is
+  // written to Firestore, and the re-rank above follows.
+  const markNotInterested = callbackIn(notInterestedCallback, {
+    ...scope, reRankFeed, user: null, IS_DEMO: true, demoSet: () => {}, withInteractionId: <T>(value: T) => value,
+    notInterestedIdsRef: ref(new Set()), setNotInterestedIds: () => {}, papersRef: { get current() { return state.papers; } }, recordProfileEvent: () => {},
+  }) as (paper: FeedRecord) => Promise<void>;
+  return { state, reRankFeed, markNotInterested };
 }
 
 test('a re-rank reorders the cards after the reader and leaves every notable card at its place', () => {
@@ -998,6 +1018,59 @@ test('a re-rank with only a notable card after the reader leaves the list as it 
   assert.deepEqual(state.papers, shown);
 });
 
+// Where the reader meets each notable card, counted from 1: the cards they
+// met (`met`), then the list after `fromId`.
+const metNotableAt = (met: FeedRecord[], list: FeedRecord[], fromId: string) => (
+  [...met, ...list.slice(list.findIndex(paper => paper.id === fromId) + 1)].flatMap((paper, index) => (paper._notable ? [index + 1] : []))
+);
+
+// The reader meets the card they dismiss, so it counts towards the next
+// notable card. A re-rank that counted the list instead put that card one
+// place later: the sixteenth the reader met.
+test('Not interested on a card leaves the next notable card the fifteenth the reader meets, through the re-ranks after it', async () => {
+  const shown = placeNotableCards(records('card', 43), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
+  // A card between two notable ones, then the notable card itself.
+  for (const dismissedAt of [18, 14]) {
+    const dismissed = shown[dismissedAt];
+    const next = shown[dismissedAt + 1];
+    const { state, reRankFeed, markNotInterested } = reRanking(shown, dismissed.id);
+    await markNotInterested(dismissed);
+    assert.ok(!state.papers.includes(dismissed));
+    // The reader met the cards through the dismissed one, and is on the next.
+    const met = [...shown.slice(0, dismissedAt + 1), next];
+    assert.deepEqual(metNotableAt(met, state.papers, next.id), [15, 30, 45], `after ${dismissed.id} left`);
+    // A long read on that card re-ranks again.
+    reRankFeed(next.id);
+    assert.deepEqual(metNotableAt(met, state.papers, next.id), [15, 30, 45], `after ${dismissed.id} left and a second re-rank`);
+  }
+});
+
+// The snapshot restore runs on every page, and only the feed reports the card
+// the reader is on. After a reload on another page, a late Crossref answer
+// had no card: the books left and the other cards kept their order, so a
+// notable card came one place early, and stayed there when it was among the
+// cards the next re-rank locks (the reader's and the three after it).
+test('after a reload on another page, a late book leaves each notable card the fifteenth the reader meets, through the next re-rank', async t => {
+  t.mock.method(console, 'log', () => {});
+  const withText = (paper: FeedRecord) => ({ ...paper, abstract: 'Source text.', sources: { primary: 'arxiv', enrichedBy: [] } });
+  const shown = placeNotableCards(records('card', 43).map(withText), records('notable', 3).map(paper => ({ ...withText(paper), _notable: true })), []);
+  // FeedContainer stored the reader's place on For You: the twelfth card.
+  const readerAt = 11;
+  const reader = shown[readerAt].id;
+  const { state, env, restore } = feed();
+  // Crossref answers after the restore: the fourteenth card is a book.
+  Object.assign(env, { classifyFeedPublications: async (papers: FeedRecord[]) => papers.map(paper => (paper.id === 'card-13' ? { ...paper, publicationType: 'book' } : paper)) });
+  restore({ papers: shown, page: 2, hasMore: true }, { paperId: reader, index: readerAt });
+  await wait(20);
+  assert.ok(!state.papers.some(paper => paper.id === 'card-13'), 'the book leaves');
+  const met = shown.slice(0, readerAt + 1);
+  assert.deepEqual(metNotableAt(met, state.papers, reader), [15, 30, 45]);
+  // The reader opens the feed, which reports their card, and a long read re-ranks.
+  const { state: reRanked, reRankFeed } = reRanking(state.papers, reader);
+  reRankFeed(reader);
+  assert.deepEqual(metNotableAt(met, reRanked.papers, reader), [15, 30, 45]);
+});
+
 test('the related papers a like brings join the cards after the reader, and every notable card keeps its place', async () => {
   const shown = placeNotableCards(records('card', 42), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
   const state = { papers: shown };
@@ -1007,7 +1080,7 @@ test('the related papers a like brings join the cards after the reader, and ever
     likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
     sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
     setPapers: (update: (previous: FeedRecord[]) => FeedRecord[]) => { state.papers = update(state.papers); },
-    splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref('card-3'),
+    splitFeedForReRank, keepNotablePlaces, visiblePaperIdRef: ref('card-3'),
     // The queue's new order, reversed, stands in for the ranking's.
     diversifiedWeightedShuffle: (queue: FeedRecord[]) => [...queue].reverse(),
     calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
@@ -1040,7 +1113,7 @@ test('a page that loads while a like inserts related papers puts its notable car
     fetchCorpusPage: async () => records('related', 5),
     likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
     sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
-    setPapers: env.setPapers, splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref('card-3'),
+    setPapers: env.setPapers, splitFeedForReRank, keepNotablePlaces, visiblePaperIdRef: ref('card-3'),
     diversifiedWeightedShuffle: <T>(queue: T) => queue, calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
   }) as (paper: FeedRecord) => Promise<void>;
   const loading = run(false);

@@ -51,7 +51,7 @@ import {
 import Petri from '../Onboarding/Petri.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState.ts';
-import { createFeedResumeMemory } from '../../utils/feedResumeMemory.ts';
+import { createFeedResumeMemory, FOR_YOU_SCROLL_KEY } from '../../utils/feedResumeMemory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feedSkipExit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feedPullToRefresh.ts';
 import './FeedContainer.css';
@@ -237,7 +237,7 @@ function FeedLandmark({ landmark, className = 'feed-wrapper', children }: PropsW
  * `endCard` is a node the source appends as one more snap item once the feed
  * has genuinely run out — same height, same snapping, same swipe.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou', landmark = null }: FeedContainerProps) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = FOR_YOU_SCROLL_KEY, landmark = null }: FeedContainerProps) {
   const feed = useFeed();
   const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();

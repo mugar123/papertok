@@ -69,6 +69,8 @@ import {
 } from '../utils/recommendationEngine.ts';
 import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 import { reRankHoldMs } from '../utils/feedReRankTiming.ts';
+import { createFeedResumeMemory, FOR_YOU_SCROLL_KEY } from '../utils/feedResumeMemory.ts';
+import { resumeIndex } from '../utils/feedMountWindow.ts';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
@@ -109,6 +111,7 @@ import {
   abstractsInFlight,
   cardsGivenTopic,
   getOpenAlexEnrichmentId,
+  keepNotablePlaces,
   mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
@@ -169,6 +172,14 @@ function feedSnapshotKey(userId: string | null | undefined, signature: string) {
   return `papertok_feed_snapshot_${encodeURIComponent(userId || 'guest')}_${encodeURIComponent(signature)}`;
 }
 
+// The card For You opens on in this tab, from the place FeedContainer keeps
+// across a reload (feedResumeMemory), or -1 when the tab has none there and
+// For You opens on the first card.
+function resumedCardIndex(papers: Paper[]) {
+  const place = createFeedResumeMemory().get(FOR_YOU_SCROLL_KEY);
+  return place.paperId ? resumeIndex({ papers, savedPaperId: place.paperId, savedIndex: place.index }) : -1;
+}
+
 function readFeedSnapshot(userId: string | null | undefined, signature: string): (FeedSnapshot & { savedAt: number }) | null {
   if (!userId || !signature) return null;
   try {
@@ -178,10 +189,17 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
     }
     // A card can be saved before Crossref answered, or kept because the reader
     // was on it. Nothing is on screen before a restore, so a book known now
-    // leaves, and the other cards keep their order: the reader comes back to
-    // their card by its id (FeedContainer), and a notable card placed again
-    // here could cross it. The next re-rank places the ones after it again.
-    return { ...snapshot, papers: applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication) };
+    // leaves. The reader comes back to their card (resumedCardIndex). A book
+    // they met, theirs included, still counts towards the next notable card,
+    // so the cards after it move up; after their card, the next card takes a
+    // book's place (keepNotablePlaces).
+    const papers = applyKnownPublicationTypes(snapshot.papers);
+    const met = resumedCardIndex(papers) + 1;
+    const ahead = papers.slice(met).filter(isFeedPublication);
+    return { ...snapshot, papers: [
+      ...papers.slice(0, met).filter(isFeedPublication),
+      ...keepNotablePlaces(papers.slice(met), ahead.filter(paper => !paper._notable), ahead.filter(paper => paper._notable)),
+    ] };
   } catch {
     return null;
   }
@@ -657,9 +675,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     });
   }, [userPreferences, followedEntities]);
 
-  // The card the reader is on, as FeedContainer reports it (on the restore
+  // The card the reader is on: as FeedContainer reports it (on the restore
   // after a reload and on every scroll), the successor markNotInterested
-  // moves it to, or none after a refresh. A ref, not state: it moves on every
+  // moves it to, or, after a snapshot restored on another page, the card
+  // FeedContainer will open on. None means the first card: after a refresh,
+  // or in a tab with no place kept. A ref, not state: it moves on every
   // scroll event and nothing needs to re-render for it — reRankFeed reads it
   // inside its functional setPapers.
   //
@@ -799,16 +819,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const { locked, queue } = splitFeedForReRank(prevPapers, {
         anchorPaperIds: [sourcePaperId, visiblePaperIdRef.current],
       });
-      // The notable cards keep their places, one card in NOTABLE_EVERY
-      // counted from the last one before the queue; the ranking orders the rest.
+      // The notable cards keep their places, which also count the cards the
+      // reader met that left the list; the ranking orders the other cards.
       const others = queue.filter(paper => !paper._notable);
       if (others.length === 0) return prevPapers;
 
-      const newQueue = placeNotableCards(diversifiedWeightedShuffle(others, {
+      const newQueue = keepNotablePlaces(queue, diversifiedWeightedShuffle(others, {
         scorePaper: calculateAndAttachScore,
         weights: recommendationWeights.current,
         initialPapers: locked,
-      }), queue.filter(paper => paper._notable), locked);
+      }), queue.filter(paper => paper._notable));
       logRankingBatch('rerank queue', newQueue);
 
       return [...locked, ...newQueue];
@@ -941,12 +961,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             const combinedRest = [...newGraphPapers, ...restFiltered];
 
             // Re-rank the unread queue using weighted shuffle; the notable
-            // cards keep their places, as in reRankFeed.
-            const reRankedRest = placeNotableCards(diversifiedWeightedShuffle(combinedRest.filter(p => !p._notable), {
+            // cards keep their places, as in reRankFeed, and the other cards
+            // that do not fit before the last place follow it.
+            const reRankedRest = keepNotablePlaces(rest, diversifiedWeightedShuffle(combinedRest.filter(p => !p._notable), {
               scorePaper: calculateAndAttachScore,
               weights: recommendationWeights.current,
               initialPapers: locked,
-            }), combinedRest.filter(p => p._notable), locked);
+            }), combinedRest.filter(p => p._notable));
             logRankingBatch('graph expansion', reRankedRest);
             
             return [...locked, ...reRankedRest];
@@ -1606,6 +1627,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // The restore shows these cards in this session, as a load would: a refresh
     // must not offer them again. Only a card's own report makes one "viewed".
     snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
+    // Only the feed reports the card the reader is on, and a reload can open
+    // another page. Until it reports, the card it will open on stands in, so a
+    // late book and a re-rank keep each card on its side of the reader.
+    visiblePaperIdRef.current ??= snapshot.papers[resumedCardIndex(snapshot.papers)]?.id ?? null;
     setPapers(snapshot.papers);
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);

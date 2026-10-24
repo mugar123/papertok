@@ -1,5 +1,5 @@
 import type { Paper } from '../models/Paper.ts';
-import { placeNotableCards } from '../utils/feedEnrichment.ts';
+import { keepNotablePlaces } from '../utils/feedEnrichment.ts';
 import { normalizeDoi } from '../utils/publicNavigation.ts';
 import { isFeedPublication, withCrossrefType } from './feedPublicationRules.ts';
 
@@ -23,28 +23,22 @@ let nextRequestAt = 0;
 /**
  * Removes confirmed books and book reviews the reader has not reached. The
  * visible card and the one after it stay, since a swipe shows the next card
- * before the scroll reports it as visible. A reported card that is no longer
- * listed leaves their place unknown: nothing is removed. After a reported card,
- * the notable cards go back to their places (placeNotableCards): a removed card
- * does not count towards the next one.
- * With no card reported, the first two cards stay and the others keep their
- * order. After a refresh the reader is on the first card, but the feed is the
- * only page that reports one: after a snapshot restored on another page, the
- * reader comes back to their card by its id (FeedContainer), and a notable
- * card placed again here could cross it. The next re-rank places the ones
- * after the reader again.
+ * before the scroll reports it as visible. With no card reported, the reader
+ * is on the first card: a restore reports the card FeedContainer opens on, on
+ * any page (FeedContext), and a refresh starts at the top. A reported card
+ * that is no longer listed leaves their place unknown: nothing is removed.
+ * The notable cards keep their places and the next card takes a removed
+ * one's (keepNotablePlaces), so the reader still meets one in NOTABLE_EVERY.
  */
 export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[], classified: Partial<Paper>[], visiblePaperId: string | null) {
   const visible = papers.findIndex(paper => paper.id === visiblePaperId);
   if (visiblePaperId && visible < 0) return papers;
   const excluded = new Set(classified.filter(paper => !isFeedPublication(paper)).map(paper => paper.id));
   const lastReached = Math.max(0, visible) + 1;
-  const kept = papers.filter((paper, index) => index <= lastReached || !excluded.has(paper.id));
-  if (kept.length === papers.length) return papers;
-  if (!visiblePaperId) return kept;
-  const reached = kept.slice(0, lastReached + 1);
-  const unreached = kept.slice(lastReached + 1);
-  return [...reached, ...placeNotableCards(unreached.filter(paper => !paper._notable), unreached.filter(paper => paper._notable), reached)];
+  const unreached = papers.slice(lastReached + 1);
+  const kept = unreached.filter(paper => !excluded.has(paper.id));
+  if (kept.length === unreached.length) return papers;
+  return [...papers.slice(0, lastReached + 1), ...keepNotablePlaces(unreached, kept.filter(paper => !paper._notable), kept.filter(paper => paper._notable))];
 }
 
 // Results outlive the tab, so a reopened app does not ask Crossref again for

@@ -20,6 +20,9 @@ type FeedResume = { scrollTop: number; index: number; paperId: string | null };
  * carries a token offset that says "somewhere to go back to" and nothing more.
  */
 export const FEED_RESUME_STORAGE_PREFIX = 'papertok_feed_resume:';
+// For You's place, which FeedContext also reads: a restore on another page
+// learns from it the card the reader comes back to.
+export const FOR_YOU_SCROLL_KEY = 'forYou';
 
 const NOWHERE = Object.freeze({ scrollTop: 0, index: 0, paperId: null });
 

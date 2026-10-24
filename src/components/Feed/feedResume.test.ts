@@ -28,7 +28,7 @@ function bounded(code: string, from: string, to: string, label: string, maxLines
  */
 test('SOURCE: the container keeps its place in a memory that survives a reload', async () => {
   const code = stripComments(await read('./FeedContainer.tsx'));
-  assert.match(code, /import \{ createFeedResumeMemory \} from '\.\.\/\.\.\/utils\/feedResumeMemory\.ts';/);
+  assert.match(code, /import \{ createFeedResumeMemory, FOR_YOU_SCROLL_KEY \} from '\.\.\/\.\.\/utils\/feedResumeMemory\.ts';/);
   assert.match(code, /const resumeMemory = createFeedResumeMemory\(\);/, 'one memory, at module scope, shared by every surface');
   assert.doesNotMatch(code, /savedScrollByKey|savedIndexByKey|savedPaperIdByKey/, 'the three bare maps are gone');
 
