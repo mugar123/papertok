@@ -15,7 +15,6 @@ import { pageview } from '@vercel/analytics';
 import { AnalyticsContext } from './contexts.ts';
 import { useLocation } from 'react-router-dom';
 import { useLanguage } from './language-context.tsx';
-import { initializeErrorTracking } from '../services/error-tracking.ts';
 import { useAuth } from './auth-context.tsx';
 import {
   ANALYTICS_CONSENT,
@@ -50,7 +49,6 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (consent === ANALYTICS_CONSENT.DENIED) return;
-    void initializeErrorTracking();
     void trackAcquisition({ language });
   }, [consent, language]);
 

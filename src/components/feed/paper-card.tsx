@@ -2121,7 +2121,7 @@ const PaperCard = memo(function PaperCard({
             ) : abstractLoading ? (
               // The feed is still asking a source for the missing abstract.
               // Saying so means the words that arrive replace a stated wait,
-              // not a "No abstract" the reader has already read.
+              // not a "No abstract available" the reader has already read.
               <motion.div
                 key={abstractKey}
                 ref={attachAbstractBody}
@@ -2149,7 +2149,7 @@ const PaperCard = memo(function PaperCard({
                 <EmptyState
                   as="p"
                   art={<Petri pose="blankPage" className="pc-abstract-empty-petri" />}
-                  title={'No abstract'}
+                  title={'No abstract available'}
                 >
                   {"This paper's record has no abstract."}
                 </EmptyState>

@@ -17,12 +17,14 @@ import {
 } from '../src/services/domain-source-records.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
+import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
+import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, FEED_CANDIDATE_LIMIT, PaperStoreError, WORKING_PAPERS_LANE, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -309,8 +311,14 @@ export const WORKING_PAPER_SERIES_IDS = [
   'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
 ];
 
+// Subfields an area lane leaves out although the area's label covers them,
+// because the area's arXiv readers do not read them: Biomedical Engineering
+// was 60 of electrical engineering's 200 newest articles on 2026-10-23,
+// sensor materials, biomass conversion and tissue scaffolds among them.
+const AREA_LANE_LEFT_OUT: Readonly<Record<string, readonly string[]>> = { eess: ['2204'] };
+
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-areas' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
   | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
 // `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
@@ -468,7 +476,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   pubmed: {
     // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology,
     // and two of nine 40-page steps ran out of the Worker's 30 s of CPU.
-    firstPages: 10, dailyPages: 10, backfillPages: 20, dated: true, overlapDays: 3,
+    firstPages: 10, dailyPages: 10, backfillPages: 5, dated: true, overlapDays: 3,
     fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
@@ -489,6 +497,28 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
+  },
+  // The newest journal articles of a whole area, filed under the area. On
+  // 2026-10-23 a page of 200 with an abstract held the last one or two days of
+  // each area but finance's nine: about 22 (finance) to 370 (electrical
+  // engineering) a day. In the 90 days before, 23 % (statistics, economics) to
+  // 39 % (mechanical engineering) of the articles had none. So a night reads
+  // one page, the newest 200: one list call an area. Unlike the topic lanes,
+  // the area lanes take an article without an abstract (PAP-107); its card
+  // says it has none. OpenAlex lists IMF, Federal Reserve Board and Fed bank
+  // working papers as core journal articles; their cards say Working paper,
+  // so the lane leaves out the review rule's series.
+  'openalex-areas': {
+    firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      openAlexLabelFilterForArea(lane.slice('area:'.length)),
+      ...(AREA_LANE_LEFT_OUT[lane.slice('area:'.length)] || []).map(id => `primary_topic.subfield.id:!${id}`),
+      windowFilter(),
+      'type:article',
+      'is_retracted:false',
+      'primary_location.source.is_core:true',
+      OPENALEX_NOT_LISTED_SERIES_FILTER,
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   'openalex-series': {
@@ -543,6 +573,7 @@ export function categoryLaneJobs(): LaneJob[] {
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
     ...LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
+    ...AREA_LANE_AREAS.map(area => ({ source: 'openalex-areas' as const, lane: areaLane(area) })),
   ];
   for (const leaf of LEAVES) {
     const plan = getDomainSourcePlan([leaf.id]);
@@ -646,7 +677,11 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       if (!(error instanceof SourceRefused)) console.warn(`Backfill of ${source} ${lane} stopped at page ${page}`, error);
       break;
     }
-    stored += await ingestPapers(env, result.items, { now });
+    try {
+      stored += await ingestPapers(env, result.items, { now });
+    } catch (error) {
+      throw new Error(`Backfill ${source} ${lane} page ${page} could not store ${result.items.length} records: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
     const done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
     await save(done ? null : page + 1);
     if (done) break;

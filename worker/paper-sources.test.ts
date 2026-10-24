@@ -19,6 +19,7 @@ import { readPubmedEfetch } from '../src/utils/pubmed-efetch.ts';
 import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
 // trimmed to one record, its abstract shortened, plus a deleted record.
@@ -373,6 +374,124 @@ test('the 14 inherited leaves keep their lanes and the topics accepted in #236',
     'd712fc6dd9b51123876e8bbf61022a0172cde893fa03bb7aa394bfa16cd14d5f');
 });
 
+// ─── Journal articles of a whole area (PAP-107) ───
+
+// OpenAlex W7223244690 as returned on 2026-10-23 to the physics area's newest
+// articles (trimmed, abstract shortened): a closed article with no free copy.
+const closedPhysicsArticle = {
+  id: 'https://openalex.org/W7223244690',
+  doi: 'https://doi.org/10.7566/jpsj.95.111002',
+  title: 'High-harmonic Generation Spectroscopy in van der Waals Materials: Accessing Bloch Wavefunctions and Their Scattering Processes',
+  type: 'article',
+  publication_date: '2026-10-23',
+  publication_year: 2026,
+  authorships: [{ author: { id: 'https://openalex.org/A5102845839', display_name: 'Kento Uchida' }, institutions: [{ id: 'https://openalex.org/I22299242', display_name: 'Kyoto University' }] }],
+  abstract_inverted_index: invertedIndex('High-harmonic generation (HHG) has emerged as a promising tool for probing femtosecond-to-attosecond electron dynamics in crystalline solids.'),
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.7566/jpsj.95.111002',
+    version: 'publishedVersion',
+    is_published: true,
+    source: { id: 'https://openalex.org/S119212824', display_name: 'Journal of the Physical Society of Japan', type: 'journal', is_core: true },
+  },
+  locations: [],
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  cited_by_count: 0,
+  primary_topic: {
+    id: 'https://openalex.org/T10566',
+    display_name: 'Laser-Matter Interactions and Applications',
+    subfield: { id: 'https://openalex.org/subfields/3107', display_name: 'Atomic and Molecular Physics, and Optics' },
+    field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
+    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+  },
+};
+
+test("an area's journal lane asks OpenAlex for the core journal articles labelled as that area, with or without an abstract, and files them under the area, paywall and review as recorded", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  // The same article as OpenAlex lists one whose abstract it does not hold.
+  const withoutAbstract = { ...closedPhysicsArticle, id: 'https://openalex.org/W7223244691', doi: 'https://doi.org/10.7566/jpsj.95.111003', abstract_inverted_index: null };
+  const { urls, env } = relay(t, () => ({ results: [closedPhysicsArticle, withoutAbstract] }));
+  const { items } = await SOURCES['openalex-areas'].fetchPage(env, { lane: 'area:physics', page: 1, since: '', waits: { seconds: 0 } });
+  const [url] = urls;
+  for (const filter of ['primary_topic.field.id:31', 'type:article', 'is_retracted:false', 'primary_location.source.is_core:true', 'from_publication_date:2026-07-25', 'to_publication_date:2026-10-23']) {
+    assert.ok(filtersOf(url).includes(filter), filter);
+  }
+  assert.equal(filtersOf(url).some(filter => filter.startsWith('has_abstract')), false, 'an article without an abstract is listed too');
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(url.searchParams.has('search'), false);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223244690', ['area:physics']], ['openalex:W7223244691', ['area:physics']]]);
+  assert.equal(hasUsableAIAbstract(items[1].paper.abstract), false, 'its abstract stays unknown');
+  const [{ paper }] = items;
+  // What the card's access chip reads (paper-status.ts): an explicit `false`,
+  // and no arXiv copy or PDF to call it open.
+  assert.deepEqual([paper.openAccess, paper.arxivId, paper.pdfUrl], [false, undefined, null]);
+  assert.equal(paper.peerReviewed, true, 'a journal article, by the review rule');
+  assert.equal(paper.workingPaper, undefined);
+  assert.equal(areaLabelForPaper(paper), 'Physics');
+  assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), [], 'no leaf is claimed for it');
+
+  // Engineering is read as electrical engineering unless a subfield names
+  // mechanical or civil work, and Economics as economics unless it is finance:
+  // each lane asks for what its label reads, and no paper twice. Electrical
+  // engineering's lane also leaves out Biomedical Engineering (2204), 60 of its
+  // 200 newest on 2026-10-23: sensor materials, biomass conversion, tissue
+  // scaffolds and cancer nanomedicine among them.
+  const areaFilters = async (lane: string) => {
+    await SOURCES['openalex-areas'].fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 } });
+    return filtersOf(urls.at(-1)!).filter(filter => filter.startsWith('primary_topic.')).sort();
+  };
+  assert.deepEqual(await areaFilters('area:eess'), [
+    'primary_topic.field.id:22',
+    ...['2202', '2203', '2204', '2205', '2206', '2210', '2211', '2212', '2215'].map(id => `primary_topic.subfield.id:!${id}`),
+  ]);
+  assert.deepEqual(await areaFilters('area:mech'), ['primary_topic.subfield.id:2202|2203|2206|2210|2211']);
+  assert.deepEqual(await areaFilters('area:econ'), ['primary_topic.field.id:20', 'primary_topic.subfield.id:!2003']);
+  assert.deepEqual(await areaFilters('area:q-fin'), ['primary_topic.subfield.id:2003']);
+});
+
+test("an area's journal lane leaves out the working-paper series OpenAlex lists as core journal articles, whose cards say Working paper", async t => {
+  // The listed series that held such articles in economics' and finance's
+  // 90 days to 2026-10-24: 64 of economics' 8,538 and 31 of finance's.
+  const series = [
+    { id: 'S4210171147', display_name: 'IMF Working Papers' },
+    { id: 'S4210225578', display_name: 'FEDS Notes' },
+    { id: 'S4210212089', display_name: 'Finance and Economics Discussion Series' },
+    FRBSF,
+    { id: 'S4210173933', display_name: 'Federal Reserve Bank of Kansas City, Research Working Papers' },
+  ];
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  for (const lane of ['area:econ', 'area:q-fin', 'area:physics']) {
+    await SOURCES['openalex-areas'].fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 } });
+    const filters = filtersOf(urls.at(-1)!);
+    for (const source of series) {
+      assert.equal(mapOpenAlexWork(seriesWork('W1', '10.1/w1', 'article', source, null))?.workingPaper, true, `an article of ${source.display_name} is a working paper`);
+      assert.ok(filters.includes(`primary_location.source.id:!${source.id}`), `${lane} leaves out ${source.display_name}`);
+    }
+  }
+});
+
+// Statistics' label covers OpenAlex's Decision Sciences: of its 200 newest
+// articles on 2026-10-23, 107 were operations research and 40 information
+// systems, all labelled Statistics.
+test('the areas the feed fills from arXiv get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
+  const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
+  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
+});
+
+// The cost of the lanes: one list call an area a night, two on a lane's first run.
+test("an area's journal lane asks one page of 200 a night, and two on its first run", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const page = (number: number) => Array.from({ length: 200 }, (_, index) => ({
+    ...closedPhysicsArticle, id: `https://openalex.org/W${number}${String(index).padStart(3, '0')}`, doi: `https://doi.org/10.1/${number}.${index}`, title: `Journal article ${number}-${index} on high-harmonic spectroscopy`,
+  }));
+  const { urls, env } = relay(t, url => ({ results: page(Number(url.searchParams.get('page'))) }));
+  const { binding } = testD1();
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [['1', '200'], ['2', '200']]);
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.equal(urls.length, 3, 'a later run reads the newest page only');
+});
+
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const work = (id: string, date: string) => ({ ...splicingWork, id: `https://openalex.org/${id}`, doi: `https://doi.org/10.1/${id}`, title: `Paper ${id}`, publication_date: date });
@@ -442,9 +561,9 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
 
   await backfillLane(store, job);
-  assert.equal(terms.length, 20);
-  assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 21 });
-  await backfillLane(store, job);
+  assert.equal(terms.length, 5);
+  assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 6 });
+  for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
   assert.ok(terms.every(term => term.endsWith(' AND hasabstract AND 1800/01/01:2026/10/24[edat]')));
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
@@ -466,9 +585,9 @@ test("a refused page ends the lane's backfill for the run, which goes on from th
   const { terms, env } = pubmedListing(t);
   const { binding, db } = testD1();
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
-  await backfillLane({ ...env, PUBMED_GLOBAL_MINUTE_LIMIT: '5', PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
-  assert.equal(terms.length, 5, "the minute's five");
-  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 6);
+  await backfillLane({ ...env, PUBMED_GLOBAL_MINUTE_LIMIT: '3', PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 3, "the minute's three");
+  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 4);
 });
 
 for (const failure of ['answers with an error', 'cannot be reached'] as const) {
@@ -496,33 +615,39 @@ for (const failure of ['answers with an error', 'cannot be reached'] as const) {
     assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 7);
     down = false;
     await backfillLane(store, job);
-    assert.equal(terms.length, 20, 'pages 7 to 26: a step reads 20 pages');
+    assert.equal(terms.length, 5, 'pages 7 to 11: a step releases resources after five pages');
   });
 }
 
-test('a backfill step cut short goes on next time from the page after the last one stored', async t => {
-  const { terms, env } = pubmedListing(t);
-  const { binding, db } = testD1();
-  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
-  // A step the Worker stops partway, as its CPU limit does: here a write that throws.
-  let batches = 0;
-  const cut = { ...binding, prepare: binding.prepare.bind(binding), batch: (statements: D1PreparedStatement[]) => {
-    batches += 1;
-    if (batches === 5) throw new Error('Worker exceeded CPU time limit.');
-    return binding.batch(statements);
-  } } as unknown as D1Database;
-  await assert.rejects(backfillLane({ ...env, PAPER_STORE: cut }, { source: 'pubmed', lane: 'bio.zoo' }));
-  const reached = terms.length;
-  assert.ok(reached > 1);
-  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, reached, 'the page it was cut on');
-});
+for (const failure of ['Worker exceeded CPU time limit.', 'D1_ERROR: out of memory: SQLITE_NOMEM']) {
+  test(`a backfill resumes without losing papers after ${failure}`, async t => {
+    const { terms, env } = pubmedListing(t);
+    const { binding, db } = testD1();
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+    // A step the Worker stops partway, as its CPU limit does: here a write that throws.
+    let batches = 0;
+    const cut = { ...binding, prepare: binding.prepare.bind(binding), batch: (statements: D1PreparedStatement[]) => {
+      batches += 1;
+      if (batches === 5) throw new Error(failure);
+      return binding.batch(statements);
+    } } as unknown as D1Database;
+    await assert.rejects(backfillLane({ ...env, PAPER_STORE: cut }, { source: 'pubmed', lane: 'bio.zoo' }), /Backfill pubmed bio.zoo page 5 could not store 50 records/);
+    const reached = terms.length;
+    assert.equal(reached, 5);
+    assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, reached, 'the page it was cut on');
+    await backfillLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
+    assert.equal(db.prepare('SELECT count(*) AS n FROM works').get()?.n, 450, 'pages one to nine are stored exactly once');
+  });
+}
 
 test("a backfill ends at the last page the PubMed route serves, which answers any later one with it", async t => {
   const { terms, env } = pubmedListing(t, { endless: true });
   const { binding, db } = testD1();
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through, backfill_until, backfill_page) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z', '2026-10-20', 95)").run();
   await backfillLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
-  assert.equal(terms.length, 6, 'pages 95 to 100');
+  assert.equal(terms.length, 5, 'pages 95 to 99');
+  await backfillLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 6, 'the next step reaches page 100');
   assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number | null }).backfill_page, null);
 });
 
@@ -638,11 +763,14 @@ test("category lanes stop at 3,000 of the harvest's OpenAlex units, so the night
   const request = { page: 1, since: '', waits: { seconds: 0 } };
   const topics = () => SOURCES['openalex-topics'].fetchPage(env, { ...request, lane: 'bio.mol' });
   const series = () => SOURCES['openalex-series'].fetchPage(env, { ...request, lane: 'series:working-papers' });
+  const area = () => SOURCES['openalex-areas'].fetchPage(env, { ...request, lane: 'area:physics' });
 
-  for (let call = 0; call < 2_999; call += 1) await topics();
+  for (let call = 0; call < 2_998; call += 1) await topics();
   await series();
+  await area();
   await assert.rejects(topics(), SourceRefused);
   await assert.rejects(series(), SourceRefused);
+  await assert.rejects(area(), SourceRefused);
   assert.equal(openAlexCalls(), 3_000);
 
   // The nightly refresh's 700 and the new follows' 300, ten units a search.

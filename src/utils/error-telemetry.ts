@@ -1,14 +1,27 @@
-import type { ErrorEvent, StackFrame } from '@sentry/core';
+// What an anonymous PostHog `$exception` event keeps: the error type, where in
+// our code it happened, the release its bundle was built for, and allowlisted
+// operation, status and email-limit labels. Messages,
+// variables, source lines and every other property stay home. Shared by the
+// browser (`sanitizeAnalyticsCapture`) and the Worker (`worker/error-tracking.ts`).
 
-export const ERROR_DATA_COLLECTION = {
-  userInfo: false, cookies: false, httpHeaders: false, httpBodies: [],
-  urlQueryParams: false, graphQL: { document: false, variables: false },
-  genAI: { inputs: false, outputs: false }, databaseQueryData: false,
-  queues: false, stackFrameVariables: false, frameContextLines: 0,
-} as const;
+interface ExceptionFrame {
+  platform?: unknown; filename?: unknown; function?: unknown;
+  lineno?: unknown; colno?: unknown; in_app?: unknown; chunk_id?: unknown;
+}
+interface ExceptionEntry {
+  type?: unknown;
+  mechanism?: { handled?: unknown; synthetic?: unknown };
+  stacktrace?: { frames?: unknown };
+}
 
-function codeLocation(filename: string | undefined) {
-  if (!filename) return undefined;
+const ERROR_TYPES = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError']);
+const PLATFORMS = new Set(['web:javascript', 'node:javascript']);
+// Chunk and release ids are written into our bundles at build time.
+const BUILD_ID = /^[\w-]{1,128}$/;
+const OPERATIONS = new Set(['http', 'rewrite', 'schedule', 'render', 'durable_object', 'workflow']);
+
+function codeLocation(filename: unknown) {
+  if (typeof filename !== 'string') return undefined;
   const path = filename.split(/[?#]/, 1)[0];
   if (/^https:\/\/(?:www\.)?papertok\.app\/assets\/[\w.-]+\.js$/.test(path)) return path;
   const source = path.match(/(?:^|\/)((?:worker|src)\/[\w./-]+\.[cm]?[jt]sx?)$/);
@@ -20,53 +33,52 @@ function codeLocation(filename: string | undefined) {
   return undefined;
 }
 
-function sanitizeFrame(frame: StackFrame): StackFrame | null {
+function positiveInteger(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function sanitizeFrame(frame: ExceptionFrame) {
   const filename = codeLocation(frame.filename);
-  if (!filename) return null;
+  if (!filename || !PLATFORMS.has(frame.platform as string)) return null;
+  const lineno = positiveInteger(frame.lineno);
+  const colno = positiveInteger(frame.colno);
   return {
+    platform: frame.platform,
     filename,
-    abs_path: filename,
-    ...(Number.isSafeInteger(frame.lineno) && frame.lineno! > 0 ? { lineno: frame.lineno } : {}),
-    ...(Number.isSafeInteger(frame.colno) && frame.colno! > 0 ? { colno: frame.colno } : {}),
-    ...(typeof frame.in_app === 'boolean' ? { in_app: frame.in_app } : {}),
-    ...(frame.debug_id && /^[\da-f-]{36}$/i.test(frame.debug_id) ? { debug_id: frame.debug_id } : {}),
+    // A name from our own bundle; '?' is what PostHog's parser writes for none.
+    function: typeof frame.function === 'string' && /^[\w$.<> ]{1,200}$/.test(frame.function) ? frame.function : '?',
+    in_app: typeof frame.in_app === 'boolean' ? frame.in_app : true,
+    ...(lineno ? { lineno } : {}),
+    ...(colno ? { colno } : {}),
+    // Links the frame to the source map uploaded for its bundle.
+    ...(typeof frame.chunk_id === 'string' && BUILD_ID.test(frame.chunk_id) ? { chunk_id: frame.chunk_id } : {}),
   };
 }
 
-export function sanitizeErrorEvent(event: ErrorEvent): ErrorEvent | null {
-  if (!event.exception?.values?.length) return null;
+function sanitizeException(exception: ExceptionEntry) {
+  const frames = Array.isArray(exception.stacktrace?.frames) ? exception.stacktrace.frames as ExceptionFrame[] : [];
   return {
-    type: undefined,
-    event_id: event.event_id,
-    timestamp: event.timestamp,
-    platform: 'javascript',
-    // Prevent ingestion from deriving identity or location from the transport IP.
-    user: { ip_address: '0.0.0.0' },
-    level: 'error',
-    environment: event.environment,
-    release: event.release,
-    exception: {
-      values: event.exception.values.slice(0, 3).map(exception => ({
-        type: ['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError'].includes(exception.type || '') ? exception.type : 'Error',
-        value: 'Application error (message redacted)',
-        mechanism: { type: 'generic', handled: exception.mechanism?.handled ?? false },
-        stacktrace: { frames: (exception.stacktrace?.frames || []).slice(-30).flatMap(frame => {
-          const safe = sanitizeFrame(frame);
-          return safe ? [safe] : [];
-        }) },
-      })),
+    type: ERROR_TYPES.has(exception.type as string) ? exception.type : 'Error',
+    value: 'Application error (message redacted)',
+    mechanism: {
+      type: 'generic',
+      handled: typeof exception.mechanism?.handled === 'boolean' ? exception.mechanism.handled : false,
+      synthetic: exception.mechanism?.synthetic === true,
     },
-    tags: {
-      ...(typeof event.tags?.http_status === 'number' && event.tags.http_status >= 500 && event.tags.http_status < 600 ? { http_status: event.tags.http_status } : {}),
-      ...(['http', 'rewrite', 'schedule', 'render'].includes(String(event.tags?.operation)) ? { operation: event.tags!.operation } : {}),
-    },
-    debug_meta: {
-      images: (event.debug_meta?.images || []).flatMap(image => {
-        const filename = codeLocation(image.code_file);
-        return image.type === 'sourcemap' && filename && /^[\da-f-]{36}$/i.test(image.debug_id)
-          ? [{ type: 'sourcemap' as const, code_file: filename, debug_id: image.debug_id }]
-          : [];
-      }),
-    },
+    stacktrace: { type: 'raw', frames: frames.slice(-30).flatMap(frame => sanitizeFrame(frame) ?? []) },
+  };
+}
+
+export function sanitizeExceptionProperties(properties: Record<string, unknown>) {
+  const exceptions = properties.$exception_list;
+  if (!Array.isArray(exceptions) || !exceptions.length) return null;
+  const status = properties.http_status;
+  return {
+    $exception_level: 'error',
+    $exception_list: (exceptions as ExceptionEntry[]).slice(0, 3).map(sanitizeException),
+    ...(typeof properties.$release_id === 'string' && BUILD_ID.test(properties.$release_id) ? { $release_id: properties.$release_id } : {}),
+    ...(OPERATIONS.has(properties.operation as string) ? { operation: properties.operation } : {}),
+    ...(typeof status === 'number' && status >= 500 && status < 600 ? { http_status: status } : {}),
+    ...(properties.email_limit === 'reached' ? { email_limit: 'reached' } : {}),
   };
 }

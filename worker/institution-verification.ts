@@ -63,7 +63,7 @@ export async function handleInstitutionVerificationRequest(request: Request, env
   if (typeof body?.nonce !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.nonce)) {
     throw new InstitutionLinkError('INVALID_BODY', 400);
   }
-  if (!isServiceAccountConfigured(env) || !env.BREVO_API_KEY || !env.BREVO_FROM_EMAIL) {
+  if (!isServiceAccountConfigured(env) || !env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
     throw new InstitutionLinkError('INSTITUTION_VERIFICATION_UNAVAILABLE', 503);
   }
   const now = Date.now();
