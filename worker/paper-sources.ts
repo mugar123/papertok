@@ -18,9 +18,9 @@ import { openAlexTopicFilterForLeaves } from '../src/utils/areaAccent.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
-import { fetchWithDeadline } from './provider-runtime.ts';
+import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, PaperStoreError, WORKING_PAPERS_LANE, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
+import { CORPUS_DAYS, FEED_CANDIDATE_LIMIT, PaperStoreError, WORKING_PAPERS_LANE, database, daysFromNow, findWorks, ingestPapers, keepLiked, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -280,7 +280,7 @@ export type SourceName =
 
 export interface LaneJob { source: SourceName; lane: string }
 
-interface PageRequest { lane: string; page: number; since: string }
+interface PageRequest { lane: string; page: number; since: string; until?: string }
 interface SourcePage { items: Harvested[]; newest: string; full: boolean }
 interface SourceSpec {
   // Pages on a lane's first run, and on later ones (a later run also stops
@@ -299,6 +299,9 @@ interface SourceSpec {
   // A pause before each request, for a source that limits its pace rather
   // than its day (CORE allows a few requests every ten seconds).
   gapMs?: number;
+  // Pages a run reads further back, for a source whose daily pages hold days
+  // of the corpus window rather than all of it (backfillLane).
+  backfillPages?: number;
   fetchPage: (env: SourceEnv, request: PageRequest) => Promise<SourcePage>;
 }
 
@@ -410,10 +413,13 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       : arxivSearch(env, `all:"${quotedLabel(lane)}"`, page, lane)),
   },
   pubmed: {
-    firstPages: 10, dailyPages: 10, dated: true, overlapDays: 3,
-    fetchPage: async (env, { lane, page }) => {
+    // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology.
+    firstPages: 10, dailyPages: 10, backfillPages: 40, dated: true, overlapDays: 3,
+    fetchPage: async (env, { lane, page, until }) => {
+      // Newest added first; a backfill reads only what was added by its first day.
+      const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
       const response = await withShortWaits(() => askRoute(handlePubmed, '/sources/pubmed', {
-        q: `(${pubmedCategoryQuery([lane])}) AND hasabstract`, page, limit: 50,
+        q: `(${pubmedCategoryQuery([lane])}) AND hasabstract${added}`, page, limit: 50,
       }, env));
       const payload = await response.json() as Parameters<typeof readPubmedPayload>[0];
       const papers = readPubmedPayload(payload, { internalCategories: [lane], parseXml: parseXmlDocument });
@@ -529,6 +535,48 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
     ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, new Date(now).toISOString()).run();
+  return stored;
+}
+
+// Between backfill pages: about 25 a minute, within PubMed's shared ceiling of
+// 60 route misses (provider-runtime.ts) with room for readers and daily pages.
+const BACKFILL_GAP_MS = 1_500;
+
+/**
+ * Reads a lane further back than its daily pages, from the page the last run
+ * stopped at. The listing ends at the day the backfill began, so new records
+ * do not move its pages. It is done at the end of the listing or the corpus
+ * window or the route's last page, or once the lane holds as many papers as
+ * the feed reads, beyond which eviction drops the older ones. A page that is
+ * refused or fails ends the lane's run there, to go on from it next run. A
+ * lane whose daily harvest has not run yet waits for it.
+ */
+export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
+  const spec = SOURCES[source];
+  const db = env.PAPER_STORE!;
+  const state = await db.prepare('SELECT backfill_until, backfill_page FROM lane_state WHERE source = ? AND lane = ?').bind(source, lane)
+    .first<{ backfill_until: string | null; backfill_page: number | null }>();
+  if (!spec.backfillPages || !state || (state.backfill_until && state.backfill_page === null)) return 0;
+  const until = state.backfill_until || new Date(now).toISOString().slice(0, 10);
+  const since = daysFromNow(-CORPUS_DAYS, now);
+  const held = await db.prepare('SELECT count(*) AS n FROM work_lanes WHERE lane = ?').bind(lane).first<{ n: number }>();
+  let page = state.backfill_page || 1;
+  let done = (held?.n || 0) >= FEED_CANDIDATE_LIMIT;
+  let stored = 0;
+  for (let read = 0; !done && read < spec.backfillPages; read += 1, page += 1) {
+    if (read > 0) await new Promise(resolve => setTimeout(resolve, BACKFILL_GAP_MS));
+    let result: SourcePage;
+    try {
+      result = await spec.fetchPage(env, { lane, page, since, until });
+    } catch (error) {
+      if (!(error instanceof SourceRefused)) console.warn(`Backfill of ${source} ${lane} stopped at page ${page}`, error);
+      break;
+    }
+    stored += await ingestPapers(env, result.items, { now });
+    done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
+  }
+  await db.prepare('UPDATE lane_state SET backfill_until = ?, backfill_page = ? WHERE source = ? AND lane = ?')
+    .bind(until, done ? null : page, source, lane).run();
   return stored;
 }
 
