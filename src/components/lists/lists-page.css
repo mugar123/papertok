@@ -31,6 +31,7 @@
      app navbar, no standalone mode. Only the top offset uses the nav token —
      the trailing --space-16 is plain end-of-page breathing room. */
   padding: calc(var(--nav-total) + var(--space-10)) var(--space-6) var(--space-16);
+  position: relative;
 }
 
 /* ─── Nameplate ─── */
@@ -87,6 +88,17 @@
   font-size: var(--fs-xs);
 }
 
+/* The refresh note sits in the gap above the title, out of the flow: the
+   default folders are already on screen under it, and taking its 54px away
+   when the lists land moved every folder up (and `layout` animated it). */
+.lists-inline-status.is-loading {
+  position: absolute;
+  top: calc(var(--nav-total) + var(--space-1));
+  left: var(--space-6);
+  min-height: 0;
+  margin: 0;
+}
+
 .lists-inline-status .lists-loading-spinner,
 .lists-metadata-status .lists-loading-spinner {
   width: 16px;
@@ -140,6 +152,34 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-8);
+}
+
+/* The first arrival on My lists (lists-page.tsx): the folders come in turn,
+   30ms apart and capped at the fourth, so the whole grid lands within
+   290ms. `translate`, not `transform`, so it composes with the transform
+   Motion's `layout` writes inline. Under reduced motion they only fade. */
+.list-card--arrive {
+  animation: listCardArrive 200ms var(--ease-out) both;
+  animation-delay: calc(var(--arrive-index, 0) * 30ms);
+}
+
+@keyframes listCardArrive {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes listCardFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-card--arrive {
+    animation-name: listCardFade;
+  }
 }
 
 .list-card {
@@ -881,6 +921,10 @@
        safe-area inset to a bottom padding that has nothing to do with it. */
     padding: calc(var(--nav-total) + var(--space-6)) var(--space-4)
       calc(var(--nav-height-mobile) + var(--space-8));
+  }
+
+  .lists-inline-status.is-loading {
+    left: var(--space-4);
   }
 
   .lists-expanded-title {
