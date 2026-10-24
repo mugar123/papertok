@@ -676,6 +676,8 @@ export interface FeedQuery {
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
+  // Whether the page also reads the area lanes of the asked categories' areas.
+  areaLanes: boolean;
 }
 
 /**
@@ -719,9 +721,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const lanes = [...new Set([
     ...query.categories,
     ...(readsEconomics ? [WORKING_PAPERS_LANE] : []),
-    // Not beside follows: there the categories stand for followed topics
-    // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
-    ...(query.follows.length ? [] : AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane)),
+    ...(query.areaLanes ? AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane) : []),
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];
@@ -866,6 +866,10 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     page: Math.max(0, Math.floor(Number(body?.page) || 0)),
     pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
+    // Not for the follows' request, even when no follow has a lane of its own
+    // (a category topic): there the categories stand for followed topics
+    // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
+    areaLanes: !(Array.isArray(body?.follows) && body.follows.length > 0),
   };
 }
 

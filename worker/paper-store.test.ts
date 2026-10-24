@@ -474,6 +474,12 @@ test("the follows' page reads no area lane: its categories stand for followed to
     follows: [{ type: 'topic', canonicalId: 'T10017', displayName: 'Quantum error correction' }],
   }), { now: NOW });
   assert.deepEqual(followed.map(item => [item.id, item._fetchedFor]), [['2610.00021', ['quant-ph']]]);
+  // A reader whose only follow is a category: it has no lane of its own.
+  const categoryFollowed = await readFeedPage(env, parseFeedRequest({
+    categories: ['quant-ph'],
+    follows: [{ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' }],
+  }), { now: NOW });
+  assert.deepEqual(categoryFollowed.map(item => [item.id, item._fetchedFor]), [['2610.00021', ['quant-ph']]]);
 });
 
 // OpenAlex dates an area's journal articles by day alone, mostly the day
