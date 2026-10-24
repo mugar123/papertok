@@ -831,9 +831,10 @@ export interface FeedQuery {
  */
 export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number; paperId?: string }
 /**
- * The order a reader's pages were served from. `served` counts the ranks
- * pages have covered, including the empty ones of a page the order ran out
- * on, which `ranks` holds as null, and the seen ones a page passed over. A
+ * The order a reader's pages were served from. `served` counts the ranks of
+ * the pages served by their numbers, including the empty ones of a page the
+ * order ran out on, which `ranks` holds as null. It leaves out how far a walk
+ * passed over seen papers, which would say which ranks the reader had seen. A
  * `final` order serves the next pages as it is; otherwise a next page keeps
  * only the ranks served and ranks the rest again. `notable` is the asked
  * categories' notable papers, closest first, which no rank holds: each page
@@ -921,7 +922,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (unseen?.unseen.length && query.seen) await walkPastDropped(db, unseen, notable, query.seen, query.notable, works);
   const through = own?.unseen.length ? own.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
+    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable })
       .catch(error => console.warn('Feed ranking not cached', error));
   } else if (kept && (own?.read || unseen?.read)) {
     await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable })

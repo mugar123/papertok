@@ -471,6 +471,19 @@ test("a reload is one request for the reader's next unseen papers, and the next 
   assert.ok(!kept.includes(feedSeenFilter(shown)), 'the filter is not kept');
 });
 
+test('the order a reload keeps is the same whether the reader had seen most of their ranking or none of it', async t => {
+  const entries = rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(60);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const reload = (uid: string, seen: string[]) => ask({ categories: ['cs.CL'], page: 0, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true }, uid);
+  assert.deepEqual(ids((await reload('reader-1', ids(papers.slice(0, 40)))).papers), ids(papers.slice(40, 55)));
+  assert.deepEqual(ids((await reload('reader-2', [])).papers), ids(papers.slice(0, 15)));
+  // Each reader's order, under their own key: neither says how far the walk went.
+  const [seenMost, seenNone] = await Promise.all([...entries.values()].map(entry => entry.clone().json<unknown>()));
+  assert.deepEqual(seenMost, seenNone);
+});
+
 test("a reader who has seen every paper of their ranking gets the page they asked for again, and an app without the filter keeps page numbers", async t => {
   rankingCaches(t);
   const { env, ask } = store();
