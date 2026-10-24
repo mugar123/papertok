@@ -1,5 +1,4 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import type { Transition } from 'framer-motion';
 import type { Paper } from '../../models/paper.ts';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import type { Project } from '../../services/open-aire-service.ts';
@@ -83,6 +82,8 @@ import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorer-han
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import OrcidStamp from './orcid-stamp.tsx';
 import CareerTimeline from './career-timeline.tsx';
+import OrcidLinks from './orcid-links.tsx';
+import { foldMotion } from './explorer-fold.ts';
 import { careerStops } from './career-stops.ts';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
@@ -129,75 +130,6 @@ import { EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
-
-// The participants fold's collapse. What travels is the page under
-// the fold, and it has to land, so the space rides a gentle ease-in-out
-// while the contents fade evenly. 300ms because this
-// is a click's answer — the reader is waiting on it.
-//
-// The curve itself was chosen by measurement on the Wikipedia fold, back when
-// that one still closed its own height (four probe runs with
-// `scripts/diagnostics/explorer-loading-probe.mjs`): what a collapse costs the reader is its worst single
-// frame — travel × steepness ÷ frames — not its duration, and a steep
-// ease-in-out given too few frames measured WORSE than the front-loaded curve
-// it replaced. Shortening this is no free way to make it feel quicker.
-const PARTICIPANTS_FOLD_OUT: Transition = {
-  opacity: { duration: 0.16, ease: 'linear' },
-  height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
-};
-
-
-const ORCID_LINKS_SHOWN = 3;
-
-// The author's ORCID links, one per row: the first few, and the rest behind
-// a toggle that opens them the way the project participants open.
-function OrcidLinks({ links }: { links: Array<{ name?: string; url: string }> }) {
-  const [expanded, setExpanded] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
-  const row = (link: { name?: string; url: string }, i: number) => (
-    <li key={i}>
-      <a href={link.url} target="_blank" rel="noopener noreferrer" className="orcid-link">
-        <Globe size={14} aria-hidden="true" />
-        <span className="orcid-link-name">{link.name || 'External link'}</span>
-        <ArrowSquareOut size={14} aria-hidden="true" />
-      </a>
-    </li>
-  );
-  return (
-    <>
-      <ul id="orcid-links-list" className="orcid-links">
-        {links.slice(0, ORCID_LINKS_SHOWN).map(row)}
-        <AnimatePresence initial={false}>
-          {expanded && (
-            <motion.li
-              key="more"
-              className="orcid-links-more"
-              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, transition: PARTICIPANTS_FOLD_OUT }}
-              transition={prefersReducedMotion
-                ? { duration: 0 }
-                : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}
-            >
-              <ul className="orcid-links">{links.slice(ORCID_LINKS_SHOWN).map((link, i) => row(link, ORCID_LINKS_SHOWN + i))}</ul>
-            </motion.li>
-          )}
-        </AnimatePresence>
-      </ul>
-      {links.length > ORCID_LINKS_SHOWN && (
-        <button
-          type="button"
-          className="project-show-more"
-          onClick={() => setExpanded(value => !value)}
-          aria-expanded={expanded}
-          aria-controls="orcid-links-list"
-        >
-          {expanded ? 'Show fewer' : `Show ${links.length - ORCID_LINKS_SHOWN} more`}
-        </button>
-      )}
-    </>
-  );
-}
 
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
@@ -2066,12 +1998,7 @@ export default function EntityExplorer({
               <motion.div
                 key="more"
                 className="project-participants-more"
-                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, transition: PARTICIPANTS_FOLD_OUT }}
-                transition={prefersReducedMotion
-                  ? { duration: 0 }
-                  : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}
+                {...foldMotion(prefersReducedMotion)}
               >
                 {entity.participants!.slice(PARTICIPANTS_SHOWN).map((p, i) => renderParticipant(p, PARTICIPANTS_SHOWN + i))}
               </motion.div>
@@ -2409,14 +2336,14 @@ export default function EntityExplorer({
                 />
               )}
               {orcidInfo.biography && (
-                <section aria-labelledby="orcid-about-title">
-                  <h2 id="orcid-about-title" className="project-section-title">About</h2>
+                <section>
+                  <h2 className="project-section-title">About</h2>
                   <p className="orcid-biography">{orcidInfo.biography}</p>
                 </section>
               )}
               {orcidLinks.length > 0 && (
-                <section aria-labelledby="orcid-links-title">
-                  <h2 id="orcid-links-title" className="project-section-title">Links</h2>
+                <section>
+                  <h2 className="project-section-title">Links</h2>
                   <OrcidLinks key={orcidInfo.orcid} links={orcidLinks} />
                 </section>
               )}

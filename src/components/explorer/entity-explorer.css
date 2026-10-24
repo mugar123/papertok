@@ -2597,7 +2597,7 @@
   /* The press stays as a colour change; the squeeze is movement and goes.
      The rows' `:active` background is untouched — it is the whole point of
      keeping feedback here. */
-    .project-summary-toggle:active:not(:disabled),
+  .project-summary-toggle:active:not(:disabled),
   .project-show-more:active:not(:disabled),
   .ee-filter-chip:active:not(:disabled),
   .ee-filter-reset:active:not(:disabled),

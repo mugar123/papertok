@@ -2,7 +2,6 @@ import type { OrcidRecord } from '../../services/orcid-service.ts';
 
 type Affiliation = NonNullable<OrcidRecord>['employments'][number];
 export type CareerStop = Affiliation & { kind: 'study' | 'work' };
-export type Stop = number | 'fold';
 
 const year = (value: string | undefined, missing: number) => (value ? Number(value) : missing);
 
@@ -27,21 +26,12 @@ export function stopYears(stop: CareerStop) {
   return isCurrent(stop) ? `${stop.startDate} → Present` : stop.startDate;
 }
 
-// The stops a line with room for `capacity` shows: all of them when they fit
-// or the reader opened the fold; otherwise the first, a fold for the middle,
-// and as many of the latest as are left.
-export function lineStops(count: number, capacity: number, open: boolean): Stop[] {
-  const all = Array.from({ length: count }, (_, at) => at);
-  if (open || count <= capacity) return all;
-  return [0, 'fold', ...all.slice(count - (capacity - 2))];
-}
-
-// The years a fold stands for, from its dated records only: from the first
-// start to the latest end, or to the present when one of them is current.
-export function foldYears(hidden: CareerStop[]) {
-  const dated = hidden.filter((stop) => stop.startDate);
-  if (!dated.length) return null;
-  const from = dated[0].startDate;
-  const to = dated.some(isCurrent) ? 'Present' : String(Math.max(...dated.map((stop) => Number(stop.endDate ?? stop.startDate))));
-  return from === to ? from : `${from} → ${to}`;
+// The width of a stop when the career is wider than the line: as wide as it
+// can be, at least `min`, while the edge cuts the next stop through, so the
+// cut stop says the line scrolls on. Null when every stop fits.
+const PEEK = 0.45;
+export function stopWidth(count: number, width: number, min: number, gap: number) {
+  if (count * min + (count - 1) * gap <= width) return null;
+  const whole = Math.max(1, Math.floor((width - PEEK * min) / (min + gap)));
+  return (width - whole * gap) / (whole + PEEK);
 }
