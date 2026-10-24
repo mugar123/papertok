@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PaperBuilder } from '../services/PaperBuilder.ts';
 import { CATEGORIES } from '../data/categoryTaxonomy.ts';
 import { resolveWithin } from '../utils/asyncTiming.ts';
-import { abstractsInFlight, keepNotablePlaces, notablePlaces, placeNotableCards, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
+import { abstractsInFlight, joinNotablePage, keepNotablePlaces, notablePlaces, placeNotableCards, preserveFeedAbstracts, mergeOpenAlexEnrichment, mergeFeedAbstracts } from '../utils/feedEnrichment.ts';
 import { createEmptyInteractionProfile, deserializeInteractionProfile, MAX_VIEWED_IDS, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds, type InteractionEvent } from '../utils/interactionProfile.ts';
 import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
@@ -109,7 +109,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     markPaperViewed: (paperId: string) => { sessionSeenPapers.current.add(paperId); },
     mergeFollowEntityMatches: (...groups: unknown[][]) => groups.flat(),
     diversifiedWeightedShuffle: <T>(values: T) => values, calculateAndAttachScore: () => 0,
-    recommendationWeights: ref({}), mergeFreshFeedPage, notablePlaces, placeNotableCards, FOLLOWED_PER_PAGE: 6, NEARBY_EXPLORATION_MAX: 8, RANDOM_EXPLORATION: 2, NOTABLE_SPARE: 2,
+    recommendationWeights: ref({}), mergeFreshFeedPage, splitFeedForReRank, notablePlaces, joinNotablePage, FOLLOWED_PER_PAGE: 6, NEARBY_EXPLORATION_MAX: 8, RANDOM_EXPLORATION: 2, NOTABLE_SPARE: 2,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
     enrichPubmedIds: () => Promise.resolve(new Map()),
@@ -1123,6 +1123,38 @@ test('a page that loads while a like inserts related papers puts its notable car
   await loading;
   assert.equal(state.papers.length, 26 + 16);
   assert.deepEqual(notableAt(state.papers), [[14, 'notable-0'], [29, 'notable-1']]);
+});
+
+// The related papers a like brings follow the last notable card when they do
+// not fit before it. Ten cards after it and five related ones passed its next
+// place, and the page counted that place as gone: it put its notable card a
+// place later, and the reader met thirty cards between two notable ones.
+test('a page puts its first notable card in the place the related papers a like inserted have passed', async t => {
+  t.mock.method(console, 'log', () => {});
+  // Notable cards fifteenth and thirtieth, ten cards after the second; the reader is on the fourth.
+  const shown = placeNotableCards(records('card', 38), ['notable-0', 'notable-1'].map(id => ({ ...paperRecord(id), _notable: true })));
+  assert.deepEqual(notableAt(shown).map(([index]) => index), [14, 29]);
+  const { state, env, run } = feed({ papers: shown, page: 2 });
+  env.visiblePaperIdRef.current = 'card-3';
+  Object.assign(env, {
+    fetchCorpusPage: async (request: { page: number; notable?: number }) => [
+      ...records(`corpus-${request.page}`, 15),
+      ...Array.from({ length: request.notable ?? 0 }, (_, index) => ({ ...paperRecord(`page-notable-${index}`), _notable: true })),
+    ],
+  });
+  const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
+    feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
+    fetchCorpusPage: async () => records('related', 5),
+    likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
+    sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
+    setPapers: env.setPapers, splitFeedForReRank, keepNotablePlaces, visiblePaperIdRef: env.visiblePaperIdRef,
+    diversifiedWeightedShuffle: <T>(queue: T) => queue, calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
+  }) as (paper: FeedRecord) => Promise<void>;
+  await expand(shown[3]);
+  assert.equal(state.papers.length, 45);
+  assert.deepEqual(notableAt(state.papers).map(([index]) => index), [14, 29], 'fifteen other cards follow the second notable card');
+  await run(false);
+  assert.deepEqual(metNotableAt(shown.slice(0, 4), state.papers, 'card-3'), [15, 30, 45, 60]);
 });
 
 // The reader saved a notable paper elsewhere. The corpus leaves out only the

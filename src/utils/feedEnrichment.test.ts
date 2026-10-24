@@ -4,6 +4,7 @@ import type { Paper } from '../models/Paper.ts';
 import {
   abstractsInFlight,
   getOpenAlexEnrichmentId,
+  joinNotablePage,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   notablePlaces,
@@ -76,6 +77,34 @@ test('one card in fifteen is notable whatever size the pages are, when each page
   const shown = Array.from({ length: 14 }, (_, index) => ({ id: `shown-${index}`, _notable: index === 13 }));
   const next = placeNotableCards<Card>(Array.from({ length: 20 }, (_, index) => ({ id: `next-${index}` })), [{ id: 'notable', _notable: true }], shown);
   assert.deepEqual(next.flatMap((paper, index) => (paper._notable ? [index] : [])), [14]);
+});
+
+// Related papers a like inserted, or a notable book that left, can leave
+// seventeen other cards after the last notable card: its next place passed
+// with no notable card. A page counted it as gone and placed its first one a
+// place later, thirty cards after the last.
+test('a notable place the feed has passed is the first card a page may still move', () => {
+  const cards: Card[] = [
+    ...Array.from({ length: 14 }, (_, index) => ({ id: `card-${index}` })),
+    { id: 'notable-0', _notable: true },
+    ...Array.from({ length: 17 }, (_, index) => ({ id: `after-${index}` })),
+  ];
+  const page: Card[] = Array.from({ length: 20 }, (_, index) => ({ id: `page-${index}` }));
+  const notable: Card[] = [{ id: 'notable-1', _notable: true }, { id: 'notable-2', _notable: true }];
+  const notableIndexes = (feed: Card[]) => feed.flatMap((paper, index) => (paper._notable ? [index] : []));
+
+  // The reader is near the end: the place is behind the cards they reached,
+  // so the first card after them takes it, three cards late.
+  assert.deepEqual(notableIndexes([...cards, ...placeNotableCards(page, notable, cards)]), [14, 32, 47]);
+  assert.deepEqual(notableIndexes(joinNotablePage(cards, page, notable, cards.length)), [14, 32, 47]);
+  assert.equal(notablePlaces(cards, page.length, cards.length), 2);
+
+  // The reader is on the eleventh card: the place is still ahead of them, and
+  // the cards after the last notable one make room for the page's first.
+  const joined = joinNotablePage(cards, page, notable, 10);
+  assert.deepEqual(notableIndexes(joined), [14, 29, 44]);
+  assert.deepEqual(joined.filter(paper => !paper._notable), [...cards.filter(paper => !paper._notable), ...page], 'every other card stays in its order');
+  assert.equal(notablePlaces(cards, page.length, 10), 2);
 });
 
 test('merges OpenAlex metadata before a feed batch is displayed', () => {

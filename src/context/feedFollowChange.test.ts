@@ -39,7 +39,7 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
     /const kept = !reset \? shown\s*: keepThroughVisible \? mergeFreshFeedPage\(shown, \[\], \{\s*anchorPaperIds: \[visiblePaperIdRef\.current\],?\s*\}\) : \[\];/,
     'through the visible card the list stays',
   );
-  assert.match(resetBranch, /return \[\.\.\.kept, \.\.\./, 'the fresh page follows');
+  assert.match(resetBranch, /return joinNotablePage\(kept, /, 'the fresh page follows');
 });
 
 test('SOURCE: the automatic retry after a failed reset keeps the option', async () => {

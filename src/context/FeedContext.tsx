@@ -111,12 +111,12 @@ import {
   abstractsInFlight,
   cardsGivenTopic,
   getOpenAlexEnrichmentId,
+  joinNotablePage,
   keepNotablePlaces,
   mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   notablePlaces,
-  placeNotableCards,
   preserveFeedAbstracts,
 } from '../utils/feedEnrichment.ts';
 import { resolveWithin, settleWithin } from '../utils/asyncTiming.ts';
@@ -974,7 +974,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
             // Re-rank the unread queue using weighted shuffle; the notable
             // cards keep their places, as in reRankFeed, and the other cards
-            // that do not fit before the last place follow it.
+            // that do not fit before the last place follow it. A place they
+            // pass has no notable card until the next page (joinNotablePage).
             const reRankedRest = keepNotablePlaces(rest, diversifiedWeightedShuffle(combinedRest.filter(p => !p._notable), {
               scorePaper: calculateAndAttachScore,
               weights: recommendationWeights.current,
@@ -1268,6 +1269,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // refresh keeps the reader's place, none on a plain reset.
     const cardsBefore = !reset ? papers
       : keepThroughVisible ? mergeFreshFeedPage(papers, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
+    // The cards the reader is on or about to reach, which a page's notable
+    // places do not move (joinNotablePage): those a re-rank locks.
+    const reachedCards = (cards: Paper[]) => splitFeedForReRank(cards, { anchorPaperIds: [visiblePaperIdRef.current] }).locked.length;
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1344,7 +1348,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // the first screen, up to ten exploration cards (STEP 5); and the
             // spares. A page has one place at least.
             seen: sessionSeenPapers.current,
-            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION)) + NOTABLE_SPARE,
+            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), reachedCards(cardsBefore)) + NOTABLE_SPARE,
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
@@ -1459,7 +1463,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
       // No paper on this page can be shown: try a later page before showing
       // seen papers again. Notable cards alone count as none: they take only
-      // their places among other cards (placeNotableCards), and the corpus
+      // their places among other cards (joinNotablePage), and the corpus
       // sends them unseen even when the reader saw every other paper on the page.
       if (filtered.every(paper => paper._notable)) {
         // Shown before, but never liked, saved, read or dismissed. A notable
@@ -1532,7 +1536,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // The page joins the list as it is now, not `papers` as this load found
       // it: while the page loaded, late answers may have filled or removed
       // cards on screen, and a network expansion may have inserted some. The
-      // notable places are counted on that list too.
+      // notable places are counted on that list too, and a place it passed
+      // after the cards the reader reached takes the page's first notable card.
       // A follow change refreshes the ranking but the reader keeps their
       // place: the cards through the visible one stay, the fresh page lands
       // below them (mergeFreshFeedPage). A plain reset still replaces all.
@@ -1541,7 +1546,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           : keepThroughVisible ? mergeFreshFeedPage(shown, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
         const keptIds = new Set(kept.map(p => p.id));
         const isNew = (p: Paper) => !keptIds.has(p.id);
-        return [...kept, ...placeNotableCards(filtered.filter(isNew), notableCards.filter(isNew), kept)];
+        return joinNotablePage(kept, filtered.filter(isNew), notableCards.filter(isNew), reachedCards(kept));
       };
       // When an empty or failed page left this load showing the seen papers
       // it carried, the feed goes on from the page after theirs: the pages
