@@ -575,6 +575,40 @@ test("each page of a ranking ranked again after the ranks served keeps the floor
   assert.deepEqual([...first, ...second, ...third].sort(), [...preprintIds, newest.id, ...articleIds].sort(), 'every paper once');
 });
 
+// OpenAlex dates an article by its day alone, so one night's articles of every
+// area share their date: of each area's 200 newest on 2026-10-23, 191 computer
+// science and 197 physics articles were dated 2026-10-22 (PAP-107 review).
+test("one night's journal articles of two areas take turns in the floor's ranks, whichever area the request reads first", async () => {
+  const { env } = corpus();
+  // A reader of an optimization and a learning category: 40 preprints of the last 20 hours.
+  const preprints = Array.from({ length: 40 }, (_, index) => {
+    const category = index % 2 ? 'cs.LG' : 'math.OC';
+    return {
+      ...arxivRecord, id: `2610.${50001 + index}`, arxivId: `2610.${50001 + index}`, title: `Optimization for learning, result ${index + 1}`,
+      allCategories: [category], categories: [category], primaryCategory: category, published: new Date(NOW - (index + 1) * 1_800_000).toISOString(),
+    };
+  });
+  const article = (area: 'cs' | 'math', index: number) => ({
+    paper: mapOpenAlexWork({
+      ...physicsWork, id: `https://openalex.org/W9${area === 'cs' ? 3 : 4}000${index + 1}`, doi: `https://doi.org/10.1000/${area}.${index + 1}`,
+      title: `A journal article of the ${area} area, number ${index + 1}`, publication_date: '2026-10-21',
+    })!,
+    lanes: [`area:${area}`],
+  });
+  await ingestPapers(env, [
+    ...preprints.map(paper => ({ paper, lanes: [] })),
+    ...Array.from({ length: 6 }, (_, index) => article('cs', index)),
+    ...Array.from({ length: 6 }, (_, index) => article('math', index)),
+  ], { now: NOW });
+  const areasOn = async (page: number) => {
+    const ids = (await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'math.OC'], page }), { now: NOW })).map(item => item.id);
+    return { cs: ids.filter(id => id.startsWith('openalex:W93')).length, math: ids.filter(id => id.startsWith('openalex:W94')).length };
+  };
+  const [first, second] = [await areasOn(0), await areasOn(1)];
+  assert.ok(first.cs > 0 && first.math > 0, `the first page holds both areas' articles: ${JSON.stringify(first)}`);
+  assert.deepEqual({ cs: first.cs + second.cs, math: first.math + second.math }, { cs: 3, math: 3 });
+});
+
 test("an area's journal lane is read beside a reader's own lanes, not out of their candidates: a like still finds a preprint 17 days back in a busy category", async () => {
   const { env, db } = corpus();
   const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');

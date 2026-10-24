@@ -635,7 +635,8 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string) 
 /**
  * Closest liked paper first, recency as the tie-breaker. A paper not yet
  * embedded ranks by recency alone, below the ones that are, so a reader is
- * never left without papers while the store catches up.
+ * never left without papers while the store catches up. Rows it cannot tell
+ * apart keep their order (`readCandidates`).
  */
 export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent' as keyof typeof RECENCY_WEIGHT } = {}) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
@@ -686,7 +687,11 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
-// for up to a dozen categories and twenty follows.
+// for up to a dozen categories and twenty follows. The candidates come in
+// turns across the lanes, each lane's newest first, and the ranking keeps that
+// order among papers it cannot tell apart: one night's articles of two areas
+// share their date, and take turns between the areas instead of following the
+// order the lanes were asked in.
 async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
   const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
   const share = (lane: string) => (AREA_LANES.has(lane)
@@ -696,16 +701,19 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
     'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
   ).bind(lane, share(lane))));
   const byWork = new Map<number, { published: string; lanes: string[] }>();
-  perLane.forEach(({ results }, index) => {
-    for (const row of results) {
+  const longest = Math.max(...perLane.map(({ results }) => results.length));
+  for (let position = 0; position < longest; position += 1) {
+    perLane.forEach(({ results }, index) => {
+      const row = results[position];
+      if (!row) return;
       const candidate = byWork.get(row.work_id);
       if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]] });
       else {
         candidate.lanes.push(lanes[index]);
         if (row.published > candidate.published) candidate.published = row.published;
       }
-    }
-  });
+    });
+  }
   return [...byWork].map(([workId, candidate]) => ({ workId, ...candidate }));
 }
 
