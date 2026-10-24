@@ -217,6 +217,10 @@ export const areaLane = (area: string) => `area:${area}`;
 const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
 const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
+// The entities whose lanes hold papers only while a reader follows them: a
+// paper names many, readers follow few, and no page reads the rest. Their
+// unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
+const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution'] as const;
 
 function entityLane(value: unknown) {
   const match = text(value).match(OPENALEX_ENTITY);
@@ -224,15 +228,21 @@ function entityLane(value: unknown) {
   return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
 }
 
+/** The lanes readers follow, for `recordLanes`. */
+async function followedLaneSet(db: D1Database) {
+  const { results } = await db.prepare('SELECT lane FROM followed_lanes').all<{ lane: string }>();
+  return new Set(results.map(row => row.lane));
+}
+
 /**
  * The lanes a paper belongs to by its own record, whichever source listed it:
- * its arXiv categories that are categories of the app, and the OpenAlex
- * authors, institutions, topics and concepts it names (what a reader follows).
- * Every reader of them shares these lanes, so a paper is filed under them only
- * inside the corpus window: an older one a reader liked, or a lane that keeps
- * listings kept, stays in the lanes it was asked for.
+ * its arXiv categories that are categories of the app, the OpenAlex topics it
+ * names, and the OpenAlex authors, institutions and concepts it names that
+ * are in `followed`. Every reader of them shares these lanes, so a paper is
+ * filed under them only inside the corpus window: an older one a reader liked,
+ * or a lane that keeps listings kept, stays in the lanes it was asked for.
  */
-export function recordLanes(paper: Partial<Paper>) {
+export function recordLanes(paper: Partial<Paper>, followed: ReadonlySet<string>) {
   const lanes = new Set<string>();
   if (paper.sources?.primary === 'arxiv' || paper.arxivId) {
     for (const category of [...(paper.allCategories || []), ...(paper.categories || [])]) {
@@ -245,7 +255,7 @@ export function recordLanes(paper: Partial<Paper>) {
   for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
   lanes.delete('');
-  return [...lanes];
+  return [...lanes].filter(lane => followed.has(lane) || !PRUNED_ENTITY_LANE_KINDS.some(kind => lane.startsWith(`${kind}:`)));
 }
 
 // ─── Writing ───
@@ -380,7 +390,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   }
   if (groups.length === 0) return 0;
 
-  const existingByKey = await lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]);
+  const [existingByKey, followed] = await Promise.all([
+    lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]),
+    followedLaneSet(db),
+  ]);
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
@@ -414,7 +427,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper) : [])])) {
+    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
       laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
     }
   }
@@ -464,6 +477,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
 export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>, now = Date.now()) {
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
+  const followed = await followedLaneSet(db);
   const changed = updates
     .filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after))
     .map(({ id, before, after }) => {
@@ -478,7 +492,7 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
           // A book or book review the enrichment revealed leaves every lane.
           offered: isFeedPublication(paper),
           keys: workKeys(paper),
-          lanes: published >= since ? recordLanes(paper) : [],
+          lanes: published >= since ? recordLanes(paper, followed) : [],
         },
       };
     });
@@ -512,12 +526,15 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  * - a notable lane drops a paper once its `listed_until` has passed, 14 days
  *   after the listing that last returned it: the lane holds the leaf's most
  *   cited, whatever else keeps the paper (a like, its date, another lane);
+ * - a paper leaves the lane of an author, concept or institution nobody
+ *   follows: `recordLanes` files those for followed entities only, and the
+ *   rows filed before it did go here. A later follow of that entity starts
+ *   without those papers, until its own harvest lists them;
  * - a paper past its keeping date, or in no category, notable, working-paper,
  *   area or followed lane, goes, unless readers still rank their feed by it
- *   (`liked_until`). The lane of an OpenAlex entity nobody follows keeps
- *   nothing: nearly every enriched paper names an author, so it would keep
- *   every paper its category trimmed. A later follow of that entity starts
- *   without those papers, until its own harvest lists them.
+ *   (`liked_until`). A topic lane nobody follows keeps nothing: nearly every
+ *   enriched paper names a topic, so it would keep every paper its category
+ *   trimmed.
  */
 // Each Workflow step scans at most 500 works, without loading their JSON.
 // The cursor is a primary key, so retries and deletions do not shift a page.
@@ -545,8 +562,12 @@ export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): 
   if (scanned.length) {
     const ids = JSON.stringify(scanned.map(row => row.id));
     // Recheck retention inside the transaction: a like or harvest can arrive
-    // after the scan. Remove child rows only for works actually deleted.
+    // after the scan. Every scanned work leaves its unfollowed entity lanes;
+    // other child rows go only for works actually deleted.
     await db.batch([
+      db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))
+        AND substr(lane, 1, instr(lane, ':') - 1) IN (SELECT value FROM json_each(?))
+        AND lane NOT IN (SELECT lane FROM followed_lanes)`).bind(ids, JSON.stringify(PRUNED_ENTITY_LANE_KINDS)),
       db.prepare(`DELETE FROM works WHERE id IN (SELECT value FROM json_each(?))
         AND (liked_until IS NULL OR liked_until < ?) AND (kept_until < ? OR published > ?
           OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id

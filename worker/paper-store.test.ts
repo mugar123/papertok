@@ -1191,7 +1191,43 @@ test('a paper only an unfollowed entity names leaves; a category, the working-pa
   db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
   await evictAll(env, NOW);
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key LIKE 'arxiv:%' ORDER BY key").map(row => row.key), ['arxiv:2610.00042', 'arxiv:2610.00043', 'arxiv:2610.00044']);
-  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 1, 'the author lane still names the paper its category keeps');
+  assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 0, 'the author lane nobody follows no longer names the paper its category keeps');
+});
+
+test('an author, concept or institution lane is filed only while someone follows it; topic lanes always', async () => {
+  const { env, db } = corpus();
+  const paper = { ...arxivRecord, authors: [{ id: 'https://openalex.org/A10', name: 'A. Author' }], concepts: [{ id: 'C20', display_name: 'Graphs' }], institutions: [{ id: 'I30', name: 'Uni' }], topics: [{ id: 'T40', display_name: 'Combinatorics' }] };
+  await ingestPapers(env, [{ paper, lanes: ['cs.LG'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['cs.CL', 'cs.LG', 'topic:T40']);
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('concept:C20', ?)").run(new Date(NOW).toISOString());
+  await ingestPapers(env, [{ paper: { ...paper, title: 'Listed again, v2' }, lanes: ['cs.LG'] }], { now: NOW });
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['concept:C20', 'cs.CL', 'cs.LG', 'topic:T40']);
+});
+
+test('eviction prunes entity lanes nobody follows and keeps topic lanes and followed ones', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
+  const [{ id }] = rows(db, 'SELECT id FROM works');
+  for (const lane of ['author:A10', 'concept:C20', 'institution:I30', 'topic:T40', 'author:A11']) {
+    db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)").run(lane, Number(id), arxivRecord.published!);
+  }
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A11', ?)").run(new Date(NOW).toISOString());
+  await evictAll(env, NOW);
+  assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['author:A11', 'cs.CL', 'cs.LG', 'topic:T40']);
+});
+
+test('a new follow is served nothing from the corpus until its own harvest files the lane', async () => {
+  const { env, db } = corpus();
+  const paper = { ...arxivRecord, authors: [{ id: 'https://openalex.org/A10', name: 'A. Author' }] };
+  await ingestPapers(env, [{ paper, lanes: ['cs.LG'] }], { now: NOW });
+  const follow = { type: 'author', canonicalId: 'A10', displayName: 'A. Author' };
+  const before = await readFeedPage(env, parseFeedRequest({ categories: [], follows: [follow], page: 0, pageSize: 15 }), { now: NOW });
+  assert.equal(before.length, 0);
+  // What the follow's harvest does: lists the lane and files the paper under it.
+  db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
+  await ingestPapers(env, [{ paper, lanes: ['author:A10'] }], { now: NOW });
+  const after = await readFeedPage(env, parseFeedRequest({ categories: [], follows: [follow], page: 0, pageSize: 15 }), { now: NOW });
+  assert.deepEqual(after.map(entry => entry._followedEntityMatches?.length), [1]);
 });
 
 // Each D1 round trip a request makes, as the statements it sent.
