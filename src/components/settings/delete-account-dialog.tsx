@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog.tsx';
 import { Button } from '../ui/button.tsx';
-import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
+import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerTitle } from '../ui/drawer.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { deleteConfirmedAccount } from './delete-confirmed-account.ts';
@@ -79,8 +79,8 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
     if (error && !working) inputRef.current?.focus();
   }, [error, working]);
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (working) return;
+  const handleOpenChange = (nextOpen: boolean, eventDetails?: { reason: string }) => {
+    if (working || eventDetails?.reason === 'swipe') return;
     setOpen(nextOpen);
   };
 
@@ -190,8 +190,8 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
           overlayClassName="settings-sheet-backdrop"
           aria-busy={working ? 'true' : undefined}
           initialFocus={inputRef}
+          data-base-ui-swipe-ignore=""
         >
-          <DrawerHandle />
           {content}
         </DrawerContent>
       </Drawer>
