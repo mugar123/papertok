@@ -3,6 +3,7 @@ declare const document: { createElement(tag: 'a'): CitationDownload; body: { app
 
 import type { Paper } from '../models/paper.ts';
 import { storedClassification } from '../models/paper.ts';
+import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 
 function authorName(author: Paper['authors'][number] | undefined) {
   if (typeof author === 'string') return author.trim();
@@ -22,6 +23,14 @@ export const STORED_SUMMARY_CAP = 4000;
 export const LEGACY_STORED_SUMMARY_CAP = 1000;
 export const STORED_AUTHOR_CAP = 20;
 
+/**
+ * The text a stored copy or an interaction keeps of a paper: its `summary`
+ * where one was built, else its `abstract`, all a corpus paper carries.
+ */
+export function abstractExcerpt(paper: Partial<Paper> = {}, chars = 500) {
+  return (paper.summary || paper.abstract || '').substring(0, chars);
+}
+
 export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; url?: string } = {}) {
   return {
     id: paper.id || paper.arxivId || paper.doi || '',
@@ -30,7 +39,7 @@ export function serializeLibraryPaper(paper: Partial<Paper> & { venue?: string; 
     ...storedClassification(paper),
     published: paper.published || paper.publicationDate || '',
     year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
-    summary: paper.summary?.substring(0, STORED_SUMMARY_CAP) || '',
+    summary: abstractExcerpt(paper, STORED_SUMMARY_CAP),
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
     journal: paper.journal || paper.venue || '',
@@ -79,7 +88,8 @@ export function papersToRIS(papers: Partial<Paper>[] = []) {
     if (paper.journal) lines.push(`JO  - ${paper.journal}`);
     if (paper.doi) lines.push(`DO  - ${paper.doi}`);
     if (paper.landingPageUrl) lines.push(`UR  - ${paper.landingPageUrl}`);
-    if (paper.summary) lines.push(`AB  - ${paper.summary.replace(/\s+/g, ' ').trim()}`);
+    const abstract = [paper.summary, paper.abstract].find(hasUsableAIAbstract);
+    if (abstract) lines.push(`AB  - ${abstract.replace(/\s+/g, ' ').trim()}`);
     lines.push('ER  -');
     return lines.join('\n');
   }).join('\n\n');

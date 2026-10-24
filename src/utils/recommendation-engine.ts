@@ -356,7 +356,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const recency = Math.max(0, weights.maxRecency * Math.exp(-ageDays / weights.recencyHalfLifeDays))
     * (1 + temporalPreference);
 
-  const citedBy = paper.openAlex?.cited_by_count ?? paper.openAlex?.citationCount ?? paper.citationCount ?? 0;
+  const citedBy = paper.citationCount ?? 0;
   // log10 saturates at maxCitationLog (10^5 citations) so mega-cited classics
   // cannot grow without bound.
   const classicBoost = temporalPreference < 0 && ageDays > 365 && citedBy > 10

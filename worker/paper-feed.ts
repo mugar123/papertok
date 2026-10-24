@@ -53,8 +53,10 @@ const NEW_LANES_HARVESTED_PER_DAY = 2_000;
 // follows and a lane asked for again is written once in FOLLOW_REFRESH_MS at
 // most, so the follows a reader asks for again take at most 20 of their 40 on
 // any day, and none on most days, leaving 20 for new ones. Past it a new
-// follow is served from what the corpus has, and a lane asked for again keeps
-// its last write.
+// follow is not added: of the lanes nobody follows, only an OpenAlex topic's
+// holds papers (paper-store.ts `recordLanes`), so any other new follow has an
+// empty lane until a later request writes it. A lane asked for again keeps its
+// last write.
 const LANES_WRITTEN_PER_READER = 40;
 const LANES_WRITTEN_PER_DAY = 4_000;
 
