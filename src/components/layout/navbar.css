@@ -156,6 +156,51 @@
   }
 }
 
+/* On /search: the page's own field (SearchPage), as wide as the bar allows. */
+.navbar-search-slot {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* On /search, the tabs as a menu; only a phone shows it (see 768px). */
+.navbar-page-picker {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.navbar-page-picker[data-popup-open] {
+  background: var(--bg-sunken);
+}
+
+.navbar-page-picker svg {
+  color: var(--text-secondary);
+}
+
+.navbar-page-menu {
+  width: 200px;
+}
+
+.navbar-page-menu .account-menu-item[aria-current='page'],
+.navbar-page-sheet .pc-share-row[aria-current='page'] {
+  font-weight: var(--fw-semibold);
+}
+
+.navbar-page-menu-check {
+  margin-left: auto;
+}
+
 /* ── Primary links ── */
 .navbar-links {
   display: flex;
@@ -460,6 +505,19 @@
   .navbar-right {
     justify-self: end;
     margin-left: 0;
+  }
+
+  /* No room for the tabs beside the field: they move into the picker. */
+  .navbar-inner--search {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+
+  .navbar-page-picker {
+    display: inline-flex;
+  }
+
+  .navbar-inner--search .navbar-links {
+    display: none;
   }
 }
 

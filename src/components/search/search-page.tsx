@@ -3,9 +3,9 @@ import type { Paper } from '../../models/paper.ts';
 import type { FollowInput } from '../../utils/following.ts';
 import type { SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entity-search-service.ts';
 import { Children, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import {
   ArrowClockwise,
-  ArrowLeft,
   CaretDown,
   Funnel,
   Briefcase,
@@ -19,7 +19,6 @@ import {
   WarningCircle,
   X,
 } from '@phosphor-icons/react';
-import { flushSync } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
@@ -243,7 +242,7 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: Fo
   );
 }
 
-export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?: (paper: Paper) => void }) {
+export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { onSaveToList?: (paper: Paper) => void; searchSlot: HTMLElement | null }) {
   const navigate = useNavigate();
   const { language, locale } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
@@ -658,12 +657,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     openSearchScope(requestRef.current, filterId, commit, () => setIsSearching(true));
   };
 
-  const handleBack = () => {
-    const historyIndex = window.history.state?.idx;
-    if (Number.isInteger(historyIndex) && historyIndex > 0) void navigate(-1);
-    else void navigate('/feed');
-  };
-
   const clearSearch = () => {
     updateQuery('', null, 'all');
   };
@@ -678,52 +671,44 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   return (
     <main className="search-page-container">
       <h1 className="visually-hidden">{'Search PaperTok'}</h1>
-      <div className="search-header">
-        <div className="search-header-main">
-          <button
-            type="button"
-            className="search-back-btn"
-            onClick={handleBack}
-            aria-label={'Back'}
-          >
-            <ArrowLeft size={22} />
-          </button>
-          <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
-            <MagnifyingGlass className="search-icon" size={18} />
-            <Input
-              type="search"
-              className="search-input"
-              placeholder={'Search PaperTok...'}
-              aria-label={'Search PaperTok'}
-              ref={searchInputRef}
-              value={query}
-              onChange={(event) => updateQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape' && query) clearSearch();
-              }}
-              autoComplete="off"
-              autoFocus
-            />
-            {/* Mounted with the field, so the wait is spoken; the results
-                region shows it, so the field draws nothing for it. */}
-            <span className="visually-hidden" role="status">{searchPending ? 'Searching' : ''}</span>
-            {query && (
-              <button
-                type="button"
-                className="search-clear-btn"
-                onClick={() => { clearSearch(); searchInputRef.current?.focus(); }}
-                aria-label={'Clear search'}
-                title={'Clear search'}
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            )}
-            {/* The scope is part of the query, so it is chosen inside the field. */}
-            <span className="search-scope-rule" aria-hidden="true" />
-            <SearchScope value={activeSearchFilter} onChange={handleSearchFilterChange} />
-          </div>
-        </div>
-      </div>
+      {/* The field lives in the app's header (Navbar's slot on /search). */}
+      {searchSlot && createPortal(
+        <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
+          <MagnifyingGlass className="search-icon" size={15} />
+          <Input
+            type="search"
+            className="search-input"
+            placeholder={'Search PaperTok...'}
+            aria-label={'Search PaperTok'}
+            ref={searchInputRef}
+            value={query}
+            onChange={(event) => updateQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && query) clearSearch();
+            }}
+            autoComplete="off"
+            autoFocus
+          />
+          {/* Mounted with the field, so the wait is spoken; the results
+              region shows it, so the field draws nothing for it. */}
+          <span className="visually-hidden" role="status">{searchPending ? 'Searching' : ''}</span>
+          {query && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => { clearSearch(); searchInputRef.current?.focus(); }}
+              aria-label={'Clear search'}
+              title={'Clear search'}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          )}
+          {/* The scope is part of the query, so it is chosen inside the field. */}
+          <span className="search-scope-rule" aria-hidden="true" />
+          <SearchScope value={activeSearchFilter} onChange={handleSearchFilterChange} />
+        </div>,
+        searchSlot,
+      )}
 
       {/* Shown on the scopes the outage is actually true for. Switching to
           Papers during an OpenAlex outage keeps it — that IS the scope it
