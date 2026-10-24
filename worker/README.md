@@ -176,10 +176,13 @@ the whole app, so cache-busting queries from one script cannot hold every seat. 
 requests one at a time (`src/services/arxiv-request-queue.ts`), gets at most one miss
 answered every 6 s, and a miss can wait up to 6 s for its seat even when nobody else is
 asking. The browser leaves the route at 8 s (`ARXIV_ROUTE_TIMEOUT_MS`). Older bundles leave
-at 6 s and can time out on such a wait, so publish the frontend before the Worker. The Worker's own callers (liked-paper lookups and the harvest's arXiv
-lanes, which ask the route in-process) and share pages may take any seat and wait up to 4 s
-(`retry-after: 4`), so the other half stays theirs. Anonymous readers still share their half
-with whoever else is asking.
+at 6 s and can time out on such a wait, so publish the frontend before the Worker. The
+Worker's own callers (liked-paper lookups and the harvest's arXiv lanes, which ask the route
+in-process) and share pages may take any seat and wait up to 4 s (`retry-after: 4`), so no
+anonymous caller can hold the other half. A signed-in reader can: the liked-paper lookups ask
+for the ids a reader sends to `POST /store/papers` (`{ ids }`, or `positiveIds` missing from
+the corpus), so one account, within its `PROVIDER_USER_MINUTE_LIMIT` requests a minute, can
+keep every seat taken. Anonymous readers still share their half with whoever else is asking.
 
 `/resources/figures?arxiv_id=` returns up to six figures of an arXiv paper, read from
 arxiv.org/html and ar5iv, which are asked at the same time. A result with figures is kept at

@@ -17,11 +17,12 @@ export const ARXIV_PACE_PERIOD_MS = 3_000;
 export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
 // A request from outside the Worker -- a reader, a guest or a script, none of
 // them identified -- may take only every other seat, 10 misses a minute
-// app-wide. A script sending cache-busting queries used to hold every seat,
-// and the Worker's own callers (liked-paper lookups and the harvest's arXiv
-// lanes, which ask in-process through `askRoute`) found none. They take any
-// seat, so the other half is always theirs. Spacing towards arXiv is
-// unchanged: still one call every three seconds.
+// app-wide, so a script sending cache-busting queries cannot hold every seat.
+// The Worker's own callers take any seat: the harvest's arXiv lanes, share
+// pages, and the liked-paper lookups (`askRoute`). A signed-in reader chooses
+// the ids those lookups ask for through POST /store/papers, so one account,
+// within its per-minute feed allowance, can still hold every seat. Spacing
+// towards arXiv is unchanged: still one call every three seconds.
 const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // Public seats are two periods apart, so a public request may wait two
 // periods: a tab whose last miss took this period's seat reaches the next
