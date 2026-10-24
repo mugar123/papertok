@@ -535,11 +535,11 @@ test('a leaf the venue gate admitted asks OpenAlex for the sources its sample fo
   const { urls, env } = relay(t, () => ({ results: [] }));
   // Sorted. cs.AI leaves out the AAAI, IJCAI and AAMAS proceedings and
   // cond-mat.supr-con three journals, none with an article among the sample's
-  // 15 newest; q-fin.GN takes the Journal of Financial and Quantitative
-  // Analysis on a sample of its own, 6 of 8 on target.
+  // 15 newest; q-fin.GN leaves out the Journal of Financial and Quantitative
+  // Analysis, which they did not reach either.
   const asked = {
     'econ.EM': [['S127742747', 'S18095783', 'S33519306', 'S49389958'], ['type:article']],
-    'q-fin.GN': [['S131117787', 'S149240962', 'S170137484', 'S193228710', 'S5353659'], ['type:article']],
+    'q-fin.GN': [['S131117787', 'S149240962', 'S170137484', 'S5353659'], ['type:article']],
     'cs.AI': [['S139930977', 'S196139623'], ['type:article|conference-paper']],
     'cond-mat.supr-con': [['S24807848', 'S4210237713', 'S93909106'], ['type:article', 'primary_topic.id:T10037']],
     'hep-ex': [['S173952182', 'S187585107', 'S4210238307', 'S94052278'], ['type:article', 'authors_count:>99']],

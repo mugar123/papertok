@@ -598,7 +598,6 @@ export const OPENALEX_LEAF_VENUES: Readonly<Record<string, { readonly sources: r
       'S131117787', // Review of Finance (Oxford University Press)
       'S149240962', // Journal of Financial Economics (Elsevier BV)
       'S170137484', // Review of Financial Studies (Oxford University Press)
-      'S193228710', // Journal of Financial and Quantitative Analysis (Cambridge University Press)
       'S5353659', // The Journal of Finance (Wiley)
     ],
     filters: ['type:article'],

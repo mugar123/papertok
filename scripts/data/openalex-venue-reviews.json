@@ -3653,33 +3653,7 @@
           {"workId":"https://openalex.org/W7221365407","label":"on-target"},
           {"workId":"https://openalex.org/W7221053564","label":"on-target"}
         ]
-      },
-      "sourceSamples": [
-        {
-          "capturedAt": "2026-10-23T19:26:34Z",
-          "query": "https://api.openalex.org/works?filter=primary_location.source.id:S193228710,type:article,from_publication_date:2026-07-25,to_publication_date:2026-10-23,is_retracted:false,has_abstract:true&sort=publication_date:desc&page=1&per-page=15&select=id,doi,title,type,publication_date,publication_year,language,abstract_inverted_index,primary_location,open_access,primary_topic",
-          "works": [
-            {"id":"https://openalex.org/W7214926359","type":"article","title":"How Does Domestic Competition Affect Firms’ Foreign Market Expansion?","publication_date":"2026-09-30","source":"S193228710"},
-            {"id":"https://openalex.org/W7214787475","type":"article","title":"Flow Diversification","publication_date":"2026-09-29","source":"S193228710"},
-            {"id":"https://openalex.org/W7214155290","type":"article","title":"Connected Social Media","publication_date":"2026-09-24","source":"S193228710"},
-            {"id":"https://openalex.org/W7214164527","type":"article","title":"Political Connections, Financial Constraints, and Corporate Taxation","publication_date":"2026-09-24","source":"S193228710"},
-            {"id":"https://openalex.org/W7213458478","type":"article","title":"Private Equity and Gas Emissions: Evidence from Electric Power Plants","publication_date":"2026-09-17","source":"S193228710"},
-            {"id":"https://openalex.org/W7171765906","type":"article","title":"The Risk of Outsourcing: How External Advisors Influence Mutual Fund Performance","publication_date":"2026-07-30","source":"S193228710"},
-            {"id":"https://openalex.org/W7171696701","type":"article","title":"Macroeconomic Fundamentals and the Shape of Sovereign Credit Risk","publication_date":"2026-07-29","source":"S193228710"},
-            {"id":"https://openalex.org/W7171723999","type":"article","title":"Inflation and Corporate Credit Risk: Global Evidence","publication_date":"2026-07-29","source":"S193228710"}
-          ],
-          "labels": [
-            {"workId":"https://openalex.org/W7214926359","label":"off-target"},
-            {"workId":"https://openalex.org/W7214787475","label":"on-target"},
-            {"workId":"https://openalex.org/W7214155290","uncertain":true},
-            {"workId":"https://openalex.org/W7214164527","label":"on-target"},
-            {"workId":"https://openalex.org/W7213458478","label":"on-target"},
-            {"workId":"https://openalex.org/W7171765906","label":"on-target"},
-            {"workId":"https://openalex.org/W7171696701","label":"on-target"},
-            {"workId":"https://openalex.org/W7171723999","label":"on-target"}
-          ]
-        }
-      ]
+      }
     },
     "q-fin.MF": {
       "sample": {

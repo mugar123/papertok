@@ -20,15 +20,15 @@ const sources = {
 
 interface Options {
   asked?: string[]; from?: string[]; onTarget?: number; size?: number; uncertain?: number;
-  types?: string; extra?: string[]; capturedAt?: string; to?: string; params?: Record<string, string>;
+  types?: string; extra?: string[]; capturedAt?: string; to?: string; params?: Record<string, string>; abstract?: boolean;
 }
 
 // The 15 newest works of `asked`, in turn from the sources in `from`, the
 // first `onTarget` of them on target and the next `uncertain` doubted.
-function sample({ asked = ['S901', 'S902', 'S903'], from = asked, onTarget = 12, size = 15, uncertain = 0, types = 'article', extra = [], capturedAt = '2026-10-22T12:00:00Z', to = '2026-10-22', params = {} }: Options = {}) {
+function sample({ asked = ['S901', 'S902', 'S903'], from = asked, onTarget = 12, size = 15, uncertain = 0, types = 'article', extra = [], capturedAt = '2026-10-22T12:00:00Z', to = '2026-10-22', params = {}, abstract = true }: Options = {}) {
   const start = new Date(Date.parse(`${to}T00:00:00Z`) - 90 * 86_400_000).toISOString().slice(0, 10);
   const query = new URL('https://api.openalex.org/works');
-  query.searchParams.set('filter', [`primary_location.source.id:${asked.join('|')}`, `type:${types}`, `from_publication_date:${start}`, `to_publication_date:${to}`, 'is_retracted:false', 'has_abstract:true', ...extra].join(','));
+  query.searchParams.set('filter', [`primary_location.source.id:${asked.join('|')}`, `type:${types}`, `from_publication_date:${start}`, `to_publication_date:${to}`, 'is_retracted:false', ...(abstract ? ['has_abstract:true'] : []), ...extra].join(','));
   query.searchParams.set('sort', 'publication_date:desc');
   query.searchParams.set('page', '1');
   query.searchParams.set('per-page', '15');
@@ -122,6 +122,23 @@ test('a source its curator did not file under the leaf stays out of the lane, wh
   // A filing must name taxonomy leaves.
   write({ 'econ.EM': { sample: sample() } }, { ...sources, S901: { ...sources.S901, leaves: ['econ.EMX'] } });
   assert.match(run().stderr, /S901: leaves must list the taxonomy leaves its curator filed it under/);
+});
+
+// The Journal of Financial and Quantitative Analysis entered q-fin.GN on 6 of 8
+// articles, asked with has_abstract:true where q-fin.GN's sample was not.
+test("a source's own sample passes only as the leaf's does: a full page of 15, asked with the leaf's filters", t => {
+  const { write, run, coverage, output } = setup(t);
+  const lane = sample({ asked: ['S901', 'S904'], from: ['S901'] });
+  write({ 'econ.EM': { sample: lane, sourceSamples: [sample({ asked: ['S904'], size: 1, onTarget: 1 })] } });
+  assert.equal(run().status, 0);
+  const [row] = coverage() as Array<{ sources: string[]; sourceSamples: Record<string, string> }>;
+  assert.deepEqual([row.sources, row.sourceSamples], [['S901'], { S904: '1/1' }]);
+  const before = readFileSync(output, 'utf8');
+  write({ 'econ.EM': { sample: sample({ asked: ['S901', 'S904'], from: ['S901'], abstract: false }), sourceSamples: [sample({ asked: ['S904'], onTarget: 15 })] } });
+  const result = run();
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /econ\.EM: a source sample asks the leaf's filters of one of its sources, once/);
+  assert.equal(readFileSync(output, 'utf8'), before);
 });
 
 test('a lane keeps the types and the topic or author filter its sample asked with', t => {

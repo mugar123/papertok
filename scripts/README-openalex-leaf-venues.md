@@ -43,8 +43,9 @@ filter. Nothing else is accepted.
 A leaf passes with a full page of 15 and at least 10 on target without doubt,
 the topic lanes' rule (`README-openalex-leaf-topics.md`). Its lane then asks
 for the sources its curator filed under it that have at least one article on
-target without doubt, or whose own sample, asked with the leaf's filters, is at
-least two thirds on target. A sample tests the curated list and does not add
+target without doubt, or whose own sample passes the leaf's gate: a full page
+of 15, asked with the leaf's filters (the same types, abstract filter and
+topic or author filter), at least 10 on target. A sample tests the curated list and does not add
 to it: a leaf whose sample passes on sources its curator left out has no lane
 (`not-curated` in the report).
 The leaf's precision says nothing about a source its 15 newest did not reach,
@@ -115,13 +116,16 @@ cond-mat.supr-con, cond-mat.quant-gas, cond-mat.mes-hall, astro-ph.GA,
 astro-ph.SR and physics.atom-ph. hep-th's sample, the same 15 with and without
 `authors_count:<100`, is recorded without it.
 
-The passing leaves' samples asked for 433 sources. Their lanes ask for 243;
-the other 190 had no article on target among their leaf's 15 newest. 37 of
+The passing leaves' samples asked for 433 sources. Their lanes ask for 242;
+the other 191 had no article on target among their leaf's 15 newest. 37 of
 them are conferences, which publish their proceedings once a year (AAAI,
-IJCAI, ACL, NeurIPS, CHI and SIGIR among them). Three journals entered on a
-sample of their own: Physics of Fluids (14 of 15), Nonlinear Dynamics (11 of
-15) and the Journal of Financial and Quantitative Analysis (6 of 8). The
-Journal of the Acoustical Society of America (9 of 15) did not.
+IJCAI, ACL, NeurIPS, CHI and SIGIR among them). Two journals entered on a
+sample of their own: Physics of Fluids (14 of 15) and Nonlinear Dynamics (11
+of 15). The Journal of the Acoustical Society of America (9 of 15) did not.
+Nor did the Journal of Financial and Quantitative Analysis, absent from
+q-fin.GN's 15 newest: it published 8 articles in the 90 days, too few for a
+sample of its own, and the one its curator took (6 of 8 on target) asked
+`has_abstract:true` where q-fin.GN's sample did not, so it is not recorded.
 
 Without `has_abstract:true`, a lane also brings the articles its labeller
 could not see. From the curators' counts, more than half of the 90-day

@@ -121,12 +121,14 @@ function checkLeaf(leaf: string, entry: Reviews['leaves'][string], records: Revi
   const lane = checkSample(leaf, entry?.sample);
   const precision = lane.sampleSize ? lane.onTarget / lane.sampleSize : null;
   const status = lane.sampleSize < minimumSample ? 'insufficient-sample' : precision! >= minimumPrecision ? 'passed' : 'rejected';
-  // A source sample answers for one of the leaf's sources, asked as the leaf asks.
+  // A source sample answers for one of the leaf's sources, asked as the leaf
+  // asks: the same types, abstract filter and topic or author filter.
   const ownSamples = new Map<string, { sampled: number; onTarget: number }>();
   for (const value of entry.sourceSamples || []) {
     const own = checkSample(leaf, value);
     const [id] = own.sources;
-    if (own.sources.length !== 1 || !lane.sources.includes(id) || ownSamples.has(id) || own.types !== lane.types || own.extra.join() !== lane.extra.join()) {
+    if (own.sources.length !== 1 || !lane.sources.includes(id) || ownSamples.has(id) || own.types !== lane.types
+      || own.withAbstractOnly !== lane.withAbstractOnly || own.extra.join() !== lane.extra.join()) {
       throw new Error(`${leaf}: a source sample asks the leaf's filters of one of its sources, once`);
     }
     ownSamples.set(id, own.bySource.get(id)!);
@@ -136,9 +138,12 @@ function checkLeaf(leaf: string, entry: Reviews['leaves'][string], records: Revi
   const curated = (id: string) => Array.isArray(records[id]?.leaves) && records[id].leaves.includes(leaf);
   // The leaf's precision says nothing about a source its sample never reached,
   // or reached only off target: the lane leaves it out unless a sample of its
-  // own is two thirds on target.
-  const admitted = status !== 'passed' ? [] : lane.sources.filter(id => curated(id) && (lane.bySource.get(id)!.onTarget > 0
-    || (ownSamples.get(id)?.sampled && ownSamples.get(id)!.onTarget / ownSamples.get(id)!.sampled >= minimumPrecision)));
+  // own passes the leaf's gate, a full page of 15 two thirds on target.
+  const ownPasses = (id: string) => {
+    const own = ownSamples.get(id);
+    return own !== undefined && own.sampled >= minimumSample && own.onTarget / own.sampled >= minimumPrecision;
+  };
+  const admitted = status !== 'passed' ? [] : lane.sources.filter(id => curated(id) && (lane.bySource.get(id)!.onTarget > 0 || ownPasses(id)));
   for (const id of admitted) {
     const record = records[id];
     if (typeof record.name !== 'string' || !record.name.trim() || (record.publisher !== null && typeof record.publisher !== 'string')) {
