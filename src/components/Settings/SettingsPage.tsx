@@ -527,7 +527,7 @@ function NotificationsPage() {
       <section className="settings-section" aria-labelledby="settings-notifications-heading">
         <SectionHeading id="settings-notifications-heading" title={copy.notifications} description={copy.notificationsDescription} />
         <div className="settings-list">
-          <div className="settings-row">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
               <div className="settings-row-title-line">
                 <h3>{copy.emailUpdates}</h3>

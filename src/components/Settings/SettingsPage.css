@@ -272,18 +272,20 @@
   justify-self: end;
 }
 
-/* A count beside a row's title, on the ghost button's hover fill. */
+/* A count beside a row's title: a round badge in the page's paper, so it
+   reads as lifted out of the sunken panel. */
 .settings-count {
   display: inline-flex;
-  min-width: 22px;
-  height: 22px;
+  min-width: 20px;
+  height: 20px;
   align-items: center;
   justify-content: center;
   padding: 0 6px;
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  border-radius: var(--radius-full);
+  background: var(--bg-primary);
+  color: var(--text-primary);
   font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
 }
 
