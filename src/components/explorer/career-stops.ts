@@ -2,7 +2,8 @@ import type { OrcidRecord } from '../../services/orcid-service.ts';
 
 type Affiliation = NonNullable<OrcidRecord>['employments'][number];
 export type CareerStop = Affiliation & { kind: 'study' | 'work' };
-export type Stop = number | 'fold';
+// A place on the line: a record's index in the career, or the fold.
+export type LineSlot = number | 'fold';
 
 const year = (value: string | undefined, missing: number) => (value ? Number(value) : missing);
 
@@ -30,7 +31,7 @@ export function stopYears(stop: CareerStop) {
 // The stops a line with room for `capacity` shows: all of them when they fit
 // or the reader opened the fold; otherwise the first, a fold for the middle,
 // and as many of the latest as are left.
-export function lineStops(count: number, capacity: number, open: boolean): Stop[] {
+export function lineStops(count: number, capacity: number, open: boolean): LineSlot[] {
   const all = Array.from({ length: count }, (_, at) => at);
   if (open || count <= capacity) return all;
   return [0, 'fold', ...all.slice(count - (capacity - 2))];
@@ -42,7 +43,8 @@ export function foldYears(hidden: CareerStop[]) {
   const dated = hidden.filter((stop) => stop.startDate);
   if (!dated.length) return null;
   const from = dated[0].startDate;
-  const to = dated.some(isCurrent) ? 'Present' : String(Math.max(...dated.map((stop) => Number(stop.endDate ?? stop.startDate))));
+  if (dated.some(isCurrent)) return `${from} → Present`;
+  const to = String(Math.max(...dated.map((stop) => Number(stop.endDate ?? stop.startDate))));
   return from === to ? from : `${from} → ${to}`;
 }
 

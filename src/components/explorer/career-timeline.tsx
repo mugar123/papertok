@@ -13,13 +13,16 @@ import { useId, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, Ref } from 'react';
 import { AnimatePresence, MotionConfig, animate, motion, useReducedMotion } from 'framer-motion';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, MOTION_SHEET_S } from '../../utils/motion-curves.ts';
-import type { CareerStop, Stop } from './career-stops.ts';
+import type { CareerStop, LineSlot } from './career-stops.ts';
 import { foldYears, isCurrent, lineStops, stopWidth, stopYears } from './career-stops.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import './career-timeline.css';
 
 type Side = 'below' | 'above';
 type Offsets = Map<number, { x: number; y: number }>;
+
+// How far a record's dot has to travel to reach `to`.
+const offsetTo = (from: DOMRect, to: DOMRect) => ({ x: to.left - from.left, y: to.top - from.top });
 
 const KIND_LABEL = { study: 'Studies', work: 'Work' } as const;
 
@@ -36,7 +39,6 @@ const FADE_IN_LATE = { duration: MOTION_SHEET_S / 3, delay: (MOTION_SHEET_S * 2)
 const STOP_MIN_PX = 86;
 const STOP_GAP_PX = 20;
 
-// One mark for the line and the legend.
 function Dot({ kind, current, layoutId }: { kind: CareerStop['kind']; current?: boolean; layoutId?: string }) {
   return <motion.span layoutId={layoutId} className="career-dot" data-kind={kind} data-current={current || undefined} />;
 }
@@ -113,6 +115,7 @@ function Fold({ ref, id, hidden, side, column }: {
   return (
     <motion.li ref={ref} initial={false} exit={{ opacity: 0, transition: FADE_AWAY }} className="career-stop" data-side={side} style={{ gridColumn: column }}>
       <motion.div layoutId={`${id}-fold`} layout="position" className="career-body">
+        <span className="visually-hidden">{`${hidden.length} more records${span ? ',' : ''} `}</span>
         {span && <span className="career-years">{span}</span>}
       </motion.div>
     </motion.li>
@@ -192,17 +195,17 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
   // What the fold holds when closed, open or not. The first of them is the
   // fold's gray dot (a shared layoutId), so that one travels on its own.
   const hidden = career.slice(1, career.length - (capacity - 2));
-  const folded = hidden.map((_, i) => i + 1);
+  const foldedAt = hidden.map((_, i) => i + 1);
   const dotOf = (at: number) => listRef.current?.querySelector<HTMLElement>(`li[data-at='${at}'] .career-dot`);
 
   // Opening: each record the fold lets out starts where the fold's dot is and
   // travels to its own place; the segments between them grow once they
-  // arrive.
-  const opening = useRef<DOMRect | null>(null);
+  // arrive. With reduced motion the records only fade in where they rest.
+  const opening = useRef<DOMRect | 'fade' | null>(null);
   const [closing, setClosing] = useState<Offsets | null>(null);
   const setFold = (open: boolean) => {
     if (open) {
-      if (!reduce) opening.current = listRef.current?.querySelector('.career-fold-dot')?.getBoundingClientRect() ?? null;
+      opening.current = reduce ? 'fade' : listRef.current?.querySelector('.career-fold-dot')?.getBoundingClientRect() ?? null;
       setExpanded(true);
       setUnfolded(true);
       return;
@@ -223,11 +226,11 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
     // Back into the fold: each record measures how far it is from where the
     // fold will stand (its first hidden record), then the fold closes and the
     // records leave by that offset (`intoFold`).
-    const target = dotOf(folded[0])?.getBoundingClientRect();
+    const target = dotOf(foldedAt[0])?.getBoundingClientRect();
     const offsets: Offsets = new Map();
-    for (const at of folded.slice(1)) {
+    for (const at of foldedAt.slice(1)) {
       const dot = dotOf(at)?.getBoundingClientRect();
-      if (dot && target) offsets.set(at, { x: target.left - dot.left, y: target.top - dot.top });
+      if (dot && target) offsets.set(at, offsetTo(dot, target));
     }
     setClosing(offsets);
     setExpanded(false);
@@ -236,18 +239,18 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
     const from = opening.current;
     if (!from) return;
     opening.current = null;
-    folded.forEach((at, i) => {
+    foldedAt.forEach((at, i) => {
       const dot = dotOf(at);
       const li = dot?.closest('li');
       if (!dot || !li) return;
       // The gray dot carries the first record itself; its text fades in.
-      if (i === 0) {
+      if (from === 'fade' || i === 0) {
         animate(li, { opacity: [0, 1] }, MOVE);
         return;
       }
-      const to = dot.getBoundingClientRect();
+      const { x, y } = offsetTo(dot.getBoundingClientRect(), from);
       animate(li, {
-        transform: [`translate(${from.left - to.left}px, ${from.top - to.top}px)`, 'translate(0px, 0px)'],
+        transform: [`translate(${x}px, ${y}px)`, 'translate(0px, 0px)'],
         opacity: [0, 1],
       }, { transform: MOVE, opacity: FADE_IN_LATE });
     });
@@ -255,7 +258,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
 
   // Stops take turns above and below the line by place in the career, so a
   // stop keeps its side when the fold opens around it.
-  const sideOf = (at: Stop, i: number): Side => ((at === 'fold' ? i : at) % 2 === 0 ? 'below' : 'above');
+  const sideOf = (at: LineSlot, i: number): Side => ((at === 'fold' ? i : at) % 2 === 0 ? 'below' : 'above');
   const fold = shown.indexOf('fold');
   const kinds = new Set(career.map((stop) => stop.kind));
 
@@ -271,7 +274,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
           )}
         </header>
         {/* Stops render once the width is known, before the first paint, so a
-            long career starts folded. */}
+            long career is sized to cut its next stop at the card's edge. */}
         <div ref={bodyRef} className="career-frame">
           <motion.ol layoutScroll ref={listRef} id={`${id}-line`} className="career-line" data-foldable={tooLong || undefined} data-opened={(expanded && unfolded) || undefined} style={openStop === null ? undefined : { '--career-stop': `${openStop}px` }}>
             {capacity !== Infinity && (
@@ -285,7 +288,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
                 </AnimatePresence>
                 {fold >= 0 && (
                   <motion.span
-                    layoutId={`${id}-dot-${folded[0]}`}
+                    layoutId={`${id}-dot-${foldedAt[0]}`}
                     className="career-dot career-fold-dot"
                     aria-hidden="true"
                     style={{ gridColumn: fold + 1 }}
