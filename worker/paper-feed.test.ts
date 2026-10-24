@@ -5,9 +5,13 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
+import type { FollowEntity } from '../src/utils/following.ts';
+import type { PaperStoreError } from './paper-store.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { fetchFollowedEntityCandidates } from '../src/context/feed-follows.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
 import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -519,6 +523,52 @@ test('a reader who follows a hundred and twenty entities still gets their follow
   const body = { categories: [], follows, positiveIds, page: 0, pageSize: 6, order: 'recent', seen, skipsSeen: true };
   assert.ok(JSON.stringify(body).length > 16_384, 'the request is longer than the 16 KB the route took before the filter');
   assert.deepEqual(ids((await ask(body)).papers), ['2610.70001']);
+});
+
+// PAP-107: a journal article of a whole area, as its OpenAlex lane lists it (synthetic).
+const physicsArticle = mapOpenAlexWork({
+  id: 'https://openalex.org/W7223244690',
+  doi: 'https://doi.org/10.7566/jpsj.95.111002',
+  title: 'High-harmonic Generation Spectroscopy in van der Waals Materials',
+  type: 'article',
+  publication_date: new Date(Date.now() - DAY_MS).toISOString().slice(0, 10),
+  authorships: [{ author: { id: 'https://openalex.org/A5102845839', display_name: 'Kento Uchida' }, institutions: [] }],
+  abstract_inverted_index: { 'High-harmonic': [0], generation: [1], probes: [2], 'electron dynamics in crystalline solids.': [3] },
+  primary_location: { is_oa: false, landing_page_url: 'https://doi.org/10.7566/jpsj.95.111002', source: { id: 'https://openalex.org/S119212824', display_name: 'Journal of the Physical Society of Japan', type: 'journal' } },
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  primary_topic: {
+    id: 'https://openalex.org/T10566', display_name: 'Laser-Matter Interactions and Applications',
+    subfield: { id: 'https://openalex.org/subfields/3107', display_name: 'Atomic and Molecular Physics, and Optics' },
+    field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
+  },
+})!;
+
+test("the app's follows' page for follows with no lane of their own reads no area lane, and answers no papers where nothing is followed by lane or category", async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const quantum = arxivRecordPaper({
+    arxivId: '2610.00021', title: 'A quantum error-correcting code', abstract: 'A code.', authors: ['Ana Pérez'], categories: ['quant-ph'],
+    doi: null, journalRef: null, comments: null, published: new Date(Date.now() - 2 * DAY_MS).toISOString(), updated: '',
+  });
+  await ingestPapers(env, [{ paper: quantum, lanes: [] }, { paper: physicsArticle, lanes: ['area:physics'] }]);
+  // The app's request, answered by this route as the router answers it.
+  const fetchWorker = async (_url: string, init: RequestInit) => {
+    try {
+      return Response.json(await ask(JSON.parse(String(init.body))));
+    } catch (error) {
+      return Response.json({ code: (error as PaperStoreError).code }, { status: (error as PaperStoreError).status });
+    }
+  };
+  const followsPage = (follows: FollowEntity[]) => fetchFollowedEntityCandidates(follows, {
+    page: 0, order: 'recent', positiveIds: [], negativeIds: [], excludedIds: [], seen: new Set(),
+    categoryIdsOf: follow => (follow.canonicalId === 'quant-ph' ? ['quant-ph'] : []),
+  }, { fetchWorker, apiBase: 'https://worker.example' });
+  // A reader whose only follow is one of the app's categories: the page is
+  // that category's papers, not the area's journal articles, which match no follow.
+  const categoryOnly = await followsPage([{ type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics' }]);
+  assert.deepEqual(categoryOnly.map(item => item.id), ['2610.00021']);
+  // A reader who follows only an institution known by its ROR id, which no lane serves.
+  assert.deepEqual(await followsPage([{ type: 'institution', canonicalId: '00f54p054', displayName: 'Stanford University' }]), []);
 });
 
 test("a reader's next pages from the kept order read each stored id once, however far they scroll", async t => {

@@ -62,12 +62,16 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * for notable papers.
  */
 export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
+  const read = follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS);
   const body = {
     categories,
     // Only the follows the Worker reads travel (`parseFeedRequest`): the first
     // FEED_MAX_FOLLOWS with a lane. A topic follow that is one of the app's
-    // categories has none; it is asked for as that category.
-    follows: follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS).map(({ type, canonicalId, displayName, metadata }) => ({
+    // categories has none; it is asked for as that category. When no follow
+    // has a lane, the first still travels, so the request stays the follows'
+    // page: the Worker reads no area lane for it, and answers it with no
+    // papers when it has no categories either (`handleCorpusFeed`).
+    follows: (read.length ? read : follows.slice(0, 1)).map(({ type, canonicalId, displayName, metadata }) => ({
       type,
       canonicalId,
       displayName,
