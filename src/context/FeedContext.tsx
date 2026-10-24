@@ -1466,7 +1466,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }
         if (shownBefore) {
           console.log('No later page has a paper the reader has not seen; showing seen papers again.');
-          filtered = shownBefore.papers;
+          // This page's unseen notable cards, the only papers left in
+          // `filtered`, take their places among them.
+          filtered = [...shownBefore.papers, ...filtered];
         }
       }
 

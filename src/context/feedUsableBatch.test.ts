@@ -239,10 +239,12 @@ test('a refresh whose first page was all shown before replaces the cards on scre
     'the list is replaced, neither shown again nor extended');
 });
 
-for (const [name, page, asked] of [
-  // The pagination ceiling stops the search at page 10.
-  ['every later page was shown before too', pageOf, 11],
-  ['no later page has papers', (start: number) => start === 0 ? records('page-0') : [], 2],
+for (const [name, page, asked, lastPageNotable] of [
+  // The pagination ceiling stops the search at page 10, whose unseen notable
+  // cards are the first screen's: the corpus offers them whatever page it is asked for.
+  ['every later page was shown before too', pageOf, 11, [[14, 'notable-10-0']]],
+  // An empty page has no notable card either.
+  ['no later page has papers', (start: number) => start === 0 ? records('page-0') : [], 2, []],
 ] as const) {
   for (const [cards, withCards] of notableVariants) {
     test(`a reload whose first page was all shown before still gets a feed when ${name}${cards}`, async t => {
@@ -251,7 +253,8 @@ for (const [name, page, asked] of [
       env.loadPapersRef.current = run;
       await run(true, null);
       assert.equal(state.error, null);
-      assert.deepEqual(state.papers.map(paper => paper.id), pageIds(0), 'the feed is not empty: the first page is shown again, without notable cards');
+      assert.deepEqual(state.papers.filter(paper => !paper._notable).map(paper => paper.id), pageIds(0), 'the feed is not empty: the first page is shown again');
+      assert.deepEqual(state.papers.flatMap((paper, index) => (paper._notable ? [[index, paper.id]] : [])), cards ? lastPageNotable : []);
       assert.equal(state.hasMore, true, 'the reader can scroll on');
       assert.equal(starts.length, asked, JSON.stringify(starts));
     });
