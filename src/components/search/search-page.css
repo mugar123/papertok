@@ -35,6 +35,13 @@
   transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .search-input-wrapper:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-secondary);
+  }
+}
+
 .search-input-wrapper:focus-within {
   border-color: var(--border-ink);
 }
