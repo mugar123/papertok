@@ -47,11 +47,18 @@ export function readFeedSnapshot(
   { storage, resumeMemory = feedResumeMemory }: { storage?: SnapshotStorage; resumeMemory?: ResumeMemory } = {},
 ): (FeedSnapshot & { savedAt: number }) | null {
   if (!userId || !signature) return null;
+  // With no snapshot to restore, For You loads its first page again, and the
+  // place the reader left would open that new page past its first cards.
+  const withoutPlace = () => {
+    resumeMemory.remember(forYouScrollKey(userId));
+    resumeMemory.persist(forYouScrollKey(userId));
+    return null;
+  };
   try {
     const target = storage ?? localStorage;
     const snapshot = JSON.parse(target.getItem(feedSnapshotKey(userId, signature)) || 'null');
     if (!snapshot || snapshot.publicationPolicy !== 3 || Date.now() - snapshot.savedAt > FEED_SNAPSHOT_TTL_MS || !Array.isArray(snapshot.papers)) {
-      return null;
+      return withoutPlace();
     }
     // A card can be saved before Crossref answered, or kept because the reader
     // was on it. The reader comes back to their card (resumedCardIndex), and
@@ -65,9 +72,7 @@ export function readFeedSnapshot(
     // their place, and For You loads again from its first card.
     if (reader === null) {
       target.removeItem(feedSnapshotKey(userId, signature));
-      resumeMemory.remember(forYouScrollKey(userId));
-      resumeMemory.persist(forYouScrollKey(userId));
-      return null;
+      return withoutPlace();
     }
     const met = reader + 1;
     const ahead = papers.slice(met).filter(isFeedPublication);
@@ -76,7 +81,7 @@ export function readFeedSnapshot(
       ...keepNotablePlaces(papers.slice(met), ahead.filter(paper => !paper._notable), ahead.filter(paper => paper._notable)),
     ] };
   } catch {
-    return null;
+    return withoutPlace();
   }
 }
 

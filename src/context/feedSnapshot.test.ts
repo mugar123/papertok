@@ -112,6 +112,26 @@ test('a reader who left past the cards a snapshot keeps starts For You again fro
   assert.equal(session.size, 0, 'their place is gone');
 });
 
+// A snapshot is restored for fifteen minutes after its page loaded. Expired,
+// or dropped by another tab of the account, it left the reader's place
+// behind, and For You opened its new first page at that index: a reader who
+// was on a notable card landed on the new page's.
+for (const state of ['expired', 'missing']) {
+  test(`with its snapshot ${state}, the reader's place goes and For You opens its new first page on the first card`, (t) => {
+    const saved = placeNotableCards(Array.from({ length: 28 }, (_, index) => card(`card-${index}`)), [notable('notable-0'), notable('notable-1')]);
+    const { write, read, readerCard, session } = snapshots({ paperId: 'notable-0', index: 14 });
+    if (state === 'expired') {
+      write(saved);
+      const savedAt = Date.now();
+      t.mock.method(Date, 'now', () => savedAt + 16 * 60 * 1000);
+    }
+    assert.equal(read(), null);
+    assert.equal(session.size, 0, 'their place is gone');
+    const fresh = placeNotableCards(Array.from({ length: 21 }, (_, index) => card(`fresh-${index}`)), [notable('fresh-notable-0')]);
+    assert.equal(readerCard(fresh), null, 'the new page opens on its first card');
+  });
+}
+
 // The reader dismissed the notable card at 14, and the next one kept its place:
 // the thirtieth card they meet, the list's twenty-ninth.
 test('a notable card the reader has not reached stays ahead of them in a restored snapshot', () => {
