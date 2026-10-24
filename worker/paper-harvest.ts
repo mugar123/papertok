@@ -81,12 +81,13 @@ function rejectsLane(error: unknown) {
  * the next UTC day: a lane whose step stops mid-lane past its timeout has had
  * it too, and the step's retry passes the lane over, so a lane has one turn a
  * run. A harvest clears the record. A refusal (`SourceRefused`: a spent share,
- * part or day, a pace beat, or a ledger that cannot answer) puts back what was
- * there, so the lane keeps its turn. A 5xx, a timeout, a provider's own 429 or
- * another 4xx that is not about the lane's request says nothing about the
- * lane, so it costs the turn and no more, and an outage of any length leaves
- * no wait behind it. A rejected request (`rejectsLane`) adds a wait for each
- * rejection in a row (`FAILED_TURN_NIGHTS`).
+ * part or day, a pace beat, a quota ledger that answers with an error, or one
+ * the OpenAlex relay cannot reach) puts back what was there, so the lane keeps
+ * its turn. A 5xx, a timeout, a provider's own 429 or another 4xx that is not
+ * about the lane's request says nothing about the lane, so it costs the turn
+ * and no more, and an outage of any length leaves no wait behind it. A
+ * rejected request (`rejectsLane`) adds a wait for each rejection in a row
+ * (`FAILED_TURN_NIGHTS`).
  */
 async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
   const db = env.PAPER_STORE!;
