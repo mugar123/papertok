@@ -532,7 +532,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
   }
   if (url.pathname === '/arxiv') {
     try {
-      return await handleArxiv(request, env);
+      return await handleArxiv(request, env, 'public');
     } catch (error) {
       captureWorkerException(error);
       console.error('arXiv route failed', error);

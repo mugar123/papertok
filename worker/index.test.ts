@@ -15,6 +15,7 @@ import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
+import { fetchArxivPapers } from './paper-sources.ts';
 import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
@@ -1063,6 +1064,76 @@ test('caches an arXiv answer for an hour at the edge', async () => {
   );
 
   assert.match(response.headers.get('cache-control')!, /s-maxage=3600\b/);
+});
+
+// arXiv's Atom answer for one id, as `parseArxivAtom` reads it (synthetic).
+const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2610.01234v1</id>
+    <published>2026-10-20T00:00:00Z</published>
+    <updated>2026-10-20T00:00:00Z</updated>
+    <title>A liked paper</title>
+    <summary>Looked up by id.</summary>
+    <author><name>Ana Pérez</name></author>
+    <arxiv:primary_category term="cs.CL"/>
+    <category term="cs.CL"/>
+  </entry>
+</feed>`;
+
+// One anonymous script sending cache-busting queries used to hold every seat
+// a caller could wait for, and the Worker's own lookups (a reader's liked
+// papers, the harvest's arXiv lanes) were refused with it.
+test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
+  // The last millisecond of a three-second period: three seats lie within the
+  // four seconds a caller may wait, the next one a millisecond away, so the
+  // seats taken here cost almost no real sleep.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:00:05.999Z') });
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+  const statuses: number[] = [];
+  const papers = await withWorkerFetchMock(async input => {
+    const lookup = new URL(String(input)).searchParams.has('id_list');
+    return new Response(lookup ? LIKED_ARXIV_FEED : ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
+  }, async () => {
+    for (let miss = 0; miss < 3; miss += 1) {
+      const response = await reportApi.fetch(new Request(`https://papertok-report-api.example/arxiv?search_query=all:x${miss}`), env);
+      statuses.push(response.status);
+    }
+    return fetchArxivPapers(env, ['2610.01234']);
+  });
+
+  assert.deepEqual(papers.map(paper => paper.arxivId), ['2610.01234']);
+  assert.ok(statuses.includes(429), `the anonymous misses took every seat: ${statuses.join(', ')}`);
+});
+
+// Each figures miss fetches arxiv.org/html and ar5iv, and anyone can ask
+// without an Origin, so misses share a minute ceiling of their own.
+const FIGURES_URL = 'https://papertok-report-api.example/resources/figures?arxiv_id=2401.00001';
+
+test('refuses a figures miss with 429 once the figures minute is spent, without asking a renderer', async () => {
+  const fetched: string[] = [];
+  const response = await withWorkerFetchMock(
+    async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
+    () => reportApi.fetch(new Request(FIGURES_URL), {
+      REQUEST_QUOTA_LEDGER: scriptedQuotaLedger({ actions: [] }, { refuse: key => key.startsWith('figures:') }),
+    }),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
+  assert.deepEqual(fetched, []);
+});
+
+test('a figures miss with no quota ledger is refused with 503 and asks no renderer', async () => {
+  const fetched: string[] = [];
+  const response = await withWorkerFetchMock(
+    async input => { fetched.push(String(input)); return new Response('<html></html>', { headers: { 'content-type': 'text/html' } }); },
+    () => reportApi.fetch(new Request(FIGURES_URL), {}),
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  assert.deepEqual(fetched, []);
 });
 
 // Every specialist route, not just the one that happened to be covered when this

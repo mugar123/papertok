@@ -16,6 +16,14 @@ export const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 // seat somebody else could have used.
 export const ARXIV_PACE_PERIOD_MS = 3_000;
 export const ARXIV_PACE_MAX_WAIT_MS = 4_000;
+// A request from outside the Worker -- a reader, a guest or a script, none of
+// them identified -- may take only every other seat, 10 misses a minute
+// app-wide. A script sending cache-busting queries used to hold every seat,
+// and the Worker's own callers (liked-paper lookups and the harvest's arXiv
+// lanes, which ask in-process through `askRoute`) found none. They take any
+// seat, so the other half is always theirs. Spacing towards arXiv is
+// unchanged: still one call every three seconds.
+const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // An hour, up from ten minutes. arXiv's listings change once a day (the
 // announcement at 20:00 ET), so a page served from the edge for an hour is as
 // fresh as one fetched twice -- and with one upstream call every three seconds
@@ -40,7 +48,9 @@ function safeArxivParam(name: string, rawValue: unknown) {
   return value;
 }
 
-export async function handleArxiv(request: Request, env: WorkerEnv) {
+// `caller` is 'public' when the router hands over a request from outside the
+// Worker; in-process callers pass null.
+export async function handleArxiv(request: Request, env: WorkerEnv, caller: 'public' | null = null) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -68,6 +78,7 @@ export async function handleArxiv(request: Request, env: WorkerEnv) {
       namespace: 'arxiv',
       periodMs: ARXIV_PACE_PERIOD_MS,
       maxWaitMs: ARXIV_PACE_MAX_WAIT_MS,
+      accepts: caller === 'public' ? PUBLIC_SEAT : undefined,
     });
     if (!seat.accepted && !seat.code) {
       return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
