@@ -115,7 +115,8 @@ A leaf's own lane (`cs.LG`, `econ.EM`) also holds OpenAlex journal articles:
 those of the topics or the journals and proceedings a labelled sample admitted
 for that leaf ([topic lanes](scripts/README-openalex-leaf-topics.md),
 [venue lanes](scripts/README-openalex-leaf-venues.md)). The leaf's readers get
-them beside its preprints, under the same ranking.
+them beside its preprints, under the same ranking. Such an article leaves its
+area lane (below), so the readers of the area's other leaves no longer get it.
 
 Area lanes (`area:<area>`) hold OpenAlex journal articles labeled with an area
 rather than one of its leaves. [paper-store.ts](worker/paper-store.ts) adds them

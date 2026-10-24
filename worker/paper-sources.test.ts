@@ -8,6 +8,7 @@ import type { WorkerEnv } from './env.ts';
 import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
+import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
@@ -603,6 +604,30 @@ test("a venue lane's articles reach the readers of its leaf alone, a paywalled o
   assert.equal(hasUsableAIAbstract(page[1].abstract), true);
   // A reader of a leaf without a venue lane gets neither.
   assert.deepEqual(await readFeedPage(store, parseFeedRequest({ categories: ['econ.GN'] })), []);
+});
+
+// leaf-filing.ts takes a paper a leaf of its area holds out of the area's lane,
+// as it does a topic lane's: the readers of the area's leaves without a lane
+// of their own, who got it from the area lane, no longer do.
+test("a venue lane's article leaves its area's lane, so readers of the area's leaves without a lane no longer get it", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
+  const econometrics = {
+    id: 'https://openalex.org/T10000', display_name: 'Asset pricing',
+    subfield: { id: 'https://openalex.org/subfields/2002', display_name: 'Economics and Econometrics' },
+    field: { id: 'https://openalex.org/fields/20', display_name: 'Economics, Econometrics and Finance' },
+    domain: { id: 'https://openalex.org/domains/2', display_name: 'Social Sciences' },
+  };
+  const { env } = relay(t, () => ({ results: [{ ...gmmArticle, primary_topic: econometrics }] }));
+  const { binding } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const reader = async (leaf: string) => (await readFeedPage(store, parseFeedRequest({ categories: [leaf] }))).map(paper => paper.id);
+  await harvestLane(store, { source: 'openalex-areas', lane: 'area:econ' });
+  assert.equal(await fileAreaPapers(store), 0);
+  assert.deepEqual(await reader('econ.GN'), ['openalex:W7221756071']);
+  await harvestLane(store, { source: 'openalex-venues', lane: 'econ.EM' });
+  assert.equal(await fileAreaPapers(store), 1);
+  assert.deepEqual(await reader('econ.GN'), []);
+  assert.deepEqual(await reader('econ.EM'), ['openalex:W7221756071']);
 });
 
 // The nightly run harvests the venue lanes before the series, so a journal

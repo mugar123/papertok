@@ -67,6 +67,17 @@ journal's reviewed row (#198, PAP-85). A working paper stored on an earlier
 night keeps its own row, Working paper tag included, when its journal article
 arrives and merges into it (`PaperBuilder.merge`).
 
+A venue lane's article reaches its leaf's readers. When its area's lane
+(`openalex-areas`) listed it too, `fileAreaPapers` (`worker/leaf-filing.ts`)
+takes it out of the area lane, as it does a topic lane's, and the readers of
+the area's other leaves, who got it there, no longer see it. That costs most
+the leaves of an area with an area lane and no topic or venue lane of their
+own: econ.GN loses the econ.EM and econ.TH journals' articles; q-fin.PM,
+q-fin.PR, q-fin.RM, q-fin.TR, q-fin.ST and q-fin.CP lose those of the Journal
+of Finance, the Journal of Financial Economics, the Review of Financial
+Studies and the Review of Finance (q-fin.GN) and of the q-fin.MF journals;
+cs.DS, cs.GT, math.AG and math.GR lose their areas' venue journals'.
+
 Each night a lane reads up to 3 pages of 200, newest first, and stops after a
 page that is not full; its first night reads up to 5. Unlike a topic lane, it
 does not stop at a page older than its last run: OpenAlex dates every Physics
