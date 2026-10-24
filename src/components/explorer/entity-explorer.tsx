@@ -147,6 +147,58 @@ const PARTICIPANTS_FOLD_OUT: Transition = {
 };
 
 
+const ORCID_LINKS_SHOWN = 3;
+
+// The author's ORCID links, one per row: the first few, and the rest behind
+// a toggle that opens them the way the project participants open.
+function OrcidLinks({ links }: { links: Array<{ name?: string; url: string }> }) {
+  const [expanded, setExpanded] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
+  const row = (link: { name?: string; url: string }, i: number) => (
+    <li key={i}>
+      <a href={link.url} target="_blank" rel="noopener noreferrer" className="orcid-link">
+        <Globe size={14} aria-hidden="true" />
+        <span className="orcid-link-name">{link.name || 'External link'}</span>
+        <ArrowSquareOut size={14} aria-hidden="true" />
+      </a>
+    </li>
+  );
+  return (
+    <>
+      <ul id="orcid-links-list" className="orcid-links">
+        {links.slice(0, ORCID_LINKS_SHOWN).map(row)}
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.li
+              key="more"
+              className="orcid-links-more"
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, transition: PARTICIPANTS_FOLD_OUT }}
+              transition={prefersReducedMotion
+                ? { duration: 0 }
+                : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}
+            >
+              <ul className="orcid-links">{links.slice(ORCID_LINKS_SHOWN).map((link, i) => row(link, ORCID_LINKS_SHOWN + i))}</ul>
+            </motion.li>
+          )}
+        </AnimatePresence>
+      </ul>
+      {links.length > ORCID_LINKS_SHOWN && (
+        <button
+          type="button"
+          className="project-show-more"
+          onClick={() => setExpanded(value => !value)}
+          aria-expanded={expanded}
+          aria-controls="orcid-links-list"
+        >
+          {expanded ? 'Show fewer' : `Show ${links.length - ORCID_LINKS_SHOWN} more`}
+        </button>
+      )}
+    </>
+  );
+}
+
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
   const { ref, ...tooltip } = useClipTooltip();
@@ -401,6 +453,10 @@ export default function EntityExplorer({
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState(() => resumed?.loadedWikiImageUrl ?? '');
   const [orcidInfo, setOrcidInfo] = useState<Awaited<ReturnType<typeof getOrcidRecord>>>(null);
   const career = useMemo(() => (orcidInfo ? careerStops(orcidInfo) : []), [orcidInfo]);
+  const orcidLinks = useMemo(() => (orcidInfo?.researcherUrls ?? []).flatMap((link) => {
+    const url = safeExternalUrl(link.url);
+    return url ? [{ name: link.name, url }] : [];
+  }), [orcidInfo]);
   // A known ORCID reserves its slot on the very first live frame. Waiting for
   // the entity refresh to raise this flag would remove and reinsert the slot.
   const [isLoadingOrcid, setIsLoadingOrcid] = useState(() => type === 'author' && Boolean(entity?.orcid || extractOrcid(id)));
@@ -2338,15 +2394,31 @@ export default function EntityExplorer({
             </div>
           )}
 
-          {type === 'author' && career.length > 0 && (
-            <CareerTimeline
-              career={career}
-              onOrganization={(stop) => {
-                void findInstitution({ rorUrl: stop.ror, name: stop.organization }).then((inst) => {
-                  if (inst) navigateToEntity('institution', inst.id);
-                });
-              }}
-            />
+          {type === 'author' && orcidInfo && !isLoadingOrcid && (career.length > 0 || orcidInfo.biography || orcidLinks.length > 0) && (
+            <div className="orcid-profile">
+              {career.length > 0 && (
+                <CareerTimeline
+                  career={career}
+                  onOrganization={(stop) => {
+                    void findInstitution({ rorUrl: stop.ror, name: stop.organization }).then((inst) => {
+                      if (inst) navigateToEntity('institution', inst.id);
+                    });
+                  }}
+                />
+              )}
+              {orcidInfo.biography && (
+                <section aria-labelledby="orcid-about-title">
+                  <h2 id="orcid-about-title" className="project-section-title">About</h2>
+                  <p className="orcid-biography">{orcidInfo.biography}</p>
+                </section>
+              )}
+              {orcidLinks.length > 0 && (
+                <section aria-labelledby="orcid-links-title">
+                  <h2 id="orcid-links-title" className="project-section-title">Links</h2>
+                  <OrcidLinks key={orcidInfo.orcid} links={orcidLinks} />
+                </section>
+              )}
+            </div>
           )}
 
           {/* Project Summary - expandable */}
@@ -2387,32 +2459,6 @@ export default function EntityExplorer({
 
           
 
-          {/* ORCID Career Section */}
-          {orcidInfo && !isLoadingOrcid && (orcidInfo.biography || orcidInfo.researcherUrls?.length > 0) && (
-            <div className="orcid-career-section orcid-career-section--animate">
-              {/* Biography */}
-              {orcidInfo.biography && (
-                <div className="orcid-biography">
-                  {orcidInfo.biography}
-                </div>
-              )}
-
-              {/* External links */}
-              {orcidInfo.researcherUrls?.length > 0 && (
-                <div className="orcid-links-row">
-                  {orcidInfo.researcherUrls.map((u, i) => {
-                    const safeUrl = safeExternalUrl(u.url);
-                    return safeUrl ? (
-                      <a key={i} href={safeUrl} target="_blank" rel="noopener noreferrer" className="orcid-ext-link">
-                        <Globe size={12} />
-                        {u.name || ('External link')}
-                      </a>
-                    ) : null;
-                  })}
-                </div>
-              )}
-            </div>
-          )}
         </div>
         
       </div>

@@ -3,14 +3,6 @@
   --career-work: var(--tint-red-fg);
   /* Between stops: room for a record's text to pass the next stop's dot. */
   --career-gap: var(--space-5);
-  /* Records travelling in from past the edge (closing an open career that
-     scrolled) are clipped at the card, not drawn over the page. */
-  overflow: hidden;
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  animation: settle var(--motion-base) linear backwards;
 }
 
 /* The negative top margin takes back the extra height of the toggle, so
@@ -19,10 +11,8 @@
 .career-title {
   flex: 1;
   margin: 0;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+  font: 600 0.75rem/1.3 var(--font-mono);
+  color: var(--text-secondary);
 }
 .career-frame {
   /* The list takes its new height at once and the frame follows it; until it
@@ -115,12 +105,9 @@
 
 .career-legend {
   display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
-  margin: var(--space-4) 0 0; padding: var(--space-3) 0 0; border-top: 1px solid var(--border-subtle);
+  margin: var(--space-3) 0 0; padding: 0;
   list-style: none; font-size: 12px; color: var(--text-secondary);
 }
 .career-legend li { display: inline-flex; align-items: center; gap: var(--space-2); }
 .career-legend-mark { position: relative; width: 22px; height: 16px; flex: 0 0 auto; }
 
-@media (prefers-reduced-motion: reduce) {
-  .career { animation: none; }
-}

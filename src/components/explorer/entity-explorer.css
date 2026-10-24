@@ -2298,74 +2298,68 @@
   }
 }
 
-/* ─── ORCID career ─── */
-.orcid-career-section {
+/* ─── ORCID profile ───
+   The author's ORCID record as one box: career, about and links, each a
+   section under a rule. Records travelling in from past the edge (closing an
+   open career that scrolled) are clipped at the box, not drawn over the page. */
+.orcid-profile {
+  overflow: hidden;
+  padding: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  animation: settle var(--motion-base) linear backwards;
+}
+
+.orcid-profile > * + * {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.orcid-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.orcid-links li + li,
+.orcid-links-more > .orcid-links {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.orcid-links-more {
+  overflow: hidden;
+}
+
+.orcid-link {
   display: flex;
-  flex-direction: column;
-  padding: var(--space-5) var(--space-5) 4px;
-}
-
-/* The badge resolves in the skeleton's place; the details settle underneath.
-   Opacity advances evenly, independent of the small displacement. Backwards
-   fill reserves only the delayed first frame and releases every transform
-   after the entrance, keeping text and interactive content at rest. */
-.orcid-career-section--animate > * {
-  animation:
-    settle var(--motion-base) linear backwards,
-    authorContentTravel var(--motion-base) var(--ease-out) backwards;
-}
-
-@keyframes authorContentTravel {
-  from { transform: translateY(6px); }
-  to { transform: none; }
-}
-
-.orcid-career-section--animate > *:nth-child(1) { animation-delay: 0s; }
-.orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.04s; }
-.orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.08s; }
-.orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.12s; }
-.orcid-career-section--animate > *:nth-child(n + 5) { animation-delay: 0.16s; }
-
-.orcid-ext-link {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font: 500 0.6875rem/1.4 var(--font-mono);
-  letter-spacing: 0.02em;
+  gap: var(--space-2);
+  min-height: 40px;
+  font: 500 0.8125rem/1.3 var(--font-mono);
   color: var(--text-secondary);
   text-decoration: none;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-default);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
+  overflow-wrap: anywhere;
+}
+
+.orcid-link-name {
+  flex: 1;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .orcid-ext-link:hover {
-    border-color: var(--tint-green-line);
-    color: var(--tint-green-fg);
+  .orcid-link:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
   }
 }
 
 .orcid-biography {
-  background: var(--bg-sunken);
-  border-left: 3px solid var(--tint-green-line);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-5);
+  margin: 0;
   font-family: var(--font-serif);
   font-size: 0.9375rem;
   line-height: 1.6;
   color: var(--text-secondary);
-}
-
-.orcid-links-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: var(--space-5);
 }
 
 /* ─── Mobile ─── */
@@ -2550,7 +2544,7 @@
   .ex-skel,
   .ex-skel::after,
   .ehc-stat-value.is-settled,
-  .orcid-career-section--animate > *,
+  .orcid-profile,
   .ehc-orcid-stamp svg,
   .explorer-container--author .ehc-header,
   .ehc-spinner,
@@ -2569,8 +2563,7 @@
 
   /* Reduced motion means less movement, not less feedback: these keep their
      colour transitions and lose only the travel. */
-  .ee-author-card.staggerFadeUp,
-  .orcid-career-section--animate > * {
+  .ee-author-card.staggerFadeUp {
     animation: none;
     opacity: 1;
     transform: none;
