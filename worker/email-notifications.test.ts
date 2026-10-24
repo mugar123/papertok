@@ -3816,7 +3816,8 @@ test('all accounts together get twenty test emails a UTC day', async t => {
     await h.subscribe();
     assert.equal((await h.sendTest()).ok, true);
   }
-  h.advanceMinutes(1);
+  // In the same minute: the minute paces one account, so a burst across
+  // accounts is refused by the day's limit and gets its code.
   h.setAccount('reader-20');
   await h.subscribe();
   const sourcesBefore = h.calls.sources;

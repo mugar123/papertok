@@ -2303,14 +2303,14 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
 // not given back: a test that fails after its reservation has already made its
 // source calls.
 async function reserveTestEmail(env: WorkerEnv, uid: string, now: number) {
-  for (const [periodKey, subjectLimit, code] of [
-    [`email-test:minute:${Math.floor(now / TEST_IDEMPOTENCY_WINDOW_MS)}`, 1, 'EMAIL_TEST_RATE_LIMIT'],
-    [`email-test:day:${utcDay(now)}`, TEST_ACCOUNT_DAILY_LIMIT, 'EMAIL_TEST_DAILY_LIMIT'],
+  // The minute paces one account and counts nothing app-wide (`globalAmount`
+  // 0), so a burst across accounts is refused by the day's limit, with its code.
+  for (const [periodKey, subjectLimit, globalAmount, code] of [
+    [`email-test:minute:${Math.floor(now / TEST_IDEMPOTENCY_WINDOW_MS)}`, 1, 0, 'EMAIL_TEST_RATE_LIMIT'],
+    [`email-test:day:${utcDay(now)}`, TEST_ACCOUNT_DAILY_LIMIT, 1, 'EMAIL_TEST_DAILY_LIMIT'],
   ] as const) {
-    // The ledger needs a global ceiling for every period. The minute reuses the
-    // day's, which only a burst across many accounts could reach.
     const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
-      periodKey, subject: uid, subjectLimit, globalLimit: TEST_GLOBAL_DAILY_LIMIT,
+      periodKey, subject: uid, subjectLimit, globalLimit: TEST_GLOBAL_DAILY_LIMIT, globalAmount,
     });
     if (quota.code) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
     if (!quota.accepted) throw new EmailNotificationError(code, 429);
