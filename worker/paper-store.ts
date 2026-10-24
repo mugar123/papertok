@@ -588,6 +588,23 @@ export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): 
   return scanned.length === 500 ? scanned.at(-1)!.id : null;
 }
 
+// A leaf with fewer papers than this published in the last LEAF_FLOOR_DAYS is
+// to be proposed to the OpenAlex topic-lane gate
+// (scripts/README-openalex-leaf-topics.md) (Nicolás, 2026-10-24).
+const LEAF_FLOOR = 300;
+const LEAF_FLOOR_DAYS = 30;
+
+/** The leaves under LEAF_FLOOR, fewest first, for the nightly run to report. */
+export async function thinLeaves(db: D1Database, now: number): Promise<Array<{ leaf: string; recent: number }>> {
+  const { results } = await db.prepare(`SELECT lane, COUNT(*) AS recent FROM work_lanes
+    WHERE lane IN (SELECT value FROM json_each(?)) AND published >= ? GROUP BY lane`)
+    .bind(JSON.stringify([...LEAF_IDS]), daysFromNow(-LEAF_FLOOR_DAYS, now)).all<{ lane: string; recent: number }>();
+  const recent = new Map(results.map(row => [row.lane, row.recent]));
+  return [...LEAF_IDS].map(leaf => ({ leaf, recent: recent.get(leaf) ?? 0 }))
+    .filter(entry => entry.recent < LEAF_FLOOR)
+    .sort((a, b) => a.recent - b.recent || a.leaf.localeCompare(b.leaf));
+}
+
 // ─── Embedding ───
 
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);

@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import {
   arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
-  readFeedPage, readVector, rewriteWorks,
+  readFeedPage, readVector, rewriteWorks, thinLeaves,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
@@ -806,6 +806,17 @@ test('eviction resumes through bounded batches and removes expired records with 
   for (const table of ['work_keys', 'work_lanes', 'work_vectors']) {
     assert.deepEqual(rows(db, `SELECT work_id FROM ${table}`).map(row => row.work_id), [900]);
   }
+});
+
+test('the leaves under 300 papers in 30 days are reported, fewest first', async () => {
+  const { env, db } = corpus();
+  const lane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  for (let id = 1; id <= 300; id += 1) lane.run('mech.fluid', id, daysFromNow(-29, NOW));
+  lane.run('mech.cad', 301, daysFromNow(-1, NOW));
+  lane.run('mech.cad', 302, daysFromNow(-29, NOW));
+  lane.run('eess.telecom', 303, '2009-06-01T00:00:00.000Z');
+  const thin = await thinLeaves(env.PAPER_STORE!, NOW);
+  assert.deepEqual(thin.filter(entry => ['mech.fluid', 'mech.cad', 'eess.telecom'].includes(entry.leaf)), [{ leaf: 'eess.telecom', recent: 0 }, { leaf: 'mech.cad', recent: 2 }]);
 });
 
 test("a vector keeps its leading dimensions, and a cut one compares like a whole one", () => {
