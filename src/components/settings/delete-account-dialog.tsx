@@ -1,11 +1,9 @@
-import type { ComponentProps } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { CircleNotch, Trash, X } from '@phosphor-icons/react';
 import { deleteAccount } from '../../services/account-deletion-service.ts';
 import { reauthenticateCurrentUser } from '../../services/auth-identity-service.ts';
 import { popupReadiness } from '../../services/firebase.ts';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
-import useIsPhone from '../../hooks/use-is-phone.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import {
   AlertDialog,
@@ -15,7 +13,6 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog.tsx';
 import { Button } from '../ui/button.tsx';
-import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { deleteConfirmedAccount } from './delete-confirmed-account.ts';
@@ -38,19 +35,13 @@ const COPY = {
   },
 };
 
-function DrawerCancel({ variant = 'outline', ...props }: ComponentProps<typeof DrawerClose> & Pick<ComponentProps<typeof Button>, 'variant' | 'size'>) {
-  return <DrawerClose render={<Button variant={variant} />} {...props} />;
-}
-
 /**
  * An alert dialog (`role="alertdialog"`): the scrim does not dismiss it, the
  * answer has to be Cancel, the X, Escape, or the typed phrase. SettingsPage
  * mounts it only while it is wanted, so it opens on mount and owns its
  * `open` flag; Base UI plays the leave and then `onOpenChangeComplete(false)`
  * is the one call to the parent's `onClose`. While the deletion runs nothing
- * closes it: the outcome is either `onDeleted` or an error to read. On a
- * phone it is a bottom Drawer with the same rules: the scrim does not
- * dismiss it, and nothing does while the deletion runs.
+ * closes it: the outcome is either `onDeleted` or an error to read.
  */
 export default function DeleteAccountDialog({ open: openOnMount = true, onClose, onDeleted }: { open?: boolean; onClose: () => void; onDeleted: () => void | Promise<void>; language?: string }) {
   const copy = COPY['en'];
@@ -62,10 +53,6 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   const [step, setStep] = useState<'' | 'signingIn' | 'deleting'>('');
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const isPhone = useIsPhone();
-  const Cancel = isPhone ? DrawerCancel : AlertDialogCancel;
-  const Title = isPhone ? DrawerTitle : AlertDialogTitle;
-  const Description = isPhone ? DrawerDescription : AlertDialogDescription;
 
   const confirmed = typed.trim() === copy.phrase;
   const working = step !== '';
@@ -84,10 +71,6 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   const handleOpenChange = (nextOpen: boolean) => {
     if (working) return;
     setOpen(nextOpen);
-  };
-
-  const handleOpenChangeComplete = (isOpen: boolean) => {
-    if (!isOpen) onClose();
   };
 
   // The Worker deletes nothing for a sign-in that is not recent, so the person
@@ -110,101 +93,11 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
     }
   };
 
-  const content = (
-    <>
-      <Cancel
-        variant="ghost"
-        size="icon-sm"
-        className="delete-account-close"
-        disabled={working}
-        aria-label={copy.close}
-      >
-        <X size={18} />
-      </Cancel>
-      <Title>{copy.title}</Title>
-      <Description>{copy.lead}</Description>
-      <p>
-        <a
-          href="/privacy.html"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${copy.privacy} (${copy.privacyNewTab})`}
-        >
-          {copy.privacy}
-        </a>
-      </p>
-      <div className="delete-account-field">
-        <Label htmlFor={inputId}>{copy.typeLabel}</Label>
-        <Input
-          ref={inputRef}
-          id={inputId}
-          type="text"
-          autoComplete="off"
-          spellCheck="false"
-          value={typed}
-          disabled={working}
-          onChange={(event) => setTyped(event.target.value)}
-          aria-invalid={error ? 'true' : undefined}
-          aria-describedby={error ? errorId : undefined}
-        />
-      </div>
-      <p
-        id={errorId}
-        className={`delete-account-status${working || held ? ' is-working' : ''}`}
-        role="status"
-        aria-live="polite"
-      >
-        {step === 'signingIn' && copy.signingIn}
-        {step === 'deleting' && copy.working}
-        {held && copy.preparing}
-        {error}
-      </p>
-      <div className="delete-account-actions">
-        <Cancel disabled={working}>
-          {copy.cancel}
-        </Cancel>
-        <Button
-          variant="outline"
-          className="delete-account-confirm"
-          onClick={() => { void handleDelete(); }}
-          disabled={!confirmed || working || held}
-          focusableWhenDisabled={held}
-          aria-describedby={held ? errorId : undefined}
-        >
-          {working || held ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
-          {copy.confirm}
-        </Button>
-      </div>
-    </>
-  );
-
-  if (isPhone) {
-    return (
-      <Drawer
-        open={open}
-        onOpenChange={handleOpenChange}
-        onOpenChangeComplete={handleOpenChangeComplete}
-        disablePointerDismissal
-      >
-        <DrawerContent
-          role="alertdialog"
-          className="settings-sheet delete-account-sheet"
-          overlayClassName="settings-sheet-backdrop"
-          aria-busy={working ? 'true' : undefined}
-          initialFocus={inputRef}
-        >
-          <DrawerHandle />
-          {content}
-        </DrawerContent>
-      </Drawer>
-    );
-  }
-
   return (
     <AlertDialog
       open={open}
       onOpenChange={handleOpenChange}
-      onOpenChangeComplete={handleOpenChangeComplete}
+      onOpenChangeComplete={(isOpen) => { if (!isOpen) onClose(); }}
     >
       <AlertDialogContent
         className="delete-account-dialog"
@@ -212,7 +105,69 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
         aria-busy={working ? 'true' : undefined}
         initialFocus={inputRef}
       >
-        {content}
+        <AlertDialogCancel
+          variant="ghost"
+          size="icon-sm"
+          className="delete-account-close"
+          disabled={working}
+          aria-label={copy.close}
+        >
+          <X size={18} />
+        </AlertDialogCancel>
+        <AlertDialogTitle>{copy.title}</AlertDialogTitle>
+        <AlertDialogDescription>{copy.lead}</AlertDialogDescription>
+        <p>
+          <a
+            href="/privacy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`${copy.privacy} (${copy.privacyNewTab})`}
+          >
+            {copy.privacy}
+          </a>
+        </p>
+        <div className="delete-account-field">
+          <Label htmlFor={inputId}>{copy.typeLabel}</Label>
+          <Input
+            ref={inputRef}
+            id={inputId}
+            type="text"
+            autoComplete="off"
+            spellCheck="false"
+            value={typed}
+            disabled={working}
+            onChange={(event) => setTyped(event.target.value)}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? errorId : undefined}
+          />
+        </div>
+        <p
+          id={errorId}
+          className={`delete-account-status${working || held ? ' is-working' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {step === 'signingIn' && copy.signingIn}
+          {step === 'deleting' && copy.working}
+          {held && copy.preparing}
+          {error}
+        </p>
+        <div className="delete-account-actions">
+          <AlertDialogCancel disabled={working}>
+            {copy.cancel}
+          </AlertDialogCancel>
+          <Button
+            variant="outline"
+            className="delete-account-confirm"
+            onClick={() => { void handleDelete(); }}
+            disabled={!confirmed || working || held}
+            focusableWhenDisabled={held}
+            aria-describedby={held ? errorId : undefined}
+          >
+            {working || held ? <CircleNotch className="delete-account-spinner" size={16} aria-hidden="true" /> : <Trash size={16} aria-hidden="true" />}
+            {copy.confirm}
+          </Button>
+        </div>
       </AlertDialogContent>
     </AlertDialog>
   );

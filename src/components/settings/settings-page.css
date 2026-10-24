@@ -250,9 +250,7 @@
   grid-column: 1;
 }
 
-/* ── Sign-in methods: one line each, the name on the left, the account or
-   action on the right, on a phone too. The name keeps its width and a long
-   address ends in an ellipsis. ── */
+/* ── Sign-in methods: the provider's own mark, its account, the action ── */
 .settings-row.settings-row-inline {
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 56px;
@@ -262,8 +260,6 @@
   justify-self: end;
 }
 
-/* A row whose action stays beside its title and description on a phone,
-   instead of dropping under them. */
 .settings-row.settings-row-side {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -272,22 +268,17 @@
   justify-self: end;
 }
 
-/* A count beside a row's title: a round badge in the page's paper, so it
-   reads as lifted out of the sunken panel. */
 .settings-count {
-  display: inline-flex;
-  min-width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--bg-primary);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
+}
+
+.settings-row-pill {
+  margin-top: var(--space-2);
+  white-space: normal;
 }
 
 .settings-method-name {
@@ -436,6 +427,8 @@
   color: var(--tint-neutral-fg);
   background: var(--tint-neutral-bg);
   font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
 }
 
 .settings-status.is-success {
@@ -468,7 +461,6 @@
   cursor: pointer;
 }
 
-/* The switches are ruled like the rows of the other panels. */
 .profile-switch + .profile-switch {
   padding-top: var(--space-5);
   border-top: 1px solid var(--settings-panel-line);
@@ -493,8 +485,6 @@
 }
 
 @media (max-width: 900px) {
-  /* No room for a column beside the content: the rail gives way to the
-     picker above it (.settings-switcher). */
   .settings-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
@@ -569,7 +559,6 @@
   color: var(--text-secondary);
 }
 
-/* With room for the rail beside the content, the rail is the navigation. */
 @media (min-width: 901px) {
   .settings-switcher {
     display: none;

@@ -211,13 +211,26 @@ function OrderedSearchSections({ children, preferredSection }: PropsWithChildren
   ));
 }
 
+function inResultsTransition(update: () => void) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof document.startViewTransition !== 'function') {
+    update();
+    return false;
+  }
+  const root = document.documentElement;
+  root.classList.add('search-results-transition');
+  const transition = document.startViewTransition(() => flushSync(update));
+  const cleanup = () => root.classList.remove('search-results-transition');
+  transition.finished.then(cleanup, cleanup);
+  return true;
+}
+
 function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: FollowInput; isFollowing: (entity: FollowInput) => boolean; isPending: (entity: FollowInput) => boolean; onToggle: (event: MouseEvent, entity: FollowInput) => void }) {
   const following = isFollowing(entity);
   const pending = isPending(entity);
 
-  // The detail pages' Follow (ui/follow-toggle.tsx). The click still goes
-  // through `onToggle`, which stops it from reaching the row link underneath
-  // and asks the following context.
+  // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
+  // `pressed`. The click still goes through `onToggle`, which stops it from
+  // reaching the row link underneath and asks the following context.
   return (
     <FollowToggle
       pressed={following}
@@ -251,16 +264,9 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState<string | null>(null);
-  const [activeSearchFilter, setActiveSearchFilter] = useState<SearchScopeId>(() => {
-    const scope = searchParams.get('scope');
-    return SEARCH_FILTER_OPTIONS.find(option => option.id === scope)?.id ?? 'all';
-  });
-  // The search that runs and its scope live in the address too, so Back from
-  // a result's page finds them again rather than an empty search. Written once
-  // per search actually run (never per keystroke: browsers throttle
-  // replaceState), replacing the entry, and only when the address would change.
+  const activeSearchFilter: SearchScopeId = SEARCH_FILTER_OPTIONS.find(option => option.id === searchParams.get('scope'))?.id ?? 'all';
   const writeSearchUrl = (term: string, scope: SearchScopeId) => {
-    const next = new URLSearchParams(term ? { q: term, ...(scope !== 'all' && { scope }) } : {});
+    const next = new URLSearchParams({ ...(term && { q: term }), ...(scope !== 'all' && { scope }) });
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
   };
   const syncSearchUrl = useEffectEvent((term: string) => writeSearchUrl(term, activeSearchFilter));
@@ -306,6 +312,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   // The search of the current query. Aborting its controller is what ends it:
   // every path that starts another one, or clears the query, aborts it first.
   const requestRef = useRef<SearchRun | null>(null);
+  const transitionTermRef = useRef<string | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -369,7 +376,12 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     // Unless the reader has opened another scope meanwhile: its own answer
     // paints then (handleSearchFilterChange). This one, with that scope's
     // sections still pending, would paint and announce an empty page under it.
-    if (scopeAnswerPaints(run, scope)) commit(snapshot);
+    if (scopeAnswerPaints(run, scope)) {
+      const transition = transitionTermRef.current === searchTerm;
+      transitionTermRef.current = null;
+      if (transition) inResultsTransition(() => commit(snapshot));
+      else commit(snapshot);
+    }
     const resultCount = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
 
     // After the commit, never before: with the whole page behind the pending
@@ -627,34 +639,20 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     clearResults();
     setQuery(nextQuery);
     setSearchIntent(intent);
-    setActiveSearchFilter(filter);
+    if (filter !== activeSearchFilter) writeSearchUrl(searchParams.get('q') ?? '', filter);
     setSearchIssue(null);
     setHasSearched(false);
     setIsSearching(Boolean(nextQuery.trim()));
   };
 
-  // A suggestion leaves the start screen through a view transition: the
-  // results area alone (search-page.css, `search-results`) hands over from
-  // the suggestions to the search, the header holding still. Instant under
-  // reduced motion or without the API.
   const handleSuggestedSearch = (suggestion: { query: string; section: SearchScopeId }) => {
-    const run = () => updateQuery(suggestion.query, suggestion.section, suggestion.section);
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reducedMotion || typeof document.startViewTransition !== 'function') {
-      run();
-      return;
-    }
-    const root = document.documentElement;
-    root.classList.add('search-results-transition');
-    const transition = document.startViewTransition(() => flushSync(run));
-    const cleanup = () => root.classList.remove('search-results-transition');
-    transition.finished.then(cleanup, cleanup);
+    const animated = inResultsTransition(() => updateQuery(suggestion.query, suggestion.section, suggestion.section));
+    transitionTermRef.current = animated ? suggestion.query.trim() : null;
   };
 
   const handleSearchFilterChange = (filterId: SearchScopeId) => {
-    setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
-    if (query.trim()) writeSearchUrl(query.trim(), filterId);
+    writeSearchUrl(searchParams.get('q') ?? '', filterId);
     // Only the answer for the scope on screen paints (search-page-run.ts).
     openSearchScope(requestRef.current, filterId, commit, () => setIsSearching(true));
   };

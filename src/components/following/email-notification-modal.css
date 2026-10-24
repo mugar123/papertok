@@ -63,8 +63,6 @@
 
 .email-notification-body { padding: 20px 22px; }
 
-/* Notes about the email service and your follows run edge to edge, the
-   first one flush under the header; stacked notes share a hairline. */
 .email-notification-provider-warning {
   display: flex;
   flex-wrap: wrap;
@@ -100,7 +98,6 @@
 }
 .email-notification-provider-warning.is-info strong { color: var(--gradient-physics); }
 
-/* No follows yet: a violet line whose heading is the way to the follows page. */
 .email-notification-provider-warning.is-follows {
   border-bottom-color: var(--tint-violet-line);
   background: var(--tint-violet-bg);
@@ -163,7 +160,6 @@
   font-size: 13px;
 }
 
-/* The last thing in the body: it sits on the footer's own hairline. */
 .email-notification-schedule {
   display: flex;
   align-items: center;
