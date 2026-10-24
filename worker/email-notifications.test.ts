@@ -1,9 +1,11 @@
 type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { html: string; text: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
 import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
+import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -3411,18 +3413,49 @@ test('the test email is the same edition, says it is a test, and keeps its own s
   assert.match(withPaper.html, /<h3[^>]*><a [^>]*>Below-threshold surface-code memory<\/a><\/h3>/);
 });
 
+const PROJECT_ID = 'papertok-168df';
+
 function identityEnvironment(kv: KVNamespace) {
-  return { ...emailEnvironment(kv), FIREBASE_WEB_API_KEY: 'firebase-web-key' };
+  return { ...emailEnvironment(kv), FIREBASE_WEB_API_KEY: 'firebase-web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 }
 
-function preferencesRequest() {
+function preferencesRequest(token = fakeIdToken({ aud: PROJECT_ID })) {
   return new Request('https://worker.example/notifications/preferences', {
-    headers: { authorization: 'Bearer id-token' },
+    headers: { authorization: `Bearer ${token}` },
   });
 }
 
+/**
+ * caches.default, which the shared verifier keeps verified identities in and
+ * Node does not provide. Each call starts empty.
+ */
+function stubIdentityCache() {
+  const original = (globalThis as TestGlobals).caches;
+  const entries = new Map<string, string>();
+  (globalThis as TestGlobals).caches = {
+    default: {
+      match: async (request) => {
+        const body = entries.get(new Request(request).url);
+        return body === undefined ? undefined : new Response(body);
+      },
+      put: async (request, response) => {
+        entries.set(new Request(request).url, await response.text());
+      },
+    },
+  };
+  return () => {
+    if (original === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = original;
+  };
+}
+
+function lookupResponse(account: unknown) {
+  return new Response(JSON.stringify({ users: [account] }), { status: 200 });
+}
+
 async function readPreferencesAs(account: { localId: string; email: string; emailVerified?: boolean; providerUserInfo?: { providerId: string; email: string; }[]|{ providerId: string; email: string; }[]; }) {
-  const restore = stubFetch(jsonResponse(200, { users: [account] }));
+  const restoreCache = stubIdentityCache();
+  const restore = stubFetch(lookupResponse(account));
   try {
     return await handleEmailNotificationRequest(
       preferencesRequest(),
@@ -3431,6 +3464,7 @@ async function readPreferencesAs(account: { localId: string; email: string; emai
     );
   } finally {
     restore();
+    restoreCache();
   }
 }
 
@@ -3470,16 +3504,16 @@ test('accepts a verified address or a federated provider that owns it', async ()
     emailVerified: false,
     providerUserInfo: [{ providerId: 'github.com', email: 'reader@example.com' }],
   });
-  assert.equal(federated.preferences.email, 'Reader@Example.com');
+  // The shared verifier normalizes the address, as it does for every route.
+  assert.equal(federated.preferences.email, 'reader@example.com');
 });
 
 test('reports a subscription saved as daily as weekly', async () => {
   const kv = createMemoryKv({
     'notification:subscription:reader': digestSubscription({ uid: 'reader', frequency: 'daily' }),
   });
-  const restore = stubFetch(jsonResponse(200, {
-    users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
-  }));
+  const restoreCache = stubIdentityCache();
+  const restore = stubFetch(lookupResponse({ localId: 'reader', email: 'reader@example.com', emailVerified: true }));
   try {
     const { preferences } = await handleEmailNotificationRequest(
       preferencesRequest(),
@@ -3490,6 +3524,7 @@ test('reports a subscription saved as daily as weekly', async () => {
     assert.equal(preferences.frequency, 'weekly');
   } finally {
     restore();
+    restoreCache();
   }
 });
 
@@ -3520,13 +3555,12 @@ test('an older client that still asks for daily emails is subscribed weekly', as
 test('gives the identity lookup and both provider probes a deadline', async () => {
   const calls: { host: string; signal: AbortSignal|null|undefined; }[] = [];
   const originalFetch = globalThis.fetch;
+  const restoreCache = stubIdentityCache();
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
     calls.push({ host: url.hostname, signal: options.signal });
     if (url.hostname === 'identitytoolkit.googleapis.com') {
-      return jsonResponse(200, {
-        users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
-      });
+      return lookupResponse({ localId: 'reader', email: 'reader@example.com', emailVerified: true });
     }
     if (url.hostname === 'api.resend.com') {
       return jsonResponse(200, { data: [{ name: 'papertok.app', status: 'verified' }] });
@@ -3555,6 +3589,78 @@ test('gives the identity lookup and both provider probes a deadline', async () =
     });
   } finally {
     globalThis.fetch = originalFetch;
+    restoreCache();
+  }
+});
+
+test('notification routes screen junk tokens locally and look a valid one up once a minute', async () => {
+  let lookups = 0;
+  const validToken = fakeIdToken({ aud: PROJECT_ID });
+  const originalFetch = globalThis.fetch;
+  const restoreCache = stubIdentityCache();
+  globalThis.fetch = async (input, options = {}) => {
+    assert.equal(new URL(String(input)).hostname, 'identitytoolkit.googleapis.com');
+    lookups += 1;
+    const { idToken } = JSON.parse(String(options.body));
+    return idToken === validToken
+      ? lookupResponse({ localId: 'reader', email: 'reader@example.com', emailVerified: true, displayName: ' Ada  Lovelace ' })
+      : new Response(JSON.stringify({ error: { message: 'INVALID_ID_TOKEN' } }), { status: 400 });
+  };
+  const kv = createMemoryKv();
+  const read = (token: string) => handleEmailNotificationRequest(
+    preferencesRequest(token),
+    identityEnvironment(kv),
+    '/notifications/preferences',
+  );
+
+  try {
+    // Junk and oversized strings could not have been issued by Firebase.
+    for (const token of [...Array.from({ length: 20 }, (_, i) => `junk-${i}`), 'x'.repeat(20_000)]) {
+      await assert.rejects(
+        () => read(token),
+        error => (error as { code?: string }).code === 'EMAIL_AUTH_REQUIRED' && (error as { status?: number }).status === 401,
+      );
+    }
+    assert.equal(lookups, 0);
+
+    for (let i = 0; i < 5; i += 1) {
+      assert.equal((await read(validToken)).preferences.email, 'reader@example.com');
+    }
+    assert.equal(lookups, 1);
+
+    // The name the digest greets the reader with comes from the same verified
+    // identity, cached or not.
+    await handleEmailNotificationRequest(new Request('https://worker.example/notifications/preferences', {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${validToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true, maxPapers: 5, follows: [digestFollow()], previewItems: [] }),
+    }), identityEnvironment(kv), '/notifications/preferences');
+    assert.equal(lookups, 1);
+    assert.equal((await kv.get<Subscription>('notification:subscription:reader', 'json'))!.displayName, 'Ada Lovelace');
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreCache();
+  }
+});
+
+test('an Identity Toolkit outage on a notification route is a retryable 503, not a sign-out', async () => {
+  const originalFetch = globalThis.fetch;
+  const restoreCache = stubIdentityCache();
+  globalThis.fetch = async () => {
+    throw new TypeError('network connection lost');
+  };
+  try {
+    await assert.rejects(
+      () => handleEmailNotificationRequest(
+        preferencesRequest(),
+        identityEnvironment(createMemoryKv()),
+        '/notifications/preferences',
+      ),
+      error => (error as { code?: string }).code === 'EMAIL_UNAVAILABLE' && (error as { status?: number }).status === 503,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreCache();
   }
 });
 

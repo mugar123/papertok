@@ -8,12 +8,15 @@ export interface VerifiedIdentity {
   /** `emailVerified`, or a Google or GitHub identity carrying the same address (`accountOwnsEmail`). */
   ownsEmail: boolean;
   authTime: number | null;
+  /** The account's name, or '' when it has none. The email digest greets the reader with it. */
+  displayName: string;
 }
 
 interface LookupUser {
   localId?: string;
   email?: unknown;
   emailVerified?: unknown;
+  displayName?: unknown;
   providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
 }
 
@@ -34,7 +37,7 @@ const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
  * the app to turn it on (#267). An identity provider that vouched for the same
  * address is the proof of possession in that case.
  */
-export function accountOwnsEmail(account: Pick<LookupUser, 'email' | 'emailVerified' | 'providerUserInfo'> | null | undefined) {
+function accountOwnsEmail(account: Pick<LookupUser, 'email' | 'emailVerified' | 'providerUserInfo'> | null | undefined) {
   if (account?.emailVerified === true) return true;
   const email = String(account?.email || '').trim().toLowerCase();
   return email !== '' && (account?.providerUserInfo || []).some(provider => (
@@ -191,6 +194,9 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
   // `authTime` is when the user last signed in for this session, in seconds.
   // The claim can be trusted only because Identity Toolkit accepted the token
   // that carries it; a token it refuses never gets this far.
+  //
+  // `displayName` is here for the email routes, which store it with the
+  // subscription. Like the email, it sits in the 60 s cache entry below.
   const identity = user?.localId
     ? {
       uid: user.localId,
@@ -198,6 +204,7 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
       emailVerified: user.emailVerified === true,
       ownsEmail: accountOwnsEmail(user),
       authTime: typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null,
+      displayName: String(user.displayName || '').trim(),
     }
     : null;
   if (!lookup.ok || !identity) throw new WorkerAuthError('AUTH_REQUIRED', 401);

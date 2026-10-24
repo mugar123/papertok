@@ -7,9 +7,10 @@ const UID = 'alice-uid';
 const EMAIL = 'alice@example.com';
 /**
  * What a verified lookup now resolves to: who, whether the address is theirs,
- * and when they signed in (none here: `fakeIdToken` carries no `auth_time`).
+ * when they signed in (none here: `fakeIdToken` carries no `auth_time`) and
+ * their name (none here: the stubbed account has no `displayName`).
  */
-const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true, ownsEmail: true, authTime: null };
+const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true, ownsEmail: true, authTime: null, displayName: '' };
 const PROJECT_ID = 'papertok-168df';
 const ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
@@ -133,7 +134,7 @@ test('an unverified address is carried, but carried as unverified', async () => 
   stubUser({ localId: UID, email: EMAIL, emailVerified: false });
   assert.deepEqual(
     await verify(fakeIdToken({ aud: PROJECT_ID })),
-    { uid: UID, email: EMAIL, emailVerified: false, ownsEmail: false, authTime: null },
+    { uid: UID, email: EMAIL, emailVerified: false, ownsEmail: false, authTime: null, displayName: '' },
   );
 });
 
@@ -148,7 +149,7 @@ test('a Google or GitHub identity carrying the same address proves possession wh
   });
   assert.deepEqual(
     await verify(fakeIdToken({ aud: PROJECT_ID })),
-    { uid: UID, email: EMAIL, emailVerified: false, ownsEmail: true, authTime: null },
+    { uid: UID, email: EMAIL, emailVerified: false, ownsEmail: true, authTime: null, displayName: '' },
   );
   // Another address, a provider Firebase does not vouch through, or no address
   // at all prove nothing.
@@ -170,7 +171,7 @@ test('an address is normalised, so a match cannot turn on capitals or spacing', 
 
 test('an account with no address at all resolves to an empty one, never to undefined', async () => {
   stubUser({ localId: UID });
-  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false, ownsEmail: false, authTime: null });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false, ownsEmail: false, authTime: null, displayName: '' });
 });
 
 test('the sign-in time travels with the identity once Google has accepted the token', async () => {
