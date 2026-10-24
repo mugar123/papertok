@@ -2,8 +2,8 @@ import type { AnimationEvent, MouseEvent, PointerEvent, RefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Menu } from '@base-ui/react/menu';
-import { animate, useReducedMotion } from 'framer-motion';
-import { EASE_OUT } from '../../utils/motion-curves.ts';
+import { useReducedMotion } from 'framer-motion';
+import { animateSize, EASE_OUT } from '../../utils/motion-curves.ts';
 import { ruleTransform } from '../../utils/nav-rule.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
@@ -159,26 +159,10 @@ function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchP
   useLayoutEffect(() => {
     const field = fieldRef.current;
     const from = widthRef.current;
-    const to = field?.offsetWidth ?? 0;
     // Below 900px the button is hidden, so one of the two widths is zero.
-    if (!field || reduceMotion || !from || !to || Math.abs(to - from) < 2) return;
-    // The field's flex rules would override the width it animates through,
-    // and the first frame is painted before Motion writes its first keyframe.
-    field.style.flex = 'none';
-    field.style.width = `${from}px`;
-    const resize = animate(field, { width: [from, to] }, { duration: 0.26, ease: EASE_OUT });
-    let settled = false;
-    const settle = () => {
-      if (settled) return;
-      settled = true;
-      field.style.flex = '';
-      field.style.width = '';
-    };
-    void resize.then(settle);
-    return () => {
-      resize.stop();
-      settle();
-    };
+    if (!field || reduceMotion || !from || !field.offsetWidth) return;
+    // The field's flex rules would override the width it animates through.
+    animateSize(field, 'width', from, 260, EASE_OUT, { flex: 'none' });
   }, [fieldRef, onSearchPage, reduceMotion]);
 
   useEffect(() => {
