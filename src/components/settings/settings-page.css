@@ -427,6 +427,8 @@
   color: var(--tint-neutral-fg);
   background: var(--tint-neutral-bg);
   font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
 }
 
 .settings-status.is-success {
