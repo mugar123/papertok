@@ -55,8 +55,9 @@ function safeArxivParam(name: string, rawValue: unknown) {
 }
 
 // `caller` is 'public' when the router hands over a request from outside the
-// Worker; in-process callers pass null.
-export async function handleArxiv(request: Request, env: WorkerEnv, caller: 'public' | null = null) {
+// Worker; in-process callers pass null. No default: a call site that leaves it
+// out does not compile, rather than getting any seat.
+export async function handleArxiv(request: Request, env: WorkerEnv, caller: 'public' | null) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

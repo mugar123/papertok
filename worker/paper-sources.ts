@@ -215,7 +215,7 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
 // ─── The other sources, by lane ───
 
 type SourceEnv = StoreEnv & WorkerEnv;
-type RouteHandler = (request: Request, env: WorkerEnv, identity?: null) => Promise<Response>;
+type RouteHandler = (request: Request, env: WorkerEnv, identity: null) => Promise<Response>;
 
 /**
  * A route refused for now: its own minute ceiling, a pace beat, the day's
