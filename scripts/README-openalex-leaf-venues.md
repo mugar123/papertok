@@ -97,7 +97,7 @@ labels are blind to the curators' calls, not to the venue.
 | Economics and finance | econ.EM, econ.TH, q-fin.GN, q-fin.MF, q-fin.RM | econ.GN 9 of 15 (11 of 15 with `has_abstract:true`; two articles without an abstract were doubted), q-fin.PM 4 of 15, q-fin.PR 9 articles in 90 days, q-fin.TR 4 |
 | Physics | all 24 sampled | none |
 | Mathematics | 12 | math.AG 9 of 15, math.GR 7 of 15 |
-| Computer science, statistics, electrical engineering | 25 | cs.DS 13 articles (all on target), cs.GT 11 |
+| Computer science, statistics, electrical engineering | 25 | cs.DS 13 articles in 90 days (all on target), cs.GT 11 (9 on target) |
 | Engineering | all 14 sampled | none |
 
 q-fin.ST, q-fin.CP and the leaves no curator sampled have no venue lane.
@@ -110,16 +110,16 @@ astro-ph.SR and physics.atom-ph. hep-th's sample, the same 15 with and without
 `authors_count:<100`, is recorded without it.
 
 The passing leaves' samples asked for 435 sources. Their lanes ask for 245;
-the other 190 had no article on target among their leaf's 15 newest, 37 of
-them conferences whose proceedings carry one date a year (AAAI, IJCAI, ACL,
-NeurIPS, CHI, SIGIR among them). The journals of three source samples entered
-on their own: Physics of Fluids (14 of 15), Nonlinear Dynamics (11 of 15) and
-the Journal of Financial and Quantitative Analysis (6 of 8). The Journal of the
-Acoustical Society of America (9 of 15) did not.
+the other 190 had no article on target among their leaf's 15 newest. 37 of
+them are conferences, which publish their proceedings once a year (AAAI,
+IJCAI, ACL, NeurIPS, CHI and SIGIR among them). Three journals entered on a
+sample of their own: Physics of Fluids (14 of 15), Nonlinear Dynamics (11 of
+15) and the Journal of Financial and Quantitative Analysis (6 of 8). The
+Journal of the Acoustical Society of America (9 of 15) did not.
 
 Without `has_abstract:true`, a lane also brings the articles its labeller
 could not see. From the curators' counts, more than half of the 90-day
 articles of 19 such lanes have no abstract in OpenAlex, among them eess.electro
 (94 %), eess.SP (91 %), eess.telecom (81 %), mech.solid (77 %) and nucl-th
-(58 %, mostly Physical Review C's closed experimental papers). A sample asked
+(58 %, most of them closed Physical Review C articles). A sample asked
 as these lanes ask would measure them; the sample in the evidence does not.
