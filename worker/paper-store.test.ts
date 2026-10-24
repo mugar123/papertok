@@ -693,8 +693,10 @@ test('a page that skips seen papers and has no candidate of its own reads no not
 });
 
 test('a seen-paper filter the app did not write is refused', () => {
-  // A filter of another size, here twice as many bits, is not the app's either.
-  for (const seen of ['', 'not a filter', 42, feedSeenFilter([]).slice(1), feedSeenFilter([]).repeat(2)]) {
+  // A filter of another size, here twice as many bits, is not the app's
+  // either, nor the app's with whitespace in it.
+  const spaced = feedSeenFilter([]).replace(/.{64}/g, '$& ');
+  for (const seen of ['', 'not a filter', 42, feedSeenFilter([]).slice(1), feedSeenFilter([]).repeat(2), spaced]) {
     assert.throws(() => parseFeedRequest({ categories: ['cs.LG'], seen }), (error: Error & { status?: number; code?: string }) => error.status === 400 && error.code === 'SEEN_INVALID', String(seen).slice(0, 20));
   }
 });

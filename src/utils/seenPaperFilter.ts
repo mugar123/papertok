@@ -135,9 +135,12 @@ export function feedSeenFilter(paperIds: Iterable<string>) {
   return uint32ArrayToBase64(filter.buckets);
 }
 
+// The characters `btoa` writes; `atob` would also take whitespace.
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
 /** A feed request's `seen`, or null when it is not a filter `feedSeenFilter` wrote. */
 export function readFeedSeenFilter(encoded: unknown): BloomFilter|null {
-  if (typeof encoded !== 'string' || encoded.length > MAX_SEEN_FILTER_CHARS) return null;
+  if (typeof encoded !== 'string' || encoded.length > MAX_SEEN_FILTER_CHARS || !BASE64.test(encoded)) return null;
   try {
     const buckets = base64ToUint32Array(encoded);
     return buckets.length * 32 === FEED_SEEN_BITS ? new BloomFilter(buckets, FEED_SEEN_HASHES) : null;
