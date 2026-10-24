@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -14,7 +16,7 @@ import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { parseXmlDocument as parseWithShim } from '../src/test-support/xmlDomShim.ts';
 import { readPubmedEfetch } from '../src/utils/pubmedEfetch.ts';
-import { areaLabelForPaper, leavesForOpenAlexTopic } from '../src/utils/areaAccent.ts';
+import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
 import { getCategoryArea } from '../src/data/categoryTaxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 
@@ -269,6 +271,106 @@ test("a category's OpenAlex lane asks by its measured topic IDs, not by text, an
   // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
   await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'mech.aero', page: 1, since: '', waits: { seconds: 0 } });
   assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
+});
+
+// ─── Which leaves get an OpenAlex topic lane: the precision gate's decisions ───
+
+const gateFile = (name: string) => JSON.parse(readFileSync(new URL(`../scripts/data/${name}`, import.meta.url), 'utf8'));
+const topicLanes = () => categoryLaneJobs().filter(job => job.source === 'openalex-topics').map(job => job.lane);
+const topicsOf = (filters: string[]) => filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
+
+// OpenAlex W7223183626 as returned to the gate's q-fin.GN sample on 2026-10-23
+// (trimmed, abstract shortened): a subscription journal article.
+const subscriptionArticle = {
+  id: 'https://openalex.org/W7223183626',
+  doi: 'https://doi.org/10.33423/0t4j8j85',
+  title: 'The Performance of Passively Managed Index Portfolios Versus Complementary Non-Index Portfolios: Evidence from the H-Share Market',
+  type: 'article',
+  publication_date: '2026-10-22',
+  publication_year: 2026,
+  abstract_inverted_index: invertedIndex('This paper investigates the performance of the Hang Seng China Enterprises Index.'),
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.33423/0t4j8j85',
+    version: 'publishedVersion',
+    source: { id: 'https://openalex.org/S4210192355', display_name: 'Journal of Applied Business and Economics', type: 'journal', is_core: true },
+  },
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  primary_topic: {
+    id: 'https://openalex.org/T10047',
+    display_name: 'Financial Markets and Investment Strategies',
+    subfield: { id: 'https://openalex.org/subfields/2003', display_name: 'Finance' },
+    field: { id: 'https://openalex.org/fields/20', display_name: 'Economics, Econometrics and Finance' },
+    domain: { id: 'https://openalex.org/domains/2', display_name: 'Social Sciences' },
+  },
+};
+
+test('an arXiv leaf the precision gate admitted gets a journal-article lane for the sampled topics found on target', async t => {
+  const reviews = gateFile('openalex-topic-reviews.json');
+  const { urls, env } = relay(t, url => ({ results: topicsOf(filtersOf(url)).includes('T10047') ? [subscriptionArticle] : [] }));
+  // Sorted, as sampled, without the topics no sampled article was on target
+  // for: q-fin.GN's green bonds T13146 (0 of 5) and four it never returned,
+  // cs.SE's T10456 (0 of 1) and six it never returned, cond-mat.stat-mech's
+  // T12261 (0 of 2) and one it never returned, and two cs.CV never returned.
+  const asked = {
+    'q-fin.GN': ['T10047', 'T10127'],
+    'cs.CV': ['T10036'],
+    'cs.SE': ['T10260', 'T10430', 'T10743'],
+    'cond-mat.stat-mech': ['T11520'],
+  };
+  for (const [leaf, topics] of Object.entries(asked)) {
+    assert.ok(topicLanes().includes(leaf), `${leaf} has a lane in the nightly harvest`);
+    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '', waits: { seconds: 0 } });
+    const filters = filtersOf(urls.at(-1)!);
+    const sampled = new URL(reviews[leaf].query).searchParams.get('filter')!.split(',');
+    assert.deepEqual(topicsOf(filters), topics, leaf);
+    assert.ok(topics.every(id => topicsOf(sampled).includes(id)), `${leaf} asks only for topics its sample asked for`);
+    for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
+      assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
+    }
+  }
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'q-fin.GN', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223183626', ['q-fin.GN']]]);
+  assert.equal(items[0].paper.publicationType, 'article');
+  assert.equal(items[0].paper.sourceType, 'journal');
+  assert.equal(items[0].paper.openAccess, false, 'the explicit subscription access is kept');
+});
+
+test('a leaf the gate did not admit sends no topic request, and every lane is an inherited or admitted leaf', () => {
+  const coverage = gateFile('openalex-leaf-topics-coverage.json') as Array<{ leaf: string; status: string; sampleSize?: number }>;
+  const statusOf = (leaf: string) => coverage.find(row => row.leaf === leaf)!;
+  // Too few on target in a full sample, or too few recent core articles to judge.
+  // physics.plasm-ph had 13 of 15 on target, 6 of them calls its labeller doubted.
+  // The seven last: 10 or 11 of 15 on target without recorded doubt, then 3 to 9
+  // in a blind relabel that recorded it.
+  const relabelled = ['astro-ph.SR', 'cs.LG', 'cs.SY', 'math.GT', 'eess.SY', 'civil.mat', 'med.tox'].map(leaf => [leaf, 'rejected']);
+  for (const [leaf, status] of [['cs.AI', 'rejected'], ['econ.EM', 'rejected'], ['physics.plasm-ph', 'rejected'], ['chemeng.metal', 'insufficient-sample'], ['math.OC', 'insufficient-sample'], ...relabelled]) {
+    assert.equal(statusOf(leaf).status, status, leaf);
+    assert.equal(typeof statusOf(leaf).sampleSize, 'number', `${leaf} records its sample`);
+    assert.equal(openAlexTopicFilterForLeaf(leaf), null, leaf);
+    assert.ok(!topicLanes().includes(leaf), leaf);
+  }
+  assert.deepEqual(topicLanes().sort(), coverage.filter(row => row.status === 'inherited' || row.status === 'passed').map(row => row.leaf).sort());
+});
+
+test('the 14 inherited leaves keep their lanes and the topics accepted in #236', async t => {
+  const inherited = [
+    'bio.biochem', 'bio.cell', 'bio.comp', 'bio.eco', 'bio.gen', 'bio.mol', 'bio.neuro',
+    'bio.physio', 'civil.env', 'civil.hydro', 'civil.struct', 'mech.aero', 'med.neuro', 'med.psych',
+  ];
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  const asked: Array<[string, string[]]> = [];
+  for (const leaf of inherited) {
+    assert.ok(topicLanes().includes(leaf), leaf);
+    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '', waits: { seconds: 0 } });
+    asked.push([leaf, topicsOf(filtersOf(urls.at(-1)!))]);
+  }
+  assert.deepEqual(asked.find(([leaf]) => leaf === 'bio.mol')![1],
+    ['T10123', 'T10268', 'T10521', 'T10604', 'T10878', 'T11041', 'T11237', 'T11482', 'T11765', 'T12534']);
+  // The 14 lists as merged in #236 (areaAccent.ts on main before PAP-99), each
+  // sorted: an edit to the baseline file cannot also move this expectation.
+  assert.equal(createHash('sha256').update(JSON.stringify(asked)).digest('hex'),
+    'd712fc6dd9b51123876e8bbf61022a0172cde893fa03bb7aa394bfa16cd14d5f');
 });
 
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {

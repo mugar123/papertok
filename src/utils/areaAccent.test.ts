@@ -7,8 +7,8 @@ import {
   areaKeyForPaper,
   areaAccentForPaper,
   areaLabelForPaper,
-  openAlexFilterForArea,
 } from './areaAccent.ts';
+import { openAlexFilterForArea } from '../data/openAlexAreas.ts';
 import type { OpenAlexWork } from '../services/adapters/openAlexTypes.ts';
 import { CATEGORIES, getCategoryLabel } from '../data/categoryTaxonomy.ts';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.ts';
