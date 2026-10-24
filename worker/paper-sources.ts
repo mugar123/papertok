@@ -612,9 +612,9 @@ const BACKFILL_GAP_MS = 1_500;
  * window or the route's last page, or once the lane holds as many papers as
  * the feed reads, beyond which eviction drops the older ones. Its pages wait
  * out short refusals as a lane's daily pages do, within LANE_WAIT_SECONDS for
- * the run. A page that is refused past that, by a quota ledger that cannot
- * answer included, or that fails ends the lane's run there, to go on from it
- * next run. A lane whose daily harvest has not run yet waits for it.
+ * the run. A refusal past that, a quota ledger that cannot answer, or a page
+ * that fails ends the lane's run there, to go on from it next run. A lane
+ * whose daily harvest has not run yet waits for it.
  */
 export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
   const spec = SOURCES[source];
