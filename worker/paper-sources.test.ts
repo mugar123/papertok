@@ -320,7 +320,7 @@ test('an arXiv leaf the precision gate admitted gets a journal-article lane for 
   };
   for (const [leaf, topics] of Object.entries(asked)) {
     assert.ok(topicLanes().includes(leaf), `${leaf} has a lane in the nightly harvest`);
-    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '' });
+    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '', waits: { seconds: 0 } });
     const filters = filtersOf(urls.at(-1)!);
     const sampled = new URL(reviews[leaf].query).searchParams.get('filter')!.split(',');
     assert.deepEqual(topicsOf(filters), topics, leaf);
@@ -329,7 +329,7 @@ test('an arXiv leaf the precision gate admitted gets a journal-article lane for 
       assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
     }
   }
-  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'q-fin.GN', page: 1, since: '' });
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'q-fin.GN', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223183626', ['q-fin.GN']]]);
   assert.equal(items[0].paper.publicationType, 'article');
   assert.equal(items[0].paper.sourceType, 'journal');
@@ -362,7 +362,7 @@ test('the 14 inherited leaves keep their lanes and the topics accepted in #236',
   const asked: Array<[string, string[]]> = [];
   for (const leaf of inherited) {
     assert.ok(topicLanes().includes(leaf), leaf);
-    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '' });
+    await SOURCES['openalex-topics'].fetchPage(env as never, { lane: leaf, page: 1, since: '', waits: { seconds: 0 } });
     asked.push([leaf, topicsOf(filtersOf(urls.at(-1)!))]);
   }
   assert.deepEqual(asked.find(([leaf]) => leaf === 'bio.mol')![1],
