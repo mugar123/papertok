@@ -1,6 +1,7 @@
 -- Where each leaf's arXiv papers sit among the vectors (worker/leaf-filing.ts):
--- the mean of the newest ones' vectors, recomputed by every harvest and read
--- by the step that files an area's journal articles under its leaves.
+-- the mean of the newest ones' vectors, recomputed by every harvest for the
+-- areas with a filing rule and read by the step that files an area's journal
+-- articles under its leaves.
 CREATE TABLE leaf_centroids (
   leaf TEXT PRIMARY KEY,
   -- int8 components of the unit vector times 127, as `work_vectors`.
