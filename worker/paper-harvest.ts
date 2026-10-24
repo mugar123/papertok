@@ -24,6 +24,8 @@ const FOLLOWED_LANES_PER_RUN = 400;
 // about 125): a lane that has started finishes within the step.
 const LANE_STEP_BUDGET_MS = 3 * 60_000;
 const LANES_PER_STEP = 5;
+// Backfill steps a lane gets a run; one that is done answers its later ones at once.
+const BACKFILL_STEPS = 3;
 // A followed lane nobody asked for in this long is no longer harvested.
 const FOLLOWED_LANE_DAYS = 14;
 const PAGE_STEP = { retries: { limit: 5, delay: '1 minute', backoff: 'exponential' }, timeout: '5 minutes' } as const;
@@ -163,9 +165,12 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
-  // A step a lane: its pages stay within one invocation's D1 queries.
+  // Steps of a lane's backfillPages each, within an invocation's CPU and D1 queries.
   for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
-    await phase(`backfill ${job.source} ${job.lane}`, () => step.do(`backfill ${job.source} ${job.lane}`, LANE_STEP, () => backfillLane(env, job)));
+    for (let round = 0; round < BACKFILL_STEPS; round += 1) {
+      const name = `backfill ${job.source} ${job.lane}${round ? ` ${round}` : ''}`;
+      if (!await phase(name, () => step.do(name, LANE_STEP, () => backfillLane(env, job)))) break;
+    }
   }
   await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started))));
   await phase('evict', () => step.do('evict', async () => {
