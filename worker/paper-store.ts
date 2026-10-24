@@ -208,9 +208,10 @@ const NOTABLE_YEARS = 10;
 export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
 // A notable lane holds its weekly listing of 100 (NOTABLE_PER_LANE in
 // paper-sources.ts) and, for 14 days, what dropped out of the two listings
-// before it; a paper another listing still keeps stays longer. A page reads
-// three listings' worth of each asked lane, newest first, so the newer papers
-// that dropped out do not cut the listing's oldest, most-cited ones.
+// before it (`work_lanes.listed_until`), whatever else keeps the paper in the
+// corpus (a like, its date, another lane). A page reads three listings' worth
+// of each asked lane, newest first, so the newer papers that dropped out do
+// not cut the listing's oldest, most-cited ones.
 const NOTABLE_READ_PER_LANE = 300;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
@@ -351,8 +352,9 @@ function withOwnText(row: Paper, own: Paper | undefined): Paper {
  * identifiers already names, or start a new one. A record that bridges two
  * rows folds them into one (`idRank`). The row's own source listing it again
  * replaces its title and abstract (`withOwnText`). A merge that changes the
- * title or abstract drops the vector for the embedding pass. Returns how many
- * rows were written.
+ * title or abstract drops the vector for the embedding pass. A notable lane's
+ * row is kept until `keepUntil`, the listing's own keeping date
+ * (`listed_until`). Returns how many rows were written.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
@@ -392,7 +394,7 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
-  const laneRows: Array<{ lane: string; id: number; published: string }> = [];
+  const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
 
@@ -422,14 +424,17 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper) : [])])) laneRows.push({ lane, id, published });
+    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper) : [])])) {
+      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
+    }
   }
 
   const statements: D1PreparedStatement[] = [];
   for (const { from, into } of folded) {
     statements.push(
       db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      db.prepare('INSERT OR IGNORE INTO work_lanes (lane, work_id, published) SELECT lane, ?, published FROM work_lanes WHERE work_id = ?').bind(into, from),
+      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, listed_until)
+        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?`).bind(into, from),
       db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
@@ -449,9 +454,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
-    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published)
-      SELECT value ->> 'lane', value ->> 'id', value ->> 'published' FROM json_each(?) WHERE true
-      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published WHERE published != excluded.published`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil' FROM json_each(?) WHERE true
+      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published, listed_until = excluded.listed_until
+        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   return rows.length;
@@ -510,6 +516,9 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  *   ever rank from an asked lane, so a busy category does not pile up papers
  *   no reader reaches. An area lane keeps as many though a page reads fewer:
  *   its older articles can still be filed under a leaf (leaf-filing.ts);
+ * - a notable lane drops a paper once its `listed_until` has passed, 14 days
+ *   after the listing that last returned it: the lane holds the leaf's most
+ *   cited, whatever else keeps the paper (a like, its date, another lane);
  * - a paper past its keeping date, or in no category, notable, working-paper,
  *   area or followed lane, goes, unless readers still rank their feed by it
  *   (`liked_until`). The lane of an OpenAlex entity nobody follows keeps
@@ -522,12 +531,16 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
   const cutoff = new Date(now).toISOString();
   const { results: crowded } = await db.prepare('SELECT lane FROM work_lanes GROUP BY lane HAVING COUNT(*) > ?')
     .bind(FEED_CANDIDATE_LIMIT).all<{ lane: string }>();
-  const trims = crowded.map(({ lane }) => db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
-    SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT -1 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT));
+  const notableLanes = [...LEAF_IDS].map(leaf => `${NOTABLE_LANE_PREFIX}${leaf}`);
+  const trims = [
+    db.prepare('DELETE FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)) AND listed_until < ?').bind(JSON.stringify(notableLanes), cutoff),
+    ...crowded.map(({ lane }) => db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
+      SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT -1 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT)),
+  ];
   for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
   // Rows filed before publishedOf refused dates ahead leave too.
   const ahead = new Date(now + DAY_MS).toISOString();
-  const keeping = JSON.stringify([...LEAF_IDS, ...[...LEAF_IDS].map(leaf => `${NOTABLE_LANE_PREFIX}${leaf}`), WORKING_PAPERS_LANE, ...AREA_LANE_AREAS.map(areaLane)]);
+  const keeping = JSON.stringify([...LEAF_IDS, ...notableLanes, WORKING_PAPERS_LANE, ...AREA_LANE_AREAS.map(areaLane)]);
   const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
     AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id
       AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes)))))`;

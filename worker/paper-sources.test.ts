@@ -6,7 +6,7 @@ import test from 'node:test';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
-import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
+import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -21,6 +21,7 @@ import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf }
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
 // trimmed to one record, its abstract shortened, plus a deleted record.
@@ -995,6 +996,47 @@ test("a notable lane's listing renews only the papers it returned, though the co
     'openalex:W1000000003': enriched,
     'openalex:W1000000002': null,
   });
+});
+
+test('a notable lane drops a paper 14 days after the listing that last returned it, though a like or its date keeps it in the corpus', async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // Synthetic variants of the recorded work: an older one a reader liked, and
+  // a recent one its category lane also holds, kept 90 days from its date.
+  const liked = { ...plsiWork, id: 'https://openalex.org/W1000000001', doi: 'https://doi.org/10.5555/left-the-hundred', title: 'An article that has left the most-cited hundred' };
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
+  let listing: unknown[] = [plsiWork, liked, recent];
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const lane = { source: 'openalex-notable' as const, lane: 'notable:cs.CV' };
+  await ingestPapers(store, [{ paper: mapOpenAlexWork(recent)!, lanes: ['cs.CV'] }], { now: first });
+  await harvestLane(store, lane, first);
+  const likedWorks = [...(await findWorks(binding, ['openalex:W1000000001'])).values()];
+  const ids = (sql: string) => (db.prepare(sql).all() as Array<{ id: string }>).map(row => row.id).sort();
+  const members = () => ids("SELECT w.paper ->> '$.id' AS id FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'notable:cs.CV'");
+
+  // From the next week the listing names only the first. A reader keeps
+  // ranking their feed by the one they liked.
+  listing = [plsiWork];
+  for (const days of [7, 14]) {
+    const night = first + days * DAY;
+    t.mock.timers.setTime(night);
+    await harvestLane(store, lane, night);
+    await keepLiked(binding, likedWorks, night);
+    await evictExpired(store, night);
+  }
+  assert.deepEqual(members(), ['openalex:W1000000001', 'openalex:W1000000003', 'openalex:W2107743791'], 'two weeks unlisted, still in the lane');
+  const now = first + 15 * DAY;
+  t.mock.timers.setTime(now);
+  await evictExpired(store, now);
+  assert.deepEqual(members(), ['openalex:W2107743791']);
+  assert.deepEqual(ids("SELECT paper ->> '$.id' AS id FROM works"), ['openalex:W1000000001', 'openalex:W1000000003', 'openalex:W2107743791'], 'the corpus keeps them');
+
+  // Another reader of cs.CV, who has seen nothing, is offered only the listed one as a notable card.
+  const page = await readFeedPage(store, parseFeedRequest({ categories: ['cs.CV'], pageSize: 15, seen: feedSeenFilter([]), notable: 3 }), { now });
+  assert.deepEqual(page.map(paper => [paper.id, paper._notable === true]), [['openalex:W1000000003', false], ['openalex:W2107743791', true]]);
 });
 
 test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {

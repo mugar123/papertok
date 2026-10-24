@@ -519,7 +519,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   // Kept whatever their age (`keepsOld`): each week's listing renews them
-  // before KEPT_LISTING_DAYS run out, and one that drops out of the list leaves.
+  // before KEPT_LISTING_DAYS run out. One that drops out of the list leaves the
+  // lane when they do, even when a like or its date keeps it in the corpus
+  // (paper-store.ts `evictExpired`).
   'openalex-notable': {
     firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
