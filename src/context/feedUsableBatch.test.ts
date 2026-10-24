@@ -96,7 +96,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     sessionSeenPapers: ref(new Set(seen)), isKnownPaper: (id: string) => known.includes(id),
     mergeFollowEntityMatches: (...groups: unknown[][]) => groups.flat(),
     diversifiedWeightedShuffle: <T>(values: T) => values, calculateAndAttachScore: () => 0,
-    recommendationWeights: ref({}), mergeFreshFeedPage, notablePlaces, placeNotableCards, FOLLOWED_PER_PAGE: 6,
+    recommendationWeights: ref({}), mergeFreshFeedPage, notablePlaces, placeNotableCards, FOLLOWED_PER_PAGE: 6, NOTABLE_SPARE: 2,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
     enrichPubmedIds: () => Promise.resolve(new Map()),
@@ -881,9 +881,9 @@ test('a page asks the corpus for the ranked categories with the likes, and a lat
     // As many papers as the page shows: a paper asked for and not shown would
     // never come back, since the next page starts after it. It says what the
     // reader has seen, and asks for the unseen notable papers its places can
-    // take: a first screen of up to 21 cards has one (the fifteenth), a later
-    // page of up to 31 two.
-    const main = { categories: ['cs.AI'], positiveIds: ['2610.00001', 'pmid:41000001'], page, pageSize: 15, order: 'recent', seen: env.sessionSeenPapers.current, notable: page === 0 ? 1 : 2 };
+    // take, and two more for any the reader already knows: a first screen of
+    // up to 21 cards has one place (the fifteenth), a later page of up to 31 two.
+    const main = { categories: ['cs.AI'], positiveIds: ['2610.00001', 'pmid:41000001'], page, pageSize: 15, order: 'recent', seen: env.sessionSeenPapers.current, notable: page === 0 ? 3 : 4 };
     // A later page adds the reader's area's other category: five papers.
     assert.deepEqual(asked, page === 0 ? [main] : [main, { categories: ['cs.LG'], page: 0, pageSize: 5, order: 'recent' }]);
   }
@@ -998,6 +998,31 @@ test('a re-rank and a related-papers insert keep a notable card at every fifteen
   assert.equal(state.papers.length, 58);
   assert.ok(records('related', 3).every(paper => state.papers.some(card => card.id === paper.id)));
   assert.deepEqual(notableAt(state.papers), placed);
+});
+
+// The corpus is told the papers the reader has seen, and leaves out only the
+// likes and saves it ranks by. A paper the reader saved from elsewhere is
+// unseen to it: the feed drops it (isAvailablePaper), and its place stayed
+// empty on every page (2 of 3 places in the review's probe).
+test('a notable paper the reader already saved leaves its place to an unseen one, and later pages tell the corpus it is known', async () => {
+  // The corpus's notable papers in its one order, unseen ones first as many as asked.
+  const order = ['saved-classic', 'notable-a', 'notable-b', 'notable-c', 'notable-d', 'notable-e'];
+  const asked: boolean[] = [];
+  const { state, env, run } = feed();
+  env.savedPaperIdsRef.current = new Set(['saved-classic']);
+  Object.assign(env, {
+    fetchCorpusPage: async (request: { page: number; notable?: number; seen?: Set<string> }) => {
+      asked.push(request.seen?.has('saved-classic') ?? false);
+      const unseen = order.filter(id => !request.seen?.has(id)).slice(0, request.notable ?? 0);
+      return [...records(`corpus-${request.page}`, 15), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))];
+    },
+  });
+  await run(true);
+  await run(false);
+  await run(false);
+  assert.equal(state.papers.length, 48);
+  assert.deepEqual(notableAt(state.papers), [[14, 'notable-a'], [29, 'notable-b'], [44, 'notable-c']]);
+  assert.deepEqual(asked, [false, true, true]);
 });
 
 // A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).

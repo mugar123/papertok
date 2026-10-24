@@ -218,6 +218,11 @@ function demoSet(key: string, value: unknown) {
 
 // How many papers the followed entities add to a page.
 const FOLLOWED_PER_PAGE = 6;
+// Notable papers a page asks for beyond its places. The corpus leaves out the
+// papers the reader has seen and the likes and saves it ranks by, not every
+// paper they liked, saved, read or dismissed: the feed drops those, and the
+// next notable paper takes the place.
+const NOTABLE_SPARE = 2;
 
 /**
  * Papers of the reader's follows from the paper corpus: the Worker serves an
@@ -1216,6 +1221,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // refresh keeps the reader's place, none on a plain reset.
     const cardsBefore = !reset ? papers
       : keepThroughVisible ? mergeFreshFeedPage(papers, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
+    // The notable places of the largest page this load can show: the corpus's
+    // fifteen, the follows' six and, after the first screen, up to ten
+    // exploration cards (STEP 5).
+    const notablePlacesLeft = notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : 10));
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1287,11 +1296,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             page: currentPage,
             pageSize: PAGE_SIZE,
             order: queryMode,
-            // Unseen notable papers for the places of the largest page this
-            // load can show: the corpus's fifteen, the follows' six and, after
-            // the first screen, up to ten exploration cards (STEP 5).
+            // Unseen notable papers for those places, and the spare ones.
             seen: sessionSeenPapers.current,
-            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : 10)),
+            notable: notablePlacesLeft > 0 ? notablePlacesLeft + NOTABLE_SPARE : 0,
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
@@ -1398,6 +1405,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
+      // A notable paper the reader already knows is unseen to the corpus,
+      // which would offer it first on every page: the next pages name it.
+      newPapers.forEach((paper) => {
+        if (paper._notable && !isAvailablePaper(paper)) sessionSeenPapers.current.add(paper.id);
+      });
 
       // No paper on this page can be shown: try a later page before showing
       // seen papers again. Notable cards alone count as none: they take only
