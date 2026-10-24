@@ -676,15 +676,17 @@ test("a venue lane reads five pages on its first night and three at most after, 
 });
 
 // OpenAlex dates every Physics of Fluids article of a month's issue by its
-// first day and lists a tied date oldest record first (the flu-dyn sample: all
-// 2026-10-01, ids ascending), so one indexed late comes behind its issue.
+// first day and lists a tied date oldest record first (its own sample in the
+// venue evidence: all 2026-10-01, ids ascending), so one indexed late comes
+// behind its issue.
 test("a venue lane reads its three pages whatever their dates, so an issue's article indexed late, behind two pages of its issue date, is kept", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T03:00:00Z') });
   const FLUIDS = { id: 'S22862804', display_name: 'Physics of Fluids' };
   const JFM = { id: 'S152000018', display_name: 'Journal of Fluid Mechanics' };
   const article = (n: number, date: string, source: typeof JFM) => journalArticle(`W71${n}`, `10.1063/${n}`, `Turbulent boundary layer study number ${n}`, date, source, null);
-  // 200 articles dated since the last run's 14 days of overlap, then the 1
-  // October issue: 200 records listed before and 50 indexed since.
+  // 200 articles dated within the 14 days before the last run, then the 1
+  // October issue, older than those 14 days: 200 records listed before the
+  // last run and 50 indexed since.
   const listing = [
     ...Array.from({ length: 200 }, (_, index) => article(10_000 + index, `2026-10-${23 - Math.floor(index / 15)}`, JFM)),
     ...Array.from({ length: 250 }, (_, index) => article(20_000 + index, '2026-10-01', FLUIDS)),
