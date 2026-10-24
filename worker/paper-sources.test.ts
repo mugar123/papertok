@@ -641,9 +641,10 @@ test("a venue lane reads five pages on its first night and three at most after, 
   assert.equal(urls.length, 8, 'a later night reads three pages at most');
   await harvestLane(store, { source: 'openalex-venues', lane: 'econ.TH' });
   assert.equal(urls.length, 9, 'a page short of 200 is the last');
-  // Every OpenAlex category lane's first night, in units of one list call a
-  // page, within the 3,000 the category lanes may spend a night.
-  const firstNight = categoryLaneJobs().filter(job => job.source.startsWith('openalex-')).reduce((sum, job) => sum + SOURCES[job.source].firstPages, 0);
+  // Every OpenAlex category lane's first night and the weekly notable lanes',
+  // in units of one list call a page, within the 3,000 they may spend a night.
+  const firstNight = [...categoryLaneJobs(), ...await notableLaneJobs(binding)].filter(job => job.source.startsWith('openalex-'))
+    .reduce((sum, job) => sum + SOURCES[job.source].firstPages, 0);
   assert.ok(firstNight <= 3_000, `${firstNight} units`);
 });
 
@@ -948,15 +949,18 @@ test("category and notable lanes stop at 3,000 of the harvest's OpenAlex units, 
   const series = () => SOURCES['openalex-series'].fetchPage(env, { ...request, lane: 'series:working-papers' });
   const notable = () => SOURCES['openalex-notable'].fetchPage(env, { ...request, lane: 'notable:cs.CV' });
   const area = () => SOURCES['openalex-areas'].fetchPage(env, { ...request, lane: 'area:physics' });
+  const venues = () => SOURCES['openalex-venues'].fetchPage(env, { ...request, lane: 'econ.EM' });
 
-  for (let call = 0; call < 2_997; call += 1) await topics();
+  for (let call = 0; call < 2_996; call += 1) await topics();
   await series();
   await notable();
   await area();
+  await venues();
   await assert.rejects(topics(), SourceRefused);
   await assert.rejects(series(), SourceRefused);
   await assert.rejects(notable(), SourceRefused);
   await assert.rejects(area(), SourceRefused);
+  await assert.rejects(venues(), SourceRefused);
   assert.equal(openAlexCalls(), 3_000);
 
   // The nightly refresh's 700 and the new follows' 300, ten units a search.

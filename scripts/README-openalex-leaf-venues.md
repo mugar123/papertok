@@ -75,9 +75,12 @@ lists a tied date oldest record first, so an article indexed late in the month
 comes after the rest of its issue. A lane with under 200 articles in 90 days
 asks once a night, one with under 400 twice. From the curators' 90-day counts,
 the 79 lanes ask about 132 list calls a night, 237 at most, and 151 on their
-first night, of the 3,000 the category lanes may spend
-of the harvest's 4,000 units a day. cs.SY and eess.SY send the same request,
-which the relay answers from its store the second time.
+first night. They spend from the 3,000 of the harvest's 4,000 units a day that
+the category lanes share with the weekly notable lanes: with the topic lanes
+(195 at most), the area lanes (9) and the working-paper series (4), a night's
+category calls are at most 445, and the notable lanes add 39 one night a week.
+cs.SY and eess.SY send the same request, which the relay answers from its
+store the second time.
 
 ## The 2026-10-23 and 2026-10-24 samples
 
