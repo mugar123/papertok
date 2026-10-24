@@ -704,7 +704,9 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const lanes = [...new Set([
     ...query.categories,
     ...(readsEconomics ? [WORKING_PAPERS_LANE] : []),
-    ...AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane),
+    // Not beside follows: there the categories stand for followed topics
+    // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
+    ...(query.follows.length ? [] : AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane)),
     ...query.follows.map(follow => follow.lane),
   ])];
   if (lanes.length === 0) return [];

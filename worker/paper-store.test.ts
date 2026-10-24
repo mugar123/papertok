@@ -457,6 +457,22 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
   assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'the area lane keeps its paper in the corpus');
 });
 
+test("the follows' page reads no area lane: its categories stand for followed topics, which an article found only at area level matches none of", async () => {
+  const { env } = corpus();
+  const quantum = { ...arxivRecord, id: '2610.00021', arxivId: '2610.00021', title: 'A quantum error-correcting code', allCategories: ['quant-ph'], categories: ['quant-ph'], primaryCategory: 'quant-ph', published: '2026-10-20T00:00:00.000Z' };
+  await ingestPapers(env, [
+    { paper: quantum, lanes: [] },
+    { paper: physicsJournalArticle, lanes: ['area:physics'] },
+  ], { now: NOW });
+  // As the feed asks for its follows: a followed topic that is one of the
+  // app's categories is asked for as that category, beside the follow itself.
+  const followed = await readFeedPage(env, parseFeedRequest({
+    categories: ['quant-ph'],
+    follows: [{ type: 'topic', canonicalId: 'T10017', displayName: 'Quantum error correction' }],
+  }), { now: NOW });
+  assert.deepEqual(followed.map(item => [item.id, item._fetchedFor]), [['2610.00021', ['quant-ph']]]);
+});
+
 test('two writers filing one paper at once meet on one row, and a short title joins nothing', async () => {
   const { env, db } = corpus();
   await Promise.all([
