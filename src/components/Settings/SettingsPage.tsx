@@ -59,7 +59,7 @@ import './SettingsPage.css';
  */
 const SETTINGS_PAGES = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', summary: 'Follows and scientific interests', Icon: Compass },
+  { slug: 'discovery', label: 'Discovery', summary: 'Follows and interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
@@ -97,13 +97,10 @@ const SETTINGS_COPY = {
   recommendationsSuffix: 'influence your recommendations',
   viewAll: 'View all',
   viewAllFollowing: 'View all you follow',
-  scientificInterests: 'Scientific interests',
-  selectedOne: 'selected subcategory',
-  selectedMany: 'selected subcategories',
-  trainFeed: 'used to train your feed',
+  interests: 'Interests',
   selectedAreas: 'Selected areas',
   edit: 'Edit',
-  editInterests: 'Edit scientific interests',
+  editInterests: 'Edit interests',
   readingAi: 'Reading & AI',
   readingAiDescription: 'Adjust the depth of your AI explanations.',
   aiLevelLabel: 'Default AI level, preselected when you ask AI to explain a paper',
@@ -437,13 +434,9 @@ function DiscoveryPage() {
             <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
           </div>
 
-          <div className="settings-row">
+          <div className="settings-row settings-row-inline">
             <div className="settings-row-content">
-              <h3>{copy.scientificInterests}</h3>
-              <p>
-                {selectedInterestCount}{' '}
-                {selectedInterestCount === 1 ? copy.selectedOne : copy.selectedMany} {copy.trainFeed}
-              </p>
+              <h3>{copy.interests} ({selectedInterestCount})</h3>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
             {selectedAreas.length > 0 && (

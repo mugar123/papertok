@@ -250,16 +250,21 @@
   grid-column: 1;
 }
 
-/* ── Sign-in methods and the university: one line each, the mark and name
-   on the left, the account or action on the right. The name keeps its width
-   and a long address ends in an ellipsis, on a phone too. ── */
+/* ── Sign-in methods, the university and interests: one line each, the
+   name on the left, the account or action on the right, on a phone too.
+   The name keeps its width and a long address ends in an ellipsis; tags
+   take the whole width under them. ── */
 .settings-row.settings-row-inline {
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 56px;
 }
 
-.settings-row.settings-row-inline > :last-child {
+.settings-row.settings-row-inline > :nth-child(2) {
   justify-self: end;
+}
+
+.settings-row-inline .settings-row-tags {
+  grid-column: 1 / -1;
 }
 
 .settings-method-name {
