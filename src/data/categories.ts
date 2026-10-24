@@ -77,7 +77,5 @@ export {
   getAllLeafCategories,
   getCategoryArea,
   getCategoryLabel,
-  getCategorySimilarity,
 } from './categoryTaxonomy.ts';
 
-export default CATEGORIES;

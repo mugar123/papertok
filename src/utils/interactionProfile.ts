@@ -492,7 +492,7 @@ function ensureSeenFilter(profile: InteractionProfile) {
 function addCurated(profile: InteractionProfile, name: CuratedSetName, paperId: string) {
   const set = curatedSet(profile, name);
   if (!set || typeof paperId !== 'string' || !paperId) return;
-  if (set!.members.has(paperId)) {
+  if (set.members.has(paperId)) {
     // Refresh recency so the newest action stays inside the cap.
     const position = set.order.indexOf(paperId);
     if (position > 0) {
@@ -501,7 +501,7 @@ function addCurated(profile: InteractionProfile, name: CuratedSetName, paperId: 
     }
     return;
   }
-  set!.members.add(paperId);
+  set.members.add(paperId);
   set.order.unshift(paperId);
 
   const cap = CURATED_ID_CAPS[name];
@@ -531,7 +531,7 @@ export function viewedIds(profile: InteractionProfile | null | undefined) {
 
 function removeCurated(profile: InteractionProfile, name: CuratedSetName, paperId: string) {
   const set = curatedSet(profile, name);
-  if (!set || !set!.members.has(paperId)) return;
+  if (!set || !set.members.has(paperId)) return;
   set.members.delete(paperId);
   const position = set.order.indexOf(paperId);
   if (position >= 0) set.order.splice(position, 1);
@@ -681,10 +681,10 @@ export function recordInteractionEvent(profile: InteractionProfile, event: Inter
     if (impact !== 0) {
       const concepts = usableConcepts(event.concepts);
       concepts.forEach((concept) => {
-        addDecayedImpact(profile.concepts, concept.id, impact! * conceptWeight(concept), timestampMs);
+        addDecayedImpact(profile.concepts, concept.id, impact * conceptWeight(concept), timestampMs);
       });
       usableAuthorIds(event.authorIds).forEach((authorId) => {
-        addDecayedImpact(profile.authors, authorId, impact!, timestampMs);
+        addDecayedImpact(profile.authors, authorId, impact, timestampMs);
       });
       recordSessionImpact(profile, category, categoryImpact ?? impact, concepts, impact);
     }
@@ -970,7 +970,7 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
 
     const curated = JSON.parse(data.curated || '{}') as Partial<Record<CuratedSetName | 'viewed', unknown[]>>;
     CURATED_SETS.forEach((name) => {
-      const ids = Array.isArray(curated[name]) ? curated[name]! : [];
+      const ids = Array.isArray(curated[name]) ? curated[name] : [];
       const set = curatedSet(profile, name);
       ids.forEach((paperId) => {
         if (typeof paperId !== 'string' || !paperId || set!.members.has(paperId)) return;

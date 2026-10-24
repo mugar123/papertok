@@ -39,10 +39,10 @@ export function areaKeyForCategory(categoryId: unknown): keyof typeof CATEGORIES
   if (!categoryId || typeof categoryId !== 'string') return null;
 
   const category = categoryId.trim();
-  if (CATEGORIES[category as keyof typeof CATEGORIES]) return category as keyof typeof CATEGORIES;
+  if (CATEGORIES[category]) return category;
 
   for (const [key, area] of Object.entries(CATEGORIES)) {
-    if ((area.subcategories as Record<string, { label: string }>)?.[category]) return key as keyof typeof CATEGORIES;
+    if ((area.subcategories as Record<string, { label: string }>)?.[category]) return key;
   }
 
   // Not a prefix match: `math.AC` shares its first letters with `math-ph` and
@@ -127,7 +127,7 @@ export function areaKeyForPaper(paper: Partial<Paper> | null | undefined) {
 
   for (const candidate of candidates) {
     const key = areaKeyForCategory(candidate);
-    if (key) return key as keyof typeof CATEGORIES;
+    if (key) return key;
   }
 
   // Then the OpenAlex subfield or field. A paper from the works endpoint has

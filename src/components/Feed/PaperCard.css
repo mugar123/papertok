@@ -320,8 +320,7 @@
 
    It steps back for a clipping that is ACTUALLY ON THE SHEET, though, and only
    where clippings are drawn at all — both of which this rule used to get wrong
-   by keying on `.pc-figures ~` alone (measured 2026-09-07, see
-   paperCardWatermark.test.js):
+   by keying on `.pc-figures ~` alone (measured 2026-09-07):
 
    The clippings are fetched behind `isCardSettled` (PaperCard.jsx), 240ms after
    the card is reported visible, so `.pc-figures` can only ever mount with the

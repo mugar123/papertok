@@ -210,7 +210,7 @@ export default function SummaryHistory({ uid }: { uid: string }) {
           variant="outline"
           size="sm"
           className="settings-summaries-more"
-          onClick={loadMore}
+          onClick={() => { void loadMore(); }}
           aria-busy={moreStatus === 'loading'}
         >
           {moreStatus === 'loading'

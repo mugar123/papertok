@@ -242,7 +242,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
         <button
           type="button"
           className={`email-notification-test ${testState === 'sending' ? 'is-sending' : ''} ${testState === 'sent' ? 'is-sent' : ''}`}
-          onClick={handleTest}
+          onClick={() => { void handleTest(); }}
           disabled={saving || testing || loading || !notificationDataReady || !hasFollows || !health.available || testState === 'sent'}
           aria-live="polite"
           aria-busy={testState === 'sending'}
@@ -263,7 +263,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             )}
           </AnimatePresence>
         </button>
-        <button type="button" className="email-notification-save" onClick={handleSave} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (!health.available || !hasFollows))}>
+        <button type="button" className="email-notification-save" onClick={() => { void handleSave(); }} disabled={saving || testing || loading || !notificationDataReady || (draft.enabled && (!health.available || !hasFollows))}>
           {saving
             ? ('Saving...')
             : ('Save changes')}

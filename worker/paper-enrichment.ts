@@ -56,7 +56,7 @@ async function openAlexChunk(env: EnrichEnv, filter: string) {
     const response = await handleHarvestOpenAlex(new Request(url), env).catch((error: Error) => {
       throw new OpenAlexUnavailable(`OpenAlex enrichment failed: ${error?.name || error}`);
     });
-    if (response.ok) return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
+    if (response.ok) return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
     // A short wait (OpenAlex's own rate limit) is waited out once; a spent day
     // or harvest share, which the relay refuses with five minutes, is not.
     const wait = Number(response.headers.get('retry-after')) || 0;
@@ -97,7 +97,7 @@ async function iCiteMetrics(env: EnrichEnv, pmids: string[]) {
   for (const chunk of chunks(pmids, ICITE_CHUNK)) {
     const response = await handleICite(new Request(`https://papertok.internal/enrich/icite?pmids=${chunk.join(',')}`), env);
     if (!response.ok) continue;
-    const { data = [] } = await response.json() as { data?: Array<Record<string, unknown>> };
+    const { data = [] } = await response.json<{ data?: Array<Record<string, unknown>> }>();
     for (const item of data.map(mapICitePublication)) if (item) byPmid[item.pmid] = item;
   }
   return byPmid;
@@ -113,7 +113,7 @@ async function europePmcRecords(pmids: string[]) {
     url.searchParams.set('pageSize', String(chunk.length));
     const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
     if (!response.ok) continue;
-    const payload = await response.json() as { resultList?: { result?: EuropePmcRecord[] } };
+    const payload = await response.json<{ resultList?: { result?: EuropePmcRecord[] } }>();
     for (const record of (payload?.resultList?.result || []).map(mapEuropePmcResult)) if (record) byPmid.set(record.pmid, record);
   }
   return byPmid;
@@ -131,7 +131,7 @@ async function crossrefTypes(dois: string[]) {
     }).toString();
     const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
     if (!response.ok) continue;
-    const payload = await response.json() as { message?: { items?: Array<{ DOI?: unknown; type?: unknown }> } };
+    const payload = await response.json<{ message?: { items?: Array<{ DOI?: unknown; type?: unknown }> } }>();
     for (const work of payload?.message?.items || []) {
       const doi = normalizeDoi(work?.DOI);
       if (chunk.includes(doi) && typeof work?.type === 'string' && /^[a-z-]+$/.test(work.type)) types.set(doi, work.type);

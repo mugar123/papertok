@@ -63,10 +63,10 @@ function arxivIdOf(paper: PaperIdentifierInput) {
  * then `externalIds.DOI`) or a bare identifier string.
  */
 export function canonicalDoiOf(paper: unknown) {
-  return (paper && typeof paper === 'object' ? doiOf(paper as PaperIdentifierInput) : normalizeDoi(paper)) || null;
+  return (paper && typeof paper === 'object' ? doiOf(paper) : normalizeDoi(paper)) || null;
 }
 
 /** The arXiv id in canonical spelling, or null; same inputs as canonicalDoiOf. */
 export function canonicalArxivIdOf(paper: unknown) {
-  return (paper && typeof paper === 'object' ? arxivIdOf(paper as PaperIdentifierInput) : normalizeArxivId(paper)) || null;
+  return (paper && typeof paper === 'object' ? arxivIdOf(paper) : normalizeArxivId(paper)) || null;
 }

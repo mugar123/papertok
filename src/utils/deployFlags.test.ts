@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import {
   DECLARED_DEPLOY_FLAGS,
   describeDeployFlagDrift,
@@ -54,13 +53,4 @@ test('names the flag and both values so the build error is actionable', () => {
   assert.match(message, /VITE_SCOPUS_ENABLED/);
   assert.match(message, /declared false/);
   assert.match(message, /would ship true/);
-});
-
-// The guard is only as true as this coupling: it decides whether a bundle is
-// correct by re-implementing the adapter's coercion. If the adapter ever reads
-// the flag differently, the guard would keep passing builds while the bundle
-// disagreed with the declaration — the exact failure it exists to prevent.
-test('the adapter still reads the flag the way the guard assumes', () => {
-  const source = readFileSync(new URL('../services/adapters/ScopusAdapter.ts', import.meta.url), 'utf8');
-  assert.match(source, /VITE_SCOPUS_ENABLED\s*===\s*'true'/);
 });

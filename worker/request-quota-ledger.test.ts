@@ -62,8 +62,8 @@ test('quota client hashes the user identity before sending it to storage', async
         body = JSON.parse(options!.body as string);
         return new Response(JSON.stringify({ accepted: true, remaining: 3 }));
       },
-    })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    })),
+  };
 
   const result = await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'ai:2026-08-13',
@@ -138,8 +138,8 @@ test('the release client hides the identity exactly like the reserve one', async
         bodies.push(JSON.parse(options!.body as string));
         return new Response(JSON.stringify({ released: true }));
       },
-    })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    })),
+  };
   const options = {
     periodKey: 'ai:2026-08-23',
     subject: 'ai:firebase-user-id',
@@ -160,8 +160,8 @@ test('the release client hides the identity exactly like the reserve one', async
 test('an unreachable ledger is reported as unavailable, not as unconfigured', async () => {
   const namespace: TestNamespace = {
     idFromName: (value: string): unknown => value,
-    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('boom', { status: 500 }) })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('boom', { status: 500 }) })),
+  };
 
   assert.deepEqual(await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'ai:2026-08-23', subject: 'ai:uid', subjectLimit: 10, globalLimit: 1_000,
@@ -442,8 +442,8 @@ test('the quota client sends a part as a hashed key and its limit', async () => 
         body = JSON.parse(options!.body as string);
         return new Response(JSON.stringify({ accepted: true }));
       },
-    })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    })),
+  };
 
   await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'openalex:day:2026-10-23', subject: 'openalex:harvest', subjectLimit: 4_000, globalLimit: 10_000,

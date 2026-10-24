@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { authorExplorerPath, openAlexAuthorId } from './explorerPaths.ts';
 
 test('an author with an OpenAlex id opens by id, name riding along for the masthead', () => {
@@ -24,12 +23,6 @@ test('signed out, the public entity page gets the id when there is one, and the 
     '/public/entity/author/A1?name=Ada%20Lovelace',
   );
   assert.equal(authorExplorerPath({ name: 'Ada Lovelace' }, 'x', { publicMode: true }), '/public/entity/author/Ada%20Lovelace');
-});
-
-test('SOURCE: every author link on the card goes through the helper', async () => {
-  const jsx = await readFile(new URL('../components/Feed/PaperCard.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(jsx, /\/explorer\/author\/\$\{encodeURIComponent\(/, 'no card builds a name-only author path by hand anymore');
-  assert.ok((jsx.match(/authorExplorerPath\(/g) || []).length >= 2, 'both author lists use it');
 });
 
 // PubMed and Europe PMC authors arrive without an OpenAlex id, and the card

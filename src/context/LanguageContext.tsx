@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react';
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useContext, useEffect } from 'react';
 import { LanguageContext } from './contexts.ts';
 

@@ -26,14 +26,18 @@ instructions-only handoff can use the documentation checks below.
 | Worker route or frontend/Worker contract | Check valid and invalid requests and affected callers, documentation, `npm run check` and Worker packaging. State whether live configuration was verified separately. |
 | UI behavior or styling | Check relevant states in the browser and manual keyboard behavior as described below, plus the applicable code checks. |
 
-`npm run check` runs the secret scan, ESLint, TypeScript checks, Node tests, Vite build and
-`npm run worker:deploy:dry-run`. A dry-run packages the Worker without deploying.
-Do not report it as a live API or production check.
+`npm run check` runs the secret scan, ESLint (including the type-aware rules), knip,
+TypeScript checks, Node tests, Vite build and `npm run worker:deploy:dry-run`. A dry-run
+packages the Worker without deploying. Do not report it as a live API or production check.
+In Claude Code, a Stop hook also lints the files changed on the branch and in the working
+tree; it does not replace the full check.
 
 For a focused Node test, use `node --test <affected-file.test.ts>` with exact
 paths found in the checkout. Add tests only when the task changes behavior
-that needs coverage. State expected output independently of the implementation;
-the test must be able to detect the reported defect or broken contract.
+that needs coverage. Call the module the way its users do and state the expected
+output independently of the implementation; the test must be able to detect the
+reported defect or broken contract. Behavior inside a `.tsx` component is tested
+through the `.ts` module that owns it, never by matching the component's source.
 
 ## UI evidence
 

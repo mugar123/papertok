@@ -72,7 +72,7 @@ export function handoverFromSearchRow(type: string, row: HandoverEntity | null |
 export function handedEntityFor(type: string, id: unknown, state: { entity?: HandoverEntity; entityType?: string } | null | undefined) {
   const handed = state?.entity;
   if (!handed || !handed.display_name || typeof id !== 'string') return null;
-  if (state!.entityType !== type) return null;
+  if (state.entityType !== type) return null;
   const routeId = safeDecodeURIComponent(id);
   if (type === 'author') {
     const orcidInRoute = routeId.match(/orcid\.org\/([0-9X-]+)/i)?.[1];

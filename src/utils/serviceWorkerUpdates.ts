@@ -40,15 +40,17 @@ export function watchServiceWorkerUpdates(registration: UpdateRegistration | nul
     }
   }
 
-  documentTarget!.addEventListener('visibilitychange', check)
-  windowTarget!.addEventListener('pageshow', check)
-  windowTarget!.addEventListener('online', check)
-  const timer = windowTarget!.setInterval(check, 5 * 60_000)
+  const listener = () => { void check() }
+
+  documentTarget!.addEventListener('visibilitychange', listener)
+  windowTarget!.addEventListener('pageshow', listener)
+  windowTarget!.addEventListener('online', listener)
+  const timer = windowTarget!.setInterval(listener, 5 * 60_000)
 
   return () => {
-    documentTarget!.removeEventListener('visibilitychange', check)
-    windowTarget!.removeEventListener('pageshow', check)
-    windowTarget!.removeEventListener('online', check)
+    documentTarget!.removeEventListener('visibilitychange', listener)
+    windowTarget!.removeEventListener('pageshow', listener)
+    windowTarget!.removeEventListener('online', listener)
     windowTarget!.clearInterval(timer)
   }
 }

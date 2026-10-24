@@ -47,7 +47,7 @@ function Avatar({ photo, user, className = '' }: { photo: string | null; user: A
     />
   ) : (
     <div className={`navbar-avatar navbar-avatar--fallback ${className}`} aria-hidden="true">
-      {user!.email?.charAt(0).toUpperCase() || 'U'}
+      {user.email?.charAt(0).toUpperCase() || 'U'}
     </div>
   );
 }
@@ -66,17 +66,17 @@ function AccountSheet({ user, photo, preference, setPreference, onSignOut }: { u
   return (
     <Drawer open={open} onOpenChange={setOpen}>
       <DrawerTrigger className="navbar-avatar-btn" aria-label="Account menu" title="Account">
-        <Avatar photo={photo} user={user!} />
+        <Avatar photo={photo} user={user} />
       </DrawerTrigger>
       {/* Focus starts on the first entry, as the menu's does; the checked
           theme radio would otherwise take it, halfway down the sheet. */}
       <DrawerContent className="account-sheet" aria-label="Account menu" initialFocus={firstRow}>
         <DrawerHandle />
         <div className="account-sheet-head">
-          <Avatar photo={photo} user={user!} className="account-sheet-avatar" />
+          <Avatar photo={photo} user={user} className="account-sheet-avatar" />
           <div className="account-sheet-identity">
-            <strong>{user!.displayName || 'PaperTok user'}</strong>
-            <span>{user!.email}</span>
+            <strong>{user.displayName || 'PaperTok user'}</strong>
+            <span>{user.email}</span>
           </div>
         </div>
 
@@ -139,7 +139,7 @@ export default function AccountMenu() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/feed');
+    void navigate('/feed');
   };
 
   const photo = user!.photoURL;
@@ -151,7 +151,7 @@ export default function AccountMenu() {
         photo={photo}
         preference={preference}
         setPreference={setPreference}
-        onSignOut={handleSignOut}
+        onSignOut={() => { void handleSignOut(); }}
       />
     );
   }
@@ -207,7 +207,7 @@ export default function AccountMenu() {
 
             <Menu.Separator className="account-menu-separator" />
 
-            <Menu.Item className="account-menu-item is-danger" onClick={handleSignOut}>
+            <Menu.Item className="account-menu-item is-danger" onClick={() => { void handleSignOut(); }}>
               <SignOut size={17} aria-hidden="true" /> Log out
             </Menu.Item>
           </Menu.Popup>

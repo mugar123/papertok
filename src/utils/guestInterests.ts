@@ -28,7 +28,7 @@ import { institutionDomainOf } from './institutionDomain.ts';
  */
 export const GUEST_INTERESTS_STORAGE_KEY = 'papertok_guestInterests';
 
-const AREA_KEYS = Object.freeze(Object.keys(INTEREST_AREAS) as Array<Extract<keyof typeof INTEREST_AREAS, string>>);
+const AREA_KEYS = Object.freeze(Object.keys(INTEREST_AREAS));
 
 function getStorage(storage?: GuestStorage | null) {
   if (storage) return storage;

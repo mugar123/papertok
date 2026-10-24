@@ -12,6 +12,7 @@ import { IS_DEMO } from '../services/firebase.ts';
 import { readListsHoldingPaper, writeListMembership } from '../services/paperListMembership.ts';
 import { savedPaperDocRef } from '../services/savedPaperStore.ts';
 import { buildSavedPaperPayload } from '../utils/savedPaperPayload.ts';
+import { markThenConfirm, runOneAtATime } from './quickSaveOperation.ts';
 
 /**
  * A card's Save button, the same wherever the card is: a tap saves the paper
@@ -38,36 +39,28 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
     saveState.current = { savedPaperIds, personalLibrary, toggleReadLater, markSaved, unmarkSaved };
   }, [markSaved, personalLibrary, savedPaperIds, toggleReadLater, unmarkSaved]);
 
-  // One operation per paper at a time. A tap while one runs is dropped: the
-  // button already shows what the reader asked for, and the operation reads
-  // the state it settles, so a second one could not tell which way to go.
   const inFlight = useRef(new Set<string>());
-  const oneAtATime = useCallback((id: string, operation: () => Promise<void>) => {
-    if (inFlight.current.has(id)) return Promise.resolve();
-    inFlight.current.add(id);
-    return operation().finally(() => { inFlight.current.delete(id); });
-  }, []);
+  const oneAtATime = useCallback(
+    (id: string, operation: () => Promise<void>) => runOneAtATime(inFlight.current, id, operation),
+    [],
+  );
 
   const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean) => {
     const id = interactionIdFor(paper)!;
     const latest = saveState.current;
-    // An Undo can land on a paper the reader has saved again by hand; a
-    // refused Undo must not take that save back.
-    const alreadySaved = latest.savedPaperIds.has(id);
     // The saved document is issued before the mark, so a late OpenAlex topic
-    // landing on a marked paper always finds the copy to complete (PAP-60,
-    // D6). The mark fills the button now; the acknowledgements come after.
-    const savedDocument = user && !IS_DEMO
-      ? setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true })
-      : null;
-    void latest.markSaved(paper);
-    try {
-      await savedDocument;
-      if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
-    } catch (error) {
-      if (!alreadySaved) void latest.unmarkSaved(paper);
-      throw error;
-    }
+    // landing on a marked paper always finds the copy to complete (PAP-60, D6).
+    await markThenConfirm({
+      alreadySaved: latest.savedPaperIds.has(id),
+      issued: user && !IS_DEMO
+        ? setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true })
+        : null,
+      mark: () => latest.markSaved(paper),
+      unmark: () => latest.unmarkSaved(paper),
+      confirm: async () => {
+        if (user && !IS_DEMO) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
+      },
+    });
     // Not awaited: Read later flips in the same tick and its write never
     // rejects, so waiting for its acknowledgement would only hold the paper
     // against the next tap for one more round trip.
@@ -80,7 +73,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
       if (!savedPaperIds.has(id)) {
         try {
           await restoreSave(paper, [], true);
-          markActivation();
+          void markActivation();
           toast.success('Saved to Read later', {
             action: { label: 'Add to list', onClick: () => onSaveToList(paper) },
           });

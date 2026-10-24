@@ -159,7 +159,7 @@ export function createInteractionProfileClient(userId: string) {
       const snapshot = await getDocs(query(interactionsRef(userId), ...constraints));
       if (!queryIsAuthoritative(snapshot)) throw unconfirmedPage();
       // Decoded: the rebuilt aggregate must carry paper ids, never document names.
-      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() as InteractionDocumentData }));
+      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() }));
       countReads('interactions', documents.length);
       return { documents, hasMore: documents.length === pageSize };
     },
@@ -249,7 +249,7 @@ export async function fetchLibraryRecords(userId: string, paperIds: string[]) {
     );
     return {
       fromCache: snapshot.metadata.fromCache,
-      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() as InteractionDocumentData })),
+      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() })),
     };
   });
   // A bounded pool cannot abandon its in-flight workers the way Promise.all

@@ -196,7 +196,7 @@ export default function CreateListDialog({
             aria-invalid={state.error ? 'true' : undefined}
             aria-describedby={state.error ? nameErrorId : undefined}
             onChange={(event) => dispatch({ type: 'name', value: event.target.value })}
-            onKeyDown={(event) => { if (event.key === 'Enter') submit(); }}
+            onKeyDown={(event) => { if (event.key === 'Enter') void submit(); }}
           />
         </div>
 
@@ -290,7 +290,7 @@ export default function CreateListDialog({
           <Button variant="outline" onClick={requestClose}>
             {copy.cancel}
           </Button>
-          <Button onClick={submit} disabled={!canSubmitCreateList(state)}>
+          <Button onClick={() => { void submit(); }} disabled={!canSubmitCreateList(state)}>
             {editing
               ? (state.busy ? copy.saving : copy.save)
               : (state.busy ? copy.creating : copy.create)}

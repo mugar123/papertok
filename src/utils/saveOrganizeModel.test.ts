@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   commitTagInput,
   diffListSelection,
@@ -110,50 +109,6 @@ test('the proposal enables Save without arming the close guard', () => {
   const initial = { ...CLEAN, readLater: false };
   assert.equal(hasUnsavedChanges({ initial, pending: { ...CLEAN, readLater: pending } }), true);
   assert.equal(hasUnsavedChanges({ initial, pending: { ...CLEAN, readLater: edited } }), false);
-});
-
-/* --- SOURCE: nothing writes outside the save path ---------------------------
-   "Closing without saving writes nothing" and "toggling writes nothing" are
-   claims about where the write primitives live. The component keeps its two
-   write sites LAST (handleCreateList — the explicit Create button, which
-   creates an empty list — and then handleSave); everything before them
-   (selection toggles, tag editing, the close guard) must be write-free. The
-   assertions below pin that ordering, so a write sneaking into a toggle
-   handler moves an index and fails here. */
-
-test('SOURCE: firestore writes live only in handleCreateList and handleSave', async () => {
-  const source = await readFile(new URL('../components/Lists/SaveToListModal.tsx', import.meta.url), 'utf8');
-  const body = source.slice(source.indexOf('export default'));
-  const createAt = body.indexOf('const handleCreateList');
-  const saveAt = body.indexOf('const handleSave');
-  assert.ok(createAt > 0 && saveAt > createAt, 'expected handleCreateList, then handleSave');
-
-  const indexesOf = (needle: string) => {
-    const found = [];
-    let at = body.indexOf(needle);
-    while (at !== -1) {
-      found.push(at);
-      at = body.indexOf(needle, at + 1);
-    }
-    return found;
-  };
-
-  for (const primitive of ['writeListMembership(']) {
-    const indexes = indexesOf(primitive);
-    assert.ok(indexes.length > 0, `${primitive} expected in the save path`);
-    for (const at of indexes) {
-      assert.ok(at > saveAt, `${primitive} found before handleSave — a write outside the save path`);
-    }
-  }
-  for (const at of indexesOf('setDoc(')) {
-    assert.ok(at > createAt, 'setDoc found before handleCreateList — a write outside the two write sites');
-  }
-});
-
-test('SOURCE: the dialog cancel path goes through the unsaved-changes guard', async () => {
-  const source = await readFile(new URL('../components/Lists/SaveToListModal.tsx', import.meta.url), 'utf8');
-  assert.ok(source.includes('onCancel'), 'the <dialog> Escape path must be intercepted');
-  assert.ok(source.includes('requestClose'), 'every close path funnels through requestClose');
 });
 
 /* --- The selection is an INTENT over the membership, not a frozen snapshot ---

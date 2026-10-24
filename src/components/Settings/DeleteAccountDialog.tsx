@@ -15,6 +15,7 @@ import {
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
+import { deleteConfirmedAccount } from './deleteConfirmedAccount.ts';
 import './DeleteAccountDialog.css';
 
 const COPY = {
@@ -80,10 +81,12 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
     setStep('signingIn');
     setError('');
     try {
-      const confirmedUid = await reauthenticateCurrentUser();
-      setStep('deleting');
-      await deleteAccount(confirmedUid);
-      await onDeleted();
+      await deleteConfirmedAccount({
+        reauthenticate: reauthenticateCurrentUser,
+        onSignedIn: () => setStep('deleting'),
+        deleteAccount,
+        onDeleted,
+      });
     } catch (err) {
       setError(getUiErrorMessage(err, 'ACCOUNT_DELETION_FAILED'));
       setStep('');
@@ -156,7 +159,7 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
           <Button
             variant="outline"
             className="delete-account-confirm"
-            onClick={handleDelete}
+            onClick={() => { void handleDelete(); }}
             disabled={!confirmed || working || held}
             focusableWhenDisabled={held}
             aria-describedby={held ? errorId : undefined}

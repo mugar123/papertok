@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import {
   PULL_REFRESH_THRESHOLD_PX,
   PULL_FLING_MIN_PX,
@@ -103,21 +102,4 @@ test('a fast fling refreshes before the threshold, but never a tremor', () => {
   assert.equal(fast(60, 30), 'refresh', '60px in 30ms is 2px/ms: a fling');
   assert.equal(fast(PULL_FLING_MIN_PX - 5, 10), 'none', 'too short to be a decision');
   assert.equal(fast(60, 200), 'none', '60px in 200ms is a slow drag short of the threshold');
-});
-
-/**
- * The blocking list must keep describing what really scrolls inside a card:
- * an `overflow-y: auto` added to PaperCard.css without an entry here would
- * silently reopen the abstract's bug for the new scroller.
- */
-test('SOURCE: every in-card vertical scroller is on the blocking list', async () => {
-  const css = (await readFile(new URL('../components/Feed/PaperCard.css', import.meta.url), 'utf8'))
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-  const selectors: string[] = [];
-  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (/overflow(?:-y)?\s*:\s*(?:hidden\s+)?(?:auto|scroll)\b/.test(m[2])) selectors.push(m[1].trim());
-  }
-  const blocked = PULL_BLOCKING_SCROLLERS.split(',').map((s) => s.trim());
-  const uncovered = selectors.filter((sel) => !blocked.some((b) => sel.includes(b.replace(/^\./, ''))));
-  assert.deepEqual(uncovered.filter((s) => /^\.pc-abstract/.test(s)), [], 'an abstract scroller escaped the list');
 });

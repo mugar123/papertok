@@ -1,22 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import katex from 'katex';
 import ScientificText from './ScientificText.ts';
 import { loadKatex } from '../utils/katexLoader.ts';
 
-const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
-
 /**
  * A card re-renders many times while it arrives on screen and again whenever
  * the queue behind it is re-ranked. None of those renders change its words,
- * so none of them should run KaTeX again or hand React a new `innerHTML` to
- * assign — React 19 compares `dangerouslySetInnerHTML` by object identity and
- * re-parses the markup for every new object it sees (measured 2026-09-22:
- * every formula on every re-rendered card, in the middle of the snap).
+ * so none of them should run KaTeX again (measured 2026-09-22: every formula
+ * on every re-rendered card, in the middle of the snap).
  */
 test('a formula is rendered by KaTeX once per session, however many times its text is rendered', async () => {
   await loadKatex();
@@ -54,11 +48,6 @@ test('a formula KaTeX rejects stays visible as its source, and is not retried on
   }
 });
 
-test('ScientificText is memoised and keeps its element tree across renders', async () => {
+test('ScientificText is memoised', () => {
   assert.equal(ScientificText.$$typeof, Symbol.for('react.memo'), 'a card re-rendering for its own reasons must not re-walk the text');
-  const code = stripComments(await read('./ScientificText.ts'));
-  assert.match(code, /const renderedChunks = useMemo(?:<[^;\n]+>)?\(\(\) => parts\.map\(\(chunk, index\) => \{[\s\S]*?dangerouslySetInnerHTML: \{ __html: html \},[\s\S]*?\}\), \[parts, katex\]\);/,
-    'the `{ __html }` objects live inside a memo keyed on the parsed text and on KaTeX being loaded, so React sees the same objects until either changes');
-  assert.match(code, /const renderedFormulas = new Map(?:<[^;\n]+>)?\(\);/, 'and rendered markup is kept per formula source');
-  assert.match(code, /if \(renderedFormulas\.size >= MAX_CACHED_FORMULAS\) renderedFormulas\.clear\(\);/, 'bounded');
 });

@@ -312,7 +312,7 @@ export class OpenAlexClient {
    * (`forgetPersistentStore`).
    */
   readPersistentStore(): Record<string, PersistentEntry> {
-    if (this.persistentStore) return this.persistentStore!;
+    if (this.persistentStore) return this.persistentStore;
     this.persistentStore = JSON.parse(this.storage!.getItem(STORAGE_KEY) || '{}');
     return this.persistentStore!;
   }
@@ -526,7 +526,6 @@ export class OpenAlexClient {
   async performFetch(url: string, options: OpenAlexRequestOptions) {
     const retries = options.retries ?? 2;
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    let lastResponse = null;
     const activeRetryAfterMs = Math.max(0, this.rateLimitedUntil - this.now());
 
     if (options.signal?.aborted) {
@@ -546,7 +545,6 @@ export class OpenAlexClient {
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
         const response = await this.fetchOnce(url, { ...options, timeoutMs });
-        lastResponse = response;
 
         const retryAfterMs = getOpenAlexRateLimitDelay(response, this.now());
         if (retryAfterMs > 0) {
@@ -588,7 +586,7 @@ export class OpenAlexClient {
       }
     }
 
-    return lastResponse!;
+    throw new Error(`OpenAlex retries must be zero or more, got ${retries}`);
   }
 
   async fetchOnce(url: string, options: OpenAlexRequestOptions) {

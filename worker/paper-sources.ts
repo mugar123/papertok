@@ -387,12 +387,12 @@ async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, se
   if (search) params.search = search;
   const harvest = (request: Request, routeEnv: WorkerEnv) => handleHarvestOpenAlex(request, routeEnv, HARVEST_OPENALEX_PARTS[part]);
   const response = await askRoute(harvest, '/openalex/works', params, env);
-  return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
+  return (await response.json<{ results?: OpenAlexWork[] }>()).results || [];
 }
 
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
-async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
+async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) }: {
   page: number; lane: string; perPage: number; search?: string; part: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
   const works = await openAlexWorks(env, filter, { page, perPage, search, part });
@@ -416,7 +416,7 @@ async function openAireProjectDois(lane: string) {
   const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 10_000);
   if (!response.ok) throw answeredError('OpenAIRE', response.status);
   type Pid = { '@classname'?: string; $?: unknown };
-  const payload = await response.json() as { response?: { results?: { result?: unknown } } };
+  const payload = await response.json<{ response?: { results?: { result?: unknown } } }>();
   const rows = [payload?.response?.results?.result || []].flat() as Array<{ metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: Pid | Pid[] } } } }>;
   return rows.flatMap(row => [row?.metadata?.['oaf:entity']?.['oaf:result']?.pid || []].flat())
     .filter(pid => ['doi', 'digital object identifier'].includes(text(pid?.['@classname']).toLowerCase()))
@@ -432,7 +432,7 @@ async function bioRxivPage(env: SourceEnv, { lane, page, since }: PageRequest) {
   const url = `https://api.biorxiv.org/details/biorxiv/${day(since)}/${day(new Date().toISOString())}/${(page - 1) * BIORXIV_PAGE}/json?category=${encodeURIComponent(plan.biorxivCategory.replace(/\s+/g, '_'))}`;
   const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 20_000);
   if (!response.ok) throw new Error(`bioRxiv answered ${response.status}`);
-  const { collection = [] } = await response.json() as { collection?: Parameters<typeof mapBioRxivPaper>[0][] };
+  const { collection = [] } = await response.json<{ collection?: Parameters<typeof mapBioRxivPaper>[0][] }>();
   return pageOf(filed(collection.map(record => mapBioRxivPaper(record, [lane])), lane), BIORXIV_PAGE);
 }
 
@@ -475,7 +475,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       const response = await withShortWaits(waits, () => askRoute(handlePubmed, '/sources/pubmed', {
         q: `(${pubmedCategoryQuery([lane])}) AND hasabstract${added}`, page, limit: 50,
       }, env));
-      const payload = await response.json() as Parameters<typeof readPubmedPayload>[0];
+      const payload = await response.json<Parameters<typeof readPubmedPayload>[0]>();
       const papers = readPubmedPayload(payload, { internalCategories: [lane], parseXml: parseXmlDocument });
       // Full by esearch's count: the category check drops papers off a page.
       return { ...pageOf(filed(papers, lane), 50), full: (payload?.esearchresult?.idlist?.length || 0) >= 50 };
@@ -684,7 +684,7 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   }
   const lookups: Array<Promise<Harvested[]>> = openAlexPaths.map(async path => {
     const response = await askRoute(handleOpenAlex, path, {}, env);
-    const paper = mapOpenAlexWork(await response.json() as OpenAlexWork);
+    const paper = mapOpenAlexWork(await response.json<OpenAlexWork>());
     return paper ? [{ paper, lanes: [] }] : [];
   });
   if (arxivIds.length) {

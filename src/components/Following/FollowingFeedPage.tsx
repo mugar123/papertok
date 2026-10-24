@@ -112,7 +112,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
       art={<Checks />}
       title={'No new publications from what you follow'}
       actions={(
-        <button className="feed-retry-btn" onClick={() => refresh()}>
+        <button className="feed-retry-btn" onClick={() => { void refresh(); }}>
           {'Check for updates'}
         </button>
       )}
@@ -126,10 +126,10 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }: Pick<Comp
       title={"You're not following anything yet"}
       actions={(
         <>
-          <button className="feed-retry-btn" onClick={() => navigate('/feed')}>
+          <button className="feed-retry-btn" onClick={() => { void navigate('/feed'); }}>
             {'Discover papers'}
           </button>
-          <button className="feed-retry-btn ff-empty-secondary" onClick={() => navigate('/search')}>
+          <button className="feed-retry-btn ff-empty-secondary" onClick={() => { void navigate('/search'); }}>
             <MagnifyingGlass size={15} aria-hidden="true" /> {'Search entities'}
           </button>
         </>

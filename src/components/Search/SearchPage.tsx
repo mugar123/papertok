@@ -1,7 +1,7 @@
 import type { MouseEvent, PropsWithChildren, ReactElement } from 'react';
 import type { Paper } from '../../models/Paper.ts';
 import type { FollowInput } from '../../utils/following.ts';
-import type { EntitySearch, SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entitySearchService.ts';
+import type { SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entitySearchService.ts';
 import { Children, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
 import {
   ArrowClockwise,
@@ -36,7 +36,7 @@ import useQuickSave from '../../hooks/useQuickSave.ts';
 import { useLanguage } from '../../context/LanguageContext.tsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.tsx';
 import { useOverlayHistory } from '../../hooks/useOverlayHistory.ts';
-import { getOpenAlexHealth, isOpenAlexBudgetRefusal, isOpenAlexRateLimitError } from '../../services/openAlexClient.ts';
+import { getOpenAlexHealth } from '../../services/openAlexClient.ts';
 import {
   SECTION_SOURCES,
   SOURCE_LABELS,
@@ -69,6 +69,9 @@ import {
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance.ts';
 
+import { openSearchScope, scopeAnswerPaints, searchPageIssue } from './searchPageRun.ts';
+import type { SearchRun } from './searchPageRun.ts';
+import { visibleSearchResults } from './searchVisibleResults.ts';
 import './SearchPage.css';
 
 const SEARCH_DEBOUNCE_MS = 320;
@@ -83,11 +86,6 @@ const PAGE_SECTION_TIMEOUTS = { papers: 6000, authors: 5000, institutions: 4500,
 // budget reading can reopen them sooner, so no countdown is given and Retry
 // stays.
 const OPENALEX_BUDGET_PAUSE_NOTE = "Searches resume by 00:00 UTC at the latest. PaperTok keeps the rest of the day's OpenAlex budget for opening papers and the feed.";
-
-// `scope` is the one on screen, which the page changes when the reader opens
-// another; the search answers each scope it was asked for, and only the
-// answer for this one paints.
-type SearchRun = { controller: AbortController; search: EntitySearch; scope: SearchScopeId };
 
 // What this page asks each source, where it differs from the palette's
 // (entitySearchService.ts): its author rows carry the ORCID and prominence
@@ -338,38 +336,14 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // several seconds. A section the search was not asked for is empty, and the
   // notice names only sections that were asked and failed.
   const commit = useCallback((snapshot: SearchSnapshot) => {
-    const failedSections = snapshot.issues.map(issue => issue.section);
-    // Only OpenAlex's own sections can testify about OpenAlex: a 429 from
-    // OpenAIRE also satisfies `isOpenAlexRateLimitError`, which walks the cause
-    // chain looking for that status.
-    const openAlexIssues = snapshot.issues.filter(issue => SECTION_SOURCES[issue.section] === 'openalex');
-    // OpenAlex refusing the key is an outage with a wait. The Worker pausing
-    // searches for the day's budget is not, and has no wait worth counting.
-    const keyRefused = (error: unknown) => isOpenAlexRateLimitError(error) && !isOpenAlexBudgetRefusal(error);
-    const health = getOpenAlexHealth();
-    const rateLimited = health.rateLimited
-      || openAlexIssues.some(issue => keyRefused(issue.error));
-    const budgetPaused = openAlexIssues.some(issue => isOpenAlexBudgetRefusal(issue.error));
-    // Both sources of the wait, latest end wins: the client zeroes
-    // `rateLimitedUntil` as soon as any request succeeds, so health can read 0
-    // while the error that failed still carries what OpenAlex said. That wait
-    // counts from the failure, not from this paint: opening a scope repaints
-    // the same answer.
-    const now = Date.now();
-    const retryAtMs = Math.max(
-      now + (health.retryAfterMs || 0),
-      ...openAlexIssues.map(issue => (
-        keyRefused(issue.error)
-          ? issue.failedAtMs + ((issue.error as { retryAfterMs?: number } | null)?.retryAfterMs || 0)
-          : 0
-      )),
-    );
+    // Read before the paint, as the wait it names counts from the failure.
+    const issue = searchPageIssue(snapshot.issues, getOpenAlexHealth(), Date.now());
     setPaperResults(snapshot.results.papers);
     setAuthorResults(snapshot.results.authors);
     setInstitutionResults(snapshot.results.institutions);
     setConceptResults(snapshot.results.topics);
     setProjectResults(snapshot.results.projects);
-    setSearchIssue(describeSearchOutage({ sections: failedSections, rateLimited, budgetPaused, retryAfterMs: retryAtMs - now, now }));
+    setSearchIssue(issue);
     setIsSearching(false);
   }, []);
 
@@ -405,13 +379,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     // Unless the reader has opened another scope meanwhile: its own answer
     // paints then (handleSearchFilterChange). This one, with that scope's
     // sections still pending, would paint and announce an empty page under it.
-    if (run.scope === scope) commit(snapshot);
+    if (scopeAnswerPaints(run, scope)) commit(snapshot);
     const resultCount = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
 
     // After the commit, never before: with the whole page behind the pending
     // gate, anything that throws on the way to `setIsSearching(false)` no
     // longer leaves a stale spinner — it leaves a blank page.
-    trackEvent('search_performed', {
+    void trackEvent('search_performed', {
       search_type: scope,
       result_count: resultCount,
       has_results: resultCount > 0,
@@ -435,7 +409,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     }
 
     requestRef.current?.controller.abort();
-    if (timeoutRef.current) clearTimeout(timeoutRef.current!);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     timeoutRef.current = setTimeout(() => {
       void startSearch(query.trim());
@@ -459,42 +433,17 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const orcidMatch = query.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
   const cleanOrcid = orcidMatch ? orcidMatch[1].toUpperCase() : null;
 
-  const hasSearchSectionResults = paperResults.length > 0
-    || authorResults.length > 0
-    || institutionResults.length > 0
-    || conceptResults.length > 0
-    || projectResults.length > 0;
-  const hasResults = hasSearchSectionResults || !!cleanOrcid;
-  const hasVisibleResults = activeSearchFilter === 'all'
-    ? hasResults
-    : activeSearchFilter === 'papers'
-      ? paperResults.length > 0
-      : activeSearchFilter === 'institutions'
-        ? institutionResults.length > 0
-        : activeSearchFilter === 'authors'
-          ? authorResults.length > 0 || !!cleanOrcid
-          : activeSearchFilter === 'projects'
-            ? projectResults.length > 0
-            : conceptResults.length > 0;
+  const { hasResults, hasVisibleResults, visibleResultCount } = visibleSearchResults({
+    scope: activeSearchFilter,
+    papers: paperResults.length,
+    authors: authorResults.length,
+    institutions: institutionResults.length,
+    topics: conceptResults.length,
+    projects: projectResults.length,
+    cleanOrcid,
+  });
   const activeFilterOption = SEARCH_FILTER_OPTIONS.find(option => option.id === activeSearchFilter)
     || SEARCH_FILTER_OPTIONS[0];
-
-  // The count this filter is actually showing, mirroring `hasVisibleResults`
-  // above but as a number: the live region below reads exactly what is on
-  // screen, so it can never disagree with a filtered "No X found".
-  const visibleResultCount = activeSearchFilter === 'all'
-    ? paperResults.length + authorResults.length + institutionResults.length
-      + conceptResults.length + projectResults.length
-      + (cleanOrcid ? 1 : 0)
-    : activeSearchFilter === 'papers'
-      ? paperResults.length
-      : activeSearchFilter === 'institutions'
-        ? institutionResults.length
-        : activeSearchFilter === 'authors'
-          ? authorResults.length + (cleanOrcid ? 1 : 0)
-          : activeSearchFilter === 'projects'
-            ? projectResults.length
-            : conceptResults.length;
 
   const searchPending = Boolean(query.trim()) && isSearching;
 
@@ -699,24 +648,8 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   const handleSearchFilterChange = (filterId: SearchScopeId) => {
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
-    // A scope the search was not asked for is asked for now, so a reader who
-    // stays on Papers never pays for the author search; the skeleton covers
-    // the wait. A scope already answered paints with the scope change, the
-    // notice included, so the new scope never renders the previous paint's
-    // sections. Only the answer for the scope on screen paints: the one for
-    // the scope the reader left still settles, and would paint this scope's
-    // sections empty, and announce that, before they are in.
-    const run = requestRef.current;
-    if (!run || run.controller.signal.aborted) return;
-    run.scope = filterId;
-    if (run.search.settled(filterId)) {
-      commit(run.search.snapshot());
-      return;
-    }
-    setIsSearching(true);
-    void run.search.ask(filterId).then(snapshot => {
-      if (!run.controller.signal.aborted && run.scope === filterId) commit(snapshot);
-    });
+    // Only the answer for the scope on screen paints (searchPageRun.ts).
+    openSearchScope(requestRef.current, filterId, commit, () => setIsSearching(true));
   };
 
   const clearSearch = () => {
@@ -738,7 +671,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
           <button
             type="button"
             className="search-back-btn"
-            onClick={() => navigate('/feed')}
+            onClick={() => { void navigate('/feed'); }}
             aria-label={'Back'}
           >
             <ArrowLeft size={22} />
@@ -909,7 +842,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                     <ListRow
                       meta={['ORCID', cleanOrcid]}
                       title={'View ORCID profile'}
-                      onOpen={() => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`)}
+                      onOpen={() => { void navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`); }}
                     >
                       <p className="list-row-byline">{'Explore the author and their work through a verified unique identifier'}</p>
                     </ListRow>
@@ -925,7 +858,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                     key={inst.id}
                     meta={['Institution', inst.country_code || ('Unknown country')]}
                     title={getLocalizedInstitutionName(inst)}
-                    onOpen={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
+                    onOpen={() => { void navigate(`/explorer/institution/${inst.id.split('/').pop()}`); }}
                     actions={(
                       <FollowButton
                         entity={{
@@ -938,7 +871,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         }}
                         isFollowing={isFollowing}
                         isPending={isFollowPending}
-                        onToggle={handleToggleFollow}
+                        onToggle={(event, entity) => { void handleToggleFollow(event, entity); }}
                       />
                     )}
                   />
@@ -954,13 +887,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                     key={project.id}
                     meta={['Project', project.funder]}
                     title={getProjectDisplayName(project)}
-                    onOpen={() => navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder!)}`)}
+                    onOpen={() => { void navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`); }}
                     actions={(
                       <FollowButton
                         entity={{ type: 'project', id: project.id, displayName: getProjectDisplayName(project), source: 'openaire', metadata: { funder: project.funder } }}
                         isFollowing={isFollowing}
                         isPending={isFollowPending}
-                        onToggle={handleToggleFollow}
+                        onToggle={(event, entity) => { void handleToggleFollow(event, entity); }}
                       />
                     )}
                   >
@@ -980,7 +913,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                     key={concept.id}
                     meta={['Topic', concept._localTopic ? concept.parent_display_name : concept.field_display_name]}
                     title={concept.display_name}
-                    onOpen={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`)}
+                    onOpen={() => { void navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`); }}
                     actions={(
                       <FollowButton
                         entity={{
@@ -997,7 +930,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         }}
                         isFollowing={isFollowing}
                         isPending={isFollowPending}
-                        onToggle={handleToggleFollow}
+                        onToggle={(event, entity) => { void handleToggleFollow(event, entity); }}
                       />
                     )}
                   />
@@ -1013,13 +946,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                     key={author.id}
                     meta={['Author']}
                     title={author.display_name}
-                    onOpen={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
+                    onOpen={() => { void navigate(`/explorer/author/${author.id.split('/').pop()}`); }}
                     actions={(
                       <FollowButton
                         entity={{ type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } }}
                         isFollowing={isFollowing}
                         isPending={isFollowPending}
-                        onToggle={handleToggleFollow}
+                        onToggle={(event, entity) => { void handleToggleFollow(event, entity); }}
                       />
                     )}
                   >
@@ -1064,7 +997,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
             isSaved={savedPaperIds.has(interactionIdFor(shownPaper)!)}
             isRead={readPaperIds.has(interactionIdFor(shownPaper)!)}
             onLike={toggleLike}
-            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onNotInterested={(paper) => { void markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
             onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaper(paper)}

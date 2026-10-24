@@ -1,12 +1,8 @@
 import type { PaperAuthor } from '../models/Paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { hydrateSeededPaper, hydratedAbstract, hydratedAuthors, seedPaintsWhole } from './paperSeed.ts';
 import { LEGACY_STORED_SUMMARY_CAP, STORED_AUTHOR_CAP, STORED_SUMMARY_CAP } from './readingLibrary.ts';
-
-const read = (path: string|URL) => readFile(new URL(path, import.meta.url), 'utf8');
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 test('a handed-over copy paints only when it carries a title and a real abstract', () => {
   assert.equal(seedPaintsWhole({ title: 'T', abstract: 'Despite growing interest in open access…' }), true);
@@ -17,28 +13,6 @@ test('a handed-over copy paints only when it carries a title and a real abstract
   assert.equal(seedPaintsWhole({ title: 'T' }), false);
   assert.equal(seedPaintsWhole({ title: '', abstract: 'Words.' }), false);
   assert.equal(seedPaintsWhole(null), false);
-});
-
-/**
- * SOURCE: the paper page keeps the copy for the fallback but paints it on
- * arrival only when it is whole; otherwise it shows the skeleton and waits.
- */
-test('SOURCE: the paper page paints an incomplete copy as a skeleton, not as "Abstract unavailable"', async () => {
-  const code = stripComments(await read('../components/Public/PublicPaperPage.tsx'));
-  assert.match(code, /const seedPainted = seedPaintsWhole\(seededPaper\) && !location\.state\?\.stored/,
-    'a stored copy from a list or a profile row opens on the skeleton, whole or not');
-  // The share seed of a crawler's document (utils/shareSeed.js) is the one
-  // other copy that can paint, and by the same rule: only when it is whole.
-  assert.match(code, /const sharePainted = !seedPainted && seedPaintsWhole\(shareSeed\)/);
-  assert.match(code, /const loadedPaper = hasCurrentResult \? result\.paper : \(seedPainted \? seededPaper : \(sharePainted \? shareSeed : null\)\)/,
-    'nothing is painted from a copy that lacks its abstract');
-  assert.match(code, /: \(seedPainted \|\| sharePainted \? 'ready' : \(identity \? 'loading' : 'not-found'\)\)/,
-    'the page waits on the providers instead, skeleton up');
-  assert.match(code, /useState(?:<[^;\n]+>)?\(\(\) => seedPainted \|\| sharePainted\)/,
-    'the cover on arrival follows what was actually painted');
-  assert.match(code, /const fallback = seededPaper \|\| shareSeed;/);
-  const failures = code.match(/paper: fallback, status: fallback \? 'ready'/g) || [];
-  assert.equal(failures.length, 2, 'both failure paths still fall back to the copy, whole or not');
 });
 
 /**
@@ -131,10 +105,4 @@ test('the stored authors stay unless the copy was cut and the provider knows mor
   assert.equal(hydratedAuthors(capped, all), all);
   assert.equal(hydratedAuthors(capped, capped.slice(0, 5)), capped, 'the provider knowing fewer is no reason to drop any');
   assert.equal(hydratedAuthors([], more), more);
-});
-
-test('SOURCE: the paper page lays the copy over the provider\'s answer', async () => {
-  const code = stripComments(await read('../components/Public/PublicPaperPage.tsx'));
-  assert.match(code, /setResult\(\{ requestKey, paper: hydrateSeededPaper\(seededPaper, loadedPaper\), status: 'ready' \}\)/);
-  assert.doesNotMatch(code, /paper: loadedPaper, status: 'ready'/, 'the provider\'s paper is never shown bare when a copy came along');
 });

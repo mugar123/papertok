@@ -47,7 +47,7 @@ test('hydrates a graph paper before display while retaining its stable identity'
       openAccess: false,
     }],
   }).references[0];
-  const hydrated = await hydrateCitationGraphPaper(paper as import('../models/Paper.ts').Paper, {
+  const hydrated = await hydrateCitationGraphPaper(paper, {
     fetchPapersByDois: async () => ([{
       id: 'W123',
       doi: 'https://doi.org/10.1000/ref',

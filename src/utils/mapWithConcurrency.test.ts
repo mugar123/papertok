@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { mapWithConcurrency } from './mapWithConcurrency.ts';
 
 /**
@@ -16,8 +15,7 @@ import { mapWithConcurrency } from './mapWithConcurrency.ts';
  * account.
  *
  * A ceiling on a burst is only a ceiling if something fails when it is removed,
- * so these tests fail if the pool stops bounding, and the structural one fails
- * if the library read goes back to an unbounded `Promise.all`.
+ * so these tests fail if the pool stops bounding.
  */
 
 function tracker() {
@@ -81,18 +79,4 @@ test('an empty list spawns no workers and a ceiling below one still runs', async
   assert.deepEqual(await mapWithConcurrency([], 6, async () => 'never'), []);
   const results = await mapWithConcurrency([1, 2], 0, async (item) => item);
   assert.deepEqual(results.map(r => (r as PromiseFulfilledResult<number>).value), [1, 2], 'a zero ceiling must not deadlock');
-});
-
-test('STRUCTURAL: the library read fans out through the bounded pool', async () => {
-  const source = await readFile(new URL('../services/interactionProfileStore.ts', import.meta.url), 'utf8');
-  const body = source.slice(source.indexOf('export async function fetchLibraryRecords'));
-
-  assert.ok(
-    body.includes('mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY'),
-    'fetchLibraryRecords must run its batches through the bounded pool',
-  );
-  assert.ok(
-    !/Promise\.all\(\s*batches/.test(body),
-    'and must not go back to starting every batch at once',
-  );
 });

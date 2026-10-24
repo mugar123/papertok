@@ -44,7 +44,7 @@ export interface AuthContextValue {
   isDemo: boolean;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts.ts';
 import { IS_DEMO, auth, db } from '../services/firebase.ts';
@@ -70,9 +70,10 @@ import {
 import { settleWithin } from '../utils/asyncTiming.ts';
 import { isReadTimeout, patientRead } from '../utils/boundedRead.ts';
 import { documentIsAuthoritative } from '../utils/cacheAuthority.ts';
-import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage.ts';
-import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.ts';
-import { forgetOwnLists } from '../utils/profileSessionCaches.ts';
+import { saveStoredOnboarding } from '../utils/userScopedStorage.ts';
+import { adoptOnboardedProfile, closeAccountSession, openAccountSession } from './accountSession.ts';
+import { confirmOnboardingWrite, profileReadOutcome } from './profileLoad.ts';
+import { writeOptimistically } from './optimisticWrite.ts';
 import { clearRewriteCache } from '../services/paperRewriteService.ts';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.ts';
 import { clearGuestInterests, readGuestInterests } from '../utils/guestInterests.ts';
@@ -136,7 +137,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     let authChangeId = 0;
     let disposed = false;
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const handleAuthChange = async (currentUser: User | null) => {
       const changeId = ++authChangeId;
       // Here rather than in signOut: another tab can end this session too.
       clearRewriteCache();
@@ -151,9 +152,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       pendingInstitutionVerification({ currentUser: () => currentUser });
 
       if (currentUser) {
-        hydrateAccountCaches(currentUser.uid);
-        void warmAccountCaches(currentUser.uid);
-        const storedOnboarding = readStoredOnboarding(currentUser.uid);
+        const storedOnboarding = openAccountSession(currentUser.uid);
         if (storedOnboarding?.complete) {
           setOnboardingComplete(true);
           if (storedOnboarding.preferences.length > 0) {
@@ -176,16 +175,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setEmailDigestPending(data.emailDigestOptIn === true);
           setInstitution(normalizeInstitution(data.institution));
-          if (onboarded) {
-            saveStoredOnboarding(currentUser.uid, {
-              complete: true,
-              preferences: Array.isArray(preferences) ? preferences : [],
-            });
-            // An account that already chose its interests is the authority
-            // on them. A guest pick left waiting on this device would only
-            // ever seed the NEXT new account here with someone else's areas.
-            clearGuestInterests();
-          }
+          // An account that already chose its interests is the authority on
+          // them. A guest pick left waiting on this device would only ever
+          // seed the NEXT new account here with someone else's areas.
+          if (onboarded) adoptOnboardedProfile(currentUser.uid, Array.isArray(preferences) ? preferences : []);
           return true;
         };
 
@@ -233,10 +226,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
         );
         if (!isCurrent()) return;
 
-        if (remote.status === 'fulfilled') {
-          applyRemote(remote.value);
-        } else if (!hydratedFromCache) {
-          setProfileLoadError('PROFILE_LOAD_FAILED');
+        const outcome = profileReadOutcome(remote, hydratedFromCache);
+        if (outcome.kind === 'apply') {
+          applyRemote(outcome.snapshot);
+        } else if (outcome.kind === 'failed') {
+          setProfileLoadError(outcome.code);
           if (remote.status === 'rejected' && !isReadTimeout(remote.reason)) {
             console.error('Error fetching user data', remote.reason);
           } else {
@@ -248,7 +242,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setUserPreferences(null);
       }
       if (!disposed && changeId === authChangeId) setLoading(false);
-    });
+    };
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => { void handleAuthChange(currentUser); });
 
     return () => {
       disposed = true;
@@ -360,12 +355,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     try {
       await firebaseSignOut(auth);
-      // A guest answer still waiting for adoption belonged to this session:
-      // the next account on this device must not inherit it.
-      clearGuestInterests();
-      clearUserScopedStorage(signingOutUserId);
-      forgetOwnLists(signingOutUserId);
-      resetAccountWarmup(signingOutUserId);
+      closeAccountSession(signingOutUserId);
     } catch (err) {
       setError((err as { code?: string } | null)?.code || 'AUTH_FAILED');
     }
@@ -403,15 +393,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const userId = user?.uid;
     if (userId) {
-      // Bounded like the profile reads below: Firestore's promise here never
-      // settles on its own against a stalled connection (memory cache,
-      // firebase.js), and an unbounded write would hang the onboarding
-      // screen's only button forever. `settleWithin` never throws for a
-      // timeout — it resolves to `{ status: 'timed_out' }` — so a
-      // non-fulfilled result is turned into a thrown error explicitly below,
-      // tagged with a stable code the caller can branch on instead of a
-      // message to match against.
-      const settled = await settleWithin(
+      // Throws unless the write is fulfilled in time: the flag and the
+      // preferences below stay unflipped.
+      await confirmOnboardingWrite(
         setDoc(doc(db, 'users', userId), {
           onboardingComplete: true,
           ...(guestReading ? { readingPreferences: guestReading } : {}),
@@ -419,18 +403,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }, { merge: true }),
         PROFILE_NETWORK_TIMEOUT_MS,
       );
-      // A retry is safe — this merge-sets the same fields — so there is
-      // nothing to do here but let the caller know and stop: the flag and
-      // the preferences must stay unflipped, same as the reorder above
-      // already guarantees for a rules refusal.
-      if (settled.status !== 'fulfilled') {
-        if (settled.status === 'timed_out') {
-          const timeoutError = new Error('completeOnboarding: the write did not settle in time') as Error & { code?: string };
-          timeoutError.code = 'ONBOARDING_WRITE_TIMEOUT';
-          throw timeoutError;
-        }
-        throw settled.reason;
-      }
       if (guestReading) setReadingPreferences(guestReading);
       // The email opt-in is its own write, after the onboarding's and never
       // awaited by it: the frontend and the Firestore rules deploy separately,
@@ -449,10 +421,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
           if (auth.currentUser?.uid === userId) setEmailDigestPending(true);
         });
       }
-      saveStoredOnboarding(userId, { complete: true, preferences });
       // The interests a guest picked before signing up have now reached the
       // profile (the onboarding pre-selects from them); the bridge is done.
-      clearGuestInterests();
+      adoptOnboardedProfile(userId, preferences);
     }
     setUserPreferences(preferences);
     setOnboardingComplete(true);
@@ -496,30 +467,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // Same reasoning: `previous` is what a failed write rolls back to, read from
   // the closure rather than from a functional update the error path could not
   // reach.
-  const updateReadingPreferences = useCallback(async (updates: Partial<ReadingPreferences>) => {
+  const updateReadingPreferences = useCallback((updates: Partial<ReadingPreferences>) => {
     const userId = user?.uid;
-    const previous = readingPreferences;
-    const next = normalizeReadingPreferences({ ...readingPreferences, ...updates });
-    setReadingPreferences(next);
-
-    try {
-      if (IS_DEMO) {
-        demoSet('readingPreferences', next);
-        return next;
-      }
-
-      if (userId) {
-        await setDoc(doc(db, 'users', userId), {
-          readingPreferences: next,
-        }, { merge: true });
-      }
-      return next;
-    } catch (updateError) {
-      // A late failure after a session switch must not paint the previous
-      // account's state over the new one.
-      if (auth.currentUser?.uid === userId) setReadingPreferences(previous);
-      throw updateError;
-    }
+    return writeOptimistically({
+      previous: readingPreferences,
+      next: normalizeReadingPreferences({ ...readingPreferences, ...updates }),
+      apply: setReadingPreferences,
+      startedBy: userId,
+      signedInUid: () => auth.currentUser?.uid,
+      write: async (next) => {
+        if (IS_DEMO) {
+          demoSet('readingPreferences', next);
+          return;
+        }
+        if (userId) {
+          await setDoc(doc(db, 'users', userId), {
+            readingPreferences: next,
+          }, { merge: true });
+        }
+      },
+    });
   }, [readingPreferences, user?.uid]);
 
   // The pending yes is spent once the subscription exists (or the reader has

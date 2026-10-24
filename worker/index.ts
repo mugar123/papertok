@@ -5,13 +5,6 @@ import { PAPER_HARVEST_CRON } from './paper-harvest.ts';
 import { handleRequest, routeForLog } from './router.ts';
 import { captureWorkerResponseFailure } from './error-tracking.ts';
 
-// Unbound and unused. Kept only so that a later, separate change can delete the
-// class with a `deleted_classes` migration.
-export { KimiBudgetLedger } from './kimi-budget-ledger.ts';
-export { EmailDeliveryLedger } from './email-delivery-ledger.ts';
-export { RequestQuotaLedger } from './request-quota-ledger.ts';
-export { PaperRewriteSession } from './ai-rewrite-session.ts';
-
 export default {
   // Workers Logs keeps console lines only (wrangler.toml turns invocation logs
   // off), so every refusal and failure leaves this one line. Some route

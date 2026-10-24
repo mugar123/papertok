@@ -6,7 +6,8 @@
 
 <!-- Record exact commands and results, not planned checks. For code, include npm run
 check; for rules/permissions, also npm run test:rules. Instructions-only changes use
-Repo QA's documentation checks. State what could not run and why. -->
+Repo QA's documentation checks. State what could not run and why. Agents: do not claim
+a manual check you did not perform. A pr-body check fails while this section is empty. -->
 
 | Check or interaction | Result and evidence |
 | --- | --- |
@@ -17,9 +18,10 @@ coverage, screen-reader checks, results and anything not verified. -->
 
 ## Review
 
-<!-- Identify the diff reviewed, Ponytail Review findings and their disposition.
-State whether this was self-review or independent review and identify the reviewer.
-A loaded skill or a passing build is not evidence of a completed review. -->
+<!-- Identify the diff reviewed, who reviewed it, the findings and what happened to each.
+An agent-written change needs a review from a context that did not write it (the
+`reviewer` subagent, or a person). A loaded skill or a passing build is not a review.
+A pr-body check fails while this section is empty. -->
 
 ## Scope and risk
 

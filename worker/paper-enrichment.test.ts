@@ -54,7 +54,7 @@ function providers(t: import('node:test').TestContext, { openAlexStatus = 200 } 
       return Response.json({ message: { 'total-results': 1, items: [{ DOI: '10.1007/978-3-540-76956-9', type: 'book' }] } });
     }
     return Response.json({});
-  }) as typeof fetch;
+  });
   (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   t.after(() => {
     globalThis.fetch = realFetch;

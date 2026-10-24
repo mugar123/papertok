@@ -8,7 +8,7 @@ export interface AnalyticsContextValue {
   markActivation: () => ReturnType<typeof markAnalyticsActivation>;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import { pageview } from '@vercel/analytics';
@@ -31,6 +31,7 @@ import {
   trackDay7Return,
   trackPageView,
   trackProductEvent,
+  type ProductAnalyticsEvent,
 } from '../services/analyticsService.ts';
 
 
@@ -50,7 +51,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (consent === ANALYTICS_CONSENT.DENIED) return;
     void initializeErrorTracking();
-    trackAcquisition({ language });
+    void trackAcquisition({ language });
   }, [consent, language]);
 
   // Page views go to both services, keyed on the concrete pathname, and report
@@ -71,19 +72,19 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
     if (consent === ANALYTICS_CONSENT.DENIED) return;
     const viewPath = normalizeAnalyticsPath(location.pathname);
     pageview({ route: viewPath, path: viewPath });
-    trackPageView(location.pathname);
+    void trackPageView(location.pathname);
   }, [consent, location.pathname]);
 
   useEffect(() => {
     if (consent === ANALYTICS_CONSENT.DENIED) return;
-    trackDay7Return();
+    void trackDay7Return();
   }, [consent, location.pathname]);
 
   // Detailed analytics follows the account: linked on sign-in, unlinked on
   // sign-out. At any other level PostHog never hears about the account.
   useEffect(() => {
     if (consent !== ANALYTICS_CONSENT.DETAILED) return;
-    identifyAnalyticsUser(user && {
+    void identifyAnalyticsUser(user && {
       uid: user.uid,
       email: user.email,
       name: user.displayName,
@@ -101,7 +102,7 @@ export function AnalyticsProvider({ children }: PropsWithChildren) {
     return persisted;
   }, []);
 
-  const trackEvent = useCallback((eventName: string, params?: Record<string, unknown>) => trackProductEvent(eventName, params), []);
+  const trackEvent = useCallback((eventName: ProductAnalyticsEvent, params?: Record<string, unknown>) => trackProductEvent(eventName, params), []);
   const markActivation = useCallback(() => markAnalyticsActivation(), []);
 
   const value = useMemo(

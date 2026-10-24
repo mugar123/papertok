@@ -681,7 +681,7 @@ test('a rebuild from the documents recovers the ring the incremental path built'
 test('a rebuild over 500 views keeps the newest 500', () => {
   const documents = Array.from({ length: 700 }, (_, index) => ({
     id: ringId(index),
-    data: { viewTime: 5, paperCategory: 'cs.AI', timestamp: new Date(NOW - index * 1000).toISOString() } as InteractionDocumentData,
+    data: { viewTime: 5, paperCategory: 'cs.AI', timestamp: new Date(NOW - index * 1000).toISOString() },
   }));
   const ring = viewedIds(buildProfileFromInteractionDocuments(documents, { now: NOW }));
   assert.equal(ring.length, 500);

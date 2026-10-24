@@ -148,7 +148,7 @@ export default function InstitutionServices({ institution }: { institution: Link
     let current = true;
     // A retry follows only a failure, which neither cache keeps, so asking
     // again is enough; `attempt` is what re-runs this.
-    findInstitutionServices({ domain, entityId, rorId })
+    void findInstitutionServices({ domain, entityId, rorId })
       .then((value) => {
         if (current) setAnswer({ subject: `${domain}|${entityId}|${rorId}`, attempt, value });
       });

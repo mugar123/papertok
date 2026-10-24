@@ -5,7 +5,6 @@
     "test-support/**/*.ts",
     "../worker-configuration.d.ts",
     "../src/services/paperFigureService.test.ts",
-    "../src/components/Institution/publisherLogos.test.ts",
     "../src/utils/aiExplanation.test.ts",
     "../src/types/**/*.d.ts"
   ],

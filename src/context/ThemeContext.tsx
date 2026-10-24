@@ -8,7 +8,7 @@ export interface ThemeContextValue {
   setPreference: (value: 'light' | 'dark' | 'system') => void;
 }
 
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
 import {
   useCallback,
   useContext,

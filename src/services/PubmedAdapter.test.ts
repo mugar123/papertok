@@ -69,7 +69,7 @@ test('a PubMed record with no PMC copy yet says nothing about access', () => {
   // CC BY in Annals of Medicine, fully open, and not deposited in PMC yet. The
   // deposit takes days to months, so "no PMC" is not a paywall, and the card
   // used to tag this paper "Suscripción".
-  const paper = new PubmedAdapter().mapToStandard({
+  const record = {
     uid: '42773801',
     pubdate: '2026 Dec',
     epubdate: '2026 Sep 22',
@@ -77,10 +77,11 @@ test('a PubMed record with no PMC copy yet says nothing about access', () => {
     title: 'An Annals of Medicine article',
     pubtype: ['Journal Article'],
     articleids: [
-      { idtype: 'pubmed', idtypen: 1, value: '42773801' } as { idtype: string; idtypen: number; value: string },
-      { idtype: 'doi', idtypen: 3, value: '10.1080/07853890.2026.2726635' } as { idtype: string; idtypen: number; value: string },
+      { idtype: 'pubmed', idtypen: 1, value: '42773801' },
+      { idtype: 'doi', idtypen: 3, value: '10.1080/07853890.2026.2726635' },
     ],
-  } as Parameters<PubmedAdapter['mapToStandard']>[0] & { epubdate: string });
+  };
+  const paper = new PubmedAdapter().mapToStandard(record);
 
   assert.equal(paper.openAccess, undefined);
   assert.equal(accessTagForPaper(paper), null);

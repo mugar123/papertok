@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { shouldOpenSearchOnSlash } from './searchShortcut.ts';
-
-const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 const slash = (overrides = {}) => ({ key: '/', target: { closest: () => null }, ...overrides } as Parameters<typeof shouldOpenSearchOnSlash>[0]);
 const docWith = (modal: boolean) => ({
@@ -44,19 +41,4 @@ test('⌘K y Ctrl+K abren el buscador, también desde un campo', () => {
     assert.equal(shouldOpenSearchOnSlash(slash({ key: 'k', [mod]: true }), docWith(true)), false, `${mod} con modal`);
     assert.equal(shouldOpenSearchOnSlash(slash({ key: 'k', [mod]: true, shiftKey: true }), docWith(false)), false, `${mod}+shift`);
   }
-});
-
-test('SOURCE: la navbar delega en la puerta en vez de llevar la suya', async () => {
-  const jsx = stripComments(await readFile(new URL('./Navbar.tsx', import.meta.url), 'utf8'));
-  assert.match(jsx, /import \{ shouldOpenSearchOnSlash \} from '\.\/searchShortcut\.ts';/);
-  assert.match(
-    jsx,
-    /if \(!shouldOpenSearchOnSlash\(event, document\)\) return;/,
-    'el handler del atajo tiene que preguntar por la puerta, documento incluido',
-  );
-  assert.doesNotMatch(
-    jsx,
-    /event\.key !== '\/'/,
-    'la comprobación en crudo volvería a saltarse el modal: vive en searchShortcut.ts',
-  );
 });

@@ -215,7 +215,7 @@ export default function PageTransition({ children }: PropsWithChildren) {
     // still moving and hand a leaving page back halfway out. Ask the element
     // which of its own animations are still running rather than naming them:
     // a fade added later is then handled without touching this.
-    const stillMoving = rootRef.current!
+    const stillMoving = rootRef.current
       .getAnimations()
       .some((animation) => animation.playState === 'running');
     if (stillMoving) return;
@@ -224,7 +224,7 @@ export default function PageTransition({ children }: PropsWithChildren) {
       // Nested motion elements may keep this presence context mounted after
       // the route finishes. Hide its held frame before the arriving page
       // drops its stacking context, even if removal has to wait for them.
-      rootRef.current!.style.visibility = 'hidden';
+      rootRef.current.style.visibility = 'hidden';
       if (safeToRemove) safeToRemove();
     }
   }, [present, safeToRemove]);

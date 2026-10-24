@@ -1151,7 +1151,7 @@ test('answers a CORE search that takes longer than the shared source deadline', 
       clearTimeout(answer);
       reject(options.signal!.reason);
     }, { once: true });
-  })) as typeof fetch;
+  }));
   try {
     const response = await withCachedIdentity(() => reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/core?q=robotics',
