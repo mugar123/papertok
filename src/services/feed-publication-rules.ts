@@ -1,10 +1,13 @@
 import type { Paper } from '../models/paper.ts';
 import { normalizeDoi } from '../utils/public-navigation.ts';
 
-// Which papers the feed shows by their type: not books, not book reviews. For
-// the browser's Crossref lookups and the Worker's paper store alike.
+// Which papers the feed shows by their type: not books or book reviews, nor
+// errata, retractions, datasets, peer-review records, front matter or
+// supplementary files. For the browser's Crossref lookups and the Worker's
+// paper store alike.
 
 const BOOK_TYPES = new Set(['book', 'monograph', 'edited-book', 'reference-book', 'book-set', 'book-series']);
+const NON_RESEARCH_TYPES = new Set(['erratum', 'retraction', 'dataset', 'peer-review', 'paratext', 'supplementary-materials']);
 // These publishers explicitly identify book reviews that Crossref calls journal-article.
 // Checked 2026-10-18; corrections match identifiers, never titles or the word "review".
 const BOOK_REVIEWS = new Map([
@@ -27,7 +30,7 @@ function confirmedPublication(paper: Partial<Paper>) {
 
 export function isFeedPublication(paper: Partial<Paper>) {
   return !confirmedPublication(paper)
-    && ![paper.publicationType, paper.sourceType].some(type => type === 'book-review' || BOOK_TYPES.has(type || ''));
+    && ![paper.publicationType, paper.sourceType].some(type => type === 'book-review' || BOOK_TYPES.has(type || '') || NON_RESEARCH_TYPES.has(type || ''));
 }
 
 /**

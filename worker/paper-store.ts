@@ -492,7 +492,8 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
           id,
           published,
           textChanged: embeddingText(paper) !== embeddingText(before),
-          // A book or book review the enrichment revealed leaves every lane.
+          // A book, an erratum or another type the feed does not show leaves
+          // every lane once the enrichment reveals it.
           offered: isFeedPublication(paper),
           keys: workKeys(paper),
           lanes: published >= since ? recordLanes(paper, followed) : [],

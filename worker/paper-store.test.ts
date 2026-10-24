@@ -1178,6 +1178,25 @@ test("an enrichment that names an old paper's topic does not file it under that 
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'topic:T10604'").map(row => row.work_id), [recent.id], 'only the paper inside the window');
 });
 
+test('an erratum the enrichment reveals leaves every lane; a letter stays', async () => {
+  const { env, db } = corpus();
+  const record = { ...arxivRecord, allCategories: [], categories: [] };
+  await ingestPapers(env, [{ paper: record, lanes: ['cs.LG'] }, { paper: { ...record, id: '2610.99999', arxivId: '2610.99999', title: 'A research letter' }, lanes: ['cs.LG'] }], { now: NOW });
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, publicationType: before.arxivId === '2610.99999' ? 'letter' : 'erratum' } })), NOW);
+  assert.equal(rows(db, 'SELECT DISTINCT work_id FROM work_lanes').length, 1);
+  assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'publicationType' = 'letter' AND id IN (SELECT work_id FROM work_lanes)").length, 1);
+});
+
+test('a review or a conference paper the enrichment reveals keeps every lane', async () => {
+  const { env, db } = corpus();
+  const record = { ...arxivRecord, allCategories: [], categories: [] };
+  await ingestPapers(env, [{ paper: record, lanes: ['cs.LG'] }, { paper: { ...record, id: '2610.99999', arxivId: '2610.99999', title: 'A conference paper' }, lanes: ['cs.LG'] }], { now: NOW });
+  const stored = rows(db, 'SELECT id, paper FROM works').map(row => ({ id: Number(row.id), before: JSON.parse(String(row.paper)) as Paper }));
+  await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, publicationType: before.arxivId === '2610.99999' ? 'conference-paper' : 'review' } })), NOW);
+  assert.deepEqual(rows(db, "SELECT paper ->> 'publicationType' AS type FROM works WHERE id IN (SELECT work_id FROM work_lanes) ORDER BY type").map(row => row.type), ['conference-paper', 'review']);
+});
+
 test('a paper only an unfollowed entity names leaves; a category, the working-paper series or a follow keeps it', async () => {
   const { env, db } = corpus();
   const paper = (id: string, title: string) => ({ ...arxivRecord, id, arxivId: id, title, allCategories: [], categories: [] });
