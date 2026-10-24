@@ -390,7 +390,14 @@ async function relayOpenAlex(request: Request, env: WorkerEnv, harvest: HarvestA
   const target = openAlexTargetUrl(requestUrl.pathname, requestUrl.searchParams);
   if (!target) return json({ code: 'INVALID_OPENALEX_REQUEST' }, 400, corsHeaders(origin, env));
 
-  const cacheKey = canonicalCacheKey(request, Object.fromEntries(target.searchParams));
+  // The key's path and query are both read off the rebuilt target, before the
+  // credentials are added. `/openalex/works/?q` sends the same upstream URL as
+  // `/openalex/works?q`; keyed by the raw path, it bought a second entry, a
+  // second reservation and a second call.
+  const cacheKey = canonicalCacheKey(
+    { url: `https://papertok.internal/openalex${target.pathname}` },
+    Object.fromEntries(target.searchParams),
+  );
   const cached = await matchAtEdge(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 

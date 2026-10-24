@@ -1486,6 +1486,28 @@ test('an OpenAlex answer fetched in one location is served from the shared store
   assert.equal(entry.ttl, 24 * 60 * 60, 'kept for a day');
 });
 
+test('a trailing slash on an OpenAlex path shares the entry, reservation and call of the same upstream URL', async () => {
+  const store = fakeOpenAlexStore();
+  const ledger = recordingLedger();
+  const env = openAlexEnv({ NOTIFICATION_STORE: store, REQUEST_QUOTA_LEDGER: ledger.binding });
+  const calls = await withCountedUpstream(
+    async () => new Response(JSON.stringify({ results: [{ id: 'W1' }] }), { status: 200 }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (const path of ['/openalex/works?search=graphene', '/openalex/works/?search=graphene']) {
+          const response = await reportApi.fetch(new Request(`https://papertok-report-api.example${path}`, { headers: BROWSER }), env);
+          assert.equal(response.status, 200, path);
+        }
+      });
+    },
+  );
+
+  // Both spellings are rebuilt as https://api.openalex.org/works?search=graphene.
+  assert.equal(calls.length, 1);
+  assert.equal(ledger.reservations.length, 1);
+  assert.equal(store.entries.size, 1);
+});
+
 test('a work OpenAlex has not indexed is shared for an hour; a refusal and an outage are not shared', async () => {
   const sharedAfter = async (status: number) => {
     const store = fakeOpenAlexStore();
