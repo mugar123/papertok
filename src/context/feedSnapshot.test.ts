@@ -146,7 +146,7 @@ test('a notable card the reader has not reached stays ahead of them in a restore
 
 // The reader dismissed the notable card they were on, the list's last one, and
 // the tab reloaded. The restored list no longer held it, and the next page
-// counted from the notable card before it: 3 cards after the dismissed one.
+// counted from the notable card before it: 2 cards after the dismissed one.
 test('after a reload, the next page puts its notable card fifteen cards after a notable card the reader dismissed', () => {
   const shown = placeNotableCards(Array.from({ length: 36 }, (_, index) => card(`card-${index}`)), [notable('notable-0'), notable('notable-1')]);
   assert.equal(shown[29].id, 'notable-1');
