@@ -1,5 +1,5 @@
 import type { PropsWithChildren } from 'react';
-import type { Paper, PaperFollowMatch } from '../models/paper.ts';
+import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 import type { CuratedSetName, InteractionDocumentData, InteractionEvent, InteractionProfile, ProfileSignals } from '../utils/interaction-profile.ts';
 import type { ProfileLoadResult } from '../utils/interaction-profile-loader.ts';
@@ -75,6 +75,7 @@ import {
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
+import { FOLLOWED_PER_PAGE, fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
@@ -161,56 +162,12 @@ function feedPreferenceSignature(preferences: string[] | null) {
   return [...(preferences || [])].sort().join('|');
 }
 
-// How many papers the followed entities add to a page.
-const FOLLOWED_PER_PAGE = 6;
 // The exploration cards a page adds from categories near the reader's:
 // FIRST_SCREEN_EXPLORATION on the first screen, up to NEARBY_EXPLORATION_MAX
 // after it, and RANDOM_EXPLORATION more from random ones when the reader is bored.
 const FIRST_SCREEN_EXPLORATION = 2;
 const NEARBY_EXPLORATION_MAX = 8;
 const RANDOM_EXPLORATION = 2;
-
-/**
- * Papers of the reader's follows from the paper corpus: the Worker serves an
- * author, institution, OpenAlex topic, project or followed query from the
- * lane it harvests for it, and says which follows each paper matched. A
- * topic follow that is one of the app's categories is asked for as those
- * categories, and matched by the categories a paper was found under. With
- * `seen`, a Worker that skips seen papers sends the follows' next unseen ones.
- */
-async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, negativeIds, excludedIds, seen, categoryIdsOf }: {
-  page: number; order: string; positiveIds: string[]; negativeIds: string[]; excludedIds: string[]; seen?: Iterable<string>; categoryIdsOf: (follow: FollowEntity) => string[];
-}) {
-  const categoryFollows = followedEntities
-    .map(follow => ({ follow, categoryIds: follow.type === 'topic' ? categoryIdsOf(follow) : [] }))
-    .filter(entry => entry.categoryIds.length > 0);
-  const { papers } = await fetchCorpusPage({
-    categories: [...new Set(categoryFollows.flatMap(entry => entry.categoryIds))],
-    follows: followedEntities,
-    positiveIds,
-    negativeIds,
-    excludedIds,
-    page,
-    pageSize: FOLLOWED_PER_PAGE,
-    order,
-    seen,
-  });
-  return papers.map(paper => ({
-    ...paper,
-    _type: 'followed' as const,
-    _followedEntityMatches: mergeFollowEntityMatches(
-      paper._followedEntityMatches,
-      categoryFollows.filter(entry => entry.categoryIds.some(id => paper._fetchedFor?.includes(id))).map(entry => entry.follow),
-    ),
-  }));
-}
-
-function mergeFollowEntityMatches(...groups: Array<Paper['_followedEntityMatches']>) {
-  const matches = groups.flat().filter(match => match && typeof match === 'object') as PaperFollowMatch[];
-  return matches.filter((match, index) => matches.findIndex(candidate => (
-    candidate.type === match.type && candidate.canonicalId === match.canonicalId
-  )) === index);
-}
 
 // The For You feed's engagement goes out every this many cards: how many were
 // skipped, read past the reader's median, liked and saved. Counts only, so
