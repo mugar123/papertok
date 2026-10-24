@@ -1,6 +1,6 @@
 import { captureWorkerException } from './error-tracking.ts';
 import { accountOwnsEmail } from './firebase-auth.ts';
-import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
+import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
 
@@ -78,10 +78,10 @@ interface ScheduleSummary {
 import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
-import { areaKeyForPaper } from '../src/utils/areaAccent.ts';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.ts';
+import { CATEGORIES } from '../src/data/category-taxonomy.ts';
+import { areaKeyForPaper } from '../src/utils/area-accent.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 
@@ -93,7 +93,7 @@ const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
 // Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
 // correos ya enviados llevan `/#/following` y siguen llegando a su sitio --
-// la puerta de index.html y utils/legacyHashRoute.js los traducen -- pero
+// la puerta de index.html y utils/legacy-hash-route.ts los traducen -- pero
 // este Worker se despliega por su cuenta, asi que lo que acuna a partir de
 // ahora es la ruta, no el fragmento.
 const PAPER_TOK_URL = 'https://papertok.app/following';
@@ -611,7 +611,7 @@ function sourceBucket(report: SourceReport | null | undefined, source: string) {
 function recordSourceFailure(report: SourceReport | null | undefined, source: string, code: string) {
   if (!report) return;
   report.failed += 1;
-  sourceBucket(report, source!)!.failed += 1;
+  sourceBucket(report, source)!.failed += 1;
   report.failureCodes[code] = (report.failureCodes[code] || 0) + 1;
 }
 
@@ -705,13 +705,13 @@ async function fetchDigestSource(input: RequestInfo | URL, init: RequestInit | u
 async function trackDigestSource<T>(report: SourceReport | null | undefined, source: string, operation: () => Promise<T>) {
   if (report) {
     report.attempted += 1;
-    sourceBucket(report, source!)!.attempted += 1;
+    sourceBucket(report, source)!.attempted += 1;
   }
   try {
     const result = await operation();
     if (report) {
       report.succeeded += 1;
-      sourceBucket(report, source!)!.succeeded += 1;
+      sourceBucket(report, source)!.succeeded += 1;
     }
     return result;
   } catch (error) {
@@ -831,7 +831,7 @@ async function verifyFirebaseIdentity(request: Request, env: WorkerEnv) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ idToken: token }),
   }, EMAIL_IDENTITY_TIMEOUT_MS);
-  const payload = await response.json<{ users?: EmailAccount[] }>().catch(() => ({} as { users?: EmailAccount[] }));
+  const payload = await response.json<{ users?: EmailAccount[] }>().catch((): { users?: EmailAccount[] } => ({}));
   const account = payload?.users?.[0];
   if (!response.ok || !account?.localId || !account?.email) {
     throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
@@ -956,7 +956,7 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+  const subscription = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
   await Promise.all([
     env.NOTIFICATION_STORE.delete(key),
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription || { uid })),
@@ -2640,7 +2640,7 @@ export async function checkEmailProviderHealth(env: WorkerEnv) {
       if (!response.ok) {
         return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
       }
-      const payload = await response.json<{ senders?: Array<{ active?: boolean; email?: string }> }>().catch(() => ({} as { senders?: Array<{ active?: boolean; email?: string }> }));
+      const payload = await response.json<{ senders?: Array<{ active?: boolean; email?: string }> }>().catch((): { senders?: Array<{ active?: boolean; email?: string }> } => ({}));
       const senderEmail = cleanText(env.BREVO_FROM_EMAIL, 320).toLowerCase();
       const activeSender = (payload?.senders || []).some(sender => (
         sender?.active && cleanText(sender.email, 320).toLowerCase() === senderEmail
@@ -2692,7 +2692,7 @@ export async function checkEmailProviderHealth(env: WorkerEnv) {
       return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_AUTH_FAILED' };
     }
     if (!response.ok) return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
-    const payload = await response.json<{ data?: Array<{ status?: string }> }>().catch(() => ({} as { data?: Array<{ status?: string }> }));
+    const payload = await response.json<{ data?: Array<{ status?: string }> }>().catch((): { data?: Array<{ status?: string }> } => ({}));
     const verified = (payload?.data || []).some(domain => domain.status === 'verified');
     return {
       configured: true,

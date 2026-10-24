@@ -481,7 +481,8 @@ test('reassembles a section split across provider chunks', async () => {
   }
   assert.equal(sections.length, 1);
   assert.equal(sections[0].paragraphs[0], 'Split across two frames.');
-  assert.equal(end!.rawText, line);
+  assert.ok(end);
+  assert.equal(end.rawText, line);
 });
 
 test('reports the finish reason and raw text when nothing parses', async () => {

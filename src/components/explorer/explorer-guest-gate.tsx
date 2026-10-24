@@ -1,0 +1,63 @@
+import { ArrowRight } from '@phosphor-icons/react';
+import { useLanguage } from '../../context/language-context.tsx';
+import { Button } from '../ui/button.tsx';
+import './explorer-guest-gate.css';
+
+// The foot of a list somebody is reading without an account. Two rows are
+// shown above it; this block says what the other rows are and opens the same
+// in-context door the rest of the explorer uses (`onAuthRequired` → AuthPrompt),
+// so signing up happens here rather than on a page that would lose the entity.
+//
+// It is a block in the flow, not an overlay: nothing is dismissed, nothing is
+// covered, and a visitor who does not want an account can still read the two
+// rows above and leave through any of the entity's links. The wall is where
+// the list stops, not on top of it.
+//
+// The count comes from the entity's own publication total — the same number
+// the stats box above already shows — and `guestGateTotal` hands over `null`
+// rather than a figure that would not explain the wall. With no number the
+// copy makes no claim about size.
+
+const COPY = {
+  papers: {
+    en: {
+      kicker: 'Preview without an account',
+      title: (total: string | null) => (total ? `There are ${total} publications here` : 'The list keeps going'),
+      body: 'You are seeing the first two. An account opens the whole list, with its search and its filters.',
+    },
+  },
+  authors: {
+    en: {
+      kicker: 'Preview without an account',
+      title: () => 'The author list keeps going',
+      body: 'You are seeing the first two. An account opens the whole list.',
+    },
+  },
+};
+
+const CTA = {
+  en: { cta: 'Sign up', foot: 'With Google or GitHub, without leaving this screen.' },
+};
+
+export default function ExplorerGuestGate({ kind = 'papers', total = null, onSignUp }: { kind?: keyof typeof COPY; total?: number | null; onSignUp?: () => void }) {
+  const { locale } = useLanguage();
+  const lang = 'en';
+  const copy = COPY[kind][lang];
+  const action = CTA[lang];
+  const formattedTotal = typeof total === 'number' ? total.toLocaleString(locale) : null;
+
+  return (
+    <div className="explorer-guest-gate">
+      <span className="egg-kicker">{copy.kicker}</span>
+      <h3 className="egg-title">{copy.title(formattedTotal)}</h3>
+      <p className="egg-body">{copy.body}</p>
+      <div className="egg-action">
+        <Button size="sm" onClick={onSignUp}>
+          {action.cta}
+          <ArrowRight size={15} aria-hidden="true" />
+        </Button>
+        <span className="egg-foot">{action.foot}</span>
+      </div>
+    </div>
+  );
+}

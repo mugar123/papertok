@@ -15,8 +15,9 @@ dist
 # stops being committed. This negation is what keeps it tracked.
 !.env.example
 .DS_Store
-.claude/
-lint_output.txt
+.claude/*
+!.claude/settings.json
+!.claude/agents/
 
 # Firestore emulator artefacts (npm run test:rules)
 firestore-debug.log
@@ -24,11 +25,8 @@ firebase-debug.log
 # Accounts and documents saved by `npm run dev:emulators` between runs
 /.firebase-emulators/
 
-# Espacio de trabajo de subagent-driven-development (scratch, no versionado)
+# Local scratch space for subagent work.
 .superpowers/
-
-.superpowers/
-emergent-ventures/
 
 # Local investigations, audits and task reports must not enter commits.
 /.local/

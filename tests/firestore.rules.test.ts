@@ -19,13 +19,13 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.ts';
-import { paperLegacyAdapter, storedClassification } from '../src/models/Paper.ts';
-import { areaLabelForPaper } from '../src/utils/areaAccent.ts';
-import { serializeLibraryPaper } from '../src/utils/readingLibrary.ts';
-import { LIST_COLORS } from '../src/utils/listColors.ts';
-import { USER_PREFERENCES_MAX } from '../src/utils/accountOnboarding.ts';
-import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/savedSummaryService.ts';
+import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
+import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
+import { areaLabelForPaper } from '../src/utils/area-accent.ts';
+import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
+import { LIST_COLORS } from '../src/utils/list-colors.ts';
+import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
+import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import {
   deleteDoc,
   deleteField,
@@ -323,7 +323,7 @@ test('an old account can make every write the app makes to its user document', a
 });
 
 test('a preference list is capped at 100, and the cap is where the client says it is', async () => {
-  // USER_PREFERENCES_MAX (src/utils/accountOnboarding.js) is what the pickers
+  // USER_PREFERENCES_MAX (src/utils/account-onboarding.ts) is what the pickers
   // enforce; this is the rules engine agreeing with them. One over is refused
   // outright, which is why the onboarding must never let a list that long
   // reach the write (audit of 2026-09-16, hallazgo 4).
@@ -754,7 +754,7 @@ test('F12: a private list carries the sync and attribution stamps', async () => 
 // The clause validates ten fields and shipped with no test at all, which is
 // the exact shape the suite exists to catch: an allowlist reads correct and
 // denies nothing until something writes through it. `src/services/
-// userHighlightService.js` is the only writer, so every body below is one the
+// user-highlight-service.ts` is the only writer, so every body below is one the
 // client could actually produce.
 // =========================================================================
 

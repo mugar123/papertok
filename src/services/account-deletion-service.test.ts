@@ -1,0 +1,107 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { deleteAccount, AccountDeletionError } from './account-deletion-service.ts';
+
+test('deleteAccount retries 202 slices until complete', async () => {
+  const statuses = [];
+  const result = await deleteAccount('alice', {
+    apiBase: 'https://worker.test',
+    currentUid: () => 'alice',
+    request: async () => {
+      statuses.push(true);
+      if (statuses.length < 3) {
+        return new Response(JSON.stringify({ complete: false, stage: 'userTree' }), { status: 202 });
+      }
+      return new Response(JSON.stringify({ complete: true, stage: 'auth' }), { status: 200 });
+    },
+  });
+  assert.equal(result.complete, true);
+  assert.equal(statuses.length, 3);
+});
+
+test('a 401 after work has started is treated as Auth already gone', async () => {
+  let calls = 0;
+  const result = await deleteAccount('alice', {
+    apiBase: 'https://worker.test',
+    currentUid: () => 'alice',
+    request: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ complete: false, stage: 'userTree' }), { status: 202 });
+      }
+      return new Response(JSON.stringify({ code: 'AUTH_REQUIRED' }), { status: 401 });
+    },
+  });
+  assert.equal(result.complete, true);
+  assert.equal(calls, 2);
+});
+
+test('a session switch between slices stops the deletion before the next POST', async () => {
+  let uid = 'alice';
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount('alice', {
+      apiBase: 'https://worker.test',
+      currentUid: () => uid,
+      request: async () => {
+        calls += 1;
+        uid = 'bob'; // Bob signs in while Alice's first slice is in flight.
+        return new Response(JSON.stringify({ complete: false, stage: 'comments' }), { status: 202 });
+      },
+    }),
+    (error) => error instanceof AccountDeletionError && error.code === 'AUTH_REQUIRED',
+  );
+  assert.equal(calls, 1);
+});
+
+test('a session switch after Alice confirmed and before the first slice sends nothing', async () => {
+  // Alice confirmed in the sign-in window; meanwhile another tab signed this
+  // one in as Bob, whose fresh sign-in would pass the Worker's recency check.
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount('alice', {
+      apiBase: 'https://worker.test',
+      currentUid: () => 'bob',
+      request: async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ complete: true, stage: 'auth' }), { status: 200 });
+      },
+    }),
+    (error) => error instanceof AccountDeletionError && error.code === 'AUTH_REQUIRED',
+  );
+  assert.equal(calls, 0);
+});
+
+test('AUTH_RECENT_LOGIN_REQUIRED is never success, even after work started', async () => {
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount('alice', {
+      apiBase: 'https://worker.test',
+      currentUid: () => 'alice',
+      request: async () => {
+        calls += 1;
+        if (calls === 1) return new Response(JSON.stringify({ complete: false, stage: 'userTree' }), { status: 202 });
+        return new Response(JSON.stringify({ code: 'AUTH_RECENT_LOGIN_REQUIRED' }), { status: 401 });
+      },
+    }),
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AUTH_RECENT_LOGIN_REQUIRED',
+  );
+  assert.equal(calls, 2);
+});
+
+test('a 401 before the user tree was reached is an error, not completion', async () => {
+  let calls = 0;
+  await assert.rejects(
+    deleteAccount('alice', {
+      apiBase: 'https://worker.test',
+      currentUid: () => 'alice',
+      request: async () => {
+        calls += 1;
+        if (calls === 1) return new Response(JSON.stringify({ complete: false, stage: 'comments' }), { status: 202 });
+        return new Response(JSON.stringify({ code: 'AUTH_REQUIRED' }), { status: 401 });
+      },
+    }),
+    (error) => (error as Error & { code?: string; status?: number; retryAfterMs?: number }).code === 'AUTH_REQUIRED' && (error as Error & { code?: string; status?: number; retryAfterMs?: number }).status === 401,
+  );
+  assert.equal(calls, 2);
+});
