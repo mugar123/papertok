@@ -23,7 +23,7 @@ scroll, and the feed learns from what you read, like, save, skip and follow.
 - **Citation map**: see what a paper cites and what cites it.
 - **Clear labels** for preprints, working papers and open access.
 - **Library** of colored lists you can share.
-- **The PaperTok Weekly**: an opt-in Monday email with new papers from what you follow.
+- **Weekly email update**: an opt-in reading list prepared on Mondays with new papers from what you follow. Delivery can be delayed by sending limits.
 - **Installable** on your home screen, with dark mode.
 
 ## Run locally
