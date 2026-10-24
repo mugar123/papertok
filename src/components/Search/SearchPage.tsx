@@ -14,7 +14,6 @@ import {
   FileText,
   Lightbulb,
   MagnifyingGlass,
-  Plus,
   TrendUp,
   Users,
   WarningCircle,
@@ -57,7 +56,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/useIsPhone.ts';
 import '../Feed/SharePanel.css';
-import { Toggle } from '../ui/toggle.tsx';
+import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization.ts';
 import { getProjectDisplayName } from '../../utils/entityMetadata.ts';
 import {
@@ -217,39 +216,18 @@ function OrderedSearchSections({ children, preferredSection }: PropsWithChildren
 function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: FollowInput; isFollowing: (entity: FollowInput) => boolean; isPending: (entity: FollowInput) => boolean; onToggle: (event: MouseEvent, entity: FollowInput) => void }) {
   const following = isFollowing(entity);
   const pending = isPending(entity);
-  const label = following
-    ? ('Following')
-    : ('Follow');
 
-  // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
-  // `pressed`. The click still goes through `onToggle`, which stops it from
-  // reaching the row link underneath and asks the following context.
+  // The detail pages' Follow (ui/follow-toggle.tsx). The click still goes
+  // through `onToggle`, which stops it from reaching the row link underneath
+  // and asks the following context.
   return (
-    <Toggle
-      variant="outline"
-      className={`search-follow-btn ${following ? 'following' : ''} ${pending ? 'is-pending' : ''}`}
+    <FollowToggle
       pressed={following}
       onClick={(event) => onToggle(event, entity)}
       disabled={pending}
-      aria-label={label}
-      title={label}
-    >
-      {following ? (
-        <>
-          <Check size={14} aria-hidden="true" className="search-follow-rest" />
-          <span className="search-follow-rest">{label}</span>
-          {/* Shown on pointer hover: what pressing it now does. Keyboard focus
-              keeps "Following", the button's accessible name. */}
-          <X size={14} aria-hidden="true" className="search-follow-undo" />
-          <span className="search-follow-undo" aria-hidden="true">{'Unfollow'}</span>
-        </>
-      ) : (
-        <>
-          <Plus size={14} aria-hidden="true" />
-          <span>{label}</span>
-        </>
-      )}
-    </Toggle>
+      followLabel={'Follow'}
+      followingLabel={'Following'}
+    />
   );
 }
 
@@ -941,7 +919,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {institutionResults.map((inst) => (
                   <ListRow
                     key={inst.id}
-                    meta={['Institution', inst.country_code || ('Unknown country')]}
                     title={getLocalizedInstitutionName(inst)}
                     onOpen={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
                     actions={(
@@ -959,7 +936,9 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         onToggle={handleToggleFollow}
                       />
                     )}
-                  />
+                  >
+                    <p className="list-row-byline">{inst.country_code || 'Unknown country'}</p>
+                  </ListRow>
                 ))}
               </div>
             )}
@@ -1029,7 +1008,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {authorResults.map((author) => (
                   <ListRow
                     key={author.id}
-                    meta={['Author']}
                     title={author.display_name}
                     onOpen={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
                     actions={(

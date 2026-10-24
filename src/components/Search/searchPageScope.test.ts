@@ -21,9 +21,9 @@ test('the field ends in the scope, a named Select on desktop and a drawer on a p
   assert.doesNotMatch(jsx, /<Tabs\b|<TabsList|<TabsTrigger|<TabsContent/, 'no tab widget is left without its tabs');
 });
 
-test('the search field is the ui Input with a name, and follow is a Toggle', async () => {
+test('the search field is the ui Input with a name, and follow is the detail pages\' FollowToggle', async () => {
   const jsx = await jsxFile;
   assert.match(jsx, /<Input\s+type="search"\s+className="search-input"[\s\S]*?aria-label=\{'Search PaperTok'\}/);
-  assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{`search-follow-btn[\s\S]*?pressed=\{following\}/);
+  assert.match(jsx, /<FollowToggle\s+pressed=\{following\}/);
   assert.doesNotMatch(jsx, /aria-pressed=/);
 });
