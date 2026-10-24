@@ -47,3 +47,13 @@ test('backend errors retain bundle coordinates and only approved status labels',
   assert.doesNotMatch(JSON.stringify(properties), /private|secret/i);
   assert.equal(sanitizeExceptionProperties({ $exception_message: 'secret' }), null);
 });
+
+test('email capacity errors retain only the safe alert label', () => {
+  const properties = sanitizeExceptionProperties({
+    $exception_list: [{ type: 'Error', value: 'recipient@example.com' }],
+    operation: 'schedule', email_limit: 'reached', recipient: 'recipient@example.com',
+  });
+  assert.equal(properties?.operation, 'schedule');
+  assert.equal(properties?.email_limit, 'reached');
+  assert.doesNotMatch(JSON.stringify(properties), /recipient@example.com/);
+});

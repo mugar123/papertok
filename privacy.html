@@ -189,7 +189,7 @@
       <p>
         When you request a university link, PaperTok sends that email address to
         <strong>Firebase Authentication</strong> to generate a one-time verification
-        link and to <strong>Brevo</strong> to deliver it. The pending request stays in
+        link and to <strong>Resend</strong> to deliver it. The pending request stays in
         your browser for up to one hour. Cloudflare stores hashed account and recipient
         identifiers for request limits and a delivery status; it does not store the
         verification link or message body. Your linked institution records the university
@@ -201,7 +201,11 @@
       <p>
         If you turn them on, PaperTok emails you what is new from what you follow. For that
         it stores your email address, your sending preferences and an unsubscribe
-        identifier, in <strong>Cloudflare Workers KV</strong>. <strong>Brevo</strong> sends
+        identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
+        an edition, PaperTok also stores its selected papers, abstracts and reasons
+        they matched your follows. That selection is removed after delivery, a
+        change to your follows or a later edition that is processed; otherwise its delivery record
+        expires after 120 days. <strong>Resend</strong> sends
         the emails.
       </p>
       <p>
@@ -348,7 +352,7 @@
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
         <li><strong>PostHog</strong> — analytics of what is done in the application, error reports and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
-        <li><strong>Brevo</strong> — sending the emails.</li>
+        <li><strong>Resend</strong> — sending the emails.</li>
       </ul>
 
       <h2>How long it is kept</h2>

@@ -108,9 +108,8 @@ test('the retired /ai/hooks and /ai/explain routes answer 405 and spend nothing'
 
 test('returns an unhealthy status when the email provider works but the scheduler is stale', async () => {
   const env = {
-    EMAIL_PROVIDER: 'brevo',
-    BREVO_API_KEY: 'xkeysib-test',
-    BREVO_FROM_EMAIL: 'papertok@example.com',
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     NOTIFICATION_STORE: {
       get: async () => ({
         scheduledAt: '2026-01-01T07:00:00.000Z',
@@ -120,7 +119,7 @@ test('returns an unhealthy status when the email provider works but the schedule
     } as KVNamespace & { get(): Promise<object> },
   };
   const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
-    senders: [{ active: true, email: 'papertok@example.com' }],
+    data: [{ name: 'papertok.app', status: 'verified' }],
   }), { headers: { 'content-type': 'application/json' } }), () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/health/email',
     { headers: { origin: 'https://mugar123.github.io' } },
@@ -134,13 +133,11 @@ test('returns an unhealthy status when the email provider works but the schedule
 });
 
 test('serves the email health probe from the edge cache', async () => {
-  // Brevo shares one rate limit between this probe and real digest delivery, so
-  // an anonymous route that hits `/v3/senders` per request can starve the cron.
+  // Edge caching keeps repeated health requests off the provider API.
   let providerCalls = 0;
   const env = {
-    EMAIL_PROVIDER: 'brevo',
-    BREVO_API_KEY: 'xkeysib-test',
-    BREVO_FROM_EMAIL: 'papertok@example.com',
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     EMAIL_DELIVERY_LEDGER: { idFromName: ((): unknown => 'day') as TestNamespace['idFromName'], get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('{}') })) as TestNamespace['get'] } as Env['REQUEST_QUOTA_LEDGER'],
     NOTIFICATION_STORE: {
       get: async () => ({
@@ -166,7 +163,7 @@ test('serves the email health probe from the edge cache', async () => {
   };
   globalThis.fetch = async () => {
     providerCalls += 1;
-    return new Response(JSON.stringify({ senders: [{ active: true, email: 'papertok@example.com' }] }), {
+    return new Response(JSON.stringify({ data: [{ name: 'papertok.app', status: 'verified' }] }), {
       headers: { 'content-type': 'application/json' },
     });
   };
@@ -193,9 +190,8 @@ test('serves the email health probe from the edge cache', async () => {
 
 test('reports a missing email delivery ledger binding as unhealthy', async () => {
   const env = {
-    EMAIL_PROVIDER: 'brevo',
-    BREVO_API_KEY: 'xkeysib-test',
-    BREVO_FROM_EMAIL: 'papertok@example.com',
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     NOTIFICATION_STORE: {
       get: async () => ({
         scheduledAt: new Date().toISOString(),
@@ -205,7 +201,7 @@ test('reports a missing email delivery ledger binding as unhealthy', async () =>
     } as KVNamespace & { get(): Promise<object> },
   };
   const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
-    senders: [{ active: true, email: 'papertok@example.com' }],
+    data: [{ name: 'papertok.app', status: 'verified' }],
   }), { headers: { 'content-type': 'application/json' } }), () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/health/email',
     { headers: { origin: 'https://mugar123.github.io' } },
