@@ -108,7 +108,6 @@ function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRele
   );
 }
 
-/** The tabs as a menu on /search, where the field takes their place below 768px. */
 function PagePicker({ search }: { search: string }) {
   const searchRow = `/search${search}`;
   return (
@@ -162,13 +161,6 @@ function PagePicker({ search }: { search: string }) {
   );
 }
 
-/**
- * Entering or leaving /search swaps the bar's search button for the page's
- * wider field. Without this the field jumps between the two widths; with it,
- * the new one grows or shrinks from the width the old one had. A
- * ResizeObserver keeps that width current, so a window resized since the last
- * swap does not start the field from a stale size.
- */
 function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchPage: boolean) {
   const widthRef = useRef(0);
   const reduceMotion = useReducedMotion();
@@ -176,7 +168,6 @@ function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchP
   useLayoutEffect(() => {
     const field = fieldRef.current;
     const from = widthRef.current;
-    // Below 900px the button is hidden, so one of the two widths is zero.
     if (!field || reduceMotion || !from || !field.offsetWidth) return;
     // The field's flex rules would override the width it animates through.
     animateSize(field, 'width', from, 260, EASE_OUT, { flex: 'none' });
@@ -207,8 +198,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
-  // On /search the bar holds the page's own field, which SearchPage renders
-  // into this slot; SearchPage also takes the shortcut there.
   const onSearchPage = pathname === '/search';
   const searchFieldRef = useRef<HTMLElement | null>(null);
   const attachSearchField = useCallback((node: HTMLElement | null) => {

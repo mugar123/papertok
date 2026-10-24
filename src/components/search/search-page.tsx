@@ -664,8 +664,6 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Focus goes back to the field: the control that was pressed unmounts while
   // the search runs.
-  // The header's shortcut opens the palette everywhere else (navbar.tsx); here
-  // it focuses this field, once the field is in the header.
   useEffect(() => {
     const focusField = (event: KeyboardEvent) => {
       const field = searchInputRef.current;
@@ -684,7 +682,6 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   return (
     <main className="search-page-container">
       <h1 className="visually-hidden">{'Search PaperTok'}</h1>
-      {/* The field lives in the app's header (Navbar's slot on /search). */}
       {searchSlot && createPortal(
         <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
           <MagnifyingGlass className="search-icon" size={15} />

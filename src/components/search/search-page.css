@@ -8,7 +8,6 @@
  * the flat chrome and the yellow active tab.
  */
 
-/* Below the app's header, which holds this page's field. */
 .search-page-container {
   display: flex;
   flex-direction: column;
@@ -77,8 +76,7 @@
   display: none;
 }
 
-/* Beside the header's search button, its size; narrower, the button is gone
-   and iOS zooms into a field under 16px (ui/input.tsx). */
+/* iOS zooms into a field under 16px (ui/input.tsx). */
 @media (min-width: 901px) {
   .search-input {
     font-size: var(--fs-sm);
@@ -437,8 +435,6 @@
   flex-shrink: 0;
 }
 
-/* On a phone the header's page picker already says Search; the query
-   keeps the icon's width. */
 @media (max-width: 768px) {
   .search-icon {
     display: none;

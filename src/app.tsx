@@ -128,7 +128,6 @@ function AppContent() {
   // its own; measured 2026-09-22, Escape left the focus on `body`. A ref,
   // read at close time, so a button that re-rendered meanwhile still counts.
   const searchOpenerRef = useRef<HTMLElement | null>(null)
-  // Navbar's slot on /search, where SearchPage renders its field.
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null)
   const openSearch = useCallback(() => {
     searchOpenerRef.current = document.activeElement instanceof HTMLElement
