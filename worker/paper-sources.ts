@@ -433,16 +433,19 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     ].join(','), { page, lane, perPage: 200 }),
   },
   // The newest journal articles of a whole area, filed under the area. On
-  // 2026-10-23 a page of 200 held the last one or two days of each area but
-  // finance's nine: about 22 (finance) to 370 (electrical engineering) a day.
-  // So a night reads one page, the newest 200: one list call an area.
+  // 2026-10-23 a page of 200 with an abstract held the last one or two days of
+  // each area but finance's nine: about 22 (finance) to 370 (electrical
+  // engineering) a day. In the 90 days before, 23 % (statistics, economics) to
+  // 39 % (mechanical engineering) of the articles had none. So a night reads
+  // one page, the newest 200: one list call an area. Unlike the topic lanes,
+  // the area lanes take an article without an abstract (PAP-107); its card
+  // says it has none.
   'openalex-areas': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexLabelFilterForArea(lane.slice('area:'.length)),
       windowFilter(),
       'type:article',
-      'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200 }),

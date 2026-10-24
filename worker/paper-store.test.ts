@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector,
+  arxivIdOf, daysFromNow, embedPending, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector,
   rewriteWorks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
@@ -15,6 +15,7 @@ import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
 import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
+import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
   assert.equal(arxivIdOf('arxiv:2610.01234v2'), '2610.01234');
@@ -513,6 +514,27 @@ test("at least 3 of every 15 cards are the area's journal articles while its lan
   assert.deepEqual(await page(0, [likedPreprint.id]), { preprints: preprintIds.slice(0, 12), articles: articleIds.slice(0, 3) });
   // By one that puts the articles first, all five lead: the floor has no maximum.
   assert.deepEqual(await page(0, [likedArticle.id]), { preprints: preprintIds.slice(0, 10), articles: articleIds });
+});
+
+// An area's lane lists articles without an abstract too (PAP-107); the mapper
+// stands "No abstract available." in for the missing one.
+test('a paper without an abstract is embedded by its title alone, not by the words standing in for the abstract', async () => {
+  const { binding } = testD1();
+  const embedded: string[] = [];
+  const env = {
+    PAPER_STORE: binding,
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
+    AI: { run: async (_model: string, { text }: { text: string[] }) => {
+      embedded.push(...text);
+      return { data: text.map(() => Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))) };
+    } },
+  } as unknown as Parameters<typeof embedPending>[0];
+  const withoutAbstract = mapOpenAlexWork({ ...physicsWork, abstract_inverted_index: null })!;
+  assert.equal(withoutAbstract.abstract, 'No abstract available.');
+  await ingestPapers(env, [{ paper: withoutAbstract, lanes: ['area:physics'] }, { paper: arxivRecord, lanes: [] }], { now: NOW });
+  assert.equal(await embedPending(env, 10), 2);
+  // Newest first: the article is from 2026-10-21, the preprint from 2026-10-10.
+  assert.deepEqual(embedded, ['High-harmonic Generation Spectroscopy in van der Waals Materials', 'Sparse attention for long documents\n\nWe make attention sparse.']);
 });
 
 test('two writers filing one paper at once meet on one row, and a short title joins nothing', async () => {

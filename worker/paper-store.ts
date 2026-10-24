@@ -231,7 +231,11 @@ function storedPaper(paper: Paper): Paper {
   return stored;
 }
 
-const embeddingText = (paper: Partial<Paper>) => `${text(paper.title)}\n\n${text(paper.abstract)}`.slice(0, EMBED_TEXT_CHARS);
+// Without an abstract, the title alone: the mappers' "No abstract available."
+// would make every such paper alike.
+const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abstract)
+  ? `${text(paper.title)}\n\n${text(paper.abstract)}`
+  : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
 interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }

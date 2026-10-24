@@ -18,6 +18,7 @@ import { readPubmedEfetch } from '../src/utils/pubmedEfetch.ts';
 import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
 import { getCategoryArea } from '../src/data/categoryTaxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
+import { hasUsableAIAbstract } from '../src/utils/aiExplanationAccess.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
 // trimmed to one record, its abstract shortened, plus a deleted record.
@@ -404,17 +405,21 @@ const closedPhysicsArticle = {
   },
 };
 
-test("an area's journal lane asks OpenAlex for the core journal articles labelled as that area, and files them under the area, paywall and review as recorded", async t => {
+test("an area's journal lane asks OpenAlex for the core journal articles labelled as that area, with or without an abstract, and files them under the area, paywall and review as recorded", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
-  const { urls, env } = relay(t, () => ({ results: [closedPhysicsArticle] }));
+  // The same article as OpenAlex lists one whose abstract it does not hold.
+  const withoutAbstract = { ...closedPhysicsArticle, id: 'https://openalex.org/W7223244691', doi: 'https://doi.org/10.7566/jpsj.95.111003', abstract_inverted_index: null };
+  const { urls, env } = relay(t, () => ({ results: [closedPhysicsArticle, withoutAbstract] }));
   const { items } = await SOURCES['openalex-areas'].fetchPage(env as never, { lane: 'area:physics', page: 1, since: '' });
   const [url] = urls;
-  for (const filter of ['primary_topic.field.id:31', 'type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true', 'from_publication_date:2026-07-25', 'to_publication_date:2026-10-23']) {
+  for (const filter of ['primary_topic.field.id:31', 'type:article', 'is_retracted:false', 'primary_location.source.is_core:true', 'from_publication_date:2026-07-25', 'to_publication_date:2026-10-23']) {
     assert.ok(filtersOf(url).includes(filter), filter);
   }
+  assert.equal(filtersOf(url).some(filter => filter.startsWith('has_abstract')), false, 'an article without an abstract is listed too');
   assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
   assert.equal(url.searchParams.has('search'), false);
-  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223244690', ['area:physics']]]);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223244690', ['area:physics']], ['openalex:W7223244691', ['area:physics']]]);
+  assert.equal(hasUsableAIAbstract(items[1].paper.abstract), false, 'its abstract stays unknown');
   const [{ paper }] = items;
   // What the card's access chip reads (paperStatus.ts): an explicit `false`,
   // and no arXiv copy or PDF to call it open.
