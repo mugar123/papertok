@@ -19,6 +19,7 @@ import {
   WarningCircle,
   X,
 } from '@phosphor-icons/react';
+import { flushSync } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
@@ -680,8 +681,22 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     setIsSearching(Boolean(nextQuery.trim()));
   };
 
+  // A suggestion leaves the start screen through a view transition: the
+  // results area alone (SearchPage.css, `search-results`) hands over from
+  // the suggestions to the search, the header holding still. Instant under
+  // reduced motion or without the API.
   const handleSuggestedSearch = (suggestion: { query: string; section: SearchScopeId }) => {
-    updateQuery(suggestion.query, suggestion.section, suggestion.section);
+    const run = () => updateQuery(suggestion.query, suggestion.section, suggestion.section);
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion || typeof document.startViewTransition !== 'function') {
+      run();
+      return;
+    }
+    const root = document.documentElement;
+    root.classList.add('search-results-transition');
+    const transition = document.startViewTransition(() => flushSync(run));
+    const cleanup = () => root.classList.remove('search-results-transition');
+    transition.finished.then(cleanup, cleanup);
   };
 
   const handleSearchFilterChange = (filterId: SearchScopeId) => {

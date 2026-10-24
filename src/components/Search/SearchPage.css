@@ -455,3 +455,33 @@
   justify-content: center;
   min-height: 50dvh;
 }
+
+/* A suggestion opening its search (SearchPage.tsx, `handleSuggestedSearch`):
+   the results area is the only thing named for the view transition, so the
+   page's root snapshot stays put (global.css) and the start screen rises
+   away while the search rises in. */
+:root.search-results-transition .search-results-list {
+  view-transition-name: search-results;
+}
+
+::view-transition-old(search-results) {
+  animation: searchResultsOut 160ms var(--ease-out) both;
+}
+
+::view-transition-new(search-results) {
+  animation: searchResultsIn 280ms var(--ease-out) 60ms both;
+}
+
+@keyframes searchResultsOut {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes searchResultsIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
