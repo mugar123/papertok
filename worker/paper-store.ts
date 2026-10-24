@@ -845,9 +845,13 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * The order a reader's pages were served from. `served` counts the ranks of
  * the pages served by their numbers, including the empty ones of a page the
  * order ran out on, which `ranks` holds as null. It leaves out how far a walk
- * passed over seen papers, which would say which ranks the reader had seen. A
- * `final` order serves the next pages as it is; otherwise a next page keeps
- * only the ranks served and ranks the rest again. `notable` is the asked
+ * passed over seen papers, but the ids a walk read (`paperId`) still say so in
+ * its read steps (200, 600, 1,400 ranks and so on), and an order whose walk
+ * reached its end is not final: together they tell roughly how much of the
+ * top of the ranking the reader had seen, in an entry of the reader's alone,
+ * kept for 15 minutes from the last page that read ids. A `final` order
+ * serves the next pages as it is; otherwise a next page keeps only the ranks
+ * served and ranks the rest again. `notable` is the asked
  * categories' notable papers, closest first, which no rank holds: each page
  * reads the ones its reader has not seen.
  */

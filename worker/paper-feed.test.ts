@@ -471,16 +471,21 @@ test("a reload is one request for the reader's next unseen papers, and the next 
   assert.ok(!kept.includes(feedSeenFilter(shown)), 'the filter is not kept');
 });
 
-test('the order a reload keeps is the same whether the reader had seen most of their ranking or none of it', async t => {
+test('a reload keeps the same order and count of ranks served whether the reader had seen most of their ranking or none of it', async t => {
   const entries = rankingCaches(t);
   const { env, ask } = store();
-  const papers = recent(60);
+  // More ranks than the walk's first read of ids, which the reader with
+  // most seen passes.
+  const papers = recent(600);
   await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
   const reload = (uid: string, seen: string[]) => ask({ categories: ['cs.CL'], page: 0, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true }, uid);
-  assert.deepEqual(ids((await reload('reader-1', ids(papers.slice(0, 40)))).papers), ids(papers.slice(40, 55)));
+  assert.deepEqual(ids((await reload('reader-1', ids(papers.slice(0, 400)))).papers), ids(papers.slice(400, 415)));
   assert.deepEqual(ids((await reload('reader-2', [])).papers), ids(papers.slice(0, 15)));
-  // Each reader's order, under their own key: neither says how far the walk went.
-  const [seenMost, seenNone] = await Promise.all([...entries.values()].map(entry => entry.clone().json<unknown>()));
+  // Each reader's order, under their own key. The ids each walk read differ
+  // (KeptRanking says how far they tell); the order and `served` do not.
+  type Kept = { ranks: Array<{ workId: number } | null>; served: number; final: boolean };
+  const shape = ({ ranks, served, final }: Kept) => ({ ranks: ranks.map(rank => rank?.workId), served, final });
+  const [seenMost, seenNone] = await Promise.all([...entries.values()].map(async entry => shape(await entry.clone().json<Kept>())));
   assert.deepEqual(seenMost, seenNone);
 });
 
