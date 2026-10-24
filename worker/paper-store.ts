@@ -6,6 +6,7 @@ import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
@@ -32,6 +33,22 @@ export const CORPUS_DAYS = 90;
 // A liked paper the feed ranks by stays this long after a reader last did.
 export const KEEP_LIKED_DAYS = 30;
 export const FEED_CANDIDATE_LIMIT = 4_000;
+// The feed's page of corpus cards (FeedContext's PAGE_SIZE), and a request's
+// page when it names none.
+const FEED_PAGE_SIZE = 15;
+// At least this many of each page of the feed are articles of an area's
+// journal lane while the area lanes hold any, and more where the ranking
+// puts more (PAP-107). OpenAlex dates an article by its day alone, mostly the
+// day before the harvest, and that day sorts as its midnight, so newest first
+// the night's articles ranked behind a busy reader's whole day of arXiv
+// preprints.
+const JOURNAL_FLOOR = 3;
+// The area lanes a page reads share at most this many candidates, beside the
+// asked lanes' FEED_CANDIDATE_LIMIT rather than out of it: counted as one of
+// the asked lanes, a single area lane would leave a one-category reader the
+// newest half of their own candidates. It is the floor's 3 ranks in 15 of a
+// ranking as long as the asked lanes'.
+const AREA_CANDIDATE_LIMIT = FEED_CANDIDATE_LIMIT * JOURNAL_FLOOR / FEED_PAGE_SIZE;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
@@ -112,12 +129,12 @@ export function readVector(value: unknown) {
 
 // Normalize once per ranking: MMR compares each candidate many times, and a
 // vector cut by migration 0004 is no longer a unit vector.
-function unitVector(vector: Int8Array) {
+export function unitVector(vector: Int8Array) {
   const norm = Math.hypot(...vector) || 1;
   return Float64Array.from(vector, value => value / norm);
 }
 
-function cosine(a: Float64Array, b: Float64Array) {
+export function cosine(a: Float64Array, b: Float64Array) {
   let dot = 0;
   const dimensions = Math.min(a.length, b.length);
   for (let index = 0; index < dimensions; index += 1) {
@@ -176,6 +193,18 @@ const LEAF_IDS = new Set(LEAVES.map(leaf => leaf.id));
 // the series say a paper is economics, not which branch.
 export const WORKING_PAPERS_LANE = 'series:working-papers';
 const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
+// Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
+// to a reader of any of its leaves, for the areas whose leaves the feed fills
+// from arXiv: PubMed lists journal articles for every leaf of medicine and
+// biology. A paper a leaf of its area holds leaves the area's lane
+// (leaf-filing.ts), so it reaches that leaf's readers and no other's. Not
+// statistics while its label covers OpenAlex's Decision Sciences (field 18):
+// 147 of that field's 200 newest articles on 2026-10-23 were operations
+// research and information systems, and most of the 44 in its statistics
+// subfield bibliometrics and meta-analyses.
+export const AREA_LANE_AREAS: readonly string[] = ARXIV_FEED_AREAS.filter(area => area !== 'stat');
+export const areaLane = (area: string) => `area:${area}`;
+const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
 const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
 
@@ -232,7 +261,11 @@ function storedPaper(paper: Paper): Paper {
   return stored;
 }
 
-const embeddingText = (paper: Partial<Paper>) => `${text(paper.title)}\n\n${text(paper.abstract)}`.slice(0, EMBED_TEXT_CHARS);
+// Without an abstract, the title alone: the mappers' "No abstract available."
+// would make every such paper alike.
+const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abstract)
+  ? `${text(paper.title)}\n\n${text(paper.abstract)}`
+  : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
 interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
@@ -455,9 +488,10 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
 /**
  * What the corpus no longer needs leaves with its keys, lanes and vector:
  * - a lane keeps its newest FEED_CANDIDATE_LIMIT papers, the most a page can
- *   ever rank from it, so a busy category does not pile up papers no reader
- *   reaches;
- * - a paper past its keeping date, or in no category, working-paper or
+ *   ever rank from an asked lane, so a busy category does not pile up papers
+ *   no reader reaches. An area lane keeps as many though a page reads fewer:
+ *   its older articles can still be filed under a leaf (leaf-filing.ts);
+ * - a paper past its keeping date, or in no category, working-paper, area or
  *   followed lane, goes, unless readers still rank their feed by it
  *   (`liked_until`). The lane of an OpenAlex entity nobody follows keeps
  *   nothing: nearly every enriched paper names an author, so it would keep
@@ -474,7 +508,7 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
   for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
   // Rows filed before publishedOf refused dates ahead leave too.
   const ahead = new Date(now + DAY_MS).toISOString();
-  const keeping = JSON.stringify([...LEAF_IDS, WORKING_PAPERS_LANE]);
+  const keeping = JSON.stringify([...LEAF_IDS, WORKING_PAPERS_LANE, ...AREA_LANE_AREAS.map(areaLane)]);
   const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
     AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id
       AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes)))))`;
@@ -610,6 +644,7 @@ export async function embedWorks(env: StoreEnv, workIds: number[], uid: string) 
 /**
  * Semantic relevance with near-copy rejection and a bounded diversity pass.
  * Missing vectors retain recency so the feed remains usable during embedding.
+ * Rows it cannot tell apart keep their order (`readCandidates`).
  */
 export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [] }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[] } = {}) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
@@ -689,23 +724,33 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
-// for up to a dozen categories and twenty follows.
+// for up to a dozen categories and twenty follows. The candidates come in
+// turns across the lanes, each lane's newest first, and the ranking keeps that
+// order among papers it cannot tell apart: one night's articles of two areas
+// share their date, and take turns between the areas instead of following the
+// order the lanes were asked in.
 async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
-  const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
+  const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
+  const share = (lane: string) => (AREA_LANES.has(lane)
+    ? Math.floor(AREA_CANDIDATE_LIMIT / areaLanes)
+    : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
     'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
-  ).bind(lane, share)));
+  ).bind(lane, share(lane))));
   const byWork = new Map<number, { published: string; lanes: string[] }>();
-  perLane.forEach(({ results }, index) => {
-    for (const row of results) {
+  const longest = Math.max(...perLane.map(({ results }) => results.length));
+  for (let position = 0; position < longest; position += 1) {
+    perLane.forEach(({ results }, index) => {
+      const row = results[position];
+      if (!row) return;
       const candidate = byWork.get(row.work_id);
       if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]] });
       else {
         candidate.lanes.push(lanes[index]);
         if (row.published > candidate.published) candidate.published = row.published;
       }
-    }
-  });
+    });
+  }
   return [...byWork].map(([workId, candidate]) => ({ workId, ...candidate }));
 }
 
@@ -735,6 +780,8 @@ export interface FeedQuery {
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
+  // Whether the page also reads the area lanes of the asked categories' areas.
+  areaLanes: boolean;
 }
 
 /**
@@ -773,8 +820,14 @@ export interface RankingCache {
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
-  const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
-  const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
+  const areas = new Set(LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
+  const readsEconomics = [...areas].some(area => WORKING_PAPER_AREAS.has(area));
+  const lanes = [...new Set([
+    ...query.categories,
+    ...(readsEconomics ? [WORKING_PAPERS_LANE] : []),
+    ...(query.areaLanes ? AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane) : []),
+    ...query.follows.map(follow => follow.lane),
+  ])];
   if (lanes.length === 0) return [];
   const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize });
   const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
@@ -782,7 +835,12 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (!ranking) {
     const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
     const shown = new Set(served.map(candidate => candidate?.workId));
-    ranking = [...served, ...(await rankCandidates(db, lanes, query, now)).filter(candidate => !shown.has(candidate.workId))];
+    const ranked = (await rankCandidates(db, lanes, query, now)).filter(candidate => !shown.has(candidate.workId));
+    // Floored after the ranks served, so its windows start where a page does,
+    // and only for the feed's page: the app's exploration asks 2 to 8 cards of
+    // nearby categories, whose area lanes are the feed's own, and floored they
+    // would repeat the articles the feed's pages have placed.
+    ranking = [...served, ...(query.pageSize === FEED_PAGE_SIZE ? withJournalFloor(ranked) : ranked)];
     const through = (query.page + 1) * query.pageSize;
     await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through }).catch(error => console.warn('Feed ranking not cached', error));
   }
@@ -814,8 +872,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
     // and D1 bills rows read. A quiet lane keeps its share instead of being
-    // crowded out by a busy one. The window is the corpus's own: what is past
-    // it has been evicted.
+    // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
+    // The window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
   ]);
@@ -831,6 +889,32 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   ]);
   return rankBySimilarity(offered.map(candidate => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null })), likes, { now, order: query.order, negatives })
     .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore }));
+}
+
+/**
+ * The order with at least JOURNAL_FLOOR area-lane articles in each page of
+ * FEED_PAGE_SIZE ranks while any are left. The articles a page is owed take
+ * its last ranks; every other candidate keeps its order. A journal article
+ * filed under a leaf (a topic lane, PubMed) shares the leaf's lane with its
+ * preprints, so only the area lanes' articles count here.
+ */
+function withJournalFloor(ranked: RankedCandidate[]) {
+  const articles: number[] = [];
+  const others: number[] = [];
+  ranked.forEach((candidate, index) => (candidate.lanes.some(lane => AREA_LANES.has(lane)) ? articles : others).push(index));
+  if (articles.length === 0) return ranked;
+  const floored: RankedCandidate[] = [];
+  let [article, other, inWindow] = [0, 0, 0];
+  while (floored.length < ranked.length) {
+    const slot = floored.length % FEED_PAGE_SIZE;
+    if (slot === 0) inWindow = 0;
+    const owed = Math.min(JOURNAL_FLOOR - inWindow, articles.length - article);
+    const takesArticle = article < articles.length
+      && (other === others.length || owed >= FEED_PAGE_SIZE - slot || articles[article] < others[other]);
+    if (takesArticle) inWindow += 1;
+    floored.push(ranked[takesArticle ? articles[article++] : others[other++]]);
+  }
+  return floored;
 }
 
 // ─── Requests ───
@@ -888,8 +972,12 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     negativeIds,
     excludedIds,
     page: Math.max(0, Math.floor(Number(body?.page) || 0)),
-    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE),
+    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
+    // Not for the follows' request, even when no follow has a lane of its own
+    // (a category topic): there the categories stand for followed topics
+    // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
+    areaLanes: !(Array.isArray(body?.follows) && body.follows.length > 0),
   };
 }
 
