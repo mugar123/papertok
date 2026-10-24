@@ -30,8 +30,9 @@ checks them now:
   `notableRequest` for its largest page, marks the `notablePassedOver` papers viewed, joins the
   page on the list as it is when the page arrives, and adds a notable card to the seen set only
   once it has a place; the restore stands `restoredReaderCardId` in for the visible card;
-  `markNotInterested` keeps `notablePlaceAfterDismissal`'s card for the next page, the snapshot
-  carries it and the account change clears it; view and skip events carry `notable`. The
+  `markNotInterested` takes the card out with `withoutDismissedCard` and keeps
+  `notablePlaceAfterDismissal`'s card for the next page, the snapshot carries it and the account
+  change clears it; view and skip events carry `notable`. The
   decisions are tested in `src/context/`; the wiring inside the context is not.
 - `PaperCard` shows "Highly cited" on a notable card before the paper's own year and citation
   count, and groups every citation count with `toLocaleString('en-US')`.

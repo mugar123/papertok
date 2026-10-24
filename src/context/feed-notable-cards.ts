@@ -46,8 +46,8 @@ export function notableRequest(cardsBefore: Paper[], largestPage: number, visibl
  * is the one known before. A notable card the reader met counts in their
  * fifteen after it leaves, so the next page counts from its place. When the
  * card just before that place leaves too, the card before it takes its role.
- * A notable card the reader has not reached leaves its place for the next
- * page to fill (joinNotablePage).
+ * A notable card the reader has not reached gives its place to the next one
+ * (withoutDismissedCard).
  */
 export function notablePlaceAfterDismissal(cards: Paper[], removedId: string, visiblePaperId: string | null, notableAfter: string | null) {
   const removedAt = cards.findIndex(paper => paper.id === removedId);
@@ -56,6 +56,24 @@ export function notablePlaceAfterDismissal(cards: Paper[], removedId: string, vi
   return met && markedAt <= removedAt && (cards[removedAt]._notable || markedAt === removedAt)
     ? cards[removedAt - 1].id
     : notableAfter;
+}
+
+/**
+ * `cards` without `removedId` (Not interested). A card through the visible one
+ * counts in the reader's fifteen, so the cards after it move up. One after it,
+ * which another page can dismiss, they never meet: as with a book taken out
+ * (dropUnreachedPublications), the next card takes its place and every notable
+ * card keeps its own. A notable card's place takes the next notable card, so
+ * the list's last notable place is left for the next page (joinNotablePage).
+ */
+export function withoutDismissedCard(cards: Paper[], removedId: string, visiblePaperId: string | null) {
+  const unreached = cards.slice(Math.max(0, cards.findIndex(paper => paper.id === visiblePaperId)) + 1);
+  const kept = unreached.filter(paper => paper.id !== removedId);
+  if (kept.length === unreached.length) return cards.filter(paper => paper.id !== removedId);
+  return [
+    ...cards.slice(0, cards.length - unreached.length),
+    ...keepNotablePlaces(unreached, kept.filter(paper => !paper._notable), kept.filter(paper => paper._notable)),
+  ];
 }
 
 /**

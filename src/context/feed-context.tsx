@@ -74,7 +74,7 @@ import {
 } from '../utils/user-scoped-storage.ts';
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader } from './feed-notable-cards.ts';
+import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
@@ -1796,11 +1796,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const successorId = removedIndex >= 0
       ? (papers[removedIndex + 1]?.id ?? papers[removedIndex - 1]?.id ?? null)
       : null;
-    notableAfterRef.current = notablePlaceAfterDismissal(papers, paper.id, visiblePaperIdRef.current, notableAfterRef.current);
+    const readerCardId = visiblePaperIdRef.current;
+    notableAfterRef.current = notablePlaceAfterDismissal(papers, paper.id, readerCardId, notableAfterRef.current);
     // The slide fires no scroll event, so FeedContainer does not report the
     // successor. A late Crossref answer reads this ref to keep the reader's card.
-    if (visiblePaperIdRef.current === paper.id) visiblePaperIdRef.current = successorId;
-    setPapers((prev) => prev.filter((p) => p.id !== paper.id));
+    if (readerCardId === paper.id) visiblePaperIdRef.current = successorId;
+    setPapers((prev) => withoutDismissedCard(prev, paper.id, readerCardId));
     recordProfileEvent({
       paperId: paper.id,
       kind: 'notInterested',
