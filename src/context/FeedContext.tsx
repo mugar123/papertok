@@ -354,9 +354,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
-  // -1 (classic) to +1 (recent): likes, saves and long reads of papers a week
-  // or a year old move it. A notable card's leave it as it is: the feed chose
-  // that card for its citations, and it is years old by that choice.
+  // -1 (classic) to +1 (recent). Likes, saves and long reads move it toward
+  // recent for a paper a week old or less, toward classic for one a year old
+  // or more. A notable card's leave it as it is: the feed chose that card for
+  // its citations, and it is years old by that choice.
   const temporalPreference = useRef(0);
   const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
   const recommendationWeights = useRef(initialRecommendationWeights);
