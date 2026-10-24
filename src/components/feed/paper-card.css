@@ -1142,20 +1142,6 @@ button.pc-topics-pop-item:focus-visible {
   -webkit-touch-callout: none;
   user-select: none;
 }
-/* In the feed the card is held to pick a list too (paper-card.tsx,
-   `cardHold`); its links keep their menu and its title and abstract their
-   text selection. */
-@media (pointer: coarse) {
-  .feed-container .pc {
-    -webkit-touch-callout: none;
-    user-select: none;
-  }
-  .feed-container .pc a { -webkit-touch-callout: default; }
-  .feed-container .pc :is(.pc-title, .pc-abstract) {
-    -webkit-touch-callout: default;
-    user-select: text;
-  }
-}
 .pc-side-btn--connections { --rail: var(--accent-primary); }
 .pc-side-btn--similar { --rail: var(--accent-violet); }
 .pc-side-btn--more { --rail: var(--text-tertiary); }

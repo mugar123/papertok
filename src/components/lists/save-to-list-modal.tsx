@@ -573,13 +573,14 @@ export default function SaveToListModal({
       // account that saved; a later save of the same paper replaces the toast.
       const uid = user!.uid;
       const undo = async () => {
-        if (auth.currentUser?.uid !== uid) return;
+        if (auth.currentUser?.uid !== uid) return false;
         await writeListMembership({ uid, paper, lists: toAdd.map(listById), added: false, language });
         await writeListMembership({ uid, paper, lists: toRemove.map(listById), added: true, language });
         if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
         if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
         if (savesPaper && !alreadySaved) await unmarkSaved(paper);
         if (unsavesPaper) await markSaved(paper);
+        return true;
       };
       const destinations = [
         ...(readLaterChanged && pendingReadLater ? ['Read later'] : []),
@@ -591,7 +592,14 @@ export default function SaveToListModal({
             : `Saved to ${destinations[0]} and ${destinations.length - 1} more`,
         {
           id: `save-to-list:${paper.id}`,
-          action: { label: 'Undo', onClick: () => { undo().catch(() => toastError('Could not undo this change')); } },
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              undo()
+                .then((undone) => { if (undone) toast.success('Save undone', { id: `save-to-list:${paper.id}` }); })
+                .catch(() => toastError('Could not undo this change'));
+            },
+          },
         },
       );
     } catch (err) {

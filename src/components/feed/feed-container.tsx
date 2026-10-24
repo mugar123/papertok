@@ -1147,7 +1147,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
     const onEnd = (event: TouchEvent) => {
       const touch = event.changedTouches[0];
-      // A finger that rested long enough to open the list picker is not a swipe.
+      // A finger that rested first is holding or selecting text, not swiping.
       if (!start || !touch || event.timeStamp - start.at >= LONG_PRESS_MS) return;
       const to = tabSwipeTarget({
         from: tabPath,
@@ -1322,7 +1322,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
               onPickList={onSaveToList}
-              holdToPickList
               getInteractionState={getInteractionState}
               analyticsSurface={analyticsSurface}
               position={index + 1}

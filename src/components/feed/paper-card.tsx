@@ -1,4 +1,4 @@
-import type { ComponentProps, MouseEvent, PointerEvent, SyntheticEvent, TransitionEvent } from 'react';
+import type { ComponentProps, MouseEvent, SyntheticEvent, TransitionEvent } from 'react';
 import type { Icon, IconWeight } from '@phosphor-icons/react';
 import type { Paper, PaperAuthor, PaperResearchResource } from '../../models/paper.ts';
 type OpenCopy = Awaited<ReturnType<typeof findOpenAccessCopy>>;
@@ -21,8 +21,6 @@ export interface PaperCardProps {
    * passes the picker here.
    */
   onPickList?: (paper: Paper) => void | Promise<void>;
-  /** Holding the paper anywhere, not only Save, opens `onPickList`. The feed's alone. */
-  holdToPickList?: boolean;
   getInteractionState?: (paper: Paper) => { isLiked?: boolean; isSaved?: boolean; isRead?: boolean };
   hideScrollHint?: boolean;
   titleAs?: 'h1' | 'h2';
@@ -390,7 +388,6 @@ const PaperCard = memo(function PaperCard({
   onOpenPdf = () => {},
   onSaveToList = () => {},
   onPickList = onSaveToList,
-  holdToPickList = false,
   getInteractionState = () => ({}),
   hideScrollHint = false,
   // The title's level: an h2 wherever the card is one of many, the page's h1
@@ -1349,20 +1346,6 @@ const PaperCard = memo(function PaperCard({
     return area ? { ...AREA_WATERMARK_ICONS[area], weight: AREA_WATERMARK_ICONS[area].weight ?? 'fill' } : null;
   }, [paper]);
 
-  // Created once, so a re-render between the hold and its click keeps the
-  // hold; the ref hands it this render's paper and callbacks.
-  const pickListRef = useRef(() => {});
-  useEffect(() => {
-    pickListRef.current = () => {
-      if (publicMode) requireAuthentication('save');
-      else void onPickList(paper);
-    };
-  }, [onPickList, paper, publicMode, requireAuthentication]);
-  const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
-  // Holding the paper itself opens the picker too, except on its own controls,
-  // whose press means something else.
-  const [cardHold] = useState(() => createLongPress(() => pickListRef.current()));
-
   // Only a tap on the card itself. The sheets, the related card and the
   // reader are portaled to the body, and React still bubbles their clicks
   // up this tree — the old overlays stopped propagation by hand; the DOM
@@ -1370,8 +1353,6 @@ const PaperCard = memo(function PaperCard({
   // a control in the card: two quick presses on the map are not a like.
   const handleDoubleTap = useCallback((event: MouseEvent) => {
     if (event?.target instanceof Node && !cardRef.current?.contains(event.target)) return;
-    // The click that ends a hold on the card is not a tap.
-    if (cardHold.consumeHold()) return;
     if (event?.target instanceof Element && event.target.closest('.related-sheet')) return;
     const now = Date.now();
     if (now - lastTap.current < 300) {
@@ -1390,7 +1371,7 @@ const PaperCard = memo(function PaperCard({
       }
     }
     lastTap.current = now;
-  }, [cardHold, isLiked, onLike, paper, publicMode, requireAuthentication]);
+  }, [isLiked, onLike, paper, publicMode, requireAuthentication]);
 
   const likeIconRef = useRef<HTMLSpanElement | null>(null);
   const saveIconRef = useRef<HTMLSpanElement | null>(null);
@@ -1456,21 +1437,18 @@ const PaperCard = memo(function PaperCard({
     void onNotInterested(paper);
   };
 
-  // React bubbles presses from the portaled sheets here too; only the card's own count.
-  // The title and abstract keep the hold for selecting their text.
-  const pressCard = (event: PointerEvent<HTMLDivElement>) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!holdToPickList || !target || !cardRef.current?.contains(target)
-      || target.closest('button, a, input, textarea, select, label, [role="button"], .related-sheet, .pc-title, .pc-abstract')) {
-      cardHold.onPointerCancel();
-      cardHold.consumeHold();
-      return;
-    }
-    cardHold.onPointerDown(event);
-  };
+  // Created once, so a re-render between the hold and its click keeps the
+  // hold; the ref hands it this render's paper and callbacks.
+  const pickListRef = useRef(() => {});
+  useEffect(() => {
+    pickListRef.current = () => {
+      if (publicMode) requireAuthentication('save');
+      else void onPickList(paper);
+    };
+  }, [onPickList, paper, publicMode, requireAuthentication]);
+  const [saveHold] = useState(() => createLongPress(() => pickListRef.current()));
   // A card that leaves mid-hold must not open the picker afterwards.
   useEffect(() => saveHold.onPointerCancel, [saveHold]);
-  useEffect(() => cardHold.onPointerCancel, [cardHold]);
 
   const handleSave = (saving: boolean) => {
     // The hold already opened the picker; the click that ends it is not a tap.
@@ -1849,16 +1827,7 @@ const PaperCard = memo(function PaperCard({
   );
 
   return (
-    <div
-      ref={cardRef}
-      className={`pc ${isCardVisible ? 'pc--visible' : ''}`}
-      onClick={handleDoubleTap}
-      onPointerDown={pressCard}
-      onPointerMove={cardHold.onPointerMove}
-      onPointerUp={cardHold.onPointerUp}
-      onPointerCancel={cardHold.onPointerCancel}
-      onContextMenu={cardHold.onContextMenu}
-    >
+    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
       {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">
