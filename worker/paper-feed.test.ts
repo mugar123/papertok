@@ -541,6 +541,34 @@ test("a reader's next pages from the kept order read each stored id once, howeve
   assert.ok(idReads <= 3, `${idReads} reads of stored ids for thirty pages`);
 });
 
+// What a fold (ingestPapers' `folded`) or an eviction does to a work's row.
+function removeWork(db: ReturnType<typeof store>['db'], arxivId: string) {
+  const { work_id: workId } = db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number };
+  db.exec(`DELETE FROM work_lanes WHERE work_id = ${workId}; DELETE FROM work_keys WHERE work_id = ${workId}; DELETE FROM works WHERE id = ${workId};`);
+}
+
+// A reload walked the order and left every id on it; the corpus then dropped
+// some of the works the next page would show.
+const dropped: Array<[number[], string]> = [[[16], 'one work of the next page leaves'], [Array.from({ length: 15 }, (_, index) => 15 + index), "the next page's fifteen works leave"]];
+for (const [removed, name] of dropped) {
+  test(`${name} the corpus after the reload walked past it: the next pages are still full, and pass over it`, async t => {
+    rankingCaches(t);
+    const { env, db, ask } = store();
+    const papers = recent(120);
+    await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+    const request = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true });
+    const shown = ids((await ask(request(0, []))).papers);
+    assert.deepEqual(shown, ids(papers.slice(0, 15)));
+    for (const index of removed) removeWork(db, papers[index].id);
+    const left = ids(papers.filter((_, index) => index >= 15 && !removed.includes(index)));
+    for (let page = 1; page <= 4; page += 1) {
+      const answer = await ask(request(page, shown));
+      assert.deepEqual(ids(answer.papers), left.slice((page - 1) * 15, page * 15), `page ${page}`);
+      shown.push(...ids(answer.papers));
+    }
+  });
+}
+
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {

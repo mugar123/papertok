@@ -834,9 +834,19 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
       ? unseenRanks(db, notable, query.seen, query.notable)
       : null,
   ]);
-  const { ranked, through } = own?.unseen.length
-    ? { ranked: own.unseen, through: own.end }
-    : { ranked: named, through: (query.page + 1) * query.pageSize };
+  let ranked = own?.unseen.length ? own.unseen : named;
+  const works = await readWorks(db, [...ranked, ...(unseen?.unseen ?? [])].map(candidate => candidate.workId));
+  // A walk trusts the ids pages left on the kept order, and a work the corpus
+  // has dropped since (merged into another, evicted) has no row: the walk
+  // goes on past it, and the order loses its id.
+  if (own?.unseen.length && query.seen) {
+    await walkPastDropped(db, own, ranking, query.seen, query.pageSize, works);
+    // Every unseen paper of the order is gone: the named page, as when it holds none.
+    if (own.unseen.length === 0) (await readWorks(db, named.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
+    ranked = own.unseen.length ? own.unseen : named;
+  }
+  if (unseen?.unseen.length && query.seen) await walkPastDropped(db, unseen, notable, query.seen, query.notable, works);
+  const through = own?.unseen.length ? own.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
     await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
       .catch(error => console.warn('Feed ranking not cached', error));
@@ -847,7 +857,6 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (ranked.length === 0) return [];
   const notableIds = new Set(unseen?.unseen.map(candidate => candidate.workId));
   const candidates = [...ranked, ...(unseen?.unseen ?? [])];
-  const works = await readWorks(db, candidates.map(candidate => candidate.workId));
   const categories = new Set(query.categories);
   return candidates.flatMap(candidate => {
     const row = works.get(candidate.workId);
@@ -866,16 +875,17 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
 }
 
 /**
- * The first `wanted` of `ranks` whose papers the reader has not seen, in
- * order, how many ranks the walk took to find them (`end`), and whether it
- * read paper ids (`read`). The filter holds the ids the app was served, so a
- * candidate's is read from its row, unless a walk already left it on the
- * candidate (`paperId`): 200 ranks the first time and twice as many each time
- * after, so a reader who has seen a few thousand papers costs a few reads.
+ * The first `wanted` of `ranks` from `from` whose papers the reader has not
+ * seen, in order, how many ranks the walk took to find them (`end`), and
+ * whether it read paper ids (`read`). The filter holds the ids the app was
+ * served, so a candidate's is read from its row, unless a walk already left
+ * it on the candidate (`paperId`): 200 ranks the first time and twice as many
+ * each time after, so a reader who has seen a few thousand papers costs a
+ * few reads.
  */
-async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number) {
+async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, from = 0) {
   const unseen: RankedCandidate[] = [];
-  let end = 0;
+  let end = from;
   let read = false;
   for (let size = 200; end < ranks.length && unseen.length < wanted; size *= 2) {
     const chunk = ranks.slice(end, end + size);
@@ -894,6 +904,27 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
     }
   }
   return { unseen, end, read };
+}
+
+/**
+ * Takes out of `walk` the candidates whose work `works` lacks, and walks
+ * `ranks` on for as many, reading their rows into `works`. A page left those
+ * ids on the kept order before the corpus dropped the work; each loses its
+ * id, so no later page reads it again or counts it as a paper.
+ */
+async function walkPastDropped(db: D1Database, walk: Awaited<ReturnType<typeof unseenRanks>>, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, works: Map<number, WorkRow>) {
+  for (;;) {
+    const dropped = walk.unseen.filter(candidate => !works.has(candidate.workId));
+    if (dropped.length === 0) return;
+    for (const candidate of dropped) candidate.paperId = '';
+    walk.unseen = walk.unseen.filter(candidate => works.has(candidate.workId));
+    walk.read = true;
+    const more = await unseenRanks(db, ranks, seen, wanted - walk.unseen.length, walk.end);
+    walk.end = more.end;
+    if (more.unseen.length === 0) return;
+    (await readWorks(db, more.unseen.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
+    walk.unseen.push(...more.unseen);
+  }
 }
 
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
