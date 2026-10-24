@@ -13,11 +13,11 @@ import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 // The Workflow's steps run in place: a step's callback is called once, a sleep
 // is recorded and returns at once. `fail` names the steps that fail past their
-// retries; `skipLanes` answers the category lanes' steps as if every lane were
-// done, for a daily run whose lanes the test does not exercise. An attempt
-// running past `timeoutMs` is stopped, as a Workflow stops one past its
-// timeout and leaves its work unfinished, and the step is tried again within
-// its retries.
+// retries; `skipLanes` answers the category and notable lanes' steps as if
+// every lane were done, for a daily run whose lanes the test does not
+// exercise. An attempt running past `timeoutMs` is stopped, as a Workflow
+// stops one past its timeout and leaves its work unfinished, and the step is
+// tried again within its retries.
 function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: { fail?: (name: string) => boolean; skipLanes?: boolean; timeoutMs?: number } = {}) {
   const steps: string[] = [];
   const sleeps: Array<number | string> = [];
@@ -25,7 +25,7 @@ function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: 
     async do(name: string, ...rest: unknown[]) {
       steps.push(name);
       if (fail(name)) throw new Error(`${name} failed past its retries`);
-      if (skipLanes && /^categories: lanes \d+$/.test(name)) return Number.MAX_SAFE_INTEGER;
+      if (skipLanes && /^(categories|notable): lanes \d+$/.test(name)) return Number.MAX_SAFE_INTEGER;
       const callback = rest.at(-1) as () => Promise<unknown>;
       if (!timeoutMs) return callback();
       const retries = rest.length > 1 ? (rest[0] as { retries?: { limit: number } }).retries?.limit ?? 0 : 0;
@@ -103,6 +103,50 @@ test("a followed lanes' run embeds its own lanes' papers and leaves the rest to 
   await runPaperHarvest(env, followRun(['author:A1']), step);
   assert.deepEqual(texts.map(text => text.split('\n')[0]).sort(), ['A paper by the followed author', 'Another paper by the followed author']);
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM work_vectors').get() as { n: number }).n, 2);
+});
+
+test('open and closed articles are embedded before backfill and maintenance without repeating unchanged text', async t => {
+  providers(t);
+  const { env, db, texts } = corpus();
+  await ingestPapers(env, [true, false].map((openAccess, index) => ({
+    paper: { ...paper(`2610.3000${index + 1}`, openAccess ? 'Open article' : 'Closed article'), openAccess, arxivId: undefined },
+    lanes: ['cs.CL'],
+  })));
+  let observed = false;
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (name.startsWith('backfill ')) {
+      assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+      observed = true;
+      return true;
+    }
+    return name.startsWith('evict ');
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(observed, true);
+  assert.deepEqual(texts.map(value => value.split('\n')[0]).sort(), ['Closed article', 'Open article']);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 2);
+});
+
+test('an enriched batch is usable before the next batch starts, without embedding later records early', async t => {
+  providers(t);
+  const { env, db, texts } = corpus();
+  await ingestPapers(env, Array.from({ length: 501 }, (_, index) => ({
+    paper: paper(`2610.${40_000 + index}`, `Research result ${index}`), lanes: ['cs.CL'],
+  })));
+  let observed = false;
+  const { step } = workflowStep({ skipLanes: true, fail: name => {
+    if (name !== 'enrich 1') return false;
+    assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 500);
+    observed = true;
+    return true;
+  } });
+  t.mock.method(console, 'error', () => {});
+  await runPaperHarvest(env, dailyRun(), step);
+  assert.equal(observed, true);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM work_vectors').get()?.n, 501);
+  assert.equal(texts.length, 501);
+  assert.equal(new Set(texts).size, 501);
 });
 
 test("runs for new follows stop at 300 of the followed lanes' OpenAlex units, and the nightly refresh still has its 700", async t => {

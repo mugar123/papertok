@@ -11,6 +11,7 @@ import PageTransition from './components/layout/page-transition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/use-page-transition-custom.ts'
 import { useOverlayHistory } from './hooks/use-overlay-history.ts'
 import { INITIAL_ACCOUNT_SCOPE, accountScopeKey, nextAccountScope } from './utils/account-scope.ts'
+import { feedResumeMemory } from './utils/feed-resume-memory.ts'
 import { clearAuthReturn, isInAppPath, offerAuthReturn, takeAuthReturn } from './utils/auth-return.ts'
 import RouteFallback from './components/layout/route-fallback.tsx'
 import RouteAnnouncer from './components/layout/route-announcer.tsx'
@@ -596,6 +597,11 @@ function UserScopedAppContent() {
   const [previousScope, setPreviousScope] = useState<ReturnType<typeof nextAccountScope>>(INITIAL_ACCOUNT_SCOPE)
   const scope = nextAccountScope(previousScope, { uid: user?.uid, authLoading })
   if (scope !== previousScope) setPreviousScope(scope)
+  // The places this tab's feeds were left on belong to the account that left
+  // them: after a sign-out or a switch, every feed opens on its first card.
+  useEffect(() => {
+    if (scope.generation > 0) feedResumeMemory.clear()
+  }, [scope.generation])
   return (
     <FollowingProvider key={accountScopeKey(scope)}>
       <FollowingUpdatesProvider>

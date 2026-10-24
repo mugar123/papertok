@@ -50,8 +50,8 @@ flowchart TD
 - [vercel.json](vercel.json) serves SPA routes, proxies Firebase auth and
   analytics paths, and sends supported public-page crawlers to Worker share
   routes. The frontend and Worker deploy separately.
-- [worker/instrumentation.ts](worker/instrumentation.ts) wraps the Worker and
-  bound Durable Objects and harvest Workflow with Sentry.
+- [worker/instrumentation.ts](worker/instrumentation.ts) reports errors from
+  the Worker, bound Durable Objects and harvest Workflow to PostHog.
   [worker/index.ts](worker/index.ts) handles requests and schedules;
   [router.ts](worker/router.ts) dispatches HTTP routes.
   Route and handler checks enforce methods, origins and identity as applicable.
@@ -111,10 +111,25 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
 separate bounded steps; the diagram summarizes the resulting data flow.
 
+Area lanes (`area:<area>`) hold OpenAlex journal articles labeled with an area
+rather than one of its leaves. [paper-store.ts](worker/paper-store.ts) adds them
+to the candidates of a request that asks for the area's leaves and no follows,
+without reserving positions in a page. Open and closed access use the same
+ranking rules. After embedding,
+[leaf-filing.ts](worker/leaf-filing.ts) removes an article from its area lane
+once a leaf of the area holds it; in an area with a calibrated rule, it also
+files articles under the leaf their vectors match.
+[The paper-store contract](worker/README.md#paper-store) gives the areas,
+candidate limits and ranking rules.
+
 [paper-store-service.ts](src/services/paper-store-service.ts) requests corpus
 pages. [FeedContext](src/context/feed-context.tsx) combines their semantic signal
 with the [recommendation engine](src/utils/recommendation-engine.ts), manages
-interactions and preserves the unread queue. Other feed modes and guest flows
+interactions and preserves the unread queue.
+[feed-notable-cards.ts](src/context/feed-notable-cards.ts) gives one card in
+fifteen to an unseen notable paper the corpus adds after a page; the
+[paper-store contract](worker/README.md#paper-store) says how they are chosen
+and placed. Other feed modes and guest flows
 still have live source callers; this diagram describes the corpus-backed path.
 [paper-search-service.ts](src/services/paper-search-service.ts) separately merges
 live arXiv and OpenAlex results and applies search relevance.

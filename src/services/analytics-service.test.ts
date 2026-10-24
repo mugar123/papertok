@@ -417,7 +417,7 @@ test('falls back to the real path when there is no hash route, and never returns
  * campaign ids appear only with other options, and are here so the allowlist is
  * tested against them too.
  */
-function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; }) {
+function postHogCapture(event: string, properties: { search_type?: string; result_count?: number; has_results?: boolean; query?: string; $current_url?: string; $pathname?: string; kind?: string; message?: string; $exception_message?: string; $exception_list?: unknown[]; }) {
   return {
     uuid: '0199c5a1-7f3e-7c4a-9d2b-1f6e8a4b3c2d',
     event,
@@ -500,8 +500,31 @@ test('a page view on a paper is filed under the pattern, without the paper\'s ti
   assert.ok(!JSON.stringify(sent).includes('W2741809807'));
 });
 
-test('nothing leaves that is not a page view or a registered event, or once analytics is off', () => {
-  for (const event of ['$autocapture', '$pageleave', '$exception', '$identify', 'made_up_event']) {
+test('an error report leaves with its type and code location, never its message or page', () => {
+  const sent = sanitizeAnalyticsCapture(postHogCapture('$exception', {
+    $current_url: 'https://papertok.app/public/paper/W2741809807',
+    $exception_message: 'Cannot read W2741809807',
+    $exception_list: [{
+      type: 'TypeError', value: 'Cannot read W2741809807', mechanism: { handled: false, synthetic: false },
+      stacktrace: { type: 'raw', frames: [{ platform: 'web:javascript', filename: 'https://papertok.app/assets/index-abc.js', function: 'render', lineno: 3, colno: 9, in_app: true }] },
+    }],
+  }), ANALYTICS_CONSENT.ANONYMOUS);
+
+  assert.equal(sent!.event, '$exception');
+  assert.equal(sent!.properties.$current_url, 'https://papertok.app/public/paper/:id');
+  assert.deepEqual(sent!.properties.$exception_list, [{
+    type: 'TypeError',
+    value: 'Application error (message redacted)',
+    mechanism: { type: 'generic', handled: false, synthetic: false },
+    stacktrace: { type: 'raw', frames: [{ platform: 'web:javascript', filename: 'https://papertok.app/assets/index-abc.js', function: 'render', in_app: true, lineno: 3, colno: 9 }] },
+  }]);
+  assert.equal(sent!.properties.distinct_id, '$posthog_cookieless');
+  assert.ok(!JSON.stringify(sent).includes('W2741809807'));
+  assert.equal(sanitizeAnalyticsCapture(postHogCapture('$exception', {}), ANALYTICS_CONSENT.ANONYMOUS), null, 'no exception to report');
+});
+
+test('nothing leaves that is not a page view, an error or a registered event, or once analytics is off', () => {
+  for (const event of ['$autocapture', '$pageleave', '$identify', 'made_up_event']) {
     assert.equal(sanitizeAnalyticsCapture(postHogCapture(event, {}), ANALYTICS_CONSENT.ANONYMOUS), null, event);
   }
   assert.equal(sanitizeAnalyticsCapture(postHogCapture('$pageview', {}), ANALYTICS_CONSENT.DENIED), null);

@@ -109,6 +109,12 @@ export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | unde
 }
 
 /**
+ * No listed series as the primary source, for a list of journal articles
+ * that must not hold the series' papers (the harvest's area lanes).
+ */
+export const OPENALEX_NOT_LISTED_SERIES_FILTER = [...WORKING_PAPER_SOURCE_IDS].map(id => `primary_location.source.id:!${id}`).join(',');
+
+/**
  * The part of `openAlexPeerReviewed` an OpenAlex works filter can express,
  * for a list that keeps only reviewed work: the types the rule can call
  * reviewed, and no listed series as the primary source. Every work it leaves
@@ -118,10 +124,7 @@ export function openAlexPeerReviewed(work: OpenAlexStatusFields): boolean | unde
  * (`group_by=type`), it ANDs each repeated negated source, and a negated
  * source keeps works that have no primary source.
  */
-export const OPENALEX_PEER_REVIEWED_FILTER = [
-  `type:${[...OPENALEX_REVIEWED_TYPES, 'preprint'].join('|')}`,
-  ...[...WORKING_PAPER_SOURCE_IDS].map(id => `primary_location.source.id:!${id}`),
-].join(',');
+export const OPENALEX_PEER_REVIEWED_FILTER = `type:${[...OPENALEX_REVIEWED_TYPES, 'preprint'].join('|')},${OPENALEX_NOT_LISTED_SERIES_FILTER}`;
 
 // Semantic Scholar's `Review` is a kind of article: PMID 30617335, a review
 // in Nature Medicine, carried the chip.

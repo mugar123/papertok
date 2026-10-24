@@ -2334,8 +2334,6 @@ export default function EntityExplorer({
                   )}
                 </div>
               )}
-              {/* No known institution keeps the line, said as unknown and
-                  with nothing to open. */}
               {type === 'author' && !authorInstitutionDisplayName && (
                 <div className="ehc-author-institution-wrap">
                   <span className="ehc-author-institution ehc-author-institution--unknown">

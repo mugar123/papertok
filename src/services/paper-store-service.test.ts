@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
+import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -58,6 +59,20 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
   assert.deepEqual(papers, [STORED]);
 });
 
+test('a page that asks for notable papers sends what the reader has seen as the filter the Worker reads', async () => {
+  const { asked, options } = harness(answered([]));
+  const seen = new Set(['2610.00001', 'openalex:W2107743791']);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 2 }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 0 }, options);
+  const [withSeen, ...without] = asked.map(entry => entry.body as { seen?: string; notable?: number });
+  assert.equal(withSeen.notable, 2);
+  const read = readFeedSeenFilter(withSeen.seen);
+  assert.ok(['2610.00001', 'openalex:W2107743791'].every(id => hasSeenPaper(read, id)));
+  assert.equal(hasSeenPaper(read, 'openalex:W2493916176'), false);
+  for (const body of without) assert.ok(!('seen' in body) && !('notable' in body), 'a page that asks for no notable papers sends no filter');
+});
+
 test('a store that fails rejects, so the feed can say so and offer a retry', async () => {
   for (const answer of [async () => new Response('{}', { status: 503 }), async () => { throw new TypeError('offline'); }]) {
     const { options } = harness(answer);
@@ -93,6 +108,23 @@ test('a full positive and followed profile still fits with long rejection IDs an
   assert.deepEqual(body.positiveIds, ids);
   assert.equal(body.follows.length, 20);
   assert.ok(body.negativeIds.length < 24);
+});
+
+// The seen filter is 3,200 characters whatever it holds, and the Worker reads
+// at most 16 KiB of a request: the exclusions and rejections make room for it.
+test('a page asking for notable papers with a full profile keeps the whole seen filter below the request body limit', async () => {
+  const { asked, options } = harness(answered([]));
+  const ids = Array.from({ length: 24 }, (_, index) => `10.1234/${index}${'a'.repeat(283)}`);
+  const follows: FollowEntity[] = Array.from({ length: 20 }, (_, index) => ({ type: 'author', canonicalId: `A${index}`, displayName: `Followed author ${index}` }));
+  const excludedIds = Array.from({ length: 200 }, (_, index) => `10.1234/seen-${index}`);
+  const seen = new Set(['2610.00001']);
+  await fetchCorpusPage({ categories: ['cs.CL'], positiveIds: ids, negativeIds: ids.map(id => `${id}b`), excludedIds, follows, page: 0, pageSize: 15, seen, notable: 3 }, options);
+  const body = asked[0].body as { seen: string; notable: number; positiveIds: string[]; excludedIds?: string[] };
+  assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
+  assert.equal(body.notable, 3);
+  assert.ok(hasSeenPaper(readFeedSeenFilter(body.seen), '2610.00001'), 'the filter arrives whole');
+  assert.deepEqual(body.positiveIds, ids);
+  assert.deepEqual(body.excludedIds ?? [], excludedIds.slice(0, body.excludedIds?.length ?? 0), 'the newest exclusions stay first');
 });
 
 test("the corpus's copies of papers are asked for by the app's ids", async () => {

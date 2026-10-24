@@ -124,7 +124,7 @@
               <td>Kept, but no longer shown to anyone</td>
             </tr>
             <tr>
-              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads) and a list of the last 500 papers you viewed</td>
+              <td>Interactions with papers (likes, skips, how long each card stayed on screen, reads), a list of the last 500 papers you viewed and a list of the last 1,200 you viewed on a card marked as highly cited</td>
               <td>Your use of the app</td>
               <td>Not showing you the same paper twice, and ordering the feed</td>
             </tr>
@@ -155,7 +155,9 @@
         or when you skip it. Besides your interactions with each paper, your account keeps a
         list of the last 500 papers you viewed, so that the feed on the other devices where
         you sign in does not show them again. Once the list is full, each new view pushes the
-        oldest one off the list. Only your account can read it.
+        oldest one off the list. A second list keeps the last 1,200 papers you viewed on a
+        card marked as highly cited, so that the feed does not offer them again. Only your
+        account can read these lists.
       </p>
 
       <p>
@@ -189,7 +191,7 @@
       <p>
         When you request a university link, PaperTok sends that email address to
         <strong>Firebase Authentication</strong> to generate a one-time verification
-        link and to <strong>Brevo</strong> to deliver it. The pending request stays in
+        link and to <strong>Resend</strong> to deliver it. The pending request stays in
         your browser for up to one hour. Cloudflare stores hashed account and recipient
         identifiers for request limits and a delivery status; it does not store the
         verification link or message body. Your linked institution records the university
@@ -201,7 +203,11 @@
       <p>
         If you turn them on, PaperTok emails you what is new from what you follow. For that
         it stores your email address, your sending preferences and an unsubscribe
-        identifier, in <strong>Cloudflare Workers KV</strong>. <strong>Brevo</strong> sends
+        identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
+        an edition, PaperTok also stores its selected papers, abstracts and reasons
+        they matched your follows. That selection is removed after delivery, a
+        change to your follows or a later edition that is processed; otherwise its delivery record
+        expires after 120 days. <strong>Resend</strong> sends
         the emails.
       </p>
       <p>
@@ -286,14 +292,16 @@
         attempt succeeds, fails or is cancelled.
       </p>
       <p>
-        <strong>Sentry</strong>, in the European Union, receives technical error
-        reports from the browser and our backend. Reports contain a standard error
-        type, application code locations, software version and limited operational
-        labels. We remove error messages, request data, paper content, notes,
-        search text and account details, and replace IP addresses with a fixed
-        value before sending. Session recording and performance tracing in Sentry are disabled.
-        Turning analytics off stops new browser error reports. Backend error
-        reporting continues to help us operate and repair the service.
+        <strong>Error reports</strong> from the browser and from our backend also go to
+        PostHog. With anonymous analytics, a browser report contains a standard error type,
+        the places in PaperTok's code where the error happened, the software version and a
+        few fixed labels, with the stripped page address and device details described above.
+        Error messages, paper content, notes, search text and account details are removed
+        before sending. With detailed analytics, reports also include the error message and
+        the full page address. Turning analytics off stops new browser error reports.
+        Backend reports contain only the error type, code locations, software version and
+        fixed labels, carry nothing about the reader and continue whatever the analytics
+        choice, to help us operate and repair the service.
       </p>
       <p>
         PostHog's requests go to papertok.app itself, and Vercel relays them to PostHog.
@@ -316,12 +324,15 @@
       <p>
         Your feed comes from a shared catalogue that server keeps: once a day it collects new
         papers from those repositories, the same for every reader. Each request for more
-        papers sends it your interests, what you follow and the identifiers of up to 24
-        papers you liked or saved; liking, saving or opening a paper also asks it for papers
+        papers sends it your interests, what you follow, the identifiers of up to 24
+        papers you liked or saved, and a compact filter of the papers you viewed or were
+        already shown, and of the highly cited papers it offered that you had already liked,
+        saved, read or dismissed, which the server checks papers against to offer only highly cited
+        papers you have not seen; liking, saving or opening a paper also asks it for papers
         related to that one, by its identifier. They are used to choose and rank that page;
-        which papers you liked, saved or opened is not stored there. A paper you liked, saved
-        or opened that the catalogue does not have yet is added to it without any link to
-        you. An author, institution, topic, search or project
+        which papers you liked, saved, opened or viewed is not stored there, and neither is
+        the filter. A paper you liked, saved or opened that the catalogue does not have yet
+        is added to it without any link to you. An author, institution, topic, search or project
         you follow is added to the list of things the catalogue collects papers for, also
         without any link to you, and leaves that list within 16 days of the last time anybody
         asks for it, later only if the daily clean-up fails. Cloudflare Workers AI turns the
@@ -344,10 +355,9 @@
       <ul>
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
-        <li><strong>PostHog</strong> — analytics of what is done in the application and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
-        <li><strong>Sentry</strong> — technical error monitoring, on servers in the European Union.</li>
+        <li><strong>PostHog</strong> — analytics of what is done in the application, error reports and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
-        <li><strong>Brevo</strong> — sending the emails.</li>
+        <li><strong>Resend</strong> — sending the emails.</li>
       </ul>
 
       <h2>How long it is kept</h2>
@@ -355,7 +365,7 @@
         Your account data is kept for as long as the account exists. You can delete it from
         <strong>Settings → Account → Delete account</strong>. That deletes your lists, your
         highlights, your plain-words summaries, what you follow, your interactions with
-        papers and the list of papers you viewed, your preferences, the email subscription and
+        papers and the lists of papers you viewed, your preferences, the email subscription and
         the sign-in account, along with what earlier versions of PaperTok kept for you: your
         public profile, the photo you uploaded, the people you followed, your comments, the
         content reports you filed and those filed about your comments.
@@ -379,7 +389,9 @@
         PaperTok keeps a few things in your own browser, and no server reads them: the light
         or dark theme, the language, your choice about analytics, a session cache so the
         application does not reload from scratch when you come back, the last 500 papers your
-        account viewed in this browser so a reload skips them, and the marks analytics
+        account viewed in this browser, or highly cited papers the feed passed over because
+        you had already liked, saved, read or dismissed them, so a reload skips them, and the
+        marks analytics
         uses to count a first visit per session, a first real use and a return a week later
         once each, without knowing who you are. They are cleared when you clear the site's
         data, the viewed papers also when you sign out, and the analytics marks also when

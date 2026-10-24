@@ -2,6 +2,7 @@ import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 
 import { authenticatedWorkerFetch, workerSourceUrl } from './worker-api-client.ts';
+import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 // Inside the feed's 4 s first-paint budget, with room for the response.
 const STORE_TIMEOUT_MS = 3_500;
@@ -15,6 +16,11 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
+  // The papers the reader has seen, and how many notable papers of its
+  // categories the page may add after its own: only ones the reader has not
+  // seen, for the app to place (placeNotableCards). Sent only together.
+  seen?: Iterable<string>;
+  notable?: number;
   /**
    * Rank by the likes only once the corpus has fetched and embedded the ones
    * it lacks, which can take seconds: for More like this, never a feed page.
@@ -45,9 +51,9 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * by the reader's liked and saved papers. Categories are the app's; follows
  * are sent as they are stored, and the Worker decides how each is served.
  * Each paper says which asked categories (`_fetchedFor`) and follows
- * (`_followedEntityMatches`) it was found under.
+ * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const body = {
     categories,
     follows: follows.map(({ type, canonicalId, displayName, metadata }) => ({
@@ -62,6 +68,7 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
+    ...(seen && notable > 0 ? { seen: feedSeenFilter(seen), notable } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
   };
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();

@@ -270,9 +270,7 @@ function ProfileAccountPage() {
         <div className="settings-list">
           {/* Every way in, the ones in use included. A method that is the
               only way in cannot be disconnected: the account would have no
-              door. The rows carry no visible subtitle, so that fact, and
-              that connecting adds a way in rather than replacing one, reach
-              assistive technology as hidden text. */}
+              door. */}
           {methods.map(method => (
             <div key={method.id} className="settings-row settings-row-inline">
               <div className="settings-row-content">
@@ -321,9 +319,9 @@ function ProfileAccountPage() {
         />
         <div className="settings-list">
           <div className="settings-row settings-row-side">
-            <div className="settings-row-content settings-row-title-line">
+            <div className="settings-row-content">
               <h3 className="settings-method-name"><GraduationCap size={16} aria-hidden="true" />{copy.institution}</h3>
-              {institution && <InstitutionPill institution={institution} />}
+              {institution && <InstitutionPill institution={institution} className="settings-row-pill" />}
             </div>
             <RowAction
               Icon={institution ? GearSix : LinkSimple}
@@ -431,7 +429,7 @@ function DiscoveryPage() {
             <div className="settings-row-content">
               <h3 className="settings-row-title-line">
                 {copy.followedContent}{' '}
-                {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">{followedEntities.length}</span>}
+                {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">({followedEntities.length})</span>}
               </h3>
               <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
@@ -440,7 +438,7 @@ function DiscoveryPage() {
 
           <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">{selectedInterestCount}</span></h3>
+              <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">({selectedInterestCount})</span></h3>
               <p>{copy.interestsDescription}</p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
@@ -585,8 +583,6 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
-          {/* Both are rendered; settings-page.css shows the rail beside the
-              content and, where there is no room for it, the picker. */}
           <button
             type="button"
             className="settings-switcher"

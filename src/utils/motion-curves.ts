@@ -19,9 +19,6 @@ export function animateSize(element: Pick<HTMLElement, 'offsetWidth' | 'offsetHe
   );
 }
 
-// The press of an on/off icon (Like, Save, Follow): the glyph swells as it
-// turns on and dips as it turns off, then settles. Callers skip it under
-// reduced motion.
 export function pulseIcon(svg: Element | null | undefined, on: boolean) {
   if (!svg) return;
   svg.getAnimations().forEach((running) => running.cancel());

@@ -31,6 +31,7 @@
      app navbar, no standalone mode. Only the top offset uses the nav token —
      the trailing --space-16 is plain end-of-page breathing room. */
   padding: calc(var(--nav-total) + var(--space-10)) var(--space-6) var(--space-16);
+  position: relative;
 }
 
 /* ─── Nameplate ─── */
@@ -87,6 +88,14 @@
   font-size: var(--fs-xs);
 }
 
+.lists-inline-status.is-loading {
+  position: absolute;
+  top: calc(var(--nav-total) + var(--space-1));
+  left: var(--space-6);
+  min-height: 0;
+  margin: 0;
+}
+
 .lists-inline-status .lists-loading-spinner,
 .lists-metadata-status .lists-loading-spinner {
   width: 16px;
@@ -140,6 +149,30 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-8);
+}
+
+.list-card--arrive {
+  animation: listCardArrive 200ms var(--ease-out) both;
+  animation-delay: calc(var(--arrive-index, 0) * 30ms);
+}
+
+@keyframes listCardArrive {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes listCardFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-card--arrive {
+    animation-name: listCardFade;
+  }
 }
 
 .list-card {
@@ -433,14 +466,6 @@
 }
 
 .lists-expanded-count {
-  display: inline-flex;
-  min-width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--bg-sunken);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
@@ -889,6 +914,10 @@
        safe-area inset to a bottom padding that has nothing to do with it. */
     padding: calc(var(--nav-total) + var(--space-6)) var(--space-4)
       calc(var(--nav-height-mobile) + var(--space-8));
+  }
+
+  .lists-inline-status.is-loading {
+    left: var(--space-4);
   }
 
   .lists-expanded-title {

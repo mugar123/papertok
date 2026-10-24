@@ -7,7 +7,7 @@ declare const self: { registration: { scope: string } }
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { sentryVitePlugin } from '@sentry/vite-plugin'
+import posthogSourceMaps from '@posthog/rollup-plugin'
 import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -311,15 +311,17 @@ export default defineConfig(({ command, mode }) => {
           ],
         },
       }),
-      sentryVitePlugin({
-        org: 'papertok',
-        project: 'papertok-web',
-        telemetry: false,
-        sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
-      }),
+      // Builds with PostHog upload credentials (Vercel Production) tag each
+      // chunk, upload its hidden source map and delete it from dist/. Other
+      // builds produce no source maps at all.
+      process.env.POSTHOG_CLI_API_KEY ? posthogSourceMaps({
+        personalApiKey: process.env.POSTHOG_CLI_API_KEY,
+        projectId: process.env.POSTHOG_CLI_PROJECT_ID,
+        host: 'https://eu.i.posthog.com',
+        sourcemaps: { releaseName: 'papertok-web', releaseVersion: process.env.VERCEL_GIT_COMMIT_SHA },
+      }) : null,
     ],
     build: {
-      sourcemap: 'hidden',
       rollupOptions: {
         // Two pages, one build: the app and the privacy policy (which stops
         // being a loose file in public/ so that it can share the app's tokens

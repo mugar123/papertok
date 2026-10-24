@@ -1,4 +1,5 @@
 import type { Paper } from '../models/paper.ts';
+import { keepNotablePlaces } from '../utils/feed-enrichment.ts';
 import { normalizeDoi } from '../utils/public-navigation.ts';
 import { isFeedPublication, withCrossrefType } from './feed-publication-rules.ts';
 
@@ -22,17 +23,22 @@ let nextRequestAt = 0;
 /**
  * Removes confirmed books and book reviews the reader has not reached. The
  * visible card and the one after it stay, since a swipe shows the next card
- * before the scroll reports it as visible. With no card reported, before the
- * first scroll or after a refresh, the reader is on the first card. A reported
- * card that is no longer listed leaves their place unknown: nothing is removed.
+ * before the scroll reports it as visible. With no card reported, the reader
+ * is on the first card: a restore reports the card FeedContainer opens on, on
+ * any page (FeedContext), and a refresh starts at the top. A reported card
+ * that is no longer listed leaves their place unknown: nothing is removed.
+ * The notable cards keep their places and the next card takes a removed
+ * one's (keepNotablePlaces), so the reader still meets one in NOTABLE_EVERY.
  */
 export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[], classified: Partial<Paper>[], visiblePaperId: string | null) {
   const visible = papers.findIndex(paper => paper.id === visiblePaperId);
   if (visiblePaperId && visible < 0) return papers;
   const excluded = new Set(classified.filter(paper => !isFeedPublication(paper)).map(paper => paper.id));
   const lastReached = Math.max(0, visible) + 1;
-  const kept = papers.filter((paper, index) => index <= lastReached || !excluded.has(paper.id));
-  return kept.length === papers.length ? papers : kept;
+  const unreached = papers.slice(lastReached + 1);
+  const kept = unreached.filter(paper => !excluded.has(paper.id));
+  if (kept.length === unreached.length) return papers;
+  return [...papers.slice(0, lastReached + 1), ...keepNotablePlaces(unreached, kept.filter(paper => !paper._notable), kept.filter(paper => paper._notable))];
 }
 
 // Results outlive the tab, so a reopened app does not ask Crossref again for

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX } from './feed-resume-memory.ts';
+import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, forYouScrollKey } from './feed-resume-memory.ts';
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const data = { ...initial };
@@ -59,6 +59,33 @@ test('what was stored is validated, and a storage that throws is a memory that o
   assert.deepEqual(fromGarbage.get('forYou'), { scrollTop: 0, index: 0, paperId: null });
   assert.deepEqual(fromGarbage.get('following'), { scrollTop: 0, index: 0, paperId: null });
   assert.deepEqual(fromGarbage.get('guest'), { scrollTop: 0, index: 0, paperId: null }, 'an index without a paper is no place to return to');
+});
+
+// A place written by one account must not open another account's feed in the
+// same tab: For You's names the account, and a change of account clears them all.
+test("For You's place is the account's, and clearing forgets every place, the stored ones too", () => {
+  assert.notEqual(forYouScrollKey('uid-a'), forYouScrollKey('uid-b'));
+  assert.notEqual(forYouScrollKey(null), forYouScrollKey('uid-a'), "a guest's place is not an account's");
+  // `Object.keys()` over a real Storage lists the keys it holds: the fake is a
+  // proxy, or its methods would read as stored keys.
+  const fake = fakeStorage({ unrelated: 'kept' });
+  const storage = new Proxy(fake, {
+    ownKeys: () => Reflect.ownKeys(fake.data),
+    getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+  });
+  const memory = createFeedResumeMemory({ storage });
+  memory.remember(forYouScrollKey('uid-a'), { index: 20, paperId: 'a-20' });
+  memory.persist(forYouScrollKey('uid-a'));
+  memory.remember('following', { index: 2, paperId: 'f2' });
+  memory.persist('following');
+  assert.deepEqual(memory.get(forYouScrollKey('uid-b')), { scrollTop: 0, index: 0, paperId: null });
+
+  memory.clear();
+  assert.deepEqual(memory.get(forYouScrollKey('uid-a')), { scrollTop: 0, index: 0, paperId: null });
+  assert.deepEqual(memory.get('following'), { scrollTop: 0, index: 0, paperId: null });
+  assert.deepEqual(Object.keys(fake.data), ['unrelated'], 'the stored places go, and nothing else');
+  // The reload after it finds none either.
+  assert.equal(createFeedResumeMemory({ storage }).get(forYouScrollKey('uid-a')).paperId, null);
 });
 
 test('no storage at all is a plain in-memory memory', () => {

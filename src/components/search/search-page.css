@@ -399,7 +399,6 @@
   max-width: 600px;
 }
 
-/* Each suggestion as wide as its words, on one line; the row wraps. */
 .search-suggestions-grid {
   display: flex;
   flex-wrap: wrap;
@@ -472,10 +471,6 @@
   min-height: 50dvh;
 }
 
-/* A suggestion opening its search (search-page.tsx, `handleSuggestedSearch`):
-   the results area is the only thing named for the view transition, so the
-   page's root snapshot stays put (global.css) and the start screen rises
-   away while the search rises in. */
 :root.search-results-transition .search-results-list {
   view-transition-name: search-results;
 }
