@@ -97,6 +97,15 @@ test('a health check the Worker refused to run announces no email outage', () =>
   );
 });
 
+test('a quota ledger that is missing or failing announces no email outage', () => {
+  // With no ledger to reserve a probe in, `/health/email` answers this code
+  // without asking Resend.
+  assert.equal(
+    emailNudgeProblem({ loading: false, health: { configured: false, available: false, code: 'PROVIDER_QUOTA_NOT_CONFIGURED' } }),
+    null,
+  );
+});
+
 test('un servicio sano no tiene nada que avisar', () => {
   assert.equal(emailNudgeProblem({ loading: false, health: { configured: true, available: true, code: null } }), null);
   assert.equal(

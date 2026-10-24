@@ -11,6 +11,13 @@ test('a health check the Worker refused to run leaves email updates usable', () 
   assert.equal(emailServiceState({ available: false, code: 'HEALTH_PROBE_LIMITED' }), 'unknown');
 });
 
+test('a quota ledger that is missing or failing leaves the email service unknown', () => {
+  // DeepSec review, probe F: with the ledger answering 500, /health/email
+  // answers 503 `{"code":"PROVIDER_QUOTA_NOT_CONFIGURED"}` and never calls
+  // Resend.
+  assert.equal(emailServiceState({ available: false, code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }), 'unknown');
+});
+
 test('a provider that answered with a fault still blocks turning updates on', () => {
   assert.equal(emailServiceState({ available: false, code: 'EMAIL_PROVIDER_AUTH_FAILED' }), 'down');
   assert.equal(emailServiceState({ available: false, code: 'EMAIL_PROVIDER_UNAVAILABLE' }), 'down');
