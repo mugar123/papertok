@@ -156,7 +156,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
         <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
           <DrawerHandle />
           <div className="settings-sheet-head">
-            <DrawerTitle render={<h2 />}>{'Configure your algorithm'}</DrawerTitle>
+            <DrawerTitle render={<h2 />}>{'Interests'}</DrawerTitle>
             <p>{'Select the research areas you want to see in your feed'}</p>
             <Select value={activeArea} onValueChange={value => setActiveArea(value as string)}>
               <SelectTrigger aria-label={'Research field'} className="settings-sheet-switcher">
@@ -198,7 +198,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
       >
         <div className="eim-header">
           <div className="eim-header-text">
-            <DialogTitle>{'Configure your algorithm'}</DialogTitle>
+            <DialogTitle>{'Interests'}</DialogTitle>
             <DialogDescription>{'Select the research areas you want to see in your feed'}</DialogDescription>
           </div>
         </div>

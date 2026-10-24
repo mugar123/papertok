@@ -470,6 +470,13 @@ in a lighter one. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it.
 
+Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
+institution, project or topic can be followed: the Explorer header, beside a
+Share glyph drawn the same way in the neutral rail, and search results. It is
+an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
+40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
+like Like and Save; "Follow" is its name and its `title` says Following once on.
+
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
 (`--tint-red-*` when a request failed, `--tint-neutral-*` when nothing did), a

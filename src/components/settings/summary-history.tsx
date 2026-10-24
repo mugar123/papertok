@@ -9,14 +9,17 @@ import { isReadTimeout } from '../../utils/bounded-read.ts';
 import { ListRow } from '../lists/list-row.tsx';
 import ScientificText from '../scientific-text.ts';
 import { Button } from '../ui/button.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import Petri from '../onboarding/petri.tsx';
 
 const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 
 const COPY = {
   title: 'Plain-words summaries',
-  description: 'Papers you have read in plain words, newest first. Opening one shows the saved summary and spends no AI use.',
+  description: 'Papers you have read in plain words',
   loading: 'Loading your summaries…',
-  empty: 'No summaries yet. A paper you read in plain words is listed here.',
+  emptyTitle: 'No summaries yet',
+  empty: 'A paper you read in plain words is listed here.',
   stalled: 'Your summaries are taking unusually long. Still trying.',
   stalledMore: 'More summaries are taking unusually long. Still trying.',
   failed: 'Your summaries could not be loaded.',
@@ -174,7 +177,9 @@ export default function SummaryHistory({ uid }: { uid: string }) {
           )}
         </div>
       )}
-      {status === 'ready' && rows.length === 0 && <p className="settings-summaries-note">{COPY.empty}</p>}
+      {status === 'ready' && rows.length === 0 && (
+        <EmptyState as="h3" art={<Petri pose="reading" />} title={COPY.emptyTitle}>{COPY.empty}</EmptyState>
+      )}
 
       {rows.length > 0 && (
         <div ref={listRef} className="settings-list settings-summaries" role="list" aria-labelledby="settings-summaries-heading">

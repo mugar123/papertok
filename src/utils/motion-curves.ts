@@ -18,3 +18,16 @@ export function animateSize(element: Pick<HTMLElement, 'offsetWidth' | 'offsetHe
     { duration, easing: `cubic-bezier(${ease.join(', ')})` },
   );
 }
+
+export function pulseIcon(svg: Element | null | undefined, on: boolean) {
+  if (!svg) return;
+  svg.getAnimations().forEach((running) => running.cancel());
+  svg.animate(
+    [
+      { transform: 'scale(1)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
+      { transform: on ? 'scale(1.16)' : 'scale(0.9)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
+      { transform: 'scale(1)' },
+    ],
+    { duration: 260 },
+  );
+}
