@@ -2410,6 +2410,16 @@ export default function EntityExplorer({
                   )}
                 </div>
               )}
+              {/* No known institution keeps the line, said as unknown and
+                  with nothing to open. */}
+              {type === 'author' && !authorInstitutionDisplayName && (
+                <div className="ehc-author-institution-wrap">
+                  <span className="ehc-author-institution ehc-author-institution--unknown">
+                    <Buildings size={15} aria-hidden="true" />
+                    <span>{'Institution unknown'}</span>
+                  </span>
+                </div>
+              )}
               {topConcepts.length > 0 && type !== 'author' && (
                 <div className="ehc-tags">
                   {topConcepts.map((c, i) => (

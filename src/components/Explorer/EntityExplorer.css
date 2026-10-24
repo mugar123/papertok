@@ -955,7 +955,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .ehc-author-institution:hover:not(:disabled) {
+  button.ehc-author-institution:hover:not(:disabled) {
     color: var(--text-primary);
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -969,6 +969,11 @@
 }
 
 .ehc-author-institution:disabled {
+  cursor: default;
+}
+
+.ehc-author-institution--unknown {
+  color: var(--text-tertiary);
   cursor: default;
 }
 
