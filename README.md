@@ -53,7 +53,8 @@ Run `npm run check` before opening a pull request.
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome. For large changes, open an issue first.
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+Start with [the architecture map](ARCHITECTURE.md) for runtime diagrams and documentation
+owners. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## Supporters
 
