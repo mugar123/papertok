@@ -45,7 +45,7 @@ error tracking settings; this repository does not configure them.
 
 ## Local testing
 
-From the repository root, install dependencies with `npm ci`. Run the Worker with `npx wrangler dev --local --port 8787`. Local provider credentials belong in the untracked root `.dev.vars` file; never put them in `VITE_*` variables. Local mode emulates KV and Durable Objects, but provider requests still reach live services and can consume quota. `--local` also turns off remote bindings, so the Workers AI binding cannot reach Cloudflare: the PDF-to-text conversion for NaN rewrites fails, and NaN is handed the PDF itself (about 45 s to the first token). To test the conversion, run `npx wrangler login` and then `npx wrangler dev --port 8787` without `--local`. Wrangler then runs the AI binding on the Cloudflare account and warns that this may incur usage charges.
+From the repository root, install dependencies with `npm ci`. Run the Worker with `npx wrangler dev --local --port 8787`. Local provider credentials belong in the untracked root `.dev.vars` file; never put them in `VITE_*` variables. Local mode emulates KV and Durable Objects, but provider requests still reach live services and can consume quota. The email sender comes from `RESEND_FROM_EMAIL` in `wrangler.toml`, so a real `RESEND_API_KEY` in `.dev.vars` is enough for a local Worker to send real email from the production address against the real Resend quota; set `RESEND_FROM_EMAIL` in `.dev.vars` to use another sender. `--local` also turns off remote bindings, so the Workers AI binding cannot reach Cloudflare: the PDF-to-text conversion for NaN rewrites fails, and NaN is handed the PDF itself (about 45 s to the first token). To test the conversion, run `npx wrangler login` and then `npx wrangler dev --port 8787` without `--local`. Wrangler then runs the AI binding on the Cloudflare account and warns that this may incur usage charges.
 
 For the frontend, copy `.env.example` to `.env.local` and run `npm run dev -- --port 5173` in another terminal. The example points both API variables to `http://localhost:8787`. Firebase web configuration is already in `src/services/firebase.ts`; signing in uses the configured Firebase project.
 
@@ -125,7 +125,6 @@ npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until con
 npx wrangler secret put SCOPUS_PROXY_URL # https://<project>.deno.dev -- see proxy/README.md
 npx wrangler secret put SCOPUS_PROXY_SECRET # shared with the egress; the Elsevier key itself never lives here
 npx wrangler secret put RESEND_API_KEY
-npx wrangler secret put RESEND_FROM_EMAIL # Nico de PaperTok <noreply@updates.papertok.app>, after domain verification
 npx wrangler secret put GETFTR_API_KEY # optional; /access asks GetFTR first once set (GETFTR_API_URL overrides the endpoint)
 npx wrangler secret put POSTHOG_PROJECT_TOKEN # PostHog's public project token; error reports are off until set (see Error monitoring)
 npm run worker:deploy:dry-run
@@ -133,7 +132,8 @@ npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health the
 ```
 
 Resend delivers the weekly digest and university verification links. Both
-`RESEND_API_KEY` and `RESEND_FROM_EMAIL` are required. Verify the sender's
+`RESEND_API_KEY` and `RESEND_FROM_EMAIL` are required. The sender is public, so
+`RESEND_FROM_EMAIL` is a variable in `wrangler.toml` rather than a secret. Verify its
 domain in Resend before deploying the Worker. After a successful Resend test
 delivery, remove the old Brevo secrets from Cloudflare.
 
