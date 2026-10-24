@@ -79,6 +79,7 @@ export function readFeedSnapshot(
     const ahead = papers.slice(met).filter(isFeedPublication);
     return {
       ...snapshot,
+      notableAfter: typeof snapshot.notableAfter === 'string' ? snapshot.notableAfter : null,
       excludedIds: Array.isArray(snapshot.excludedIds) ? snapshot.excludedIds.filter((id: unknown) => typeof id === 'string').slice(0, 200) : [],
       papers: [
         ...papers.slice(0, met),

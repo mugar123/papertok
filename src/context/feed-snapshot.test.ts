@@ -220,3 +220,14 @@ test('a restored snapshot keeps the exclusion snapshot its pages were asked with
   writeFeedSnapshot('test-user', 'cs.AI', { papers: [card('card-0')], page: 1, hasMore: true }, storage);
   assert.deepEqual(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory })?.excludedIds, [], 'a snapshot saved without it asks with none');
 });
+
+// A stored value is read back as data: a notable place that is not a card id is dropped.
+test('a restored snapshot keeps the card before a dismissed notable card only when it is an id', () => {
+  const storage = memoryStorage();
+  const resumeMemory = createFeedResumeMemory({ storage: memoryStorage() });
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: [card('card-0'), card('card-1')], page: 1, hasMore: true, notableAfter: 'card-0' }, storage);
+  assert.equal(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory })?.notableAfter, 'card-0');
+  const [[key, saved]] = storage.values;
+  storage.setItem(key, JSON.stringify({ ...JSON.parse(saved), notableAfter: 7 }));
+  assert.equal(readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory })?.notableAfter, null);
+});
