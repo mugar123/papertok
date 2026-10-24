@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { ESLint } from 'eslint'
 
 // The real eslint.config.ts: proves the rules are wired to the files they guard.
-const eslint = new ESLint({ flags: ['unstable_native_nodejs_ts_config'] })
+// With CI set, typescript-eslint builds each program once from the files on
+// disk and ignores text passed to lintText; these probes are not on disk.
+const eslint = new ESLint({
+  flags: ['unstable_native_nodejs_ts_config'],
+  overrideConfig: { languageOptions: { parserOptions: { disallowAutomaticSingleRunInference: true } } },
+})
 
 async function findings(code: string, filePath: string, prefix: RegExp) {
   const [result] = await eslint.lintText(code, { filePath })
