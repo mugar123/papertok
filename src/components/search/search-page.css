@@ -28,11 +28,11 @@
   flex: 1;
   display: flex;
   align-items: center;
-  background: transparent;
+  background: var(--bg-primary);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 0 var(--space-3);
-  height: 38px;
+  height: 34px;
   transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
@@ -63,7 +63,7 @@
   border: none !important;
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
   box-shadow: none !important;
   -webkit-appearance: none;
   appearance: none;
@@ -75,6 +75,14 @@
 
 .search-input::-webkit-search-cancel-button {
   display: none;
+}
+
+/* Beside the header's search button, its size; narrower, the button is gone
+   and iOS zooms into a field under 16px (ui/input.tsx). */
+@media (min-width: 901px) {
+  .search-input {
+    font-size: var(--fs-sm);
+  }
 }
 
 /* The field's own clear, drawn rather than the browser's cancel glyph. */

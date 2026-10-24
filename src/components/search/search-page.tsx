@@ -676,7 +676,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
       {/* The field lives in the app's header (Navbar's slot on /search). */}
       {searchSlot && createPortal(
         <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
-          <MagnifyingGlass className="search-icon" size={18} />
+          <MagnifyingGlass className="search-icon" size={15} />
           <Input
             type="search"
             className="search-input"

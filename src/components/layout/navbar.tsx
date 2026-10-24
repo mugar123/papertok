@@ -2,6 +2,8 @@ import type { AnimationEvent, MouseEvent, PointerEvent, RefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Menu } from '@base-ui/react/menu';
+import { animate, useReducedMotion } from 'framer-motion';
+import { EASE_OUT } from '../../utils/motion-curves.ts';
 import { ruleTransform } from '../../utils/nav-rule.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
@@ -143,6 +145,51 @@ function PagePicker({ search }: { search: string }) {
   );
 }
 
+/**
+ * Entering or leaving /search swaps the bar's search button for the page's
+ * wider field. Without this the field jumps between the two widths; with it,
+ * the new one grows or shrinks from the width the old one had. A
+ * ResizeObserver keeps that width current, so a window resized since the last
+ * swap does not start the field from a stale size.
+ */
+function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchPage: boolean) {
+  const widthRef = useRef(0);
+  const reduceMotion = useReducedMotion();
+
+  useLayoutEffect(() => {
+    const field = fieldRef.current;
+    const from = widthRef.current;
+    const to = field?.offsetWidth ?? 0;
+    // Below 900px the button is hidden, so one of the two widths is zero.
+    if (!field || reduceMotion || !from || !to || Math.abs(to - from) < 2) return;
+    // The field's flex rules would override the width it animates through,
+    // and the first frame is painted before Motion writes its first keyframe.
+    field.style.flex = 'none';
+    field.style.width = `${from}px`;
+    const resize = animate(field, { width: [from, to] }, { duration: 0.26, ease: EASE_OUT });
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      field.style.flex = '';
+      field.style.width = '';
+    };
+    void resize.then(settle);
+    return () => {
+      resize.stop();
+      settle();
+    };
+  }, [fieldRef, onSearchPage, reduceMotion]);
+
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    const observer = new ResizeObserver(() => { widthRef.current = field.offsetWidth; });
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [fieldRef, onSearchPage]);
+}
+
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, onSearchSlot }: { onOpenSearch?: () => void; searchOpen?: boolean; onSearchSlot?: (node: HTMLDivElement | null) => void }) {
   const { user } = useAuth();
   const [arriving, setArriving] = useState(() => !navbarHasArrived);
@@ -162,10 +209,16 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
   // into this slot; the shortcut focuses it rather than opening the palette.
   const onSearchPage = pathname === '/search';
   const searchSlotRef = useRef<HTMLDivElement | null>(null);
+  const searchFieldRef = useRef<HTMLElement | null>(null);
+  const attachSearchField = useCallback((node: HTMLElement | null) => {
+    searchFieldRef.current = node;
+  }, []);
   const attachSearchSlot = useCallback((node: HTMLDivElement | null) => {
     searchSlotRef.current = node;
+    searchFieldRef.current = node;
     onSearchSlot?.(node);
   }, [onSearchSlot]);
+  useSearchFieldResize(searchFieldRef, onSearchPage);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -299,6 +352,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
         ) : (
           <button
             type="button"
+            ref={attachSearchField}
             className={`navbar-search ${searchOpen ? 'is-open' : ''}`}
             onClick={onOpenSearch}
             aria-expanded={searchOpen}
