@@ -129,8 +129,8 @@ for (const placeAccount of ['another-account', null]) {
 }
 
 // A snapshot keeps the list's first thirty cards. Restored for a reader past
-// them, it put them on its last card, a notable one they had met, and the
-// next notable card came more than fifteen cards later.
+// them, it put the reader on its last card, a notable one they had met, and
+// the next notable card came more than fifteen cards later.
 test('a reader who left past the cards a snapshot keeps starts For You again from its first card, not on a card they met', () => {
   const saved = placeNotableCards(Array.from({ length: 56 }, (_, index) => card(`card-${index}`)), ['notable-0', 'notable-1', 'notable-2', 'notable-3'].map(notable));
   assert.equal(saved.length, 60);

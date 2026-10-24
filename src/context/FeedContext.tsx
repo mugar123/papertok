@@ -1536,8 +1536,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // The page joins the list as it is now, not `papers` as this load found
       // it: while the page loaded, late answers may have filled or removed
       // cards on screen, and a network expansion may have inserted some. The
-      // notable places are counted on that list too, and a place it passed
-      // after the cards the reader reached takes the page's first notable card.
+      // notable places are counted on that list too: a place it has passed
+      // with no notable card, after the cards the reader reached, takes the
+      // page's first one.
       // A follow change refreshes the ranking but the reader keeps their
       // place: the cards through the visible one stay, the fresh page lands
       // below them (mergeFreshFeedPage). A plain reset still replaces all.
