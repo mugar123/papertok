@@ -732,7 +732,7 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
   const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
   const share = (lane: string) => (AREA_LANES.has(lane)
-    ? Math.ceil(AREA_CANDIDATE_LIMIT / areaLanes)
+    ? Math.floor(AREA_CANDIDATE_LIMIT / areaLanes)
     : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
     'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',

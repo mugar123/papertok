@@ -674,6 +674,34 @@ test("an area's journal lane is read beside a reader's own lanes, not out of the
   assert.equal(page.filter(paper => paper.id.startsWith('openalex:')).length, 3, 'and the area lane still fills the floor');
 });
 
+test('the area lanes a request reads give at most 800 candidates together, in equal shares, though 800 does not divide by their number', async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const areas = ['cs', 'math', 'physics'];
+  db.exec('BEGIN');
+  // Three nights of 100 articles in each of three areas.
+  areas.forEach((area, areaIndex) => {
+    for (let index = 0; index < 300; index += 1) {
+      const workId = areaIndex * 1_000 + index + 1;
+      const published = `2026-10-${21 - Math.floor(index / 100)}T00:00:00.000Z`;
+      insertWork.run(workId, JSON.stringify({ id: `openalex:W9${areaIndex}${String(index).padStart(4, '0')}`, title: `Article ${workId}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+      insertLane.run(`area:${area}`, workId, published);
+    }
+  });
+  db.exec('COMMIT');
+  const ranked: string[] = [];
+  for (let page = 0; ; page += 1) {
+    const papers = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'math.OC', 'quant-ph'], page, pageSize: 30 }), { now: NOW });
+    if (papers.length === 0) break;
+    ranked.push(...papers.map(paper => paper.id));
+  }
+  const perArea = areas.map((_, areaIndex) => ranked.filter(id => id.startsWith(`openalex:W9${areaIndex}`)).length);
+  assert.ok(ranked.length <= 800, `${ranked.length} area candidates: ${perArea.join(' + ')}`);
+  assert.ok(ranked.length > 800 - areas.length, `${ranked.length} area candidates`);
+  assert.deepEqual(perArea, perArea.map(() => perArea[0]), 'an equal share of each area');
+});
+
 // An area's lane lists articles without an abstract too (PAP-107); the mapper
 // stands "No abstract available." in for the missing one.
 test('a paper without an abstract is embedded by its title alone, not by the words standing in for the abstract', async () => {
