@@ -7,6 +7,9 @@ const eslint = new ESLint({ flags: ['unstable_native_nodejs_ts_config'] })
 
 async function findings(code: string, filePath: string, prefix: RegExp) {
   const [result] = await eslint.lintText(code, { filePath })
+  // A file the config cannot parse reports no rule at all; say why instead.
+  const fatal = result.messages.filter(message => message.fatal)
+  assert.deepEqual(fatal.map(message => message.message), [], `${filePath} did not parse`)
   return result.messages
     .filter(message => message.ruleId && prefix.test(message.ruleId))
     .map(message => `${message.line} ${message.ruleId}`)
