@@ -237,8 +237,14 @@ async function deleteUserTree(admin: DeletionAdmin, uid: string) {
     const writes = [];
     for (const row of rows) {
       if (collectionId === 'lists') {
+        // The pointer catches a publish that raced the publicLists stage, but
+        // it is only the list's claim: the share is ours to delete when its
+        // owner record names this uid back, the rule requireOwnedShare applies.
         const shareId = typeof row.data?.publicShareId === 'string' ? row.data.publicShareId : '';
-        if (/^[a-f0-9]{32}$/.test(shareId)) {
+        const owner = /^[a-f0-9]{32}$/.test(shareId)
+          ? await admin.getDocument<{ ownerId?: unknown }>(['publicListOwners', shareId])
+          : null;
+        if (owner?.ownerId === uid) {
           writes.push(deleteWrite(admin.name(['publicLists', shareId])));
           writes.push(deleteWrite(admin.name(['publicListOwners', shareId])));
         }

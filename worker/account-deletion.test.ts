@@ -303,6 +303,64 @@ test('a profile pointing at somebody else\'s handle does not free that handle', 
   assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
 });
 
+test('a list pointing at somebody else\'s share does not delete that share', async () => {
+  // Rules from 2026-08-13 to 2026-08-20 let a client write any share id into its
+  // own list, so the pointer alone does not prove whose share it is.
+  const victimShare = 'b'.repeat(32);
+  const admin = memoryAdmin({
+    [`publicListOwners/${victimShare}`]: { ownerId: 'victim', listId: 'v-list' },
+    [`publicLists/${victimShare}`]: { title: 'Victim reading list' },
+    'users/victim/lists/v-list': { name: 'Victim reading list', publicShareId: victimShare },
+    [`users/${UID}/lists/legacy`]: { name: 'Planted', publicShareId: victimShare },
+  });
+
+  let result;
+  for (let i = 0; i < 12; i += 1) {
+    result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+      idToken: TOKEN,
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    if (result.complete) break;
+  }
+
+  assert.equal(result?.complete, true);
+  assert.equal(admin.documents[`users/${UID}/lists/legacy`], undefined);
+  assert.deepEqual(admin.documents[`publicLists/${victimShare}`], { title: 'Victim reading list' });
+  assert.deepEqual(admin.documents[`publicListOwners/${victimShare}`], { ownerId: 'victim', listId: 'v-list' });
+  assert.equal(admin.documents['users/victim/lists/v-list']?.publicShareId, victimShare);
+});
+
+test('a share published after the publicLists stage is still deleted through its pointer', async () => {
+  const lateShare = 'c'.repeat(32);
+  const admin = memoryAdmin({
+    [`users/${UID}/lists/late`]: { name: 'Late', publicShareId: lateShare },
+  });
+  // The owner query of the publicLists stage has already run and found nothing
+  // when the publish lands, so only the list's pointer can find this share.
+  const getDocument = admin.getDocument;
+  let published = false;
+  admin.getDocument = (async (segments: string[]) => {
+    if (!published && segments[0] === 'publicListOwners') {
+      published = true;
+      admin.documents[`publicListOwners/${lateShare}`] = { ownerId: UID, listId: 'late' };
+      admin.documents[`publicLists/${lateShare}`] = { title: 'Late' };
+    }
+    return getDocument(segments);
+  }) as typeof admin.getDocument;
+
+  let result;
+  for (let i = 0; i < 12; i += 1) {
+    result = await runAccountDeletionSlice(admin, UID, { ...SERVICE }, {
+      idToken: TOKEN,
+      fetchImpl: async () => new Response('{}', { status: 200 }),
+    });
+    if (result.complete) break;
+  }
+
+  assert.equal(result?.complete, true);
+  assert.deepEqual(admin.documents, {});
+});
+
 test('a write that lands between the sweep and the Auth delete is swept too', async () => {
   const admin = memoryAdmin({
     [`userProfiles/${UID}`]: { handle: HANDLE },
