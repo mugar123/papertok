@@ -176,6 +176,25 @@ test('a share path that cannot name a page is refused before anything is fetched
   assert.equal(matchShareRoute(new URL('https://api.papertok.app/openalex/works')), null);
 });
 
+test('a DOI with a dot segment is refused before admission, so it cannot open another record', async () => {
+  for (const doi of ['10.1234/../../works/W2741809807', '10.1234/./abc']) {
+    const key = encodePaperKey('doi', doi)!;
+    assert.equal(matchShareRoute(new URL(`https://api.papertok.app/share/paper/${key}`))!.invalid, true, doi);
+    const asked: string[] = [];
+    let admitted = 0;
+    const { deps } = handlerDeps({
+      loadRecord: createShareLoader({ openAlex: async (path) => { asked.push(path); return OPENALEX_WORK; } }),
+      admit: async () => { admitted += 1; return true; },
+    });
+    const response = await handleSharePage(shareRequest(`/share/paper/${key}`), deps);
+    assert.equal(response.status, 404, doi);
+    assert.deepEqual(asked, [], doi);
+    assert.equal(admitted, 0, doi);
+  }
+  // Dots inside a segment are part of the DOI.
+  assert.deepEqual(paperRoute(encodePaperKey('doi', '10.1234/a..b')!).identity, { type: 'doi', value: '10.1234/a..b' });
+});
+
 // -------------------------------------------------------------- language
 
 test('the copy is English whatever the reader\'s Accept-Language says', async () => {
