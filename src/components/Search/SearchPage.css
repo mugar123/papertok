@@ -513,9 +513,11 @@
   max-width: 600px;
 }
 
+/* Each suggestion as wide as its words, on one line; the row wraps. */
 .search-suggestions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
@@ -531,6 +533,7 @@
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+  white-space: nowrap;
   cursor: pointer;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   text-align: left;
@@ -567,20 +570,12 @@
     padding-inline: var(--space-3);
   }
 
-  .search-suggestions-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
-
   .search-initial-state {
     padding-inline: var(--space-1);
   }
 }
 
 @media (max-width: 380px) {
-  .search-suggestions-grid {
-    grid-template-columns: 1fr;
-  }
-
   .search-follow-btn {
     min-width: 40px;
   }
