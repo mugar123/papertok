@@ -228,10 +228,37 @@ function entityLane(value: unknown) {
   return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
 }
 
-/** The lanes readers follow, for `recordLanes`. */
-async function followedLaneSet(db: D1Database) {
-  const { results } = await db.prepare('SELECT lane FROM followed_lanes').all<{ lane: string }>();
-  return new Set(results.map(row => row.lane));
+// The OpenAlex authors, institutions, topics and concepts a paper names, as lanes.
+function namedEntityLanes(paper: Partial<Paper>) {
+  const lanes = new Set<string>();
+  for (const author of paper.authors || []) {
+    if (typeof author === 'object') lanes.add(entityLane(author?.id));
+  }
+  for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
+  for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
+  lanes.delete('');
+  return [...lanes];
+}
+const isFollowOnlyLane = (lane: string) => PRUNED_ENTITY_LANE_KINDS.some(kind => lane.startsWith(`${kind}:`));
+/** The lanes a paper names that `recordLanes` files only while followed. */
+const followOnlyLanes = (paper: Partial<Paper>) => namedEntityLanes(paper).filter(isFollowOnlyLane);
+
+/**
+ * Which of `lanes` readers follow, for `recordLanes`. Each write asks only for
+ * the lanes its own papers name, not for the whole table: `followed_lanes`
+ * holds every lane written in the last 14 days, up to about 60k rows at the
+ * app's 4,000 writes a day, and every harvest page, follow run, like lookup
+ * and enrichment step files papers.
+ */
+async function followedLanesAmong(db: D1Database, lanes: Iterable<string>) {
+  const asked = [...new Set(lanes)];
+  const followed = new Set<string>();
+  for (let start = 0; start < asked.length; start += 500) {
+    const { results } = await db.prepare('SELECT lane FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(asked.slice(start, start + 500))).all<{ lane: string }>();
+    results.forEach(row => followed.add(row.lane));
+  }
+  return followed;
 }
 
 /**
@@ -249,13 +276,8 @@ export function recordLanes(paper: Partial<Paper>, followed: ReadonlySet<string>
       if (LEAF_IDS.has(category)) lanes.add(category);
     }
   }
-  for (const author of paper.authors || []) {
-    if (typeof author === 'object') lanes.add(entityLane(author?.id));
-  }
-  for (const institution of paper.institutions || []) lanes.add(entityLane(institution?.id));
-  for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
-  lanes.delete('');
-  return [...lanes].filter(lane => followed.has(lane) || !PRUNED_ENTITY_LANE_KINDS.some(kind => lane.startsWith(`${kind}:`)));
+  for (const lane of namedEntityLanes(paper)) lanes.add(lane);
+  return [...lanes].filter(lane => followed.has(lane) || !isFollowOnlyLane(lane));
 }
 
 // ─── Writing ───
@@ -392,13 +414,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   }
   if (groups.length === 0) return 0;
 
-  const [existingByKey, followed] = await Promise.all([
-    lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]),
-    followedLaneSet(db),
-  ]);
+  const existingByKey = await lookUpKeys(db, [...new Set(groups.flatMap(group => [...group.keys]))]);
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
+  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
   const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
@@ -429,7 +449,13 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    for (const lane of new Set([...group.lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
+    filings.push({ id, paper, published, lanes: group.lanes });
+  }
+  // Asked once the records are merged: a stored row names entities, such as
+  // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
+  const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  for (const { id, paper, published, lanes } of filings) {
+    for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
       laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
     }
   }
@@ -479,27 +505,25 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
 export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>, now = Date.now()) {
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
-  const followed = await followedLaneSet(db);
   // Compared as stored: every OpenAlex merge adds back the payload a row drops.
-  const changed = updates
+  const updated = updates
     .map(({ id, before, after }) => ({ id, before, paper: storedPaper(after) }))
     .filter(({ before, paper }) => JSON.stringify(before) !== JSON.stringify(paper))
-    .map(({ id, before, paper }) => {
-      const published = publishedOf(paper, now) || publishedOf(before, now);
-      return {
-        text: { id, paper: JSON.stringify(paper) },
-        filing: {
-          id,
-          published,
-          textChanged: embeddingText(paper) !== embeddingText(before),
-          // A book, an erratum or another type the feed does not show leaves
-          // every lane once the enrichment reveals it.
-          offered: isFeedPublication(paper),
-          keys: workKeys(paper),
-          lanes: published >= since ? recordLanes(paper, followed) : [],
-        },
-      };
-    });
+    .map(update => ({ ...update, published: publishedOf(update.paper, now) || publishedOf(update.before, now) }));
+  const followed = await followedLanesAmong(db, updated.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  const changed = updated.map(({ id, before, paper, published }) => ({
+    text: { id, paper: JSON.stringify(paper) },
+    filing: {
+      id,
+      published,
+      textChanged: embeddingText(paper) !== embeddingText(before),
+      // A book, an erratum or another type the feed does not show leaves
+      // every lane once the enrichment reveals it.
+      offered: isFeedPublication(paper),
+      keys: workKeys(paper),
+      lanes: published >= since ? recordLanes(paper, followed) : [],
+    },
+  }));
   // A D1 call carries at most 32 MiB: each chunk is its own batch, and only
   // the first statement is sent the papers' text (2026-10-23: 500 enriched
   // papers bound five times over came to 33.6 MB).

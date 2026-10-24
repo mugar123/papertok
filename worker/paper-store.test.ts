@@ -1260,6 +1260,21 @@ test('a new follow is served nothing from the corpus until its own harvest files
   assert.deepEqual(after.map(entry => entry._followedEntityMatches?.length), [1]);
 });
 
+test('a batch files the followed lanes its papers name, those only its stored row names included, and no other follow', async () => {
+  const { env, db } = corpus();
+  const followLaneNow = (lane: string) => db.prepare('INSERT INTO followed_lanes (lane, requested_at) VALUES (?, ?)').run(lane, new Date(NOW).toISOString());
+  const entityLanes = () => rows(db, "SELECT lane FROM work_lanes WHERE lane LIKE '%:%' ORDER BY lane").map(row => row.lane);
+  followLaneNow('author:A11');
+  followLaneNow('concept:C99');
+  const paper = { ...arxivRecord, authors: [{ id: 'https://openalex.org/A10', name: 'Ana Pérez' }, { id: 'https://openalex.org/A11', name: 'Li Wei' }] };
+  await ingestPapers(env, [{ paper, lanes: [] }], { now: NOW });
+  assert.deepEqual(entityLanes(), ['author:A11']);
+  // arXiv's next version names its authors without ids; the stored row keeps them.
+  followLaneNow('author:A10');
+  await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
+  assert.deepEqual(entityLanes(), ['author:A10', 'author:A11']);
+});
+
 // Each D1 round trip a request makes, as the statements it sent.
 function roundTrips(t: TestContext, binding: D1Database) {
   const trips: string[][] = [];
