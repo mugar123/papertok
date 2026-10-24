@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/cloudflare';
 import type { WorkerEnv } from './env.ts';
-import { ERROR_DATA_COLLECTION, sanitizeErrorEvent } from '../src/utils/errorTelemetry.ts';
+import { ERROR_DATA_COLLECTION, sanitizeErrorEvent } from '../src/utils/error-telemetry.ts';
 
 export function workerSentryOptions(env: WorkerEnv): Sentry.CloudflareOptions {
   return {

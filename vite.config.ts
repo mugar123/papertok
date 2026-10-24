@@ -12,7 +12,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
-import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deployFlags.ts'
+import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deploy-flags.ts'
 
 // Shared with the `base` field below and with the service-worker precache
 // derivation, which needs to strip this same prefix off every asset URL
@@ -42,7 +42,7 @@ function requireWorkerBaseUrl(env: Record<string, string>) {
 }
 
 // A flag whose value is a product decision is declared in
-// `src/utils/deployFlags.ts`, but the value that reaches the bundle comes from a
+// `src/utils/deploy-flags.ts`, but the value that reaches the bundle comes from a
 // GitHub Actions repository variable, which changes with no commit and no
 // review. Nothing used to compare the two, so the bundle could ship the
 // opposite of the decision on record and look entirely healthy doing it —
@@ -53,9 +53,9 @@ function requireDeclaredDeployFlags(env: Record<string, string>) {
   const drift = findDeployFlagDrift(env)
   if (drift.length === 0) return
   throw new Error(
-    'This build disagrees with the deploy flags declared in src/utils/deployFlags.ts:\n'
+    'This build disagrees with the deploy flags declared in src/utils/deploy-flags.ts:\n'
     + `${describeDeployFlagDrift(drift)}\n`
-    + 'Change the decision in src/utils/deployFlags.ts, in the commit that records why, '
+    + 'Change the decision in src/utils/deploy-flags.ts, in the commit that records why, '
     + 'or clear the disagreeing GitHub Actions repository variable (Settings -> Secrets '
     + 'and variables -> Actions -> Variables). Do not change only the variable: the value '
     + 'it carries is the one nobody reviews.',
@@ -272,7 +272,7 @@ export default defineConfig(({ command, mode }) => {
                     // the reader asked for with a different one. `/` is NOT on
                     // the list any more -- it was the landing's address until
                     // the landing was withdrawn, and it is now the app's own
-                    // root, which App.jsx redirects to /feed. `/__/auth/` is
+                    // root, which app.tsx redirects to /feed. `/__/auth/` is
                     // Firebase's sign-in handler,
                     // proxied through this origin and navigated to for real --
                     // answering it with the app would hand Google an HTML page

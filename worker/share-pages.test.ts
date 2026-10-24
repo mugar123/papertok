@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { paperLegacyAdapter } from '../src/models/Paper.ts';
-import { seedPaintsWhole } from '../src/utils/paperSeed.ts';
-import { encodePaperKey } from '../src/utils/publicNavigation.ts';
-import { publicPaperMetadata, readShareSeed } from '../src/utils/shareSeed.ts';
+import { paperLegacyAdapter } from '../src/models/paper.ts';
+import { seedPaintsWhole } from '../src/utils/paper-seed.ts';
+import { encodePaperKey } from '../src/utils/public-navigation.ts';
+import { publicPaperMetadata, readShareSeed } from '../src/utils/share-seed.ts';
 import {
   createShareLoader,
   createShellLoader,
@@ -125,11 +125,11 @@ function memoryCache() {
   return {
     stored,
     async match(request: Request<unknown,CfProperties<unknown>>) {
-      const hit = stored.get(String((request as Request).url));
+      const hit = stored.get(String((request).url));
       return hit ? hit.clone() : undefined;
     },
     async put(request: Request<unknown,CfProperties<unknown>>, response: Response) {
-      stored.set(String((request as Request).url), response.clone());
+      stored.set(String((request).url), response.clone());
     },
   };
 }
@@ -148,18 +148,18 @@ function shareRequest(path: string, { method = 'GET', language }: { method?: str
 
 test('a share path names its kind, its identity and the public page it stands for', () => {
   const paper = paperRoute();
-  assert.equal(paper!.kind, 'paper');
-  assert.deepEqual(paper!.identity, { type: 'doi', value: '10.1145/3555174' });
-  assert.equal(paper!.canonicalPath, `/public/paper/${DOI_KEY}`);
+  assert.equal(paper.kind, 'paper');
+  assert.deepEqual(paper.identity, { type: 'doi', value: '10.1145/3555174' });
+  assert.equal(paper.canonicalPath, `/public/paper/${DOI_KEY}`);
 
   const list = matchShareRoute(new URL(`https://api.papertok.app/share/list/${SHARE_ID}`)) as Extract<ShareRoute, { kind: 'list' }>;
-  assert.equal(list!.kind, 'list');
-  assert.equal(list!.canonicalPath, `/public/list/${SHARE_ID}`);
+  assert.equal(list.kind, 'list');
+  assert.equal(list.canonicalPath, `/public/list/${SHARE_ID}`);
 
   const author = matchShareRoute(new URL('https://api.papertok.app/share/entity/author/A5018713931')) as Extract<ShareRoute, { kind: 'entity' }>;
-  assert.equal(author!.kind, 'entity');
-  assert.equal(author!.type, 'author');
-  assert.equal(author!.canonicalPath, '/public/entity/author/A5018713931');
+  assert.equal(author.kind, 'entity');
+  assert.equal(author.type, 'author');
+  assert.equal(author.canonicalPath, '/public/entity/author/A5018713931');
 });
 
 test('a share path that cannot name a page is refused before anything is fetched', () => {
@@ -363,7 +363,7 @@ test('a paper page embeds a seed that parses, names its key and can paint the pa
 
 test('the page reads back the seed the Worker writes, paints from it and indexes it', async () => {
   // Both sides of the contract at once: the element and the key the Worker
-  // writes are the ones src/utils/shareSeed.ts reads, and what it reads goes
+  // writes are the ones src/utils/share-seed.ts reads, and what it reads goes
   // through the same adapter and paint rule as a seed handed over in-app.
   const outcome = await foundPaper();
   const html = renderSharePage(SHELL, sharePageModel(paperRoute(), outcome));

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "ask": [
+      "Edit(/eslint.config.ts)",
+      "Edit(/eslint-rules/**)",
+      "Edit(/knip.jsonc)",
+      "Edit(/package.json)",
+      "Edit(/**/tsconfig*.json)",
+      "Edit(/.github/workflows/**)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/settings.local.json)",
+      "Edit(/scripts/agent-hooks.ts)",
+      "Edit(/scripts/check-pr-body.ts)"
+    ],
+    "deny": [
+      "Edit(/worker-configuration.d.ts)",
+      "Edit(/.dev.vars*)",
+      "Edit(/.env.local)",
+      "Edit(/.env.sentry-build-plugin)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/agent-hooks.ts\"", "timeout": 10 }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/agent-hooks.ts\"", "timeout": 180 }]
+      }
+    ]
+  }
+}

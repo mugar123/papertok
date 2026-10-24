@@ -16,7 +16,7 @@ import {
   upstreamParams,
 } from './institution-access.ts';
 import reportApi from './index.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), with the
 // performance counters removed: Cell, ISSN 0092-8674, 2020.
@@ -1820,7 +1820,7 @@ test('a subscription in an SFX library is entitled, its article link through the
   const result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
   assert.deepEqual(result, { status: 'entitled', collection: 'SpringerLink Journals - AutoHoldings', url: `${TUM_LOGIN}${encodeURIComponent(NATURE_LINK)}` });
   // The login keeps the article whole, its own query included.
-  assert.equal(new URL(result.url!).searchParams.get('qurl'), NATURE_LINK);
+  assert.equal(new URL(result.url).searchParams.get('qurl'), NATURE_LINK);
   const [call, ...more] = stub.sfxCalls();
   assert.equal(more.length, 0);
   assert.equal(call.url.pathname, '/sfx_tum');
@@ -2060,7 +2060,7 @@ test('a closed article without a licence keeps its subscription once Unpaywall h
       unpaywall: () => jsonResponse({ ...UNPAYWALL_RECORDS[SCIENCE_DOI], oa_status: oaStatus }),
     });
     const result = await lookupInstitutionAccess({ doi: SCIENCE_DOI, domain: 'tum.de', rorId: TUM_ROR }, { fetchImpl: stub.fetchImpl });
-    assert.deepEqual(result, { status: 'entitled', collection: 'Jstor Complete Legacy', url: `${TUM_LOGIN}${encodeURIComponent(jstor.url!)}` }, oaStatus);
+    assert.deepEqual(result, { status: 'entitled', collection: 'Jstor Complete Legacy', url: `${TUM_LOGIN}${encodeURIComponent(jstor.url)}` }, oaStatus);
   }
 });
 
@@ -2109,7 +2109,7 @@ test('without Unpaywall\'s word an SFX service not named free proves nothing: un
 test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSCO links go through E-Medien whole', async () => {
   // Gale only: the Springer and Nature packages taken out of LMU's answer.
   const galeOnly = SFX_LMU_NATURE.replace(/ {3}<target>\n {4}<target_name>(?:SPRINGER_LINK_JOURNALS_AUTOLOAD|NATURE)<[\s\S]*?\n {3}<\/target>\n?/g, '');
-  const gale = parseSfxAnswer(galeOnly, '1476-4687')!.services[0].url!;
+  const gale = parseSfxAnswer(galeOnly, '1476-4687')!.services[0].url;
   assert.match(gale, /^https:\/\/find\.gale\.com\/openurl\/openurl\?/);
   let stub = upstreams({ crossref: askedAbout(NATURE_WORK), sfx: () => xml(galeOnly) });
   let result = await lookupInstitutionAccess({ doi: NATURE_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
@@ -2117,7 +2117,7 @@ test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSC
   // EBSCO's link, from LMU's Entropy answer, for a closed article in the same
   // journal (licence and Unpaywall status synthetic): its own query and the %2F
   // inside it reach EBSCO unchanged.
-  const ebsco = parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services[0].url!;
+  const ebsco = parseSfxAnswer(SFX_LMU_ENTROPY, '1099-4300')!.services[0].url;
   stub = upstreams({
     crossref: askedAbout({ ...ENTROPY_WORK, license: [] }),
     sfx: () => xml(SFX_LMU_ENTROPY),
@@ -2125,8 +2125,8 @@ test('LMU\'s Gale links start LMU\'s sign-in and are not wrapped again; its EBSC
   });
   result = await lookupInstitutionAccess({ doi: ENTROPY_DOI, domain: 'campus.lmu.de', rorId: LMU_ROR }, { fetchImpl: stub.fetchImpl });
   assert.equal(result.collection, 'EBSCOhost Academic Search Complete');
-  assert.ok(result.url!.startsWith(LMU_LOGIN));
-  assert.equal(new URL(result.url!).searchParams.get('qurl'), ebsco);
+  assert.ok(result.url.startsWith(LMU_LOGIN));
+  assert.equal(new URL(result.url).searchParams.get('qurl'), ebsco);
   assert.match(ebsco, /doi=10\.3390%2Fe23010001&.*authtype=ip%2Cuid/);
 });
 

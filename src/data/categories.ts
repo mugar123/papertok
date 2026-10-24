@@ -1,8 +1,8 @@
 /**
  * PaperTok — the category taxonomy as the interface uses it: every area of
- * `categoryTaxonomy.ts` with its icon attached.
+ * `category-taxonomy.ts` with its icon attached.
  *
- * The records and the lookups live in `categoryTaxonomy.ts`, which imports
+ * The records and the lookups live in `category-taxonomy.ts`, which imports
  * nothing, so the Worker can resolve a paper's field without pulling React and
  * the icon set into its bundle. Everything the interface imported from here
  * still comes from here.
@@ -23,7 +23,7 @@ import {
   Monitor,
   TrendUp,
 } from '@phosphor-icons/react';
-import { CATEGORIES as AREAS } from './categoryTaxonomy.ts';
+import { CATEGORIES as AREAS } from './category-taxonomy.ts';
 
 const AREA_ICONS: Record<string, typeof Atom> = {
   physics: Atom,
@@ -77,7 +77,5 @@ export {
   getAllLeafCategories,
   getCategoryArea,
   getCategoryLabel,
-  getCategorySimilarity,
-} from './categoryTaxonomy.ts';
+} from './category-taxonomy.ts';
 
-export default CATEGORIES;

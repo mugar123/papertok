@@ -1,20 +1,21 @@
-import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
-import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
+import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
+import type { OpenAlexLocation } from '../src/services/adapters/open-alex-types.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector,
-  rewriteWorks,
+  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  readFeedPage, readVector, rewriteWorks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
-import { PaperBuilder } from '../src/services/PaperBuilder.ts';
-import { mapAdsPaper } from '../src/services/domainSourceRecords.ts';
-import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
-import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
-import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
+import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { mapAdsPaper } from '../src/services/domain-source-records.ts';
+import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
   assert.equal(arxivIdOf('arxiv:2610.01234v2'), '2610.01234');
@@ -52,6 +53,31 @@ test('a stored vector reads back the same whether D1 returns bytes or numbers', 
   const unsignedBytes = [...new Uint8Array(stored.buffer)];
   assert.deepEqual([...readVector(unsignedBytes)], [76, -102]);
   assert.deepEqual([...readVector(stored.buffer)], [76, -102]);
+});
+
+test('a rejection demotes near copies, without penalizing a distant topic', () => {
+  const now = Date.parse('2026-10-22T00:00:00Z');
+  const rows = [
+    { id: 'copy', embedding: quantize([1, 0]), published: '2026-10-20' },
+    { id: 'other', embedding: quantize([0.6, 0.8]), published: '2026-10-20' },
+  ];
+  const baseline = rankBySimilarity(rows, [quantize([1, 0])], { now });
+  const rejected = rankBySimilarity(rows, [quantize([1, 0])], { now, negatives: [quantize([1, 0])] });
+  assert.deepEqual(baseline.map(({ row }) => row.id), ['copy', 'other']);
+  assert.deepEqual(rejected.map(({ row }) => row.id), ['other', 'copy']);
+  assert.equal(rejected[0].score, baseline[1].score);
+  assert.ok(rejected[1].semanticScore < rejected[0].semanticScore);
+});
+
+test('semantic diversity moves a second interest ahead of near duplicates and retains every candidate', () => {
+  const now = Date.parse('2026-10-22T00:00:00Z');
+  const rows = [
+    ...Array.from({ length: 20 }, (_, index) => ({ id: `copy-${index}`, embedding: quantize([1, 0]), published: '2026-10-20' })),
+    { id: 'second-interest', embedding: quantize([0.85, 0.53]), published: '2026-10-20' },
+  ];
+  const ranked = rankBySimilarity(rows, [quantize([1, 0])], { now });
+  assert.deepEqual(ranked.slice(0, 2).map(({ row }) => row.id), ['copy-0', 'second-interest']);
+  assert.equal(new Set(ranked.map(({ row }) => row.id)).size, 21);
 });
 
 // D1 answers a BLOB as an array of its unsigned bytes, and a ranked page
@@ -395,6 +421,17 @@ test('a follow is served from the lane its entity names, and a followed category
   assert.equal(followLane({ type: 'author', canonicalId: 'T10604' }), '', 'a topic id is no author, and there is no name to search');
 });
 
+test('feed feedback is optional, deduplicated, bounded and accepts only string IDs', () => {
+  assert.deepEqual(parseFeedRequest(null).negativeIds, []);
+  assert.deepEqual(parseFeedRequest(null).excludedIds, []);
+  const query = parseFeedRequest({ negativeIds: [null, {}, 1, '', ' rejected ', 'rejected'], excludedIds: [false, ' seen ', 'seen'] });
+  assert.deepEqual(query.negativeIds, ['rejected']);
+  assert.deepEqual(query.excludedIds, ['seen']);
+  const many = parseFeedRequest({ negativeIds: Array.from({ length: 50 }, (_, index) => `negative-${index}`), excludedIds: Array.from({ length: 250 }, (_, index) => `seen-${index}`) });
+  assert.equal(many.negativeIds.length, 24);
+  assert.equal(many.excludedIds.length, 200);
+});
+
 test("the app's ids for a paper find it whichever form they take", () => {
   assert.deepEqual(keysForPaperId('arxiv:2610.11111v3'), ['id:arxiv:2610.11111v3', 'arxiv:2610.11111']);
   assert.deepEqual(keysForPaperId('W4391234567'), ['id:w4391234567', 'id:openalex:w4391234567']);
@@ -480,6 +517,125 @@ test("a reader's later pages read the order the first page ranked, and only thei
   const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});
+
+test('seen aliases are excluded before pagination, including provisional rankings and cache misses', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, Array.from({ length: 7 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.0030${index}`, arxivId: `2610.0030${index}`, doi: undefined, title: `Seen pagination example ${index}`, published: `2026-10-1${index}T00:00:00.000Z`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const stored = new Map<string, import('./paper-store.ts').KeptRanking>();
+  const cache = {
+    get: async (key: string) => stored.get(key) ?? null,
+    put: async (key: string, ranking: import('./paper-store.ts').KeptRanking) => { stored.set(key, { ...ranking, final: false }); },
+  };
+  const query = { categories: ['cs.CL'], excludedIds: ['arxiv:2610.00306v2', '2610.00305'], pageSize: 2 };
+  const first = await readFeedPage(env, parseFeedRequest(query), { now: NOW, cache });
+  assert.deepEqual(first.map(paper => paper.id), ['2610.00304', '2610.00303']);
+  const second = await readFeedPage(env, parseFeedRequest({ ...query, page: 1 }), { now: NOW, cache });
+  assert.deepEqual(second.map(paper => paper.id), ['2610.00302', '2610.00301']);
+  const missed = await readFeedPage(env, parseFeedRequest({ ...query, page: 1 }), { now: NOW });
+  assert.deepEqual(missed.map(paper => paper.id), ['2610.00302', '2610.00301']);
+  const refreshed = await readFeedPage(env, parseFeedRequest({ ...query, excludedIds: [...query.excludedIds, ...first.map(paper => paper.id)] }), { now: NOW, cache });
+  assert.deepEqual(refreshed.map(paper => paper.id), ['2610.00302', '2610.00301']);
+});
+
+test('a client can relax exhausted exclusions while positives and explicit rejections stay excluded', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, Array.from({ length: 3 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.0040${index}`, arxivId: `2610.0040${index}`, doi: undefined, title: `Exhausted seen fallback ${index}`, published: `2026-10-1${index}T00:00:00.000Z`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const query = parseFeedRequest({ categories: ['cs.CL'], positiveIds: ['2610.00400'], negativeIds: ['2610.00401'], excludedIds: ['arxiv:2610.00402v2'], pageSize: 15 });
+  assert.deepEqual(await readFeedPage(env, query, { now: NOW }), []);
+  const relaxed = { ...query, excludedIds: [] };
+  assert.deepEqual((await readFeedPage(env, relaxed, { now: NOW })).map(paper => paper.id), ['2610.00402']);
+  assert.deepEqual(await readFeedPage(env, { ...relaxed, page: 1 }, { now: NOW }), []);
+  assert.deepEqual(await readFeedPage(env, { ...query, negativeIds: ['2610.00401', '2610.00402'] }, { now: NOW }), []);
+});
+
+// Workers AI, as the store calls it: one vector of the model's size per text.
+function embeddingModel() {
+  const texts: string[] = [];
+  const AI = {
+    run: async (_model: string, { text }: { text: string[] }) => {
+      texts.push(...text);
+      await new Promise(resolve => setImmediate(resolve));
+      return { data: text.map((_, index) => Array.from({ length: 1024 }, (__, dimension) => Math.sin(index + dimension + 1))) };
+    },
+  };
+  return { AI, texts };
+}
+
+test('two embedding passes at once embed each paper once', async () => {
+  const { binding } = testD1();
+  const { AI, texts } = embeddingModel();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 64 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.002${String(index).padStart(2, '0')}`, arxivId: `2610.002${String(index).padStart(2, '0')}`, title: `Paper ${index} waiting for its vector`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  // The daily run's pass, and a followed lanes' run started beside it.
+  const embedded = await Promise.all([embedPending(env, 256), embedPending(env, 256)]);
+  assert.equal(embedded[0] + embedded[1], 64);
+  assert.equal(texts.length, 64);
+  assert.equal(new Set(texts).size, 64);
+});
+
+test("one reader's lookups embed a small share of the day, and the harvest and other readers keep the rest", async () => {
+  const { binding, db } = testD1();
+  const { AI } = embeddingModel();
+  // 200,000 estimated tokens a day; each paper below is about 670.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '200000' } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 400 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.1${String(index).padStart(4, '0')}`, arxivId: `2610.1${String(index).padStart(4, '0')}`,
+      title: `Liked paper ${index}`, abstract: `A long abstract of paper ${index}. `.repeat(100), allCategories: [], categories: [],
+    },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const ids = (db.prepare('SELECT id FROM works ORDER BY id').all() as Array<{ id: number }>).map(row => row.id);
+  // A lookup embeds at most ten liked papers; this reader keeps asking with new ones.
+  let readerEmbedded = 0;
+  let refused: number[] = [];
+  for (let lookup = 0; lookup < 30; lookup += 1) {
+    const asked = ids.slice(lookup * 10, lookup * 10 + 10);
+    const embedded = await embedWorks(env, asked, 'reader-1');
+    if (embedded === 0) {
+      refused = asked;
+      break;
+    }
+    readerEmbedded += embedded;
+  }
+  assert.ok(readerEmbedded > 0 && readerEmbedded <= 100, `one reader embedded ${readerEmbedded}`);
+  assert.equal(await embedWorks(env, refused, 'reader-2'), 10, "another reader's lookup of the same papers is embedded");
+  assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
+});
+
+test("runs for new follows embed within their own share of the day, and the daily run keeps the rest", async () => {
+  const { binding } = testD1();
+  const { AI } = embeddingModel();
+  // 3M estimated tokens a day; each paper below is about 670, 2M in all.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '3000000' } as Parameters<typeof embedPending>[0];
+  const followed = Array.from({ length: 3_000 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.2${String(index).padStart(4, '0')}`, arxivId: `2610.2${String(index).padStart(4, '0')}`,
+      title: `Followed paper ${index}`, abstract: `A long abstract of followed paper ${index}. `.repeat(60), allCategories: [], categories: [],
+    },
+    lanes: [`query:search ${index % 20}`],
+  }));
+  await ingestPapers(env, followed, { now: NOW });
+  // Twenty readers' new follows, each run embedding its own lane until it is refused.
+  let followRuns = 0;
+  for (let lane = 0; lane < 20; lane += 1) {
+    for (let embedded = -1; embedded !== 0;) {
+      embedded = await embedPending(env, 256, { lanes: [`query:search ${lane}`] });
+      followRuns += embedded;
+    }
+  }
+  assert.ok(followRuns > 0 && followRuns < 3_000, `follow runs embedded ${followRuns} of 3,000`);
+  assert.equal(await embedPending(env, 256), 256, 'the daily run still embeds');
 });
 
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {

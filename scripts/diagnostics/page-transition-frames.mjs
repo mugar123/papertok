@@ -85,7 +85,7 @@ const DEMO_SEED = `(() => { try {
 } catch {} })();`;
 
 // Installed in the page the same tick the navigation is triggered, so t=0 is
-// the tap. Samples for 1.4 s, well past every duration in PageTransition.css.
+// the tap. Samples for 1.4 s, well past every duration in page-transition.css.
 const SAMPLER = `(() => {
   const samples = [];
   const start = performance.now();

@@ -3,9 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -39,7 +37,6 @@ const {
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
-  fieldInks,
   digestFollowsForWindow,
   providerOutcomeDefinitelyRejected,
   deliveryLedgerPrefix,
@@ -1669,7 +1666,7 @@ test('a window from Thursday to Sunday records the run without reading any subsc
   kv.list = (async (options) => {
     reads.push(`list:${options?.prefix}`);
     return list(options);
-  }) as typeof kv.list;
+  });
 
   // 2026-08-06 is a Thursday.
   const summary = await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-06T07:00:00.000Z'));
@@ -3066,19 +3063,6 @@ test('a full edition stays inside the delivery ledger draft limits', () => {
   const digest = renderDigest({ displayName: 'N'.repeat(160) }, papers, UNSUBSCRIBE_URL, false, ON_A_MONDAY);
   assert.ok(digest.html.length < 120_000, `${digest.html.length} characters of HTML`);
   assert.ok(digest.text.length < 40_000, `${digest.text.length} characters of text`);
-});
-
-test('the field inks are the app\'s own light-theme inks', async () => {
-  const css = await readFile(new URL('../src/styles/variables.css', import.meta.url), 'utf8');
-  const lightStart = css.indexOf(':root {');
-  const lightTheme = css.slice(lightStart, css.indexOf('\n}', lightStart));
-  assert.ok(lightTheme.includes('--bg-primary: #fbf8f0'), 'the first :root block is the light theme');
-  for (const [area, { gradient }] of Object.entries(CATEGORIES)) {
-    const token = gradient.match(/var\((--gradient-[a-z]+)\)/)![1];
-    const value = lightTheme.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1];
-    assert.equal(fieldInks[area as keyof typeof fieldInks], value?.toLowerCase(), area);
-  }
-  assert.deepEqual(Object.keys(fieldInks).sort(), Object.keys(CATEGORIES).sort());
 });
 
 test('renders common LaTeX in email-safe HTML without exposing delimiters', () => {

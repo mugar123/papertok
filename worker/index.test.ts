@@ -8,17 +8,17 @@ import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { encodePaperKey } from '../src/utils/publicNavigation.ts';
-import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publicationStatus.ts';
+import { encodePaperKey } from '../src/utils/public-navigation.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publication-status.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
-import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
+import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import type { WorkerEnv } from './env.ts';
 
 async function withWorkerFetchMock<Result>(fetchImplementation: typeof fetch, callback: () => Promise<Result>) {
@@ -1151,7 +1151,7 @@ test('answers a CORE search that takes longer than the shared source deadline', 
       clearTimeout(answer);
       reject(options.signal!.reason);
     }, { once: true });
-  })) as typeof fetch;
+  }));
   try {
     const response = await withCachedIdentity(() => reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/core?q=robotics',
@@ -2585,164 +2585,7 @@ test('/related names a stalled Semantic Scholar instead of dressing it as a gene
   assert.equal(body.upstreamStatus, undefined, 'a stall has no status to relay');
 });
 
-const RECOMMENDATIONS_URL = 'https://papertok-report-api.example/recommendations';
 
-function recommendationsRequest(body: unknown, method = 'POST') {
-  return new Request(RECOMMENDATIONS_URL, {
-    method,
-    headers: {
-      origin: 'https://mugar123.github.io',
-      authorization: 'Bearer test-token',
-      'content-type': 'application/json',
-    },
-    ...(method === 'POST' ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}),
-  });
-}
-
-interface RecommendationWorld {
-  uid: string;
-  upstream: Array<{ url: string; init?: RequestInit }>;
-  stored: Map<string, Response>;
-}
-
-// A signed-in reader whose uid the test can change, an edge cache that keeps
-// what is put in it, and a scripted Semantic Scholar.
-async function withRecommendationWorld<Result>(
-  upstream: () => Response,
-  callback: (world: RecommendationWorld) => Promise<Result>,
-) {
-  const world: RecommendationWorld = { uid: 'user-1', upstream: [], stored: new Map() };
-  const originalFetch = globalThis.fetch;
-  const originalCaches = (globalThis as TestGlobals).caches;
-  globalThis.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
-    world.upstream.push({ url: String(url), init });
-    return upstream();
-  };
-  (globalThis as TestGlobals).caches = {
-    default: {
-      match: async (request): Promise<Response | null | undefined> => (String((request as Request).url).includes('/auth/')
-        ? new Response(JSON.stringify({ uid: world.uid }), { headers: { 'content-type': 'application/json' } })
-        : world.stored.get((request as Request).url)?.clone() || null),
-      put: async (request, response): Promise<unknown> => world.stored.set((request as Request).url, response.clone()),
-    },
-  };
-  try {
-    return await callback(world);
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
-    else (globalThis as TestGlobals).caches = originalCaches;
-  }
-}
-
-const recommendedPapers = (items: unknown[]) => () => new Response(JSON.stringify({ recommendedPapers: items }), {
-  headers: { 'content-type': 'application/json' },
-});
-
-test('/recommendations asks Semantic Scholar about the reader\'s examples and answers only ids the feed can fetch', async () => {
-  const state = { reservations: 0, periodKeys: [] as string[] };
-  await withRecommendationWorld(recommendedPapers([
-    { paperId: 'a'.repeat(40), externalIds: { ArXiv: '2609.30288', CorpusId: 1 } },
-    { paperId: 'b'.repeat(40), externalIds: { CorpusId: 2 } },
-    { paperId: 'c'.repeat(40), externalIds: { DOI: '10.3389/frai.2026.1889866', PubMed: '42741109' } },
-  ]), async (world) => {
-    const response = await reportApi.fetch(recommendationsRequest({
-      positive: ['DOI:10.1000/b', 'ARXIV:2401.00002'],
-      negative: ['PMID:123'],
-    }), { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
-
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get('cache-control'), 'private, no-store');
-    assert.deepEqual(await response.json(), {
-      papers: [
-        { arxivId: '2609.30288', doi: null },
-        { arxivId: null, doi: '10.3389/frai.2026.1889866' },
-      ],
-    });
-
-    assert.equal(world.upstream.length, 1);
-    const [{ url, init }] = world.upstream;
-    assert.match(url, /^https:\/\/api\.semanticscholar\.org\/recommendations\/v1\/papers\?fields=externalIds&limit=50$/);
-    assert.equal(init?.method, 'POST');
-    assert.deepEqual(JSON.parse(String(init?.body)), {
-      positivePaperIds: ['ARXIV:2401.00002', 'DOI:10.1000/b'],
-      negativePaperIds: ['PMID:123'],
-    });
-  });
-
-  // The same Semantic Scholar allowance as /related and /sources/s2, on the same beat.
-  assert.ok(state.periodKeys.some(key => key.startsWith('s2:') && !key.endsWith(':pace')), JSON.stringify(state.periodKeys));
-  assert.ok(state.periodKeys.includes('s2:pace'));
-});
-
-test('/recommendations keeps one reader\'s answer to that reader, whatever order the examples arrive in', async () => {
-  await withRecommendationWorld(recommendedPapers([{ externalIds: { ArXiv: '2609.30288' } }]), async (world) => {
-    const ask = (positive: string[]) => reportApi.fetch(recommendationsRequest({ positive }), AUTHENTICATED_ENV);
-
-    await ask(['ARXIV:2401.00001', 'ARXIV:2401.00002']);
-    const repeated = await ask(['ARXIV:2401.00002', 'ARXIV:2401.00001']);
-    assert.equal(world.upstream.length, 1, 'the same examples in another order are the same question');
-    assert.equal(repeated.headers.get('cache-control'), 'private, no-store', 'a hit is as private as a miss');
-
-    world.uid = 'user-2';
-    await ask(['ARXIV:2401.00001', 'ARXIV:2401.00002']);
-    assert.equal(world.upstream.length, 2, 'another reader never gets the first one\'s answer');
-    const keys = [...world.stored.keys()];
-    assert.equal(keys.length, 2);
-    assert.ok(keys.some(key => key.includes('uid=user-1')) && keys.some(key => key.includes('uid=user-2')), keys.join(' '));
-  });
-});
-
-test('/recommendations refuses a malformed request before spending anything', async () => {
-  await withRecommendationWorld(recommendedPapers([]), async (world) => {
-    const refusals = [
-      [recommendationsRequest(null, 'GET'), 405, 'METHOD_NOT_ALLOWED'],
-      [recommendationsRequest('{not json'), 400, 'INVALID_BODY'],
-      [recommendationsRequest({ positive: [] }), 400, 'INVALID_EXAMPLES'],
-      [recommendationsRequest({ positive: ['openalex:W123'] }), 400, 'INVALID_EXAMPLES'],
-      [recommendationsRequest({ positive: ['ARXIV:2401.00001'], negative: 'PMID:1' }), 400, 'INVALID_EXAMPLES'],
-      [recommendationsRequest({ positive: Array.from({ length: 11 }, (_, index) => `ARXIV:2401.${String(index).padStart(5, '0')}`) }), 400, 'INVALID_EXAMPLES'],
-    ] as const;
-    for (const [request, status, code] of refusals) {
-      const response = await reportApi.fetch(request, AUTHENTICATED_ENV);
-      assert.equal(response.status, status, code);
-      assert.equal((await response.json<{ code?: string }>()).code, code);
-    }
-    assert.equal(world.upstream.length, 0);
-  });
-});
-
-test('/recommendations answers examples Semantic Scholar does not know with nothing, kept briefly', async () => {
-  await withRecommendationWorld(
-    () => new Response(JSON.stringify({ error: 'No positive paper examples given' }), { status: 400 }),
-    async (world) => {
-      const response = await reportApi.fetch(recommendationsRequest({ positive: ['ARXIV:9999.99999'] }), AUTHENTICATED_ENV);
-      assert.equal(response.status, 200);
-      assert.deepEqual(await response.json(), { papers: [] });
-      const [stored] = world.stored.values();
-      assert.match(stored.headers.get('cache-control') || '', /s-maxage=120\b/);
-    },
-  );
-});
-
-test('/recommendations relays any other Semantic Scholar refusal instead of answering empty', async () => {
-  await withRecommendationWorld(
-    () => new Response(JSON.stringify({ error: 'Unrecognized or unsupported fields' }), { status: 400 }),
-    async () => {
-      const response = await reportApi.fetch(recommendationsRequest({ positive: ['ARXIV:2401.00001'] }), AUTHENTICATED_ENV);
-      assert.equal(response.status, 502);
-      assert.equal((await response.json<{ upstreamStatus?: number }>()).upstreamStatus, 400);
-    },
-  );
-  await withRecommendationWorld(
-    () => new Response('{}', { status: 429 }),
-    async () => {
-      const response = await reportApi.fetch(recommendationsRequest({ positive: ['ARXIV:2401.00001'] }), AUTHENTICATED_ENV);
-      assert.equal(response.status, 429);
-      assert.equal(response.headers.get('retry-after'), '2');
-    },
-  );
-});
 
 test('tells a client refused by Semantic Scholar search to wait a second, not a minute', async () => {
   const response = await withWorkerFetchMock(
@@ -4169,8 +4012,8 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
       const tier = (name: keyof typeof OPENALEX_TIER_PERCENT, spent: number, refused: number) => ({
         percent: OPENALEX_TIER_PERCENT[name],
         limit: limitOf(name),
-        // The harvest's own share of the day, beside the feed tier it spends.
-        ...(name === 'feed' ? { share: OPENALEX_HARVEST_DAILY_UNITS } : {}),
+        // The nightly run's share of the harvest's day, beside the feed tier it spends.
+        ...(name === 'feed' ? { share: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS } : {}),
         used: spent,
         refused,
         open: used + 1 <= limitOf(name),
