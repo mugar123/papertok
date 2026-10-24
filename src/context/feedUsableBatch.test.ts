@@ -1025,6 +1025,39 @@ test('a notable paper the reader already saved leaves its place to an unseen one
   assert.deepEqual(asked, [false, true, true]);
 });
 
+// A like, a save or a long read of a paper a year old or more moves the
+// reader's temporal preference towards older papers, and below -0.3 their
+// pages switch to relevance order. A notable card is years old by design.
+test("a notable card's age does not move the reader's order towards older papers", async () => {
+  const actions = {
+    like: (temporalPreference: { current: number }) => callbackIn(componentCallback('toggleLike', 'withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent'), {
+      withInteractionId: <T>(paper: T) => paper, user: null, IS_DEMO: true, likedPaperIds: new Set(), boredomLevel: ref(0), temporalPreference,
+      traverseAndExpandNetwork: () => {}, countEngagement: () => {}, recordProfileEvent: () => {}, setLikedPaperIds: () => {}, reRankFeed: () => {},
+      demoSet: () => {}, demoGet: <T>(_key: string, fallback: T) => fallback,
+    }) as (paper: FeedRecord) => Promise<void>,
+    save: (temporalPreference: { current: number }) => callbackIn(componentCallback('markSaved', 'withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid'), {
+      withInteractionId: <T>(paper: T) => paper, user: null, IS_DEMO: true, savedPaperIdsRef: ref(new Set()), papers: [], boredomLevel: ref(0), temporalPreference,
+      traverseAndExpandNetwork: () => {}, countEngagement: () => {}, recordProfileEvent: () => {}, setSavedPaperIds: () => {}, reRankFeed: () => {}, demoSet: () => {},
+    }) as (paper: FeedRecord) => Promise<void>,
+    'twelve-second read': (temporalPreference: { current: number }) => {
+      const trackViewTime = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), {
+        markPaperViewed: () => {}, user: null, IS_DEMO: true, boredomLevel: ref(0), profileSignals: ref(readProfileSignals(null)), temporalPreference,
+        countEngagement: () => {}, recordProfileEvent: () => {}, scheduleReRank: () => {},
+      }) as (paper: FeedRecord, seconds: number) => Promise<void>;
+      return (paper: FeedRecord) => trackViewTime(paper, 12);
+    },
+  };
+  const classic = { ...paperRecord('W2919115771'), published: '2019-02-01T00:00:00Z' };
+  for (const [name, action] of Object.entries(actions)) {
+    const afterNotable = ref(0);
+    await action(afterNotable)({ ...classic, _notable: true });
+    assert.equal(afterNotable.current, 0, `a ${name} of a notable card`);
+    const afterOther = ref(0);
+    await action(afterOther)(classic);
+    assert.ok(afterOther.current < 0, `a ${name} of the same paper outside a notable card still counts`);
+  }
+});
+
 // A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).
 // The corpus may not have embedded that paper yet: the request says to wait
 // for it, which the feed's own pages never do.

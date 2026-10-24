@@ -1828,10 +1828,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       newLiked.add(paper.id);
       countEngagement(paperInput.id, { likes: 1 });
 
-      // Update temporal preference
-      const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
-      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
+      // Update temporal preference. A notable card is years old by design, so
+      // its age says nothing about the papers the reader prefers.
+      if (!paper._notable) {
+        const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
+        else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
+      }
     }
     recordProfileEvent({
       paperId: paper.id,
@@ -2038,8 +2041,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // citation network: that was an OpenAlex call for a reader who did nothing,
     // and in the PAP-86 audit's model of a signed-in session those walks were
     // about a tenth of its OpenAlex units (modelled, not measured). A like, a
-    // save or an opened PDF still expands the graph.
-    if (timeInSeconds >= 10) {
+    // save or an opened PDF still expands the graph. A notable card's age is
+    // the feed's choice, not the reader's (toggleLike).
+    if (timeInSeconds >= 10 && !paper._notable) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.05);
@@ -2180,12 +2184,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     // ─── BOREDOM RESET: saving = highly engaged ───
     boredomLevel.current = 0;
-    // Attempt to update temporal preference
+    // Attempt to update temporal preference, except from a notable card (toggleLike)
     if (paper) {
-      const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
-      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
-      
+      if (!paper._notable) {
+        const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
+        else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
+      }
+
       // Expand network via OpenAlex
       traverseAndExpandNetwork(paper);
     }
