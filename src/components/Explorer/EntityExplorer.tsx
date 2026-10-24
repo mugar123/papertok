@@ -182,9 +182,6 @@ function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count:
         <span>{'Papers per year'}</span>
         <span>{`${years[0]}–${lastYear}`}</span>
       </div>
-      <div className="ehc-activity-counts" aria-hidden="true">
-        {values.map((value, i) => <span key={years[i]}>{value}</span>)}
-      </div>
       <div className="ehc-activity-bars" aria-hidden="true">
         {values.map((value, i) => (
           <span
@@ -194,8 +191,8 @@ function AuthorActivity({ counts }: { counts: Array<{ year: number; works_count:
           />
         ))}
       </div>
-      <div className="ehc-activity-years" aria-hidden="true">
-        {years.map(year => <span key={year}>{String(year).slice(2)}</span>)}
+      <div className="ehc-activity-counts" aria-hidden="true">
+        {values.map((value, i) => <span key={years[i]}>{value}</span>)}
       </div>
     </figure>
   );
