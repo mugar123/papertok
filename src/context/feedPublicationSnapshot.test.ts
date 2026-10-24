@@ -86,7 +86,7 @@ for (const past of [1, 2]) {
 }
 
 // The reader dismissed the notable card at 14. The re-rank that followed placed
-// the next one fifteen cards after the cards it kept, at 29.
+// the next one at 29, the fifteenth place after the dismissed card's.
 test('a notable card the reader has not reached stays ahead of them in a restored snapshot', () => {
   const { readFeedSnapshot, writeFeedSnapshot } = snapshots({ applyKnownPublicationTypes: papers => papers });
   const saved = [...Array.from({ length: 29 }, (_, index) => card(`card-${index}`)), notable('notable-1')];

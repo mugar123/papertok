@@ -23,11 +23,16 @@ let nextRequestAt = 0;
 /**
  * Removes confirmed books and book reviews the reader has not reached. The
  * visible card and the one after it stay, since a swipe shows the next card
- * before the scroll reports it as visible. With no card reported, before the
- * first scroll or after a refresh, the reader is on the first card. A reported
- * card that is no longer listed leaves their place unknown: nothing is removed.
- * The notable cards after the kept ones go back to their places
- * (placeNotableCards): a removed card does not count towards the next one.
+ * before the scroll reports it as visible. A reported card that is no longer
+ * listed leaves their place unknown: nothing is removed. After a reported card,
+ * the notable cards go back to their places (placeNotableCards): a removed card
+ * does not count towards the next one.
+ * With no card reported, the first two cards stay and the others keep their
+ * order. After a refresh the reader is on the first card, but the feed is the
+ * only page that reports one: after a snapshot restored on another page, the
+ * reader comes back to their card by its id (FeedContainer), and a notable
+ * card placed again here could cross it. The next re-rank places the ones
+ * after the reader again.
  */
 export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[], classified: Partial<Paper>[], visiblePaperId: string | null) {
   const visible = papers.findIndex(paper => paper.id === visiblePaperId);
@@ -36,6 +41,7 @@ export function dropUnreachedPublications<T extends Partial<Paper>>(papers: T[],
   const lastReached = Math.max(0, visible) + 1;
   const kept = papers.filter((paper, index) => index <= lastReached || !excluded.has(paper.id));
   if (kept.length === papers.length) return papers;
+  if (!visiblePaperId) return kept;
   const reached = kept.slice(0, lastReached + 1);
   const unreached = kept.slice(lastReached + 1);
   return [...reached, ...placeNotableCards(unreached.filter(paper => !paper._notable), unreached.filter(paper => paper._notable), reached)];
