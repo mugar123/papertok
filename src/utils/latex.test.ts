@@ -132,6 +132,18 @@ test('text-only symbol macros paint as their character', () => {
   assert.equal(normalizeLatexText('a 3.2 \\AA{} bond, \\textcopyright 2020'), 'a 3.2 Å bond, © 2020');
 });
 
+// Providers relay the abstract as the authors typed it, font commands included.
+test('text-mode font commands paint as their plain text', () => {
+  assert.equal(
+    normalizeLatexText('a \\textbf{HERMES}, a \\textbf{H}arness (\\emph{Dev-Primitives}) and \\textbf{\\emph{nested}} text'),
+    'a HERMES, a Harness (Dev-Primitives) and nested text',
+  );
+});
+
+test('a font command inside a formula is left to KaTeX', () => {
+  assert.equal(normalizeLatexText('$x_{\\textbf{b}}$ and \\textbf{bold}'), '$x_{\\textbf{b}}$ and bold');
+});
+
 test('renders the quasiparticle abstract with no raw macro left on screen', async () => {
   await loadKatex();
   const normalized = normalizeLatexText(QUASIPARTICLE_ABSTRACT);
