@@ -1239,6 +1239,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
         let mainFailed = false;
+        // The seen papers as the main page sends them. A profile that arrives
+        // late (applyInteractionProfile) or More like this adds to the
+        // session's while the request runs, and a paper the Worker sent as
+        // unseen does not then say that the reader has seen their ranking.
+        const seenSent = new Set(sessionSeenPapers.current);
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
@@ -1253,10 +1258,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // load can show: the corpus's fifteen, the follows' six and the
             // exploration cards (two on the first screen, up to ten after it);
             // and the spares. A page has one place at least.
-            seen: sessionSeenPapers.current,
+            seen: seenSent,
             notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? FIRST_SCREEN_EXPLORATION : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
           }));
-          rankingSeen = hasSeenRanking({ papers: mainPapers, skipsSeen }, sessionSeenPapers.current);
+          rankingSeen = hasSeenRanking({ papers: mainPapers, skipsSeen }, seenSent);
         } catch (e) {
           console.error('Error fetching main papers:', e);
           mainFailed = true;
