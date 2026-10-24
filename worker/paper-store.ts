@@ -297,7 +297,8 @@ export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
 }
 
 // Transient fields describe one fetch or one reader, never the paper.
-// `openAlex` is enrichment's copy of OpenAlex's answer, already merged into it;
+// `openAlex` is enrichment's copy of OpenAlex's answer, whose fields the app
+// reads are already merged into the paper;
 // `summary` repeats the abstract.
 function storedPaper(paper: Paper): Paper {
   const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex' && key !== 'summary')) as Paper;
