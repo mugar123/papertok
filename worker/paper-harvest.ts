@@ -19,7 +19,7 @@ const ENRICH_STEP_PAPERS = 500;
 const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, the longest due first: a lane is due from
 // its last harvest or, never harvested, from when it was first followed, and
-// the most recently asked comes first among lanes due from the same time. A
+// the most recently written comes first among lanes due from the same time. A
 // followed search costs ten units, an entity one, of the 700 a day the
 // nightly refresh of followed lanes may spend (paper-sources.ts); once they
 // are spent, the run's other OpenAlex followed lanes wait and keep their turn.
