@@ -275,9 +275,10 @@ export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
 }
 
 // Transient fields describe one fetch or one reader, never the paper.
-// `openAlex` is enrichment's copy of OpenAlex's answer, already merged into it.
+// `openAlex` is enrichment's copy of OpenAlex's answer, already merged into it;
+// `summary` repeats the abstract.
 function storedPaper(paper: Paper): Paper {
-  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex')) as Paper;
+  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex' && key !== 'summary')) as Paper;
   if (stored.authors?.length > STORED_AUTHORS) stored.authors = stored.authors.slice(0, STORED_AUTHORS);
   return stored;
 }
@@ -343,7 +344,7 @@ const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.pri
 function withOwnText(row: Paper, own: Paper | undefined): Paper {
   if (!own) return row;
   return hasUsableAIAbstract(own.abstract)
-    ? { ...row, title: own.title, abstract: own.abstract, summary: own.summary }
+    ? { ...row, title: own.title, abstract: own.abstract }
     : { ...row, title: own.title };
 }
 

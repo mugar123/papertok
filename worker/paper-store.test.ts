@@ -161,7 +161,7 @@ test("the source a row came from replaces its title and abstract when it lists t
   db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
   await ingestPapers(env, [{ paper: arxivRevision, lanes: [] }], { now: NOW });
   const stored = (id: string) => JSON.parse(String(rows(db, `SELECT w.paper FROM works w JOIN work_keys k ON k.work_id = w.id WHERE k.key = 'id:${id}'`)[0].paper));
-  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract, stored('2610.11111').summary], [arxivRevision.title, arxivRevision.abstract, arxivRevision.abstract]);
+  assert.deepEqual([stored('2610.11111').title, stored('2610.11111').abstract], [arxivRevision.title, arxivRevision.abstract]);
   assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the new text is embedded again');
   // Hugging Face still lists the first version's text.
   await ingestPapers(env, [{ paper: huggingFaceRecord, lanes: [] }], { now: NOW });
@@ -1307,6 +1307,15 @@ test('a stored row keeps the merged citation count and drops the OpenAlex payloa
   const [row] = rows(db, "SELECT paper ->> 'openAlex' AS openAlex, paper ->> 'citationCount' AS citations FROM works");
   assert.equal(row.openAlex, null);
   assert.equal(Number(row.citations), 7);
+});
+
+test('a stored row carries no summary; a new version replaces the abstract alone', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: { ...arxivRecord, summary: arxivRecord.abstract }, lanes: ['cs.LG'] }], { now: NOW });
+  await ingestPapers(env, [{ paper: { ...arxivRecord, abstract: 'Version two abstract.', summary: 'Version two abstract.' }, lanes: ['cs.LG'] }], { now: NOW });
+  const [row] = rows(db, "SELECT paper ->> 'summary' AS summary, paper ->> 'abstract' AS abstract FROM works");
+  assert.equal(row.summary, null);
+  assert.equal(row.abstract, 'Version two abstract.');
 });
 
 test('a refresh whose OpenAlex answer changes nothing the row stores does not rewrite it', async () => {
