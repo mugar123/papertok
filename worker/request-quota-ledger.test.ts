@@ -409,7 +409,53 @@ test('a refusal by the subject ceiling is not tallied and writes nothing', async
   assert.deepEqual((await read({ action: 'peek' })).tally, { used: { 'feed.list': 3 }, refused: {} });
 });
 
-test('a malformed percent, tally or remaining is refused, not ignored', async () => {
+// The paper harvest's share of the day is split into parts (followed lanes,
+// category lanes): a part is a second subject, checked with the subject and
+// the day in one transaction, so neither can be spent past its limit by a
+// reservation the other accepted.
+test("a reservation naming a part of the subject's allowance stops at the part, spends nothing when refused, and gives the part back on release", async () => {
+  const { read, harness } = dayLedger();
+  const part = { partKey: 'f'.repeat(64), partLimit: 7 };
+
+  assert.equal((await read({ action: 'reserve', amount: 5, ...part })).accepted, true);
+  const before = new Map(harness.values);
+  const refused = await read({ action: 'reserve', amount: 3, ...part });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'part');
+  assert.deepEqual(new Map(harness.values), before, 'a refused part spends nothing');
+  // The subject and the day still have room for a reservation outside the part.
+  assert.equal((await read({ action: 'reserve', amount: 3 })).accepted, true);
+  assert.equal(harness.values.get(`subject:${'f'.repeat(64)}`), 5);
+
+  await read({ action: 'release', amount: 5, ...part });
+  assert.equal(harness.values.get(`subject:${'f'.repeat(64)}`), 0);
+  assert.equal((await read({ action: 'reserve', amount: 7, ...part })).accepted, true);
+  assert.equal(harness.values.get('global'), 10);
+});
+
+test('the quota client sends a part as a hashed key and its limit', async () => {
+  let body: Record<string, unknown> = {};
+  const namespace: TestNamespace = {
+    idFromName: (value: string): unknown => value,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (_url, options) => {
+        body = JSON.parse(options!.body as string);
+        return new Response(JSON.stringify({ accepted: true }));
+      },
+    })) as TestNamespace['get'],
+  } as Env['REQUEST_QUOTA_LEDGER'];
+
+  await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
+    periodKey: 'openalex:day:2026-10-23', subject: 'openalex:harvest', subjectLimit: 4_000, globalLimit: 10_000,
+    part: { subject: 'openalex:harvest:follows', limit: 700 },
+  });
+
+  assert.match(String(body.partKey), /^[a-f0-9]{64}$/);
+  assert.notEqual(body.partKey, body.subjectKey);
+  assert.equal(body.partLimit, 700);
+});
+
+test('a malformed percent, tally, remaining or part is refused, not ignored', async () => {
   const { call, harness } = dayLedger();
   const malformed: Array<Record<string, unknown>> = [
     { action: 'reserve', percent: 0 },
@@ -420,6 +466,10 @@ test('a malformed percent, tally or remaining is refused, not ignored', async ()
     { action: 'reserve', tally: 'feed' },
     { action: 'observe', remaining: -1 },
     { action: 'observe' },
+    { action: 'reserve', partKey: 'f'.repeat(64) },
+    { action: 'reserve', partLimit: 7 },
+    { action: 'reserve', partKey: 'not a hash', partLimit: 7 },
+    { action: 'reserve', partKey: 'f'.repeat(64), partLimit: 0 },
   ];
   for (const body of malformed) {
     const response = await call(body);

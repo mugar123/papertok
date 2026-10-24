@@ -2,6 +2,8 @@ import type { Paper } from '../src/models/Paper.ts';
 import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Harvested, StoreEnv } from './paper-store.ts';
+import type { HarvestAsk } from './openalex-api.ts';
+import type { UpstreamError } from './provider-runtime.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
@@ -213,7 +215,10 @@ export async function harvestArxivPage(env: StoreEnv, { set, from, resumptionTok
 type SourceEnv = StoreEnv & WorkerEnv;
 type RouteHandler = (request: Request, env: WorkerEnv, identity?: null) => Promise<Response>;
 
-/** A route refused for now: its own minute ceiling, a pace beat or the day's budget. */
+/**
+ * A route refused for now: its own minute ceiling, a pace beat, the day's
+ * budget, or the quota ledger that keeps them, when it cannot answer.
+ */
 export class SourceRefused extends Error {
   retryAfterSeconds: number;
   constructor(path: string, retryAfterSeconds: number) {
@@ -221,6 +226,10 @@ export class SourceRefused extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
+
+// A ledger that cannot answer, as a refusal longer than a lane waits out
+// (LANE_WAIT_SECONDS): the relay refuses a spent day with the same 300.
+const LEDGER_REFUSAL_SECONDS = 300;
 
 // Asks a Worker route in-process, as the browser asked it over the network:
 // the route's own validation, keys, cache, ceilings and deadlines apply.
@@ -231,18 +240,44 @@ async function askRoute(handler: RouteHandler, path: string, params: Record<stri
   }
   const response = await handler(new Request(url), env, null);
   if (response.status === 429) throw new SourceRefused(path, Number(response.headers.get('retry-after')) || 60);
-  if (!response.ok) throw new Error(`${path} answered ${response.status}`);
+  // The route's ledger could not answer, so no provider was asked. Nothing
+  // says when it is back: a refusal longer than a lane waits ends the source
+  // for the step rather than asking the ledger again for every lane, and a
+  // followed lane keeps its turn (paper-harvest.ts).
+  if (response.status === 503) {
+    const answer = await response.clone().json().catch(() => null) as { code?: unknown } | null;
+    if (answer?.code === 'PROVIDER_QUOTA_NOT_CONFIGURED') throw new SourceRefused(path, LEDGER_REFUSAL_SECONDS);
+  }
+  if (!response.ok) throw answeredError(path, response.status);
   return response;
 }
 
-// A refusal that names a short wait is waited out, twice at most; a longer
-// one (OpenAlex's spent day) ends the lane for this run.
-async function withShortWaits<T>(attempt: () => Promise<T>) {
+// The status travels on the error: a followed lane's harvest tells a request
+// the provider rejected from a provider that failed (paper-harvest.ts).
+function answeredError(name: string, status: number) {
+  const error: UpstreamError = new Error(`${name} answered ${status}`);
+  error.status = status;
+  return error;
+}
+
+// A refusal that names a short wait is waited out, twice at most a page, and
+// for LANE_WAIT_SECONDS at most a lane: one minute's ceiling (PubMed's, 60 s)
+// and the pace beats around it. Two minutes a page would let a ten-page lane
+// outlast the step it must finish in (paper-harvest.ts). A longer refusal
+// (OpenAlex's spent day), or one past the lane's allowance, ends the lane for
+// this run.
+const LANE_WAIT_SECONDS = 90;
+
+/** The seconds a lane may still spend waiting out refusals, shared by its pages. */
+interface LaneWaits { seconds: number }
+
+async function withShortWaits<T>(waits: LaneWaits, attempt: () => Promise<T>) {
   for (let tries = 0; ; tries += 1) {
     try {
       return await attempt();
     } catch (error) {
-      if (!(error instanceof SourceRefused) || error.retryAfterSeconds > 30 || tries >= 2) throw error;
+      if (!(error instanceof SourceRefused) || error.retryAfterSeconds > waits.seconds || tries >= 2) throw error;
+      waits.seconds -= error.retryAfterSeconds;
       await new Promise(resolve => setTimeout(resolve, error.retryAfterSeconds * 1000));
     }
   }
@@ -278,9 +313,10 @@ export type SourceName =
   | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-series' | 'openalex-follows' | 'openaire' | 'biorxiv'
   | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
-export interface LaneJob { source: SourceName; lane: string }
+// `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
+export interface LaneJob { source: SourceName; lane: string; newFollow?: boolean }
 
-interface PageRequest { lane: string; page: number; since: string; until?: string }
+interface PageRequest { lane: string; page: number; since: string; waits: LaneWaits; newFollow?: boolean; until?: string }
 interface SourcePage { items: Harvested[]; newest: string; full: boolean }
 interface SourceSpec {
   // Pages on a lane's first run, and on later ones (a later run also stops
@@ -315,9 +351,9 @@ function pageOf(items: Harvested[], size: number): SourcePage {
 
 const filed = (papers: Array<Partial<Paper> | null>, lane: string) => (papers.filter(Boolean) as Partial<Paper>[]).map(paper => ({ paper, lanes: [lane] }));
 
-async function arxivSearch(env: SourceEnv, query: string, page: number, lane: string) {
+async function arxivSearch(env: SourceEnv, query: string, { page, lane, waits }: PageRequest) {
   const size = 50;
-  const response = await withShortWaits(() => askRoute(handleArxiv, '/arxiv', {
+  const response = await withShortWaits(waits, () => askRoute(handleArxiv, '/arxiv', {
     search_query: query, start: (page - 1) * size, max_results: size, sortBy: 'submittedDate', sortOrder: 'descending',
   }, env));
   return pageOf(filed(parseArxivAtom(await response.text()).map(arxivRecordPaper), lane), size);
@@ -325,24 +361,41 @@ async function arxivSearch(env: SourceEnv, query: string, page: number, lane: st
 
 const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?.label || leafId.replace(/\./g, ' ');
 
-// A billed miss spends the harvest's own share of OpenAlex's day
-// (`OPENALEX_HARVEST_DAILY_UNITS`), enrichment included; a spent share is a
-// refusal that ends the source for this run.
-async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '' }: { page: number; perPage: number; search?: string }) {
+// What the harvest's lanes spend of its own share of OpenAlex's day
+// (`OPENALEX_HARVEST_DAILY_UNITS`, 4,000 units). The runs new follows start
+// spend from 00:00 UTC and at any hour after, so they have 300 of it as a
+// share of their own, which nothing in the nightly run spends
+// (provider-runtime.ts). The nightly run has the other 3,700: a billed miss
+// reserves that share and its lane's part in one ledger transaction, with the
+// day's ceiling; enrichment spends the share alone. A spent share or part is
+// a refusal that ends the source for this step. Readers choose how many
+// followed lanes there are, and 400 followed searches spent the whole share
+// before a paper was enriched, so the nightly refresh of followed lanes has a
+// part of 700. Category lanes run before it every night, so they stop at
+// 3,000 and leave it its 700; enrichment runs last and spends what is left.
+type HarvestPart = 'categories' | 'nightly' | 'new';
+const HARVEST_OPENALEX_PARTS: Record<HarvestPart, HarvestAsk> = {
+  categories: { part: { subject: 'openalex:harvest:categories', limit: 3_000 } },
+  nightly: { part: { subject: 'openalex:harvest:follows', limit: 700 } },
+  new: { newFollow: true },
+};
+
+async function openAlexWorks(env: SourceEnv, filter: string, { page, perPage, search = '', part }: { page: number; perPage: number; search?: string; part: HarvestPart }) {
   const params: Record<string, string | number> = {
     filter, sort: 'publication_date:desc', page, 'per-page': perPage, select: OPENALEX_WORK_SEARCH_FIELDS.join(','),
   };
   if (search) params.search = search;
-  const response = await askRoute(handleHarvestOpenAlex, '/openalex/works', params, env);
+  const harvest = (request: Request, routeEnv: WorkerEnv) => handleHarvestOpenAlex(request, routeEnv, HARVEST_OPENALEX_PARTS[part]);
+  const response = await askRoute(harvest, '/openalex/works', params, env);
   return ((await response.json()) as { results?: OpenAlexWork[] }).results || [];
 }
 
 const windowFilter = (now = Date.now()) => `from_publication_date:${day(daysFromNow(-CORPUS_DAYS, now))},to_publication_date:${day(new Date(now).toISOString())}`;
 
-async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
-  page: number; lane: string; perPage: number; search?: string; map?: (work: OpenAlexWork) => Partial<Paper> | null;
+async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPage, search = '', part, map = (work: OpenAlexWork) => mapOpenAlexWork(work) as Partial<Paper> | null }: {
+  page: number; lane: string; perPage: number; search?: string; part: HarvestPart; map?: (work: OpenAlexWork) => Partial<Paper> | null;
 }) {
-  const works = await openAlexWorks(env, filter, { page, perPage, search });
+  const works = await openAlexWorks(env, filter, { page, perPage, search, part });
   return pageOf(filed(works.map(map), lane), perPage);
 }
 
@@ -361,7 +414,7 @@ async function openAireProjectDois(lane: string) {
   url.searchParams.set(project.includes('::') ? 'openaireProjectID' : 'projectID', project);
   if (funder && !project.includes('::')) url.searchParams.set('funder', funder);
   const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 10_000);
-  if (!response.ok) throw new Error(`OpenAIRE answered ${response.status}`);
+  if (!response.ok) throw answeredError('OpenAIRE', response.status);
   type Pid = { '@classname'?: string; $?: unknown };
   const payload = await response.json() as { response?: { results?: { result?: unknown } } };
   const rows = [payload?.response?.results?.result || []].flat() as Array<{ metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: Pid | Pid[] } } } }>;
@@ -395,12 +448,12 @@ const DOMAIN_ROUTES: Record<string, RouteHandler> = {
 
 // The page of one specialist source the browser asked for the same category.
 function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] {
-  return async (env, { lane, page }) => {
+  return async (env, { lane, page, waits }) => {
     const plan = getDomainSourcePlan([lane]);
     const eligible = getEligibleDomainSources(plan, { hasSession: true, scopusEnabled: false });
     const request = domainSourceRequests(plan, eligible, page, perPage, 'recent').find(candidate => candidate.source === source);
     if (!request) return { items: [], newest: '', full: false };
-    const response = await withShortWaits(() => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
+    const response = await withShortWaits(waits, () => askRoute(DOMAIN_ROUTES[source], request.path, request.params, env));
     return pageOf(filed(request.read(await response.json()), lane), Math.min(Number(request.params.limit) || perPage, perPage));
   };
 }
@@ -408,18 +461,18 @@ function domainSource(source: string, perPage: number): SourceSpec['fetchPage'] 
 export const SOURCES: Record<SourceName, SourceSpec> = {
   'arxiv-search': {
     firstPages: 4, dailyPages: 4, dated: true, overlapDays: 3, keepsOld: true,
-    fetchPage: (env, { lane, page }) => (lane.startsWith('author-name:')
-      ? arxivSearch(env, `au:"${lane.slice('author-name:'.length).replace(/"/g, '')}"`, page, lane)
-      : arxivSearch(env, `all:"${quotedLabel(lane)}"`, page, lane)),
+    fetchPage: (env, request) => (request.lane.startsWith('author-name:')
+      ? arxivSearch(env, `au:"${request.lane.slice('author-name:'.length).replace(/"/g, '')}"`, request)
+      : arxivSearch(env, `all:"${quotedLabel(request.lane)}"`, request)),
   },
   pubmed: {
     // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology,
     // and two of nine 40-page steps ran out of the Worker's 30 s of CPU.
     firstPages: 10, dailyPages: 10, backfillPages: 20, dated: true, overlapDays: 3,
-    fetchPage: async (env, { lane, page, until }) => {
+    fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
-      const response = await withShortWaits(() => askRoute(handlePubmed, '/sources/pubmed', {
+      const response = await withShortWaits(waits, () => askRoute(handlePubmed, '/sources/pubmed', {
         q: `(${pubmedCategoryQuery([lane])}) AND hasabstract${added}`, page, limit: 50,
       }, env));
       const payload = await response.json() as Parameters<typeof readPubmedPayload>[0];
@@ -436,7 +489,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
-    ].join(','), { page, lane, perPage: 200 }),
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   'openalex-series': {
     firstPages: 4, dailyPages: 2, dated: true, overlapDays: 14,
@@ -446,7 +499,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'type:article|report',
       windowFilter(),
     ].join(','), {
-      page, lane, perPage: 200,
+      page, lane, perPage: 200, part: 'categories',
       // The area's own key, which the label and accent lookups read as
       // Economics: the series say a paper is economics, not which branch.
       map: work => {
@@ -457,19 +510,20 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   },
   'openalex-follows': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14, keepsOld: true,
-    fetchPage: (env, { lane, page }) => {
+    fetchPage: (env, { lane, page, newFollow }) => {
       const [kind, value] = [lane.slice(0, lane.indexOf(':')), lane.slice(lane.indexOf(':') + 1)];
-      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value });
+      const part = newFollow ? 'new' : 'nightly';
+      if (kind === 'query') return openAlexLane(env, `${windowFilter()},is_retracted:false`, { page, lane, perPage: 50, search: value, part });
       // None dated after today, which would sort first.
-      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50 });
+      return openAlexLane(env, `${FOLLOW_FILTERS[kind]}:${value},to_publication_date:${day(new Date().toISOString())}`, { page, lane, perPage: 50, part });
     },
   },
   openaire: {
     firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true,
-    fetchPage: async (env, { lane }) => {
+    fetchPage: async (env, { lane, newFollow }) => {
       const dois = await openAireProjectDois(lane);
       if (!dois.length) return { items: [], newest: '', full: false };
-      return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50 });
+      return openAlexLane(env, `doi:${dois.join('|')}`, { page: 1, lane, perPage: 50, part: newFollow ? 'new' : 'nightly' });
     },
   },
   biorxiv: { firstPages: 20, dailyPages: 20, dated: false, overlapDays: 2, fetchPage: bioRxivPage },
@@ -501,12 +555,20 @@ export function categoryLaneJobs(): LaneJob[] {
   return jobs;
 }
 
-/** The source that serves a followed lane (paper-store.ts `followLane`). */
+// The source that serves each kind of followed lane (paper-store.ts `followLane`).
+const FOLLOWED_LANE_SOURCES: Array<[RegExp, SourceName]> = [
+  [/^author-name:/, 'arxiv-search'],
+  [/^project:/, 'openaire'],
+  [/^(author|institution|topic|concept|query):/, 'openalex-follows'],
+];
+
+/** The sources followed lanes are harvested from, as `lane_state` names them. */
+export const FOLLOWED_SOURCES = [...new Set(FOLLOWED_LANE_SOURCES.map(([, source]) => source))];
+
+/** The source that serves a followed lane. */
 export function followedLaneJob(lane: string): LaneJob | null {
-  if (lane.startsWith('author-name:')) return { source: 'arxiv-search', lane };
-  if (lane.startsWith('project:')) return { source: 'openaire', lane };
-  if (/^(author|institution|topic|concept|query):/.test(lane)) return { source: 'openalex-follows', lane };
-  return null;
+  const source = FOLLOWED_LANE_SOURCES.find(([kind]) => kind.test(lane))?.[1];
+  return source ? { source, lane } : null;
 }
 
 // How long a paper a lane kept whatever its date stays once its source no
@@ -518,7 +580,7 @@ const KEPT_LISTING_DAYS = 14;
  * than the last run reached, or the run's page allowance. Records the lane's
  * progress only once it completes.
  */
-export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
+export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: LaneJob, now = Date.now()) {
   const spec = SOURCES[source];
   const db = env.PAPER_STORE!;
   const state = await db.prepare('SELECT harvested_through FROM lane_state WHERE source = ? AND lane = ?').bind(source, lane)
@@ -528,9 +590,10 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
   const keepUntil = spec.keepsOld ? daysFromNow(KEPT_LISTING_DAYS, now) : '';
   let stored = 0;
   const pages = reached ? spec.dailyPages : spec.firstPages;
+  const waits = { seconds: LANE_WAIT_SECONDS };
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
-    const result = await spec.fetchPage(env, { lane, page, since });
+    const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
   }
@@ -544,13 +607,16 @@ export async function harvestLane(env: SourceEnv, { source, lane }: LaneJob, now
 const BACKFILL_GAP_MS = 1_500;
 
 /**
- * Reads a lane further back than its daily pages, from the page the last run
- * stopped at. The listing ends at the day the backfill began, so new records
- * do not move its pages. It is done at the end of the listing or the corpus
- * window or the route's last page, or once the lane holds as many papers as
- * the feed reads, beyond which eviction drops the older ones. A page that is
- * refused or fails ends the lane's run there, to go on from it next run. A
- * lane whose daily harvest has not run yet waits for it.
+ * Reads a lane further back than its daily pages, up to backfillPages a step,
+ * from the page the last step stopped at, saved after each page. The listing
+ * ends at the day the backfill began, so new records do not move its pages.
+ * It is done at the end of the listing or the corpus window or the route's
+ * last page, or once the lane holds as many papers as the feed reads, beyond
+ * which eviction drops the older ones. Its pages wait out short refusals as a
+ * lane's daily pages do, within LANE_WAIT_SECONDS a step. A refusal past that,
+ * a quota ledger that cannot answer, or a page that fails ends the step there;
+ * the lane's next step or run goes on from the saved page. A lane whose daily
+ * harvest has not run yet waits for it.
  */
 export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
   const spec = SOURCES[source];
@@ -570,11 +636,12 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
     await save(null);
     return stored;
   }
+  const waits = { seconds: LANE_WAIT_SECONDS };
   for (let read = 0; read < spec.backfillPages; read += 1, page += 1) {
     if (read > 0) await new Promise(resolve => setTimeout(resolve, BACKFILL_GAP_MS));
     let result: SourcePage;
     try {
-      result = await spec.fetchPage(env, { lane, page, since, until });
+      result = await spec.fetchPage(env, { lane, page, since, waits, until });
     } catch (error) {
       if (!(error instanceof SourceRefused)) console.warn(`Backfill of ${source} ${lane} stopped at page ${page}`, error);
       break;
@@ -602,9 +669,10 @@ const LOOKUP_TIMEOUT_MS = 2_000;
  * fetched and kept as liked papers whatever their date: one older than the
  * corpus window enters no lane (`recordLanes`).
  * arXiv ids ask arXiv; PubMed ids, DOIs and OpenAlex ids ask OpenAlex for the
- * single work, which it does not bill. Bounded by the caller's deadline.
+ * single work, which it does not bill. An answer later than `deadlineMs` is
+ * dropped: 2 s for a caller that answers a reader inline.
  */
-export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepUntil, now = Date.now() }: { keepUntil: string; now?: number }) {
+export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepUntil, now = Date.now(), deadlineMs = LOOKUP_TIMEOUT_MS }: { keepUntil: string; now?: number; deadlineMs?: number }) {
   const arxivIds: string[] = [];
   const openAlexPaths: string[] = [];
   for (const id of paperIds) {
@@ -622,7 +690,7 @@ export async function ingestPaperIds(env: SourceEnv, paperIds: string[], { keepU
   if (arxivIds.length) {
     lookups.push(fetchArxivPapers(env, arxivIds).then(papers => papers.map(paper => ({ paper, lanes: [] }))));
   }
-  const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), LOOKUP_TIMEOUT_MS));
+  const deadline = new Promise<'late'>(resolve => setTimeout(() => resolve('late'), deadlineMs));
   const settled = await Promise.all(lookups.map(lookup => Promise.race([lookup.catch(() => [] as Harvested[]), deadline])));
   const found = settled.flatMap(result => (result === 'late' ? [] : result));
   const stored = await ingestPapers(env, found, { keepUntil, now });

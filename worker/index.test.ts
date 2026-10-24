@@ -15,7 +15,7 @@ import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
-import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
+import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
@@ -4169,8 +4169,8 @@ test('/health/openalex/budget reports today\'s units by tier and kind with the c
       const tier = (name: keyof typeof OPENALEX_TIER_PERCENT, spent: number, refused: number) => ({
         percent: OPENALEX_TIER_PERCENT[name],
         limit: limitOf(name),
-        // The harvest's own share of the day, beside the feed tier it spends.
-        ...(name === 'feed' ? { share: OPENALEX_HARVEST_DAILY_UNITS } : {}),
+        // The nightly run's share of the harvest's day, beside the feed tier it spends.
+        ...(name === 'feed' ? { share: OPENALEX_HARVEST_DAILY_UNITS - OPENALEX_NEW_FOLLOWS_DAILY_UNITS } : {}),
         used: spent,
         refused,
         open: used + 1 <= limitOf(name),

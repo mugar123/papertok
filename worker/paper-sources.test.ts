@@ -5,10 +5,11 @@ import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, harvestLane, ingestPaperIds, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
-import { handleOpenAlex } from './openalex-api.ts';
+import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
+import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
 import { parseXmlDocument } from './xml-dom.ts';
+import { handlePubmed } from './source-api.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 import { parseXmlDocument as parseWithShim } from '../src/test-support/xmlDomShim.ts';
@@ -222,7 +223,7 @@ test('the working-paper series lane asks OpenAlex for the series in the window a
     seriesWork('W7222541626', '10.65864/jochq5qfxv', 'report', CESIFO, null),
     { ...seriesWork('W7220380262', '10.3386/w35873', 'report', NBER, null), primary_topic: TYLENOL_TOPIC },
   ] }));
-  const { items } = await SOURCES['openalex-series'].fetchPage(env as never, { lane: 'series:working-papers', page: 2, since: '' });
+  const { items } = await SOURCES['openalex-series'].fetchPage(env as never, { lane: 'series:working-papers', page: 2, since: '', waits: { seconds: 0 } });
   const [url] = urls;
   assert.equal(`${url.origin}${url.pathname}`, 'https://api.openalex.org/works');
   const filters = filtersOf(url);
@@ -254,7 +255,7 @@ test("every series the lane names is on the review rule's list, so its journal a
 test("a category's OpenAlex lane asks by its measured topic IDs, not by text, and keeps OpenAlex's own classification", async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const { urls, env } = relay(t, () => ({ results: [splicingWork] }));
-  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'bio.mol', page: 1, since: '' });
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'bio.mol', page: 1, since: '', waits: { seconds: 0 } });
   const filters = filtersOf(urls[0]);
   assert.equal(urls[0].searchParams.has('search'), false);
   const topics = filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
@@ -266,7 +267,7 @@ test("a category's OpenAlex lane asks by its measured topic IDs, not by text, an
   assert.equal(items[0].paper.primaryCategory, undefined, 'filed under the lane, not given it as its field');
 
   // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
-  await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'mech.aero', page: 1, since: '' });
+  await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'mech.aero', page: 1, since: '', waits: { seconds: 0 } });
   assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
 });
 
@@ -368,6 +369,35 @@ test("a refused page ends the lane's backfill for the run, which goes on from th
   assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 6);
 });
 
+for (const failure of ['answers with an error', 'cannot be reached'] as const) {
+  test(`a backfill whose quota ledger ${failure} asks PubMed nothing and ends at its page, where the next run goes on`, async t => {
+    const { terms, env } = pubmedListing(t);
+    t.mock.method(console, 'warn', () => {});
+    const ledger = env.REQUEST_QUOTA_LEDGER!;
+    let down = true;
+    const failing = {
+      idFromName: (name: string) => ledger.idFromName(name),
+      get: (id: Parameters<typeof ledger.get>[0]) => ({
+        fetch: async (url: string, init?: RequestInit) => {
+          if (down && failure === 'cannot be reached') throw new Error('the ledger cannot be reached');
+          if (down) return new Response('down', { status: 500 });
+          return ledger.get(id).fetch(url, init);
+        },
+      }),
+    } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+    const { binding, db } = testD1();
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through, backfill_until, backfill_page) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z', '2026-10-24', 7)").run();
+    const store = { ...env, REQUEST_QUOTA_LEDGER: failing, PAPER_STORE: binding } as never;
+    const job = { source: 'pubmed', lane: 'bio.zoo' } as const;
+    assert.equal(await backfillLane(store, job), 0);
+    assert.equal(terms.length, 0);
+    assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 7);
+    down = false;
+    await backfillLane(store, job);
+    assert.equal(terms.length, 20, 'pages 7 to 26: a step reads 20 pages');
+  });
+}
+
 test('a backfill step cut short goes on next time from the page after the last one stored', async t => {
   const { terms, env } = pubmedListing(t);
   const { binding, db } = testD1();
@@ -409,8 +439,8 @@ test("a followed project's lane asks OpenAIRE by its id, with the funder only fo
   const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
     ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/Genetics/IYAG290' }] } } } }] } } }
     : { results: [splicingWork] }));
-  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:EC|corda__h2020::0123456789abcdef', page: 1, since: '' });
-  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '' });
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:EC|corda__h2020::0123456789abcdef', page: 1, since: '', waits: { seconds: 0 } });
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } });
   const openAire = urls.filter(url => url.hostname === 'api.openaire.eu');
   assert.equal(openAire[0].searchParams.get('openaireProjectID'), 'corda__h2020::0123456789abcdef');
   assert.equal(openAire[0].searchParams.has('funder'), false, 'an OpenAIRE id names its funder already');
@@ -419,20 +449,110 @@ test("a followed project's lane asks OpenAIRE by its id, with the funder only fo
   assert.ok(urls.some(url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter') === 'doi:10.1093/genetics/iyag290'));
 });
 
-test("the harvest stops asking OpenAlex once its share of the day is spent, leaving the rest to readers", async t => {
-  const { urls, env } = relay(t, () => ({ results: [] }));
+test("a lane whose source's minute is full waits for the next minute instead of failing", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  const { urls, env } = relay(t, () => ({ esearchresult: { idlist: [] } }));
+  Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: '1' });
+  const { binding, db } = testD1();
+  // A reader's PubMed search takes this minute's one request.
+  assert.equal((await handlePubmed(new Request('https://papertok.internal/sources/pubmed?q=heart'), env)).status, 200);
+  let settled = false;
+  const harvest = harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'med.cardio' }).finally(() => { settled = true; });
+  // The route refuses with a 60 s retry-after; let the clock run until the
+  // lane settles, letting the ledger answer within each second.
+  for (let second = 0; !settled && second < 15 * 60; second += 1) {
+    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.tick(1_000);
+  }
+  await harvest;
+  assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
+  assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all().map(row => ({ ...row })), [{ source: 'pubmed', lane: 'med.cardio' }]);
+});
+
+test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane ends inside its harvest step", async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  // Full pages, so the lane would read all ten.
+  const idlist = Array.from({ length: 50 }, (_, index) => String(42_000_000 + index));
+  const { urls, env } = relay(t, url => (url.pathname.endsWith('/esearch.fcgi') ? { esearchresult: { idlist } } : { result: {} }));
+  // One request a minute: every page after the first finds the minute spent by the one before it.
+  Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: '1' });
+  const { binding, db } = testD1();
+  const started = Date.now();
+  let settled = false;
+  const harvest = harvestLane({ ...env, PAPER_STORE: binding } as never, { source: 'pubmed', lane: 'med.cardio' })
+    .then(() => null, (error: unknown) => error)
+    .finally(() => { settled = true; });
+  // The lane step's timeout (paper-harvest.ts) is ten minutes; run the clock
+  // past it, letting the ledger answer within each second.
+  for (let second = 0; !settled && second < 15 * 60; second += 1) {
+    for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.tick(1_000);
+  }
+  const refusal = await harvest;
+  assert.ok(refusal instanceof SourceRefused, 'the lane ends for this run once it has waited out one minute');
+  assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
+  assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
+  assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
+});
+
+// Enrichment runs last in the nightly run and can always use more units. A
+// reader who follows something new after it has finished must still have the
+// follow harvested at once, not the next night.
+test("followed searches stop at their part of the nightly run's OpenAlex share, category lanes and enrichment keep the rest of it, and new follows keep their own 300", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
+    : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
-  await assert.rejects(
-    (async () => {
-      for (let call = 0; call < 401; call += 1) {
-        await SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '' });
-      }
-    })(),
-    (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60,
-  );
-  // A search is ten list calls of the harvest's 4,000.
-  assert.equal(urls.length, 400);
+  const followedSearch = (newFollow = false) => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 }, newFollow });
+  // A search is ten list calls: the nightly refresh of followed lanes may spend 700 of the harvest's 4,000.
+  for (let call = 0; call < 70; call += 1) await followedSearch();
+  await assert.rejects(followedSearch(), (error: Error & { retryAfterSeconds?: number }) => (error.retryAfterSeconds ?? 0) > 60);
+  await assert.rejects(SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), SourceRefused);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 70);
+  // A run a new follow started, before the nightly run's enrichment.
+  await followedSearch(true);
+  // A category's lane is still served, and enrichment after it, up to the
+  // nightly run's 3,700 whatever the new follows have spent.
+  await SOURCES['openalex-topics'].fetchPage(env as never, { lane: 'bio.mol', page: 1, since: '', waits: { seconds: 0 } });
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 72);
+  const enrich = () => handleHarvestOpenAlex(new Request('https://papertok.internal/openalex/works?filter=doi:10.1093/genetics/iyag290&per-page=50'), env);
+  for (let call = 0; call < 2_999; call += 1) assert.equal((await enrich()).status, 200);
+  // The budget route says so too, with the new follows' 300 not yet spent.
+  assert.equal((await readOpenAlexBudget(env)).report!.tiers.feed.open, false);
+  assert.equal((await enrich()).status, 429);
+  // The rest of the new follows' 300 is still theirs.
+  for (let call = 0; call < 29; call += 1) await followedSearch(true);
+  await assert.rejects(followedSearch(true), SourceRefused);
+});
+
+// The nightly run harvests every category lane before its followed lanes, and
+// the topic lanes alone can ask for more than the harvest's 4,000 units.
+test("category lanes stop at 3,000 of the harvest's OpenAlex units, so the nightly refresh's 700 and the new follows' 300 are left", async t => {
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  // The relay's own ceilings, out of the way: the harvest's share and its parts are under test.
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const openAlexCalls = () => urls.filter(url => url.hostname === 'api.openalex.org').length;
+  const request = { page: 1, since: '', waits: { seconds: 0 } };
+  const topics = () => SOURCES['openalex-topics'].fetchPage(env as never, { ...request, lane: 'bio.mol' });
+  const series = () => SOURCES['openalex-series'].fetchPage(env as never, { ...request, lane: 'series:working-papers' });
+
+  for (let call = 0; call < 2_999; call += 1) await topics();
+  await series();
+  await assert.rejects(topics(), SourceRefused);
+  await assert.rejects(series(), SourceRefused);
+  assert.equal(openAlexCalls(), 3_000);
+
+  // The nightly refresh's 700 and the new follows' 300, ten units a search.
+  const followedSearch = (newFollow: boolean) => SOURCES['openalex-follows'].fetchPage(env as never, { ...request, lane: 'query:graph neural networks', newFollow });
+  for (let call = 0; call < 70; call += 1) await followedSearch(false);
+  for (let call = 0; call < 30; call += 1) await followedSearch(true);
+  assert.equal(openAlexCalls(), 3_100);
+
+  // The share is spent, and the budget route says so.
+  const { report } = await readOpenAlexBudget(env);
+  assert.equal(report!.tiers.feed.used, 4_000);
+  assert.equal(report!.tiers.feed.open, false);
 });
 
 test('a paper a reader liked, looked up by id, stays for them whatever its age, in no lane other readers share', async t => {
@@ -463,14 +583,14 @@ test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the ha
   const spendElsewhere = (amount: number) => reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
     periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`, subject: 'readers', subjectLimit: ceiling, globalLimit: ceiling, amount,
   });
-  const follows = (lane: string) => SOURCES['openalex-follows'].fetchPage(env as never, { lane, page: 1, since: '' });
+  const follows = (lane: string) => SOURCES['openalex-follows'].fetchPage(env as never, { lane, page: 1, since: '', waits: { seconds: 0 } });
 
   // Readers have spent past both of their shares.
   const readers = share('enrichment') + 50;
   await spendElsewhere(readers);
   await follows('author:A5023888391');
   await follows('query:graph neural networks');
-  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '' });
+  await SOURCES.openaire.fetchPage(env as never, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(
     urls.filter(url => url.hostname === 'api.openalex.org').map(url => (url.searchParams.has('search') ? 'search' : url.searchParams.get('filter')!.split(':')[0])),
     ['author.id', 'search', 'doi'],
@@ -497,7 +617,7 @@ test("the harvest reserves its share with the day's OpenAlex ledger, and a store
       put: async (key: string, value: string, options?: { metadata?: unknown }) => { entries.set(key, { value, metadata: options?.metadata }); },
     },
   });
-  const follows = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'author:A5023888391', page: 1, since: '' });
+  const follows = () => SOURCES['openalex-follows'].fetchPage(env as never, { lane: 'author:A5023888391', page: 1, since: '', waits: { seconds: 0 } });
 
   await follows();
   await follows();
