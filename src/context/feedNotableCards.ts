@@ -10,8 +10,8 @@ const NOTABLE_SPARE = 2;
 
 /**
  * How a page joins the list: a refresh replaces it, keeping the cards through
- * the visible one when asked. `notableAfter` is the card a dismissed notable
- * card the reader met followed (notablePlaceAfterDismissal).
+ * the visible one when asked. `notableAfter` is the card just before a notable
+ * card the reader met and dismissed (notablePlaceAfterDismissal).
  */
 type PageJoin = { reset: boolean; keepThroughVisible: boolean; visiblePaperId: string | null; notableAfter?: string | null };
 
@@ -41,12 +41,13 @@ export function notableRequest(cardsBefore: Paper[], largestPage: number, visibl
 }
 
 /**
- * The card the last notable place the reader met follows, once `removedId`
- * leaves `cards` (Not interested), from `notableAfter`, the one known before.
- * A notable card the reader met counts in their fifteen after it leaves, so
- * the next page counts from its place, the card before it; so does a card
- * that followed such a place and leaves too. A notable card they have not
- * reached leaves a place for the next page to fill (joinNotablePage).
+ * The card just before the last notable place the reader met that has no
+ * notable card, once `removedId` leaves `cards` (Not interested); `notableAfter`
+ * is the one known before. A notable card the reader met counts in their
+ * fifteen after it leaves, so the next page counts from its place. When the
+ * card just before that place leaves too, the card before it takes its role.
+ * A notable card the reader has not reached leaves its place for the next
+ * page to fill (joinNotablePage).
  */
 export function notablePlaceAfterDismissal(cards: Paper[], removedId: string, visiblePaperId: string | null, notableAfter: string | null) {
   const removedAt = cards.findIndex(paper => paper.id === removedId);

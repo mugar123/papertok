@@ -142,7 +142,7 @@ test('a notable card dismissed before the reader reaches it leaves its place to 
 
 // The card before a dismissed notable card's place leaves too: the reader met
 // both, and the place moves onto the card before them.
-test('Not interested on the card a dismissed notable card followed keeps the next page counting from that place', () => {
+test('Not interested on the card just before a dismissed notable card keeps the next page counting from its place', () => {
   const shown = placeNotableCards(records('card', 36), [notable('notable-0'), notable('notable-1')]);
   const notableAfter = notablePlaceAfterDismissal(shown, 'notable-1', 'notable-1', null);
   const afterNotable = shown.filter(paper => paper.id !== 'notable-1');

@@ -107,8 +107,8 @@ export function needsOpenAlexEnrichment(paper: Partial<Paper> | null | undefined
 export const NOTABLE_EVERY = 15;
 
 // The index of the last notable place in `cards`: the last notable card, or
-// `notableAfter`, the card a notable card the reader met followed before it
-// left the list. The reader met that place, so the count goes on from it.
+// `notableAfter`, the card just before a notable card the reader met and
+// dismissed. The reader met that place, so the count goes on from it.
 const lastNotablePlace = (cards: ReadonlyArray<Partial<Paper>>, notableAfter: string | null) => Math.max(
   cards.findLastIndex(paper => paper?._notable),
   notableAfter === null ? -1 : cards.findIndex(paper => paper?.id === notableAfter),
@@ -165,8 +165,8 @@ export function placeNotableCards<T extends Partial<Paper>>(others: T[], notable
  * cards after the last notable place, past the `reached` ones, are placed
  * again before the page's: related papers a like inserted, or a notable book
  * that left, can leave a place among them with no notable card, and the
- * page's first notable card takes it. `notableAfter` is the card a notable
- * card the reader met and dismissed followed (`lastNotablePlace`).
+ * page's first notable card takes it. `notableAfter` is the card just before
+ * a notable card the reader met and dismissed (`lastNotablePlace`).
  */
 export function joinNotablePage<T extends Partial<Paper>>(cards: T[], others: T[], notable: T[], reached = cards.length, notableAfter: string | null = null) {
   const from = firstMovable(cards, reached, notableAfter);

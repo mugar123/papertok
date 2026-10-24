@@ -607,8 +607,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // reRankFeed and the merge lock only the top few cards, and a late Crossref
   // answer removes no card. Not enforced.
   const visiblePaperIdRef = useRef<string | null>(null);
-  // The card a notable card the reader met and dismissed followed: the next
-  // page counts its notable place from there (notablePlaceAfterDismissal).
+  // The card just before a notable card the reader met and dismissed: the
+  // next page counts its notable place from there (notablePlaceAfterDismissal).
   // The account's own, cleared when the account changes.
   const notableAfterRef = useRef<string | null>(null);
   // When the feed last moved. FeedContainer reports the visible paper from

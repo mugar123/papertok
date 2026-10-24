@@ -7,8 +7,8 @@ import { feedResumeMemory, forYouScrollKey } from '../utils/feedResumeMemory.ts'
 import { PAGE_SIZE } from './feedPagination.ts';
 
 // `savedAt` is set only on a snapshot read back from storage. `notableAfter`
-// is the card a notable card the reader met and dismissed followed: the next
-// page counts its notable place from there (notablePlaceAfterDismissal).
+// is the card just before a notable card the reader met and dismissed: the
+// next page counts its notable place from there (notablePlaceAfterDismissal).
 export interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean; savedAt?: number; notableAfter?: string | null }
 
 type SnapshotStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
