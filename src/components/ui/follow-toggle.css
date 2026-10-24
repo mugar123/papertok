@@ -1,31 +1,33 @@
-/* The Follow control (follow-toggle.jsx), one look wherever something can be
-   followed. Off, it invites in ink; on (`data-pressed`, written by Base UI
-   with `aria-pressed`), it is the bordered chip that says the relationship
-   exists. The fixed min-width keeps it from jumping between its two labels. */
-.follow-toggle {
-  min-width: 96px;
-  gap: 8px;
-  border: 1px solid var(--text-primary);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  font-weight: var(--fw-semibold);
-  transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast), transform 0.16s ease-out;
-}
-
+/* The Follow control (follow-toggle.tsx), one look wherever something can be
+   followed: the outline button of Share beside it, drawn like the feed's Like
+   and Save. Off, its icon is an outline; on (`data-pressed`, written by Base
+   UI with `aria-pressed`), the icon fills and the label says Following, on
+   the same outline rather than the toggle's own pressed fill. The fixed
+   min-width keeps it from jumping between its two labels. */
+.follow-toggle,
 .follow-toggle[data-pressed] {
-  border-color: var(--border-default);
+  border: 1px solid var(--border-ink);
   background: var(--bg-card);
   color: var(--text-primary);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .follow-toggle:hover {
-    background: var(--accent-primary-hover);
-  }
+.follow-toggle {
+  min-width: 124px;
+  gap: 8px;
+  font-weight: var(--fw-semibold);
+  transition: background var(--transition-fast), transform 0.16s ease-out;
+}
 
+/* The icon pulses on its own (motionCurves.ts, `pulseIcon`); its box keeps
+   the swell from nudging the label. */
+.follow-toggle-icon {
+  display: inline-grid;
+  place-items: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .follow-toggle:hover,
   .follow-toggle[data-pressed]:hover {
-    border-color: var(--border-strong);
     background: var(--bg-secondary);
   }
 }
@@ -42,7 +44,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The press stays as a colour change; the squeeze is movement and goes. */
+  /* The press stays as the icon's fill; the squeeze is movement and goes. */
   .follow-toggle:active:not(:disabled) {
     transform: none;
   }

@@ -11,14 +11,17 @@ const stripComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\/|^\s*\
  * explorerOverlays.test.ts pins).
  */
 
-test('the Follow control is a Toggle: ink while it invites, a chip with a check once on', async () => {
+test('the Follow control is a Toggle drawn like Like and Save: an outline whose icon fills once on and pulses on the press', async () => {
   const jsx = await read('./follow-toggle.tsx');
   const css = stripComments(await read('./follow-toggle.css'));
-  assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{cn\('follow-toggle', className\)\}\s+pressed=\{pressed\}/);
-  assert.match(jsx, /<Check size=\{14\} aria-hidden="true" \/>/);
-  assert.match(css, /\.follow-toggle \{[^}]*min-width: 96px;[^}]*background: var\(--accent-primary\);/);
-  assert.match(css, /\.follow-toggle\[data-pressed\] \{[^}]*background: var\(--bg-card\);/);
-  // A colour fade AND the squeeze: one transition list, so neither drops the other.
+  assert.match(jsx, /<Toggle\s+variant="outline"\s+className=\{cn\('follow-toggle', compact && 'follow-toggle--compact', className\)\}\s+pressed=\{pressed\}/);
+  // Always an icon: a plus to follow, a filled minus once followed.
+  assert.match(jsx, /pressed\s*\? <UserCircleMinus [^>]*weight="fill" aria-hidden="true" \/>\s*: <UserCirclePlus [^>]*aria-hidden="true" \/>/);
+  // The feed's pulse, on the icon's box (the glyph is swapped mid-pulse),
+  // and none under reduced motion.
+  assert.match(jsx, /if \(!reducedMotion\) pulseIcon\(iconRef\.current, !pressed\);/);
+  // On stays the outline of off, not the toggle's ink fill.
+  assert.match(css, /\.follow-toggle,\s*\.follow-toggle\[data-pressed\] \{[^}]*background: var\(--bg-card\);/);
   assert.match(css, /\.follow-toggle \{[^}]*transition:[^;]*background[^;]*transform 0\.16s ease-out;/);
   const squeeze = css.match(/\.follow-toggle:active:not\(:disabled\) \{([^}]*)\}/);
   assert.match(squeeze?.[1] || '', /transform: scale\(0\.97\);/);
