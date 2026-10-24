@@ -40,7 +40,7 @@ test('recording ESLint findings as suppressions is denied', () => {
 });
 
 test('an ordinary lint run, or the flag quoted inside other text, passes through', () => {
-  assert.deepEqual(bash('npx eslint src/App.tsx'), { status: 0, output: null, stderr: '' });
+  assert.deepEqual(bash('npx eslint src/app.tsx'), { status: 0, output: null, stderr: '' });
   assert.deepEqual(bash(`git commit -m "explain why eslint ${suppressAll} is denied"`), { status: 0, output: null, stderr: '' });
 });
 

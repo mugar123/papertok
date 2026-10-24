@@ -3,13 +3,13 @@ import ReactDOM from 'react-dom/client'
 import { MotionConfig } from 'framer-motion'
 import { BrowserRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
-import { noteDeployActivated, watchServiceWorkerUpdates, watchWorkerActivations } from './utils/serviceWorkerUpdates.ts'
-import { applyReloadPolicy, markAppForcedReload, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from './utils/appReload.ts'
-import { applyLegacyHashRoute } from './utils/legacyHashRoute.ts'
-import { clearStaleOverlayMarker } from './hooks/useOverlayHistory.ts'
-import App from './App.tsx'
-import GlobalErrorBoundary from './GlobalErrorBoundary.tsx'
-import { initializeErrorTracking } from './services/errorTracking.ts'
+import { noteDeployActivated, watchServiceWorkerUpdates, watchWorkerActivations } from './utils/service-worker-updates.ts'
+import { applyReloadPolicy, markAppForcedReload, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from './utils/app-reload.ts'
+import { applyLegacyHashRoute } from './utils/legacy-hash-route.ts'
+import { clearStaleOverlayMarker } from './hooks/use-overlay-history.ts'
+import App from './app.tsx'
+import GlobalErrorBoundary from './global-error-boundary.tsx'
+import { initializeErrorTracking } from './services/error-tracking.ts'
 
 void initializeErrorTracking()
 
@@ -51,7 +51,7 @@ import '@fontsource/ibm-plex-mono/600.css'
 // Newsreader roman is the paper title face.
 import '@fontsource-variable/newsreader/opsz.css'
 // KaTeX's stylesheet ships with the on-demand KaTeX chunk (see
-// components/ScientificText.js); loading it here put 23 KB of CSS in front of
+// components/scientific-text.ts); loading it here put 23 KB of CSS in front of
 // every first paint, math or no math.
 import './styles/global.css'
 
@@ -72,7 +72,7 @@ import './styles/global.css'
 // longer serves. Below, `onNeedReload` turns the plugin's reload off, and each
 // worker that takes control is checked instead: nothing happens when the
 // page runs the build that worker precaches, and otherwise the reload waits
-// until the reader changes page (utils/serviceWorkerUpdates.ts). A chunk that
+// until the reader changes page (utils/service-worker-updates.ts). A chunk that
 // fails before then is caught by `vite:preloadError` below.
 //
 // No `immediate: true` here, deliberately: that option calls
@@ -110,7 +110,7 @@ window.addEventListener('vite:preloadError', (event) => {
   }
   event.preventDefault()
   // Marked as ours, so the feed knows this reload was not asked for and keeps
-  // the reader's place (utils/appReload.js).
+  // the reader's place (utils/app-reload.ts).
   markAppForcedReload()
   window.location.reload()
 })
@@ -121,7 +121,7 @@ window.addEventListener('vite:preloadError', (event) => {
 // ever shared out of it and every link its notification emails carry; the gate
 // in index.html forwards those to `/feed` with the fragment intact, and this
 // turns the fragment back into the route it always named, in place, before
-// anything can paint a feed nobody asked for (utils/legacyHashRoute.js).
+// anything can paint a feed nobody asked for (utils/legacy-hash-route.ts).
 applyLegacyHashRoute({ history: window.history, location: window.location })
 
 // Before React renders, because the feed reads both stores on its first
@@ -134,7 +134,7 @@ applyReloadPolicy()
 // it described — react-router rewrites `history.state` only when `idx` is
 // missing, and a cloned entry always has one. Cleared here, before React
 // renders and so before anything can be armed, or the next `arm()` would find
-// its own tag on an entry it never pushed (useOverlayHistory.js).
+// its own tag on an entry it never pushed (use-overlay-history.ts).
 clearStaleOverlayMarker({ history: window.history, location: window.location })
 
 registerSW({
@@ -158,7 +158,7 @@ try {
   // is no deploy to watch.
 }
 
-// The phone-side record of the tab bar's taps (diagnostics/tapDiagnostics.ts):
+// The phone-side record of the tab bar's taps (diagnostics/tap-diagnostics.ts):
 // behind `?tapdiag=1`, remembered for the tab's session so the app's own
 // reloads keep it, `?tapdiag=0` to stop. A separate chunk that never loads
 // otherwise. The flag is read from the search AND the hash: the routes live in
@@ -169,7 +169,7 @@ try {
   const flag = /[?&]tapdiag=([01])\b/.exec(`${window.location.search} ${window.location.hash}`)
   if (flag) sessionStorage.setItem('papertok_tapdiag', flag[1])
   if (sessionStorage.getItem('papertok_tapdiag') === '1') {
-    import('./diagnostics/tapDiagnostics.ts').then((m) => m.start()).catch(() => {})
+    import('./diagnostics/tap-diagnostics.ts').then((m) => m.start()).catch(() => {})
   }
 } catch {
   // No session storage: no diagnostics either.
@@ -187,7 +187,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         `useLocation()` and wait for that commit. Synchronous, the exit
         starts 3 ms / 11 ms after the tap. Lazy routes are unaffected:
         AnimatePresence mode="wait" mounts the incoming page after the exit,
-        outside the router's update either way (utils/lazyPreload.js). */}
+        outside the router's update either way (utils/lazy-preload.ts). */}
     <MotionConfig reducedMotion="user">
       <BrowserRouter useTransitions={false}>
         <GlobalErrorBoundary>

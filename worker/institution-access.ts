@@ -1,6 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
-import type { CrossrefLicense } from '../src/utils/crossrefLicense.ts';
+import type { CrossrefLicense } from '../src/utils/crossref-license.ts';
 
 export interface InstitutionQuery { domain: string; entityId?: string | null; rorId?: string | null }
 /**
@@ -47,8 +47,8 @@ export interface ResolverCitation {
  * a free proxy to the resolvers.
  */
 
-import { openLicenseFromCrossref } from '../src/utils/crossrefLicense.ts';
-import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { openLicenseFromCrossref } from '../src/utils/crossref-license.ts';
+import { institutionDomainOf } from '../src/utils/institution-domain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { unpaywallUrl } from './open-access.ts';
 import { cacheResponse } from './provider-runtime.ts';

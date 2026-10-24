@@ -92,7 +92,7 @@ the card with no summary and no AI explanation. The egress and the probe stay in
 place to report the day either of those changes.
 
 Turning the flow on is therefore a product decision, and it is recorded in
-`src/utils/deployFlags.ts` rather than in a repository variable: `vite build`
+`src/utils/deploy-flags.ts` rather than in a repository variable: `vite build`
 refuses a bundle whose `VITE_SCOPUS_ENABLED` disagrees with what is declared
 there. Change the declaration first, in the commit that records why — setting
 the variable alone only makes the build fail.

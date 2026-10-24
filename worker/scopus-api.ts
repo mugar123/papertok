@@ -9,7 +9,7 @@ interface ScopusPayload {
 }
 
 
-import { buildScopusSearchQuery } from '../src/services/scopusQuery.ts';
+import { buildScopusSearchQuery } from '../src/services/scopus-query.ts';
 import { corsHeaders, json } from './http.ts';
 import { boundedText, cacheResponse, fetchWithDeadline, safeSourceQuery, sourceCacheParams, sourceRequestContext, SOURCE_CACHE_SECONDS, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtime.ts';
 

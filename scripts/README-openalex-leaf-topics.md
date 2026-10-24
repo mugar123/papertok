@@ -1,7 +1,7 @@
 # OpenAlex feed topics
 
-`src/utils/areaAccent.ts` owns the feed's topic lookup and imports
-`src/data/openAlexLeafTopics.generated.ts`. Generate that file with:
+`src/utils/area-accent.ts` owns the feed's topic lookup and imports
+`src/data/open-alex-leaf-topics.generated.ts`. Generate that file with:
 
 ```bash
 npm run generate:openalex-topics
@@ -46,7 +46,7 @@ node scripts/generate-openalex-leaf-topics.ts \
   --report /path/coverage.json
 ```
 
-The report includes every leaf in `categoryTaxonomy.ts`. For each leaf with
+The report includes every leaf in `category-taxonomy.ts`. For each leaf with
 neither an inherited list nor a review, the generator restricts candidates to
 the existing area's OpenAlex ancestors, then ranks topic names and keywords
 against the leaf label. At least 60% of the label's significant words must

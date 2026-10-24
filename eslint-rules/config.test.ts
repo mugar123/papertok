@@ -28,7 +28,7 @@ test('the stylesheet rules run on a component stylesheet under src/', async () =
     '.card { border-color: var(--no-such-token); outline-color: var(--brand-orange); }',
     '@layer base { :focus-visible { outline: 2px solid var(--focus-ring); } }',
   ].join('\n')
-  assert.deepEqual(await findings(code, 'src/components/Feed/Probe.css', /^papertok\//), [
+  assert.deepEqual(await findings(code, 'src/components/feed/Probe.css', /^papertok\//), [
     '1 papertok/no-focus-ring-removal',
     '2 papertok/no-external-css-urls',
     '2 papertok/no-retired-colours',
@@ -55,7 +55,7 @@ test('a component outside ui/ cannot hand-roll an overlay; a primitive in ui/ ca
     ')',
   ].join('\n')
   // Existing files, so the type-aware rules find them in their project.
-  assert.deepEqual(await findings(code, 'src/App.tsx', /^(no-restricted-syntax|papertok\/)/), [
+  assert.deepEqual(await findings(code, 'src/app.tsx', /^(no-restricted-syntax|papertok\/)/), [
     '1 no-restricted-syntax',
     '3 no-restricted-syntax',
     '3 no-restricted-syntax',
@@ -70,20 +70,20 @@ test('a component outside ui/ cannot hand-roll an overlay; a primitive in ui/ ca
 })
 
 test('the frontend imports one icon library, and the feed path stays off the identity service', async () => {
-  const code = "import { X } from 'lucide-react'\nimport { linkAccount } from '../../services/authIdentityService.ts'\nexport const probe = [X, linkAccount]"
-  assert.deepEqual(await findings(code, 'src/components/Feed/PaperCard.tsx', /^no-restricted-imports$/), [
+  const code = "import { X } from 'lucide-react'\nimport { linkAccount } from '../../services/auth-identity-service.ts'\nexport const probe = [X, linkAccount]"
+  assert.deepEqual(await findings(code, 'src/components/feed/paper-card.tsx', /^no-restricted-imports$/), [
     '1 no-restricted-imports',
     '2 no-restricted-imports',
   ])
-  assert.deepEqual(await findings(code, 'src/components/Settings/SettingsPage.tsx', /^no-restricted-imports$/), [
+  assert.deepEqual(await findings(code, 'src/components/settings/settings-page.tsx', /^no-restricted-imports$/), [
     '1 no-restricted-imports',
   ])
 })
 
 test('a context created in a component module is rejected; mock.module paths are not source reads', async () => {
   const component = "import { createContext } from 'react'\nexport const Ctx = createContext(null)\nexport const Probe = () => <div />"
-  assert.deepEqual(await findings(component, 'src/App.tsx', /^no-restricted-syntax$/), ['2 no-restricted-syntax'])
+  assert.deepEqual(await findings(component, 'src/app.tsx', /^no-restricted-syntax$/), ['2 no-restricted-syntax'])
   assert.deepEqual(await findings("import { createContext } from 'react'\nexport const Ctx = createContext(null)", 'src/context/contexts.ts', /^no-restricted-syntax$/), [])
-  const mocked = "import { mock } from 'node:test'\nmock.module('./paperSeed.ts', { namedExports: {} })"
-  assert.deepEqual(await findings(mocked, 'src/utils/paperSeed.test.ts', /^no-restricted-syntax$/), [])
+  const mocked = "import { mock } from 'node:test'\nmock.module('./paper-seed.ts', { namedExports: {} })"
+  assert.deepEqual(await findings(mocked, 'src/utils/paper-seed.test.ts', /^no-restricted-syntax$/), [])
 })
