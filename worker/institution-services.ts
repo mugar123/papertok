@@ -652,7 +652,8 @@ async function askGetFtrForCatalogue(entries: readonly ServiceEntry[], outcomes:
  * Without a store (tests), nothing is remembered between requests.
  *
  * `failures` remembers a library whose resolver failed every probe of a
- * request (`RESOLVER_FAILURE_SECONDS`). Until then, what the store does not
+ * request that GetFTR left the start window to (`RESOLVER_FAILURE_SECONDS`).
+ * Until then, what the store does not
  * answer counts as a failed probe without asking: the list is partial, or an
  * outage when the store knows nothing about the library.
  */
@@ -694,6 +695,10 @@ export async function lookupInstitutionServices(
   } else if (resolver) {
     let next = 0;
     const windowOpenedAt = now();
+    // GetFTR shares the deadline. When it took longer than the start window,
+    // the resolver's first probes had less time than a quick request's last
+    // one, or none: their failures may be GetFTR's and are not remembered.
+    const resolverHadWindow = windowOpenedAt - startedAt <= SERVICES_START_WINDOW_MS;
     const drain = async () => {
       while (next < pending.length && now() - windowOpenedAt < SERVICES_START_WINDOW_MS) {
         const index = pending[next++];
@@ -702,7 +707,7 @@ export async function lookupInstitutionServices(
     };
     await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
     const probed = pending.slice(0, next);
-    if (failures && probed.length > 0 && probed.every(index => outcomes[index] === FAILED)) {
+    if (failures && resolverHadWindow && probed.length > 0 && probed.every(index => outcomes[index] === FAILED)) {
       // A memory that cannot be written costs the next request its probes.
       await failures.put(failureKey, new Response(null, {
         headers: { 'cache-control': `public, max-age=${RESOLVER_FAILURE_SECONDS}` },

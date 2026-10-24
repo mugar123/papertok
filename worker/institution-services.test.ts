@@ -442,7 +442,7 @@ function memoryStore({ put }: { put?: (key: string, value: string) => Promise<vo
  * An edge cache that keeps what is put for its `max-age`, by the clock the
  * test runs on.
  */
-function edgeCache(): TestCache {
+function edgeCache(): Pick<Cache, 'match' | 'put'> {
   const entries = new Map<string, { response: Response; expiresAt: number }>();
   const keyOf = (request: RequestInfo | URL) => (request instanceof Request ? request.url : String(request));
   return {
@@ -740,6 +740,45 @@ test('a remembered resolver failure leaves the stored verdicts in a partial list
   assert.deepEqual(remembered.body.services.map(service => service.id), ['nature']);
   assert.ok(remembered.calls.every(host => host === 'identitytoolkit.googleapis.com'), remembered.calls.join(', '));
   assert.equal(store.values.get(key), JSON.stringify(record));
+});
+
+test('a GetFTR stall until the deadline does not mark the resolver it left no time as failing', async (t) => {
+  // The request's deadline: a stalled GetFTR runs it out, the clock reaching
+  // 12 s as the signal aborts. As on the platform, an aborted signal sends nothing.
+  let deadline = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', () => {
+    deadline = new AbortController();
+    return deadline.signal;
+  });
+  let clock = 0;
+  let stall = true;
+  let resolverSent = 0;
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const signal = init.signal!;
+    if (signal.aborted) throw signal.reason;
+    const url = new URL(String(input));
+    if (url.host === 'entitlements.prod.getft.io') {
+      if (!stall) return jsonResponse({ entitlements: [] });
+      clock = 12_000;
+      deadline.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+      throw signal.reason;
+    }
+    if (url.host === 'eu01.alma.exlibrisgroup.com') {
+      resolverSent += 1;
+      return xml(CTO_NONE);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const failures = edgeCache();
+  const lookup = () => lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl, env: GETFTR_ENV, now: () => clock, failures });
+  await assert.rejects(lookup(), error => error instanceof InstitutionAccessError && error.status === 502);
+  assert.equal(resolverSent, 0);
+  // GetFTR and the resolver healthy: the resolver is asked about everything.
+  stall = false;
+  clock = 0;
+  const healthy = await lookup();
+  assert.equal(healthy.partial, false);
+  assert.equal(resolverSent, SERVICE_CATALOGUE.length);
 });
 
 
