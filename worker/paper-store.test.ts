@@ -620,6 +620,27 @@ test('in January the year that left the ten-year window gives no notable card, w
   assert.ok(!page.some(paper => paper.id === 'openalex:W2016000001'));
 });
 
+test("with twelve categories asked, a notable lane holding more than its listing still offers the listing's oldest papers", async () => {
+  const { env } = corpus();
+  await ingestPapers(env, recentPapers(15), { now: NOW });
+  // Synthetic works in the recorded shape: this week's listing of 100,
+  // published from 2016 to 2018, and 60 newer papers an earlier listing had,
+  // which the lane keeps for 14 days after it.
+  const dated = (index: number, from: string, everyDays: number) => new Date(Date.parse(from) + index * everyDays * 86_400_000).toISOString().slice(0, 10);
+  const listing = Array.from({ length: 100 }, (_, index) => notableWork(`W81${String(index).padStart(6, '0')}`, `Highly cited study ${index} of learning`, dated(index, '2016-02-01', 10), 20_000 - index, true));
+  const droppedOut = Array.from({ length: 60 }, (_, index) => notableWork(`W82${String(index).padStart(6, '0')}`, `Once highly cited study ${index} of learning`, dated(index, '2023-02-01', 5), 900 - index, true));
+  await ingestPapers(env, [...listing, ...droppedOut].map(paper => ({ paper, lanes: ['notable:cs.LG'] })), { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  // The reader has seen the lane's hundred newest papers: the 60 that dropped
+  // out and the listing's 40 latest.
+  const seen = [...droppedOut, ...listing.slice(60)].map(paper => paper.id!);
+  const categories = ['cs.LG', 'cs.AI', 'cs.CL', 'cs.CV', 'cs.NE', 'cs.IR', 'cs.RO', 'stat.ML', 'math.OC', 'q-bio.NC', 'eess.SP', 'econ.EM'];
+  const page = await readFeedPage(env, parseFeedRequest({ categories, pageSize: 15, seen: feedSeenFilter(seen), notable: 3 }), { now: NOW });
+  const offered = page.filter(paper => paper._notable).map(paper => paper.id!);
+  const unseenListing = listing.slice(0, 60).map(paper => paper.id!);
+  assert.equal(offered.length, 3, 'the three asked for');
+  assert.ok(offered.every(id => unseenListing.includes(id)), `${offered} are papers of the listing the reader has not seen`);
+});
+
 test('a seen-paper filter the app did not write is refused', () => {
   for (const seen of ['', 'not a filter', 42, feedSeenFilter([]).slice(1)]) {
     assert.throws(() => parseFeedRequest({ categories: ['cs.LG'], seen }), (error: Error & { status?: number; code?: string }) => error.status === 400 && error.code === 'SEEN_INVALID', String(seen).slice(0, 20));

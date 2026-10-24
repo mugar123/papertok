@@ -218,15 +218,11 @@ function demoSet(key: string, value: unknown) {
 
 // How many papers the followed entities add to a page.
 const FOLLOWED_PER_PAGE = 6;
-// Exploration cards a page after the first screen adds (STEP 5): up to eight
-// from categories near the reader's, and two from random ones when bored.
-const MAX_NEARBY_EXPLORATION = 8;
+// The exploration cards a page after the first screen adds: up to
+// NEARBY_EXPLORATION_MAX from categories near the reader's, and
+// RANDOM_EXPLORATION from random ones when the reader is bored.
+const NEARBY_EXPLORATION_MAX = 8;
 const RANDOM_EXPLORATION = 2;
-// Notable papers a page asks for beyond its places. The corpus leaves out the
-// papers the reader has seen and the likes and saves it ranks by, not every
-// paper they liked, saved, read or dismissed: the feed drops those, and the
-// next notable paper takes the place.
-const NOTABLE_SPARE = 2;
 
 /**
  * Papers of the reader's follows from the paper corpus: the Worker serves an
@@ -358,7 +354,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
-  const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
+  // -1 (classic) to +1 (recent). Likes, saves and long reads move it toward
+  // recent for a paper a week old or less, toward classic for one a year old
+  // or more. A notable card's leave it as it is: the feed chose that card for
+  // its citations, and it is years old by that choice.
+  const temporalPreference = useRef(0);
   const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
   const recommendationWeights = useRef(initialRecommendationWeights);
   const boredomLevel = useRef(0); // 0 = happy, higher = more bored
@@ -790,11 +790,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const { locked, queue } = splitFeedForReRank(prevPapers, {
         anchorPaperIds: [sourcePaperId, visiblePaperIdRef.current],
       });
-      if (queue.length === 0) return prevPapers;
+      // The notable cards keep their places, one card in NOTABLE_EVERY
+      // counted from the last one before the queue; the ranking orders the rest.
+      const others = queue.filter(paper => !paper._notable);
+      if (others.length === 0) return prevPapers;
 
-      // The other cards are shuffled; the notable ones go back to every
-      // NOTABLE_EVERY-th place, counted from the locked cards.
-      const newQueue = placeNotableCards(diversifiedWeightedShuffle(queue.filter(paper => !paper._notable), {
+      const newQueue = placeNotableCards(diversifiedWeightedShuffle(others, {
         scorePaper: calculateAndAttachScore,
         weights: recommendationWeights.current,
         initialPapers: locked,
@@ -929,14 +930,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             
             // Combine rest and new papers
             const combinedRest = [...newGraphPapers, ...restFiltered];
-            
-            // Re-rank the unread queue using weighted shuffle, the notable
-            // cards kept at their places as reRankFeed keeps them.
-            const reRankedRest = placeNotableCards(diversifiedWeightedShuffle(combinedRest.filter(rp => !rp._notable), {
+
+            // Re-rank the unread queue using weighted shuffle; the notable
+            // cards keep their places, as in reRankFeed.
+            const reRankedRest = placeNotableCards(diversifiedWeightedShuffle(combinedRest.filter(p => !p._notable), {
               scorePaper: calculateAndAttachScore,
               weights: recommendationWeights.current,
               initialPapers: locked,
-            }), combinedRest.filter(rp => rp._notable), locked);
+            }), combinedRest.filter(p => p._notable), locked);
             logRankingBatch('graph expansion', reRankedRest);
             
             return [...locked, ...reRankedRest];
@@ -1225,9 +1226,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // refresh keeps the reader's place, none on a plain reset.
     const cardsBefore = !reset ? papers
       : keepThroughVisible ? mergeFreshFeedPage(papers, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
-    // The notable places of the largest page this load can show: the corpus's
-    // fifteen, the follows' six and, after the first screen, the exploration cards.
-    const notablePlacesLeft = notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : MAX_NEARBY_EXPLORATION + RANDOM_EXPLORATION));
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1299,9 +1297,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             page: currentPage,
             pageSize: PAGE_SIZE,
             order: queryMode,
-            // Unseen notable papers for those places, and the spare ones.
+            // Unseen notable papers for the places of the largest page this
+            // load can show: the corpus's fifteen, the follows' six and, after
+            // the first screen, up to ten exploration cards (STEP 5).
             seen: sessionSeenPapers.current,
-            notable: notablePlacesLeft > 0 ? notablePlacesLeft + NOTABLE_SPARE : 0,
+            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION)),
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
@@ -1341,7 +1341,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         const boredomThreshold = getBoredomThreshold();
         const exploreCount = currentBoredom >= boredomThreshold
-          ? Math.min(MAX_NEARBY_EXPLORATION, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
+          ? Math.min(NEARBY_EXPLORATION_MAX, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
           : 5; // Baseline exploration: cold-start users deserve real serendipity
 
         // The first screen already has a broad candidate pool. Defer exploration
@@ -1408,11 +1408,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
-      // A notable paper the reader already knows is unseen to the corpus,
-      // which would offer it first on every page: the next pages name it.
-      newPapers.forEach((paper) => {
-        if (paper._notable && !isAvailablePaper(paper)) sessionSeenPapers.current.add(paper.id);
-      });
+      // A notable paper the feed does not show, one the reader liked, saved,
+      // read or dismissed elsewhere, joins the session's seen papers: the
+      // corpus offers unseen notable papers in one order, and would send it
+      // again in every page's place.
+      newPapers.forEach(paper => { if (paper._notable && !isAvailablePaper(paper)) sessionSeenPapers.current.add(paper.id); });
 
       // No paper on this page can be shown: try a later page before showing
       // seen papers again. Notable cards alone count as none: they take only
@@ -1831,8 +1831,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       newLiked.add(paper.id);
       countEngagement(paperInput.id, { likes: 1 });
 
-      // Update temporal preference. A notable card is years old by design, so
-      // its age says nothing about the papers the reader prefers.
+      // Update temporal preference
       if (!paper._notable) {
         const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
         if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
@@ -2044,8 +2043,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // citation network: that was an OpenAlex call for a reader who did nothing,
     // and in the PAP-86 audit's model of a signed-in session those walks were
     // about a tenth of its OpenAlex units (modelled, not measured). A like, a
-    // save or an opened PDF still expands the graph. A notable card's age is
-    // the feed's choice, not the reader's (toggleLike).
+    // save or an opened PDF still expands the graph.
     if (timeInSeconds >= 10 && !paper._notable) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
@@ -2187,7 +2185,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     // ─── BOREDOM RESET: saving = highly engaged ───
     boredomLevel.current = 0;
-    // Attempt to update temporal preference, except from a notable card (toggleLike)
+    // Attempt to update temporal preference
     if (paper) {
       if (!paper._notable) {
         const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);

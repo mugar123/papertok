@@ -38,7 +38,7 @@ const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_PAGE_SIZE = 30;
-// Notable papers a page adds: the app's largest page asks for its three places and two spares.
+// Notable papers a page adds: more than the app's largest page has places for (three).
 const FEED_MAX_NOTABLE = 5;
 const FEED_MAX_PAGE = 100;
 const DEFAULT_FEED_USER_MINUTE_LIMIT = 60;
@@ -171,8 +171,12 @@ export const NOTABLE_LANE_PREFIX = 'notable:';
 const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */
 export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
-// A notable lane holds about 100 papers, and a reader asks for up to 12 categories.
-const NOTABLE_CANDIDATE_LIMIT = 1_200;
+// A notable lane holds its weekly listing of 100 (NOTABLE_PER_LANE in
+// paper-sources.ts) and, for 14 days, what dropped out of the two listings
+// before it; a paper another listing still keeps stays longer. A page reads
+// three listings' worth of each asked lane, newest first, so the newer papers
+// that dropped out do not cut the listing's oldest, most-cited ones.
+const NOTABLE_READ_PER_LANE = 300;
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
 const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
 
@@ -625,8 +629,7 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
 // for up to a dozen categories and twenty follows.
-async function readCandidates(db: D1Database, lanes: string[], { limit = FEED_CANDIDATE_LIMIT, since = '' } = {}): Promise<Candidate[]> {
-  const share = Math.ceil(limit / lanes.length);
+async function readCandidates(db: D1Database, lanes: string[], { share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length), since = '' } = {}): Promise<Candidate[]> {
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
     'SELECT work_id, published FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY published DESC LIMIT ?',
   ).bind(lane, since, share)));
@@ -783,7 +786,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     readCandidates(db, lanes),
     // A notable lane keeps a paper two weeks past its last listing; from
     // 1 January, the year that left the window is not read.
-    notableLanes.length ? readCandidates(db, notableLanes, { limit: NOTABLE_CANDIDATE_LIMIT, since: notableSince(now) }) : Promise.resolve([]),
+    notableLanes.length ? readCandidates(db, notableLanes, { share: NOTABLE_READ_PER_LANE, since: notableSince(now) }) : Promise.resolve([]),
     positiveIds.length
       ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
       : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
