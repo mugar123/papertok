@@ -136,7 +136,10 @@ establish conformance; report manual evidence and anything not verified.
   the implementation's own constants or add production APIs just to satisfy a mock.
 - Update existing contract and development documentation when adding routes, environment
   variables, providers or persistence. Historical investigation notes do not override code
-  or current product decisions.
+  or current product decisions. Use [the documentation owners](ARCHITECTURE.md#documentation-owners)
+  to find the affected source, and follow [documentation maintenance](CONTRIBUTING.md#documentation-maintenance)
+  for PR evidence and diagram verification. Review existing claims against the final diff,
+  including documents the author did not edit; changing a Markdown file is not proof of accuracy.
 - Never retain harness, E2E runner, fixture, environment, build, manifest, lockfile or logging
   changes merely to make local verification pass. Remove temporary changes before finishing
   and report what was removed. Do not commit or push local workarounds without explicit
