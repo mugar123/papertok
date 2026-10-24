@@ -66,15 +66,16 @@ export function closestLeaf(vector: Int8Array, centroids: ReadonlyMap<string, In
 export const ruleFiles = (closest: ReturnType<typeof closestLeaf>, rule: FilingRule) => Boolean(closest && closest.similarity >= rule.similarity && closest.margin >= rule.margin);
 
 /**
- * Recomputes the centroid of every leaf of the areas with a lane from its
- * newest arXiv papers with a vector, those whose primary category it is, and
- * stores them in place of the last run's. Returns how many leaves have one.
+ * Recomputes the centroid of every leaf of the areas with a rule, the only
+ * ones filing reads, from its newest arXiv papers with a vector, those whose
+ * primary category it is, and stores them in place of the last run's.
+ * Returns how many leaves have one.
  */
-export async function storeLeafCentroids(env: StoreEnv, now = Date.now()) {
+export async function storeLeafCentroids(env: StoreEnv, now = Date.now(), rules: Readonly<Record<string, FilingRule>> = LEAF_FILING_RULES) {
   const db = database(env);
   // A leaf arXiv has no category for (mechanical, civil and chemical
   // engineering) is never an arXiv paper's primary category: it has no centroid.
-  const leaves = AREA_LANE_AREAS.flatMap(leavesOf).filter(isArxivCategory);
+  const leaves = AREA_LANE_AREAS.filter(area => rules[area]).flatMap(leavesOf).filter(isArxivCategory);
   const centroids: Array<{ leaf: string; vector: Int8Array; papers: number }> = [];
   for (let start = 0; start < leaves.length; start += CENTROID_LEAVES_PER_CALL) {
     const chunk = leaves.slice(start, start + CENTROID_LEAVES_PER_CALL);

@@ -82,6 +82,8 @@ function journalArticle(id: string, extra: Partial<OpenAlexWork> = {}) {
   } as OpenAlexWork)!;
 }
 
+const PHYSICS_RULE = { physics: { similarity: 0.8, margin: 0.2 } };
+
 test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers other sources filed under it, and a leaf with too few, give none", async () => {
   const store = corpus();
   await arxivPapers(store, 'hep-th', 60, 0, 0);
@@ -93,7 +95,10 @@ test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers oth
   await ingestPapers(store.env, stray.map(paper => ({ paper, lanes: ['quant-ph'] })), { now: NOW });
   stray.forEach((paper, index) => store.setVector(`id:${paper.id!.toLowerCase()}`, vector({ 5: 1 }, 300 + index)));
 
-  await storeLeafCentroids(store.env, NOW);
+  // Only filing reads them, and only in an area with a rule: the shipped rules have none.
+  assert.equal(await storeLeafCentroids(store.env, NOW), 0);
+  assert.deepEqual(store.db.prepare('SELECT leaf FROM leaf_centroids').all(), []);
+  assert.equal(await storeLeafCentroids(store.env, NOW, PHYSICS_RULE), 2);
   const centroids = new Map((store.db.prepare('SELECT leaf, embedding, papers FROM leaf_centroids').all() as Array<{ leaf: string; embedding: Uint8Array; papers: number }>)
     .map(row => [row.leaf, { vector: readVector(row.embedding), papers: row.papers }]));
   assert.deepEqual([...centroids.keys()].sort(), ['hep-th', 'quant-ph']);
@@ -117,7 +122,7 @@ test('an area lane holds only what no leaf of the area holds: shipped rules file
   store.setVector('id:openalex:w2', vector({ 0: 1, 1: 1 }, 1_002));
   store.setVector('id:openalex:w3', vector({ 7: 1 }, 1_003));
   assert.equal(store.workOf('id:openalex:w4'), store.workOf('arxiv:2610.00100'), 'one row for the article and its preprint');
-  await storeLeafCentroids(store.env, NOW);
+  await storeLeafCentroids(store.env, NOW, PHYSICS_RULE);
   const [w1, w2, w3, w4] = ['w1', 'w2', 'w3', 'w4'].map(id => store.workOf(`id:openalex:${id}`));
 
   await fileAreaPapers(store.env);
@@ -125,7 +130,7 @@ test('an area lane holds only what no leaf of the area holds: shipped rules file
   assert.deepEqual(store.lane('area:physics'), [w1, w2, w3].sort((a, b) => a - b), 'the preprint\'s leaf holds the published version');
   assert.ok(!store.lane('hep-th').includes(w1), 'uncalibrated: nothing is filed under a leaf');
 
-  await fileAreaPapers(store.env, { physics: { similarity: 0.8, margin: 0.2 } });
+  await fileAreaPapers(store.env, PHYSICS_RULE);
   assert.deepEqual(store.lane('area:physics'), [w2, w3].sort((a, b) => a - b), 'between two leaves, or close to none, it stays at area level');
   assert.ok(store.lane('hep-th').includes(w1));
   assert.ok(!store.lane('quant-ph').includes(w2));
