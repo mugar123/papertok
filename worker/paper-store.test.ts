@@ -970,11 +970,10 @@ test('a page short of papers of its own still adds the notable ones asked for, a
   const { env } = corpus();
   await ingestPapers(env, recentPapers(14), { now: NOW });
   await ingestPapers(env, [{ paper: NOTABLE[1], lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
-  const request = (page: number, seen: string[] = []) => parseFeedRequest({ categories: ['cs.LG'], page, pageSize: 15, seen: feedSeenFilter(seen), notable: 3 });
+  const request = (page: number) => parseFeedRequest({ categories: ['cs.LG'], page, pageSize: 15, seen: feedSeenFilter([]), notable: 3 });
   const page = await readFeedPage(env, request(0), { now: NOW });
   assert.deepEqual(page.map(paper => [paper.id, paper._notable === true]), [...recentIds(0, 14).map(id => [id, false]), ['openalex:W2493916176', true]]);
-  // The fourteen shown, the notable one not yet: the next page has nothing of its own.
-  assert.deepEqual(await readFeedPage(env, request(1, recentIds(0, 14)), { now: NOW }), [], 'notable papers alone are no page');
+  assert.deepEqual(await readFeedPage(env, request(1), { now: NOW }), [], 'notable papers alone are no page');
 });
 
 test('the app shows one card in fifteen notable from corpus pages of fifteen and the cards the follows and exploration add', async () => {
@@ -1090,6 +1089,15 @@ test('a page that skips seen papers and has no candidate of its own reads no not
   const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], pageSize: 15, seen: feedSeenFilter([]), skipsSeen: true, notable: 3 }), { now: NOW });
   assert.deepEqual(page, []);
   assert.ok(!trips.some(trip => trip.some(sql => sql.includes("paper ->> '$.id'"))), 'no stored id is read for notable papers the page would not carry');
+});
+
+test('a page that skips seen papers, past a ranking the reader has seen whole, adds no notable papers alone', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, recentPapers(14), { now: NOW });
+  await ingestPapers(env, [{ paper: NOTABLE[1], lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: '2026-11-05T03:00:00.000Z' });
+  // The fourteen shown, the notable one not yet: the page past them has nothing of its own.
+  const request = parseFeedRequest({ categories: ['cs.LG'], page: 1, pageSize: 15, seen: feedSeenFilter(recentIds(0, 14)), skipsSeen: true, notable: 3 });
+  assert.deepEqual(await readFeedPage(env, request, { now: NOW }), [], 'notable papers alone are no page');
 });
 
 test('a seen-paper filter the app did not write is refused', () => {
