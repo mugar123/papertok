@@ -390,7 +390,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   );
 
   // A card counts as seen once it was on screen: the dwell and the skip the
-  // card reports call this. A card a load only brought in stays in
+  // card reports call this. So does a load for a notable paper it passes over
+  // because the reader already knew it. A card a load only brought in stays in
   // sessionSeenPapers, which dies with the page, so the next load may show it.
   // The list kept across loads is read back before it is written, so a second
   // tab's views are not overwritten. A card that reports after the account
@@ -1415,10 +1416,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
       // A notable paper the feed does not show, one the reader liked, saved,
-      // read or dismissed elsewhere, joins the session's seen papers: the
-      // corpus offers unseen notable papers in one order, and would send it
-      // again in every page's place.
-      newPapers.forEach(paper => { if (paper._notable && !isAvailablePaper(paper)) sessionSeenPapers.current.add(paper.id); });
+      // read or dismissed elsewhere, joins the seen papers this browser keeps:
+      // the corpus offers unseen notable papers in one order, and would send
+      // it again in a place of every page and every session.
+      newPapers.forEach(paper => { if (paper._notable && !isAvailablePaper(paper)) markPaperViewed(paper.id, activeUserId.current); });
 
       // No paper on this page can be shown: try a later page before showing
       // seen papers again. Notable cards alone count as none: they take only
@@ -1583,7 +1584,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [
     userPreferences, page, papers, loading, feedMode,
-    profileSignals, isKnownPaper,
+    profileSignals, isKnownPaper, markPaperViewed,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
   ]);
 

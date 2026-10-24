@@ -74,6 +74,7 @@ function withCorpusStandIn<T extends { fetchPapers: unknown; restOfPage: () => P
 
 function feed({ fast = records('fast'), slow = [], known = [], seen = [], page = 0, papers = [] }: { fast?: FeedRecord[]; slow?: FeedRecord[] | Promise<FeedRecord[]>; known?: string[]; seen?: string[]; page?: number; papers?: FeedRecord[] } = {}) {
   const state = { papers, page, loading: false, hasMore: true, error: null as string | null, continuations: [] as unknown[][], abstractWaits: [] as ReadonlyArray<ReadonlySet<string>> };
+  const sessionSeenPapers = ref(new Set(seen));
   const env = {
     userPreferences: ['cs.AI'], recommendationProfileReady: true, feedMode: 'top', PAGE_SIZE: 15,
     feedRequestId: ref(0), feedSessionId: ref(0), feedLoadInFlight: ref(false), loadAfterCommit: ref<object | null>(null),
@@ -93,7 +94,9 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     boredomLevel: ref(0), getBoredomThreshold: () => 5,
     likedPaperIdsRef: ref(new Set(known)), savedPaperIdsRef: ref(new Set()),
     readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
-    sessionSeenPapers: ref(new Set(seen)), isKnownPaper: (id: string) => known.includes(id),
+    sessionSeenPapers, isKnownPaper: (id: string) => known.includes(id),
+    // The session's part of markPaperViewed; viewing() below has the real one.
+    markPaperViewed: (paperId: string) => { sessionSeenPapers.current.add(paperId); },
     mergeFollowEntityMatches: (...groups: unknown[][]) => groups.flat(),
     diversifiedWeightedShuffle: <T>(values: T) => values, calculateAndAttachScore: () => 0,
     recommendationWeights: ref({}), mergeFreshFeedPage, notablePlaces, placeNotableCards, FOLLOWED_PER_PAGE: 6, NEARBY_EXPLORATION_MAX: 8, RANDOM_EXPLORATION: 2, NOTABLE_SPARE: 2,
@@ -1028,6 +1031,31 @@ test('a notable paper the reader already saved leaves its place to the next one,
   assert.deepEqual(asked.map(request => request.notable), [3, 4, 4]);
   assert.equal(asked[1].seen?.has('saved-classic'), true, 'the corpus is told the reader knows it');
   assert.ok(!state.papers.some(paper => paper.id === 'saved-classic'));
+});
+
+// More known papers at the top of the corpus's order than a page has spares:
+// the first screen has no notable card. A session starts from the seen papers
+// this browser keeps, so without them every session's first screen lost it.
+test('notable papers the reader already knew cost one first screen its notable card in this browser, not every session', async t => {
+  t.mock.method(console, 'log', () => {});
+  const storage = memoryStorage();
+  const known = ['saved-1', 'saved-2', 'saved-3'];
+  const order = [...known, 'notable-a', 'notable-b', 'notable-c'];
+  const firstScreens: unknown[] = [];
+  for (let session = 0; session < 2; session += 1) {
+    const { state, env, run } = feed({ seen: [...readSeenPaperIds('test-user', storage)] });
+    env.savedPaperIdsRef.current = new Set(known);
+    Object.assign(env, {
+      markPaperViewed: viewing({ seen: env.sessionSeenPapers, storage }).markPaperViewed,
+      fetchCorpusPage: async (request: { page: number; notable?: number; seen?: Set<string> }) => {
+        const unseen = order.filter(id => !request.seen?.has(id)).slice(0, request.notable ?? 0);
+        return [...records(`corpus-${request.page}`, 15), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))];
+      },
+    });
+    await run(true);
+    firstScreens.push(notableAt(state.papers));
+  }
+  assert.deepEqual(firstScreens, [[], [[14, 'notable-a']]]);
 });
 
 // A like, a save and a long read, as the feed's handlers take them in demo
