@@ -26,8 +26,16 @@ const LIKED_LOOKUP_MAX_PAPERS = 10;
 // the 2 s an inline lookup has, an answer arXiv sends later spends an app-wide
 // seat and files nothing.
 const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT_MS + 1_000;
-// A followed lane asked for again within a day is not written again.
-const FOLLOW_REFRESH_MS = 86_400_000;
+// A known followed lane is written again only when it is asked for 7 days or
+// more after its last write; every write counts in the reader's and the app's
+// lanes for the day (below). Were it written again whenever asked a day after
+// its last write, 4,000 lanes asked for each morning would spend the app's day
+// every day, and a lane asked for after them would never be written again
+// before the nightly run drops it, 14 days after its last write
+// (paper-harvest.ts). Written once a week, lanes asked for daily spend the
+// app's day only on the days they fall due, and a lane refused on its day can
+// still be written by an ask in the 7 days before the drop.
+const FOLLOW_REFRESH_MS = 7 * 86_400_000;
 // New followed lanes a reader's runs may harvest at once a day, and the whole
 // app's. Runs spend the new follows' shares of OpenAlex and Workers AI
 // (paper-sources.ts, paper-store.ts), but an author known by name is searched
@@ -42,9 +50,11 @@ const NEW_LANES_HARVESTED_PER_DAY = 2_000;
 // in the nightly refresh (paper-harvest.ts), and a lane stays live for 14 days
 // after it was last written, so this bounds the lanes one account keeps live,
 // and the wait they add, to about 14 days' worth. A request reads at most 20
-// follows and a lane is written at most once a day, so a reader asking for
-// their own follows still has 20 for new ones. Past it a new follow is served
-// from what the corpus has, and a lane asked for again keeps its last write.
+// follows and a lane asked for again is written once in FOLLOW_REFRESH_MS at
+// most, so the follows a reader asks for again take at most 20 of their 40 on
+// any day, and none on most days, leaving 20 for new ones. Past it a new
+// follow is served from what the corpus has, and a lane asked for again keeps
+// its last write.
 const LANES_WRITTEN_PER_READER = 40;
 const LANES_WRITTEN_PER_DAY = 4_000;
 

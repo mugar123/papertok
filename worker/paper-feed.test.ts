@@ -79,13 +79,39 @@ test('a reader writes at most 40 followed lanes a day, new or asked for again; p
   await ask({ follows: searches(40, 1) }, 'reader-2');
   assert.equal(registered(), 41);
 
-  // The next day, 20 of the reader's lanes asked for again leave them 20 new ones.
-  t.mock.timers.setTime(Date.parse('2026-10-23T12:00:01Z'));
+  // A week later, 20 of the reader's lanes asked for again are written again and leave them 20 new ones.
+  t.mock.timers.setTime(Date.parse('2026-10-29T12:00:01Z'));
   await ask({ follows: searches(0, 20) });
   await ask({ follows: searches(41, 20) });
   assert.deepEqual(await ask({ follows: searches(61, 1) }), { papers: [] });
   assert.equal(registered(), 61);
-  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-23T12:00:01.000Z'").get() as { n: number }).n, 40);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM followed_lanes WHERE requested_at = '2026-10-29T12:00:01.000Z'").get() as { n: number }).n, 40);
+});
+
+// Every write of a lane, new or asked for again, counts in the app's 4,000 a
+// day. Were a lane asked for daily written daily, 4,000 lanes asked for every
+// morning would spend the app's day every day, and a lane asked for later in
+// the day would never be written again: the nightly run drops a lane 14 days
+// after its last write (paper-harvest.ts).
+test("a lane asked for daily stays followed while other readers ask daily, before it, for 4,000 lanes", async t => {
+  const day = 86_400_000;
+  const start = Date.parse('2026-11-02T00:10:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: start });
+  const { db, ask } = store();
+  const searches = (name: string, count: number) => Array.from({ length: count }, (_, index) => ({
+    type: 'topic', canonicalId: `query-${name}-${index}`, displayName: `${name} ${index}`, metadata: { query: `${name} ${index}` },
+  }));
+  const lastWrite = () => (db.prepare("SELECT requested_at FROM followed_lanes WHERE lane = 'query:narrow 0'").get() as { requested_at: string } | undefined)?.requested_at;
+  await ask({ follows: searches('narrow', 1) }, 'late-reader');
+  for (let days = 0; days <= 14; days += 1) {
+    // Ten minutes later each morning, so every lane is more than a day past its last write.
+    const morning = start + days * (day + 10 * 60_000);
+    t.mock.timers.setTime(morning);
+    for (let reader = 0; reader < 200; reader += 1) await ask({ follows: searches(`reader ${reader}`, 20) }, `reader-${reader}`);
+    t.mock.timers.setTime(morning + 30 * 60_000);
+    await ask({ follows: searches('narrow', 1) }, 'late-reader');
+    assert.ok(Date.parse(lastWrite() ?? '') > Date.now() - 14 * day, `day ${days}: last written ${lastWrite()}`);
+  }
 });
 
 // The app sends every follow with each page, so new lanes the allowance refused
