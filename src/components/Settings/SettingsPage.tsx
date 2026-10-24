@@ -89,10 +89,10 @@ const SETTINGS_COPY = {
   settingsPage: 'Settings page',
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
-  followedContent: 'Following',
+  followedContent: 'Follows',
   loadingFollowing: 'Loading the content you follow...',
   followingDescription: 'Entities that influence your recommendations',
-  editFollowing: 'Edit following',
+  editFollowing: 'Edit follows',
   interests: 'Interests',
   interestsDescription: 'Subcategories used to train your feed',
   selectedAreas: 'Selected areas',
@@ -422,7 +422,7 @@ function DiscoveryPage() {
           <div className="settings-row settings-row-side">
             <div className="settings-row-content">
               <h3 className="settings-row-title-line">
-                {copy.followedContent}
+                {copy.followedContent}{' '}
                 {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">{followedEntities.length}</span>}
               </h3>
               <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>

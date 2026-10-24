@@ -442,7 +442,7 @@
   padding: 0 8px;
   border-radius: var(--radius-full);
   background: var(--bg-sunken);
-  color: var(--text-primary);
+  color: var(--text-tertiary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);

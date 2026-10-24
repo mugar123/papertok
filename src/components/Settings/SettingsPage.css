@@ -283,7 +283,7 @@
   padding: 0 6px;
   border-radius: var(--radius-full);
   background: var(--bg-primary);
-  color: var(--text-primary);
+  color: var(--text-tertiary);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
