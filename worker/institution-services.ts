@@ -1,4 +1,5 @@
 import type { WorkerEnv } from './env.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { InstitutionQuery, InstitutionResolver, LookupOptions } from './institution-access.ts';
 
 interface ServiceEntry {
@@ -13,6 +14,7 @@ type ServiceOutcome = ServiceSubscription | null | undefined | typeof FAILED | t
 type StoredVerdict = { at: number; verdict: ServiceSubscription | null | 'unchecked' };
 type StoredVerdicts = Record<string, StoredVerdict>;
 type ServicesStore = Pick<KVNamespace, 'get' | 'put'>;
+type FailureMemory = Pick<Cache, 'match' | 'put'>;
 
 
 /**
@@ -48,6 +50,8 @@ import {
 } from './institution-access.ts';
 
 import { corsHeaders, json } from './http.ts';
+import { getSafeLimit } from './provider-runtime.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 export const INSTITUTION_SERVICES_PATH = '/institution/services';
 
@@ -66,6 +70,17 @@ const SERVICES_START_WINDOW_MS = 6000;
 // again. A library nobody asks about for three months is forgotten.
 export const VERDICT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const STORE_RECORD_TTL_SECONDS = 90 * 24 * 60 * 60;
+// How long a library whose resolver failed every probe of a request is not
+// probed again. Failures are not stored, so each request used to probe it as
+// often as the start window allowed, and that load kept it failing. Kept in
+// the edge cache, per location: KV allows few writes a day.
+const RESOLVER_FAILURE_SECONDS = 30 * 60;
+// What one account may ask, and everyone together, in a UTC hour. A library
+// read for the first time takes the client up to ten requests, and the client
+// keeps the list for a day.
+const DEFAULT_SERVICES_USER_HOURLY_LIMIT = 30;
+const DEFAULT_SERVICES_GLOBAL_HOURLY_LIMIT = 600;
+const HOUR_MS = 60 * 60 * 1000;
 const FAILED = Symbol('failed');
 const UNCHECKED = Symbol('unchecked');
 
@@ -497,7 +512,30 @@ export const SERVICE_CATALOGUE: readonly Readonly<ServiceEntry>[] = Object.freez
   })),
 ].map(entry => Object.freeze({ kind: 'platform' as const, ...entry })));
 
-export async function handleInstitutionServices(request: Request, env: WorkerEnv) {
+/**
+ * One request of the reader's hourly allowance, taken before any provider is
+ * asked: null when it was granted, otherwise the refusal to send. A request
+ * may probe the resolver as many times as the start window allows, so it is
+ * the request that is counted, and a ledger that cannot answer refuses it.
+ */
+async function reserveServicesRequest(identity: Pick<VerifiedIdentity, 'uid'>, env: WorkerEnv, origin: string) {
+  const now = Date.now();
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `institution-services:${new Date(now).toISOString().slice(0, 13)}`,
+    subject: `institution-services:${identity.uid}`,
+    subjectLimit: getSafeLimit(env.INSTITUTION_SERVICES_USER_HOURLY_LIMIT, DEFAULT_SERVICES_USER_HOURLY_LIMIT, 1_000),
+    globalLimit: getSafeLimit(env.INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT, DEFAULT_SERVICES_GLOBAL_HOURLY_LIMIT, 100_000),
+  });
+  if (reservation.accepted) return null;
+  const headers = { ...corsHeaders(origin, env), 'cache-control': 'no-store' };
+  if (reservation.code) return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, headers);
+  return json({ code: 'INSTITUTION_LOOKUP_LIMIT' }, 429, {
+    ...headers,
+    'retry-after': String(Math.ceil((HOUR_MS - (now % HOUR_MS)) / 1000)),
+  });
+}
+
+export async function handleInstitutionServices(request: Request, env: WorkerEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   const query = readInstitutionQuery(url.searchParams);
@@ -505,7 +543,9 @@ export async function handleInstitutionServices(request: Request, env: WorkerEnv
   // Logged by the router and answered as an outage: without the store every
   // request would read the library from the start and never finish it.
   if (!store) throw new Error('INSTITUTION_SERVICES_STORE binding is missing');
-  const payload = await lookupInstitutionServices(query, { env, store });
+  const refusal = await reserveServicesRequest(identity, env, origin);
+  if (refusal) return refusal;
+  const payload = await lookupInstitutionServices(query, { env, store, failures: caches.default });
   // The store is the cache. A request that left entries unanswered is asked
   // again at once, so no cache may hand it back.
   return json(payload, 200, { ...corsHeaders(origin, env), 'cache-control': 'no-store' });
@@ -610,15 +650,23 @@ async function askGetFtrForCatalogue(entries: readonly ServiceEntry[], outcomes:
  * Two requests for one library at once probe the same entries and the later
  * write wins; its verdicts are the same, so nothing is lost but the probes.
  * Without a store (tests), nothing is remembered between requests.
+ *
+ * `failures` remembers a library whose resolver failed every probe of a
+ * request (`RESOLVER_FAILURE_SECONDS`). Until then, what the store does not
+ * answer counts as a failed probe without asking: the list is partial, or an
+ * outage when the store knows nothing about the library.
  */
 export async function lookupInstitutionServices(
   { domain, entityId = null, rorId = null }: InstitutionQuery,
-  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now, store }: LookupOptions & { store?: ServicesStore } = {},
+  { fetchImpl = (...args) => fetch(...args), env = {}, now = Date.now, store, failures }: LookupOptions & { store?: ServicesStore; failures?: FailureMemory } = {},
 ) {
   const resolver = findResolver({ domain, rorId });
   const getFtr = Boolean(env.GETFTR_API_KEY) && Boolean(entityId || rorId);
   if (!resolver && !getFtr) throw new InstitutionAccessError('INSTITUTION_NOT_SUPPORTED', 404);
   const key = await servicesStoreKey({ domain, entityId, rorId }, env);
+  const failureKey = new Request(`https://papertok.internal/cache${INSTITUTION_SERVICES_PATH}/resolver-failed/${key}`);
+  // An edge cache that cannot be read remembers nothing.
+  const resolverFailing = Boolean(resolver && failures && await failures.match(failureKey).catch(() => undefined));
   const stored: StoredVerdicts = (store && await store.get<StoredVerdicts>(key, 'json')) || {};
   const startedAt = now();
   const signal = AbortSignal.timeout(SERVICES_DEADLINE_MS);
@@ -641,7 +689,9 @@ export async function lookupInstitutionServices(
   // took does not shorten the request: what the deadline then cuts is
   // partial, what the window leaves unstarted is remaining.
   const pending = outcomes.flatMap((outcome, index) => (outcome === undefined ? [index] : []));
-  if (resolver) {
+  if (resolver && resolverFailing) {
+    for (const index of pending) outcomes[index] = FAILED;
+  } else if (resolver) {
     let next = 0;
     const windowOpenedAt = now();
     const drain = async () => {
@@ -651,6 +701,13 @@ export async function lookupInstitutionServices(
       }
     };
     await Promise.all(Array.from({ length: PROBE_CONCURRENCY }, drain));
+    const probed = pending.slice(0, next);
+    if (failures && probed.length > 0 && probed.every(index => outcomes[index] === FAILED)) {
+      // A memory that cannot be written costs the next request its probes.
+      await failures.put(failureKey, new Response(null, {
+        headers: { 'cache-control': `public, max-age=${RESOLVER_FAILURE_SECONDS}` },
+      })).catch(() => {});
+    }
   } else {
     for (const index of pending) outcomes[index] = UNCHECKED;
   }

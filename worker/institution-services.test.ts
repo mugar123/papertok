@@ -1,14 +1,15 @@
-import type { TestGlobals } from './test-types.ts';
+import type { TestCache, TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type ServicesOptions = { token?: string | null; resolver?: Resolver; store?: ReturnType<typeof memoryStore> | null };
+type ServicesOptions = { token?: string | null; resolver?: Resolver; store?: ReturnType<typeof memoryStore> | null; env?: WorkerEnv; uid?: string; edge?: TestCache };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
 import { GETFTR_BATCH_SIZE, InstitutionAccessError, findResolver } from './institution-access.ts';
 import { SERVICE_CATALOGUE, VERDICT_TTL_MS, lookupInstitutionServices, probeKey, servicesStoreKey } from './institution-services.ts';
 import reportApi from './index.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), cut down to
@@ -437,21 +438,46 @@ function memoryStore({ put }: { put?: (key: string, value: string) => Promise<vo
   return store as unknown as KVNamespace & { values: Map<string, string> };
 }
 
-/** The route through the Worker's own dispatch, with the store its verdicts land in. */
-async function requestServices(search: string, { token = TOKEN, resolver = () => xml(CTO_ENTITLED), store = memoryStore() }: ServicesOptions = {}) {
+/**
+ * An edge cache that keeps what is put for its `max-age`, by the clock the
+ * test runs on.
+ */
+function edgeCache(): TestCache {
+  const entries = new Map<string, { response: Response; expiresAt: number }>();
+  const keyOf = (request: RequestInfo | URL) => (request instanceof Request ? request.url : String(request));
+  return {
+    match: async (request) => {
+      const entry = entries.get(keyOf(request));
+      return entry && Date.now() < entry.expiresAt ? entry.response.clone() : undefined;
+    },
+    put: async (request, response) => {
+      const seconds = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] || 0);
+      entries.set(keyOf(request), { response: response.clone(), expiresAt: Date.now() + seconds * 1000 });
+    },
+  };
+}
+
+/**
+ * The route through the Worker's own dispatch, with the store its verdicts land
+ * in. Each request has a ledger of its own unless `env` brings one, and an edge
+ * cache that keeps nothing unless `edge` is given.
+ */
+async function requestServices(search: string, { token = TOKEN, resolver = () => xml(CTO_ENTITLED), store = memoryStore(), env = {}, uid = 'alice-uid', edge }: ServicesOptions = {}) {
   const calls: string[] = [];
   const originalFetch = globalThis.fetch;
   const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
-    if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
+    if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: uid }] });
     if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com' || url.host === SFX_HOST) return resolver(url.searchParams.get('rft.issn')!, url);
+    // GetFTR has no verdict on any DOI, so every platform goes to the resolver.
+    if (url.host === 'entitlements.prod.getft.io') return jsonResponse({ entitlements: [] });
     throw new Error(`unexpected upstream ${url}`);
   };
   // The identity check keeps its answers at the edge; the list no longer does.
   (globalThis as TestGlobals).caches = {
-    default: {
+    default: edge || {
       match: async (): Promise<Response | null | undefined> => null,
       put: async (): Promise<void> => {},
     },
@@ -459,7 +485,7 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
   try {
     const response = await reportApi.fetch(new Request(`https://api.papertok.test/institution/services?${search}`, {
       headers: { origin: 'https://papertok.app', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    }), { ...ROUTE_ENV, INSTITUTION_SERVICES_STORE: store ?? undefined });
+    }), { ...ROUTE_ENV, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, INSTITUTION_SERVICES_STORE: store ?? undefined, ...env });
     return { response, body: await response.json<Awaited<ReturnType<typeof lookupInstitutionServices>>>(), calls, store: store! };
   } finally {
     globalThis.fetch = originalFetch;
@@ -621,6 +647,99 @@ test('the route refuses a missing session or a malformed domain before any provi
     assert.equal(store.values.size, 0);
     if (upstreamCalls) assert.deepEqual(calls, upstreamCalls);
   }
+});
+
+test('each account and the whole app have an hourly allowance of library checks, and a refused one asks no provider', async (t) => {
+  // Before the test token expires, forty minutes before the hour ends.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:20:00Z') });
+  const env = {
+    ...GETFTR_ENV,
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
+    INSTITUTION_SERVICES_USER_HOURLY_LIMIT: '2',
+    INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT: '3',
+  };
+  const store = memoryStore();
+  // A new entityId each time: with GetFTR's key, a new record to fill.
+  let request = 0;
+  const ask = (uid: string) => {
+    request += 1;
+    return requestServices(new URLSearchParams({ domain: 'usal.es', entityId: `https://idp.example.org/${request}` }).toString(), { env, store, uid });
+  };
+  for (const uid of ['alice-uid', 'alice-uid']) {
+    const { response, calls } = await ask(uid);
+    assert.equal(response.status, 200);
+    assert.ok(calls.includes('entitlements.prod.getft.io') && calls.includes('eu01.alma.exlibrisgroup.com'), calls.join(', '));
+  }
+  const records = store.values.size;
+  const aliceRefused = await ask('alice-uid');
+  const bob = await ask('bob-uid');
+  assert.equal(bob.response.status, 200);
+  const bobRefused = await ask('bob-uid');
+  for (const refused of [aliceRefused, bobRefused]) {
+    assert.equal(refused.response.status, 429);
+    assert.deepEqual(refused.body, { code: 'INSTITUTION_LOOKUP_LIMIT' });
+    assert.equal(refused.response.headers.get('retry-after'), '2400');
+    assert.equal(refused.response.headers.get('cache-control'), 'no-store');
+    assert.equal(refused.response.headers.get('access-control-allow-origin'), 'https://papertok.app');
+    assert.deepEqual(refused.calls, ['identitytoolkit.googleapis.com']);
+  }
+  // Alice's two, Bob's one: the third record is Bob's.
+  assert.equal(store.values.size, records + 1);
+});
+
+test('the client\'s ten requests for a library fit in an account\'s hour', async () => {
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+  const store = memoryStore();
+  for (let request = 0; request < 10; request += 1) {
+    const { response } = await requestServices('domain=usal.es', { env, store });
+    assert.equal(response.status, 200, `request ${request + 1}`);
+  }
+});
+
+test('a library whose resolver failed every probe is not probed again for half an hour', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:00:00Z') });
+  const edge = edgeCache();
+  const store = memoryStore();
+  const down = () => new Response('down', { status: 503 });
+  const resolverCalls = (calls: string[]) => calls.filter(host => host === 'eu01.alma.exlibrisgroup.com').length;
+  const failed = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(failed.response.status, 502);
+  assert.ok(resolverCalls(failed.calls) > 0);
+  const again = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(again.response.status, 502);
+  assert.deepEqual(again.body, { code: 'ACCESS_LOOKUP_UNAVAILABLE' });
+  assert.equal(resolverCalls(again.calls), 0);
+  // Another library is asked as usual.
+  const other = await requestServices('domain=usc.edu', { edge, store, resolver: () => xml(CTO_NONE) });
+  assert.equal(other.response.status, 200);
+  assert.ok(other.calls.includes('na03.alma.exlibrisgroup.com'));
+  t.mock.timers.tick(30 * 60 * 1000);
+  const recovered = await requestServices('domain=usal.es', { edge, store, resolver: () => xml(CTO_NONE) });
+  assert.equal(recovered.response.status, 200);
+  assert.equal(resolverCalls(recovered.calls), SERVICE_CATALOGUE.length);
+});
+
+test('a remembered resolver failure leaves the stored verdicts in a partial list and stores nothing over them', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:00:00Z') });
+  const edge = edgeCache();
+  const store = memoryStore();
+  const read = await requestServices('domain=usal.es', { edge, store, resolver: issn => xml(issn === ISSN_OF.nature ? ctoWith('Nature') : CTO_NONE) });
+  assert.deepEqual(read.body.services.map(service => service.id), ['nature']);
+  // A catalogue entry the store has no verdict for, while the resolver is down.
+  const [key] = store.values.keys();
+  const record = JSON.parse(store.values.get(key)!) as Record<string, unknown>;
+  delete record[probeKey(SERVICE_CATALOGUE.find(entry => entry.id === 'economist')!)];
+  store.values.set(key, JSON.stringify(record));
+  const down = () => new Response('down', { status: 503 });
+  const failing = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(failing.response.status, 200);
+  assert.equal(failing.body.partial, true);
+  const remembered = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(remembered.response.status, 200);
+  assert.equal(remembered.body.partial, true);
+  assert.deepEqual(remembered.body.services.map(service => service.id), ['nature']);
+  assert.ok(remembered.calls.every(host => host === 'identitytoolkit.googleapis.com'), remembered.calls.join(', '));
+  assert.equal(store.values.get(key), JSON.stringify(record));
 });
 
 
