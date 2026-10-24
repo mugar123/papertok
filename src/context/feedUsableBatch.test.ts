@@ -1004,6 +1004,40 @@ test('the related papers a like brings join the cards after the reader, and ever
   assert.deepEqual(notableAt(state.papers), [[14, 'notable-0'], [29, 'notable-1'], [44, 'notable-2']]);
 });
 
+// The page joins the list as it is when the page arrives. Placed on the list
+// as it was when the load started, its notable card came as many cards later
+// as the like had inserted (the review's probe: 20 cards after the last one).
+test('a page that loads while a like inserts related papers puts its notable card fifteen cards after the last one', async t => {
+  t.mock.method(console, 'log', () => {});
+  // Twenty cards on screen and a notable one fifteenth; the reader is on the fourth.
+  const shown = placeNotableCards(records('card', 20), [{ ...paperRecord('notable-0'), _notable: true }]);
+  const { state, env, run } = feed({ papers: shown, page: 1 });
+  let answer!: () => void;
+  const answered = new Promise<void>(resolve => { answer = resolve; });
+  Object.assign(env, {
+    fetchCorpusPage: async (request: { page: number; notable?: number }) => {
+      await answered;
+      const notable = ['notable-1', 'notable-2', 'notable-3'].slice(0, request.notable).map(id => ({ ...paperRecord(id), _notable: true }));
+      return [...records(`corpus-${request.page}`, 15), ...notable];
+    },
+  });
+  const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
+    feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
+    fetchCorpusPage: async () => records('related', 5),
+    likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
+    sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
+    setPapers: env.setPapers, splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref('card-3'),
+    diversifiedWeightedShuffle: <T>(queue: T) => queue, calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
+  }) as (paper: FeedRecord) => Promise<void>;
+  const loading = run(false);
+  await expand(shown[3]);
+  assert.deepEqual(notableAt(state.papers), [[14, 'notable-0']], 'the insert keeps the notable card on screen at its place');
+  answer();
+  await loading;
+  assert.equal(state.papers.length, 26 + 16);
+  assert.deepEqual(notableAt(state.papers), [[14, 'notable-0'], [29, 'notable-1']]);
+});
+
 // The reader saved a notable paper elsewhere. The corpus leaves out only the
 // seen filter and the likes and saves it ranks by, so it offers that paper
 // first, in one order of unseen notable papers. The feed leaves it out, and it

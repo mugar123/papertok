@@ -1480,34 +1480,30 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           weights: recommendationWeights.current,
           initialPapers: reset && !keepThroughVisible ? [] : papers,
         });
-      }
-      filtered = placeNotableCards(filtered, notableCards, cardsBefore);
-
-      // The corpus enriched these papers when it stored them: the page is
-      // shown as it arrived.
-      if (activeMode === 'top' || activeMode === null) {
+        // The corpus enriched these papers when it stored them: the page is
+        // shown as it arrived.
         logRankingBatch('fresh feed', filtered);
       }
 
       // The papers this load shows are not offered again this session. They are
       // not "viewed" until a card reports it (markPaperViewed), so the next load
-      // may show one the reader never reached.
+      // may show one the reader never reached. A notable card counts once it
+      // has its place, below.
       filtered.forEach(p => sessionSeenPapers.current.add(p.id));
 
       // The page joins the list as it is now, not `papers` as this load found
       // it: while the page loaded, late answers may have filled or removed
-      // cards on screen, and a network expansion may have inserted some.
+      // cards on screen, and a network expansion may have inserted some. The
+      // notable places are counted on that list too.
       // A follow change refreshes the ranking but the reader keeps their
       // place: the cards through the visible one stay, the fresh page lands
       // below them (mergeFreshFeedPage). A plain reset still replaces all.
       const addPage = (shown: Paper[]) => {
-        if (reset) {
-          return keepThroughVisible
-            ? mergeFreshFeedPage(shown, filtered, { anchorPaperIds: [visiblePaperIdRef.current] })
-            : filtered;
-        }
-        const existingIds = new Set(shown.map((p) => p.id));
-        return [...shown, ...filtered.filter((p) => !existingIds.has(p.id))];
+        const kept = !reset ? shown
+          : keepThroughVisible ? mergeFreshFeedPage(shown, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
+        const keptIds = new Set(kept.map(p => p.id));
+        const isNew = (p: Paper) => !keptIds.has(p.id);
+        return [...kept, ...placeNotableCards(filtered.filter(isNew), notableCards.filter(isNew), kept)];
       };
       // When an empty or failed page left this load showing the seen papers
       // it carried, the feed goes on from the page after theirs: the pages
@@ -1520,6 +1516,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
       setPapers(current => {
         const nextPapers = addPage(current);
+        const listed = new Set(nextPapers.map(p => p.id));
+        notableCards.forEach(p => { if (listed.has(p.id)) sessionSeenPapers.current.add(p.id); });
         // The cache and the snapshot keep the list the reader sees.
         feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
         // This write is synchronous and bypasses the debounce map on purpose —
