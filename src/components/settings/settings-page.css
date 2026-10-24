@@ -250,9 +250,7 @@
   grid-column: 1;
 }
 
-/* ── Sign-in methods: one line each, the name on the left, the account or
-   action on the right, on a phone too. The name keeps its width and a long
-   address ends in an ellipsis. ── */
+/* ── Sign-in methods: the provider's own mark, its account, the action ── */
 .settings-row.settings-row-inline {
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 56px;
@@ -262,8 +260,6 @@
   justify-self: end;
 }
 
-/* A row whose action stays beside its title and description on a phone,
-   instead of dropping under them. */
 .settings-row.settings-row-side {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -272,7 +268,6 @@
   justify-self: end;
 }
 
-/* A count beside a row's title, in parentheses, quieter than the title. */
 .settings-count {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
@@ -281,8 +276,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The linked university's badge sits under the row's title, and a long name
-   wraps there rather than pushing the action aside. */
 .settings-row-pill {
   margin-top: var(--space-2);
   white-space: normal;
@@ -466,7 +459,6 @@
   cursor: pointer;
 }
 
-/* The switches are ruled like the rows of the other panels. */
 .profile-switch + .profile-switch {
   padding-top: var(--space-5);
   border-top: 1px solid var(--settings-panel-line);
@@ -491,8 +483,6 @@
 }
 
 @media (max-width: 900px) {
-  /* No room for a column beside the content: the rail gives way to the
-     picker above it (.settings-switcher). */
   .settings-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
@@ -567,7 +557,6 @@
   color: var(--text-secondary);
 }
 
-/* With room for the rail beside the content, the rail is the navigation. */
 @media (min-width: 901px) {
   .settings-switcher {
     display: none;

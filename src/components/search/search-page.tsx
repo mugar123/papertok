@@ -216,9 +216,9 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: Fo
   const following = isFollowing(entity);
   const pending = isPending(entity);
 
-  // The detail pages' Follow (ui/follow-toggle.tsx). The click still goes
-  // through `onToggle`, which stops it from reaching the row link underneath
-  // and asks the following context.
+  // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
+  // `pressed`. The click still goes through `onToggle`, which stops it from
+  // reaching the row link underneath and asks the following context.
   return (
     <FollowToggle
       pressed={following}
@@ -256,10 +256,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     const scope = searchParams.get('scope');
     return SEARCH_FILTER_OPTIONS.find(option => option.id === scope)?.id ?? 'all';
   });
-  // The search that runs and its scope live in the address too, so Back from
-  // a result's page finds them again rather than an empty search. Written once
-  // per search actually run (never per keystroke: browsers throttle
-  // replaceState), replacing the entry, and only when the address would change.
   const writeSearchUrl = (term: string, scope: SearchScopeId) => {
     const next = new URLSearchParams(term ? { q: term, ...(scope !== 'all' && { scope }) } : {});
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
@@ -634,10 +630,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     setIsSearching(Boolean(nextQuery.trim()));
   };
 
-  // A suggestion leaves the start screen through a view transition: the
-  // results area alone (search-page.css, `search-results`) hands over from
-  // the suggestions to the search, the header holding still. Instant under
-  // reduced motion or without the API.
   const handleSuggestedSearch = (suggestion: { query: string; section: SearchScopeId }) => {
     const run = () => updateQuery(suggestion.query, suggestion.section, suggestion.section);
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -660,8 +652,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     openSearchScope(requestRef.current, filterId, commit, () => setIsSearching(true));
   };
 
-  // Back to wherever the search was opened from, as the Explorer's Back does;
-  // For you only when the search is the first page in the tab.
   const handleBack = () => {
     const historyIndex = window.history.state?.idx;
     if (Number.isInteger(historyIndex) && historyIndex > 0) void navigate(-1);

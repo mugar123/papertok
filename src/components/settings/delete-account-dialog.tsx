@@ -48,9 +48,7 @@ function DrawerCancel({ variant = 'outline', ...props }: ComponentProps<typeof D
  * mounts it only while it is wanted, so it opens on mount and owns its
  * `open` flag; Base UI plays the leave and then `onOpenChangeComplete(false)`
  * is the one call to the parent's `onClose`. While the deletion runs nothing
- * closes it: the outcome is either `onDeleted` or an error to read. On a
- * phone it is a bottom Drawer with the same rules: the scrim does not
- * dismiss it, and nothing does while the deletion runs.
+ * closes it: the outcome is either `onDeleted` or an error to read.
  */
 export default function DeleteAccountDialog({ open: openOnMount = true, onClose, onDeleted }: { open?: boolean; onClose: () => void; onDeleted: () => void | Promise<void>; language?: string }) {
   const copy = COPY['en'];

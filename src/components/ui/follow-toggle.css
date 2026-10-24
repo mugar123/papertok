@@ -1,9 +1,5 @@
 /* The Follow control (follow-toggle.tsx), one look wherever something can be
-   followed: the feed's Like and Save (feed/paper-card.css, `.pc-side-icon`).
-   A glyph alone in its own colour, a wash of that colour on hover; off, the
-   glyph is an outline, on (`data-pressed`, written by Base UI with
-   `aria-pressed`) it fills, on the same bare ground rather than the toggle's
-   own pressed fill. */
+   followed. */
 .follow-toggle,
 .follow-toggle[data-pressed] {
   --rail: var(--accent-sky);
@@ -25,7 +21,6 @@
   height: 24px;
 }
 
-/* The icon pulses on its own (motion-curves.ts, `pulseIcon`). */
 .follow-toggle-icon {
   display: inline-grid;
   place-items: center;
@@ -44,7 +39,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* The press stays as the icon's fill; the squeeze is movement and goes. */
+  /* The press stays as a colour change; the squeeze is movement and goes. */
   .follow-toggle:active:not(:disabled) {
     transform: none;
   }

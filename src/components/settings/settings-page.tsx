@@ -270,9 +270,7 @@ function ProfileAccountPage() {
         <div className="settings-list">
           {/* Every way in, the ones in use included. A method that is the
               only way in cannot be disconnected: the account would have no
-              door. The rows carry no visible subtitle, so that fact, and
-              that connecting adds a way in rather than replacing one, reach
-              assistive technology as hidden text. */}
+              door. */}
           {methods.map(method => (
             <div key={method.id} className="settings-row settings-row-inline">
               <div className="settings-row-content">
@@ -585,8 +583,6 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
-          {/* Both are rendered; settings-page.css shows the rail beside the
-              content and, where there is no room for it, the picker. */}
           <button
             type="button"
             className="settings-switcher"

@@ -88,9 +88,6 @@
   font-size: var(--fs-xs);
 }
 
-/* The refresh note sits in the gap above the title, out of the flow: the
-   default folders are already on screen under it, and taking its 54px away
-   when the lists land moved every folder up (and `layout` animated it). */
 .lists-inline-status.is-loading {
   position: absolute;
   top: calc(var(--nav-total) + var(--space-1));
@@ -154,10 +151,6 @@
   gap: var(--space-8);
 }
 
-/* The first arrival on My lists (lists-page.tsx): the folders come in turn,
-   30ms apart and capped at the fourth, so the whole grid lands within
-   290ms. `translate`, not `transform`, so it composes with the transform
-   Motion's `layout` writes inline. Under reduced motion they only fade. */
 .list-card--arrive {
   animation: listCardArrive 200ms var(--ease-out) both;
   animation-delay: calc(var(--arrive-index, 0) * 30ms);

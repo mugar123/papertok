@@ -12,10 +12,8 @@ type FollowToggleProps = StyledProps<typeof Toggle> & { followLabel: string; fol
 
 /**
  * The one Follow control: authors, institutions, projects and topics in the
- * Explorer. An on/off state, so a Toggle (`aria-pressed`), drawn like the
- * feed's Like and Save: an icon alone, outlined to follow and filled once
- * followed, that pulses on the press. Pressing it again unfollows. The
- * follow label is its name; the tooltip says which state it is in.
+ * Explorer. An on/off state, so a Toggle (`aria-pressed`). Pressing it again
+ * unfollows.
  *
  * The labels come from the caller, which owns the language.
  */
@@ -23,7 +21,6 @@ export function FollowToggle({ pressed, followLabel, followingLabel, className, 
   const iconRef = useRef<HTMLSpanElement | null>(null);
   const reducedMotion = useReducedMotion();
   const handleClick: NonNullable<FollowToggleProps['onClick']> = (event) => {
-    // The box, not the glyph: following swaps the glyph mid-pulse.
     if (!reducedMotion) pulseIcon(iconRef.current, !pressed);
     onClick?.(event);
   };

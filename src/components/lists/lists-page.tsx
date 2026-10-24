@@ -376,9 +376,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   const [editing, setEditing] = useState<OwnList | null>(null);
   const [removing, setRemoving] = useState<RowTarget | null>(null);
   const [createdListId, setCreatedListId] = useState<string | null>(null);
-  // The folders come in turn on the page's first arrival only. Once a view
-  // has left (a list opened, or one opened first and closed), the index
-  // comes back with its own slide and nothing more.
   const [foldersArrived, setFoldersArrived] = useState(false);
   const [removalOpen, setRemovalOpen] = useState(false);
   const [deletingList, setDeletingList] = useState<OwnList | null>(null);
@@ -1890,11 +1887,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             <p>{'Organize, annotate and share the papers you keep.'}</p>
           </header>
           <div className="lists-grid">
-            {/* On the first arrival the folders come in turn, so the grid
-                does not land in one frame (lists-page.css, `list-card--arrive`).
-                CSS, not Motion: it keeps its frames while the page mounts, and
-                `translate` composes with the transform `layout` writes. A list
-                just made keeps its own entrance. */}
             <AnimatePresence initial={false} mode="popLayout">
             {displayLists.map((list, index) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
