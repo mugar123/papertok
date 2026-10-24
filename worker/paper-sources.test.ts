@@ -13,13 +13,13 @@ import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT, readOpenAlexBudget } from './provider-runtime.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 import { handlePubmed } from './source-api.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
-import { parseXmlDocument as parseWithShim } from '../src/test-support/xmlDomShim.ts';
-import { readPubmedEfetch } from '../src/utils/pubmedEfetch.ts';
-import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
-import { getCategoryArea } from '../src/data/categoryTaxonomy.ts';
-import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { parseXmlDocument as parseWithShim } from '../src/test-support/xml-dom-shim.ts';
+import { readPubmedEfetch } from '../src/utils/pubmed-efetch.ts';
+import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
+import { getCategoryArea } from '../src/data/category-taxonomy.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
 // trimmed to one record, its abstract shortened, plus a deleted record.
@@ -105,7 +105,7 @@ test('stacked TeX accents make one letter, and a TeX command the converter does 
 });
 
 
-// Trimmed from efetch for PMID 42775314 (2026-09-24), as in pubmedEfetch.test.ts:
+// Trimmed from efetch for PMID 42775314 (2026-09-24), as in pubmed-efetch.test.ts:
 // a structured abstract beside a translation, MeSH terms and an author.
 const EFETCH = `<?xml version="1.0" ?>
 <!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2025//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">
@@ -237,7 +237,7 @@ test('the working-paper series lane asks OpenAlex for the series in the window a
   assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
   assert.deepEqual(items.map(item => item.lanes), [['series:working-papers'], ['series:working-papers'], ['series:working-papers']]);
   for (const { paper } of items) {
-    // What shows the Working paper tag (paperStatus.ts).
+    // What shows the Working paper tag (paper-status.ts).
     assert.equal(paper.workingPaper, true, paper.id);
     assert.equal(paper.peerReviewed, false, paper.id);
     // The series make every card economics, the NBER paper OpenAlex files under
@@ -368,7 +368,7 @@ test('the 14 inherited leaves keep their lanes and the topics accepted in #236',
   }
   assert.deepEqual(asked.find(([leaf]) => leaf === 'bio.mol')![1],
     ['T10123', 'T10268', 'T10521', 'T10604', 'T10878', 'T11041', 'T11237', 'T11482', 'T11765', 'T12534']);
-  // The 14 lists as merged in #236 (areaAccent.ts on main before PAP-99), each
+  // The 14 lists as merged in #236 (area-accent.ts on main before PAP-99), each
   // sorted: an edit to the baseline file cannot also move this expectation.
   assert.equal(createHash('sha256').update(JSON.stringify(asked)).digest('hex'),
     'd712fc6dd9b51123876e8bbf61022a0172cde893fa03bb7aa394bfa16cd14d5f');

@@ -13,13 +13,13 @@ import {
   PublicListApiError,
 } from './public-list-api.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
-type TestListCard = { shareId: string; title: string; paperCount: number; emoji?: string; publishedAt?: Date };
 
 const UID = 'alice-uid';
 const OTHER = 'mallory-uid';
 const SHARE = 'a'.repeat(32);
+const OTHER_SHARE = 'b'.repeat(32);
 const NOW = Date.parse('2026-08-20T10:00:00.000Z');
 const PROJECT_ID = 'papertok-168df';
 // The Worker refuses a token that is not shaped like one before it spends a
@@ -160,7 +160,7 @@ async function run<Path extends string>(pathname: Path, body: unknown, { admin =
 }
 
 function fieldsOf(write: FirestoreWrite) {
-  return decodeFields<Partial<ReturnType<typeof buildPublicListPayload>> & { createdAt?: Date; updatedAt?: Date; publicSyncedAt?: Date; lists?: TestListCard[]; pinnedLists?: TestListCard[]; [key: string]: unknown }>(write.update!.fields);
+  return decodeFields<Partial<ReturnType<typeof buildPublicListPayload>> & { createdAt?: Date; updatedAt?: Date; publicSyncedAt?: Date; [key: string]: unknown }>(write.update!.fields);
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +254,6 @@ test('a body that never reaches Firestore does not spend a unit of the daily cap
     ['/lists/publish', { listId: 'l1', title: 'T', papers: listOf(51) }],
     ['/lists/update', { shareId: 'ZZZ', title: 'T', papers: [] }],
     ['/lists/unpublish', { shareId: 'nope' }],
-    ['/lists/attribute', { shareId: SHARE, attributed: 'yes' }],
   ];
   for (const [pathname, body] of refused) {
     await assert.rejects(
@@ -308,7 +307,7 @@ test('over the daily cap the caller gets 429 and nothing is written', async () =
 // Publish.
 // ---------------------------------------------------------------------------
 
-test('publishing writes owner, list, pointer and showcase card in ONE commit', async () => {
+test('publishing writes owner, list and pointer in one commit', async () => {
   stubIdentity();
   const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista', emoji: 'Folder' } });
   const result = await run('/lists/publish', {
@@ -316,10 +315,9 @@ test('publishing writes owner, list, pointer and showcase card in ONE commit', a
   }, { admin });
 
   assert.equal(admin.commits.length, 1, 'a publish must be atomic, as the client batch was');
-  const [ownerWrite, listWrite, pointerWrite, cardWrite] = admin.commits[0];
+  const [ownerWrite, listWrite, pointerWrite] = admin.commits[0];
 
   assert.match(result.shareId, /^[a-f0-9]{32}$/);
-  assert.equal(result.attributed, true, 'attributed by default (F12)');
   assert.deepEqual(fieldsOf(ownerWrite), {
     ownerId: UID, listId: 'l1', createdAt: new Date(NOW),
   });
@@ -331,61 +329,14 @@ test('publishing writes owner, list, pointer and showcase card in ONE commit', a
   assert.equal(published.createdAt!.getTime(), NOW);
   assert.equal(published.updatedAt!.getTime(), NOW);
 
-  // The pointer now carries the F12 stamps: the attribution mirror and the
-  // in-step marker, born in the same commit as the copy they describe.
+  assert.equal(admin.commits[0].length, 3);
   assert.deepEqual(fieldsOf(pointerWrite), {
-    publicShareId: result.shareId, onProfile: true, publicSyncedAt: new Date(NOW),
+    publicShareId: result.shareId, publicSyncedAt: new Date(NOW),
   });
   assert.deepEqual(pointerWrite.updateMask, {
-    fieldPaths: ['publicShareId', 'onProfile', 'publicSyncedAt'],
+    fieldPaths: ['publicShareId', 'publicSyncedAt'],
   });
 
-  // And the showcase card is part of the SAME commit, not a courtesy after it.
-  assert.match(cardWrite.update!.name, new RegExp(`profileLists/${UID}$`));
-  const showcase = fieldsOf(cardWrite);
-  assert.deepEqual(showcase.lists, [{
-    shareId: result.shareId, title: 'Mi lista', emoji: 'Folder',
-    paperCount: 12, publishedAt: new Date(NOW),
-  }]);
-  assert.equal(cardWrite.currentDocument, undefined, 'a first card may create the document');
-});
-
-test('publishing with attributed:false skips the showcase and mirrors it', async () => {
-  stubIdentity();
-  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista' } });
-  const result = await run('/lists/publish', {
-    listId: 'l1', title: 'Anónima', papers: listOf(2), attributed: false,
-  }, { admin });
-
-  assert.equal(result.attributed, false);
-  assert.equal(admin.commits.length, 1);
-  assert.equal(admin.commits[0].length, 3, 'no showcase write for an anonymous publish');
-  const pointer = fieldsOf(admin.commits[0][2]);
-  assert.equal(pointer.onProfile, false);
-});
-
-test('a full showcase refuses the 31st attributed publish, not the anonymous one', async () => {
-  stubIdentity();
-  const fullShowcase = {
-    lists: Array.from({ length: 30 }, (_, i) => ({
-      shareId: String(i).padStart(32, '0'), title: `L${i}`, paperCount: 1,
-      publishedAt: new Date(NOW),
-    })),
-  };
-  const documents = {
-    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista' },
-    [`profileLists/${UID}`]: fullShowcase,
-  };
-  await assert.rejects(
-    () => run('/lists/publish', { listId: 'l1', title: 'T', papers: listOf(1) }, { admin: fakeAdmin(documents) }),
-    error => (error as Error & { code?: string; status?: number }).code === 'PROFILE_LISTS_FULL' && (error as Error & { code?: string; status?: number }).status === 409,
-  );
-  const admin = fakeAdmin(documents);
-  const result = await run('/lists/publish', {
-    listId: 'l1', title: 'T', papers: listOf(1), attributed: false,
-  }, { admin });
-  assert.equal(result.attributed, false);
-  assert.equal(admin.commits.length, 1);
 });
 
 test('the 12-paper ceiling is gone: 50 papers publish', async () => {
@@ -584,140 +535,6 @@ test('unpublishing someone else share is a 403', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// The pinned card follows the list.
-// ---------------------------------------------------------------------------
-
-const OTHER_SHARE = 'f'.repeat(32);
-
-/** Documents for an owner whose profile pins SHARE (plus one other list). */
-function pinnedFixture(profileOverrides = {}) {
-  return {
-    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`userProfiles/${UID}`]: {
-      handle: 'alice',
-      displayName: 'Alice',
-      pinnedLists: [
-        { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 },
-        { shareId: SHARE, title: 'Vieja', emoji: 'Folder', paperCount: 12 },
-      ],
-      ...profileOverrides,
-    },
-  };
-}
-
-test('updating a pinned list refreshes its card: count, title, and nothing else', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(pinnedFixture(), {
-    updateTimes: { [`userProfiles/${UID}`]: '2026-08-20T19:00:00.123456Z' },
-  });
-  const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Relatividad numérica', papers: listOf(19),
-  }, { admin });
-
-  assert.equal(result.pinCard, 'refreshed');
-  assert.equal(admin.commits.length, 2, 'the list commit and the card commit are separate');
-  const [write] = admin.commits[1];
-  assert.match(write.update!.name, new RegExp(`userProfiles/${UID}$`));
-  assert.deepEqual(write.updateMask, { fieldPaths: ['pinnedLists', 'updatedAt'] });
-  // The refresh must lose a race against a concurrent pin toggle, not win it.
-  assert.deepEqual(write.currentDocument, { updateTime: '2026-08-20T19:00:00.123456Z' });
-  const pins = fieldsOf(write).pinnedLists;
-  assert.deepEqual(pins![0], { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 }, 'other pins ride along untouched');
-  assert.deepEqual(pins![1], {
-    shareId: SHARE, title: 'Relatividad numérica', emoji: 'Folder', paperCount: 19,
-  }, 'count and title follow the list; the emoji is the pin\'s own and stays');
-});
-
-test('updating a list nobody pinned costs one profile read and no extra write', async () => {
-  stubIdentity();
-  const admin = fakeAdmin({
-    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`userProfiles/${UID}`]: { handle: 'alice', pinnedLists: [] },
-  });
-  const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'T', papers: [],
-  }, { admin });
-  assert.equal(result.pinCard, 'not-pinned');
-  assert.equal(admin.commits.length, 1);
-});
-
-test('an update that changes nothing the card shows writes nothing', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(pinnedFixture({
-    pinnedLists: [{ shareId: SHARE, title: 'Igual', paperCount: 3 }],
-  }));
-  const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Igual', papers: listOf(3),
-  }, { admin });
-  assert.equal(result.pinCard, 'unchanged');
-  assert.equal(admin.commits.length, 1);
-});
-
-test('hidden pins are refreshed in the stash, where F8 parked them', async () => {
-  stubIdentity();
-  const admin = fakeAdmin({
-    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`userProfiles/${UID}`]: { handle: 'alice', pinnedLists: [], showPinnedLists: false },
-    [`users/${UID}/profileStash/pinnedLists`]: {
-      pinnedLists: [{ shareId: SHARE, title: 'Vieja', paperCount: 12 }],
-    },
-  });
-  const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Nueva', papers: listOf(19),
-  }, { admin });
-  assert.equal(result.pinCard, 'refreshed');
-  const [write] = admin.commits[1];
-  assert.match(write.update!.name, new RegExp(`users/${UID}/profileStash/pinnedLists$`));
-  assert.equal(fieldsOf(write).pinnedLists![0].paperCount, 19);
-});
-
-test('unpublishing a pinned list removes its card and keeps the others', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(pinnedFixture());
-  const result = await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
-  assert.equal(result.pinCard, 'removed');
-  const pins = fieldsOf(admin.commits[1][0]).pinnedLists;
-  assert.deepEqual(pins, [{ shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 }],
-    'the orphan is gone at its source; no stale card is left to veto profile writes');
-});
-
-test('losing the race against a pin toggle retries once from a fresh read', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(pinnedFixture(), { failOn: [2] });
-  const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'T', papers: listOf(5),
-  }, { admin });
-  assert.equal(result.pinCard, 'refreshed');
-  assert.equal(admin.commits.length, 2, 'main write plus the retried card write');
-});
-
-test('the card is a courtesy: when every refresh attempt fails, the update still lands', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(pinnedFixture(), { failOn: [2, 3] });
-  const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'T', papers: listOf(5),
-  }, { admin });
-  assert.equal(result.pinCard, 'skipped');
-  assert.equal(admin.commits.length, 1, 'the list update committed; the card kept its staleness');
-});
-
-test('a broken profile read cannot break the unpublish that already committed', async () => {
-  stubIdentity();
-  const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } });
-  admin.getDocument = async <T extends object, Meta extends boolean = false>(segments: string[], options?: { withMeta?: Meta }) => {
-    if (segments[0] === 'userProfiles') throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502);
-    if (options?.withMeta) return null;
-    return (admin.documents[segments.join('/')] ?? null) as (Meta extends true ? { data: T; updateTime?: string } : T) | null;
-  };
-  const result = await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
-  assert.equal(result.unpublished, true);
-  assert.equal(result.pinCard, 'skipped');
-});
-
-// ---------------------------------------------------------------------------
-// Payload gate and share ids, on their own.
-// ---------------------------------------------------------------------------
-
 test('buildPublicListPayload refuses what sanitizing would have silently fixed', () => {
   assert.throws(() => buildPublicListPayload({ title: 'T', papers: listOf(51) }),
     error => (error as Error & { code?: string; status?: number }).code === 'PAPERS_REJECTED');
@@ -740,55 +557,7 @@ test('share ids are 128 bits of lowercase hex, the shape the app already reads',
   assert.equal(id, '000102030405060708090a0b0c0d0e0f');
 });
 
-// ---------------------------------------------------------------------------
-// F12: the showcase travels in the list's own commit, and /lists/attribute.
-// ---------------------------------------------------------------------------
-
-/** Documents for an owner whose showcase already holds SHARE and one more. */
-function showcaseFixture(extra = {}) {
-  return {
-    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista', emoji: 'Folder' },
-    [`profileLists/${UID}`]: {
-      lists: [
-        { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2, publishedAt: new Date(NOW - 1000) },
-        { shareId: SHARE, title: 'Vieja', emoji: 'Folder', paperCount: 12, publishedAt: new Date(NOW - 500) },
-      ],
-      updatedAt: new Date(NOW - 500),
-    },
-    ...extra,
-  };
-}
-
-test('F12: updating an attributed list refreshes its showcase card in the SAME commit', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(showcaseFixture(), {
-    updateTimes: { [`profileLists/${UID}`]: '2026-08-20T19:00:00.123456Z' },
-  });
-  await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Relatividad', papers: listOf(19),
-  }, { admin });
-
-  const writes = admin.commits[0];
-  assert.equal(writes.length, 3, 'public doc + sync stamp + showcase, one commit');
-
-  const stamp = writes[1];
-  assert.match(stamp.update!.name, new RegExp(`users/${UID}/lists/l1$`));
-  assert.deepEqual(fieldsOf(stamp), { publicSyncedAt: new Date(NOW) });
-
-  const showcase = writes[2];
-  assert.match(showcase.update!.name, new RegExp(`profileLists/${UID}$`));
-  const cards = fieldsOf(showcase).lists;
-  assert.deepEqual(cards!.map(card => [card.shareId, card.title, card.paperCount]), [
-    [OTHER_SHARE, 'Otra', 2],
-    [SHARE, 'Relatividad', 19],
-  ]);
-  assert.deepEqual(showcase.currentDocument, {
-    updateTime: '2026-08-20T19:00:00.123456Z',
-  }, 'a racing showcase write must fail the commit, not lose a card');
-});
-
-test('F12: updating an unattributed list stamps the sync and leaves the showcase alone', async () => {
+test('updating a list stamps the sync in the same commit', async () => {
   stubIdentity();
   const admin = fakeAdmin({
     [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
@@ -797,7 +566,7 @@ test('F12: updating an unattributed list stamps the sync and leaves the showcase
   await run('/lists/update', {
     shareId: SHARE, listId: 'l1', title: 'Anónima', papers: listOf(2),
   }, { admin });
-  assert.equal(admin.commits[0].length, 2, 'no showcase write when no card is held');
+  assert.equal(admin.commits[0].length, 2, 'public copy and sync stamp');
 });
 
 test('F12 merge: unhydrated papers survive from the published copy, removals still land', async () => {
@@ -1003,88 +772,6 @@ test('a private list with no paperIds still falls back to what the caller sent',
   assert.equal(result.paperCount, 1);
 });
 
-test('F12: unpublishing an attributed list removes its showcase card in the SAME commit', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(showcaseFixture());
-  await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
-
-  const writes = admin.commits[0];
-  assert.equal(writes.length, 4, 'two deletes + pointer clear + showcase');
-  const cards = fieldsOf(writes[3]).lists;
-  assert.deepEqual(cards!.map(card => card.shareId), [OTHER_SHARE]);
-});
-
-test('F12: attributing a published list adds its card and mirrors onProfile', async () => {
-  stubIdentity();
-  const admin = fakeAdmin({
-    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista', emoji: 'Star' },
-    [`publicLists/${SHARE}`]: {
-      title: 'Relatividad', paperCount: 19, papers: [], createdAt: new Date(NOW - 9000),
-    },
-  });
-  const result = await run('/lists/attribute', { shareId: SHARE, attributed: true }, { admin });
-
-  assert.deepEqual(result, { shareId: SHARE, attributed: true });
-  const [mirror, showcase] = admin.commits[0];
-  assert.deepEqual(fieldsOf(mirror), { onProfile: true });
-  assert.deepEqual(fieldsOf(showcase).lists, [{
-    shareId: SHARE, title: 'Relatividad', emoji: 'Star', paperCount: 19,
-    publishedAt: new Date(NOW - 9000),
-  }]);
-});
-
-test('F12: de-attributing removes the card and flips the mirror', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(showcaseFixture());
-  const result = await run('/lists/attribute', { shareId: SHARE, attributed: false }, { admin });
-
-  assert.deepEqual(result, { shareId: SHARE, attributed: false });
-  const [mirror, showcase] = admin.commits[0];
-  assert.deepEqual(fieldsOf(mirror), { onProfile: false });
-  assert.deepEqual(fieldsOf(showcase).lists!.map(card => card.shareId), [OTHER_SHARE]);
-});
-
-test('F12: asking for what is already true is success and heals the mirror', async () => {
-  stubIdentity();
-  const admin = fakeAdmin(showcaseFixture());
-  const result = await run('/lists/attribute', { shareId: SHARE, attributed: true }, { admin });
-
-  assert.deepEqual(result, { shareId: SHARE, attributed: true, unchanged: true });
-  assert.equal(admin.commits.length, 1);
-  assert.equal(admin.commits[0].length, 1, 'only the mirror; the showcase is untouched');
-  assert.deepEqual(fieldsOf(admin.commits[0][0]), { onProfile: true });
-});
-
-test('F12: attributing somebody else\'s share is a 403, a full showcase a 409, a non-bool a 400', async () => {
-  stubIdentity();
-  await assert.rejects(
-    () => run('/lists/attribute', { shareId: SHARE, attributed: true }, {
-      admin: fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: OTHER, listId: 'l1' } }),
-    }),
-    error => (error as Error & { code?: string; status?: number }).code === 'NOT_THE_OWNER' && (error as Error & { code?: string; status?: number }).status === 403,
-  );
-  await assert.rejects(
-    () => run('/lists/attribute', { shareId: SHARE, attributed: true }, {
-      admin: fakeAdmin({
-        [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-        [`profileLists/${UID}`]: {
-          lists: Array.from({ length: 30 }, (_, i) => ({
-            shareId: String(i).padStart(32, '0'), title: `L${i}`, paperCount: 1,
-          })),
-        },
-      }),
-    }),
-    error => (error as Error & { code?: string; status?: number }).code === 'PROFILE_LISTS_FULL' && (error as Error & { code?: string; status?: number }).status === 409,
-  );
-  await assert.rejects(
-    () => run('/lists/attribute', { shareId: SHARE, attributed: 'yes' }, {
-      admin: fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } }),
-    }),
-    error => (error as Error & { code?: string; status?: number }).code === 'INVALID_BODY' && (error as Error & { code?: string; status?: number }).status === 400,
-  );
-});
-
 // ---------------------------------------------------------------------------
 // The merge on its own. It sits four Firestore reads away from any route and
 // it has already deleted papers from a real shared list twice, so it is worth
@@ -1186,9 +873,6 @@ function racingAdmin(documents: Record<string,FirestoreData>|undefined, { update
 }
 
 const published = (i: number) => ({ id: `a${i}`, sourceId: `p${i}`, title: `A${i}`, authors: ['Ada'] });
-const showcaseEntry = (shareId: string, title: string, paperCount: number) => ({
-  shareId, title, paperCount, publishedAt: new Date(NOW - 1000),
-});
 
 function mergeFixture(extra = {}) {
   return {
@@ -1260,58 +944,6 @@ test('the retry re-reads the membership, not just the published copy', async () 
 
   assert.deepEqual(result.papers.map((entry: NonNullable<ReturnType<typeof buildPublicListPayload>>['papers'][number]) => entry.id), ['a1', 'a2', 'a3']);
   assert.deepEqual([result.listCount, result.skipped], [3, 0]);
-});
-
-test('the retry rebuilds the showcase too, so a card added mid-flight survives', async () => {
-  stubIdentity();
-  const THIRD_SHARE = 'c'.repeat(32);
-  const admin = racingAdmin(mergeFixture({
-    [`profileLists/${UID}`]: {
-      lists: [showcaseEntry(OTHER_SHARE, 'Otra', 2), showcaseEntry(SHARE, 'Vieja', 12)],
-      updatedAt: new Date(NOW - 500),
-    },
-  }), {
-    afterRace: {
-      [`profileLists/${UID}`]: {
-        lists: [
-          showcaseEntry(OTHER_SHARE, 'Otra', 2),
-          showcaseEntry(SHARE, 'Vieja', 12),
-          showcaseEntry(THIRD_SHARE, 'Nueva', 1),
-        ],
-        updatedAt: new Date(NOW),
-      },
-    },
-  });
-  await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Renombrada', papers: [],
-  }, { admin });
-
-  const showcase = admin.commits[0].find(write => write.update?.name.endsWith(`profileLists/${UID}`));
-  assert.deepEqual(fieldsOf(showcase!).lists!.map(entry => entry.shareId),
-    [OTHER_SHARE, SHARE, THIRD_SHARE],
-    'carrying the first attempt cards over would delete the one just published');
-});
-
-test('if the showcase drops the card mid-flight, the retry does not put it back', async () => {
-  stubIdentity();
-  const admin = racingAdmin(mergeFixture({
-    [`profileLists/${UID}`]: {
-      lists: [showcaseEntry(OTHER_SHARE, 'Otra', 2), showcaseEntry(SHARE, 'Vieja', 12)],
-      updatedAt: new Date(NOW - 500),
-    },
-  }), {
-    // The owner turned attribution off from another tab.
-    afterRace: {
-      [`profileLists/${UID}`]: {
-        lists: [showcaseEntry(OTHER_SHARE, 'Otra', 2)],
-        updatedAt: new Date(NOW),
-      },
-    },
-  });
-  await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Renombrada', papers: [],
-  }, { admin });
-  assert.equal(admin.commits[0].length, 2, 'public doc + sync stamp, and no showcase write');
 });
 
 test('losing twice is the caller turn to retry, and it is told so', async () => {

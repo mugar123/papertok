@@ -4,8 +4,8 @@
     "**/*.test.ts",
     "test-support/**/*.ts",
     "../worker-configuration.d.ts",
-    "../src/services/paperFigureService.test.ts",
-    "../src/utils/aiExplanation.test.ts",
+    "../src/services/paper-figure-service.test.ts",
+    "../src/utils/ai-explanation.test.ts",
     "../src/types/**/*.d.ts"
   ],
   "exclude": [],

@@ -1,8 +1,8 @@
 import { getAccessToken, readServiceAccount, invalidateAccessToken } from './firebase-service-account.ts';
 import type { WorkerEnv } from './env.ts';
 
-import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
-export type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/Firestore.ts';
+import type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/firestore.ts';
+export type { FirestoreValue, FirestoreDataValue, FirestoreData } from '../src/models/firestore.ts';
 
 interface FirestoreFailure { error?: { status?: string } }
 interface FirestoreDocument extends FirestoreFailure {

@@ -30,6 +30,11 @@ separate the task's changes from user-owned work and earlier debt.
 
 Read the callers, consumers and contracts the diff can affect. Lint, types and
 knip already run in `npm run check`; do not spend findings on what they catch.
+For behavior changes, use [the documentation owners](../../../ARCHITECTURE.md#documentation-owners)
+and [maintenance workflow](../../../CONTRIBUTING.md#documentation-maintenance) to
+review existing claims and Mermaid diagrams against the final diff, even when
+the author left those documents unchanged. Report contradictions with the claim,
+source location and smallest correction; verify any no-impact explanation.
 
 ## Behavior
 

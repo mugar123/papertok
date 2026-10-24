@@ -38,13 +38,13 @@ checks them now:
 - `FeedContainer` keys For You's place by the account (`forYouScrollKey`), and `App` clears
   every feed's place when the account changes (`feedResumeMemory.clear`).
 - The router keeps `useTransitions={false}` and keys the provider tree on `accountScopeKey`.
-- Every route `App.tsx` declares is matched by the `vercel.json` rewrite and normalizes to a
+- Every route `app.tsx` declares is matched by the `vercel.json` rewrite and normalizes to a
   named analytics path; the sitemap and `robots.txt` agree on protected routes.
 - Landmarks: each routed page has one `<main>` and one `<h1>`, every `<nav>` has a name, and
   the skip link targets a focusable `#main-content`.
 
 → Move the decision into a `.ts` module next to the component and test it there, as
-`src/components/Search/recentSearchOwner.ts` does. A component render test runner would cover
+`src/components/search/recent-search-owner.ts` does. A component render test runner would cover
 what cannot be moved.
 
 ## Defensive guards against values the types rule out
@@ -59,7 +59,7 @@ their boundary, then enable the rule.
 ## Source files over 1,000 lines
 
 Eleven files exceed 1,000 lines; the largest are `worker/email-notifications.ts`,
-`EntityExplorer.tsx` and `PaperCard.tsx`. Agents add to the nearest large file.
+`entity-explorer.tsx` and `paper-card.tsx`. Agents add to the nearest large file.
 
 → A `max-lines` rule once those files are split by owner.
 

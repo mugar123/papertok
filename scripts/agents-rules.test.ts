@@ -10,7 +10,7 @@ import { ESLint } from 'eslint';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const instructionFiles = ['AGENTS.md', 'src/AGENTS.md', 'worker/AGENTS.md'];
 // One file per area whose configuration differs.
-const sampleFiles = ['src/App.tsx', 'src/utils/publicNavigation.test.ts', 'src/styles/variables.css', 'worker/index.ts', 'worker/index.test.ts', 'proxy/scopus-proxy.ts'];
+const sampleFiles = ['src/app.tsx', 'src/utils/public-navigation.test.ts', 'src/styles/variables.css', 'worker/index.ts', 'worker/index.test.ts', 'proxy/scopus-proxy.ts'];
 
 function lintTags(text: string) {
   return [...text.matchAll(/\[lint: ([^\]]+)\]/g)].map(match => match[1].trim());

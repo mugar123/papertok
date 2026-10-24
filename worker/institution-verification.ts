@@ -1,6 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 import { readBoundedJson } from './bounded-body.ts';
-import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { institutionDomainOf } from '../src/utils/institution-domain.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import { getAccessToken, isServiceAccountConfigured } from './firebase-service-account.ts';
 import { InstitutionLinkError } from './institution-link.ts';

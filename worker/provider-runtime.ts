@@ -130,7 +130,7 @@ export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
 export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
 // Names the tier on every refusal of the OpenAlex budget, so the client can
 // tell the Worker's own refusal of one request from OpenAlex refusing the key:
-// only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
+// only the second closes OpenAlex for the whole tab. `open-alex-client.ts` reads
 // the same name.
 const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
 // One list call, the unit every OpenAlex ceiling here counts in.
@@ -152,7 +152,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
-  // Ten minutes is what the browser cache in `src/utils/sourceCache.ts` already
+  // Ten minutes is what the browser cache in `src/utils/source-cache.ts` already
   // considered invisible staleness for a paper feed, and it is short enough that
   // a batch whose efetch half failed heals on its own rather than sitting behind
   // a six-hour TTL.
@@ -177,7 +177,7 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // makes: origin gate plus edge cache plus a global per-minute ceiling reserved
 // only after a cache miss.
 //
-// `/related` and `/recommendations` share the `s2` namespace with `/sources/s2`
+// `/related` shares the `s2` namespace with `/sources/s2`
 // on purpose. All three spend the same Semantic Scholar allowance, and a
 // ceiling that only covered one of them would leave alive exactly the failure
 // this replaces -- a limiter that counts per caller instead of per provider.
@@ -200,7 +200,6 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
-  '/recommendations': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
 
 // The key is built from the values the handler is about to send upstream, never
@@ -349,7 +348,7 @@ export async function reserveSharedMinuteQuota(ceiling: MinuteCeiling, env: Work
 // proposes the current second or a later one, so it would refuse to re-grant
 // one already elapsed. That is safe only because no gate runs after an
 // accepted beat today -- the paced routes, `/sources/s2`, `/related` and
-// `/recommendations`, never pass `openAlexBudget` -- but a route that combined both would leak
+// never pass `openAlexBudget` -- but a route that combined both would leak
 // this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;
@@ -640,7 +639,7 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
     // `retry-after` of several hours is a client that stops asking until
     // someone reloads the tab. It bounds how soon a client may ask again, not
     // when the tier reopens, so the browser shows no countdown for a refusal
-    // naming its tier (`isOpenAlexBudgetRefusal` in openAlexClient.ts). The
+    // naming its tier (`isOpenAlexBudgetRefusal` in open-alex-client.ts). The
     // harvest's subject is its day's share, so its every refusal is a day's.
     'retry-after': reservation.scope === 'global' || budget.tier === 'feed' ? '300' : '60',
   }) };

@@ -1,4 +1,4 @@
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { WorkerGlobals } from './env.ts';
 
@@ -46,8 +46,8 @@ interface ArxivEntry {
 }
 
 import { XMLParser } from 'fast-xml-parser';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { plainScientificText } from '../src/utils/plainScientificText.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { plainScientificText } from '../src/utils/plain-scientific-text.ts';
 import {
   DEFAULT_PUBLIC_ORIGIN,
   DEFAULT_SHARE_IMAGE_PATH,
@@ -57,7 +57,7 @@ import {
   getPublicListPath,
   getPublicPaperPath,
   parsePaperKey,
-} from '../src/utils/publicNavigation.ts';
+} from '../src/utils/public-navigation.ts';
 
 /**
  * The HTML a crawler gets for a public page (audit 2026-09-23, issue 5).
@@ -71,7 +71,7 @@ import {
  * gone, so a /share/user/… path gets the not-found page): title,
  * description, canonical, og:* and twitter:*, JSON-LD, a static copy of the
  * page inside #root, and for a paper the paper itself as a seed the app
- * paints from (`src/utils/shareSeed.ts`).
+ * paints from (`src/utils/share-seed.ts`).
  *
  * Two caches, deliberately apart. The shell is kept five minutes, because it
  * names the hashed assets of the current deployment and a stale one points at

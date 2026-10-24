@@ -1,10 +1,10 @@
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { QuotaRequest } from './request-quota-ledger.ts';
 
-import type { AIQuota } from '../src/models/Rewrite.ts';
-export type { AIQuota } from '../src/models/Rewrite.ts';
+import type { AIQuota } from '../src/models/rewrite.ts';
+export type { AIQuota } from '../src/models/rewrite.ts';
 
 export interface AIProviderPayload {
   error?: { details?: Array<{ retryDelay?: unknown; [key: string]: unknown }>; [key: string]: unknown };
@@ -14,8 +14,7 @@ export interface AIProviderPayload {
 type PdfResult = { bytes: Uint8Array<ArrayBuffer>; reason: '' }
   | { bytes: null; reason: 'unreachable' | 'not_pdf' | 'too_large' };
 
-import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.ts';
-import { getMonthlyBudgetReset } from './kimi-budget-ledger.ts';
+import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/ai-explanation-access.ts';
 import { readBoundedBytes } from './bounded-body.ts';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
@@ -426,6 +425,15 @@ export async function verifyFirebaseAccount(request: Request, env: WorkerEnv) {
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getMonthlyBudgetReset(now = Date.now()) {
+  const current = new Date(now);
+  const resetAt = Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 1);
+  return {
+    resetAt: new Date(resetAt).toISOString(),
+    retryAfterSeconds: Math.max(1, Math.ceil((resetAt - current.getTime()) / 1_000)),
+  };
 }
 
 export function getDailyQuotaReset(now = Date.now()) {

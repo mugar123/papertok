@@ -9,6 +9,8 @@ been loaded when the session started at the root. Worker configuration also foll
 
 ## Scope and skills
 
+- Use kebab-case for source filenames and directories, including components and hooks.
+  Keep conventional documentation filenames such as `README.md`, `AGENTS.md` and `SKILL.md`.
 - Name new branches `<author-name>/feature-name`, using the current author's given
   name in lowercase ASCII (for example, `nicolas/feature-name` for Nicolas), unless
   the user requests another name. Resolve the author from the user's stated identity
@@ -106,7 +108,7 @@ without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
 - Personal responses must not share global cache keys. Canonicalize keys from the parameters
   actually sent upstream. Reserve paid-provider budgets atomically; do not replace shared
   ledgers with process memory or non-atomic read-then-write counters.
-- Analytics has two levels (`src/services/analyticsService.ts`). Anonymous is the default
+- Analytics has two levels (`src/services/analytics-service.ts`). Anonymous is the default
   and needs no permission, so it stays cookieless and within the event allowlist: no paper
   titles, entity IDs, search text, interests, account identifiers or unsanitized URLs.
   Detailed analytics may identify the account, record sessions and send which paper or search,
@@ -134,7 +136,10 @@ establish conformance; report manual evidence and anything not verified.
   the implementation's own constants or add production APIs just to satisfy a mock.
 - Update existing contract and development documentation when adding routes, environment
   variables, providers or persistence. Historical investigation notes do not override code
-  or current product decisions.
+  or current product decisions. Use [the documentation owners](ARCHITECTURE.md#documentation-owners)
+  to find the affected source, and follow [documentation maintenance](CONTRIBUTING.md#documentation-maintenance)
+  for PR evidence and diagram verification. Review existing claims against the final diff,
+  including documents the author did not edit; changing a Markdown file is not proof of accuracy.
 - Never retain harness, E2E runner, fixture, environment, build, manifest, lockfile or logging
   changes merely to make local verification pass. Remove temporary changes before finishing
   and report what was removed. Do not commit or push local workarounds without explicit

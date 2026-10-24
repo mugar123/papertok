@@ -86,14 +86,13 @@ curl -s -H "origin: https://papertok.app" https://api.papertok.app/health/scopus
 
 `available: true` is necessary but not sufficient, and the browser flow is
 deliberately off. Measured against OpenAlex, Scopus returned 75 papers across
-three fields and OpenAlex already held all 75 (STATE.md, «Scopus: estudio
-cerrado», 2026-08-22), so it adds nothing as a discovery source; and without an
+three fields and OpenAlex already held all 75 (2026-08-22), so it adds nothing as a discovery source; and without an
 institutional token the probe reports `hasAbstract: false`, so its records reach
 the card with no summary and no AI explanation. The egress and the probe stay in
 place to report the day either of those changes.
 
 Turning the flow on is therefore a product decision, and it is recorded in
-`src/utils/deployFlags.ts` rather than in a repository variable: `vite build`
+`src/utils/deploy-flags.ts` rather than in a repository variable: `vite build`
 refuses a bundle whose `VITE_SCOPUS_ENABLED` disagrees with what is declared
 there. Change the declaration first, in the commit that records why — setting
 the variable alone only makes the build fail.

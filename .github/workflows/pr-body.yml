@@ -1,6 +1,6 @@
 name: PR description
 
-# The description must report verification and review
+# The description must report documentation impact, verification and review
 # (.github/pull_request_template.md). The checker comes from the base branch,
 # not from the pull request, so a pull request cannot change the check that
 # judges it; only the description text is read from the event.

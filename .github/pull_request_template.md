@@ -2,6 +2,14 @@
 
 <!-- State the problem and resulting behavior. Keep one objective. -->
 
+## Documentation
+
+<!-- Write one of the following, with a concrete explanation:
+Updated: name the documents/diagrams and the behavior they now describe.
+Not needed: explain why the documented behavior and architecture still hold.
+Review ARCHITECTURE.md for the primary documentation owners. CI requires this
+section; the reviewer must check its claims against the final diff. -->
+
 ## Verification
 
 <!-- Record exact commands and results, not planned checks. For code, include npm run

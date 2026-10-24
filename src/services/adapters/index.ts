@@ -1,4 +1,4 @@
-import type { Paper } from '../../models/Paper.ts';
+import type { Paper } from '../../models/paper.ts';
 
 export interface PaperSearchFilters {
   type?: string;
@@ -20,6 +20,6 @@ export interface PaperSearchResult {
   quota?: unknown;
 }
 
-export { SemanticScholarAdapter } from './SemanticScholarAdapter.ts';
-export { PubmedAdapter } from './PubmedAdapter.ts';
-export { ScopusAdapter, isScopusEnabled } from './ScopusAdapter.ts';
+export { SemanticScholarAdapter } from './semantic-scholar-adapter.ts';
+export { PubmedAdapter } from './pubmed-adapter.ts';
+export { ScopusAdapter, isScopusEnabled } from './scopus-adapter.ts';

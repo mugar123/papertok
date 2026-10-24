@@ -1,6 +1,6 @@
-import type { CitationRow } from '../src/utils/citationGraph.ts';
+import type { CitationRow } from '../src/utils/citation-graph.ts';
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { UpstreamError } from './provider-runtime.ts';
@@ -14,9 +14,9 @@ import {
   extractCitationOpenAlexId,
   normalizeCitationDoi,
   normalizeCitationRows,
-} from '../src/utils/citationGraph.ts';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publicationStatus.ts';
+} from '../src/utils/citation-graph.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../src/utils/publication-status.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { addOpenAlexCredentials, fetchOpenAlexJsonWithFallback } from './openalex-api.ts';
 import { cacheResponse, DEGRADED_CACHE_SECONDS, fetchJsonWithTimeout, getSafeLimit, OPENALEX_CALLS } from './provider-runtime.ts';

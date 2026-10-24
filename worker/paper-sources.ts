@@ -1,22 +1,22 @@
-import type { Paper } from '../src/models/Paper.ts';
-import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
+import type { Paper } from '../src/models/paper.ts';
+import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import type { WorkerEnv } from './env.ts';
 import type { Harvested, StoreEnv } from './paper-store.ts';
 import type { HarvestAsk } from './openalex-api.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
-import { ARXIV_FEED_AREAS, arxivPaper, isArxivCategory } from '../src/services/arxivRecords.ts';
-import { pubmedCategoryQuery, readPubmedPayload } from '../src/services/adapters/pubmedRecords.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { ARXIV_FEED_AREAS, arxivPaper, isArxivCategory } from '../src/services/arxiv-records.ts';
+import { pubmedCategoryQuery, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
 import {
   domainSourceRequests,
   getDomainSourcePlan,
   getEligibleDomainSources,
   mapBioRxivPaper,
-} from '../src/services/domainSourceRecords.ts';
-import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
-import { openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
+} from '../src/services/domain-source-records.ts';
+import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
@@ -293,7 +293,7 @@ const PUBMED_LEAVES = LEAVES.filter(leaf => leaf.area === 'med' || leaf.area ===
 
 // The series the feed shows for economics and finance, by OpenAlex source ID,
 // each checked with a keyless OpenAlex request on 2026-10-19 (PAP-53). The
-// review rule in publicationStatus.ts owns which sources are working-paper
+// review rule in publication-status.ts owns which sources are working-paper
 // series; a test checks each ID here is on its list, or its articles would
 // arrive as reviewed journal papers without the Working paper tag. OpenAlex
 // types NBER, CESifo, Banco de España and the New York and Philadelphia Fed

@@ -1,5 +1,5 @@
-// Fails a pull request whose description does not say how the change was
-// verified and who reviewed it (.github/pull_request_template.md). Runs from
+// Requires documentation impact, verification and review evidence in the
+// description (.github/pull_request_template.md). Runs from
 // the base branch (.github/workflows/pr-body.yml), so a pull request cannot
 // change the check that judges it.
 
@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REQUIRED_SECTIONS = ['Verification', 'Review'];
+const REQUIRED_SECTIONS = ['Documentation', 'Verification', 'Review'];
 
 function sectionText(body: string, heading: string) {
   const lines = body.replace(/<!--[\s\S]*?-->/g, '').split(/\r?\n/);
@@ -25,7 +25,11 @@ export function prBodyProblems(body: string) {
   return REQUIRED_SECTIONS.flatMap((heading) => {
     const text = sectionText(body, heading);
     if (text === null) return [`The description has no "## ${heading}" section.`];
-    if (!text) return [`"## ${heading}" is empty. State what was actually run or done, not what was planned.`];
+    if (heading === 'Documentation') {
+      if (!text || !/^(?:Updated|Not needed):[\t ]*\S/m.test(text)) {
+        return ['"## Documentation" must state "Updated: <documents and changes>" or "Not needed: <reason>". See ARCHITECTURE.md for documentation owners.'];
+      }
+    } else if (!text) return [`"## ${heading}" is empty. State what was actually run or done, not what was planned.`];
     return [];
   });
 }

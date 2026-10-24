@@ -70,8 +70,8 @@ const frontendImports = {
 
 // worker/tsconfig.test.json compiles these frontend tests because they import Worker modules.
 const workerImportingFrontendTests = [
-  'src/services/paperFigureService.test.ts',
-  'src/utils/aiExplanation.test.ts',
+  'src/services/paper-figure-service.test.ts',
+  'src/utils/ai-explanation.test.ts',
 ]
 
 // Type-aware rules for the defects type information can prove: a dropped
@@ -99,8 +99,6 @@ export default defineConfig([
   // but ESLint does not read .gitignore and linted them from the main tree.
   globalIgnores([
     'dist', '.wrangler', 'worker-configuration.d.ts', '.claude/**', 'scripts/diagnostics/**',
-    // Vendored Impeccable scripts retain their upstream source and lint conventions.
-    '.agents/skills/impeccable/scripts/**',
   ]),
   {
     linterOptions: { reportUnusedDisableDirectives: 'error' },
@@ -201,11 +199,11 @@ export default defineConfig([
       // allow it here and in design.md together.
       'papertok/patterned-buttons': ['error', {
         variants: {
-          engraved: ['src/components/Public/GuestWelcome.tsx', 'src/components/Public/WelcomeShell.tsx'],
-          halftone: ['src/components/Public/GuestWelcome.tsx'],
+          engraved: ['src/components/public/guest-welcome.tsx', 'src/components/public/welcome-shell.tsx'],
+          halftone: ['src/components/public/guest-welcome.tsx'],
         },
         classes: {
-          'btn-halftone': ['src/components/Public/GuestWelcome.tsx', 'src/components/Public/WelcomeShell.tsx', 'src/components/ui/button-variants.ts'],
+          'btn-halftone': ['src/components/public/guest-welcome.tsx', 'src/components/public/welcome-shell.tsx', 'src/components/ui/button-variants.ts'],
         },
       }],
     },
@@ -233,14 +231,14 @@ export default defineConfig([
     // The feed loads with one profile read; the identity service reads and
     // links accounts, and must stay off that path.
     files: [
-      'src/context/FeedContext.tsx', 'src/components/Feed/FeedContainer.tsx', 'src/components/Feed/PaperCard.tsx',
-      'src/utils/interactionProfileLoader.ts', 'src/services/interactionProfileStore.ts',
+      'src/context/feed-context.tsx', 'src/components/feed/feed-container.tsx', 'src/components/feed/paper-card.tsx',
+      'src/utils/interaction-profile-loader.ts', 'src/services/interaction-profile-store.ts',
     ],
     rules: {
       'no-restricted-imports': ['error', {
         ...frontendImports,
         patterns: [...frontendImports.patterns, {
-          group: ['**/authIdentityService*'],
+          group: ['**/auth-identity-service*'],
           message: 'The feed path must not import the identity service: it adds reads to the feed load.',
         }],
       }],
@@ -312,17 +310,17 @@ export default defineConfig([
       'papertok/no-brand-orange-focus-ring': 'error',
       'papertok/focus-ring-unlayered': 'error',
       'papertok/defined-custom-properties': ['error', { injected: [
-        { name: '--area-accent', setBy: 'src/components/Lists/ListRow.tsx', reason: 'a row, card or entity header takes the research field of its paper, so its rules are tinted by the data' },
-        { name: '--prop-fill', setBy: 'src/components/Onboarding/PetriFlask.tsx', reason: 'each onboarding illustration fills its props with the colour of the topic it shows' },
-        { name: '--bubble', setBy: 'src/components/Onboarding/PetriFlask.tsx', reason: 'each bubble’s place in the sequence offsets its animation' },
-        { name: '--line', setBy: 'src/components/Onboarding/PetriDownload.tsx', reason: 'each line’s place in the sequence delays its animation' },
-        { name: '--swatch', setBy: 'src/components/Lists/CreateListDialog.tsx', reason: 'each swatch shows one of the list colours the owner can pick' },
-        { name: '--abstract-motion', setBy: 'src/components/Feed/PaperCard.tsx', reason: 'the abstract’s expand duration scales with the height it travels' },
-        { name: '--i', setBy: 'src/components/Feed/PaperCard.tsx', reason: 'a staggered item’s index in its list; also set by the explorer, the skeleton, the reader and the author dots' },
-        { name: '--similar-origin', setBy: 'src/components/Feed/SimilarFeedLayer.tsx', reason: 'the Similar layer opens from the card that was pressed' },
-        { name: '--timeline-progress', setBy: 'src/components/Explorer/EntityExplorer.tsx', reason: 'how far the author timeline has been drawn' },
-        { name: '--v', setBy: 'src/components/Explorer/EntityExplorer.tsx', reason: 'a chart bar’s value as a fraction of the tallest' },
-        { name: '--total-scale-factor', setBy: 'src/components/PDF/PdfPages.tsx', reason: 'pdf.js’s text layer is sized by the page’s render scale' },
+        { name: '--area-accent', setBy: 'src/components/lists/list-row.tsx', reason: 'a row, card or entity header takes the research field of its paper, so its rules are tinted by the data' },
+        { name: '--prop-fill', setBy: 'src/components/onboarding/petri-flask.tsx', reason: 'each onboarding illustration fills its props with the colour of the topic it shows' },
+        { name: '--bubble', setBy: 'src/components/onboarding/petri-flask.tsx', reason: 'each bubble’s place in the sequence offsets its animation' },
+        { name: '--line', setBy: 'src/components/onboarding/petri-download.tsx', reason: 'each line’s place in the sequence delays its animation' },
+        { name: '--swatch', setBy: 'src/components/lists/create-list-dialog.tsx', reason: 'each swatch shows one of the list colours the owner can pick' },
+        { name: '--abstract-motion', setBy: 'src/components/feed/paper-card.tsx', reason: 'the abstract’s expand duration scales with the height it travels' },
+        { name: '--i', setBy: 'src/components/feed/paper-card.tsx', reason: 'a staggered item’s index in its list; also set by the explorer, the skeleton, the reader and the author dots' },
+        { name: '--similar-origin', setBy: 'src/components/feed/similar-feed-layer.tsx', reason: 'the Similar layer opens from the card that was pressed' },
+        { name: '--timeline-progress', setBy: 'src/components/explorer/entity-explorer.tsx', reason: 'how far the author timeline has been drawn' },
+        { name: '--v', setBy: 'src/components/explorer/entity-explorer.tsx', reason: 'a chart bar’s value as a fraction of the tallest' },
+        { name: '--total-scale-factor', setBy: 'src/components/pdf/pdf-pages.tsx', reason: 'pdf.js’s text layer is sized by the page’s render scale' },
         { name: '--available-height', setBy: '@base-ui/react', reason: 'Base UI’s positioner sets the space left in the viewport on its popup' },
         { name: '--transform-origin', setBy: '@base-ui/react', reason: 'Base UI’s positioner sets the anchor side a popup grows from' },
         { name: '--collapsible-panel-height', setBy: '@base-ui/react', reason: 'Base UI’s Collapsible panel measures its content' },

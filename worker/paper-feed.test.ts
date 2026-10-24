@@ -1,4 +1,4 @@
-import type { PaperFollowMatch } from '../src/models/Paper.ts';
+import type { PaperFollowMatch } from '../src/models/paper.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -10,9 +10,9 @@ import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Synthetic, in the shape the arXiv harvest stores.
 const stored = arxivRecordPaper({
@@ -359,6 +359,27 @@ const embeddingModel = () => ({
 });
 
 const ids = (papers: Array<{ id: string }>) => papers.map(item => item.id);
+
+test('the corpus route excludes seen and rejected aliases, and transports negative relevance', async t => {
+  rankingCaches(t);
+  const { env, db, ask } = store();
+  await ingestPapers(env, [
+    { paper: paper('2610.40001', 'Rejected paper', 4), lanes: [] },
+    { paper: paper('2610.40002', 'Near copy of rejected paper', 2), lanes: [] },
+    { paper: paper('2610.40003', 'Distant topic', 2), lanes: [] },
+    { paper: paper('2610.40004', 'Already viewed', 1), lanes: [] },
+  ]);
+  embed(db, '2610.40001', [1, 0]);
+  embed(db, '2610.40002', [1, 0]);
+  embed(db, '2610.40003', [0, 1]);
+  const request = { categories: ['cs.CL'], negativeIds: ['arxiv:2610.40001v2'], excludedIds: ['arxiv:2610.40004v2'], pageSize: 2 };
+  const { papers } = await ask(request);
+  assert.deepEqual(ids(papers), ['2610.40003', '2610.40002']);
+  assert.equal(papers[0]._semanticScore, 0);
+  assert.equal(papers[1]._semanticScore, -1);
+  const changed = await ask({ ...request, negativeIds: ['2610.40003'], page: 1, pageSize: 1 });
+  assert.deepEqual(ids(changed.papers), ['2610.40001'], 'changing feedback or page size cannot reuse the previous cached ranking');
+});
 
 test('a next page asked while the lookup after the first still runs goes on after the ranks the first served', async t => {
   rankingCaches(t);

@@ -19,7 +19,7 @@ instructions-only handoff can use the documentation checks below.
 
 | Change | Required evidence |
 | --- | --- |
-| Instructions, skills or prose only | Review activation and instruction conflicts; validate skill frontmatter and local links; run `git diff --check` and `npm run security:secrets`. Application builds do not verify prose. |
+| Instructions, skills or prose only | Review activation and instruction conflicts; validate skill frontmatter; run the local link check in [documentation maintenance](../../../CONTRIBUTING.md#documentation-maintenance), `git diff --check` and `npm run security:secrets`. Render changed Mermaid diagrams and check them against their linked source files. Application builds do not verify prose. |
 | Runtime behavior | Run the closest existing tests first, then `npm run check` before commit or publication. Shared feed or routing changes need the full check before handoff too. |
 | Executable tooling or quality gate | Exercise the actual invoked command and a concrete invalid case it must reject. Verify its caller and intended file coverage. A script nobody invokes is not a gate. |
 | Firestore rules or permissions | Run `npm run test:rules` as well as the relevant application checks; `npm run check` does not include the rules emulator. Test allowed and denied ownership cases. |

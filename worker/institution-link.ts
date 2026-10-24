@@ -30,7 +30,7 @@ interface InstitutionLinkOptions {
  * once the domain is known.
  */
 
-import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { institutionDomainOf } from '../src/utils/institution-domain.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { verifyFirebaseIdentity, verifyIdToken, WorkerAuthError } from './firebase-auth.ts';
 import {

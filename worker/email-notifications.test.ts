@@ -3,7 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,

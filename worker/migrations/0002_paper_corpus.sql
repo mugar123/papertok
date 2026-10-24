@@ -3,7 +3,7 @@
 
 CREATE TABLE works (
   id INTEGER PRIMARY KEY,
-  -- The paper in the app's contract (src/models/Paper.ts), as JSON.
+  -- The paper in the app's contract (src/models/paper.ts), as JSON.
   paper TEXT NOT NULL,
   -- The date the feed windows and orders by (ISO 8601).
   published TEXT NOT NULL,
