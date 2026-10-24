@@ -382,7 +382,7 @@ test("followed searches stop at their part of the nightly run's OpenAlex share, 
 
 // The nightly run harvests every category lane before its followed lanes, and
 // the topic lanes alone can ask for more than the harvest's 4,000 units.
-test("category lanes stop at 3,000 of the harvest's OpenAlex units, so the followed lanes' 1,000 is left for the followed phase", async t => {
+test("category lanes stop at 3,000 of the harvest's OpenAlex units, so the nightly refresh's 700 and the new follows' 300 are left", async t => {
   const { urls, env } = relay(t, () => ({ results: [] }));
   // The relay's own ceilings, out of the way: the harvest's share and its parts are under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });

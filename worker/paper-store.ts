@@ -51,8 +51,9 @@ const DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT = 7_500_000;
 const EMBEDDING_TOKENS_PER_UNIT = 1_000;
 // Shares of the day's limit for what readers start, so the daily run keeps the
 // rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
-// ten long papers; on the harvest's subject, one account spent the whole
-// 60M-token day in 143 minutes. The runs new follows start, together: no reader
+// ten long papers; on the harvest's subject, a review estimated that one
+// account's lookups could spend the 60M-token day in about 143 minutes. The
+// runs new follows start, together: no reader
 // is recorded with them, and each of the 20 new lanes a reader's runs may
 // harvest a day can bring a few hundred papers; what they leave waits for the
 // daily run.
