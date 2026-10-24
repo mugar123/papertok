@@ -43,6 +43,11 @@ const FEED_PAGE_SIZE = 15;
 // the night's articles ranked behind a busy reader's whole day of arXiv
 // preprints.
 const JOURNAL_FLOOR = 3;
+// The area lanes a page reads share at most this many candidates, beside the
+// asked lanes' FEED_CANDIDATE_LIMIT rather than out of it: as a lane's share
+// of those, one area lane cut a single category's candidates to the newest
+// half. The floor's 3 ranks in 15 of a ranking as long as the asked lanes'.
+const AREA_CANDIDATE_LIMIT = FEED_CANDIDATE_LIMIT * JOURNAL_FLOOR / FEED_PAGE_SIZE;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
@@ -474,8 +479,9 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
 /**
  * What the corpus no longer needs leaves with its keys, lanes and vector:
  * - a lane keeps its newest FEED_CANDIDATE_LIMIT papers, the most a page can
- *   ever rank from it, so a busy category does not pile up papers no reader
- *   reaches;
+ *   ever rank from an asked lane, so a busy category does not pile up papers
+ *   no reader reaches. An area lane keeps as many though a page reads fewer:
+ *   its older articles can still be filed under a leaf (leaf-filing.ts);
  * - a paper past its keeping date, or in no category, working-paper, area or
  *   followed lane, goes, unless readers still rank their feed by it
  *   (`liked_until`). The lane of an OpenAlex entity nobody follows keeps
@@ -682,10 +688,13 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
 // for up to a dozen categories and twenty follows.
 async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
-  const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
+  const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
+  const share = (lane: string) => (AREA_LANES.has(lane)
+    ? Math.ceil(AREA_CANDIDATE_LIMIT / areaLanes)
+    : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
     'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
-  ).bind(lane, share)));
+  ).bind(lane, share(lane))));
   const byWork = new Map<number, { published: string; lanes: string[] }>();
   perLane.forEach(({ results }, index) => {
     for (const row of results) {
@@ -814,8 +823,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
     // and D1 bills rows read. A quiet lane keeps its share instead of being
-    // crowded out by a busy one. The window is the corpus's own: what is past
-    // it has been evicted.
+    // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
+    // The window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
     positiveIds.length
       ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()

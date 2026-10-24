@@ -575,6 +575,35 @@ test("each page of a ranking ranked again after the ranks served keeps the floor
   assert.deepEqual([...first, ...second, ...third].sort(), [...preprintIds, newest.id, ...articleIds].sort(), 'every paper once');
 });
 
+test("an area's journal lane is read beside a reader's own lanes, not out of their candidates: a like still finds a preprint 17 days back in a busy category", async () => {
+  const { env, db } = corpus();
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertKey = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  const insertVector = db.prepare('INSERT INTO work_vectors (work_id, embedding) VALUES (?, ?)');
+  const add = (workId: number, paperId: string, published: string, lane: string | null, like: number[]) => {
+    insertWork.run(workId, JSON.stringify({ id: paperId, title: `Paper ${paperId}`, authors: [] }), published, '2027-03-01T00:00:00.000Z');
+    insertKey.run(`id:${paperId.toLowerCase()}`, workId);
+    if (lane) insertLane.run(lane, workId, published);
+    insertVector.run(workId, Buffer.from(quantize(like).buffer));
+  };
+  db.exec('BEGIN');
+  // A busy category: 2,600 preprints, one every 10 minutes for 18 days. Only
+  // the 2,401st newest is like the reader's like, which is in no asked lane.
+  for (let index = 0; index < 2_600; index += 1) {
+    add(index + 1, `2610.${10_000 + index}`, new Date(NOW - (index + 1) * 600_000).toISOString(), 'cs.LG', index === 2_400 ? [0, 0, 1] : [1, 0, 0]);
+  }
+  add(2_601, '2609.99999', new Date(NOW - 3 * 86_400_000).toISOString(), null, [0, 0, 1]);
+  // The area's journal lane, as full as a few weeks of nights make it: 200 articles a night.
+  for (let index = 0; index < 2_000; index += 1) {
+    add(3_000 + index, `openalex:W95${String(index).padStart(5, '0')}`, `2026-10-${21 - Math.floor(index / 200)}T00:00:00.000Z`, 'area:cs', [0, 1, 0]);
+  }
+  db.exec('COMMIT');
+  const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], positiveIds: ['2609.99999'] }), { now: NOW });
+  assert.equal(page[0]?.id, '2610.12400');
+  assert.equal(page.filter(paper => paper.id.startsWith('openalex:')).length, 3, 'and the area lane still fills the floor');
+});
+
 // An area's lane lists articles without an abstract too (PAP-107); the mapper
 // stands "No abstract available." in for the missing one.
 test('a paper without an abstract is embedded by its title alone, not by the words standing in for the abstract', async () => {
