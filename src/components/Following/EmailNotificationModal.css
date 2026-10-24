@@ -100,6 +100,16 @@
 }
 .email-notification-provider-warning.is-info strong { color: var(--gradient-physics); }
 
+/* No follows yet: one violet line, itself the way to the follows page. */
+.email-notification-provider-warning.is-follows {
+  border-bottom-color: var(--tint-violet-line);
+  background: var(--tint-violet-bg);
+}
+
+.email-notification-provider-warning.is-follows strong {
+  color: var(--tint-violet-fg);
+}
+
 .email-notification-toggle-row,
 .email-notification-count {
   display: flex;

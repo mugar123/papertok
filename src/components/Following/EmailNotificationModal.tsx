@@ -176,11 +176,9 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           </div>
         )}
         {!loading && notificationDataReady && !hasFollows && (
-          <div className="email-notification-provider-warning is-info">
-            <strong>{'Nothing followed yet'}</strong>
-            <span>{emailDigestPending
-              ? 'You asked for the digest when you joined. It starts on its own with your first follow: a topic, author, institution, or project.'
-              : <><Link to="/settings/following" onClick={onClose}>{'Follow something'}</Link>{' so PaperTok can send you relevant papers.'}</>}</span>
+          <div className="email-notification-provider-warning is-follows">
+            <strong><Link to="/settings/following" onClick={onClose}>{'Nothing followed yet'}</Link></strong>
+            {emailDigestPending && <span>{'You asked for the digest when you joined. It starts on its own with your first follow: a topic, author, institution, or project.'}</span>}
           </div>
         )}
         <div className="email-notification-toggle-row">
