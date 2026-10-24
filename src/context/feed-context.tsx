@@ -36,7 +36,8 @@ export interface FeedContextValue {
   unmarkSaved: (paper: Paper | string) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string) => Promise<void>;
-  toggleReadLater: (paper: Paper) => Promise<boolean>;
+  /** Flips Read later, or sets it to `value` when one is given. */
+  toggleReadLater: (paper: Paper, value?: boolean) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
   trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
   trackPdfOpened: (paper: Paper) => Promise<void>;
@@ -2157,11 +2158,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [recordProfileEvent, user?.uid]);
 
-  const toggleReadLater = useCallback(async (paperInput: Paper) => {
+  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId || !paper?.id) return false;
-    const nextValue = !personalLibrary[paper.id]?.readLater;
+    const nextValue = value ?? !personalLibrary[paper.id]?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
 

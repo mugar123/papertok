@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import {
   Check,
   CheckCircle,
@@ -166,11 +167,11 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           </div>
         )}
         {!loading && notificationDataReady && !hasFollows && (
-          <div className="email-notification-provider-warning is-info">
-            <strong>{'Nothing followed yet'}</strong>
+          <div className="email-notification-provider-warning is-follows">
+            <strong><Link to="/settings/following" onClick={onClose}>{'Nothing followed yet'}</Link></strong>
             <span>{emailDigestPending
               ? 'You asked for the digest when you joined. It starts on its own with your first follow: a topic, author, institution, or project.'
-              : 'Follow a topic, author, institution, or project so PaperTok can prepare relevant email updates.'}</span>
+              : 'Follow a topic, author or institution to get updates.'}</span>
           </div>
         )}
         <div className="email-notification-toggle-row">
@@ -211,11 +212,6 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
           </div>
         </div>
 
-        <div className="email-notification-schedule">
-          <Clock size={16} aria-hidden="true" />
-          <span>{'Prepared on Mondays when there are updates. Delivery may take longer if sending is limited.'}</span>
-        </div>
-
         {/* The sheet keeps this line's room, so a result does not lift the
             whole sheet; it is also where the result is announced. */}
         <div className="email-notification-feedback-slot" role="status">
@@ -226,6 +222,11 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
             </motion.p>
           )}
           </AnimatePresence>
+        </div>
+
+        <div className="email-notification-schedule">
+          <Clock size={16} aria-hidden="true" />
+          <span>{'Prepared on Mondays when there are updates. Delivery may take longer if sending is limited.'}</span>
         </div>
       </div>
 

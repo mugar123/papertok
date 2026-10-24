@@ -1,5 +1,4 @@
 import type { KeyboardEvent, MouseEvent } from 'react';
-import type { Transition } from 'framer-motion';
 import type { Paper } from '../../models/paper.ts';
 import type { OpenAlexAuthor, OpenAlexInstitution, OpenAlexTopic } from '../../services/adapters/open-alex-types.ts';
 import type { Project } from '../../services/open-aire-service.ts';
@@ -28,7 +27,6 @@ import {
   ArrowLeft,
   ArrowsClockwise,
   ArrowSquareOut,
-  BookOpen,
   Briefcase,
   Buildings,
   CaretDown,
@@ -83,6 +81,10 @@ import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorer-skele
 import { handedEntityFor, handoverFromSearchRow } from '../../utils/explorer-handover.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.tsx';
 import OrcidStamp from './orcid-stamp.tsx';
+import CareerTimeline from './career-timeline.tsx';
+import OrcidLinks from './orcid-links.tsx';
+import { foldMotion } from './explorer-fold.ts';
+import { careerStops } from './career-stops.ts';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
@@ -128,29 +130,6 @@ import { EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
-
-// The experience panel arrives open by default (2026-09-04) — up to this many
-// rows. Measured on an author with a long history opened from the feed: 590px
-// of panel, the tab strip pushed 1108px in 710ms. Past this the panel arrives
-// folded and the chevron by the name opens it on the reader's own press.
-const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
-
-// The ORCID experience panel's collapse. What travels is the page under
-// the panel, and it has to land, so the space rides a gentle ease-in-out
-// while the contents fade evenly. 300ms because this
-// is a click's answer — the reader is waiting on it.
-//
-// The curve itself was chosen by measurement on the Wikipedia fold, back when
-// that one still closed its own height (four probe runs with
-// `scripts/diagnostics/explorer-loading-probe.mjs`): what a collapse costs the reader is its worst single
-// frame — travel × steepness ÷ frames — not its duration, and a steep
-// ease-in-out given too few frames measured WORSE than the front-loaded curve
-// it replaced. Shortening this is no free way to make it feel quicker.
-const EXPERIENCE_FOLD_OUT: Transition = {
-  opacity: { duration: 0.16, ease: 'linear' },
-  height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
-};
-
 
 // One line in the side sheet; resting on a cut name shows it whole.
 function ParticipantName({ name }: { name: string }) {
@@ -405,6 +384,11 @@ export default function EntityExplorer({
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState(() => resumed?.settledWikiRequestKey ?? '');
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState(() => resumed?.loadedWikiImageUrl ?? '');
   const [orcidInfo, setOrcidInfo] = useState<Awaited<ReturnType<typeof getOrcidRecord>>>(null);
+  const career = useMemo(() => (orcidInfo ? careerStops(orcidInfo) : []), [orcidInfo]);
+  const orcidLinks = useMemo(() => (orcidInfo?.researcherUrls ?? []).flatMap((link) => {
+    const url = safeExternalUrl(link.url);
+    return url ? [{ name: link.name, url }] : [];
+  }), [orcidInfo]);
   // A known ORCID reserves its slot on the very first live frame. Waiting for
   // the entity refresh to raise this flag would remove and reinsert the slot.
   const [isLoadingOrcid, setIsLoadingOrcid] = useState(() => type === 'author' && Boolean(entity?.orcid || extractOrcid(id)));
@@ -449,21 +433,6 @@ export default function EntityExplorer({
   // fetch, so leaving the tab does not cancel it and coming back does not
   // repeat it.
   const [authorsOpened, setAuthorsOpened] = useState(() => Boolean(resumed?.authorsOpened));
-  // Open by default: the experience is the answer to "who is this person", which
-  // is what the page is for. Hiding it behind the briefcase made the page open
-  // on numbers alone and left the one human fact a click away. The toggle stays,
-  // so it can still be folded out of the way.
-  const [isExperienceOpen, setIsExperienceOpen] = useState(true);
-  // Whether the reader has toggled the panel since this ORCID record arrived.
-  // On arrival the panel mounts already open, and it must mount at its full
-  // height: the hero body's `useHeightSettle` measures its `to` in that same
-  // commit, and a panel still at `height: 0` under framer's entrance made it
-  // measure 130px short — WAAPI then clamped the box for 360ms while framer
-  // grew the panel inside it, and the box snapped +130px the frame the settle
-  // released (measured on a phone: 650 → 780 in one frame, after two settles
-  // in opposite directions). One box, one owner: the settle carries arrival;
-  // framer's entrance is for the reader's own toggle.
-  const [experienceToggled, setExperienceToggled] = useState(false);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
@@ -761,7 +730,7 @@ export default function EntityExplorer({
   const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
 
   // Only overlay state belongs to this deferred reset. The load below owns
-  // ORCID and the experience disclosure; clearing them here could overwrite
+  // ORCID; clearing it here could overwrite
   // a fast response after it has already committed.
   // Not on mount: the tab a resumed visit was left on is state already, and
   // this reset is for an entity change under a page that stays mounted.
@@ -824,8 +793,6 @@ export default function EntityExplorer({
       }
       setOrcidInfo(null);
       setIsLoadingOrcid(type === 'author' && Boolean(bornWith?.orcid || extractOrcid(id)));
-      setIsExperienceOpen(true);
-      setExperienceToggled(false);
       setExpandedSummary(false);
       setIsProjectSummaryExpandable(false);
       setResolvingParticipant(null);
@@ -966,10 +933,7 @@ export default function EntityExplorer({
       const loadOrcid = async () => {
         try {
           const record = prefetchedOrcid || await getOrcidRecord(data!.orcid!);
-          if (!isCancelled) {
-            setOrcidInfo(record);
-            setIsExperienceOpen((record?.employments?.length ?? 0) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS);
-          }
+          if (!isCancelled) setOrcidInfo(record);
         } catch (e) {
           if (!isCancelled) console.error("Error loading ORCID", e);
         } finally {
@@ -1548,7 +1512,6 @@ export default function EntityExplorer({
           disabled={entityFollowPending}
           followLabel={'Follow'}
           followingLabel={'Following'}
-          compact={isPhone}
         />
       )}
       {publicEntityUrl && (
@@ -1559,14 +1522,9 @@ export default function EntityExplorer({
           align="start"
           links={usesSheet ? [] : heroLinks}
           onShared={(method) => { void trackEvent('share', { method, content_type: analyticsEntityType, surface: 'explorer' }); }}
-          trigger={isPhone ? (
-            <Button variant="outline" size="icon-sm" className="ehc-share" aria-label="Share">
-              <ShareNetwork size={16} aria-hidden="true" />
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" className="ehc-share">
-              <ShareNetwork size={16} aria-hidden="true" />
-              {'Share'}
+          trigger={(
+            <Button variant="ghost" size="icon-sm" className="ehc-share" aria-label="Share" title="Share">
+              <ShareNetwork size={20} aria-hidden="true" />
             </Button>
           )}
         />
@@ -2040,12 +1998,7 @@ export default function EntityExplorer({
               <motion.div
                 key="more"
                 className="project-participants-more"
-                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, transition: EXPERIENCE_FOLD_OUT }}
-                transition={prefersReducedMotion
-                  ? { duration: 0 }
-                  : { opacity: { duration: 0.24, ease: 'linear' }, height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] } }}
+                {...foldMotion(prefersReducedMotion)}
               >
                 {entity.participants!.slice(PARTICIPANTS_SHOWN).map((p, i) => renderParticipant(p, PARTICIPANTS_SHOWN + i))}
               </motion.div>
@@ -2293,20 +2246,6 @@ export default function EntityExplorer({
                   <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName || entityTypeLabel}</h1>
                   {type === 'author' && orcidInfo && !isLoadingOrcid && <OrcidStamp orcid={orcidInfo.orcid} />}
                 </div>
-                {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
-                  <button
-                    type="button"
-                    className={`ehc-name-toggle ${isExperienceOpen ? 'is-open' : ''}`}
-                    onClick={() => { setExperienceToggled(true); setIsExperienceOpen(open => !open); }}
-                    aria-expanded={isExperienceOpen}
-                    aria-controls="ehc-experience-panel"
-                    aria-label={'Professional experience'}
-                    title={'Professional experience'}
-                  >
-                    <Briefcase size={15} aria-hidden="true" />
-                    <CaretDown size={16} aria-hidden="true" />
-                  </button>
-                )}
               </div>
               {type === 'institution' && (
                 <p className="ehc-meta">
@@ -2338,6 +2277,14 @@ export default function EntityExplorer({
                   {authorInstitutionNavigationError && (
                     <p className="ehc-author-institution-error" role="alert">{authorInstitutionNavigationError}</p>
                   )}
+                </div>
+              )}
+              {type === 'author' && !authorInstitutionDisplayName && (
+                <div className="ehc-author-institution-wrap">
+                  <span className="ehc-author-institution ehc-author-institution--unknown">
+                    <Buildings size={15} aria-hidden="true" />
+                    <span>{'Unknown institution'}</span>
+                  </span>
                 </div>
               )}
               {topConcepts.length > 0 && type !== 'author' && (
@@ -2376,84 +2323,31 @@ export default function EntityExplorer({
             </div>
           )}
 
-          {/* Professional experience — a disclosure opened from the chevron by the name */}
-          {type === 'author' && (orcidInfo?.employments?.length as number) > 0 && (
-            // No `initial={false}`: the presence mounts with the panel, when
-            // the record lands on a hero that is already live, so the panel
-            // arriving is the one entrance this animation exists for. Off, it
-            // popped in at full height and shoved the card and the list.
-            <AnimatePresence>
-              {isExperienceOpen && (
-                <motion.div
-                  id="ehc-experience-panel"
-                  className="ehc-experience-panel"
-                  // No `y` any more. It was there to give the panel somewhere
-                  // to come from back when the height could not reach zero;
-                  // now that it can, a slide on top of the collapse is a
-                  // second motion arguing with the first. Height opens the
-                  // box, opacity fills it, and nothing else moves.
-                  // On arrival the panel is already open when the record
-                  // lands, so it mounts at full height and the hero body's
-                  // settle is the one animation that carries the SPACE (see
-                  // `experienceToggled`). Its contents still arrive: an
-                  // opacity-only entrance, which touches no layout, so the
-                  // height keeps a single owner. `initial={false}` here used
-                  // to switch the fade off with the height, and the bordered
-                  // panel popped in at opacity 1 (measured). The entrance from
-                  // 0 height is the reader's toggle, where the box is at rest.
-                  initial={experienceToggled ? (prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }) : { opacity: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  // Clear the text before the fold finishes closing. The
-                  // height has the same gentle curve in both directions;
-                  // only the opacity gets a shorter clock on the way out.
-                  exit={prefersReducedMotion
-                    ? { opacity: 0 }
-                    : { opacity: 0, height: 0, transition: EXPERIENCE_FOLD_OUT }}
-                  transition={prefersReducedMotion
-                    ? { duration: 0 }
-                    : {
-                      // The contents clear a little before the box finishes
-                      // closing, so the last thing seen is an empty fold
-                      // rather than text being guillotined by the clip.
-                      opacity: { duration: experienceToggled ? 0.24 : 0.36, ease: 'linear' },
-                      height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
-                    }}
-                >
-                  <div className="ehc-experience-inner">
-                  <div className="ehc-experience-title">
-                    <Briefcase size={13} aria-hidden="true" />
-                    {'Professional experience'}
-                  </div>
-                  <div className="orcid-timeline">
-                    {orcidInfo!.employments.map((emp, i) => (
-                      <div key={i} className="orcid-timeline-item" style={{ '--author-row-delay': `${Math.min(i, 4) * 40}ms` }}>
-                        <button
-                          type="button"
-                          className="orcid-item-org orcid-item-org--link"
-                          onClick={() => {
-                            void findInstitution({ rorUrl: emp.ror, name: emp.organization }).then((inst) => {
-                              if (inst) navigateToEntity('institution', inst.id);
-                            });
-                          }}
-                          title={`${'Find and view profile for'} ${emp.organization}`}
-                        >
-                          {emp.organization}
-                        </button>
-                        {emp.role && <div className="orcid-item-role">{emp.role}</div>}
-                        {emp.startDate && (
-                          <div className="orcid-item-dates">
-                            {emp.startDate}
-                            <span className="dot-separator">→</span>
-                            {emp.endDate || ('Present')}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  </div>
-                </motion.div>
+          {type === 'author' && orcidInfo && !isLoadingOrcid && (career.length > 0 || orcidInfo.biography || orcidLinks.length > 0) && (
+            <div className="orcid-profile">
+              {career.length > 0 && (
+                <CareerTimeline
+                  career={career}
+                  onOrganization={(stop) => {
+                    void findInstitution({ rorUrl: stop.ror, name: stop.organization }).then((inst) => {
+                      if (inst) navigateToEntity('institution', inst.id);
+                    });
+                  }}
+                />
               )}
-            </AnimatePresence>
+              {orcidInfo.biography && (
+                <section>
+                  <h2 className="project-section-title">About</h2>
+                  <p className="orcid-biography">{orcidInfo.biography}</p>
+                </section>
+              )}
+              {orcidLinks.length > 0 && (
+                <section>
+                  <h2 className="project-section-title">Links</h2>
+                  <OrcidLinks key={orcidInfo.orcid} links={orcidLinks} />
+                </section>
+              )}
+            </div>
           )}
 
           {/* Project Summary - expandable */}
@@ -2494,68 +2388,6 @@ export default function EntityExplorer({
 
           
 
-          {/* ORCID Career Section */}
-          {orcidInfo && !isLoadingOrcid && (orcidInfo.biography || orcidInfo.researcherUrls?.length > 0 || orcidInfo.educations?.length > 0) && (
-            <div className="orcid-career-section orcid-career-section--animate">
-              {/* Biography */}
-              {orcidInfo.biography && (
-                <div className="orcid-biography">
-                  {orcidInfo.biography}
-                </div>
-              )}
-
-              {/* External links */}
-              {orcidInfo.researcherUrls?.length > 0 && (
-                <div className="orcid-links-row">
-                  {orcidInfo.researcherUrls.map((u, i) => {
-                    const safeUrl = safeExternalUrl(u.url);
-                    return safeUrl ? (
-                      <a key={i} href={safeUrl} target="_blank" rel="noopener noreferrer" className="orcid-ext-link">
-                        <Globe size={12} />
-                        {u.name || ('External link')}
-                      </a>
-                    ) : null;
-                  })}
-                </div>
-              )}
-
-              {/* Education timeline */}
-              {orcidInfo.educations?.length > 0 && (
-                <div className="orcid-timeline-block">
-                  <div className="orcid-timeline-title">
-                    <span className="orcid-tl-icon orcid-tl-icon--edu"><BookOpen size={12} /></span>
-                    {'Education'}
-                  </div>
-                  <div className="orcid-timeline">
-                    {orcidInfo.educations.map((edu, i) => (
-                      <div key={i} className="orcid-timeline-item orcid-timeline-item--edu">
-                        <button
-                          type="button"
-                          className="orcid-item-org orcid-item-org--link"
-                          onClick={() => {
-                            void findInstitution({ rorUrl: edu.ror, name: edu.organization }).then((inst) => {
-                              if (inst) navigateToEntity('institution', inst.id);
-                            });
-                          }}
-                          title={`${'Find and view profile for'} ${edu.organization}`}
-                        >
-                          {edu.organization}
-                        </button>
-                        {edu.role && <div className="orcid-item-role">{edu.role}</div>}
-                        {edu.startDate && (
-                          <div className="orcid-item-dates">
-                            {edu.startDate}
-                            {edu.endDate && <><span className="dot-separator">→</span>{edu.endDate}</>}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          )}
         </div>
         
       </div>

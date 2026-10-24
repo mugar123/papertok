@@ -1,13 +1,12 @@
 import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
   BookOpen,
   CaretDown,
-  CaretRight,
   Check,
   CircleNotch,
   Compass,
@@ -59,7 +58,7 @@ import './settings-page.css';
  */
 const SETTINGS_PAGES = [
   { slug: 'profile', label: 'Account', summary: 'Sign-in, university, delete account', Icon: UserCircle },
-  { slug: 'discovery', label: 'Discovery', summary: 'Follows and scientific interests', Icon: Compass },
+  { slug: 'discovery', label: 'Discovery', summary: 'Follows and interests', Icon: Compass },
   { slug: 'reading', label: 'Reading & AI', summary: 'AI level and your plain-words summaries', Icon: Sparkle },
   { slug: 'notifications', label: 'Notifications', summary: 'Email updates while PaperTok is closed', Icon: Bell },
   { slug: 'privacy', label: 'Privacy', summary: 'Usage analytics', Icon: ShieldCheck },
@@ -90,20 +89,15 @@ const SETTINGS_COPY = {
   settingsPage: 'Settings page',
   discovery: 'Discovery',
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
-  followedContent: 'Following',
+  followedContent: 'Follows',
   loadingFollowing: 'Loading the content you follow...',
-  followedOne: 'followed entity',
-  followedMany: 'followed entities',
-  recommendationsSuffix: 'influence your recommendations',
-  viewAll: 'View all',
-  viewAllFollowing: 'View all you follow',
-  scientificInterests: 'Scientific interests',
-  selectedOne: 'selected subcategory',
-  selectedMany: 'selected subcategories',
-  trainFeed: 'used to train your feed',
+  followingDescription: 'Entities that influence your recommendations',
+  editFollowing: 'Edit follows',
+  interests: 'Interests',
+  interestsDescription: 'Subcategories used to train your feed',
   selectedAreas: 'Selected areas',
   edit: 'Edit',
-  editInterests: 'Edit scientific interests',
+  editInterests: 'Edit interests',
   readingAi: 'Reading & AI',
   readingAiDescription: 'Adjust the depth of your AI explanations.',
   aiLevelLabel: 'Default AI level, preselected when you ask AI to explain a paper',
@@ -136,7 +130,6 @@ const SETTINGS_COPY = {
   connectedAs: 'Connected as ',
   connected: 'Connected',
   onlyMethod: 'Your only way to sign in, so it cannot be disconnected.',
-  methodLinked: 'You can sign in with it.',
   methodUnlinked: 'Connect it and you can sign in with it as well as the way you sign in today.',
   connectShort: 'Connect',
   connect: (label: string) => `Connect ${label}`,
@@ -279,23 +272,22 @@ function ProfileAccountPage() {
               only way in cannot be disconnected: the account would have no
               door. */}
           {methods.map(method => (
-            <div key={method.id} className="settings-row">
+            <div key={method.id} className="settings-row settings-row-inline">
               <div className="settings-row-content">
                 <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
-                <p>
-                  {method.linked
-                    ? (onlyMethod ? copy.onlyMethod : copy.methodLinked)
-                    : copy.methodUnlinked}
-                </p>
-                {!method.linked && <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} />}
+                {!method.linked && (
+                  <>
+                    <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} keepLine={false} />
+                    <span id={`${preparingId}-${method.id}-hint`} className="visually-hidden">{copy.methodUnlinked}</span>
+                  </>
+                )}
               </div>
               {method.linked ? (
-                <span className="settings-method-actions">
-                  <span className="settings-account-id">
-                    <span className="settings-account-dot" aria-hidden="true" />
-                    <span className="visually-hidden">{copy.connectedAs}</span>
-                    {identityFor(method.providerId) || copy.connected}
-                  </span>
+                <span className="settings-account-id">
+                  <span className="settings-account-dot" aria-hidden="true" />
+                  <span className="visually-hidden">{copy.connectedAs}</span>
+                  {identityFor(method.providerId) || copy.connected}
+                  {onlyMethod && <span className="visually-hidden">{`. ${copy.onlyMethod}`}</span>}
                 </span>
               ) : (
                 <Button
@@ -306,7 +298,7 @@ function ProfileAccountPage() {
                   disabled={Boolean(linking) || preparing}
                   focusableWhenDisabled={preparing}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  aria-describedby={preparing ? `${preparingId}-${method.id}` : undefined}
+                  aria-describedby={preparing ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
                 >
                   {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />
@@ -316,13 +308,20 @@ function ProfileAccountPage() {
               )}
             </div>
           ))}
-          <div className="settings-row">
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="settings-university-heading">
+        <SectionHeading
+          id="settings-university-heading"
+          title={copy.institution}
+          description={institution ? copy.institutionLinked(institution.name) : copy.institutionDescription}
+        />
+        <div className="settings-list">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <div className="settings-row-title-line">
-                <h3>{copy.institution}</h3>
-                {institution && <InstitutionPill institution={institution} />}
-              </div>
-              <p>{institution ? copy.institutionLinked(institution.name) : copy.institutionDescription}</p>
+              <h3 className="settings-method-name"><GraduationCap size={16} aria-hidden="true" />{copy.institution}</h3>
+              {institution && <InstitutionPill institution={institution} className="settings-row-pill" />}
             </div>
             <RowAction
               Icon={institution ? GearSix : LinkSimple}
@@ -426,25 +425,21 @@ function DiscoveryPage() {
       <section className="settings-section" aria-labelledby="settings-discovery-heading">
         <SectionHeading id="settings-discovery-heading" title={copy.discovery} description={copy.discoveryDescription} />
         <div className="settings-list">
-          <div className="settings-row">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <h3>{copy.followedContent}</h3>
-              <p>
-                {followingLoading && followedEntities.length === 0
-                  ? copy.loadingFollowing
-                  : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
-              </p>
+              <h3 className="settings-row-title-line">
+                {copy.followedContent}{' '}
+                {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">({followedEntities.length})</span>}
+              </h3>
+              <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
-            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => { if (isPhone) setIsFollowingOpen(true); else void navigate('/settings/following'); }} />
+            <RowAction Icon={PencilSimple} label={copy.editFollowing} text={copy.edit} onClick={() => { if (isPhone) setIsFollowingOpen(true); else void navigate('/settings/following'); }} />
           </div>
 
-          <div className="settings-row">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <h3>{copy.scientificInterests}</h3>
-              <p>
-                {selectedInterestCount}{' '}
-                {selectedInterestCount === 1 ? copy.selectedOne : copy.selectedMany} {copy.trainFeed}
-              </p>
+              <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">({selectedInterestCount})</span></h3>
+              <p>{copy.interestsDescription}</p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
             {selectedAreas.length > 0 && (
@@ -536,7 +531,7 @@ function NotificationsPage() {
       <section className="settings-section" aria-labelledby="settings-notifications-heading">
         <SectionHeading id="settings-notifications-heading" title={copy.notifications} description={copy.notificationsDescription} />
         <div className="settings-list">
-          <div className="settings-row">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
               <div className="settings-row-title-line">
                 <h3>{copy.emailUpdates}</h3>
@@ -565,16 +560,7 @@ export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
   const Page = PAGE_COMPONENTS[active.slug as keyof typeof PAGE_COMPONENTS];
-  // Below 900px the rail is a sideways strip, and every page remounts it
-  // scrolled to the start, which hid a later page's own tab past the edge.
-  // Brought in just clear of the strip's fading edge (`scroll-padding-inline`,
-  // settings-page.css).
-  const indexListRef = useRef<HTMLDivElement | null>(null);
-  const isPhone = useIsPhone();
   const [pagesOpen, setPagesOpen] = useState(false);
-  useLayoutEffect(() => {
-    indexListRef.current?.querySelector('a.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [activeIndex]);
 
   // The tab keeps saying which page this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
@@ -597,57 +583,53 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
-          {isPhone ? (
-            <>
-              <button
-                type="button"
-                className="settings-switcher"
-                aria-haspopup="dialog"
-                aria-expanded={pagesOpen}
-                onClick={() => setPagesOpen(true)}
-              >
-                <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
-                <span className="settings-switcher-copy">
-                  <small>{copy.settingsPage}</small>
-                  <strong>{active.label}</strong>
-                </span>
-                <CaretDown size={16} aria-hidden="true" />
-              </button>
-              <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
-                <DrawerContent className="settings-pages-sheet">
-                  <DrawerHandle />
-                  <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
-                  <nav aria-label={copy.pagesLabel}>
-                    <ul className="settings-pages-list">
-                      {SETTINGS_PAGES.map(entry => (
-                        <li key={entry.slug}>
-                          <NavLink
-                            to={`/settings/${entry.slug}`}
-                            replace
-                            className={({ isActive }) => (isActive ? 'is-active' : '')}
-                            onClick={() => setPagesOpen(false)}
-                          >
-                            {({ isActive }) => (
-                              <>
-                                <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                                <span className="settings-pages-copy">
-                                  <strong>{entry.label}</strong>
-                                  <small>{entry.summary}</small>
-                                </span>
-                                {isActive && <Check size={16} aria-hidden="true" />}
-                              </>
-                            )}
-                          </NavLink>
-                        </li>
-                      ))}
-                    </ul>
-                  </nav>
-                </DrawerContent>
-              </Drawer>
-            </>
-          ) : (
+          <button
+            type="button"
+            className="settings-switcher"
+            aria-haspopup="dialog"
+            aria-expanded={pagesOpen}
+            onClick={() => setPagesOpen(true)}
+          >
+            <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
+            <span className="settings-switcher-copy">
+              <small>{copy.settingsPage}</small>
+              <strong>{active.label}</strong>
+            </span>
+            <CaretDown size={16} aria-hidden="true" />
+          </button>
+          <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
+            <DrawerContent className="settings-pages-sheet">
+              <DrawerHandle />
+              <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
+              <nav aria-label={copy.pagesLabel}>
+                <ul className="settings-pages-list">
+                  {SETTINGS_PAGES.map(entry => (
+                    <li key={entry.slug}>
+                      <NavLink
+                        to={`/settings/${entry.slug}`}
+                        replace
+                        className={({ isActive }) => (isActive ? 'is-active' : '')}
+                        onClick={() => setPagesOpen(false)}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                            <span className="settings-pages-copy">
+                              <strong>{entry.label}</strong>
+                              <small>{entry.summary}</small>
+                            </span>
+                            {isActive && <Check size={16} aria-hidden="true" />}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </DrawerContent>
+          </Drawer>
           <nav className="settings-index" aria-label={copy.pagesLabel}>
-            <div ref={indexListRef} className="settings-index-list">
+            <div className="settings-index-list">
               {SETTINGS_PAGES.map(entry => (
                 <NavLink
                   key={entry.slug}
@@ -667,7 +649,6 @@ export default function SettingsPage({ page = 'profile' }) {
               ))}
             </div>
           </nav>
-          )}
 
           <div className="settings-content">
             <Page />

@@ -124,7 +124,7 @@ function formatOrcidData(data: OrcidPayload, orcidId: string) {
         ror,
         role: summary['role-title'],
         startDate: summary['start-date']?.year?.value,
-        endDate: summary['end-date']?.year?.value || 'Presente'
+        endDate: summary['end-date']?.year?.value
       };
     });
   }).filter(Boolean) as OrcidAffiliationRecord[] || [];

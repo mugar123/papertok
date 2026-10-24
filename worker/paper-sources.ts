@@ -243,9 +243,9 @@ async function askRoute(handler: RouteHandler, path: string, params: Record<stri
   const response = await handler(new Request(url), env, null);
   if (response.status === 429) throw new SourceRefused(path, Number(response.headers.get('retry-after')) || 60);
   // The route's ledger could not answer, so no provider was asked. Nothing
-  // says when it is back: a refusal longer than a lane waits ends the source
-  // for the step rather than asking the ledger again for every lane, and a
-  // followed lane keeps its turn (paper-harvest.ts).
+  // says when it is back: a refusal longer than a lane waits ends that lane.
+  // Later lanes can ask the ledger; a followed lane keeps its turn
+  // (paper-harvest.ts).
   if (response.status === 503) {
     const answer = await response.clone().json().catch(() => null) as { code?: unknown } | null;
     if (answer?.code === 'PROVIDER_QUOTA_NOT_CONFIGURED') throw new SourceRefused(path, LEDGER_REFUSAL_SECONDS);
@@ -383,7 +383,7 @@ const quotedLabel = (leafId: string) => LEAVES.find(leaf => leaf.id === leafId)?
 // (provider-runtime.ts). The nightly run has the other 3,700: a billed miss
 // reserves that share and its lane's part in one ledger transaction, with the
 // day's ceiling; enrichment spends the share alone. A spent share or part is
-// a refusal that ends the source for this step. Readers choose how many
+// a refusal that ends the current lane. Readers choose how many
 // followed lanes there are, and 400 followed searches spent the whole share
 // before a paper was enriched, so the nightly refresh of followed lanes has a
 // part of 700. Category and notable lanes run before it every night, so they

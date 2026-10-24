@@ -75,7 +75,6 @@
 
 .search-back-btn:focus-visible,
 .search-suggestion-chip:focus-visible,
-.search-follow-btn:focus-visible,
 .search-retry-btn:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
@@ -388,71 +387,6 @@
   color: var(--text-tertiary);
 }
 
-/* ─── Follow button ───
-   Modelled on `.sc-follow` in `search-command.css`, which `design.md` names as
-   the reference for this surface: a compact inline control, near-square, tinted
-   green once the relationship exists. */
-.search-follow-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-default);
-  padding: 6px var(--space-4);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-weight: var(--fw-medium);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
-  white-space: nowrap;
-  min-width: 98px;
-  min-height: 31px;
-  gap: 6px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .search-follow-btn:hover {
-    border-color: var(--border-ink);
-    color: var(--text-primary);
-  }
-}
-
-.search-follow-btn.following {
-  border-color: var(--tint-green-line);
-  background: var(--tint-green-bg);
-  color: var(--tint-green-fg);
-}
-
-.search-follow-btn .search-follow-undo {
-  display: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .search-follow-btn.following:hover .search-follow-rest {
-    display: none;
-  }
-
-  .search-follow-btn.following:hover .search-follow-undo {
-    display: inline;
-  }
-
-  .search-follow-btn.following:hover {
-    border-color: var(--tint-red-line);
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
-  }
-}
-
-.search-follow-btn.is-pending {
-  opacity: 0.78;
-  cursor: default;
-  pointer-events: none;
-}
-
 @keyframes searchLoadingShimmer {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
@@ -514,8 +448,9 @@
 }
 
 .search-suggestions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-2);
 }
 
@@ -531,6 +466,7 @@
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+  white-space: nowrap;
   cursor: pointer;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   text-align: left;
@@ -562,31 +498,8 @@
     padding: var(--space-6) var(--space-3) var(--space-4);
   }
 
-  .search-follow-btn {
-    min-width: 84px;
-    padding-inline: var(--space-3);
-  }
-
-  .search-suggestions-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
-
   .search-initial-state {
     padding-inline: var(--space-1);
-  }
-}
-
-@media (max-width: 380px) {
-  .search-suggestions-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .search-follow-btn {
-    min-width: 40px;
-  }
-
-  .search-follow-btn span {
-    display: none;
   }
 }
 
@@ -604,4 +517,30 @@
   flex: 1;
   justify-content: center;
   min-height: 50dvh;
+}
+
+:root.search-results-transition .search-results-list {
+  view-transition-name: search-results;
+}
+
+::view-transition-old(search-results) {
+  animation: searchResultsOut 160ms var(--ease-out) both;
+}
+
+::view-transition-new(search-results) {
+  animation: searchResultsIn 280ms var(--ease-out) 60ms both;
+}
+
+@keyframes searchResultsOut {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes searchResultsIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
 }

@@ -14,12 +14,12 @@ import {
   FileText,
   Lightbulb,
   MagnifyingGlass,
-  Plus,
   TrendUp,
   Users,
   WarningCircle,
   X,
 } from '@phosphor-icons/react';
+import { flushSync } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
@@ -57,7 +57,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle, DrawerTrigger } from '../ui/drawer.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import '../feed/share-panel.css';
-import { Toggle } from '../ui/toggle.tsx';
+import { FollowToggle } from '../ui/follow-toggle.tsx';
 import { getLocalizedInstitutionName } from '../../utils/institution-localization.ts';
 import { getProjectDisplayName } from '../../utils/entity-metadata.ts';
 import {
@@ -212,42 +212,34 @@ function OrderedSearchSections({ children, preferredSection }: PropsWithChildren
   ));
 }
 
+function inResultsTransition(update: () => void) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof document.startViewTransition !== 'function') {
+    update();
+    return false;
+  }
+  const root = document.documentElement;
+  root.classList.add('search-results-transition');
+  const transition = document.startViewTransition(() => flushSync(update));
+  const cleanup = () => root.classList.remove('search-results-transition');
+  transition.finished.then(cleanup, cleanup);
+  return true;
+}
+
 function FollowButton({ entity, isFollowing, isPending, onToggle }: { entity: FollowInput; isFollowing: (entity: FollowInput) => boolean; isPending: (entity: FollowInput) => boolean; onToggle: (event: MouseEvent, entity: FollowInput) => void }) {
   const following = isFollowing(entity);
   const pending = isPending(entity);
-  const label = following
-    ? ('Following')
-    : ('Follow');
 
   // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
   // `pressed`. The click still goes through `onToggle`, which stops it from
   // reaching the row link underneath and asks the following context.
   return (
-    <Toggle
-      variant="outline"
-      className={`search-follow-btn ${following ? 'following' : ''} ${pending ? 'is-pending' : ''}`}
+    <FollowToggle
       pressed={following}
       onClick={(event) => onToggle(event, entity)}
       disabled={pending}
-      aria-label={label}
-      title={label}
-    >
-      {following ? (
-        <>
-          <Check size={14} aria-hidden="true" className="search-follow-rest" />
-          <span className="search-follow-rest">{label}</span>
-          {/* Shown on pointer hover: what pressing it now does. Keyboard focus
-              keeps "Following", the button's accessible name. */}
-          <X size={14} aria-hidden="true" className="search-follow-undo" />
-          <span className="search-follow-undo" aria-hidden="true">{'Unfollow'}</span>
-        </>
-      ) : (
-        <>
-          <Plus size={14} aria-hidden="true" />
-          <span>{label}</span>
-        </>
-      )}
-    </Toggle>
+      followLabel={'Follow'}
+      followingLabel={'Following'}
+    />
   );
 }
 
@@ -268,12 +260,17 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // the reader to this page with the query intact rather than to a dead link.
   // The search effect below already keys on `query`, so seeding it is the
   // whole of the wiring.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
   const [isSearching, setIsSearching] = useState(() => Boolean(searchParams.get('q')?.trim()));
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState<string | null>(null);
-  const [activeSearchFilter, setActiveSearchFilter] = useState<SearchScopeId>('all');
+  const activeSearchFilter: SearchScopeId = SEARCH_FILTER_OPTIONS.find(option => option.id === searchParams.get('scope'))?.id ?? 'all';
+  const writeSearchUrl = (term: string, scope: SearchScopeId) => {
+    const next = new URLSearchParams({ ...(term && { q: term }), ...(scope !== 'all' && { scope }) });
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  };
+  const syncSearchUrl = useEffectEvent((term: string) => writeSearchUrl(term, activeSearchFilter));
   const [searchIssue, setSearchIssue] = useState<ReturnType<typeof describeSearchOutage>>(null);
 
   const [paperResults, setPaperResults] = useState<SearchResults['papers']>([]);
@@ -316,6 +313,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
   // The search of the current query. Aborting its controller is what ends it:
   // every path that starts another one, or clears the query, aborts it first.
   const requestRef = useRef<SearchRun | null>(null);
+  const transitionTermRef = useRef<string | null>(null);
   const getInteractionState = useCallback((paper: Paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -379,7 +377,12 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     // Unless the reader has opened another scope meanwhile: its own answer
     // paints then (handleSearchFilterChange). This one, with that scope's
     // sections still pending, would paint and announce an empty page under it.
-    if (scopeAnswerPaints(run, scope)) commit(snapshot);
+    if (scopeAnswerPaints(run, scope)) {
+      const transition = transitionTermRef.current === searchTerm;
+      transitionTermRef.current = null;
+      if (transition) inResultsTransition(() => commit(snapshot));
+      else commit(snapshot);
+    }
     const resultCount = Object.values(snapshot.results).reduce((total, list) => total + list.length, 0);
 
     // After the commit, never before: with the whole page behind the pending
@@ -400,6 +403,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     if (!query.trim()) {
       requestRef.current?.controller.abort();
       const resetStateTimeout = setTimeout(() => {
+        syncSearchUrl('');
         clearResults();
         setIsSearching(false);
         setHasSearched(false);
@@ -413,6 +417,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
 
     timeoutRef.current = setTimeout(() => {
       void startSearch(query.trim());
+      syncSearchUrl(query.trim());
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
@@ -635,21 +640,28 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
     clearResults();
     setQuery(nextQuery);
     setSearchIntent(intent);
-    setActiveSearchFilter(filter);
+    if (filter !== activeSearchFilter) writeSearchUrl(searchParams.get('q') ?? '', filter);
     setSearchIssue(null);
     setHasSearched(false);
     setIsSearching(Boolean(nextQuery.trim()));
   };
 
   const handleSuggestedSearch = (suggestion: { query: string; section: SearchScopeId }) => {
-    updateQuery(suggestion.query, suggestion.section, suggestion.section);
+    const animated = inResultsTransition(() => updateQuery(suggestion.query, suggestion.section, suggestion.section));
+    transitionTermRef.current = animated ? suggestion.query.trim() : null;
   };
 
   const handleSearchFilterChange = (filterId: SearchScopeId) => {
-    setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
+    writeSearchUrl(searchParams.get('q') ?? '', filterId);
     // Only the answer for the scope on screen paints (search-page-run.ts).
     openSearchScope(requestRef.current, filterId, commit, () => setIsSearching(true));
+  };
+
+  const handleBack = () => {
+    const historyIndex = window.history.state?.idx;
+    if (Number.isInteger(historyIndex) && historyIndex > 0) void navigate(-1);
+    else void navigate('/feed');
   };
 
   const clearSearch = () => {
@@ -671,7 +683,7 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
           <button
             type="button"
             className="search-back-btn"
-            onClick={() => { void navigate('/feed'); }}
+            onClick={handleBack}
             aria-label={'Back'}
           >
             <ArrowLeft size={22} />
@@ -856,7 +868,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {institutionResults.map((inst) => (
                   <ListRow
                     key={inst.id}
-                    meta={['Institution', inst.country_code || ('Unknown country')]}
                     title={getLocalizedInstitutionName(inst)}
                     onOpen={() => { void navigate(`/explorer/institution/${inst.id.split('/').pop()}`); }}
                     actions={(
@@ -874,7 +885,9 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         onToggle={(event, entity) => { void handleToggleFollow(event, entity); }}
                       />
                     )}
-                  />
+                  >
+                    <p className="list-row-byline">{inst.country_code || 'Unknown country'}</p>
+                  </ListRow>
                 ))}
               </div>
             )}
@@ -885,7 +898,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {projectResults.map((project) => (
                   <ListRow
                     key={project.id}
-                    meta={['Project', project.funder]}
                     title={getProjectDisplayName(project)}
                     onOpen={() => { void navigate(`/explorer/project/${encodeURIComponent(project.id!)}?name=${encodeURIComponent(getProjectDisplayName(project))}&funder=${encodeURIComponent(project.funder)}`); }}
                     actions={(
@@ -897,8 +909,13 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                       />
                     )}
                   >
-                    {project.budget! > 0 && (
-                      <p className="list-row-byline">{(() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!); } catch { return `${project.budget!.toLocaleString(locale)} €`; } })()}</p>
+                    {(project.funder || project.budget! > 0) && (
+                      <p className="list-row-byline">
+                        {[
+                          project.funder,
+                          project.budget! > 0 && (() => { try { return new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget!); } catch { return `${project.budget!.toLocaleString(locale)} €`; } })(),
+                        ].filter(Boolean).join(' · ')}
+                      </p>
                     )}
                   </ListRow>
                 ))}
@@ -911,7 +928,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {conceptResults.map((concept) => (
                   <ListRow
                     key={concept.id}
-                    meta={['Topic', concept._localTopic ? concept.parent_display_name : concept.field_display_name]}
                     title={concept.display_name}
                     onOpen={() => { void navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop()!)}`); }}
                     actions={(
@@ -933,7 +949,11 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                         onToggle={(event, entity) => { void handleToggleFollow(event, entity); }}
                       />
                     )}
-                  />
+                  >
+                    {(concept._localTopic ? concept.parent_display_name : concept.field_display_name) && (
+                      <p className="list-row-byline">{concept._localTopic ? concept.parent_display_name : concept.field_display_name}</p>
+                    )}
+                  </ListRow>
                 ))}
               </div>
             )}
@@ -944,7 +964,6 @@ export default function SearchPage({ onSaveToList = () => {} }: { onSaveToList?:
                 {authorResults.map((author) => (
                   <ListRow
                     key={author.id}
-                    meta={['Author']}
                     title={author.display_name}
                     onOpen={() => { void navigate(`/explorer/author/${author.id.split('/').pop()}`); }}
                     actions={(

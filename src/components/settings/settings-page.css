@@ -251,25 +251,45 @@
 }
 
 /* ── Sign-in methods: the provider's own mark, its account, the action ── */
+.settings-row.settings-row-inline {
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 56px;
+}
+
+.settings-row.settings-row-inline > :nth-child(2) {
+  justify-self: end;
+}
+
+.settings-row.settings-row-side {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-row.settings-row-side > .settings-row-action {
+  justify-self: end;
+}
+
+.settings-count {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-row-pill {
+  margin-top: var(--space-2);
+  white-space: normal;
+}
+
 .settings-method-name {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.settings-method-actions {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-
 .settings-account-id {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: var(--space-2);
+  position: relative;
+  max-width: 100%;
   overflow: hidden;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -279,7 +299,9 @@
 }
 
 .settings-account-dot {
-  flex: 0 0 auto;
+  display: inline-block;
+  margin-right: var(--space-2);
+  vertical-align: middle;
   width: 7px;
   height: 7px;
   border-radius: var(--radius-full);
@@ -439,6 +461,11 @@
   cursor: pointer;
 }
 
+.profile-switch + .profile-switch {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--settings-panel-line);
+}
+
 .profile-switch-copy {
   display: flex;
   flex-direction: column;
@@ -458,8 +485,6 @@
 }
 
 @media (max-width: 900px) {
-  /* No room for a column beside the content: the pages become one line
-     above it, scrolled sideways, each page the same icon and name. */
   .settings-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
@@ -470,30 +495,7 @@
   }
 
   .settings-index {
-    position: static;
-    margin: 0 calc(-1 * var(--space-6)) var(--space-8);
-    padding: 0 var(--space-6);
-  }
-
-  .settings-index-list {
-    flex-direction: row;
-    gap: var(--space-1);
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scroll-padding-inline: 28px;
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
-    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
-  }
-
-  .settings-index-list::-webkit-scrollbar {
     display: none;
-  }
-
-  .settings-index-list a {
-    min-height: 44px;
-    flex: 0 0 auto;
-    gap: var(--space-2);
   }
 }
 
@@ -555,6 +557,12 @@
 .settings-switcher > svg {
   flex: none;
   color: var(--text-secondary);
+}
+
+@media (min-width: 901px) {
+  .settings-switcher {
+    display: none;
+  }
 }
 
 .settings-pages-sheet {
@@ -622,12 +630,6 @@
     padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-12);
   }
 
-  .settings-index {
-    margin-right: calc(-1 * var(--space-4));
-    margin-left: calc(-1 * var(--space-4));
-    padding: 0 var(--space-4);
-  }
-
   .settings-section {
     margin-top: var(--space-8);
   }
@@ -648,14 +650,8 @@
     row-gap: var(--space-3);
   }
 
-  .settings-row > .settings-row-action,
-  .settings-row > .settings-method-actions {
+  .settings-row > .settings-row-action {
     justify-self: start;
-  }
-
-  .settings-method-actions {
-    justify-content: flex-start;
-    flex-wrap: wrap;
   }
 }
 

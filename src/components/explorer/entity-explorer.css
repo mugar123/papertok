@@ -825,102 +825,6 @@
   color: var(--text-secondary);
 }
 
-/* Chevron by the name that discloses the professional-experience panel. */
-.ehc-name-toggle {
-  display: inline-flex;
-  align-items: center;
-  min-width: 32px;
-  min-height: 28px;
-  gap: 3px;
-  flex: 0 0 auto;
-  margin-top: 6px;
-  padding: 3px 6px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .ehc-name-toggle:hover {
-    border-color: var(--border-ink);
-    color: var(--text-primary);
-  }
-}
-
-.ehc-name-toggle.is-open {
-  border-color: var(--border-ink);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
-
-.ehc-name-toggle:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* The chevron and the fold share the same gentle height curve in both
-   directions, so opening a long career does not jump on the first frame. */
-.ehc-name-toggle > svg:last-child {
-  transition: transform var(--motion-base) var(--ease-out);
-}
-
-.ehc-name-toggle.is-open > svg:last-child {
-  transform: rotate(180deg);
-}
-
-/* The experience disclosure: a bordered panel dropping below the header. */
-/* The disclosure is two elements on purpose, and this is the whole fix.
-
-   It used to be one: the animated element carried the padding, the border and
-   the background itself. Animating its height to zero then left 16px of padding
-   top and bottom plus two 1px borders standing — so "closed" was a 34px empty
-   bordered strip that then blinked out of existence when the node unmounted,
-   and "open" started from that same strip rather than from nothing. Neither end
-   of the movement was the one the curve described.
-
-   Now the outer element only collapses, and everything with a size of its own
-   lives inside it, where the clip hides it as the height comes down. Zero
-   means zero. */
-.ehc-experience-panel {
-  overflow: hidden;
-  /* And the second residue, one level up from the first.
-
-     The parent is a flex column with a 16px row gap, and a gap does not
-     collapse with height: folded to zero the panel still held its share of it,
-     so the fold finished 16px short of closed and those last 16px went in one
-     frame when `AnimatePresence` unmounted the node. Same shape of bug as the
-     padding, same tell — the curve described a movement that ended somewhere
-     the layout did not.
-
-     Pulling the panel up by exactly that gap cancels it, and the inner element
-     pays the space back from inside the clip, where it is folded away with
-     everything else instead of outliving it. Both sides are the same token, so
-     they cannot drift apart. */
-  margin-top: calc(-1 * var(--space-4));
-}
-
-.ehc-experience-inner {
-  margin-top: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
-}
-
-.ehc-experience-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: var(--space-4);
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
 .ehc-meta {
   margin: 0;
   font: 500 0.75rem/1.3 var(--font-mono);
@@ -955,7 +859,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .ehc-author-institution:hover:not(:disabled) {
+  button.ehc-author-institution:hover:not(:disabled) {
     color: var(--text-primary);
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -969,6 +873,11 @@
 }
 
 .ehc-author-institution:disabled {
+  cursor: default;
+}
+
+.ehc-author-institution--unknown {
+  color: var(--text-tertiary);
   cursor: default;
 }
 
@@ -1195,7 +1104,27 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
+}
+
+.ehc-share.ehc-share {
+  --rail: var(--text-secondary);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  color: var(--rail);
+}
+
+.ehc-share svg {
+  width: 24px;
+  height: 24px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ehc-share.ehc-share:hover {
+    background: color-mix(in srgb, var(--rail) 10%, transparent);
+    color: var(--rail);
+  }
 }
 
 .ehc-links {
@@ -1527,7 +1456,6 @@
 
 .ee-author-card:focus-visible,
 .project-summary-box:focus-visible,
-.orcid-item-org--link:focus-visible,
 .ehc-meta [role="link"]:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
@@ -2395,214 +2323,65 @@
   }
 }
 
-/* ─── ORCID career ─── */
-.orcid-career-section {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-5) var(--space-5) 4px;
-}
-
-/* The badge resolves in the skeleton's place; the details settle underneath.
-   Opacity advances evenly, independent of the small displacement. Backwards
-   fill reserves only the delayed first frame and releases every transform
-   after the entrance, keeping text and interactive content at rest. */
-.orcid-career-section--animate > * {
-  animation:
-    settle var(--motion-base) linear backwards,
-    authorContentTravel var(--motion-base) var(--ease-out) backwards;
-}
-
-/* The panel already fades as a whole. Its rows only travel, avoiding a second
-   opacity ramp on the same text. Delays stop growing after the fifth row. */
-.ehc-experience-panel .orcid-timeline-item {
-  animation: authorContentTravel var(--motion-base) var(--ease-out) var(--author-row-delay, 0ms) backwards;
-}
-
-@keyframes authorContentTravel {
-  from { transform: translateY(6px); }
-  to { transform: none; }
-}
-
-.orcid-career-section--animate > *:nth-child(1) { animation-delay: 0s; }
-.orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.04s; }
-.orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.08s; }
-.orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.12s; }
-.orcid-career-section--animate > *:nth-child(n + 5) { animation-delay: 0.16s; }
-
-.orcid-ext-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: 500 0.6875rem/1.4 var(--font-mono);
-  letter-spacing: 0.02em;
-  color: var(--text-secondary);
-  text-decoration: none;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-default);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .orcid-ext-link:hover {
-    border-color: var(--tint-green-line);
-    color: var(--tint-green-fg);
-  }
-}
-
-.orcid-biography {
-  background: var(--bg-sunken);
-  border-left: 3px solid var(--tint-green-line);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-5);
-  font-family: var(--font-serif);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-
-.orcid-links-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: var(--space-5);
-}
-
-.orcid-timeline-block {
-  margin-bottom: var(--space-6);
-}
-
-.orcid-timeline-block:last-child {
-  margin-bottom: 0;
-}
-
-.orcid-timeline-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: var(--space-4);
-  padding-left: 4px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.orcid-tl-icon {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-}
-
-.orcid-tl-icon--edu {
-  background: var(--tint-green-bg);
-  color: var(--tint-green-fg);
-  border: 1px solid var(--tint-green-line);
-}
-
-.orcid-timeline {
-  position: relative;
-  padding-left: 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.orcid-timeline::before {
-  content: '';
-  position: absolute;
-  left: 16px;
-  top: 10px;
-  bottom: 10px;
-  width: 1px;
-  background: var(--border-default);
-  transform: translateX(-50%);
-}
-
-.orcid-timeline-item {
-  position: relative;
-  padding: 12px 14px;
-  background: var(--bg-card);
+/* ─── ORCID profile ─── */
+.orcid-profile {
+  overflow: hidden;
+  padding: var(--space-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  background: var(--bg-card);
+  animation: settle var(--motion-base) linear backwards;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .orcid-timeline-item:hover {
-    background: var(--bg-secondary);
-    border-color: var(--border-default);
-  }
+.orcid-profile > * + * {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
 }
 
-.orcid-timeline-item::before {
-  content: '';
-  position: absolute;
-  left: -21px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 9px;
-  height: 9px;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
-  border: 2px solid var(--bg-card);
-  box-shadow: 0 0 0 1px var(--border-default);
-}
-
-.orcid-timeline-item--edu::before {
-  background: var(--tint-green-fg);
-}
-
-.orcid-item-org {
-  display: inline-flex;
-  align-items: center;
-  margin-bottom: 3px;
-  font-size: 0.87rem;
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-  line-height: 1.3;
-}
-
-.orcid-item-org--link {
-  min-height: 24px;
+.orcid-links {
+  margin: 0;
   padding: 0;
-  border: 0;
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
+  list-style: none;
+}
+
+.orcid-links li + li,
+.orcid-links-more > .orcid-links {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.orcid-links-more {
+  overflow: hidden;
+}
+
+.orcid-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  font: 500 0.8125rem/1.3 var(--font-mono);
+  color: var(--text-secondary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.orcid-link-name {
+  flex: 1;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .orcid-item-org--link:hover {
+  .orcid-link:hover {
+    color: var(--text-primary);
     text-decoration: underline;
   }
 }
 
-.orcid-item-role {
-  margin-bottom: 6px;
-  font-size: 0.78rem;
+.orcid-biography {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 0.9375rem;
+  line-height: 1.6;
   color: var(--text-secondary);
-  line-height: 1.3;
-}
-
-.orcid-item-dates {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  font: 500 0.625rem/1.4 var(--font-mono);
-  color: var(--text-tertiary);
 }
 
 /* ─── Mobile ─── */
@@ -2729,7 +2508,6 @@
    lifted out of the pointer gate — a 776px serif row scaled by 3% re-rasters
    two lines of type for a tap, which is the cost `page-transition.tsx` argues
    at length about for a page. */
-.ehc-name-toggle:active:not(:disabled),
 .project-summary-toggle:active:not(:disabled),
 .project-show-more:active:not(:disabled),
 .ee-filter-chip:active:not(:disabled),
@@ -2759,10 +2537,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ehc-name-toggle > svg:last-child {
-    transition: none;
-  }
-
   .ee-author-card:hover .ee-author-arrow {
     transform: none;
   }
@@ -2792,9 +2566,8 @@
   .ex-skel,
   .ex-skel::after,
   .ehc-stat-value.is-settled,
-  .orcid-career-section--animate > *,
+  .orcid-profile,
   .ehc-orcid-stamp svg,
-  .ehc-experience-panel .orcid-timeline-item,
   .explorer-container--author .ehc-header,
   .ehc-spinner,
   .explorer-empty {
@@ -2812,8 +2585,7 @@
 
   /* Reduced motion means less movement, not less feedback: these keep their
      colour transitions and lose only the travel. */
-  .ee-author-card.staggerFadeUp,
-  .orcid-career-section--animate > * {
+  .ee-author-card.staggerFadeUp {
     animation: none;
     opacity: 1;
     transform: none;
@@ -2822,7 +2594,6 @@
   /* The press stays as a colour change; the squeeze is movement and goes.
      The rows' `:active` background is untouched — it is the whole point of
      keeping feedback here. */
-  .ehc-name-toggle:active:not(:disabled),
   .project-summary-toggle:active:not(:disabled),
   .project-show-more:active:not(:disabled),
   .ee-filter-chip:active:not(:disabled),

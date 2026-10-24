@@ -167,7 +167,7 @@ import {
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
-import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize } from '../../utils/motion-curves.ts';
+import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
 import { createLongPress } from './long-press.ts';
 
 /** An author's name in its grid cell: ellipsed when it does not fit, and only
@@ -1377,17 +1377,7 @@ const PaperCard = memo(function PaperCard({
   const likeIconRef = useRef<HTMLSpanElement | null>(null);
   const saveIconRef = useRef<HTMLSpanElement | null>(null);
   const pulse = (icon: HTMLSpanElement | null, on: boolean) => {
-    const svg = icon?.querySelector('svg');
-    if (!svg || prefersReducedMotion) return;
-    svg.getAnimations().forEach((running) => running.cancel());
-    svg.animate(
-      [
-        { transform: 'scale(1)', easing: 'cubic-bezier(0.23, 1, 0.32, 1)' },
-        { transform: on ? 'scale(1.16)' : 'scale(0.9)', offset: 0.4, easing: 'cubic-bezier(0.65, 0, 0.35, 1)' },
-        { transform: 'scale(1)' },
-      ],
-      { duration: 260 },
-    );
+    if (!prefersReducedMotion) pulseIcon(icon?.querySelector('svg'), on);
   };
   const handleLike = (liking: boolean) => {
     if (publicMode) {
