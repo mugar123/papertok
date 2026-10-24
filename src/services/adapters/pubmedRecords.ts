@@ -78,21 +78,25 @@ function getCategoryDefinition(categoryId: string|number) {
 }
 
 /**
- * The feed's PubMed query for a reader's categories. Each label is searched in
- * every field. Limited to title and abstract (`[tiab]`), the newest matches
- * were mostly reviews and papers that only name the discipline: on 2026-10-21
- * page 0 had 40 % on-target papers for molecular biology and 31 % for
- * neuroscience, against 63 % and 50 % with every field. Every field also
- * matches Methods in Molecular Biology, a protocol series added a volume at a
- * time, so the series is left out by its ISSNs. Only records with a
+ * The harvest's PubMed query for a category: the terms the category check
+ * looks for, in title and abstract (`[tiab]`), so the papers it lists are ones
+ * the check can keep. The label searched as one phrase in every field matched
+ * affiliations and journal names, which the check drops, and next to nothing
+ * for a label joined by "&": on 2026-10-24 a page kept 0 of 50 for zoology and
+ * marine biology, 1 for general medicine, and "Public Health & Epidemiology"
+ * matched 689 records in all. Methods in Molecular Biology, a protocol series
+ * added a volume at a time, is left out by its ISSNs. Only records with a
  * publication date (`[dp]`) by today (UTC) come back, so a recent-first lane
  * is not filled with issues printed next year.
  */
 export function pubmedCategoryQuery(categoryIds: readonly string[]) {
-  const labels = categoryIds.map(categoryId => getCategoryDefinition(categoryId)?.label).filter(Boolean);
+  const terms = [...new Set(categoryIds.flatMap(categoryId => [
+    ...(getCategoryDefinition(categoryId)?.label.split(' & ') || []),
+    ...(PUBMED_CATEGORY_ALIASES[categoryId] || []),
+  ].map(term => term.toLowerCase())))];
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
   const protocolSeries = [...PROTOCOL_SERIES_ISSNS].map(issn => `"${issn}"[is]`).join(' OR ');
-  return `(${labels.map(label => `"${label}"`).join(' OR ')}) AND 1800/01/01:${today}[dp] NOT (${protocolSeries})`;
+  return `(${terms.map(term => `"${term}"[tiab]`).join(' OR ')}) AND 1800/01/01:${today}[dp] NOT (${protocolSeries})`;
 }
 
 function containsTerm(text: string, term: string) {

@@ -16,6 +16,15 @@ export interface QuotaRequest {
   tally?: string;
   // `observe` only: what the provider reports is left, in the same units.
   remaining?: number;
+  // A part of the subject's allowance that this request spends: a second
+  // subject with its own limit, checked and counted in the same transaction
+  // as the subject and the day, and given back with them.
+  part?: QuotaPart;
+}
+
+export interface QuotaPart {
+  subject: string;
+  limit: number;
 }
 
 export interface QuotaTally {
@@ -125,22 +134,29 @@ export class RequestQuotaLedger {
     const percent = optionalPercent(payload?.percent);
     const tallyName = optionalTally(payload?.tally);
     const reportedRemaining = optionalRemaining(payload?.remaining);
+    const hasPart = payload?.partKey !== undefined || payload?.partLimit !== undefined;
+    const partKey = hasPart ? safeSubjectKey(payload?.partKey) : '';
+    const partLimit = hasPart ? positiveInteger(payload?.partLimit) : 0;
     if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit || !amount
       || !percent || tallyName === null || reportedRemaining === null
-      || (action === 'observe' && reportedRemaining === undefined)) {
+      || (action === 'observe' && reportedRemaining === undefined)
+      || (hasPart && (!partKey || !partLimit))) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
     const result = await this.state.storage.transaction(async transaction => {
       const subjectStorageKey = `subject:${subjectKey}`;
-      const [subjectValue, globalValue, observedValue, tallyValue] = await Promise.all([
+      const partStorageKey = `subject:${partKey}`;
+      const [subjectValue, globalValue, observedValue, tallyValue, partValue] = await Promise.all([
         transaction.get(subjectStorageKey),
         transaction.get('global'),
         transaction.get('observed'),
         transaction.get('tally'),
+        partKey ? transaction.get(partStorageKey) : undefined,
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
+      const partUsage = Math.max(0, Number(partValue) || 0);
       const observed = storedObservation(observedValue);
       const tally = storedTally(tallyValue);
 
@@ -182,6 +198,7 @@ export class RequestQuotaLedger {
           transaction.put(subjectStorageKey, releasedSubjectUsage),
           transaction.put('global', releasedGlobalUsage),
           tallyName ? transaction.put('tally', tally) : undefined,
+          partKey ? transaction.put(partStorageKey, Math.max(0, partUsage - amount)) : undefined,
         ]);
         return {
           released: true,
@@ -200,7 +217,9 @@ export class RequestQuotaLedger {
       const limit = Math.floor(ceiling * percent / 100);
       const scope = subjectUsage + amount > subjectLimit
         ? 'user'
-        : globalUsage + amount > limit ? 'global' : '';
+        : partKey && partUsage + amount > partLimit
+          ? 'part'
+          : globalUsage + amount > limit ? 'global' : '';
       // Only the day's share refusing is tallied: a subject's refusal (for
       // OpenAlex, the minute's ceiling) is a burst rather than a closed tier,
       // and counting it would add a write here exactly when the object is
@@ -220,6 +239,7 @@ export class RequestQuotaLedger {
         transaction.put(subjectStorageKey, nextSubjectUsage),
         transaction.put('global', nextGlobalUsage),
         tallyName ? transaction.put('tally', tally) : undefined,
+        partKey ? transaction.put(partStorageKey, partUsage + amount) : undefined,
       ]);
       return {
         accepted: true,
@@ -254,11 +274,13 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
   percent,
   tally,
   remaining,
+  part,
 }: QuotaRequest): Promise<QuotaReading> {
   if (!namespace?.idFromName || !namespace?.get) {
     return { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' };
   }
   const subjectKey = await sha256(subject);
+  const partKey = part ? await sha256(part.subject) : undefined;
   const id = namespace.idFromName(String(periodKey).slice(0, 160));
   const response = await namespace.get(id).fetch(`https://papertok.internal/quota/${action}`, {
     method: 'POST',
@@ -274,6 +296,8 @@ async function callRequestQuotaLedger(namespace: WorkerEnv['REQUEST_QUOTA_LEDGER
       percent,
       tally,
       remaining,
+      partKey,
+      partLimit: part?.limit,
     }),
   });
   if (!response.ok) return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' };
