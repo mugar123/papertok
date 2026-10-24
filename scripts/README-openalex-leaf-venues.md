@@ -38,16 +38,19 @@ sources, with `type:article` (`article|conference-paper` where proceedings
 count), the 90 days through its capture day (or the day before, for a sample
 taken after midnight UTC), `is_retracted:false`, optionally
 `has_abstract:true`, and optionally one topic filter and one author-count
-filter. Nothing else is accepted.
+filter. Nothing else is accepted. The day before is a departure from the topic
+lanes' gate, which takes only the window through the capture day: every
+sample but economics and finance's was taken between 02:06 and 02:54 UTC on
+2026-10-24 with the window that ended on 2026-10-23.
 
 A leaf passes with a full page of 15 and at least 10 on target without doubt,
 the topic lanes' rule (`README-openalex-leaf-topics.md`). Its lane then asks
 for the sources its curator filed under it that have at least one article on
 target without doubt, or whose own sample passes the leaf's gate: a full page
 of 15, asked with the leaf's filters (the same types, abstract filter and
-topic or author filter), at least 10 on target. A sample tests the curated list and does not add
-to it: a leaf whose sample passes on sources its curator left out has no lane
-(`not-curated` in the report).
+topic or author filter), at least 10 on target. A sample tests the curated
+list and does not add to it: a leaf whose sample passes on sources its curator
+left out has no lane (`not-curated` in the report).
 The leaf's precision says nothing about a source its 15 newest did not reach,
 so such a source stays out, as a topic does in a topic lane. Every source a
 lane asks for must be one the review rule calls reviewed
@@ -58,14 +61,20 @@ window and `is_retracted:false`. It does not ask `has_abstract:true`
 (Pablo, 2026-10-23: it drops most closed Elsevier, Springer and University of
 Chicago Press articles), so a card without an abstract says "No abstract
 available". It does not ask `primary_location.source.is_core:true`: the
-sources are named, and OpenAlex marks none of the conference sources, nor npj
-Soft Matter, as core.
+sources are named, and six of them are not core in OpenAlex: the three
+conferences the lanes ask for (ICPP, SPLASH and PIMRC), npj Soft Matter,
+Natural Language Processing and ACM Transactions on Information Systems. The
+mathematics curator did not record the core flag of its 42 sources.
 
 The nightly run harvests the venue lanes before the working-paper series, so
 a journal article and its working paper listed the same night merge into the
 journal's reviewed row (#198, PAP-85). A working paper stored on an earlier
-night keeps its own row, Working paper tag included, when its journal article
-arrives and merges into it (`PaperBuilder.merge`).
+night keeps its own row when its journal article arrives and merges into it
+(`PaperBuilder.merge`): the row keeps the working paper's DOI, its unreviewed
+answer and its Working paper tag, and is filed under the venue leaf too.
+Working papers usually appear first, so when both fall within the 90 days this
+is the more likely order, and the journal row stays reviewed only when both
+are listed the same night.
 
 A venue lane's article reaches its leaf's readers. When its area's lane
 (`openalex-areas`) listed it too, `fileAreaPapers` (`worker/leaf-filing.ts`)
@@ -125,7 +134,7 @@ labels are blind to the curators' calls, not to the venue.
 | Economics and finance | econ.EM, econ.TH, q-fin.GN, q-fin.MF | econ.GN 9 of 15 (11 of 15 with `has_abstract:true`; two articles without an abstract were doubted), q-fin.RM 10 of 15 from the Journal of Risk and Insurance and Insurance: Mathematics and Economics, which its curator excluded as insurance and actuarial journals, q-fin.PM 4 of 15, q-fin.PR 9 articles in 90 days, q-fin.TR 4 |
 | Physics | all 24 sampled | none |
 | Mathematics | 12 | math.AG 9 of 15, math.GR 7 of 15 |
-| Computer science, statistics, electrical engineering | 25 | cs.DS 13 articles in 90 days (all on target), cs.GT 11 (9 on target) |
+| Computer science, statistics, electrical engineering | 25 | cs.DS 13 articles with an abstract in 90 days, all on target (14 in all), cs.GT 11 with an abstract, 9 on target (24 in all): their samples asked `has_abstract:true`, which their lanes would not |
 | Engineering | all 14 sampled | none |
 
 q-fin.ST, q-fin.CP and the leaves no curator sampled have no venue lane.
@@ -141,8 +150,15 @@ with and without it.
 
 The passing leaves' samples asked for 433 sources. Their lanes ask for 242;
 the other 191 had no article on target among their leaf's 15 newest. 37 of
-them are conferences, which publish their proceedings once a year (AAAI,
-IJCAI, ACL, NeurIPS, CHI and SIGIR among them). Two journals entered on a
+them are conferences. 32 of those had no work in the 90 days, since they
+publish their proceedings once a year (AAAI, ACL, NeurIPS, CHI and SIGIR among
+them); none can enter a lane before a new sample reaches its proceedings. Four
+published many in the window, but none among their leaf's 15 newest, so none
+of their articles was labelled: IJCAI (cs.AI, 957 articles), KDD (cs.LG,
+1,216), ICIP (eess.IV, 629) and RecSys (cs.IR, 284). The Design Automation
+Conference (eess.electro, 307) had one, off target. The lanes ask for three
+conferences: ICPP (cs.DC), SPLASH (cs.PL) and PIMRC, eess.telecom's only
+source. Two journals entered on a
 sample of their own: Physics of Fluids (14 of 15) and Nonlinear Dynamics (11
 of 15). The Journal of the Acoustical Society of America (9 of 15) did not.
 Nor did the Journal of Financial and Quantitative Analysis, absent from
