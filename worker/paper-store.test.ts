@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, embedPending, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity, readFeedPage, readVector,
-  rewriteWorks,
+  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  readFeedPage, readVector, rewriteWorks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { PaperBuilder } from '../src/services/PaperBuilder.ts';
@@ -657,6 +657,89 @@ test("a reader's later pages read the order the first page ranked, and only thei
   const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});
+
+// Workers AI, as the store calls it: one vector of the model's size per text.
+function embeddingModel() {
+  const texts: string[] = [];
+  const AI = {
+    run: async (_model: string, { text }: { text: string[] }) => {
+      texts.push(...text);
+      await new Promise(resolve => setImmediate(resolve));
+      return { data: text.map((_, index) => Array.from({ length: 1024 }, (__, dimension) => Math.sin(index + dimension + 1))) };
+    },
+  };
+  return { AI, texts };
+}
+
+test('two embedding passes at once embed each paper once', async () => {
+  const { binding } = testD1();
+  const { AI, texts } = embeddingModel();
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 64 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.002${String(index).padStart(2, '0')}`, arxivId: `2610.002${String(index).padStart(2, '0')}`, title: `Paper ${index} waiting for its vector`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  // The daily run's pass, and a followed lanes' run started beside it.
+  const embedded = await Promise.all([embedPending(env, 256), embedPending(env, 256)]);
+  assert.equal(embedded[0] + embedded[1], 64);
+  assert.equal(texts.length, 64);
+  assert.equal(new Set(texts).size, 64);
+});
+
+test("one reader's lookups embed a small share of the day, and the harvest and other readers keep the rest", async () => {
+  const { binding, db } = testD1();
+  const { AI } = embeddingModel();
+  // 200,000 estimated tokens a day; each paper below is about 670.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '200000' } as Parameters<typeof embedPending>[0];
+  await ingestPapers(env, Array.from({ length: 400 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.1${String(index).padStart(4, '0')}`, arxivId: `2610.1${String(index).padStart(4, '0')}`,
+      title: `Liked paper ${index}`, abstract: `A long abstract of paper ${index}. `.repeat(100), allCategories: [], categories: [],
+    },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const ids = (db.prepare('SELECT id FROM works ORDER BY id').all() as Array<{ id: number }>).map(row => row.id);
+  // A lookup embeds at most ten liked papers; this reader keeps asking with new ones.
+  let readerEmbedded = 0;
+  let refused: number[] = [];
+  for (let lookup = 0; lookup < 30; lookup += 1) {
+    const asked = ids.slice(lookup * 10, lookup * 10 + 10);
+    const embedded = await embedWorks(env, asked, 'reader-1');
+    if (embedded === 0) {
+      refused = asked;
+      break;
+    }
+    readerEmbedded += embedded;
+  }
+  assert.ok(readerEmbedded > 0 && readerEmbedded <= 100, `one reader embedded ${readerEmbedded}`);
+  assert.equal(await embedWorks(env, refused, 'reader-2'), 10, "another reader's lookup of the same papers is embedded");
+  assert.equal(await embedPending(env, 64), 64, 'the harvest still embeds');
+});
+
+test("runs for new follows embed within their own share of the day, and the daily run keeps the rest", async () => {
+  const { binding } = testD1();
+  const { AI } = embeddingModel();
+  // 3M estimated tokens a day; each paper below is about 670, 2M in all.
+  const env = { PAPER_STORE: binding, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, AI, EMBEDDING_DAILY_TOKEN_LIMIT: '3000000' } as Parameters<typeof embedPending>[0];
+  const followed = Array.from({ length: 3_000 }, (_, index) => ({
+    paper: {
+      ...arxivRecord, id: `2610.2${String(index).padStart(4, '0')}`, arxivId: `2610.2${String(index).padStart(4, '0')}`,
+      title: `Followed paper ${index}`, abstract: `A long abstract of followed paper ${index}. `.repeat(60), allCategories: [], categories: [],
+    },
+    lanes: [`query:search ${index % 20}`],
+  }));
+  await ingestPapers(env, followed, { now: NOW });
+  // Twenty readers' new follows, each run embedding its own lane until it is refused.
+  let followRuns = 0;
+  for (let lane = 0; lane < 20; lane += 1) {
+    for (let embedded = -1; embedded !== 0;) {
+      embedded = await embedPending(env, 256, { lanes: [`query:search ${lane}`] });
+      followRuns += embedded;
+    }
+  }
+  assert.ok(followRuns > 0 && followRuns < 3_000, `follow runs embedded ${followRuns} of 3,000`);
+  assert.equal(await embedPending(env, 256), 256, 'the daily run still embeds');
 });
 
 test("a paper dated past tomorrow is not filed, and one filed before that rule leaves", async () => {
