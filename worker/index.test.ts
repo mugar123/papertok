@@ -7,7 +7,7 @@ type QuotaScriptState = { actions: QuotaAction[] };
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { encodePaperKey } from '../src/utils/public-navigation.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publication-status.ts';
 import reportApi from './index.ts';
@@ -1013,7 +1013,7 @@ test('refuses an arXiv miss with 429 and retry-after when the beat has no seat, 
 
   assert.equal(response.status, 429);
   assert.equal((await response.json<{ code: string }>()).code, 'PROVIDER_RATE_LIMITED');
-  assert.equal(response.headers.get('retry-after'), '4');
+  assert.equal(response.headers.get('retry-after'), '6');
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(upstreamCalls, 0);
 });
@@ -1105,6 +1105,54 @@ test('anonymous cache-busting arXiv misses leave a seat on the beat for the Work
   assert.deepEqual(papers.map(paper => paper.arxivId), ['2610.01234']);
   assert.ok(statuses.includes(429), `the anonymous misses took every seat: ${statuses.join(', ')}`);
 });
+
+// Runs a request on mocked timers: each wait for a seat ends exactly when it
+// is due, as it would on the real clock, without sleeping for real.
+async function settledOnMockClock<Result>(t: TestContext, pending: Promise<Result>) {
+  let settled = false;
+  pending.then(() => { settled = true; }, () => { settled = true; });
+  for (let turn = 0; !settled; turn += 1) {
+    if (turn > 10_000) throw new Error('the request never settled');
+    // The ledger hashes subjects off the event loop; let it answer first.
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.runAll();
+  }
+  return pending;
+}
+
+// One tab sends its arXiv misses one at a time: the route answers in about
+// 0.3 s and the tab's lane waits 350 ms before the next one
+// (src/services/arxiv-request-queue.ts). A request from outside the Worker
+// takes only every other seat, so with nobody else asking, the tab's next
+// miss still has to reach the next of those, six seconds after the seat its
+// last miss took. A refusal there also stops every other request of the tab.
+for (const [period, arrival, firstSent, secondSent] of [
+  ['odd', '2026-10-24T12:00:03.100Z', '2026-10-24T12:00:06.000Z', '2026-10-24T12:00:12.000Z'],
+  ['even', '2026-10-24T12:00:00.500Z', '2026-10-24T12:00:00.500Z', '2026-10-24T12:00:06.000Z'],
+] as const) {
+  test(`one reader's back-to-back arXiv misses are both answered when the first arrives in an ${period} period`, async t => {
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: Date.parse(arrival) });
+    const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+    const sent: string[] = [];
+    const ask = (query: string) => settledOnMockClock(t, reportApi.fetch(new Request(
+      `https://papertok-report-api.example/arxiv?search_query=all:${query}`,
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), env));
+    const statuses = await withWorkerFetchMock(async () => {
+      sent.push(new Date().toISOString());
+      t.mock.timers.tick(300);
+      return new Response(ATOM_FEED, { headers: { 'content-type': 'application/atom+xml' } });
+    }, async () => {
+      const first = await ask('first');
+      t.mock.timers.tick(350);
+      const second = await ask('second');
+      return [first.status, second.status];
+    });
+
+    assert.deepEqual(statuses, [200, 200]);
+    assert.deepEqual(sent, [firstSent, secondSent]);
+  });
+}
 
 // Each figures miss fetches arxiv.org/html and ar5iv, and anyone can ask
 // without an Origin, so misses share a minute ceiling of their own.

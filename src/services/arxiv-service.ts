@@ -156,9 +156,11 @@ function safeDateISO(dateStr: string) {
 // The Worker holds arXiv to ARXIV_UPSTREAM_TIMEOUT_MS (5 s, worker/arxiv-api.ts)
 // and answers 502 when that passes. The client used to leave at 4 s, before the
 // Worker could say anything: a `sortBy=relevance` query, which arXiv takes 5 s+
-// to answer, could never succeed however healthy the route. One second above
-// the Worker's own deadline.
-export const ARXIV_ROUTE_TIMEOUT_MS = 6_000;
+// to answer, could never succeed however healthy the route. The Worker also
+// holds a request from the browser up to 6 s for a seat on arXiv's beat: it
+// gives the browser every other seat, one every 6 s, so a tab's next miss
+// waits for the next one. 8 s covers that wait and a healthy fetch.
+export const ARXIV_ROUTE_TIMEOUT_MS = 8_000;
 
 // Every arXiv request of this tab goes through one lane (arxiv-request-queue.ts):
 // serialized with a gap, deduplicated in flight, dropped when it has waited
