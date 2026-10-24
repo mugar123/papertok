@@ -692,7 +692,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (next.length === current.length && next.every((paper, index) => paper === current[index])) return current;
         const cachedMode = feedCache.current[mode];
         if (cachedMode) {
-          feedCache.current[mode] = { ...cachedMode, papers: next };
+          feedCache.current[mode] = { ...cachedMode, papers: next, notableAfter: notableAfterRef.current };
           scheduleFeedSnapshotWrite(activeUserId.current, signature, feedCache.current[mode]);
         }
         return next;
@@ -1421,7 +1421,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const listed = new Set(nextPapers.map(p => p.id));
         notableCards.forEach(p => { if (listed.has(p.id)) sessionSeenPapers.current.add(p.id); });
         // The cache and the snapshot keep the list the reader sees.
-        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
+        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore, notableAfter: notableAfterRef.current };
         // This write is synchronous and bypasses the debounce map on purpose —
         // it's the primary persist, not a merge, so it should land immediately.
         // But it shares its localStorage key (userId, preferenceSignature) with
@@ -1507,6 +1507,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // another page. Until it reports, the card it will open on stands in, so a
     // late book and a re-rank keep each card on its side of the reader.
     visiblePaperIdRef.current ??= restoredReaderCardId(activeUserId.current, snapshot.papers);
+    notableAfterRef.current = snapshot.notableAfter ?? null;
     setPapers(snapshot.papers);
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);

@@ -5,7 +5,7 @@ import { dropUnreachedPublications } from '../services/feedPublicationService.ts
 import { placeNotableCards } from '../utils/feedEnrichment.ts';
 import { resumeIndex } from '../utils/feedMountWindow.ts';
 import { createFeedResumeMemory, FEED_RESUME_STORAGE_PREFIX, forYouScrollKey } from '../utils/feedResumeMemory.ts';
-import { reRankAfterReader } from './feedNotableCards.ts';
+import { joinFeedPage, notablePlaceAfterDismissal, reRankAfterReader } from './feedNotableCards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feedSnapshot.ts';
 
 function memoryStorage() {
@@ -27,8 +27,9 @@ function snapshots(place: { paperId: string; index: number } | null = null, plac
   const resumeMemory = createFeedResumeMemory({ storage: session });
   return {
     session: session.values,
-    write: (papers: Paper[], page = 2) => writeFeedSnapshot('test-user', 'cs.AI', { papers, page, hasMore: true }, storage),
+    write: (papers: Paper[], page = 2, notableAfter: string | null = null) => writeFeedSnapshot('test-user', 'cs.AI', { papers, page, hasMore: true, notableAfter }, storage),
     read: () => readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory })?.papers ?? null,
+    restore: () => readFeedSnapshot('test-user', 'cs.AI', { storage, resumeMemory }),
     readerCard: (papers: Paper[]) => restoredReaderCardId('test-user', papers, resumeMemory),
   };
 }
@@ -121,6 +122,26 @@ test('a notable card the reader has not reached stays ahead of them in a restore
   const at = resumeIndex({ papers: restored, savedPaperId: 'card-16', savedIndex: 16 });
   assert.ok(ids(restored).indexOf('notable-1') > at, 'the reader still reaches it');
   assert.deepEqual(ids(restored), ids(saved), 'with no book to leave, the restore keeps the saved list');
+});
+
+// The reader dismissed the notable card they were on, the list's last one, and
+// the tab reloaded. The restored list no longer held it, and the next page
+// counted from the notable card before it: 3 cards after the dismissed one.
+test('after a reload, the next page puts its notable card fifteen cards after a notable card the reader dismissed', () => {
+  const shown = placeNotableCards(Array.from({ length: 36 }, (_, index) => card(`card-${index}`)), [notable('notable-0'), notable('notable-1')]);
+  assert.equal(shown[29].id, 'notable-1');
+  const notableAfter = notablePlaceAfterDismissal(shown, 'notable-1', 'notable-1', null);
+  const list = shown.filter(paper => paper.id !== 'notable-1');
+  // The reader is on the card after it, the thirtieth of the list.
+  const { write, restore } = snapshots({ paperId: 'card-28', index: 29 });
+  write(list, 3, notableAfter);
+  const snapshot = restore()!;
+  const page = Array.from({ length: 21 }, (_, index) => card(`page-${index}`));
+  const joined = joinFeedPage(snapshot.papers, page, [notable('page-notable-0'), notable('page-notable-1')], {
+    reset: false, keepThroughVisible: false, visiblePaperId: 'card-28', notableAfter: snapshot.notableAfter,
+  });
+  // The cards they met, the dismissed one included, then the list after their card.
+  assert.deepEqual(notableMet([...shown.slice(0, 31), ...joined.slice(30)]), [15, 30, 45]);
 });
 
 // The re-rank locks the reader's card and the two after it, so a notable
