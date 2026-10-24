@@ -7,7 +7,6 @@ import {
   Bell,
   BookOpen,
   CaretDown,
-  CaretRight,
   Check,
   CircleNotch,
   Compass,
@@ -93,8 +92,7 @@ const SETTINGS_COPY = {
   followedContent: 'Following',
   loadingFollowing: 'Loading the content you follow...',
   followingDescription: 'Entities that influence your recommendations',
-  viewAll: 'View all',
-  viewAllFollowing: 'View all you follow',
+  editFollowing: 'Edit following',
   interests: 'Interests',
   interestsDescription: 'Subcategories used to train your feed',
   selectedAreas: 'Selected areas',
@@ -429,7 +427,7 @@ function DiscoveryPage() {
               </h3>
               <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
-            <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
+            <RowAction Icon={PencilSimple} label={copy.editFollowing} text={copy.edit} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
           </div>
 
           <div className="settings-row settings-row-side">

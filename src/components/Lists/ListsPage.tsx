@@ -1640,7 +1640,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                       })()}
                     </span>
                     <div className="lists-expanded-copy">
-                      <h1 className="lists-expanded-title">{list.name} <span className="lists-expanded-count">({list.paperIds?.length ?? 0})</span></h1>
+                      <h1 className="lists-expanded-title">{list.name} <span className="lists-expanded-count">{list.paperIds?.length ?? 0}</span></h1>
                     </div>
                   </div>
                   {(exportPapers.length > 0 || isCustomList) && (
