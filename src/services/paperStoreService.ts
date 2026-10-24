@@ -14,9 +14,11 @@ export interface CorpusPageRequest {
   page: number;
   pageSize: number;
   order?: string;
-  // The papers the reader has seen, and how many notable papers of its
-  // categories the page may add after its own: only ones the reader has not
-  // seen, for the app to place (placeNotableCards). Sent only together.
+  // The papers the reader has seen: a Worker that skips them answers with the
+  // next papers of the reader's ranking they have not seen, whatever `page`
+  // says (`skipsSeen`). With it, how many notable papers of its categories the
+  // page may add after its own: only unseen ones, for the app to place
+  // (placeNotableCards).
   seen?: Iterable<string>;
   notable?: number;
   /**
@@ -39,8 +41,8 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Paper store returned ${response.status}`);
-  const { papers } = await response.json() as { papers?: Paper[] };
-  return Array.isArray(papers) ? papers : [];
+  const { papers, skipsSeen } = await response.json() as { papers?: Paper[]; skipsSeen?: unknown };
+  return { papers: Array.isArray(papers) ? papers : [], skipsSeen: skipsSeen === true };
 }
 
 /**
@@ -50,6 +52,8 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * are sent as they are stored, and the Worker decides how each is served.
  * Each paper says which asked categories (`_fetchedFor`) and follows
  * (`_followedEntityMatches`) it was found under, and a notable one `_notable`.
+ * `skipsSeen` says the Worker passed over the papers in `seen`; Workers
+ * before it page by number.
  */
 export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   return askStore({
@@ -64,7 +68,7 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
-    ...(seen && notable > 0 ? { seen: feedSeenFilter(seen), notable } : {}),
+    ...(seen ? { seen: feedSeenFilter(seen), ...(notable > 0 ? { notable } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
   }, options);
 }
@@ -74,6 +78,6 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
  * with what the corpus's enrichment added. A paper the corpus lacks is fetched
  * into it when its id names a source it can ask; otherwise it is left out.
  */
-export function fetchCorpusPapers(ids: string[], options: StoreOptions = {}) {
-  return askStore({ ids }, options);
+export async function fetchCorpusPapers(ids: string[], options: StoreOptions = {}) {
+  return (await askStore({ ids }, options)).papers;
 }

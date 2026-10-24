@@ -237,21 +237,23 @@ const NOTABLE_SPARE = 2;
  * author, institution, OpenAlex topic, project or followed query from the
  * lane it harvests for it, and says which follows each paper matched. A
  * topic follow that is one of the app's categories is asked for as those
- * categories, and matched by the categories a paper was found under.
+ * categories, and matched by the categories a paper was found under. With
+ * `seen`, a Worker that skips seen papers sends the follows' next unseen ones.
  */
-async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, categoryIdsOf }: {
-  page: number; order: string; positiveIds: string[]; categoryIdsOf: (follow: FollowEntity) => string[];
+async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, seen, categoryIdsOf }: {
+  page: number; order: string; positiveIds: string[]; seen?: Iterable<string>; categoryIdsOf: (follow: FollowEntity) => string[];
 }) {
   const categoryFollows = followedEntities
     .map(follow => ({ follow, categoryIds: follow.type === 'topic' ? categoryIdsOf(follow) : [] }))
     .filter(entry => entry.categoryIds.length > 0);
-  const papers = await fetchCorpusPage({
+  const { papers } = await fetchCorpusPage({
     categories: [...new Set(categoryFollows.flatMap(entry => entry.categoryIds))],
     follows: followedEntities,
     positiveIds,
     page,
     pageSize: FOLLOWED_PER_PAGE,
     order,
+    seen,
   });
   return papers.map(paper => ({
     ...paper,
@@ -901,7 +903,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // once it has embedded it.
       const categories = [...new Set([paper.primaryCategory, ...(userPreferences || [])].filter(Boolean) as string[])].slice(0, MAIN_CATEGORIES);
       const related = categories.length > 0
-        ? await fetchCorpusPage({ categories, positiveIds: [paper.id], page: 0, pageSize: 15, waitForLikes: true }).catch(() => [])
+        ? await fetchCorpusPage({ categories, positiveIds: [paper.id], page: 0, pageSize: 15, waitForLikes: true }).then(answer => answer.papers, () => [])
         : [];
       if (sessionId !== feedSessionId.current) return;
 
@@ -1248,6 +1250,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     try {
       let newPapers: Paper[] = [];
+      // The reader has seen every paper of their ranking: no later page has one they have not.
+      let rankingSeen = false;
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
@@ -1282,8 +1286,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // One request stands for every source the feed reads: the Worker
         // harvests, merges and enriches them once a day (worker/paper-store.ts)
         // and ranks the page by the reader's liked and saved papers. It asks
-        // for the fifteen the page shows: the next page starts after them, so
-        // a paper asked for and left out would never come back.
+        // for the fifteen the page shows, and says what the reader has seen:
+        // a Worker that skips seen papers sends the next fifteen they have
+        // not, however many pages they saw before. A paper asked for and left
+        // out joins the seen papers below, so it does not come back.
         // The follows are optional: they join the page if they answer in time.
         const followedCandidatesPromise = followedEntities.length > 0
           ? resolveWithin(
@@ -1291,6 +1297,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
               page: currentPage,
               order: queryMode,
               positiveIds,
+              seen: sessionSeenPapers.current,
               categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
             })),
             OPTIONAL_SOURCE_RENDER_BUDGET_MS,
@@ -1300,7 +1307,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         let mainPapers: Paper[] = [];
         let mainFailed = false;
         try {
-          mainPapers = await fetchCorpusPage({
+          let skipsSeen: boolean;
+          ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({
             categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
             positiveIds,
             page: currentPage,
@@ -1312,7 +1320,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // spares. A page has one place at least.
             seen: sessionSeenPapers.current,
             notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION)) + NOTABLE_SPARE,
-          });
+          }));
+          // A Worker that skips seen papers sends seen ones only when the ranking has no other.
+          rankingSeen = skipsSeen && mainPapers.some(paper => !paper._notable && sessionSeenPapers.current.has(paper.id));
         } catch (e) {
           console.error('Error fetching main papers:', e);
           mainFailed = true;
@@ -1362,7 +1372,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             page: Math.floor(Math.random() * 30 / count),
             pageSize: count,
             order: queryMode,
-          }).catch((e) => {
+          }).then(answer => answer.papers, (e) => {
             console.error('Error fetching explore papers:', e);
             return [];
           }), FEED_SOURCE_RENDER_BUDGET_MS, []);
@@ -1418,16 +1428,24 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // Keep the raw candidates until here: an entirely excluded page still
       // proves that the provider has results and pagination should continue.
       let filtered = newPapers.filter(isAvailablePaper);
-      // A notable paper the feed does not show, one the reader liked, saved,
-      // read or dismissed elsewhere, joins the seen papers this browser keeps:
-      // the corpus offers unseen notable papers in one order, and would send
-      // it again in a place of every page and every session.
-      newPapers.forEach(paper => { if (paper._notable && !isAvailablePaper(paper)) markPaperViewed(paper.id, activeUserId.current); });
+      // A paper the feed does not show (one the reader saw, liked, saved, read
+      // or dismissed, or a book) joins the seen papers, so a Worker that skips
+      // seen papers does not send it again on every page. A notable one also
+      // joins those this browser keeps: the corpus offers unseen notable
+      // papers in one order, and would send it again in a place of every page
+      // and every session.
+      newPapers.forEach(paper => {
+        if (isAvailablePaper(paper)) return;
+        sessionSeenPapers.current.add(paper.id);
+        if (paper._notable) markPaperViewed(paper.id, activeUserId.current);
+      });
 
       // No paper on this page can be shown: try a later page before showing
-      // seen papers again. Notable cards alone count as none: they take only
-      // their places among other cards (placeNotableCards), and the corpus
-      // sends them unseen even when the reader saw every other paper on the page.
+      // seen papers again, unless the reader has seen their whole ranking.
+      // From a Worker that skips seen papers, the next page passes over the
+      // ones this page left out. Notable cards alone count as none: they take
+      // only their places among other cards (placeNotableCards), and the
+      // corpus sends them unseen even when the reader saw every other paper on the page.
       if (filtered.every(paper => paper._notable)) {
         // Shown before, but never liked, saved, read or dismissed. A notable
         // card is never shown twice.
@@ -1444,7 +1462,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // page has an unseen paper: the feed is never empty because
         // everything was seen.
         const shownBefore = seenFallback ?? (bypassSeen.length > 0 ? { page: currentPage, papers: bypassSeen } : undefined);
-        if (newPapers.length > 0 && currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
+        if (newPapers.length > 0 && currentPage < 10 && !rankingSeen) { // Limit auto-fetch depth to avoid infinite loops
           // One page on, not more: the corpus ranks the same way on every
           // load, so a longer move would pass over papers not yet shown.
           const nextPageToFetch = currentPage + 1;

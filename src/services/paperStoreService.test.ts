@@ -41,9 +41,10 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
     type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', followKey: 'author:A5023888391',
     metadata: { source: 'openalex', labelEn: 'Ana Pérez' },
   } as FollowEntity;
-  const papers = await fetchCorpusPage({
+  const { papers, skipsSeen } = await fetchCorpusPage({
     categories: ['med.cardio', 'cs.LG'], follows: [follow], positiveIds: ['2610.00001'], page: 2, pageSize: 30, order: 'recent',
   }, options);
+  assert.equal(skipsSeen, false);
   assert.deepEqual(asked, [{
     url: `${WORKER}/store/papers`,
     body: {
@@ -59,18 +60,30 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
   assert.deepEqual(papers, [STORED]);
 });
 
-test('a page that asks for notable papers sends what the reader has seen as the filter the Worker reads', async () => {
+test('a page sends what the reader has seen as the filter the Worker reads, and asks for notable papers only with it', async () => {
   const { asked, options } = harness(answered([]));
   const seen = new Set(['2610.00001', 'openalex:W2107743791']);
   await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 2 }, options);
-  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options);
   await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, seen, notable: 0 }, options);
-  const [withSeen, ...without] = asked.map(entry => entry.body as { seen?: string; notable?: number });
-  assert.equal(withSeen.notable, 2);
-  const read = readFeedSeenFilter(withSeen.seen);
-  assert.ok(['2610.00001', 'openalex:W2107743791'].every(id => hasSeenPaper(read, id)));
-  assert.equal(hasSeenPaper(read, 'openalex:W2493916176'), false);
-  for (const body of without) assert.ok(!('seen' in body) && !('notable' in body), 'a page that asks for no notable papers sends no filter');
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, notable: 2 }, options);
+  const [withNotable, seenOnly, without] = asked.map(entry => entry.body as { seen?: string; notable?: number });
+  assert.equal(withNotable.notable, 2);
+  for (const body of [withNotable, seenOnly]) {
+    const read = readFeedSeenFilter(body.seen);
+    assert.ok(['2610.00001', 'openalex:W2107743791'].every(id => hasSeenPaper(read, id)));
+    assert.equal(hasSeenPaper(read, 'openalex:W2493916176'), false);
+  }
+  assert.ok(!('notable' in seenOnly), 'a page that asks for no notable papers says nothing of them');
+  assert.ok(!('seen' in without) && !('notable' in without), 'a page that says nothing of what was seen asks for no notable papers');
+});
+
+test('a page returns whether the Worker passed over the papers the filter holds', async () => {
+  const seen = new Set(['2610.00001']);
+  const skipping = harness(async () => new Response(JSON.stringify({ papers: [STORED], skipsSeen: true }), { status: 200 }));
+  assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, skipping.options), { papers: [STORED], skipsSeen: true });
+  // A Worker from before PAP-103 reads the filter for notable papers only, and says nothing.
+  const paging = harness(answered([STORED]));
+  assert.deepEqual(await fetchCorpusPage({ categories: ['med.cardio'], page: 0, pageSize: 15, seen }, paging.options), { papers: [STORED], skipsSeen: false });
 });
 
 test('a store that fails rejects, so the feed can say so and offer a retry', async () => {

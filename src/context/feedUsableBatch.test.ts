@@ -59,13 +59,14 @@ function deferred() {
 
 // The feed's papers come from the paper corpus (fetchCorpusPage). These tests
 // stand it in with the scope's per-category double, asked at the page's start
-// as arXiv was, followed by `slow`, the rest of the corpus's answer.
+// as arXiv was, followed by `slow`, the rest of the corpus's answer: a Worker
+// that pages by number, as Workers before `skipsSeen` do.
 function withCorpusStandIn<T extends { fetchPapers: unknown; restOfPage: () => Promise<FeedRecord[]>; PAGE_SIZE: number }>(scope: T) {
   const fetchPapers = scope.fetchPapers as (...args: unknown[]) => Promise<FeedRecord[]>;
   return {
-    fetchCorpusPage: async ({ categories, page, pageSize, order }: { categories: string[]; page: number; pageSize: number; order: string }) => (
-      [...await fetchPapers(categories, page * scope.PAGE_SIZE, pageSize, order), ...await scope.restOfPage()]
-    ),
+    fetchCorpusPage: async ({ categories, page, pageSize, order }: { categories: string[]; page: number; pageSize: number; order: string }) => ({
+      papers: [...await fetchPapers(categories, page * scope.PAGE_SIZE, pageSize, order), ...await scope.restOfPage()],
+    }),
     selectSemanticProfilePositiveIds: () => [], curatedIds: () => [], interactionProfile: ref(null),
     // A test that asks the corpus double itself sets these on the scope.
     ...scope,
@@ -227,6 +228,86 @@ for (const [cards, withCards] of notableVariants) {
       `the first screen stays loading until the later page is shown: ${steps.join(', ')}`);
   });
 }
+
+// A Worker that skips seen papers (PAP-103): each answer holds the next
+// papers of one ranking whose ids the request's filter does not hold or, when
+// none is left, the page the request names, and says it applied the filter.
+function skippingSeen(ranking: FeedRecord[], asked: Array<{ page: number; seen: Set<string> }>) {
+  return async ({ page, pageSize, seen }: { page: number; pageSize: number; seen?: Set<string> }) => {
+    asked.push({ page, seen: new Set(seen) });
+    const unseen = ranking.filter(paper => !seen?.has(paper.id)).slice(0, pageSize);
+    return { papers: unseen.length ? unseen : ranking.slice(page * pageSize, (page + 1) * pageSize), skipsSeen: true };
+  };
+}
+const ranking = (pages: number) => Array.from({ length: pages }, (_, index) => records(`page-${index}`)).flat();
+
+for (const seenPages of [1, 5, 11]) {
+  test(`a reload after ${seenPages} pages seen is one corpus request when the Worker skips seen papers, the follows' included`, async t => {
+    const asked: Array<{ page: number; seen: Set<string> }> = [];
+    const { state, env, run } = reload(t, { seen: pageIds(...Array.from({ length: seenPages }, (_, index) => index)) });
+    env.loadPapersRef.current = run;
+    const followsAsked: Array<{ page: number; seen?: Set<string> }> = [];
+    Object.assign(env, {
+      followedEntities: [{ type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' }],
+      loadTopicRetrieval: async () => ({ getFollowedTopicCategoryIds: () => [] }),
+      fetchFollowedEntityCandidates: async (_follows: unknown, request: { page: number; seen?: Set<string> }) => { followsAsked.push(request); return []; },
+      fetchCorpusPage: skippingSeen(ranking(20), asked),
+    });
+    await run(true, null);
+    assert.equal(state.error, null);
+    assert.deepEqual(asked.map(request => request.page), [0], 'no page walked');
+    assert.deepEqual(state.papers.map(paper => paper.id), pageIds(seenPages));
+    assert.equal(followsAsked.length, 1);
+    assert.equal(followsAsked[0].seen, env.sessionSeenPapers.current, "the follows' request says what was seen too");
+  });
+}
+
+test('a reload whose whole ranking the reader has seen shows its first page again from one request', async t => {
+  const asked: Array<{ page: number; seen: Set<string> }> = [];
+  const { state, env, run } = reload(t, { seen: pageIds(0, 1) });
+  env.loadPapersRef.current = run;
+  Object.assign(env, { fetchCorpusPage: skippingSeen(ranking(2), asked) });
+  await run(true, null);
+  assert.equal(state.error, null);
+  assert.deepEqual(asked.map(request => request.page), [0], 'no later page would have an unseen paper');
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(0));
+  assert.equal(state.hasMore, true, 'the reader can scroll on');
+  // Scrolling on shows the next page of the ranking again.
+  await run(false);
+  assert.deepEqual(asked.map(request => request.page), [0, 1]);
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(0, 1));
+});
+
+test('the papers a page leaves out join the filter, so a Worker that skips seen papers never sends them again', async t => {
+  const asked: Array<{ page: number; seen: Set<string> }> = [];
+  // Liked on another device, and two books: never shown, and in no seen list.
+  const liked = ['page-0-1', 'page-0-4', 'page-1-0'];
+  const books = new Set(['page-0-7', 'page-1-9']);
+  const { state, env, run } = feed({ known: liked });
+  const papers = ranking(4).map(paper => (books.has(paper.id) ? { ...paper, publicationType: 'book' } : paper));
+  Object.assign(env, { fetchCorpusPage: skippingSeen(papers, asked) });
+  t.mock.method(console, 'log', () => {});
+  await run(true);
+  await run(false);
+  await run(false);
+  const shown = state.papers.map(paper => paper.id);
+  assert.equal(new Set(shown).size, shown.length, 'no card twice');
+  assert.ok(!shown.some(id => liked.includes(id) || books.has(id)));
+  assert.ok([...liked, ...books].every(id => asked[2].seen.has(id)), 'the third page passes over every paper left out before it');
+  assert.equal(shown.length, 45 - 5, 'each page brings fifteen papers the reader can see, but for those left out');
+});
+
+test('a reload whose next unseen papers the reader all knows goes one page on, and the Worker passes over them', async t => {
+  const asked: Array<{ page: number; seen: Set<string> }> = [];
+  const { state, env, run } = reload(t, { seen: pageIds(0) });
+  env.likedPaperIdsRef.current = new Set(pageIds(1));
+  env.loadPapersRef.current = run;
+  Object.assign(env, { fetchCorpusPage: skippingSeen(ranking(4), asked) });
+  await run(true, null);
+  assert.equal(state.error, null);
+  assert.deepEqual(asked.map(request => request.page), [0, 1]);
+  assert.deepEqual(state.papers.map(paper => paper.id), pageIds(2));
+});
 
 test('a refresh whose first page was all shown before replaces the cards on screen with unseen ones', async t => {
   const onScreen = records('page-0');
@@ -879,7 +960,7 @@ test('a page asks the corpus for the ranked categories with the likes, and a lat
       selectSemanticProfilePositiveIds: () => ['2610.00001', 'pmid:41000001'],
       fetchCorpusPage: async (request: Record<string, unknown>) => {
         asked.push(request);
-        return (request.categories as string[]).includes('cs.LG') ? records('nearby', 2) : records(`page-${page}`);
+        return { papers: (request.categories as string[]).includes('cs.LG') ? records('nearby', 2) : records(`page-${page}`) };
       },
     });
     await run(page === 0);
@@ -902,7 +983,7 @@ test("the feed's fifteenth card is the corpus's notable one, counted from the ca
   const corpusPage = [...records('corpus', 15), ...records('notable', 2).map(paper => ({ ...paper, _notable: true }))];
   const shown = feed({ seen: ['viewed-yesterday'] });
   const asked: Array<{ seen?: Set<string> }> = [];
-  Object.assign(shown.env, { fetchCorpusPage: async (request: { seen?: Set<string> }) => { asked.push(request); return corpusPage; } });
+  Object.assign(shown.env, { fetchCorpusPage: async (request: { seen?: Set<string> }) => { asked.push(request); return { papers: corpusPage }; } });
   await shown.run(true);
   assert.equal(asked[0].seen?.has('viewed-yesterday'), true);
   // Every paper of the corpus's page, and one notable card, fifteenth.
@@ -911,7 +992,7 @@ test("the feed's fifteenth card is the corpus's notable one, counted from the ca
 
   // Ten cards on screen: the next page's fifth card is the feed's fifteenth.
   const later = feed({ papers: records('shown', 10), page: 1 });
-  Object.assign(later.env, { fetchCorpusPage: async () => corpusPage });
+  Object.assign(later.env, { fetchCorpusPage: async () => ({ papers: corpusPage }) });
   await later.run(false);
   assert.equal(later.state.papers.length, 26);
   assert.deepEqual(notableAt(later.state.papers), [[14, 'notable-0']]);
@@ -920,13 +1001,13 @@ test("the feed's fifteenth card is the corpus's notable one, counted from the ca
   // through the visible one: the next notable card is fifteen after theirs.
   const kept = feed({ papers: records('shown', 20).map((paper, index) => ({ ...paper, _notable: index === 14 })) });
   kept.env.visiblePaperIdRef.current = 'shown-16';
-  Object.assign(kept.env, { fetchCorpusPage: async () => corpusPage });
+  Object.assign(kept.env, { fetchCorpusPage: async () => ({ papers: corpusPage }) });
   await kept.run(true, 'top', undefined, { keepThroughVisible: true });
   assert.deepEqual(notableAt(kept.state.papers), [[14, 'shown-14'], [29, 'notable-0']]);
 
   // Every card seen: the papers shown again while later pages are tried leave the notable ones out.
   const allSeen = feed({ seen: corpusPage.map(paper => paper.id) });
-  Object.assign(allSeen.env, { fetchCorpusPage: async () => corpusPage });
+  Object.assign(allSeen.env, { fetchCorpusPage: async () => ({ papers: corpusPage }) });
   await allSeen.run(true);
   const [[, , , { seenFallback }]] = allSeen.state.continuations as Array<[unknown, unknown, unknown, { seenFallback: { papers: FeedRecord[] } }]>;
   assert.equal(seenFallback.papers.length, 15);
@@ -950,7 +1031,7 @@ test('a notable card the reader viewed is not offered again, however many cards 
   viewing({ seen: env.sessionSeenPapers }).carryViewedPapers(deserializeInteractionProfile(serializeInteractionProfile(aggregate))!);
   const asked: Array<{ seen?: Set<string> }> = [];
   const corpusPage = [...records('corpus', 15), { ...paperRecord('notable-viewed'), _notable: true }];
-  Object.assign(env, { fetchCorpusPage: async (request: { seen?: Set<string> }) => { asked.push(request); return corpusPage; } });
+  Object.assign(env, { fetchCorpusPage: async (request: { seen?: Set<string> }) => { asked.push(request); return { papers: corpusPage }; } });
   await run(true);
   assert.equal(asked[0].seen?.has('notable-viewed'), true, 'the corpus is told the reader saw it');
   assert.equal(state.papers.length, 15);
@@ -1003,7 +1084,7 @@ test('the related papers a like brings join the cards after the reader, and ever
   const state = { papers: shown };
   const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
     feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
-    fetchCorpusPage: async () => records('related', 5),
+    fetchCorpusPage: async () => ({ papers: records('related', 5) }),
     likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
     sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
     setPapers: (update: (previous: FeedRecord[]) => FeedRecord[]) => { state.papers = update(state.papers); },
@@ -1032,12 +1113,12 @@ test('a page that loads while a like inserts related papers puts its notable car
     fetchCorpusPage: async (request: { page: number; notable?: number }) => {
       await answered;
       const notable = ['notable-1', 'notable-2', 'notable-3'].slice(0, request.notable).map(id => ({ ...paperRecord(id), _notable: true }));
-      return [...records(`corpus-${request.page}`, 15), ...notable];
+      return { papers: [...records(`corpus-${request.page}`, 15), ...notable] };
     },
   });
   const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
     feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
-    fetchCorpusPage: async () => records('related', 5),
+    fetchCorpusPage: async () => ({ papers: records('related', 5) }),
     likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
     sessionSeenPapers: ref(new Set(shown.map(paper => paper.id))), isKnownPaper: () => false,
     setPapers: env.setPapers, splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref('card-3'),
@@ -1067,7 +1148,7 @@ test('a notable paper the reader already saved leaves its place to the next one,
     fetchCorpusPage: async (request: { page: number; notable?: number; seen?: Set<string> }) => {
       asked.push({ notable: request.notable, seen: new Set(request.seen) });
       const unseen = order.filter(id => !request.seen?.has(id)).slice(0, request.notable ?? 0);
-      return [...records(`corpus-${request.page}`, 15), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))];
+      return { papers: [...records(`corpus-${request.page}`, 15), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))] };
     },
   });
   await run(true);
@@ -1097,7 +1178,7 @@ test('notable papers the reader already knew cost one first screen its notable c
       markPaperViewed: viewing({ seen: env.sessionSeenPapers, storage }).markPaperViewed,
       fetchCorpusPage: async (request: { page: number; notable?: number; seen?: Set<string> }) => {
         const unseen = order.filter(id => !request.seen?.has(id)).slice(0, request.notable ?? 0);
-        return [...records(`corpus-${request.page}`, 15), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))];
+        return { papers: [...records(`corpus-${request.page}`, 15), ...unseen.map(id => ({ ...paperRecord(id), _notable: true }))] };
       },
     });
     await run(true);
@@ -1133,7 +1214,7 @@ test('liking, saving or reading notable cards keeps the next page newest first, 
       const { env, run } = feed();
       const handlers = engaging(env.temporalPreference);
       for (let index = 0; index < times; index += 1) await handlers[engagement](published2017(`${engagement}-${index}`, notable));
-      Object.assign(env, { fetchCorpusPage: async ({ order }: { order: string }) => { orders.push(`${times} × ${engagement}, ${notable ? 'notable cards' : 'other papers from 2017'}: ${order}`); return records('corpus'); } });
+      Object.assign(env, { fetchCorpusPage: async ({ order }: { order: string }) => { orders.push(`${times} × ${engagement}, ${notable ? 'notable cards' : 'other papers from 2017'}: ${order}`); return { papers: records('corpus') }; } });
       await run(true);
     }
   }
@@ -1172,7 +1253,7 @@ const withFollows = (env: ReturnType<typeof feed>['env'], answer: (request: { pa
 test("a page shows every paper it asked the corpus for: the reader's fifteen and the follows' six", async () => {
   const { state, env, run } = feed();
   withFollows(env, () => records('followed', 6));
-  Object.assign(env, { fetchCorpusPage: async ({ pageSize }: { pageSize: number }) => records('main', pageSize) });
+  Object.assign(env, { fetchCorpusPage: async ({ pageSize }: { pageSize: number }) => ({ papers: records('main', pageSize) }) });
   await run(true);
   assert.equal(state.error, null);
   assert.deepEqual(state.papers.map(paper => paper.id).sort(), [...records('main'), ...records('followed', 6)].map(paper => paper.id).sort());
@@ -1185,7 +1266,7 @@ test("a pull to refresh asks for the corpus's first page, the follows' first pag
   const { state, env, refresh } = feed();
   withFollows(env, ({ page }) => { asked.push(`follows ${page}`); return records('followed', 6); });
   Object.assign(env, {
-    fetchCorpusPage: async ({ page }: { page: number }) => { asked.push(`main ${page}`); return records('main'); },
+    fetchCorpusPage: async ({ page }: { page: number }) => { asked.push(`main ${page}`); return { papers: records('main') }; },
     // The refresh's 800 ms minimum, at once.
     setTimeout: (callback: () => void) => setTimeout(callback, 0),
   });
@@ -1209,18 +1290,20 @@ test('followed authors and category topics come back as followed papers, each wi
   const fetchFollowed = new Function('fetchCorpusPage', 'FOLLOWED_PER_PAGE', 'mergeFollowEntityMatches', `${followedCandidates}; return fetchFollowedEntityCandidates;`)(
     async (request: Record<string, unknown>) => {
       asked.push(request);
-      return [
+      return { papers: [
         { ...records('by-author', 1)[0], _followedEntityMatches: [{ type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez' }] },
         { ...records('in-topic', 1)[0], _fetchedFor: ['cs.LG'] },
-      ];
+      ] };
     },
     6,
     (...groups: unknown[][]) => groups.flat().filter(Boolean),
   );
+  const seen = new Set(['seen-before']);
   const papers = await fetchFollowed([author, topic], {
-    page: 2, order: 'recent', positiveIds: ['2610.00001'], categoryIdsOf: (follow: { canonicalId: string }) => (follow.canonicalId === 'cs.LG' ? ['cs.LG'] : []),
+    page: 2, order: 'recent', positiveIds: ['2610.00001'], seen, categoryIdsOf: (follow: { canonicalId: string }) => (follow.canonicalId === 'cs.LG' ? ['cs.LG'] : []),
   });
-  assert.deepEqual(asked, [{ categories: ['cs.LG'], follows: [author, topic], positiveIds: ['2610.00001'], page: 2, pageSize: 6, order: 'recent' }]);
+  // What the reader has seen goes too, so a Worker that skips seen papers sends the follows' next unseen ones.
+  assert.deepEqual(asked, [{ categories: ['cs.LG'], follows: [author, topic], positiveIds: ['2610.00001'], page: 2, pageSize: 6, order: 'recent', seen }]);
   assert.deepEqual(papers.map((paper: Paper) => [paper.id, paper._type, (paper._followedEntityMatches as Array<{ canonicalId: string }>).map(match => match.canonicalId)]), [
     ['by-author-0', 'followed', ['A5023888391']],
     ['in-topic-0', 'followed', ['cs.LG']],
