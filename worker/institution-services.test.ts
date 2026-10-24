@@ -713,7 +713,11 @@ test('a library whose resolver failed every probe is not probed again for half a
   const other = await requestServices('domain=usc.edu', { edge, store, resolver: () => xml(CTO_NONE) });
   assert.equal(other.response.status, 200);
   assert.ok(other.calls.includes('na03.alma.exlibrisgroup.com'));
-  t.mock.timers.tick(30 * 60 * 1000);
+  // A minute before the half hour, a resolver that is back is still not asked.
+  t.mock.timers.tick(29 * 60 * 1000);
+  const remembered = await requestServices('domain=usal.es', { edge, store, resolver: () => xml(CTO_NONE) });
+  assert.equal(resolverCalls(remembered.calls), 0);
+  t.mock.timers.tick(60 * 1000);
   const recovered = await requestServices('domain=usal.es', { edge, store, resolver: () => xml(CTO_NONE) });
   assert.equal(recovered.response.status, 200);
   assert.equal(resolverCalls(recovered.calls), SERVICE_CATALOGUE.length);
