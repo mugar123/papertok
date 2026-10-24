@@ -96,7 +96,7 @@ function feed({ fast = records('fast'), slow = [], known = [], seen = [], page =
     sessionSeenPapers: ref(new Set(seen)), isKnownPaper: (id: string) => known.includes(id),
     mergeFollowEntityMatches: (...groups: unknown[][]) => groups.flat(),
     diversifiedWeightedShuffle: <T>(values: T) => values, calculateAndAttachScore: () => 0,
-    recommendationWeights: ref({}), mergeFreshFeedPage, notablePlaces, placeNotableCards, FOLLOWED_PER_PAGE: 6, NOTABLE_SPARE: 2,
+    recommendationWeights: ref({}), mergeFreshFeedPage, notablePlaces, placeNotableCards, FOLLOWED_PER_PAGE: 6, NOTABLE_SPARE: 2, MAX_NEARBY_EXPLORATION: 8, RANDOM_EXPLORATION: 2,
     needsOpenAlexEnrichment: () => false, getOpenAlexEnrichmentId: () => '',
     enrichPapersBatch: () => Promise.resolve({}), OPENALEX_FEED_REQUEST_TIMEOUT_MS: 5,
     enrichPubmedIds: () => Promise.resolve(new Map()),

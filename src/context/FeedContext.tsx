@@ -218,6 +218,10 @@ function demoSet(key: string, value: unknown) {
 
 // How many papers the followed entities add to a page.
 const FOLLOWED_PER_PAGE = 6;
+// Exploration cards a page after the first screen adds (STEP 5): up to eight
+// from categories near the reader's, and two from random ones when bored.
+const MAX_NEARBY_EXPLORATION = 8;
+const RANDOM_EXPLORATION = 2;
 // Notable papers a page asks for beyond its places. The corpus leaves out the
 // papers the reader has seen and the likes and saves it ranks by, not every
 // paper they liked, saved, read or dismissed: the feed drops those, and the
@@ -1222,9 +1226,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const cardsBefore = !reset ? papers
       : keepThroughVisible ? mergeFreshFeedPage(papers, [], { anchorPaperIds: [visiblePaperIdRef.current] }) : [];
     // The notable places of the largest page this load can show: the corpus's
-    // fifteen, the follows' six and, after the first screen, up to ten
-    // exploration cards (STEP 5).
-    const notablePlacesLeft = notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : 10));
+    // fifteen, the follows' six and, after the first screen, the exploration cards.
+    const notablePlacesLeft = notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : MAX_NEARBY_EXPLORATION + RANDOM_EXPLORATION));
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1338,7 +1341,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         const boredomThreshold = getBoredomThreshold();
         const exploreCount = currentBoredom >= boredomThreshold
-          ? Math.min(8, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
+          ? Math.min(MAX_NEARBY_EXPLORATION, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
           : 5; // Baseline exploration: cold-start users deserve real serendipity
 
         // The first screen already has a broad candidate pool. Defer exploration
@@ -1370,7 +1373,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
-          if (randomCats.length > 0) explorationPapers.push(...await explore(randomCats, 2));
+          if (randomCats.length > 0) explorationPapers.push(...await explore(randomCats, RANDOM_EXPLORATION));
         }
 
         // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
