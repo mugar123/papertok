@@ -3,7 +3,7 @@ import type { Paper } from '../../models/Paper.ts';
 import type { FollowInput } from '../../utils/following.ts';
 import type { EntitySearch, SearchProviders, SearchResults, SearchScope as SearchScopeId, SearchSnapshot } from '../../services/entitySearchService.ts';
 import { Children, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import {
   ArrowClockwise,
   CaretDown,
@@ -19,7 +19,6 @@ import {
   WarningCircle,
   X,
 } from '@phosphor-icons/react';
-import { flushSync } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
