@@ -14,8 +14,12 @@ test('caps liked+saved ids used for the OpenAlex semantic overlay', () => {
 
   assert.equal(selected.length, 24);
   assert.equal(selected[0], 'liked-0');
-  assert.ok(!selected.includes('saved-a'));
+  assert.deepEqual(selected.slice(0, 5), ['liked-0', 'liked-1', 'saved-a', 'liked-2', 'saved-b']);
   assert.equal(SEMANTIC_PROFILE_POSITIVE_CAP, 24);
+});
+
+test('an empty semantic sample stays empty', () => {
+  assert.deepEqual(selectSemanticProfilePositiveIds(['liked'], ['saved'], 0), []);
 });
 
 test('skips blank ids when building the semantic overlay sample', () => {

@@ -19,6 +19,18 @@ import {
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
 
+test('corpus semantics affect the client score independently and stay bounded', () => {
+  const score = (value?: number) => scorePaperForRecommendation({ id: 'candidate', _semanticScore: value }, { now: NOW });
+  const neutral = score();
+  assert.equal(neutral.corpusSimilarity, 0);
+  assert.equal(score(0.8).total - neutral.total, 80);
+  assert.equal(score(-0.5).corpusSimilarity, -50);
+  assert.ok(Math.abs(score(-0.5).total - neutral.total + 50) < 1e-10);
+  assert.equal(score(2).corpusSimilarity, 100);
+  assert.equal(score(-2).corpusSimilarity, -100);
+  assert.equal(score(NaN).total, neutral.total);
+});
+
 test('selected user category dominates neutral papers', () => {
   const score = scorePaperForRecommendation(
     {

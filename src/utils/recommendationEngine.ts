@@ -24,7 +24,7 @@ interface ShuffleOptions<T> {
 
 // Every score component is bounded so the weights below describe the REAL
 // maximum contribution of each signal. Resulting hierarchy: preference and
-// learned category affinity (<=100) > follows (<=70) > learned concepts
+// learned category affinity and corpus semantics (<=100) > follows (<=70) > learned concepts
 // (<=semanticConceptMultiplier) > learned authors and the session (<=30) >
 // citations/classics (<=25) > personal and graph candidates, diversity,
 // recency. A card without an abstract loses missingAbstract: it reaches the
@@ -47,6 +47,7 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   recencyHalfLifeDays: 7,
   classicCitationMultiplier: 5,
   semanticConceptMultiplier: 50,
+  maxCorpusSimilarity: 100,
   // Learned author affinity saturates at learnedAuthorScale, five likes'
   // worth on one author; the session at sessionScale, three strong reads.
   maxLearnedAuthor: 30,
@@ -374,6 +375,8 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     return sum + conceptWeight(concept.score) * (affinityValue / 100);
   }, 0);
   const semantic = clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier;
+  const corpusSimilarity = Number.isFinite(paper._semanticScore)
+    ? clamp(paper._semanticScore!, -1, 1) * weights.maxCorpusSimilarity : 0;
 
   // Authors the reader keeps engaging with, learned rather than followed.
   const authorMatch = authorIds.reduce((sum, authorId) => sum + (authorAffinities[authorId] || 0), 0);
@@ -400,6 +403,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     recency,
     classicBoost,
     semantic,
+    corpusSimilarity,
     learnedAuthor,
     sessionInterest,
     citations,

@@ -23,13 +23,18 @@ export function canFetchNextPage(candidateCount: number, currentPage: number) {
  * is shown again when no later page has an unseen paper: the feed is never
  * empty because everything was seen.
  */
-export function planUnshowablePage({ candidateCount, currentPage, seenFallback, shownBeforeHere }: {
+export function planUnshowablePage({ candidateCount, currentPage, seenFallback, shownBeforeHere, reset = false, excludedCount = 0 }: {
   candidateCount: number;
   currentPage: number;
   seenFallback: SeenFallback | undefined;
   shownBeforeHere: Paper[];
+  reset?: boolean;
+  excludedCount?: number;
 }) {
   const shownBefore = seenFallback ?? (shownBeforeHere.length > 0 ? { page: currentPage, papers: shownBeforeHere } : undefined);
+  // The server cannot see the client's full curated sets or Bloom filter.
+  // Restart once without soft exclusions when they leave no usable fallback.
+  if (reset && excludedCount > 0 && !shownBefore) return { kind: 'relax-exclusions', page: 0 } as const;
   if (canFetchNextPage(candidateCount, currentPage)) {
     return { kind: 'next-page', page: currentPage + 1, seenFallback: shownBefore } as const;
   }

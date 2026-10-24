@@ -65,6 +65,36 @@ test('a store that fails rejects, so the feed can say so and offer a retry', asy
   }
 });
 
+test('exclusions and explicit rejections reach the corpus while semantic relevance reaches the client', async () => {
+  const { asked, options } = harness(answered([{ ...STORED, _semanticScore: -0.4 }]));
+  const papers = await fetchCorpusPage({ categories: ['med.cardio'], negativeIds: ['rejected'], excludedIds: ['seen'], page: 0, pageSize: 15 }, options);
+  assert.equal(papers[0]._semanticScore, -0.4);
+  assert.deepEqual(asked.map(entry => entry.body), [{ categories: ['med.cardio'], follows: [], positiveIds: [], negativeIds: ['rejected'], excludedIds: ['seen'], page: 0, pageSize: 15, order: 'recent' }]);
+});
+
+test('long exclusions stay below the request body limit and keep the newest exclusions first', async () => {
+  const { asked, options } = harness(answered([]));
+  const excludedIds = Array.from({ length: 250 }, (_, index) => `10.1234/${index}${'é'.repeat(140)}`);
+  await fetchCorpusPage({ categories: ['cs.CL'], negativeIds: ['rejected'], excludedIds, page: 0, pageSize: 15 }, options);
+  const body = asked[0].body as { excludedIds: string[]; negativeIds: string[] };
+  assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
+  assert.deepEqual(body.excludedIds, excludedIds.slice(0, body.excludedIds.length));
+  assert.ok(body.excludedIds.length > 0 && body.excludedIds.length < 200);
+  assert.deepEqual(body.negativeIds, ['rejected']);
+});
+
+test('a full positive and followed profile still fits with long rejection IDs and no exclusions', async () => {
+  const { asked, options } = harness(answered([]));
+  const ids = Array.from({ length: 24 }, (_, index) => `10.1234/${index}${'a'.repeat(283)}`);
+  const follows: FollowEntity[] = Array.from({ length: 20 }, (_, index) => ({ type: 'author', canonicalId: `A${index}`, displayName: `Followed author ${index}` }));
+  await fetchCorpusPage({ categories: ['cs.CL'], positiveIds: ids, negativeIds: ids.map(id => `${id}b`), follows, page: 0, pageSize: 15 }, options);
+  const body = asked[0].body as { positiveIds: string[]; negativeIds: string[]; follows: unknown[] };
+  assert.ok(new TextEncoder().encode(JSON.stringify(body)).byteLength <= 16_384);
+  assert.deepEqual(body.positiveIds, ids);
+  assert.equal(body.follows.length, 20);
+  assert.ok(body.negativeIds.length < 24);
+});
+
 test("the corpus's copies of papers are asked for by the app's ids", async () => {
   const { asked, options } = harness(answered([STORED]));
   assert.deepEqual(await fetchCorpusPapers(['pmid:41000001', 'W4391234567'], options), [STORED]);
