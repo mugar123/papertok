@@ -651,11 +651,11 @@ async function askGetFtrForCatalogue(entries: readonly ServiceEntry[], outcomes:
  * write wins; its verdicts are the same, so nothing is lost but the probes.
  * Without a store (tests), nothing is remembered between requests.
  *
- * `failures` remembers a library whose resolver failed every probe of a
- * request that GetFTR left the start window to (`RESOLVER_FAILURE_SECONDS`).
- * Until then, what the store does not
- * answer counts as a failed probe without asking: the list is partial, or an
- * outage when the store knows nothing about the library.
+ * `failures` remembers, for `RESOLVER_FAILURE_SECONDS`, a library whose
+ * resolver failed every probe of a request in which GetFTR took no longer
+ * than the start window. Until then, what the store does not answer counts
+ * as a failed probe without asking: the list is partial, or an outage when
+ * the store knows nothing about the library.
  */
 export async function lookupInstitutionServices(
   { domain, entityId = null, rorId = null }: InstitutionQuery,
