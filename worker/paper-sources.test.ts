@@ -445,6 +445,27 @@ test("an area's journal lane asks OpenAlex for the core journal articles labelle
   assert.deepEqual(await areaFilters('area:q-fin'), ['primary_topic.subfield.id:2003']);
 });
 
+test("an area's journal lane leaves out the working-paper series OpenAlex lists as core journal articles, whose cards say Working paper", async t => {
+  // The listed series that held such articles in economics' and finance's
+  // 90 days to 2026-10-24: 64 of economics' 8,538 and 31 of finance's.
+  const series = [
+    { id: 'S4210171147', display_name: 'IMF Working Papers' },
+    { id: 'S4210225578', display_name: 'FEDS Notes' },
+    { id: 'S4210212089', display_name: 'Finance and Economics Discussion Series' },
+    FRBSF,
+    { id: 'S4210173933', display_name: 'Federal Reserve Bank of Kansas City, Research Working Papers' },
+  ];
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  for (const lane of ['area:econ', 'area:q-fin', 'area:physics']) {
+    await SOURCES['openalex-areas'].fetchPage(env as never, { lane, page: 1, since: '' });
+    const filters = filtersOf(urls.at(-1)!);
+    for (const source of series) {
+      assert.equal(mapOpenAlexWork(seriesWork('W1', '10.1/w1', 'article', source, null))?.workingPaper, true, `an article of ${source.display_name} is a working paper`);
+      assert.ok(filters.includes(`primary_location.source.id:!${source.id}`), `${lane} leaves out ${source.display_name}`);
+    }
+  }
+});
+
 test('the areas the feed fills from arXiv get a journal lane; medicine and biology, whose every leaf PubMed serves, do not', () => {
   const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
   assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin', 'area:stat']);

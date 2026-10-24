@@ -16,6 +16,7 @@ import {
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { openAlexTopicFilterForLeaf } from '../src/utils/areaAccent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/openAlexAreas.ts';
+import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publicationStatus.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
@@ -445,7 +446,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // 39 % (mechanical engineering) of the articles had none. So a night reads
   // one page, the newest 200: one list call an area. Unlike the topic lanes,
   // the area lanes take an article without an abstract (PAP-107); its card
-  // says it has none.
+  // says it has none. OpenAlex lists IMF, Federal Reserve Board and Fed bank
+  // working papers as core journal articles; their cards say Working paper,
+  // so the lane leaves out the review rule's series.
   'openalex-areas': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -454,6 +457,7 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'type:article',
       'is_retracted:false',
       'primary_location.source.is_core:true',
+      OPENALEX_NOT_LISTED_SERIES_FILTER,
     ].join(','), { page, lane, perPage: 200 }),
   },
   'openalex-series': {
