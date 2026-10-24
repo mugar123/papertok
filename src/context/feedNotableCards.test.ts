@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Paper } from '../models/Paper.ts';
 import { placeNotableCards } from '../utils/feedEnrichment.ts';
 import { readSeenPaperIds } from '../utils/userScopedStorage.ts';
-import { cardsBeforePage, joinFeedPage, notablePassedOver, notableRequest, reRankAfterReader } from './feedNotableCards.ts';
+import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader } from './feedNotableCards.ts';
 import { recordCardView, seenPapersForAccount } from './feedViewedPapers.ts';
 
 const records = (prefix: string, count = 15): Paper[] => Array.from({ length: count }, (_, index) => ({
@@ -106,6 +106,51 @@ test('Not interested on a card leaves the next notable card the fifteenth the re
     const again = reRankAfterReader(afterDismissal, [next.id, next.id], reversed)!;
     assert.deepEqual(metNotableAt(met, [...again.locked, ...again.queue], next.id), [15, 30, 45], `after ${dismissed.id} left and a second re-rank`);
   }
+});
+
+// The reader dismissed the list's last notable card, which they had met. The
+// next page counted its place from the notable card before that one, more than
+// fifteen cards back, and put its notable card on the first card after the
+// reader's: 4 to 10 cards after the dismissed one (the review's probe).
+for (const readOn of [0, 2, 6]) {
+  test(`Not interested on the list's last notable card leaves the next page's notable card the fifteenth after it (${readOn} cards read on)`, () => {
+    // Notable cards fifteenth and thirtieth, eight cards after the second; the reader is on the second.
+    const shown = placeNotableCards(records('card', 36), [notable('notable-0'), notable('notable-1')]);
+    assert.equal(shown[29].id, 'notable-1');
+    // markNotInterested: the card leaves, the reader is on the next one, the re-rank anchors on it.
+    const notableAfter = notablePlaceAfterDismissal(shown, 'notable-1', 'notable-1', null);
+    const next = shown[30];
+    const { locked, queue } = reRankAfterReader(shown.filter(paper => paper.id !== 'notable-1'), [next.id, next.id], asItIs)!;
+    const afterDismissal = [...locked, ...queue];
+    const readerAt = afterDismissal.indexOf(next) + readOn;
+    const visible = afterDismissal[readerAt].id;
+    const met = [...shown.slice(0, 30), ...afterDismissal.slice(afterDismissal.indexOf(next), readerAt + 1)];
+    const asked = notableRequest(afterDismissal, LATER_PAGE, visible, notableAfter);
+    const joined = joinFeedPage(afterDismissal, records('corpus-2', 21), Array.from({ length: asked }, (_, index) => notable(`page-notable-${index}`)), { ...later, visiblePaperId: visible, notableAfter });
+    assert.deepEqual(metNotableAt(met, joined, visible), [15, 30, 45, 60]);
+  });
+}
+
+// Not interested on another page (EntityExplorer) can take out a notable card
+// the reader has not reached. They never meet it, so its place stays open.
+test('a notable card dismissed before the reader reaches it leaves its place to the next page', () => {
+  const shown = placeNotableCards(records('card', 36), [notable('notable-0'), notable('notable-1')]);
+  const notableAfter = notablePlaceAfterDismissal(shown, 'notable-1', 'card-3', null);
+  const joined = joinFeedPage(shown.filter(paper => paper.id !== 'notable-1'), records('corpus-2', 21), [notable('page-notable-0'), notable('page-notable-1')], { ...later, visiblePaperId: 'card-3', notableAfter });
+  assert.deepEqual(metNotableAt(shown.slice(0, 4), joined, 'card-3'), [15, 30, 45]);
+});
+
+// The card before a dismissed notable card's place leaves too: the reader met
+// both, and the place moves onto the card before them.
+test('Not interested on the card a dismissed notable card followed keeps the next page counting from that place', () => {
+  const shown = placeNotableCards(records('card', 36), [notable('notable-0'), notable('notable-1')]);
+  const notableAfter = notablePlaceAfterDismissal(shown, 'notable-1', 'notable-1', null);
+  const afterNotable = shown.filter(paper => paper.id !== 'notable-1');
+  // On card-30, the reader dismisses card-27, the card before the notable card's place, on another page.
+  const placeAfter = notablePlaceAfterDismissal(afterNotable, 'card-27', 'card-30', notableAfter);
+  const list = afterNotable.filter(paper => paper.id !== 'card-27');
+  const joined = joinFeedPage(list, records('corpus-2', 21), ['page-notable-0', 'page-notable-1'].map(notable), { ...later, visiblePaperId: 'card-30', notableAfter: placeAfter });
+  assert.deepEqual(metNotableAt(shown.slice(0, 33), joined, 'card-30'), [15, 30, 45, 60]);
 });
 
 test('the related papers a like brings join the cards after the reader, and every notable card keeps its place', () => {

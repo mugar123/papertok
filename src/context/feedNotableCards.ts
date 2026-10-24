@@ -8,8 +8,12 @@ import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit
 // (notablePassedOver), and a spare takes the place.
 const NOTABLE_SPARE = 2;
 
-/** How a page joins the list: a refresh replaces it, keeping the cards through the visible one when asked. */
-type PageJoin = { reset: boolean; keepThroughVisible: boolean; visiblePaperId: string | null };
+/**
+ * How a page joins the list: a refresh replaces it, keeping the cards through
+ * the visible one when asked. `notableAfter` is the card a dismissed notable
+ * card the reader met followed (notablePlaceAfterDismissal).
+ */
+type PageJoin = { reset: boolean; keepThroughVisible: boolean; visiblePaperId: string | null; notableAfter?: string | null };
 
 /**
  * The cards a page follows: the whole list on a later page, the cards through
@@ -32,8 +36,25 @@ const reachedCards = (cards: Paper[], visiblePaperId: string | null) => (
  * place of the largest page the load can show (`largestPage` other cards)
  * after `cardsBefore`, and NOTABLE_SPARE more.
  */
-export function notableRequest(cardsBefore: Paper[], largestPage: number, visiblePaperId: string | null) {
-  return notablePlaces(cardsBefore, largestPage, reachedCards(cardsBefore, visiblePaperId)) + NOTABLE_SPARE;
+export function notableRequest(cardsBefore: Paper[], largestPage: number, visiblePaperId: string | null, notableAfter: string | null = null) {
+  return notablePlaces(cardsBefore, largestPage, reachedCards(cardsBefore, visiblePaperId), notableAfter) + NOTABLE_SPARE;
+}
+
+/**
+ * The card the last notable place the reader met follows, once `removedId`
+ * leaves `cards` (Not interested), from `notableAfter`, the one known before.
+ * A notable card the reader met counts in their fifteen after it leaves, so
+ * the next page counts from its place, the card before it; so does a card
+ * that followed such a place and leaves too. A notable card they have not
+ * reached leaves a place for the next page to fill (joinNotablePage).
+ */
+export function notablePlaceAfterDismissal(cards: Paper[], removedId: string, visiblePaperId: string | null, notableAfter: string | null) {
+  const removedAt = cards.findIndex(paper => paper.id === removedId);
+  const markedAt = notableAfter === null ? -1 : cards.findIndex(paper => paper.id === notableAfter);
+  const met = removedAt > 0 && removedAt <= Math.max(0, cards.findIndex(paper => paper.id === visiblePaperId));
+  return met && markedAt <= removedAt && (cards[removedAt]._notable || markedAt === removedAt)
+    ? cards[removedAt - 1].id
+    : notableAfter;
 }
 
 /**
@@ -59,7 +80,7 @@ export function joinFeedPage(shown: Paper[], others: Paper[], notable: Paper[], 
   const kept = cardsBeforePage(shown, join);
   const keptIds = new Set(kept.map(paper => paper.id));
   const isNew = (paper: Paper) => !keptIds.has(paper.id);
-  return joinNotablePage(kept, others.filter(isNew), notable.filter(isNew), reachedCards(kept, join.visiblePaperId));
+  return joinNotablePage(kept, others.filter(isNew), notable.filter(isNew), reachedCards(kept, join.visiblePaperId), join.notableAfter ?? null);
 }
 
 /**

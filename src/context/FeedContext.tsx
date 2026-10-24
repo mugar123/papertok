@@ -74,7 +74,7 @@ import {
 } from '../utils/userScopedStorage.ts';
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feedViewedPapers.ts';
 import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feedPagination.ts';
-import { cardsBeforePage, joinFeedPage, notablePassedOver, notableRequest, reRankAfterReader } from './feedNotableCards.ts';
+import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader } from './feedNotableCards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feedSnapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feedTemporalLean.ts';
 import { readStoredClassification, storedClassification } from '../models/Paper.ts';
@@ -607,6 +607,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // reRankFeed and the merge lock only the top few cards, and a late Crossref
   // answer removes no card. Not enforced.
   const visiblePaperIdRef = useRef<string | null>(null);
+  // The card a notable card the reader met and dismissed followed: the next
+  // page counts its notable place from there (notablePlaceAfterDismissal).
+  // The account's own, cleared when the account changes.
+  const notableAfterRef = useRef<string | null>(null);
   // When the feed last moved. FeedContainer reports the visible paper from
   // its scroll handler, so this doubles as the scroll heartbeat the deferred
   // re-rank below waits out: a re-rank landing inside the snap animation is
@@ -898,6 +902,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     activeUserId.current = userId;
     sessionSeenPapers.current = seenPapersForAccount(userId);
+    notableAfterRef.current = null;
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
@@ -1157,7 +1162,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // the ranking puts the reader's closest papers there.
     const currentPage = pageOverride ?? (reset ? 0 : page);
     // How the page joins the list, with the card the reader is on when it does.
-    const pageJoin = () => ({ reset, keepThroughVisible, visiblePaperId: visiblePaperIdRef.current });
+    const pageJoin = () => ({ reset, keepThroughVisible, visiblePaperId: visiblePaperIdRef.current, notableAfter: notableAfterRef.current });
     const cardsBefore = cardsBeforePage(papers, pageJoin());
 
     const isAvailablePaper = (paper: Paper) => (
@@ -1232,7 +1237,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // the first screen, up to ten exploration cards (STEP 5); and the
             // spares. A page has one place at least.
             seen: sessionSeenPapers.current,
-            notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current),
+            notable: notableRequest(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION), visiblePaperIdRef.current, notableAfterRef.current),
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
@@ -1798,6 +1803,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const successorId = removedIndex >= 0
       ? (papers[removedIndex + 1]?.id ?? papers[removedIndex - 1]?.id ?? null)
       : null;
+    notableAfterRef.current = notablePlaceAfterDismissal(papers, paper.id, visiblePaperIdRef.current, notableAfterRef.current);
     // The slide fires no scroll event, so FeedContainer does not report the
     // successor. A late Crossref answer reads this ref to keep the reader's card.
     if (visiblePaperIdRef.current === paper.id) visiblePaperIdRef.current = successorId;
