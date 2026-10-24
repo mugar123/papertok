@@ -31,8 +31,8 @@ const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT
 // lanes for the day (below). Were it written again whenever asked a day after
 // its last write, 4,000 lanes asked for each morning would spend the app's day
 // every day, and a lane asked for after them would never be written again
-// before the nightly run drops it, 14 days after its last write
-// (paper-harvest.ts). Written once a week, lanes asked for daily spend the
+// before the first nightly run more than 14 days after its last write drops
+// it (paper-harvest.ts). Written once a week, lanes asked for daily spend the
 // app's day only on the days they fall due, and a lane refused on its day can
 // still be written by an ask in the 7 days before the drop.
 const FOLLOW_REFRESH_MS = 7 * 86_400_000;
