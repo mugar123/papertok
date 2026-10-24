@@ -508,13 +508,13 @@ test('an app that sends the filter without asking to skip seen papers keeps page
   assert.deepEqual(ids((await ask({ categories: ['cs.CL'], page: 1, pageSize: 15, seen, notable: 3 })).papers), ids(papers.slice(15, 30)));
 });
 
-test('a reader who follows a hundred and twenty entities still gets their follows with the filter', async t => {
+test('a request with a hundred and twenty follows, the likes and the filter fits the body cap', async t => {
   rankingCaches(t);
   const { env, ask } = store();
   await ingestPapers(env, [{ paper: paper('2610.70001', "A followed author's paper", 1), lanes: ['author:A5000000000'] }]);
-  // As a bundle from before the app sent only the follows the page reads
-  // sends its follows' page: every follow as stored, its likes and what the
-  // reader has seen.
+  // No bundle sends this request: bundles before this one send every follow
+  // as stored but no filter with them, and this one sends at most 20 follows.
+  // It pins the cap above the 16 KB the route took before.
   const follows = Array.from({ length: 120 }, (_, index) => ({
     type: 'author', canonicalId: `https://openalex.org/A${5_000_000_000 + index}`, displayName: `Followed author number ${index}`, metadata: {},
   }));
