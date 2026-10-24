@@ -783,11 +783,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       });
       if (queue.length === 0) return prevPapers;
 
-      const newQueue = diversifiedWeightedShuffle(queue, {
+      // The other cards are shuffled; the notable ones go back to every
+      // NOTABLE_EVERY-th place, counted from the locked cards.
+      const newQueue = placeNotableCards(diversifiedWeightedShuffle(queue.filter(paper => !paper._notable), {
         scorePaper: calculateAndAttachScore,
         weights: recommendationWeights.current,
         initialPapers: locked,
-      });
+      }), queue.filter(paper => paper._notable), locked);
       logRankingBatch('rerank queue', newQueue);
 
       return [...locked, ...newQueue];
@@ -919,12 +921,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // Combine rest and new papers
             const combinedRest = [...newGraphPapers, ...restFiltered];
             
-            // Re-rank the unread queue using weighted shuffle
-            const reRankedRest = diversifiedWeightedShuffle(combinedRest, {
+            // Re-rank the unread queue using weighted shuffle, the notable
+            // cards kept at their places as reRankFeed keeps them.
+            const reRankedRest = placeNotableCards(diversifiedWeightedShuffle(combinedRest.filter(rp => !rp._notable), {
               scorePaper: calculateAndAttachScore,
               weights: recommendationWeights.current,
               initialPapers: locked,
-            });
+            }), combinedRest.filter(rp => rp._notable), locked);
             logRankingBatch('graph expansion', reRankedRest);
             
             return [...locked, ...reRankedRest];

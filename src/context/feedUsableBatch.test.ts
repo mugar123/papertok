@@ -10,11 +10,11 @@ import { abstractsInFlight, notablePlaces, placeNotableCards, preserveFeedAbstra
 import { createEmptyInteractionProfile, deserializeInteractionProfile, MAX_VIEWED_IDS, readProfileSignals, recordInteractionEvent, serializeInteractionProfile, viewedIds, type InteractionEvent } from '../utils/interactionProfile.ts';
 import { clearUserScopedStorage, readSeenPaperIds, removeLegacySeenPaperIds, saveSeenPaperIds } from '../utils/userScopedStorage.ts';
 import { rankPreferences } from '../utils/preferenceRanking.ts';
-import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
+import { diversifiedWeightedShuffle, pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
 import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
-import { mergeFreshFeedPage } from '../utils/feedReRankSplit.ts';
+import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
@@ -949,6 +949,55 @@ test('a notable card the reader viewed is not offered again, however many cards 
   assert.equal(asked[0].seen?.has('notable-viewed'), true, 'the corpus is told the reader saw it');
   assert.equal(state.papers.length, 15);
   assert.ok(!state.papers.some(paper => paper.id === 'notable-viewed'), 'and the feed does not show it');
+});
+
+// A first screen of 21 cards and a later page of 31, placed as the loader
+// places them: notable cards 15th, 30th and 45th of 55.
+function feedWithNotableCards() {
+  const card = (id: string, index: number) => ({ ...paperRecord(id), primaryCategory: ['cs.CV', 'cs.LG', 'cs.AI'][index % 3] });
+  const notable = (id: string) => ({ ...paperRecord(id), _notable: true });
+  const first = placeNotableCards(Array.from({ length: 21 }, (_, index) => card(`first-${index}`, index)), [notable('notable-0')]);
+  return [...first, ...placeNotableCards(Array.from({ length: 31 }, (_, index) => card(`later-${index}`, index)), [notable('notable-1'), notable('notable-2')], first)];
+}
+// The same draws on every run: the shuffle weighs its picks with Math.random.
+const seededRandom = () => { let seed = 7; return () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }; };
+
+// The re-rank after a view, a like or a save shuffles the cards below the
+// reader. Before, it shuffled the notable cards with them: in the review's
+// probe, 500 of 500 re-ranks moved them and 292 left two fewer than 8 cards apart.
+test('a re-rank and a related-papers insert keep a notable card at every fifteenth card', async t => {
+  t.mock.method(Math, 'random', seededRandom());
+  t.mock.method(console, 'log', () => {});
+  const placed = [[14, 'notable-0'], [29, 'notable-1'], [44, 'notable-2']];
+  const state = { papers: feedWithNotableCards() };
+  assert.deepEqual(notableAt(state.papers), placed);
+  const shuffling = {
+    setPapers: (value: FeedRecord[] | ((previous: FeedRecord[]) => FeedRecord[])) => { state.papers = typeof value === 'function' ? value(state.papers) : value; },
+    // The reader is on the 16th card, just past the first notable one.
+    visiblePaperIdRef: ref<string | null>(state.papers[15].id),
+    splitFeedForReRank, diversifiedWeightedShuffle, placeNotableCards, calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
+  };
+  const reRankFeed = callbackIn(componentCallback('reRankFeed', 'calculateAndAttachScore'), {
+    ...shuffling, startTransition: (update: () => void) => update(),
+  }) as (sourcePaperId?: string | null) => void;
+  const ids = new Set(state.papers.map(paper => paper.id));
+  for (let run = 0; run < 20; run += 1) {
+    reRankFeed(run % 2 ? 'first-3' : null);
+    assert.deepEqual(notableAt(state.papers), placed, `re-rank ${run + 1}`);
+    assert.deepEqual(new Set(state.papers.map(paper => paper.id)), ids);
+  }
+
+  // A like inserts the corpus's closest papers below the reader and shuffles the rest.
+  const expand = callbackIn(componentCallback('traverseAndExpandNetwork', 'calculateAndAttachScore, isKnownPaper, userPreferences'), {
+    ...shuffling, feedSessionId: ref(0), activeUserId: ref('test-user'), isTraversingNetwork: ref(false), userPreferences: ['cs.AI'], MAIN_CATEGORIES: 10,
+    likedPaperIdsRef: ref(new Set()), savedPaperIdsRef: ref(new Set()), readPaperIdsRef: ref(new Set()), notInterestedIdsRef: ref(new Set()),
+    sessionSeenPapers: ref(new Set(ids)), isKnownPaper: () => false,
+    fetchCorpusPage: async () => records('related', 3),
+  }) as (paper: FeedRecord) => Promise<void>;
+  await expand(state.papers.find(paper => paper.id === 'later-0')!);
+  assert.equal(state.papers.length, 58);
+  assert.ok(records('related', 3).every(paper => state.papers.some(card => card.id === paper.id)));
+  assert.deepEqual(notableAt(state.papers), placed);
 });
 
 // A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).
