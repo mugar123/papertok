@@ -114,7 +114,7 @@ try {
   // tiene: lo que se mide es la ultima oportunidad, no un acierto de cache.
   // Las tres primeras son rutas de la app y tienen que salir. `/` lo es desde
   // que se retiro la landing que lo ocupaba: index.html ES la app, y el
-  // catch-all de App.jsx lo manda al feed. `/privacy.html` NO es ruta de la
+  // catch-all de app.tsx lo manda al feed. `/privacy.html` NO es ruta de la
   // app, y que se quede sin pagina es la respuesta correcta -- sustituirla
   // por la app seria cambiarle la pagina al lector.
   for (const [ruta, esApp] of [['/research', true], ['/lists', true], ['/', true], ['/privacy.html', false]]) {

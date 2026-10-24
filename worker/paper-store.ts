@@ -1,13 +1,13 @@
 import type { BloomFilter } from 'bloomfilter';
-import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
+import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { PaperBuilder } from '../src/services/PaperBuilder.ts';
-import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
-import { hasUsableAIAbstract } from '../src/utils/aiExplanationAccess.ts';
-import { isPlaceholderPaperTitle } from '../src/utils/paperDisplayTitle.ts';
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
-import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seenPaperFilter.ts';
+import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
+import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
@@ -33,10 +33,16 @@ export type EmbeddingEnv = {
 export const CORPUS_DAYS = 90;
 // A liked paper the feed ranks by stays this long after a reader last did.
 export const KEEP_LIKED_DAYS = 30;
-const FEED_CANDIDATE_LIMIT = 4_000;
+export const FEED_CANDIDATE_LIMIT = 4_000;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
+const FEED_MAX_EXCLUDED = 200;
+const DIVERSITY_POOL = 500;
+const DIVERSITY_RANKS = 150;
+const DIVERSITY_WEIGHT = 0.3;
+const NEGATIVE_SIMILARITY_THRESHOLD = 0.75;
+const NEGATIVE_WEIGHT = 0.5;
 const FEED_MAX_PAGE_SIZE = 30;
 // Notable papers a page adds: the app's largest page asks for its three places and two spares.
 const FEED_MAX_NOTABLE = 5;
@@ -53,6 +59,16 @@ const STORED_AUTHORS = 50;
 // store inside the free allocation with room for the PDF conversions.
 const DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT = 7_500_000;
 const EMBEDDING_TOKENS_PER_UNIT = 1_000;
+// Shares of the day's limit for what readers start, so the daily run keeps the
+// rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
+// ten long papers; on the harvest's subject, a review estimated that one
+// account's lookups could spend the 60M-token day in about 143 minutes. The
+// runs new follows start, together: no reader
+// is recorded with them, and each of the 20 new lanes a reader's runs may
+// harvest a day can bring a few hundred papers; what they leave waits for the
+// daily run.
+const READER_EMBEDDING_DAILY_TOKENS = 50_000;
+const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // Similarity orders the page; recency only separates near ties, so a reader
 // with likes still sees this week's papers ahead of last month's lookalikes.
 // Relevance order is for a reader whose views lean older: no recency at all.
@@ -98,18 +114,20 @@ export function readVector(value: unknown) {
   return new Int8Array(value as number[]);
 }
 
-// Normalized here rather than assumed: a vector cut to its leading dimensions
-// (migration 0004) is no longer a unit vector.
-function cosine(a: Int8Array, b: Int8Array) {
+// Normalize once per ranking: MMR compares each candidate many times, and a
+// vector cut by migration 0004 is no longer a unit vector.
+function unitVector(vector: Int8Array) {
+  const norm = Math.hypot(...vector) || 1;
+  return Float64Array.from(vector, value => value / norm);
+}
+
+function cosine(a: Float64Array, b: Float64Array) {
   let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+  const dimensions = Math.min(a.length, b.length);
+  for (let index = 0; index < dimensions; index += 1) {
     dot += a[index] * b[index];
-    normA += a[index] * a[index];
-    normB += b[index] * b[index];
   }
-  return normA && normB ? dot / Math.sqrt(normA * normB) : 0;
+  return Math.max(-1, Math.min(1, dot));
 }
 
 // ─── Identity ───
@@ -166,7 +184,7 @@ const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
 // years before the current UTC year (paper-sources.ts), filed under
 // `notable:<category>`. A page that says what the reader has seen adds the
 // ones the reader has not, for the app to give one card in every
-// NOTABLE_EVERY (src/utils/feedEnrichment.ts) (Pablo, 2026-10-23).
+// NOTABLE_EVERY (src/utils/feed-enrichment.ts) (Pablo, 2026-10-23).
 export const NOTABLE_LANE_PREFIX = 'notable:';
 const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */
@@ -491,16 +509,20 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
 
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);
 
+/** A share of the day's embedding limit: a ledger subject, and the most it may reserve. */
+interface EmbeddingShare { subject: string; tokens: number }
+
 /**
- * Reserves the embedding tokens for today before spending them. Workers AI
- * bills past the free allocation, so a ledger that cannot answer refuses.
+ * Reserves the embedding tokens for today before spending them, within
+ * `share` when given and the day's limit always. Workers AI bills past the
+ * free allocation, so a ledger that cannot answer refuses.
  */
-async function reserveEmbeddingTokens(env: StoreEnv, tokens: number) {
+async function reserveEmbeddingTokens(env: StoreEnv, tokens: number, share?: EmbeddingShare) {
   const limit = Math.floor((Number(env.EMBEDDING_DAILY_TOKEN_LIMIT) || DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT) / EMBEDDING_TOKENS_PER_UNIT);
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
     periodKey: `embedding:day:${new Date().toISOString().slice(0, 10)}`,
-    subject: 'embedding:all',
-    subjectLimit: limit,
+    subject: share?.subject ?? 'embedding:all',
+    subjectLimit: share ? Math.min(limit, share.tokens / EMBEDDING_TOKENS_PER_UNIT) : limit,
     globalLimit: limit,
     amount: Math.max(1, Math.ceil(tokens / EMBEDDING_TOKENS_PER_UNIT)),
   });
@@ -534,16 +556,22 @@ async function embedTexts(env: StoreEnv, texts: string[]) {
 }
 
 /**
- * Embeds the rows' title and abstract within today's budget and stores the
- * vectors. Returns how many were embedded: 0 when the budget is spent.
+ * Embeds the rows' title and abstract within today's budget, and `share` of it
+ * when given, and stores the vectors. Returns how many were embedded: 0 when
+ * the budget is spent.
  */
-async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>) {
+async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>, share?: EmbeddingShare) {
   if (rows.length === 0) return 0;
-  const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
-  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts)))) return 0;
-  const vectors = await embedTexts(env, texts);
-  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index]! }] : []));
   const db = database(env);
+  const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
+  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts), share))) {
+    // Not embedded: another pass, or another reader with budget left, may.
+    await db.prepare('UPDATE works SET embedding_claimed_until = NULL WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(rows.map(row => row.id))).run();
+    return 0;
+  }
+  const vectors = await embedTexts(env, texts);
+  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index] }] : []));
   // Two parameters a row, under D1's hundred per statement.
   const statements = [];
   for (let start = 0; start < embedded.length; start += 50) {
@@ -555,41 +583,93 @@ async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string 
   return embedded.length;
 }
 
-/** The newest stored papers without a vector, embedded. 0 once none are left or today's budget is spent. */
-export async function embedPending(env: StoreEnv, limit: number) {
-  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
-    WHERE NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
-    ORDER BY w.published DESC LIMIT ?`).bind(limit).all<{ id: number; paper: string }>();
-  return embedRows(env, results);
+// How long a pass holds the papers it embeds: longer than the harvest step that
+// runs it may take (5 minutes), so no other pass embeds them meanwhile. A pass
+// that failed leaves them to the next one after this.
+const EMBEDDING_CLAIM_MS = 10 * 60_000;
+
+/**
+ * Claims the newest works `scope` names (a condition on `w`, and its
+ * parameters) that have no vector and that no other pass holds, in one
+ * statement: passes that overlap, such as the daily run beside a followed
+ * lanes' run or a reader's lookup, get different works.
+ */
+async function claimUnembedded(db: D1Database, scope: string, params: unknown[], limit: number, now = Date.now()) {
+  const { results } = await db.prepare(`UPDATE works SET embedding_claimed_until = ? WHERE id IN (
+      SELECT w.id FROM works w WHERE ${scope}
+        AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
+        AND (w.embedding_claimed_until IS NULL OR w.embedding_claimed_until < ?)
+      ORDER BY w.published DESC LIMIT ?)
+    RETURNING id, paper`)
+    .bind(new Date(now + EMBEDDING_CLAIM_MS).toISOString(), ...params, new Date(now).toISOString(), limit)
+    .all<{ id: number; paper: string }>();
+  return results;
 }
 
-/** The given works that have no vector yet, embedded within today's budget. */
-export async function embedWorks(env: StoreEnv, workIds: number[]) {
+/**
+ * The newest stored papers without a vector, embedded. 0 once none are left or
+ * today's budget is spent. With `lanes`, a run for new follows: only those
+ * lanes' papers, within the follow runs' share of the day.
+ */
+export async function embedPending(env: StoreEnv, limit: number, { lanes }: { lanes?: string[] } = {}) {
+  if (!lanes) return embedRows(env, await claimUnembedded(database(env), 'true', [], limit));
+  const rows = await claimUnembedded(database(env), 'w.id IN (SELECT work_id FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)))', [JSON.stringify(lanes)], limit);
+  return embedRows(env, rows, { subject: 'embedding:follows', tokens: FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS });
+}
+
+/** The given works that have no vector yet, embedded within the reader's share of today's budget. */
+export async function embedWorks(env: StoreEnv, workIds: number[], uid: string) {
   if (workIds.length === 0) return 0;
-  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
-    WHERE w.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)`)
-    .bind(JSON.stringify(workIds)).all<{ id: number; paper: string }>();
-  return embedRows(env, results);
+  const rows = await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length);
+  return embedRows(env, rows, { subject: `uid:${uid}`, tokens: READER_EMBEDDING_DAILY_TOKENS });
 }
 
 // ─── Reading ───
 
 /**
- * Closest liked paper first, recency as the tie-breaker. A paper not yet
- * embedded ranks by recency alone, below the ones that are, so a reader is
- * never left without papers while the store catches up.
+ * Semantic relevance with near-copy rejection and a bounded diversity pass.
+ * Missing vectors retain recency so the feed remains usable during embedding.
  */
-export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent' as keyof typeof RECENCY_WEIGHT } = {}) {
+export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [] }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[] } = {}) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
+  const likedVectors = positives.map(unitVector);
+  const rejectedVectors = negatives.map(unitVector);
   const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
-  return rows
+  const ranked = rows
     .map(row => {
-      const similarity = positives.length && row.embedding
-        ? positives.reduce((best, positive) => Math.max(best, cosine(row.embedding as Int8Array, positive)), -1)
-        : 0;
-      return { row, score: similarity + weight * recency(row.published) };
+      const embedding = row.embedding ? unitVector(row.embedding) : null;
+      const similarity = positives.length && embedding
+        ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
+      const rejectedSimilarity = embedding
+        ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
+      const negative = Math.max(0, (rejectedSimilarity - NEGATIVE_SIMILARITY_THRESHOLD) / (1 - NEGATIVE_SIMILARITY_THRESHOLD));
+      // A fixed scale keeps an uninformative page from stretching its best
+      // match to 100%. The client's contribution is bounded independently.
+      const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
+      return { row, embedding, score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(row.published), semanticScore };
     })
     .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
+  if (!positives.length && !negatives.length) return ranked;
+  // Limit both the pool and selected prefix: a full 4,000 x 4,000 MMR pass
+  // would dominate Worker CPU. The untouched tail remains available.
+  const pool = ranked.slice(0, DIVERSITY_POOL).map(candidate => ({ candidate, redundancy: 0 }));
+  const selected: typeof ranked = [];
+  while (pool.length && selected.length < DIVERSITY_RANKS) {
+    let best = 0;
+    for (let index = 1; index < pool.length; index += 1) {
+      if (pool[index].candidate.score - DIVERSITY_WEIGHT * pool[index].redundancy > pool[best].candidate.score - DIVERSITY_WEIGHT * pool[best].redundancy) best = index;
+    }
+    const [{ candidate }] = pool.splice(best, 1);
+    selected.push(candidate);
+    const embedding = candidate.embedding;
+    if (embedding) {
+      for (const entry of pool) {
+        if (entry.candidate.embedding) entry.redundancy = Math.max(entry.redundancy, Math.max(0, (cosine(embedding, entry.candidate.embedding) - 0.75) / 0.25));
+      }
+    }
+  }
+  const chosen = new Set(selected);
+  return [...selected, ...ranked.filter(candidate => !chosen.has(candidate))];
 }
 
 export async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER_MINUTE_LIMIT' | 'PROVIDER_GLOBAL_MINUTE_LIMIT'>, uid: string) {
@@ -668,6 +748,8 @@ export interface FeedQuery {
   categories: string[];
   follows: FeedFollow[];
   positiveIds: string[];
+  negativeIds: string[];
+  excludedIds: string[];
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
@@ -693,7 +775,7 @@ export interface FeedQuery {
  * row to check it against the filter, '' when the corpus no longer holds the
  * work: the next pages check it against theirs without reading it again.
  */
-export interface RankedCandidate { workId: number; lanes: string[]; paperId?: string }
+export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number; paperId?: string }
 /**
  * The order a reader's pages were served from. `served` counts the ranks
  * pages have covered, including the empty ones of a page the order ran out
@@ -738,7 +820,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
   const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
   if (lanes.length === 0) return [];
-  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), order: query.order, notable: query.notable > 0 });
+  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0 });
   const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
   let ranking = kept?.final ? kept.ranks : null;
   let notable = kept?.notable ?? [];
@@ -783,6 +865,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     const follows = query.follows.filter(follow => candidate.lanes.includes(follow.lane));
     return [{
       ...paper,
+      _semanticScore: candidate.semanticScore,
       ...(fetchedFor.length ? { _fetchedFor: fetchedFor } : {}),
       ...(follows.length ? { _followedEntityMatches: follows.map(({ type, canonicalId, displayName }) => ({ type, canonicalId, displayName: displayName || canonicalId })) } : {}),
       ...(notableIds.has(candidate.workId) ? { _notable: true } : {}),
@@ -822,10 +905,11 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
 }
 
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
-  const positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
-  const positiveIds = [...new Set(positiveWorks.values())];
+  const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
+  const positiveIds = [...new Set(query.positiveIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
+  const negativeIds = [...new Set(query.negativeIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
-  const [candidates, notableCandidates, positives] = await Promise.all([
+  const [candidates, notableCandidates, signals] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
@@ -836,30 +920,29 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // A notable lane keeps a paper two weeks past its last listing; from
     // 1 January, the year that left the window is not read.
     notableLanes.length ? readCandidates(db, notableLanes, { share: NOTABLE_READ_PER_LANE, since: notableSince(now) }) : Promise.resolve([]),
-    positiveIds.length
-      ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
-      : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
+    readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
   ]);
-  const likes = positives.results.map(row => readVector(row.embedding));
-  // A liked paper is not offered again, and keeps its vector in the corpus.
-  const liked = new Set(positiveIds);
+  const likes = positiveIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  const negatives = negativeIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  // A liked paper is not offered again, and keeps its vector in the corpus. A
+  // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
+  const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
   // A paper of the reader's notable lanes comes only as a notable card.
   const inNotableLanes = new Set(notableCandidates.map(candidate => candidate.workId));
-  const offered = candidates.filter(candidate => !liked.has(candidate.workId) && !inNotableLanes.has(candidate.workId));
-  const offeredNotable = notableCandidates.filter(candidate => !liked.has(candidate.workId));
+  const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !inNotableLanes.has(candidate.workId));
+  const offeredNotable = notableCandidates.filter(candidate => !excluded.has(candidate.workId));
   const [vectors] = await Promise.all([
-    // Only the candidates' vectors, and only to compare with a like's: without
-    // one the order is recency alone.
-    likes.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
+    // Without a positive or negative vector, recency needs no candidate vectors.
+    likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
     keepLiked(db, positiveIds, now),
   ]);
   const withVector = (candidate: Candidate) => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null });
   return {
-    ranks: rankBySimilarity(offered.map(withVector), likes, { now, order: query.order })
-      .map(({ row }) => ({ workId: row.workId, lanes: row.lanes })),
+    ranks: rankBySimilarity(offered.map(withVector), likes, { now, order: query.order, negatives })
+      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore })),
     // The closest notable papers first, without recency: they are years old by design.
-    notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance' })
-      .map(({ row }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)) })),
+    notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
+      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
   };
 }
 
@@ -891,7 +974,7 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
 }
 
 export interface FeedRequestBody {
-  categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
+  categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
   seen?: unknown; skipsSeen?: unknown; notable?: unknown; waitForLikes?: unknown;
 }
 
@@ -910,12 +993,16 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     }));
   const positiveIds = [...new Set((Array.isArray(body?.positiveIds) ? body.positiveIds : []).map(id => text(id).slice(0, 300)).filter(Boolean))]
     .slice(0, FEED_MAX_POSITIVES);
+  const negativeIds = [...new Set((Array.isArray(body?.negativeIds) ? body.negativeIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_POSITIVES);
+  const excludedIds = [...new Set((Array.isArray(body?.excludedIds) ? body.excludedIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_EXCLUDED);
   const seen = body?.seen === undefined ? null : readFeedSeenFilter(body.seen);
   if (body?.seen !== undefined && !seen) throw new PaperStoreError('SEEN_INVALID', 400);
   return {
     categories,
     follows,
     positiveIds,
+    negativeIds,
+    excludedIds,
     page: Math.max(0, Math.floor(Number(body?.page) || 0)),
     pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',

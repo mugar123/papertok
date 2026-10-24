@@ -48,7 +48,7 @@
 
     <main class="lp-doc">
       <h1>Privacy policy</h1>
-      <p class="lp-updated">Last updated 23 October 2026.</p>
+      <p class="lp-updated">Last updated 24 October 2026.</p>
 
       <p class="lp-lede">
         PaperTok is an application for discovering and reading scientific research. This
@@ -191,7 +191,7 @@
       <p>
         When you request a university link, PaperTok sends that email address to
         <strong>Firebase Authentication</strong> to generate a one-time verification
-        link and to <strong>Brevo</strong> to deliver it. The pending request stays in
+        link and to <strong>Resend</strong> to deliver it. The pending request stays in
         your browser for up to one hour. Cloudflare stores hashed account and recipient
         identifiers for request limits and a delivery status; it does not store the
         verification link or message body. Your linked institution records the university
@@ -203,7 +203,11 @@
       <p>
         If you turn them on, PaperTok emails you what is new from what you follow. For that
         it stores your email address, your sending preferences and an unsubscribe
-        identifier, in <strong>Cloudflare Workers KV</strong>. <strong>Brevo</strong> sends
+        identifier in <strong>Cloudflare Workers KV</strong>. If a sending limit delays
+        an edition, PaperTok also stores its selected papers, abstracts and reasons
+        they matched your follows. That selection is removed after delivery, a
+        change to your follows or a later edition that is processed; otherwise its delivery record
+        expires after 120 days. <strong>Resend</strong> sends
         the emails.
       </p>
       <p>
@@ -288,14 +292,16 @@
         attempt succeeds, fails or is cancelled.
       </p>
       <p>
-        <strong>Sentry</strong>, in the European Union, receives technical error
-        reports from the browser and our backend. Reports contain a standard error
-        type, application code locations, software version and limited operational
-        labels. We remove error messages, request data, paper content, notes,
-        search text and account details, and replace IP addresses with a fixed
-        value before sending. Session recording and performance tracing in Sentry are disabled.
-        Turning analytics off stops new browser error reports. Backend error
-        reporting continues to help us operate and repair the service.
+        <strong>Error reports</strong> from the browser and from our backend also go to
+        PostHog. With anonymous analytics, a browser report contains a standard error type,
+        the places in PaperTok's code where the error happened, the software version and a
+        few fixed labels, with the stripped page address and device details described above.
+        Error messages, paper content, notes, search text and account details are removed
+        before sending. With detailed analytics, reports also include the error message and
+        the full page address. Turning analytics off stops new browser error reports.
+        Backend reports contain only the error type, code locations, software version and
+        fixed labels, carry nothing about the reader and continue whatever the analytics
+        choice, to help us operate and repair the service.
       </p>
       <p>
         PostHog's requests go to papertok.app itself, and Vercel relays them to PostHog.
@@ -311,8 +317,9 @@
       <p>
         Those queries <strong>do not leave from your browser</strong>: they go through an
         intermediate server on Cloudflare, so those repositories never receive your IP
-        address. That server logs the volume of requests, to respect each source's limits,
-        not who makes them.
+        address. That server counts requests to respect each source's limits. For a
+        signed-in reader it also counts them per account, under a hashed account identifier
+        it keeps for up to three days.
       </p>
       <p>
         Your feed comes from a shared catalogue that server keeps: once a day it collects new
@@ -321,14 +328,17 @@
         papers you liked or saved, and a compact filter of the papers you viewed or were
         already shown, and of the papers it offered that you had already liked, saved, read
         or dismissed, which the server checks papers against to offer only papers you have
-        not seen. They are used to choose and rank that page; which papers
-        you liked or viewed is not stored there, and neither is the filter. A liked paper
-        the catalogue does not have yet is added to it without any link to you. An author,
-        institution, topic, search or project
+        not seen; liking, saving or opening a paper also asks it for papers related to that
+        one, by its identifier. They are used to choose and rank that page; which papers you
+        liked, saved, opened or viewed is not stored there, and neither is the filter. A paper
+        you liked, saved or opened that the catalogue does not have yet is added to it without
+        any link to you. An author, institution, topic, search or project
         you follow is added to the list of things the catalogue collects papers for, also
-        without any link to you, and leaves that list after 14 days in which nobody asks for
-        it. The papers' own titles and abstracts are turned into numeric vectors by
-        Cloudflare Workers AI; your likes and your identity are not sent to it.
+        without any link to you, and leaves that list within 16 days of the last time anybody
+        asks for it, later only if the daily clean-up fails. Cloudflare Workers AI turns the
+        titles and abstracts of the catalogue's papers into numeric vectors. When papers you
+        liked, saved or opened have no vector yet, their titles and abstracts are sent to it
+        together, without your identity.
       </p>
       <p>
         Paper explanations and rewrites are generated by an open language model, DeepSeek
@@ -345,10 +355,9 @@
       <ul>
         <li><strong>Google</strong> (Firebase Authentication, Firestore) — accounts and app data.</li>
         <li><strong>Vercel</strong> — hosting, page-view analytics, and relaying analytics requests to PostHog.</li>
-        <li><strong>PostHog</strong> — analytics of what is done in the application and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
-        <li><strong>Sentry</strong> — technical error monitoring, on servers in the European Union.</li>
+        <li><strong>PostHog</strong> — analytics of what is done in the application, error reports and, if you allow detailed analytics, session recordings, on servers in the European Union.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — the intermediate server and email-update storage.</li>
-        <li><strong>Brevo</strong> — sending the emails.</li>
+        <li><strong>Resend</strong> — sending the emails.</li>
       </ul>
 
       <h2>How long it is kept</h2>

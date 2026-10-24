@@ -1,12 +1,12 @@
 import { captureWorkerException } from './error-tracking.ts';
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { AIProviderPayload } from './ai-explanation.ts';
 
 type RewriteLevel = keyof typeof REWRITE_LEVELS;
 type ExplanationContext = ReturnType<typeof normalizePaperForExplanation>;
-import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/Rewrite.ts';
-export type { RewriteSection } from '../src/models/Rewrite.ts';
+import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/rewrite.ts';
+export type { RewriteSection } from '../src/models/rewrite.ts';
 interface CachedRewrite { meta: RewriteMeta; sections: RewriteSection[]; truncated?: boolean }
 type RewriteSource = { text: string; truncated: boolean; textReason: string; pdfBase64?: never }
   | { pdfBase64: string; textReason?: string; text?: never; truncated?: never };
@@ -657,7 +657,7 @@ function streamRequestFailed(error: unknown) {
  * PDF's, so "the attached paper" is still what it rewrites.
  */
 async function requestNanStream({ env, paper, level, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   const prompt = buildRewritePrompt(paper, level);
   const content = source.text
     ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
@@ -691,7 +691,7 @@ async function requestNanStream({ env, paper, level, source, model, signal }: Mo
 }
 
 async function requestGeminiStream({ env, paper, level, language, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   let upstream;
   try {
     upstream = await fetch(

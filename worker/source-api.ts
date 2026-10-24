@@ -411,7 +411,7 @@ export async function handlePaperFigures(request: Request, env: WorkerEnv) {
 // CORE's search took 7.4 s and 8.0 s to answer (measured 2026-10-20), past the
 // shared six seconds, so a successful search was cut before it could reach the
 // edge cache. The browser keeps the request open for 10 s (`REQUEST_TIMEOUT_MS`
-// in domainSourceService.ts) after the feed stops waiting for it; nine seconds
+// in domain-source-service.ts) after the feed stops waiting for it; nine seconds
 // lets the answer finish and be cached for the next reader, with room left for
 // the identity and quota checks that run first.
 const CORE_UPSTREAM_TIMEOUT_MS = 9_000;

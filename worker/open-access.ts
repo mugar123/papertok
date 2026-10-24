@@ -1,7 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
-import { openLicenseFromCrossref } from '../src/utils/crossrefLicense.ts';
+import { openLicenseFromCrossref } from '../src/utils/crossref-license.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
 import { cacheResponse, fetchJsonUpstream, fetchJsonWithTimeout, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtime.ts';
 

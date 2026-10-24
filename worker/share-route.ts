@@ -3,7 +3,7 @@ import type { ShareProviders, OpenAireProjects } from './share-pages.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { createFirestoreRest } from '../src/utils/firestoreRest.ts';
+import { createFirestoreRest } from '../src/utils/firestore-rest.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS } from './arxiv-api.ts';
 import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
 import { fetchWithDeadline, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';

@@ -1,11 +1,9 @@
-type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { htmlContent: string; textContent: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
+type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { html: string; text: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
 import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -16,7 +14,6 @@ import {
 } from './email-notifications.ts';
 
 const {
-  brevoSendErrorCode,
   fetchDigestSource,
   fetchOpenAlexDigestPayload,
   fetchWithDeadline,
@@ -39,7 +36,6 @@ const {
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
-  fieldInks,
   digestFollowsForWindow,
   providerOutcomeDefinitelyRejected,
   deliveryLedgerPrefix,
@@ -151,9 +147,8 @@ function digestSubscription(overrides: Partial<Subscription> = {}): Subscription
 function emailEnvironment(kv: KVNamespace): WorkerEnv {
   return {
     NOTIFICATION_STORE: kv,
-    EMAIL_PROVIDER: 'brevo',
-    BREVO_API_KEY: 'xkeysib-test',
-    BREVO_FROM_EMAIL: 'papertok@example.com',
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     // Tests run the KV emulation of the delivery ledger, which production must
     // never fall back to silently.
     EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
@@ -663,7 +658,7 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
       </entry>
     </feed>`;
   let arxivQuery = '';
-  let brevoPayload;
+  let resendPayload;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
@@ -672,9 +667,9 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
       return textResponse(200, arxivXml);
     }
     if (url.hostname === 'api.openalex.org') return jsonResponse(200, { results: [] });
-    if (url.hostname === 'api.brevo.com' && url.pathname === '/v3/smtp/email') {
-      brevoPayload = JSON.parse(options.body as string);
-      return jsonResponse(201, { messageId: 'arxiv-email-id' });
+    if (url.hostname === 'api.resend.com' && url.pathname === '/emails') {
+      resendPayload = JSON.parse(options.body as string);
+      return jsonResponse(201, { id: 'arxiv-email-id' });
     }
     throw new Error(`Unexpected request: ${url}`);
   };
@@ -682,9 +677,8 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
   try {
     const result = await runEmailNotificationSchedule({
       NOTIFICATION_STORE: kv,
-      EMAIL_PROVIDER: 'brevo',
-      BREVO_API_KEY: 'xkeysib-test',
-      BREVO_FROM_EMAIL: 'papertok@example.com',
+        RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
       EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
     }, now.getTime());
 
@@ -692,9 +686,9 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
     assert.equal(result.failed, 0);
     assert.equal(result.empty, 0);
     assert.equal(arxivQuery, 'cat:astro-ph.GA');
-    assert.equal(brevoPayload!.subject, 'The evolution of galaxy dust scaling relations');
+    assert.equal(resendPayload!.subject, 'Your papers for the week of 3 August');
     assert.equal(
-      brevoPayload!.htmlContent.includes('The evolution of galaxy dust scaling relations'),
+      resendPayload!.html.includes('The evolution of galaxy dust scaling relations'),
       true,
     );
     const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
@@ -734,7 +728,8 @@ test('scheduled digest fetches and emails papers from every followed entity type
     },
   });
   const requests: string[] = [];
-  let brevoPayload!: { sender: unknown; to: unknown; headers: { idempotencyKey: string; }; subject: unknown; htmlContent: string|string[]; };
+  let resendPayload!: { from: string; to: string[]; subject: string; html: string; };
+  let idempotencyKey: string | null = null;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
@@ -784,9 +779,10 @@ test('scheduled digest fetches and emails papers from every followed entity type
       });
     }
 
-    if (url.hostname === 'api.brevo.com' && url.pathname === '/v3/smtp/email') {
-      brevoPayload = JSON.parse(options.body as string);
-      return jsonResponse(201, { messageId: 'email-provider-id' });
+    if (url.hostname === 'api.resend.com' && url.pathname === '/emails') {
+      resendPayload = JSON.parse(options.body as string);
+      idempotencyKey = new Headers(options.headers).get('idempotency-key');
+      return jsonResponse(201, { id: 'email-provider-id' });
     }
 
     throw new Error(`Unexpected request: ${url}`);
@@ -795,33 +791,32 @@ test('scheduled digest fetches and emails papers from every followed entity type
   try {
     const result = await runEmailNotificationSchedule({
       NOTIFICATION_STORE: kv,
-      EMAIL_PROVIDER: 'brevo',
-      BREVO_API_KEY: 'xkeysib-test',
-      BREVO_FROM_EMAIL: 'papertok@example.com',
+        RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
       EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
     }, now.getTime());
 
     assert.equal(result.sent, 1);
     assert.equal(result.failed, 0);
     assert.equal(result.empty, 0);
-    assert.deepEqual(brevoPayload.sender, { name: 'PaperTok', email: 'papertok@example.com' });
-    assert.deepEqual(brevoPayload.to, [{ email: 'reader@example.com', name: 'Reader' }]);
+    assert.equal(resendPayload.from, 'PaperTok <hello@papertok.app>');
+    assert.deepEqual(resendPayload.to, ['reader@example.com']);
     assert.match(
-      brevoPayload.headers.idempotencyKey,
+      idempotencyKey!,
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     // The most cited of the four leads the edition: Institution, 11 citations.
-    assert.equal(brevoPayload.subject, 'Institution followed paper, and 3 more');
+    assert.equal(resendPayload.subject, 'Your papers for the week of 10 August');
     assert.equal(
-      brevoPayload.htmlContent.includes('https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token'),
+      resendPayload.html.includes('https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token'),
       true,
     );
     ['Author', 'Institution', 'Topic', 'Project'].forEach(source => {
-      assert.equal(brevoPayload.htmlContent.includes(`${source} followed paper`), true);
+      assert.equal(resendPayload.html.includes(`${source} followed paper`), true);
     });
     assert.equal(requests.filter(url => url.startsWith('https://api.openalex.org/works')).length, 5);
     assert.equal(requests.filter(url => url.startsWith('https://api.openaire.eu/')).length, 1);
-    assert.equal(requests.filter(url => url.startsWith('https://api.brevo.com/v3/smtp/email')).length, 1);
+    assert.equal(requests.filter(url => url.startsWith('https://api.resend.com/emails')).length, 1);
 
     const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
     assert.equal(storedSubscription!.lastSentAt, now.toISOString());
@@ -899,10 +894,10 @@ async function withDigestUpstream<Result>(respond: (url: URL, query: string | nu
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
     upstream.hosts.push(url.hostname);
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       const email = JSON.parse(options.body as string);
-      upstream.emailsTo[email.to[0].email] = email;
-      return jsonResponse(201, { messageId: `digest-${email.to[0].email}` });
+      upstream.emailsTo[email.to[0]] = email;
+      return jsonResponse(201, { id: `digest-${email.to[0]}` });
     }
     if (url.hostname !== 'api.openalex.org') return respond(url, null);
     const query = digestOpenAlexQuery(url);
@@ -1048,7 +1043,7 @@ test('malformed shared OpenAlex payloads are dropped so a later page can recover
   }
 });
 
-test('readers who share an OpenAlex answer keep their own follow names and sent history', async () => {
+test('readers who share an OpenAlex answer keep their own sent history', async () => {
   const kv = readersKv({
     'reader-1': { follows: [scheduledFollow('author', 'A1', 'Ada Lovelace')] },
     'reader-2': { follows: [scheduledFollow('author', 'A1', 'Countess of Lovelace')] },
@@ -1059,16 +1054,14 @@ test('readers who share an OpenAlex answer keep their own follow names and sent 
     },
   });
 
-  await withDigestUpstream(answerWithOneRecentWork, async (upstream: { emailsTo: { [x: string]: { htmlContent: string; }; }; openAlex: { byQuery: { [x: string]: unknown; }; }; }) => {
+  await withDigestUpstream(answerWithOneRecentWork, async (upstream: { emailsTo: { [x: string]: { html: string; }; }; openAlex: { byQuery: { [x: string]: unknown; }; }; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
-    const html = (uid: string) => upstream.emailsTo[`${uid}@example.com`].htmlContent;
+    const html = (uid: string) => upstream.emailsTo[`${uid}@example.com`].html;
 
     assert.equal(summary.sent, 3);
     assert.equal(upstream.openAlex.byQuery['author.id:A1'], 1);
-    assert.match(html('reader-1'), /You follow Ada Lovelace/);
-    assert.doesNotMatch(html('reader-1'), /Countess of Lovelace/);
-    assert.match(html('reader-2'), /You follow Countess of Lovelace/);
-    assert.doesNotMatch(html('reader-2'), /Ada Lovelace/);
+    assert.match(html('reader-1'), /Recent paper for A1/);
+    assert.match(html('reader-2'), /Recent paper for A1/);
     assert.match(html('reader-3'), /Recent paper for T2/);
     assert.doesNotMatch(html('reader-3'), /Recent paper for A1/);
   });
@@ -1098,9 +1091,9 @@ test('readers who share an OpenAlex search keep their own relevance filter', asy
     });
   };
 
-  await withDigestUpstream(searchAnswer, async (upstream: { emailsTo: { [x: string]: { htmlContent: string; }; }; openAlex: { byQuery: { [x: string]: unknown; }; }; }) => {
+  await withDigestUpstream(searchAnswer, async (upstream: { emailsTo: { [x: string]: { html: string; }; }; openAlex: { byQuery: { [x: string]: unknown; }; }; }) => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
-    const html = (uid: string) => upstream.emailsTo[`${uid}@example.com`].htmlContent;
+    const html = (uid: string) => upstream.emailsTo[`${uid}@example.com`].html;
 
     assert.equal(summary.sent, 2);
     assert.equal(upstream.openAlex.byQuery[`search:${query}`], 1);
@@ -1572,9 +1565,9 @@ test('does not attach a completed send from an old subscription generation to a 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
-      return jsonResponse(201, { messageId: 'old-generation-delivery' });
+      return jsonResponse(201, { id: 'old-generation-delivery' });
     }
     return jsonResponse(200, { results: [] });
   };
@@ -1656,7 +1649,7 @@ test('resumes a deferred subscription scan from its persisted cursor', async () 
   }
 });
 
-test('a window from Thursday to Sunday records the run without reading any subscription', async () => {
+test('a Thursday window scans subscriptions for deferred digests', async () => {
   const kv = createMemoryKv({
     'notification:subscription:reader': digestSubscription({ uid: 'reader', enabled: true }),
   });
@@ -1669,13 +1662,14 @@ test('a window from Thursday to Sunday records the run without reading any subsc
   kv.list = (async (options) => {
     reads.push(`list:${options?.prefix}`);
     return list(options);
-  }) as typeof kv.list;
+  });
 
   // 2026-08-06 is a Thursday.
   const summary = await runEmailNotificationSchedule(emailEnvironment(kv), Date.parse('2026-08-06T07:00:00.000Z'));
 
-  assert.deepEqual(reads, []);
-  assert.equal(summary.scanned, 0);
+  assert.equal(reads.includes('list:notification:subscription:'), true);
+  assert.equal(summary.scanned, 1);
+  assert.equal(summary.sent, 0);
   assert.equal(summary.disabled, undefined);
   const stored = await kv.get<Awaited<ReturnType<typeof runEmailNotificationSchedule>>>(scheduleStatusKey, 'json');
   assert.equal(stored!.scheduledAt, '2026-08-06T07:00:00.000Z');
@@ -1697,9 +1691,8 @@ test('a zero-follow subscription already marked invalid is not written again by 
   });
   const env = {
     NOTIFICATION_STORE: kv,
-    EMAIL_PROVIDER: 'brevo',
-    BREVO_API_KEY: 'xkeysib-test',
-    BREVO_FROM_EMAIL: 'papertok@example.com',
+    RESEND_API_KEY: 're_test',
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
   };
   const originalFetch = globalThis.fetch;
@@ -1745,9 +1738,8 @@ test('marks a legacy enabled subscription with zero follows invalid without call
   try {
     const result = await runEmailNotificationSchedule({
       NOTIFICATION_STORE: kv,
-      EMAIL_PROVIDER: 'brevo',
-      BREVO_API_KEY: 'xkeysib-test',
-      BREVO_FROM_EMAIL: 'papertok@example.com',
+        RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
       EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
     }, now.getTime());
 
@@ -1783,7 +1775,7 @@ test('counts all required source failures as failed rather than empty and never 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') providerCalls += 1;
+    if (url.hostname === 'api.resend.com') providerCalls += 1;
     return jsonResponse(503, { message: 'temporarily unavailable' });
   };
 
@@ -1815,7 +1807,7 @@ test('counts authoritative successful source responses with no papers as empty',
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') providerCalls += 1;
+    if (url.hostname === 'api.resend.com') providerCalls += 1;
     return jsonResponse(200, { results: [] });
   };
 
@@ -1848,9 +1840,9 @@ test('retries an empty weekly selection in a later cron window and sends when pa
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
-      return jsonResponse(201, { messageId: 'retry-delivery' });
+      return jsonResponse(201, { id: 'retry-delivery' });
     }
     const filter = url.searchParams.get('filter') || '';
     if (papersAvailable && filter.includes('author.id:A1')) {
@@ -1904,9 +1896,9 @@ test('sends usable papers after a partial source failure and records the partial
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
-      return jsonResponse(201, { messageId: 'partial-delivery' });
+      return jsonResponse(201, { id: 'partial-delivery' });
     }
     const filter = url.searchParams.get('filter') || '';
     if (filter.includes('author.id:A1')) return jsonResponse(503, {});
@@ -1996,10 +1988,10 @@ test('two cron windows cannot duplicate a successful weekly digest', async () =>
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
       await new Promise(resolve => setTimeout(resolve, 20));
-      return jsonResponse(201, { messageId: 'single-delivery' });
+      return jsonResponse(201, { id: 'single-delivery' });
     }
     return jsonResponse(200, { results: [] });
   };
@@ -2040,12 +2032,12 @@ test('retries one unknown provider outcome inside the idempotency window', async
   const originalDateNow = Date.now;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       const body = JSON.parse(options.body as string);
       providerBodies.push(body);
-      providerKeys.push(body.headers.idempotencyKey);
+      providerKeys.push(new Headers(options.headers).get('idempotency-key'));
       if (providerKeys.length === 1) throw new TypeError('simulated response loss');
-      return jsonResponse(201, { messageId: 'accepted-on-safe-retry' });
+      return jsonResponse(201, { id: 'accepted-on-safe-retry' });
     }
     if (rejectSourceCalls) throw new Error('No source call expected while replaying a reserved delivery');
     return jsonResponse(200, { results: [] });
@@ -2092,11 +2084,11 @@ test('uses the final cron window only to replay a late uncertain provider respon
   const originalDateNow = Date.now;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerBodies.push(JSON.parse(options.body as string));
       return providerBodies.length === 1
         ? jsonResponse(503, { message: 'upstream response uncertain' })
-        : jsonResponse(201, { messageId: 'late-retry-delivery' });
+        : jsonResponse(201, { id: 'late-retry-delivery' });
     }
     if (rejectSourceCalls) throw new Error('No source call expected in the final retry-only window');
     return jsonResponse(200, { results: [] });
@@ -2164,9 +2156,9 @@ const SCHEDULED_WORK = {
 };
 
 // One reader following one author, run cron window by cron window. Each test
-// switches OpenAlex on and off and scripts what Brevo answers. `Date.now` is
+// switches OpenAlex on and off and scripts what Resend answers. `Date.now` is
 // pinned to the window because reservation recovery measures age with it.
-function digestScheduleHarness(subscription: Subscription = {}) {
+function digestScheduleHarness(subscription: Subscription = {}, dailyLimit = 290) {
   const subscriptionKey = 'notification:subscription:schedule-reader';
   const kv = createMemoryKv({
     [subscriptionKey]: digestSubscription({ uid: 'schedule-reader', frequency: 'weekly', ...subscription }),
@@ -2174,20 +2166,24 @@ function digestScheduleHarness(subscription: Subscription = {}) {
   const upstream = {
     sourcesUp: false,
     sourceRequests: 0,
-    providerBodies: [] as Array<{ headers: { idempotencyKey: string } }>,
-    provider: () => jsonResponse(201, { messageId: 'scheduled-digest' }),
+    work: SCHEDULED_WORK,
+    providerBodies: [] as Array<{ idempotencyKey: string | null; body: unknown }>,
+    provider: () => jsonResponse(201, { id: 'scheduled-digest' }),
   };
   async function fetchUpstream(input: RequestInfo | URL, options: RequestInit = {}) {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
-      upstream.providerBodies.push(JSON.parse(options.body as string));
+    if (url.hostname === 'api.resend.com') {
+      upstream.providerBodies.push({
+        idempotencyKey: new Headers(options.headers).get('idempotency-key'),
+        body: JSON.parse(options.body as string),
+      });
       return upstream.provider();
     }
     if (url.hostname !== 'api.openalex.org') throw new Error(`Unexpected request: ${url}`);
     upstream.sourceRequests += 1;
     if (!upstream.sourcesUp) return jsonResponse(503, {});
     const followed = (url.searchParams.get('filter') || '').includes('author.id:A1');
-    return jsonResponse(200, { results: followed ? [SCHEDULED_WORK] : [] });
+    return jsonResponse(200, { results: followed ? [upstream.work] : [] });
   }
   async function run(isoWindow: string) {
     const at = Date.parse(isoWindow);
@@ -2196,13 +2192,13 @@ function digestScheduleHarness(subscription: Subscription = {}) {
     globalThis.fetch = fetchUpstream;
     Date.now = () => at;
     try {
-      return await runEmailNotificationSchedule(emailEnvironment(kv), at);
+      return await runEmailNotificationSchedule({ ...emailEnvironment(kv), EMAIL_DAILY_SEND_LIMIT: String(dailyLimit) }, at);
     } finally {
       globalThis.fetch = originalFetch;
       Date.now = originalDateNow;
     }
   }
-  return { upstream, run, state: () => storedSubscriptionWithState(kv, subscriptionKey) };
+  return { upstream, run, state: () => storedSubscriptionWithState(kv, subscriptionKey), kv };
 }
 
 function weeklySubscriptionState(lastDelivery: Subscription['lastDelivery'], extra: Partial<Subscription> = {}) {
@@ -2292,11 +2288,9 @@ test('a weekly digest whose sources failed is not retried from Wednesday on', as
   assert.equal(isSubscriptionDue(failedTuesday, new Date('2026-08-03T07:00:00Z')), true);
 });
 
-test('a weekly send failure is never retried on Tuesday as a new digest', () => {
-  // Only a collection failure is known to have sent nothing. A failure at or
-  // after the provider may have delivered, and a Tuesday reservation would
-  // carry a new idempotency key, so the provider could not tell it was a
-  // repeat.
+test('only definite non-deliveries start a new digest after Monday', () => {
+  // Source collection and quota refusal have sent nothing. Other failures
+  // might have delivered and can only recover their existing reservation.
   const tuesday = new Date('2026-07-28T07:00:00Z');
   const failedMonday = (code: string) => weeklySubscriptionState({
     status: 'failed',
@@ -2306,10 +2300,11 @@ test('a weekly send failure is never retried on Tuesday as a new digest', () => 
   });
 
   assert.equal(isSubscriptionDue(failedMonday('EMAIL_DIGEST_SOURCES_UNAVAILABLE'), tuesday), true);
+  assert.equal(isSubscriptionDue(failedMonday('EMAIL_PROVIDER_LIMIT'), tuesday), true);
+  assert.equal(isSubscriptionDue(failedMonday('EMAIL_PROVIDER_RATE_LIMIT'), tuesday), true);
   for (const code of [
     'EMAIL_SEND_OUTCOME_UNKNOWN',
     'EMAIL_SEND_FAILED',
-    'EMAIL_PROVIDER_LIMIT',
     'EMAIL_PROVIDER_AUTH_FAILED',
     'EMAIL_SENDER_NOT_VERIFIED',
     'EMAIL_SCHEDULE_PROCESSING_FAILED',
@@ -2325,6 +2320,156 @@ test('a weekly send failure is never retried on Tuesday as a new digest', () => 
   }), tuesday), false);
 });
 
+test('the daily cap defers unsent weekly digests one UTC day at a time', async () => {
+  const { upstream, run, kv } = digestScheduleHarness({}, 1);
+  upstream.sourcesUp = true;
+  for (const uid of ['schedule-reader-b', 'schedule-reader-c']) {
+    kv.values.set(`notification:subscription:${uid}`, JSON.stringify(digestSubscription({ uid })));
+  }
+
+  const monday = await run('2026-07-27T07:00:00Z');
+  const laterMonday = await run('2026-07-27T07:40:00Z');
+  const tuesday = await run('2026-07-28T07:00:00Z');
+  const wednesday = await run('2026-07-29T07:00:00Z');
+  const thursday = await run('2026-07-30T07:00:00Z');
+
+  assert.deepEqual([monday.sent, tuesday.sent, wednesday.sent, thursday.sent], [1, 1, 1, 0]);
+  assert.deepEqual([monday.failureCodes.EMAIL_PROVIDER_LIMIT, tuesday.failureCodes.EMAIL_PROVIDER_LIMIT], [2, 1]);
+  assert.equal(laterMonday.sent, 0);
+  assert.equal(laterMonday.failureCodes.EMAIL_PROVIDER_LIMIT, undefined);
+  assert.equal(upstream.providerBodies.length, 3);
+  assert.equal(new Set(upstream.providerBodies.map(request => request.idempotencyKey)).size, 3);
+  for (const uid of ['schedule-reader', 'schedule-reader-b', 'schedule-reader-c']) {
+    const state = await storedSubscriptionWithState(kv, `notification:subscription:${uid}`);
+    assert.equal(state!.lastDelivery!.status, 'sent');
+  }
+});
+
+test('a quota-held digest sends its Monday papers on Tuesday even if sources fail and the papers age out', async () => {
+  const { upstream, run, kv } = digestScheduleHarness({}, 1);
+  upstream.sourcesUp = true;
+  upstream.work = { ...SCHEDULED_WORK, publication_date: '2026-07-18' };
+  kv.values.set('notification:subscription:schedule-reader-b', JSON.stringify(digestSubscription({ uid: 'schedule-reader-b' })));
+
+  const monday = await run('2026-07-27T07:00:00Z');
+  // Both readers are processed together, so either may take the one send.
+  const readers = ['notification:subscription:schedule-reader', 'notification:subscription:schedule-reader-b'];
+  const mondayStates = await Promise.all(readers.map(key => storedSubscriptionWithState(kv, key)));
+  const heldKey = readers[mondayStates.findIndex(state => state?.heldDigest)];
+  const held = mondayStates.find(state => state?.heldDigest);
+  const requestsAfterMonday = upstream.sourceRequests;
+  upstream.sourcesUp = false;
+  const tuesday = await run('2026-07-28T07:00:00Z');
+  const delivered = await storedSubscriptionWithState(kv, heldKey);
+
+  assert.equal(monday.sent, 1);
+  assert.equal(monday.failureCodes.EMAIL_PROVIDER_LIMIT, 1);
+  assert.equal(held!.heldDigest!.papers[0].title, 'A paper published before the outage');
+  assert.equal(tuesday.sent, 1);
+  assert.equal(upstream.sourceRequests, requestsAfterMonday);
+  assert.equal(upstream.providerBodies.length, 2);
+  assert.equal(JSON.stringify(upstream.providerBodies[1].body).includes('A paper published before the outage'), true);
+  assert.equal(delivered!.heldDigest, null);
+});
+
+test('a preview or label sync keeps held papers, while changing followed IDs clears them', async () => {
+  const { upstream, run, kv } = digestScheduleHarness({ follows: [digestFollow(), digestFollow('A2', 'Second author')] });
+  upstream.sourcesUp = true;
+  upstream.provider = () => jsonResponse(429, { name: 'daily_quota_exceeded' });
+  const key = 'notification:subscription:schedule-reader';
+  await run('2026-07-27T07:00:00Z');
+
+  const save = (follows: Follow[], previewItems: DigestPaper[]) => saveSubscription(
+    new Request('https://example.com/notifications/preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sync: true, enabled: true, follows, previewItems }),
+    }),
+    { NOTIFICATION_STORE: kv },
+    { uid: 'schedule-reader', email: 'reader@example.com', displayName: 'Reader' },
+  );
+  await save([
+    digestFollow('A2', 'Renamed second author'),
+    digestFollow('A1', 'Renamed first author'),
+  ], [digestPaper({ id: 'new-preview' })]);
+  assert.equal((await storedSubscriptionWithState(kv, key))!.heldDigest!.papers[0].title, 'A paper published before the outage');
+
+  await save([digestFollow('A3', 'Other author')], []);
+  assert.equal((await storedSubscriptionWithState(kv, key))!.heldDigest, null);
+});
+
+test('a held Tuesday digest retries a short Resend rate limit after 40 minutes', async () => {
+  const { upstream, run, kv } = digestScheduleHarness({}, 1);
+  upstream.sourcesUp = true;
+  kv.values.set('notification:subscription:schedule-reader-b', JSON.stringify(digestSubscription({ uid: 'schedule-reader-b' })));
+  await run('2026-07-27T07:00:00Z');
+  upstream.provider = () => jsonResponse(429, { name: 'rate_limit_exceeded' });
+  const limited = await run('2026-07-28T07:00:00Z');
+  const tooSoon = await run('2026-07-28T07:20:00Z');
+  upstream.provider = () => jsonResponse(201, { id: 'tuesday-retry' });
+  const retried = await run('2026-07-28T07:40:00Z');
+
+  assert.equal(limited.failureCodes.EMAIL_PROVIDER_RATE_LIMIT, 1);
+  assert.equal(tooSoon.sent, 0);
+  assert.equal(retried.sent, 1);
+  assert.equal(upstream.providerBodies.length, 3);
+});
+
+test('a Sunday-held edition goes out Monday and this week’s edition follows Tuesday', async () => {
+  const { upstream, run, state } = digestScheduleHarness();
+  upstream.sourcesUp = true;
+  upstream.provider = () => jsonResponse(429, { name: 'daily_quota_exceeded' });
+  for (const day of ['2026-07-27', '2026-07-28', '2026-07-29', '2026-07-30', '2026-07-31', '2026-08-01', '2026-08-02']) {
+    const result = await run(`${day}T07:00:00Z`);
+    assert.equal(result.failureCodes.EMAIL_PROVIDER_LIMIT, 1, day);
+  }
+  const requestsBeforeMonday = upstream.sourceRequests;
+  upstream.work = {
+    ...SCHEDULED_WORK,
+    id: 'https://openalex.org/WNEW-WEEK',
+    display_name: 'A new paper for the new week',
+    publication_date: '2026-08-03',
+  };
+  upstream.provider = () => jsonResponse(201, { id: 'recovered' });
+
+  const monday = await run('2026-08-03T07:00:00Z');
+  const laterMonday = await run('2026-08-03T07:40:00Z');
+  const tuesday = await run('2026-08-04T07:00:00Z');
+
+  assert.equal(monday.sent, 1);
+  assert.equal(laterMonday.sent, 0);
+  assert.equal(tuesday.sent, 1);
+  assert.equal(upstream.sourceRequests, requestsBeforeMonday + 2);
+  const sentBodies = upstream.providerBodies.slice(-2).map(request => JSON.stringify(request.body));
+  assert.equal(sentBodies[0].includes('A paper published before the outage'), true);
+  assert.equal(sentBodies[1].includes('A new paper for the new week'), true);
+  // The held edition keeps the week it was selected in.
+  assert.deepEqual(
+    upstream.providerBodies.slice(-2).map(request => (request.body as { subject: string }).subject),
+    ['Your papers for the week of 27 July', 'Your papers for the week of 3 August'],
+  );
+  assert.equal((await state())!.owedCurrentWeek, false);
+});
+
+test('a short Resend rate limit retries on Monday after the failure interval', async () => {
+  const { upstream, run } = digestScheduleHarness();
+  upstream.sourcesUp = true;
+  upstream.provider = () => jsonResponse(429, { name: 'rate_limit_exceeded' });
+
+  const limited = await run('2026-07-27T07:00:00Z');
+  const tooSoon = await run('2026-07-27T07:20:00Z');
+  upstream.provider = () => jsonResponse(201, { id: 'sent-after-short-limit' });
+  const retried = await run('2026-07-27T07:40:00Z');
+  const tuesday = await run('2026-07-28T07:00:00Z');
+
+  assert.equal(limited.failureCodes.EMAIL_PROVIDER_RATE_LIMIT, 1);
+  assert.equal(limited.failureCodes.EMAIL_PROVIDER_LIMIT, undefined);
+  assert.equal(tooSoon.sent, 0);
+  assert.equal(retried.sent, 1);
+  assert.equal(tuesday.sent, 0);
+  assert.equal(upstream.providerBodies.length, 2);
+});
+
 test('a Monday send with an unknown outcome is reconciled on Tuesday, not resent', async () => {
   // The provider's answer is lost at 13:20, so the email may have gone out.
   // Tuesday's existing recovery reconciles the reservation as uncertain, and
@@ -2337,7 +2482,7 @@ test('a Monday send with an unknown outcome is reconciled on Tuesday, not resent
 
   const monday = await run('2026-07-27T13:20:00Z');
   const failure = (await state())!.lastDelivery;
-  upstream.provider = () => jsonResponse(201, { messageId: 'must-not-be-sent' });
+  upstream.provider = () => jsonResponse(201, { id: 'must-not-be-sent' });
   const requestsBefore = upstream.sourceRequests;
   const tuesday = await run('2026-07-28T07:00:00Z');
   const laterTuesday = await run('2026-07-28T07:40:00Z');
@@ -2433,7 +2578,7 @@ test('a Tuesday retry whose email provider fails keeps the existing duplicate pr
   };
   const tuesday = await run('2026-07-28T07:00:00Z');
   const failure = (await state())!.lastDelivery;
-  upstream.provider = () => jsonResponse(201, { messageId: 'scheduled-digest' });
+  upstream.provider = () => jsonResponse(201, { id: 'scheduled-digest' });
   const requestsBefore = upstream.sourceRequests;
   const replay = await run('2026-07-28T07:20:00Z');
   const afterwards = [
@@ -2448,8 +2593,8 @@ test('a Tuesday retry whose email provider fails keeps the existing duplicate pr
   assert.equal(upstream.sourceRequests, requestsBefore);
   assert.equal(upstream.providerBodies.length, 2);
   assert.equal(
-    upstream.providerBodies[0].headers.idempotencyKey,
-    upstream.providerBodies[1].headers.idempotencyKey,
+    upstream.providerBodies[0].idempotencyKey,
+    upstream.providerBodies[1].idempotencyKey,
   );
   assert.deepEqual(upstream.providerBodies[0], upstream.providerBodies[1]);
   assert.equal(afterwards.reduce((total, summary) => total + summary.sent + summary.uncertain, 0), 0);
@@ -2467,7 +2612,7 @@ test('a late Tuesday delivery with an unknown outcome is reconciled on Wednesday
   const tuesday = await run('2026-07-28T13:20:00Z');
   const finalTuesday = await run('2026-07-28T13:40:00Z');
   const requestsBeforeRecovery = upstream.sourceRequests;
-  upstream.provider = () => jsonResponse(201, { messageId: 'must-not-repeat' });
+  upstream.provider = () => jsonResponse(201, { id: 'must-not-repeat' });
   const wednesday = await run('2026-07-29T07:00:00Z');
   const recovered = await state();
   const laterWednesday = await run('2026-07-29T07:40:00Z');
@@ -2516,9 +2661,9 @@ test('provider success followed by state reconciliation failure does not resend'
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
-      return jsonResponse(201, { messageId: 'accepted-before-kv-failure' });
+      return jsonResponse(201, { id: 'accepted-before-kv-failure' });
     }
     if (rejectSourceCalls) throw new Error('No source call expected during reconciliation');
     return jsonResponse(200, { results: [] });
@@ -2557,9 +2702,9 @@ test('a settled Monday digest is not replayed on Tuesday and does not swallow th
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
-      return jsonResponse(201, { messageId: `delivery-${providerCalls}` });
+      return jsonResponse(201, { id: `delivery-${providerCalls}` });
     }
     return jsonResponse(200, { results: [] });
   };
@@ -2642,9 +2787,9 @@ test('an expired reservation already reflected in delivery state does not replac
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       providerCalls += 1;
-      return jsonResponse(201, { messageId: 'today-delivery' });
+      return jsonResponse(201, { id: 'today-delivery' });
     }
     return jsonResponse(200, { results: [] });
   };
@@ -2663,6 +2808,58 @@ test('an expired reservation already reflected in delivery state does not replac
   }
 });
 
+test('a pending Brevo draft is recorded as uncertain without sending it through Resend', async () => {
+  const now = new Date('2026-08-10T08:00:00Z');
+  const uid = 'migrated-reader';
+  const subscription = digestSubscription({ uid });
+  const reservationId = await buildDeliveryReservationId(subscription, { now: now.getTime() });
+  const kv = createMemoryKv({
+    [`notification:subscription:${uid}`]: subscription,
+    [`${deliveryLedgerPrefix}2026-08-10`]: {
+      committed: 0,
+      reserved: 1,
+      reservations: {
+        [reservationId]: {
+          status: 'reserved',
+          reservedAt: '2026-08-10T07:50:00.000Z',
+          attempts: 1,
+          draft: {
+            provider: 'brevo',
+            recipient: { email: 'reader@example.com', displayName: '' },
+            content: { subject: 'Earlier digest', html: '<p>paper</p>', text: 'paper' },
+            unsubscribeUrl: 'https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token',
+            delivery: {
+              kind: 'digest',
+              sentAt: now.toISOString(),
+              paperCount: 1,
+              paperKeys: ['id:earlier-paper'],
+            },
+          },
+        },
+      },
+    },
+  });
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error('No provider call expected for a Brevo reservation');
+  };
+  Date.now = () => now.getTime();
+  try {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+    assert.equal(summary.uncertain, 1);
+    assert.equal(summary.sent, 0);
+    assert.equal(providerCalls, 0);
+    const ledger = await kv.get<{ reservations: Record<string, { status: string }> }>(`${deliveryLedgerPrefix}2026-08-10`, 'json');
+    assert.equal(ledger!.reservations[reservationId].status, 'committed');
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalDateNow;
+  }
+});
+
 test('reports the resend.dev recipient restriction instead of an invalid credential', () => {
   const code = resendSendErrorCode(403, {
     name: 'validation_error',
@@ -2670,6 +2867,10 @@ test('reports the resend.dev recipient restriction instead of an invalid credent
   });
   assert.equal(code, 'EMAIL_TEST_RECIPIENT_RESTRICTED');
   assert.equal(resendSendErrorCode(403, { name: 'forbidden', message: 'Account suspended' }), 'EMAIL_PROVIDER_AUTH_FAILED');
+  assert.equal(resendSendErrorCode(429, { name: 'rate_limit_exceeded' }), 'EMAIL_PROVIDER_RATE_LIMIT');
+  assert.equal(resendSendErrorCode(429, { name: 'daily_quota_exceeded' }), 'EMAIL_PROVIDER_LIMIT');
+  assert.equal(resendSendErrorCode(429, { name: 'monthly_quota_exceeded' }), 'EMAIL_PROVIDER_LIMIT');
+  assert.equal(resendSendErrorCode(429, {}), 'EMAIL_PROVIDER_RATE_LIMIT');
 });
 
 test('retains uncertain provider outcomes but releases definitive request rejections', () => {
@@ -2684,77 +2885,81 @@ test('retains uncertain provider outcomes but releases definitive request reject
   assert.equal(providerOutcomeDefinitelyRejected(429), true);
 });
 
-test('prefers a fully configured Brevo provider and keeps Resend as fallback', () => {
+test('requires a Resend key and sender for email delivery', () => {
   assert.equal(configuredEmailProvider({
-    BREVO_API_KEY: 'xkeysib-test',
-    BREVO_FROM_EMAIL: 'papertok@example.com',
     RESEND_API_KEY: 're_test',
-  }), 'brevo');
-  assert.equal(configuredEmailProvider({ RESEND_API_KEY: 're_test' }), 'resend');
-  assert.equal(configuredEmailProvider({
-    EMAIL_PROVIDER: 'brevo',
-    RESEND_API_KEY: 're_test',
-  }), '');
+    RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
+  }), 'resend');
+  assert.equal(configuredEmailProvider({ RESEND_API_KEY: 're_test' }), '');
+  assert.equal(configuredEmailProvider({ RESEND_FROM_EMAIL: 'hello@papertok.app' }), '');
 });
 
-test('maps Brevo authentication, sender and quota failures', () => {
-  assert.equal(brevoSendErrorCode(401, { code: 'unauthorized' }), 'EMAIL_PROVIDER_AUTH_FAILED');
-  assert.equal(brevoSendErrorCode(400, { message: 'Sender not valid' }), 'EMAIL_SENDER_NOT_VERIFIED');
-  assert.equal(brevoSendErrorCode(429, { code: 'rate_limit' }), 'EMAIL_PROVIDER_LIMIT');
-});
-
-test('reports Brevo as available only when the configured sender is active', async () => {
+test('reports Resend as available only when the sender domain is verified', async () => {
   const restore = stubFetch(jsonResponse(200, {
-    senders: [
-      { active: true, email: 'papertok@example.com' },
-      { active: false, email: 'disabled@example.com' },
+    data: [
+      { name: 'updates.papertok.app', status: 'verified' },
+      { name: 'papertok.app', status: 'not_started', capabilities: { sending: 'enabled' } },
+      { name: 'partial.example.com', status: 'partially_verified' },
+      { name: 'disabled.example.com', status: 'not_started' },
     ],
   }));
   try {
     const health = await checkEmailProviderHealth({
-      EMAIL_PROVIDER: 'brevo',
-      BREVO_API_KEY: 'xkeysib-test',
-      BREVO_FROM_EMAIL: 'papertok@example.com',
+      RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'Nico de PaperTok <noreply@updates.papertok.app>',
     });
     assert.equal(health.available, true);
-    assert.equal(health.provider, 'brevo');
-    assert.equal(health.senderMode, 'brevo-verified-sender');
+    assert.equal(health.provider, 'resend');
+    assert.equal('senderMode' in health && health.senderMode, 'verified-domain');
+
+    const parentHealth = await checkEmailProviderHealth({
+      RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'hello@papertok.app',
+    });
+    assert.equal(parentHealth.available, false);
+    assert.equal(parentHealth.code, 'EMAIL_SENDER_NOT_VERIFIED');
 
     const inactiveHealth = await checkEmailProviderHealth({
-      EMAIL_PROVIDER: 'brevo',
-      BREVO_API_KEY: 'xkeysib-test',
-      BREVO_FROM_EMAIL: 'missing@example.com',
+      RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'PaperTok <hello@missing.example.com>',
     });
     assert.equal(inactiveHealth.available, false);
     assert.equal(inactiveHealth.code, 'EMAIL_SENDER_NOT_VERIFIED');
+
+    const partialHealth = await checkEmailProviderHealth({
+      RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'hello@partial.example.com',
+    });
+    assert.equal(partialHealth.available, false);
+    assert.equal(partialHealth.code, 'EMAIL_SENDER_STATUS_UNKNOWN');
   } finally {
     restore();
   }
 });
 
-test('treats a restricted (send-only) Resend key as available, not an auth failure', async () => {
+test('reports an unknown sender status for a restricted Resend key', async () => {
   const restore = stubFetch(jsonResponse(401, {
     statusCode: 401,
     name: 'restricted_api_key',
     message: 'This API key is restricted to only send emails.',
   }));
   try {
-    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_restricted_key' });
-    assert.equal(health.available, true);
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_restricted_key', RESEND_FROM_EMAIL: 'hello@papertok.app' });
+    assert.equal(health.available, false);
     assert.equal(health.permissionLimited, true);
-    assert.equal(health.code, undefined);
-    assert.equal(health.senderMode, 'resend-test');
+    assert.equal(health.code, 'EMAIL_SENDER_STATUS_UNKNOWN');
+    assert.equal('senderMode' in health, false);
   } finally {
     restore();
   }
 });
 
-test('reports verified-domain sender mode for a restricted key with a custom from address', async () => {
+test('does not infer domain verification from a restricted key and custom sender', async () => {
   const restore = stubFetch(jsonResponse(401, { name: 'restricted_api_key', message: 'restricted' }));
   try {
     const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_x', RESEND_FROM_EMAIL: 'PaperTok <hi@papertok.io>' });
-    assert.equal(health.available, true);
-    assert.equal(health.senderMode, 'verified-domain');
+    assert.equal(health.available, false);
+    assert.equal(health.code, 'EMAIL_SENDER_STATUS_UNKNOWN');
   } finally {
     restore();
   }
@@ -2767,7 +2972,7 @@ test('still fails closed for a genuinely invalid Resend key', async () => {
     message: 'API key is invalid',
   }));
   try {
-    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_bad_key' });
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_bad_key', RESEND_FROM_EMAIL: 'hello@papertok.app' });
     assert.equal(health.available, false);
     assert.equal(health.code, 'EMAIL_PROVIDER_AUTH_FAILED');
   } finally {
@@ -2778,7 +2983,7 @@ test('still fails closed for a genuinely invalid Resend key', async () => {
 test('fails closed for a bare 403 with no restricted marker (blocked or suspended key)', async () => {
   const restore = stubFetch(jsonResponse(403, { name: 'forbidden', message: 'Account suspended' }));
   try {
-    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_blocked' });
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_blocked', RESEND_FROM_EMAIL: 'hello@papertok.app' });
     assert.equal(health.available, false);
     assert.equal(health.code, 'EMAIL_PROVIDER_AUTH_FAILED');
   } finally {
@@ -2786,12 +2991,13 @@ test('fails closed for a bare 403 with no restricted marker (blocked or suspende
   }
 });
 
-test('still detects a restricted key when Resend reports it as 403', async () => {
+test('treats a restricted API key reported as 403 as inactive', async () => {
   const restore = stubFetch(jsonResponse(403, { name: 'restricted_api_key', message: 'This API key is restricted to only send emails.' }));
   try {
-    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_restricted' });
-    assert.equal(health.available, true);
-    assert.equal(health.permissionLimited, true);
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_restricted', RESEND_FROM_EMAIL: 'hello@papertok.app' });
+    assert.equal(health.available, false);
+    assert.equal(health.available, false);
+    assert.equal(health.code, 'EMAIL_PROVIDER_AUTH_FAILED');
   } finally {
     restore();
   }
@@ -2804,7 +3010,7 @@ test('fails closed when a 401 body is not valid JSON', async () => {
     json: async () => { throw new Error('not json'); },
   } as Response & { json(): Promise<never> });
   try {
-    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_weird' });
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_weird', RESEND_FROM_EMAIL: 'hello@papertok.app' });
     assert.equal(health.available, false);
     assert.equal(health.code, 'EMAIL_PROVIDER_AUTH_FAILED');
   } finally {
@@ -2813,11 +3019,22 @@ test('fails closed when a 401 body is not valid JSON', async () => {
 });
 
 test('marks a verified domain as available with a full-access key', async () => {
-  const restore = stubFetch(jsonResponse(200, { data: [{ status: 'verified' }] }));
+  const restore = stubFetch(jsonResponse(200, { data: [{ name: 'papertok.app', status: 'verified' }] }));
   try {
-    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_full' });
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_full', RESEND_FROM_EMAIL: 'hello@papertok.app' });
     assert.equal(health.available, true);
-    assert.equal(health.senderMode, 'verified-domain');
+    assert.equal('senderMode' in health && health.senderMode, 'verified-domain');
+  } finally {
+    restore();
+  }
+});
+
+test('treats malformed Resend domain status as unavailable', async () => {
+  const restore = stubFetch(jsonResponse(200, { data: null }));
+  try {
+    const health = await checkEmailProviderHealth({ RESEND_API_KEY: 're_full', RESEND_FROM_EMAIL: 'hello@papertok.app' });
+    assert.equal(health.available, false);
+    assert.equal(health.code, 'EMAIL_PROVIDER_UNAVAILABLE');
   } finally {
     restore();
   }
@@ -2879,8 +3096,6 @@ test('escapes paper metadata in email HTML', () => {
 const UNSUBSCRIBE_URL = 'https://example.com/unsubscribe';
 const ON_A_MONDAY = { now: Date.parse('2026-08-10T07:00:00Z') };
 
-// The page as read: the hidden preheader above the nameplate repeats the
-// headlines, so order is measured from the nameplate down.
 function pageBody(html: string) {
   return html.slice(html.indexOf('<h1'));
 }
@@ -2919,7 +3134,7 @@ function briefPaper(overrides: Partial<DigestPaper> = {}): DigestPaper {
   });
 }
 
-test('the weekly digest is set as a front page: nameplate, dateline, lead story, briefs', () => {
+test('the weekly digest shows its count, lead paper and compact reading list', () => {
   const digest = renderDigest(
     { displayName: 'Nicolás Muñoz' },
     [frontPagePaper(), briefPaper()],
@@ -2929,29 +3144,36 @@ test('the weekly digest is set as a front page: nameplate, dateline, lead story,
   );
 
   assert.match(digest.html, /^<!doctype html><html lang="en">/);
-  assert.match(digest.html, /<h1[^>]*>The PaperTok Weekly<\/h1>/);
+  assert.match(digest.html, /<h1[^>]*>2 new papers for you<\/h1>/);
   assert.equal(digest.html.includes('Monday, 10 August 2026'), true);
-  assert.equal(digest.html.includes('Weekly edition for Nicolás'), true);
-  assert.match(digest.html, /<h2[^>]*><a [^>]*href="https:\/\/example\.com\/lead"[^>]*>Below-threshold surface-code memory<\/a><\/h2>/);
+  assert.equal(digest.html.includes('Hi Nicolás,'), true);
+  assert.match(digest.html, /<h3[^>]*><a [^>]*href="https:\/\/example\.com\/lead"[^>]*>Below-threshold surface-code memory<\/a><\/h3>/);
   assert.match(digest.html, /<h3[^>]*><a [^>]*href="https:\/\/example\.com\/brief"[^>]*>Sparse attention at scale<\/a><\/h3>/);
   // Only the lead story carries an excerpt of its abstract.
   assert.equal(digest.html.includes('Quantum error correction only pays off'), true);
   assert.equal(digest.html.includes('A brief keeps its abstract to itself.'), false);
   assert.equal(digest.html.includes('By A. Rivera, M. Okafor, L. Chen and others'), true);
-  assert.equal(digest.html.includes('4 Aug 2026 · arXiv · Open access'), true);
-  assert.equal(digest.html.includes('3 Aug 2026 · NeurIPS · 4 citations'), true);
+  assert.equal(digest.html.includes('Welcome to your weekly selection of papers we think you might find interesting.'), true);
+  assert.equal(
+    digest.html.replace(/<[^>]+>/g, '').includes('About physics and computer science.'),
+    true,
+  );
+  assert.match(digest.html, /<h2[^>]*>Start here<\/h2>/);
+  assert.match(digest.html, /<h2[^>]*>More to read <span[^>]*>\(1\)<\/span><\/h2>/);
+  assert.equal(digest.html.includes('PaperTok · Your weekly research update'), false);
+  assert.equal(digest.html.includes(' · '), false);
   const page = pageBody(digest.html);
-  assert.ok(page.indexOf('Below-threshold') < page.indexOf('Also in this edition'));
-  assert.ok(page.indexOf('Also in this edition') < page.indexOf('Sparse attention at scale'));
+  assert.ok(page.indexOf('Below-threshold') < page.indexOf('More to read'));
+  assert.ok(page.indexOf('More to read') < page.indexOf('Sparse attention at scale'));
   assert.equal(digest.html.includes(`href="${UNSUBSCRIBE_URL}"`), true);
 
-  assert.match(digest.text, /^THE PAPERTOK WEEKLY\nMonday, 10 August 2026 · Weekly edition for Nicolás\n/);
+  assert.match(digest.text, /^PAPERTOK\nMonday, 10 August 2026\n\nHi Nicolás,\n2 new papers for you\n/);
   assert.equal(digest.text.includes('Quantum error correction only pays off'), true);
   assert.equal(digest.text.includes('A brief keeps its abstract to itself.'), false);
   assert.equal(digest.text.includes(`Unsubscribe: ${UNSUBSCRIBE_URL}`), true);
 });
 
-test('each paper wears its field ink and name; one of no known field wears ink and no name', () => {
+test('the edition names known topics below the introduction without labels above papers', () => {
   const unknown = briefPaper({
     id: 'unknown',
     title: 'Annual report on photonic interconnects',
@@ -2961,23 +3183,31 @@ test('each paper wears its field ink and name; one of no known field wears ink a
   });
   const digest = renderDigest({}, [frontPagePaper(), unknown], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
 
-  // The field's name is set in the field's ink, as is the rule above the story.
-  assert.match(digest.html, /color:#4f46e5[^"]*">Physics</);
-  assert.equal(digest.html.includes('background:#4f46e5'), true);
+  assert.equal(digest.html.replace(/<[^>]+>/g, '').includes('About physics.'), true);
   const page = pageBody(digest.html);
   const beforeUnknownTitle = page.slice(
-    page.indexOf('Also in this edition'),
+    page.indexOf('More to read'),
     page.indexOf('Annual report on photonic interconnects'),
   );
   assert.ok(beforeUnknownTitle.length > 0);
-  assert.equal(beforeUnknownTitle.includes('background:#111318'), true);
+  assert.equal(beforeUnknownTitle.includes('You follow QUANTERA'), false);
   assert.doesNotMatch(beforeUnknownTitle, /Physics|Computer Science|Engineering/);
 
-  assert.equal(digest.text.includes('PHYSICS · You follow Quantum Computing\nBelow-threshold'), true);
-  assert.equal(digest.text.includes('\nYou follow QUANTERA\nAnnual report on photonic interconnects'), true);
+  assert.equal(digest.text.includes('About physics.'), true);
+  assert.equal(digest.text.includes('You follow QUANTERA'), false);
 });
 
-test('the discovery pick is boxed after the briefs and says it is outside the follows', () => {
+test('a test email with no papers does not welcome the reader to a selection', () => {
+  const digest = renderDigest({}, [], UNSUBSCRIBE_URL, true, ON_A_MONDAY);
+
+  for (const output of [pageBody(digest.html), digest.text]) {
+    assert.equal(output.includes('Welcome to your weekly selection'), false);
+    assert.equal(output.includes("That's all for this edition."), false);
+    assert.equal(output.includes('We have not found recent publications'), true);
+  }
+});
+
+test('the discovery pick follows the briefs and says it is outside the follows', () => {
   const discovery = briefPaper({
     id: 'discovery',
     title: 'A single-dose mRNA vaccine',
@@ -2989,31 +3219,34 @@ test('the discovery pick is boxed after the briefs and says it is outside the fo
 
   const page = pageBody(digest.html);
   assert.ok(page.indexOf('Sparse attention at scale') < page.indexOf('Outside your follows'));
-  assert.ok(page.indexOf('Outside your follows') < page.indexOf('A single-dose mRNA vaccine'));
-  assert.equal(digest.text.includes('OUTSIDE YOUR FOLLOWS · MEDICINE\nA single-dose mRNA vaccine'), true);
+  assert.ok(page.indexOf('A single-dose mRNA vaccine') < page.indexOf('Outside your follows'));
+  assert.equal(digest.text.includes('A single-dose mRNA vaccine\nJ. Park\nOutside your follows'), true);
 });
 
 test('a discovery that is the whole edition leads it and still says where it comes from', () => {
   const digest = renderDigest({}, [frontPagePaper({ matches: [] })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
 
-  assert.equal(digest.text.includes('OUTSIDE YOUR FOLLOWS · PHYSICS\nBelow-threshold'), true);
-  assert.equal(digest.html.includes('Also in this edition'), false);
+  assert.equal(digest.text.includes('By A. Rivera, M. Okafor, L. Chen and others\nOutside your follows'), true);
+  assert.equal(digest.html.includes('More to read'), false);
 });
 
-test('the subject is the lead headline and how many papers follow it', () => {
-  const papers = [
-    frontPagePaper(),
-    briefPaper(),
-    briefPaper({ id: 'third', title: 'Third paper', url: 'https://example.com/third' }),
-  ];
-  const subjectOf = (list: DigestPaper[]) => renderDigest({}, list, UNSUBSCRIBE_URL, false, ON_A_MONDAY).subject;
+test('the subject names the edition week, not a paper, and the preheader starts with the lead title', () => {
+  const preheaderOf = (list: DigestPaper[]) => {
+    const { html, subject } = renderDigest({}, list, UNSUBSCRIBE_URL, false, ON_A_MONDAY);
+    assert.equal(subject, 'Your papers for the week of 10 August');
+    return html.match(/mso-hide:all">([^<]*)</)![1];
+  };
+  const onAThursday = renderDigest({}, [frontPagePaper()], UNSUBSCRIBE_URL, false, { now: Date.parse('2026-08-13T07:00:00Z') });
+  assert.equal(onAThursday.subject, 'Your papers for the week of 10 August');
 
-  assert.equal(subjectOf(papers), 'Below-threshold surface-code memory, and 2 more');
-  assert.equal(subjectOf(papers.slice(0, 1)), 'Below-threshold surface-code memory');
-  const long = subjectOf([frontPagePaper({ title: 'Quantum '.repeat(30).trim() }), briefPaper()]);
-  assert.ok(long.length <= 90, long);
-  assert.match(long, /^Quantum( Quantum)*…, and 1 more$/);
-  assert.equal(subjectOf([frontPagePaper({ title: 'High-Resolution ($2560^3$) Simulation' })]).includes('$'), false);
+  assert.equal(
+    preheaderOf([frontPagePaper(), briefPaper()]),
+    '2 new papers, starting with: Below-threshold surface-code memory',
+  );
+  assert.equal(preheaderOf([frontPagePaper({ title: 'High-Resolution ($2560^3$) Simulation' })]).includes('$'), false);
+  const long = preheaderOf([frontPagePaper({ title: `${'x'.repeat(100)}${'𝔽'.repeat(10)}` })]);
+  assert.equal(long, `1 new paper: ${'x'.repeat(100)}${'𝔽'.repeat(6)}…`);
+  assert.equal(Array.from(long).length, 120);
 });
 
 test('the lead excerpt ends on a whole word and never inside a formula', () => {
@@ -3043,8 +3276,7 @@ test('keeps the spaces around a formula in email HTML and text', () => {
     title: 'Density of $\\Omega_m$ at high redshift',
   })], UNSUBSCRIBE_URL, false, ON_A_MONDAY);
   assert.equal(digest.text.includes('Density of Ω_m at high redshift'), true);
-  assert.equal(digest.subject, 'Density of Ω_m at high redshift');
-});
+  });
 
 test('a full edition stays inside the delivery ledger draft limits', () => {
   // A reservation keeps the exact draft for one retry, cut at 120 000 / 40 000
@@ -3066,19 +3298,6 @@ test('a full edition stays inside the delivery ledger draft limits', () => {
   const digest = renderDigest({ displayName: 'N'.repeat(160) }, papers, UNSUBSCRIBE_URL, false, ON_A_MONDAY);
   assert.ok(digest.html.length < 120_000, `${digest.html.length} characters of HTML`);
   assert.ok(digest.text.length < 40_000, `${digest.text.length} characters of text`);
-});
-
-test('the field inks are the app\'s own light-theme inks', async () => {
-  const css = await readFile(new URL('../src/styles/variables.css', import.meta.url), 'utf8');
-  const lightStart = css.indexOf(':root {');
-  const lightTheme = css.slice(lightStart, css.indexOf('\n}', lightStart));
-  assert.ok(lightTheme.includes('--bg-primary: #fbf8f0'), 'the first :root block is the light theme');
-  for (const [area, { gradient }] of Object.entries(CATEGORIES)) {
-    const token = gradient.match(/var\((--gradient-[a-z]+)\)/)![1];
-    const value = lightTheme.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`))?.[1];
-    assert.equal(fieldInks[area as keyof typeof fieldInks], value?.toLowerCase(), area);
-  }
-  assert.deepEqual(Object.keys(fieldInks).sort(), Object.keys(CATEGORIES).sort());
 });
 
 test('renders common LaTeX in email-safe HTML without exposing delimiters', () => {
@@ -3107,15 +3326,14 @@ test('renders every digest label in English', () => {
     matches: [{ displayName: 'Quantum Physics' }],
   }], 'https://example.com/unsubscribe', false, ON_A_MONDAY);
 
-  assert.equal(digest.subject, 'A new result');
-  assert.equal(digest.html.includes('The PaperTok Weekly'), true);
-  assert.equal(digest.html.includes('You follow Quantum Physics'), true);
+  assert.equal(digest.subject, 'Your papers for the week of 10 August');
+  assert.equal(digest.html.includes('PaperTok'), true);
+  assert.equal(digest.html.includes('Welcome to your weekly selection'), true);
   assert.equal(digest.html.includes('Authors unavailable'), true);
-  assert.equal(digest.html.includes('2 citations'), true);
-  assert.equal(digest.html.includes('Open my feed'), true);
+  assert.equal(digest.html.includes('Explore my feed'), true);
   assert.equal(digest.html.includes('Unsubscribe'), true);
   assert.equal(digest.html.includes('Porque sigues'), false);
-  assert.equal(digest.text.includes('Weekly edition for Nicolas'), true);
+  assert.equal(digest.text.includes('Hi Nicolas,'), true);
 });
 
 test('a subscription stored with legacy Spanish still gets an English digest', () => {
@@ -3130,11 +3348,10 @@ test('a subscription stored with legacy Spanish still gets an English digest', (
     matches: [{ displayName: 'Quantum Physics' }],
   }], 'https://example.com/unsubscribe', false, ON_A_MONDAY);
 
-  assert.equal(digest.subject, 'A new result');
+  assert.equal(digest.subject, 'Your papers for the week of 10 August');
   assert.match(digest.html, /^<!doctype html><html lang="en">/);
-  assert.equal(digest.html.includes('You follow Quantum Physics'), true);
-  assert.equal(digest.html.includes('1 citation'), true);
-  assert.equal(digest.text.includes('Weekly edition for Nicolas'), true);
+  assert.equal(digest.html.includes('Welcome to your weekly selection'), true);
+  assert.equal(digest.text.includes('Hi Nicolas,'), true);
   for (const spanish of ['Porque sigues', 'novedad', 'Darme de baja', 'selección']) {
     assert.equal(digest.html.includes(spanish), false, spanish);
     assert.equal(digest.text.includes(spanish), false, spanish);
@@ -3184,14 +3401,14 @@ test('the unsubscribe page is English even for legacy Spanish links and browsers
 test('the test email is the same edition, says it is a test, and keeps its own subject', () => {
   const empty = renderDigest({ language: 'en' }, [], UNSUBSCRIBE_URL, true, ON_A_MONDAY);
   assert.equal(empty.subject, 'PaperTok: test email');
-  assert.match(empty.html, /<h1[^>]*>The PaperTok Weekly<\/h1>/);
+  assert.match(empty.html, /<h1[^>]*>Your email is ready<\/h1>/);
   assert.equal(empty.html.includes('Your PaperTok email works'), true);
   assert.equal(empty.html.includes('We have not found recent publications'), true);
 
   const withPaper = renderDigest({}, [frontPagePaper()], UNSUBSCRIBE_URL, true, ON_A_MONDAY);
   assert.equal(withPaper.subject, 'PaperTok: test email');
   assert.equal(withPaper.html.includes('Your PaperTok email works'), true);
-  assert.match(withPaper.html, /<h2[^>]*><a [^>]*>Below-threshold surface-code memory<\/a><\/h2>/);
+  assert.match(withPaper.html, /<h3[^>]*><a [^>]*>Below-threshold surface-code memory<\/a><\/h3>/);
 });
 
 function identityEnvironment(kv: KVNamespace) {
@@ -3311,8 +3528,8 @@ test('gives the identity lookup and both provider probes a deadline', async () =
         users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
       });
     }
-    if (url.hostname === 'api.brevo.com') {
-      return jsonResponse(200, { senders: [{ active: true, email: 'papertok@example.com' }] });
+    if (url.hostname === 'api.resend.com') {
+      return jsonResponse(200, { data: [{ name: 'papertok.app', status: 'verified' }] });
     }
     return jsonResponse(200, { data: [] });
   };
@@ -3324,11 +3541,11 @@ test('gives the identity lookup and both provider probes a deadline', async () =
       '/notifications/preferences',
     );
     await checkEmailProviderHealth(emailEnvironment(createMemoryKv()));
-    await checkEmailProviderHealth({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test-key' });
+    await checkEmailProviderHealth({ RESEND_API_KEY: 're_test-key', RESEND_FROM_EMAIL: 'hello@papertok.app' });
 
     assert.deepEqual(calls.map(call => call.host), [
       'identitytoolkit.googleapis.com',
-      'api.brevo.com',
+      'api.resend.com',
       'api.resend.com',
     ]);
     // A hung identity or health upstream used to hold the subrequest open with
@@ -3341,22 +3558,22 @@ test('gives the identity lookup and both provider probes a deadline', async () =
   }
 });
 
-test('sends the Brevo digest with one-click unsubscribe headers', async () => {
+test('sends the Resend digest with one-click unsubscribe headers', async () => {
   const now = new Date('2026-08-10T08:00:00Z');
-  const subscriptionKey = 'notification:subscription:brevo-reader';
+  const subscriptionKey = 'notification:subscription:resend-reader';
   const kv = createMemoryKv({
     [subscriptionKey]: digestSubscription({
-      uid: 'brevo-reader',
-      previewItems: [digestPaper({ id: 'brevo-paper', published: '2026-08-09' })],
+      uid: 'resend-reader',
+      previewItems: [digestPaper({ id: 'resend-paper', published: '2026-08-09' })],
     }),
   });
   let payload;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, options = {}) => {
     const url = new URL(String(input));
-    if (url.hostname === 'api.brevo.com') {
+    if (url.hostname === 'api.resend.com') {
       payload = JSON.parse(options.body as string);
-      return jsonResponse(201, { messageId: 'brevo-delivery' });
+      return jsonResponse(201, { id: 'resend-delivery' });
     }
     return jsonResponse(200, { results: [] });
   };
@@ -3365,13 +3582,11 @@ test('sends the Brevo digest with one-click unsubscribe headers', async () => {
     const summary = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
 
     assert.equal(summary.sent, 1);
-    // Gmail and Yahoo score sender reputation on RFC 8058 one-click, which the
-    // Resend branch already sent and the production Brevo branch did not.
     const unsubscribeUrl = 'https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token';
     assert.equal(payload!.headers['List-Unsubscribe'], `<${unsubscribeUrl}>`);
     assert.equal(payload!.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
-    assert.equal(typeof payload!.headers.idempotencyKey, 'string');
-    assert.equal(payload!.textContent.includes(unsubscribeUrl), true);
+    assert.equal(payload!.from, 'PaperTok <hello@papertok.app>');
+    assert.equal(payload!.text.includes(unsubscribeUrl), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -3396,9 +3611,8 @@ test('refuses to run the schedule without an atomic delivery ledger', async () =
     // that cannot stop two isolates from sending twice: fail loud, not silently.
     const summary = await runEmailNotificationSchedule({
       NOTIFICATION_STORE: kv,
-      EMAIL_PROVIDER: 'brevo',
-      BREVO_API_KEY: 'xkeysib-test',
-      BREVO_FROM_EMAIL: 'papertok@example.com',
+        RESEND_API_KEY: 're_test',
+      RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     }, now.getTime());
 
     assert.equal(summary.disabled, true);
