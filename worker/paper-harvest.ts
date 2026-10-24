@@ -32,8 +32,8 @@ const FOLLOWED_LANES_PER_RUN = 400;
 // The nights a followed lane waits after its provider rejected its request
 // the first, second, third and later times in a row. A lane that keeps being
 // rejected, such as a search OpenAlex answers with a 400, which still spends
-// its ten units, is asked less and less often, but at least once a week,
-// behind every lane harvested before its retry date.
+// its ten units, is asked less and less often: from its fourth rejection, no
+// sooner than 7 nights later, then behind every lane harvested before that date.
 const FAILED_TURN_NIGHTS = [1, 2, 4, 7];
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
@@ -65,11 +65,14 @@ export async function harvestStart(db: D1Database, set: string, now = Date.now()
 // From the start of the UTC day `nights` from now, so that day's nightly run finds the lane due.
 const dueAfter = (nights: number) => `${daysFromNow(nights).slice(0, 10)}T00:00:00.000Z`;
 
-// A provider that answered the lane's own request with a 4xx other than 429
-// rejected the request itself, as OpenAlex rejects a search it cannot parse.
+// The statuses that reject a lane's own request, as OpenAlex answers a search
+// it cannot parse with a 400. A followed lane's text and ids travel in the
+// query of a path every lane shares, so any other 4xx (a 401 or 403 refusing
+// our key or client, a 404 for a path gone, a 429) answers every lane alike.
+const LANE_REJECTIONS = new Set([400, 414, 422]);
+
 function rejectsLane(error: unknown) {
-  const status = Number((error as UpstreamError)?.status);
-  return status >= 400 && status < 500 && status !== 429;
+  return LANE_REJECTIONS.has(Number((error as UpstreamError)?.status));
 }
 
 /**
@@ -79,10 +82,11 @@ function rejectsLane(error: unknown) {
  * it too, and the step's retry passes the lane over, so a lane has one turn a
  * run. A harvest clears the record. A refusal (`SourceRefused`: a spent share,
  * part or day, a pace beat, or a ledger that cannot answer) puts back what was
- * there, so the lane keeps its turn. A 5xx, a timeout or a provider's own 429
- * says nothing about the lane, so it costs the turn and no more, and an outage
- * of any length leaves no wait behind it. A rejected request (`rejectsLane`)
- * adds a wait for each rejection in a row (`FAILED_TURN_NIGHTS`).
+ * there, so the lane keeps its turn. A 5xx, a timeout, a provider's own 429 or
+ * another 4xx that is not about the lane's request says nothing about the
+ * lane, so it costs the turn and no more, and an outage of any length leaves
+ * no wait behind it. A rejected request (`rejectsLane`) adds a wait for each
+ * rejection in a row (`FAILED_TURN_NIGHTS`).
  */
 async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
   const db = env.PAPER_STORE!;

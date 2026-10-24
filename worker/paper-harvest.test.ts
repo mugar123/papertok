@@ -344,11 +344,15 @@ function failingLedger(ledger: WorkerEnv['REQUEST_QUOTA_LEDGER'], failure: () =>
 test('outages cost no followed lane a wait: the first night after one refreshes every lane', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
   const tooMany = () => new Response('Too many requests', { status: 429, headers: { 'retry-after': '3600' } });
+  const followedHosts = ['api.openalex.org', 'export.arxiv.org', 'api.openaire.eu'];
   const providerOutages: Record<string, (url: URL) => Response | Promise<Response> | undefined> = {
     'OpenAlex answering 503': url => (url.hostname === 'api.openalex.org' ? new Response('Service unavailable', { status: 503 }) : undefined),
     // As fetchWithDeadline rejects once its deadline passes.
     'OpenAlex timing out': url => (url.hostname === 'api.openalex.org' ? Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')) : undefined),
-    'OpenAlex, arXiv and OpenAIRE answering 429': url => (['api.openalex.org', 'export.arxiv.org', 'api.openaire.eu'].includes(url.hostname) ? tooMany() : undefined),
+    'OpenAlex, arXiv and OpenAIRE answering 429': url => (followedHosts.includes(url.hostname) ? tooMany() : undefined),
+    // A key or a client the providers refuse is refused on every request alike.
+    'OpenAlex, arXiv and OpenAIRE answering 401': url => (followedHosts.includes(url.hostname) ? new Response('Unauthorized', { status: 401 }) : undefined),
+    'OpenAlex, arXiv and OpenAIRE answering 403': url => (followedHosts.includes(url.hostname) ? new Response('Forbidden', { status: 403 }) : undefined),
   };
   let outageNow: string | null = null;
   providers(t, url => (outageNow && providerOutages[outageNow] ? providerOutages[outageNow](url) : undefined)
