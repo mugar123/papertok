@@ -11,7 +11,8 @@ import { useLanguage } from '../context/language-context.tsx';
 import { readListsHoldingPaper, writeListMembership } from '../services/paper-list-membership.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
-import { markThenConfirm, pickerUndoToastId, runOneAtATime } from './quick-save-operation.ts';
+import { pickerUndoToastId } from '../components/lists/picker-undo-toast.ts';
+import { markThenConfirm, runOneAtATime } from './quick-save-operation.ts';
 
 /**
  * A card's Save button, the same wherever the card is: a tap saves the paper

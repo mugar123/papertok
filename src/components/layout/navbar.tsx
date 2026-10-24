@@ -141,7 +141,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     if (event.button !== 0 || event.pointerType !== 'touch') return;
     touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
   };
-  /** Pressing the tab you are already on reloads its feed, as the pill does. */
+  /** Pressing the tab you are already on reloads its feed. */
   const refreshTab = (tab: string) => {
     if (tab === 'home' && !isRefreshing) void refreshFeed();
     if (tab === 'following') void followingUpdates.refresh();
@@ -187,7 +187,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
       return;
     }
     if (tab === 'home') setFeedMode('top');
-    // A modified click still opens the tab elsewhere.
     if (pathname === to && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
       event.preventDefault();
       refreshTab(tab);

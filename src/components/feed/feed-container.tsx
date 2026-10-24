@@ -216,17 +216,20 @@ const ATOM_VEIL_REDUCED_VARIANTS = {
 // `.feed-empty`, con su propio `margin-top: var(--nav-total)`. Envolver uno
 // dentro del otro sumaría el hueco de la barra dos veces, así que el landmark
 // ES el contenedor en cada rama en vez de un nivel más.
-function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, children }: PropsWithChildren<{
+function FeedLandmark({ landmark, className = 'feed-wrapper', nodeRef, status, children }: PropsWithChildren<{
   landmark: FeedContainerProps['landmark'];
   className?: string;
   nodeRef?: (node: HTMLElement | null) => void;
+  status?: string;
 }>) {
+  const statusRegion = <span className="visually-hidden" role="status">{status}</span>;
   if (!landmark) {
-    return <div ref={nodeRef} className={className}>{children}</div>;
+    return <div ref={nodeRef} className={className}>{statusRegion}{children}</div>;
   }
   return (
     <main ref={nodeRef} className={className} aria-label={landmark.label}>
       <h1 className="visually-hidden">{landmark.heading}</h1>
+      {statusRegion}
       {children}
     </main>
   );
@@ -331,6 +334,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // flashing when the feed returns under a cursor that never left the band.
   const refreshHoverLockedRef = useRef(true);
   const [refreshDone, setRefreshDone] = useState(false);
+  const refreshStatus = isRefreshing ? 'Refreshing papers…' : refreshDone ? 'Papers updated' : '';
   // La píldora se va SIEMPRE diciendo «Actualizado».
   //
   // Al terminar el beat, la cara volvía al verbo. Ese cruce no informa de
@@ -1131,9 +1135,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
   }, [feedNode, canPull, setPull, landPull]);
 
-  // A sideways swipe moves between For you and Following (feed-tab-swipe.ts),
-  // from every state of the page, empty and failed ones included. The Similar
-  // layer is neither tab and keeps its sideways touches.
   const navigate = useNavigate();
   const tabPath = source ? (scrollKey === 'following' ? '/following' : null) : '/feed';
   useEffect(() => {
@@ -1147,7 +1148,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     };
     const onEnd = (event: TouchEvent) => {
       const touch = event.changedTouches[0];
-      // A finger that rested first is holding or selecting text, not swiping.
       if (!start || !touch || event.timeStamp - start.at >= LONG_PRESS_MS) return;
       const to = tabSwipeTarget({
         from: tabPath,
@@ -1179,7 +1179,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // la rama con papers. Un estado de la página sigue siendo la página.
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
         <EmptyState
           role="alert"
           art={<Petri pose="upset" className="feed-error-petri" />}
@@ -1199,7 +1199,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
 
   if (displayState === FEED_DISPLAY_STATES.SKELETON) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} landmark={landmark}>
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark}>
         <div className="feed-container">
           <div className="feed-snap-item"><SkeletonCard /></div>
         </div>
@@ -1210,12 +1210,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    return <FeedLandmark nodeRef={setSwipeNode} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
+    return <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">{source!.emptyState}</FeedLandmark>;
   }
 
   if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
-      <FeedLandmark nodeRef={setSwipeNode} landmark={landmark} className="feed-empty">
+      <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark} className="feed-empty">
         <div className="atom-loader">
           <Petri pose="flask" className="petri-loader" />
         </div>
@@ -1236,11 +1236,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const refreshLabel = refreshLabels[refreshPhase];
   const faceMotion = refreshFaceMotion(refreshPhase, prefersReducedMotion);
   return (
-    <FeedLandmark nodeRef={setSwipeNode} landmark={landmark}>
-      {/* A refresh can start from the navbar tab, away from the pill. */}
-      <span className="visually-hidden" role="status">
-        {isRefreshing ? 'Refreshing papers…' : refreshDone ? 'Papers updated' : ''}
-      </span>
+    <FeedLandmark nodeRef={setSwipeNode} status={refreshStatus} landmark={landmark}>
       {papers.length > 0 && (!source || source.refresh) && (
         <button
           type="button"

@@ -46,7 +46,7 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
-import { pickerUndoToastId } from '../../hooks/quick-save-operation.ts';
+import { pickerUndoToastId } from './picker-undo-toast.ts';
 import {
   ownListsAreFresh,
   ownListsCache,
@@ -495,7 +495,6 @@ export default function SaveToListModal({
   const handleSave = async () => {
     if (savingRef.current || saving || !hasWrites) return;
     savingRef.current = true;
-    // An earlier save's Undo would replay a diff this save is about to change.
     toast.dismiss(pickerUndoToastId(paper.id));
     const finalTags = effectiveTags;
     const { toAdd, toRemove } = diffListSelection([...initialListIds], [...pendingListIds]);
@@ -570,8 +569,6 @@ export default function SaveToListModal({
       if (savesPaper) void markActivation();
 
       closeDialog();
-      // Undo writes back what this save changed and nothing else, for the
-      // account that saved; a later save of the same paper replaces the toast.
       const uid = user!.uid;
       const undo = async () => {
         if (auth.currentUser?.uid !== uid) return false;
