@@ -9,9 +9,6 @@ import { applyLegacyHashRoute } from './utils/legacy-hash-route.ts'
 import { clearStaleOverlayMarker } from './hooks/use-overlay-history.ts'
 import App from './app.tsx'
 import GlobalErrorBoundary from './global-error-boundary.tsx'
-import { initializeErrorTracking } from './services/error-tracking.ts'
-
-void initializeErrorTracking()
 
 // Self-hosted fonts, imported before the global CSS so their @font-face
 // rules land first in the bundle and the browser can start the font

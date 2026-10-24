@@ -1,5 +1,6 @@
 import type { CaptureResult, PostHog, PostHogConfig } from 'posthog-js';
 import { APP_RELOAD_KEY, PRELOAD_RELOAD_KEY, PRELOAD_RELOAD_WINDOW_MS } from '../utils/app-reload.ts';
+import { sanitizeExceptionProperties } from '../utils/error-telemetry.ts';
 type Consent = typeof ANALYTICS_CONSENT[keyof typeof ANALYTICS_CONSENT];
 type AnalyticsStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 interface AcquisitionLocation { referrer?: string; location?: Pick<Location, 'origin' | 'search'> }
@@ -8,15 +9,17 @@ interface TrackingOptions { storage?: AnalyticsStorage | null; now?: number | ((
 // Two transports with different jobs. Vercel Web Analytics counts visits,
 // pages and countries; AnalyticsProvider renders its <Analytics /> and sends the
 // page views. PostHog's EU cloud, loaded on the first event, receives the
-// product events below. This file's actual subject is what both share: the
-// consent gate, the event registry, and the path normalizer that keeps an
-// identifier out of an anonymous report.
+// product events below and the app's error reports. This file's actual subject
+// is what both share: the consent gate, the event registry, and the path
+// normalizer that keeps an identifier out of an anonymous report.
 //
 // Three levels since 2026-10-20. Anonymous is the default and needs nobody's
 // permission: no cookies, a daily hash, identifiers stripped. Detailed is
 // opt-in from the consent banner or Settings: PostHog keeps an identity in the
 // browser, links it to the account, and records sessions, clicks and errors,
-// so what each person does can be followed over time. Denied sends nothing.
+// so what each person does can be followed over time. Anonymous error reports
+// keep the error type, code locations and fixed labels, never the message.
+// Denied sends nothing.
 
 export const ANALYTICS_CONSENT_KEY = 'papertok_analytics_consent';
 export const ANALYTICS_CONSENT_COOKIE_KEY = 'papertok_analytics_decision';
@@ -426,7 +429,8 @@ const ANALYTICS_HOSTS = new Set(['papertok.app', 'www.papertok.app']);
  * drops every anonymous event. Opting in gives it a persistent identity, and
  * starts session replay, which PostHog only runs outside cookieless mode.
  * Autocapture, heatmaps, page leaves, exceptions and web vitals run at both
- * levels, and `sanitizeAnalyticsCapture` drops them from anonymous traffic.
+ * levels. `sanitizeAnalyticsCapture` drops all but exceptions from anonymous
+ * traffic, and reduces those to the error type, code locations and fixed labels.
  * Requests and PostHog's lazily loaded scripts go to our own origin, which
  * vercel.json rewrites to PostHog's EU hosts.
  */
@@ -483,15 +487,17 @@ const POSTHOG_PROPERTIES = new Set([
 /**
  * The last step before an event leaves (`before_send`). A reader who opted in
  * to detailed analytics sends the event as PostHog built it. Otherwise it is
- * rebuilt from the allowlist above, the event's own parameter schema and the
- * normalized URL, and dropped when it is neither a page view nor a registered
- * event, or when the reader has turned analytics off.
+ * rebuilt from the allowlist above, the event's own parameter schema (or, for an
+ * error report, `sanitizeExceptionProperties`) and the normalized URL, and
+ * dropped when it is neither a page view, an error nor a registered event, or
+ * when the reader has turned analytics off.
  */
 export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent = readAnalyticsConsent()): CaptureResult | null {
   if (!capture || consent === ANALYTICS_CONSENT.DENIED) return null;
   if (consent === ANALYTICS_CONSENT.DETAILED) return capture;
   const { event, properties = {} } = capture;
-  if (event !== '$pageview' && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
+  const exception = event === '$exception' ? sanitizeExceptionProperties(properties) : null;
+  if (event !== '$pageview' && !exception && !Object.hasOwn(EVENT_PARAMETER_SCHEMAS, event)) return null;
 
   const currentUrl = sanitizeAnalyticsEventUrl(properties.$current_url);
   const kept = Object.fromEntries(
@@ -503,7 +509,7 @@ export function sanitizeAnalyticsCapture(capture: CaptureResult | null, consent 
     timestamp: capture.timestamp,
     properties: {
       ...kept,
-      ...sanitizeProductEventParams(event, properties, consent),
+      ...(exception ?? sanitizeProductEventParams(event, properties, consent)),
       $current_url: currentUrl,
       $pathname: new URL(currentUrl, 'https://papertok.app').pathname,
     },
@@ -793,4 +799,12 @@ export async function trackAppCrash({
   appCrashReported = true;
   const kind = now - reloadedAt < PRELOAD_RELOAD_WINDOW_MS ? 'chunk_load_failed' : 'render_crash';
   return track('app_error', { kind });
+}
+
+// The error boundary's report. PostHog captures uncaught errors and rejections
+// itself once loaded, but React hands a render error to the boundary instead.
+export async function captureAppException(error: unknown) {
+  if (readAnalyticsConsent() === ANALYTICS_CONSENT.DENIED || !canSendAnalytics()) return;
+  const client = await loadAnalyticsClient();
+  client?.captureException(error, { operation: 'render' });
 }
