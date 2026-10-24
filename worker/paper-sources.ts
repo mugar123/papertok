@@ -466,8 +466,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       : arxivSearch(env, `all:"${quotedLabel(request.lane)}"`, request)),
   },
   pubmed: {
-    // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology.
-    firstPages: 10, dailyPages: 10, backfillPages: 40, dated: true, overlapDays: 3,
+    // 2026-10-24: 40 pages went back 3 days for oncology and 4 years for zoology,
+    // and two of nine 40-page steps ran out of the Worker's 30 s of CPU.
+    firstPages: 10, dailyPages: 10, backfillPages: 20, dated: true, overlapDays: 3,
     fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
@@ -606,15 +607,16 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
 const BACKFILL_GAP_MS = 1_500;
 
 /**
- * Reads a lane further back than its daily pages, from the page the last run
- * stopped at. The listing ends at the day the backfill began, so new records
- * do not move its pages. It is done at the end of the listing or the corpus
- * window or the route's last page, or once the lane holds as many papers as
- * the feed reads, beyond which eviction drops the older ones. Its pages wait
- * out short refusals as a lane's daily pages do, within LANE_WAIT_SECONDS for
- * the run. A refusal past that, a quota ledger that cannot answer, or a page
- * that fails ends the lane's run there, to go on from it next run. A lane
- * whose daily harvest has not run yet waits for it.
+ * Reads a lane further back than its daily pages, up to backfillPages a step,
+ * from the page the last step stopped at, saved after each page. The listing
+ * ends at the day the backfill began, so new records do not move its pages.
+ * It is done at the end of the listing or the corpus window or the route's
+ * last page, or once the lane holds as many papers as the feed reads, beyond
+ * which eviction drops the older ones. Its pages wait out short refusals as a
+ * lane's daily pages do, within LANE_WAIT_SECONDS a step. A refusal past that,
+ * a quota ledger that cannot answer, or a page that fails ends the step there;
+ * the lane's next step or run goes on from the saved page. A lane whose daily
+ * harvest has not run yet waits for it.
  */
 export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, now = Date.now()) {
   const spec = SOURCES[source];
@@ -625,11 +627,17 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
   const until = state.backfill_until || new Date(now).toISOString().slice(0, 10);
   const since = daysFromNow(-CORPUS_DAYS, now);
   const held = await db.prepare('SELECT count(*) AS n FROM work_lanes WHERE lane = ?').bind(lane).first<{ n: number }>();
+  // Saved after each page, so a step cut short goes on from the last one read.
+  const save = (next: number | null) => db.prepare('UPDATE lane_state SET backfill_until = ?, backfill_page = ? WHERE source = ? AND lane = ?')
+    .bind(until, next, source, lane).run();
   let page = state.backfill_page || 1;
-  let done = (held?.n || 0) >= FEED_CANDIDATE_LIMIT;
   let stored = 0;
+  if ((held?.n || 0) >= FEED_CANDIDATE_LIMIT) {
+    await save(null);
+    return stored;
+  }
   const waits = { seconds: LANE_WAIT_SECONDS };
-  for (let read = 0; !done && read < spec.backfillPages; read += 1, page += 1) {
+  for (let read = 0; read < spec.backfillPages; read += 1, page += 1) {
     if (read > 0) await new Promise(resolve => setTimeout(resolve, BACKFILL_GAP_MS));
     let result: SourcePage;
     try {
@@ -639,10 +647,10 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
       break;
     }
     stored += await ingestPapers(env, result.items, { now });
-    done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
+    const done = !result.full || Boolean(result.newest && result.newest < since) || page >= SOURCE_MAX_PAGE;
+    await save(done ? null : page + 1);
+    if (done) break;
   }
-  await db.prepare('UPDATE lane_state SET backfill_until = ?, backfill_page = ? WHERE source = ? AND lane = ?')
-    .bind(until, done ? null : page, source, lane).run();
   return stored;
 }
 
