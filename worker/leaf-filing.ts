@@ -1,7 +1,7 @@
 import type { StoreEnv } from './paper-store.ts';
 
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
-import { isArxivCategory } from '../src/services/arxivRecords.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { isArxivCategory } from '../src/services/arxiv-records.ts';
 import { AREA_LANE_AREAS, areaLane, cosine, database, quantize, readVector, unitVector } from './paper-store.ts';
 
 // The journal articles an area's lane brings in (paper-sources.ts

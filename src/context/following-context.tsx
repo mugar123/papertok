@@ -1,0 +1,340 @@
+import type { PropsWithChildren } from 'react';
+import type { CollectionReference } from 'firebase/firestore';
+import type { FollowEntity, FollowInput } from '../utils/following.ts';
+export interface FollowingContextValue {
+  followedEntities: FollowEntity[];
+  followedByType: Record<string, FollowEntity[]>;
+  loading: boolean;
+  error: unknown;
+  isFollowing: (entity: FollowInput) => boolean;
+  isFollowPending: (entity: FollowInput) => boolean;
+  toggleFollow: (entity: FollowInput) => Promise<boolean>;
+}
+
+/* eslint-disable react-refresh/only-export-components -- the context module exports its provider together with its hook */
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { FollowingContext } from './contexts.ts';
+import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db } from '../services/firebase.ts';
+import { getRorInstitution, normalizeRorId } from '../services/ror-service.ts';
+import { useAuth } from './auth-context.tsx';
+import { useAnalyticsConsent } from './analytics-context.tsx';
+import {
+  createFollowEntity,
+  createFollowKey,
+  followsEntity,
+  migrateLegacyAuthors,
+} from '../utils/following.ts';
+import { finishLegacyAuthorsMigration } from '../utils/following-migration.ts';
+
+const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze<Record<string, Record<string, string>>>({});
+
+/**
+ * How long the app waits for the first snapshot of `following` before it stops
+ * blocking on it. Long enough that a healthy connection never sees it.
+ */
+const FIRST_SNAPSHOT_GRACE_MS = 6500;
+
+/**
+ * The follow list has not arrived yet, and the app has stopped waiting for it.
+ *
+ * Not a failure: the listener is still attached and Firestore reconnects on its
+ * own. It exists so consumers can tell "we do not know what this account
+ * follows" from "this account follows nobody" — a distinction that decides
+ * whether it is safe to write notification preferences derived from the list.
+ */
+class FollowsUnavailableError extends Error {
+  declare code: string;
+  declare retryable: boolean;
+  constructor() {
+    super('The follow list has not arrived yet.');
+    this.name = 'FollowsUnavailableError';
+    this.code = 'FOLLOWS_UNAVAILABLE';
+    this.retryable = true;
+  }
+}
+
+export function FollowingProvider({ children }: PropsWithChildren) {
+  const { user, followedAuthors } = useAuth();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
+  const [followedEntities, setFollowedEntities] = useState<FollowEntity[]>([]);
+  const [loading, setLoading] = useState(Boolean(user));
+  const [error, setError] = useState<unknown>(null);
+  const [pendingFollowKeys, setPendingFollowKeys] = useState(new Set<string>());
+  const [institutionLocalizationState, setInstitutionLocalizationState] = useState({
+    userId: '',
+    names: EMPTY_LOCALIZED_INSTITUTION_NAMES,
+  });
+  const legacyMigrationAttempted = useRef(false);
+  const institutionLocalizationPending = useRef(new Set<string>());
+  // The legacy authors, reachable from inside the subscription without being a
+  // dependency of it. See the two effects below.
+  const followedAuthorsRef = useRef(followedAuthors);
+  // Mirrored in an effect, like the other stale-closure guards in this app
+  // (see FeedContext): a ref must not be written during render.
+  useEffect(() => { followedAuthorsRef.current = followedAuthors; }, [followedAuthors]);
+  // True once a snapshot for the account below has actually arrived. A ref, not
+  // state: the migration effect only needs to read it, and writing it from the
+  // snapshot callback keeps it correct before the re-render it triggers.
+  const followsArrived = useRef(false);
+  const localizedInstitutionNames = institutionLocalizationState.userId === user?.uid
+    ? institutionLocalizationState.names
+    : EMPTY_LOCALIZED_INSTITUTION_NAMES;
+
+  // What the remount used to do, done in place.
+  //
+  // `useState(Boolean(user))` above was a correct reading of the account only
+  // because this provider was rebuilt once the account was known: `App` keyed
+  // it on `user?.uid`, and that key flipped when `onAuthStateChanged` answered.
+  // It is keyed on a generation now (utils/account-scope.ts) and a session
+  // merely BECOMING KNOWN no longer rebuilds anything — so on a cold load this
+  // mounts with `user` still null and `loading` reads false while the uid is on
+  // its way. A `loading: false` with nothing in hand is an unconfirmed absence
+  // presented as an answer: "you follow nobody" to an account that follows
+  // fifty, and the gate `FeedContext` waits on before it loads a feed at all.
+  //
+  // State adjusted during render — the documented way to reset state when a
+  // prop changes — rather than in an effect: the gate then closes in the very
+  // render the uid appears instead of a commit later, and there is no
+  // cascading render for `react-hooks/set-state-in-effect` to object to. Every
+  // other piece of state here is already right for an empty account, so
+  // `loading` is the only one that has to be re-read.
+  const accountId = user?.uid || null;
+  const [loadingAccount, setLoadingAccount] = useState(accountId);
+  if (loadingAccount !== accountId) {
+    setLoadingAccount(accountId);
+    setLoading(Boolean(accountId));
+  }
+
+  useEffect(() => {
+    if (!user?.uid) {
+      return undefined;
+    }
+
+    followsArrived.current = false;
+    legacyMigrationAttempted.current = false;
+    const followsCollection = collection(db, 'users', user.uid, 'following') as CollectionReference<FollowEntity>;
+    /**
+     * The grace period before the app stops waiting for the first snapshot.
+     *
+     * It has to exist: FeedContext will not load a feed while `loading` is
+     * true, so a listener that never delivers would leave the app on an empty
+     * screen. But clearing `loading` on a timer and saying nothing else was a
+     * timeout presented as an answer — an account that follows fifty people
+     * rendered as an account that follows nobody, and the settings screen
+     * offered to help them start following someone.
+     *
+     * So it clears `loading` *and* raises `error`. The listener stays attached
+     * and Firestore reconnects on its own, so the first real snapshot clears
+     * the error and the screen heals with no user action.
+     */
+    const loadingTimeout = window.setTimeout(() => {
+      setLoading(false);
+      setError(new FollowsUnavailableError());
+    }, FIRST_SNAPSHOT_GRACE_MS);
+
+    const unsubscribe = onSnapshot(followsCollection, (snapshot) => {
+      window.clearTimeout(loadingTimeout);
+      followsArrived.current = true;
+      setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
+      // Whatever went wrong before, this is the server's own answer.
+      setError(null);
+      setLoading(false);
+    }, (snapshotError) => {
+      window.clearTimeout(loadingTimeout);
+      console.error('Error loading follows', snapshotError);
+      setError(snapshotError);
+      setFollowedEntities(migrateLegacyAuthors(followedAuthorsRef.current));
+      setLoading(false);
+    });
+    return () => {
+      window.clearTimeout(loadingTimeout);
+      unsubscribe();
+    };
+    // Keyed on the account and nothing else. `followedAuthors` used to be a
+    // dependency, and it is a fresh array on every profile apply — which
+    // AuthContext does twice per sign-in, once from cache and once from the
+    // server. That tore down and rebuilt the only Firestore listener in the app
+    // at least twice per sign-in, re-reading the whole collection each time.
+    // The migration below is what actually needs those authors, so it reads
+    // them itself.
+  }, [user?.uid]);
+
+  /**
+   * One-off migration of the pre-`following` author list.
+   *
+   * Split out of the subscription on purpose: it is the only thing that needed
+   * `followedAuthors`, and keeping it here means the listener no longer
+   * restarts every time that array is replaced by an identical one. It waits
+   * for a real snapshot, because migrating against an empty placeholder would
+   * re-create follows the user had already removed.
+   */
+  useEffect(() => {
+    const userId = user?.uid;
+    if (!userId) return;
+    if (!followsArrived.current || legacyMigrationAttempted.current) return;
+    if (followedAuthors.length === 0) return;
+
+    legacyMigrationAttempted.current = true;
+    const followsCollection = collection(db, 'users', userId, 'following');
+    const missingLegacy = migrateLegacyAuthors(followedAuthors)
+      .filter((legacy) => !followsEntity(followedEntities, legacy));
+
+    void (async () => {
+      try {
+        await Promise.all(missingLegacy.map((legacy) => setDoc(
+          doc(followsCollection, createFollowKey(legacy.type, legacy.canonicalId)),
+          { ...legacy, followedAt: serverTimestamp() },
+          { merge: true },
+        )));
+        await setDoc(
+          doc(db, 'users', userId),
+          finishLegacyAuthorsMigration(followedAuthors),
+          { merge: true },
+        );
+      } catch (migrationError) {
+        console.warn('No se pudieron migrar todos los seguimientos', migrationError);
+      }
+    })();
+  }, [user?.uid, followedAuthors, followedEntities]);
+
+  useEffect(() => {
+    if (!user?.uid) return undefined;
+    const userId = user.uid;
+    const candidates = followedEntities.filter((follow) => {
+      if (follow.type !== 'institution' || follow.metadata?.localizedNames?.en) return false;
+      const followKey = follow.followKey || createFollowKey(follow.type, follow.canonicalId);
+      const pendingKey = `${userId}:${followKey}`;
+      const rorId = normalizeRorId(follow.externalIds?.ror || follow.canonicalId);
+      return rorId
+        && !localizedInstitutionNames[followKey]
+        && !institutionLocalizationPending.current.has(pendingKey);
+    });
+    if (candidates.length === 0) return undefined;
+
+    let cancelled = false;
+    candidates.forEach((follow) => {
+      const followKey = follow.followKey || createFollowKey(follow.type, follow.canonicalId);
+      institutionLocalizationPending.current.add(`${userId}:${followKey}`);
+    });
+
+    void Promise.all(candidates.map(async (follow) => {
+      const followKey = follow.followKey || createFollowKey(follow.type, follow.canonicalId);
+      const pendingKey = `${userId}:${followKey}`;
+      try {
+        const institution = await getRorInstitution(follow.externalIds?.ror || follow.canonicalId);
+        return institution?.localized_names
+          ? [followKey, institution.localized_names] as const
+          : null;
+      } catch {
+        return null;
+      } finally {
+        institutionLocalizationPending.current.delete(pendingKey);
+      }
+    })).then((entries) => {
+      if (cancelled) return;
+      const validEntries = entries.filter(Boolean) as (readonly [string, Record<string, string>])[];
+      if (validEntries.length === 0) return;
+      setInstitutionLocalizationState(current => ({
+        userId,
+        names: {
+          ...(current.userId === userId ? current.names : {}),
+          ...Object.fromEntries(validEntries),
+        },
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [followedEntities, localizedInstitutionNames, user?.uid]);
+
+  const isFollowing = useCallback((entity: FollowInput) => followsEntity(followedEntities, entity), [followedEntities]);
+  const isFollowPending = useCallback((input: FollowInput) => {
+    const entity = createFollowEntity(input);
+    return entity ? pendingFollowKeys.has(createFollowKey(entity.type, entity.canonicalId)) : false;
+  }, [pendingFollowKeys]);
+
+  const toggleFollow = useCallback(async (input: FollowInput) => {
+    const entity = createFollowEntity(input);
+    if (!entity || !user?.uid) return false;
+    const pendingKey = createFollowKey(entity.type, entity.canonicalId);
+    if (pendingFollowKeys.has(pendingKey)) return followsEntity(followedEntities, entity);
+
+    const existingFollow = followedEntities.find((follow) => followsEntity([follow], entity));
+    const wasFollowing = Boolean(existingFollow);
+    const previous = followedEntities;
+    const next = wasFollowing
+      ? previous.filter((follow) => !followsEntity([follow], entity))
+      : [...previous, entity];
+    setFollowedEntities(next);
+    setError(null);
+    setPendingFollowKeys(current => new Set(current).add(pendingKey));
+
+    try {
+      const followRef = doc(db, 'users', user.uid, 'following', createFollowKey(entity.type, entity.canonicalId));
+      if (wasFollowing) {
+        const existingKey = existingFollow!.followKey || createFollowKey(existingFollow!.type, existingFollow!.canonicalId);
+        await deleteDoc(doc(db, 'users', user.uid, 'following', existingKey));
+      }
+      else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
+      void trackEvent('follow_change', {
+        entity_type: entity.type,
+        action: wasFollowing ? 'remove' : 'add',
+        surface: 'other',
+        entity_id: entity.canonicalId,
+        entity_name: entity.displayName,
+      });
+      if (!wasFollowing) void markActivation();
+      return !wasFollowing;
+    } catch (toggleError) {
+      setFollowedEntities(previous);
+      setError(toggleError);
+      throw toggleError;
+    } finally {
+      setPendingFollowKeys(current => {
+        const updated = new Set(current);
+        updated.delete(pendingKey);
+        return updated;
+      });
+    }
+  }, [followedEntities, markActivation, pendingFollowKeys, trackEvent, user]);
+
+  const localizedFollowedEntities = useMemo(() => followedEntities.map((entity) => {
+    if (entity.type !== 'institution' || entity.metadata?.localizedNames?.en) return entity;
+    const followKey = entity.followKey || createFollowKey(entity.type, entity.canonicalId);
+    const localizedNames = localizedInstitutionNames[followKey];
+    return localizedNames
+      ? {
+        ...entity,
+        metadata: {
+          ...(entity.metadata || {}),
+          localizedNames,
+        },
+      }
+      : entity;
+  }), [followedEntities, localizedInstitutionNames]);
+
+  const followedByType = useMemo(() => localizedFollowedEntities.reduce<Record<string, FollowEntity[]>>((groups, entity) => {
+    groups[entity.type] = [...(groups[entity.type] || []), entity];
+    return groups;
+  }, {}), [localizedFollowedEntities]);
+
+  const value = useMemo(() => ({
+    followedEntities: localizedFollowedEntities,
+    followedByType,
+    loading,
+    error,
+    isFollowing,
+    isFollowPending,
+    toggleFollow,
+  }), [error, followedByType, isFollowPending, isFollowing, loading, localizedFollowedEntities, toggleFollow]);
+
+  return <FollowingContext.Provider value={value}>{children}</FollowingContext.Provider>;
+}
+
+export function useFollowing() {
+  const context = useContext(FollowingContext);
+  if (!context) throw new Error('useFollowing must be used within a FollowingProvider');
+  return context;
+}

@@ -1,12 +1,12 @@
-import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
+import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { evaluateLeafFiling, fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
 import { ingestPapers, parseFeedRequest, quantize, readFeedPage, readVector } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
-import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
 
 const NOW = Date.parse('2026-10-23T03:00:00Z');
 

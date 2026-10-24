@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { GETFTR_BATCH_SIZE, InstitutionAccessError, findResolver } from './institution-access.ts';
 import { SERVICE_CATALOGUE, VERDICT_TTL_MS, lookupInstitutionServices, probeKey, servicesStoreKey } from './institution-services.ts';
 import reportApi from './index.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), cut down to
 // the keys the parser reads: Cell, ISSN 0092-8674, 2020.

@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 
 // Synthetic catalogue and article samples; these do not establish live precision.
 const catalogue = [
@@ -225,7 +225,7 @@ function copyCheckout(t: import('node:test').TestContext) {
 
 test('generation can reconstruct a missing output from taxonomy inputs', t => {
   const { checkout, generate } = copyCheckout(t);
-  const output = join(checkout, 'src/data/openAlexLeafTopics.generated.ts');
+  const output = join(checkout, 'src/data/open-alex-leaf-topics.generated.ts');
   rmSync(output);
   const result = generate();
   assert.equal(result.status, 0, result.stderr);
@@ -234,8 +234,8 @@ test('generation can reconstruct a missing output from taxonomy inputs', t => {
 
 test("renaming a reviewed leaf keeps its review: its topics are the ones the sample's query named", t => {
   const { checkout, generate } = copyCheckout(t);
-  const taxonomy = join(checkout, 'src/data/categoryTaxonomy.ts');
-  const output = join(checkout, 'src/data/openAlexLeafTopics.generated.ts');
+  const taxonomy = join(checkout, 'src/data/category-taxonomy.ts');
+  const output = join(checkout, 'src/data/open-alex-leaf-topics.generated.ts');
   const report = join(checkout, 'scripts/data/openalex-leaf-topics-coverage.json');
   const rowOf = (leaf: string) => (JSON.parse(readFileSync(report, 'utf8')) as Array<{ leaf: string }>).find(row => row.leaf === leaf)!;
   const map = readFileSync(output, 'utf8');

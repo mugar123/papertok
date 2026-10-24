@@ -1,0 +1,272 @@
+/* The scrim and the sheet are the Dialog primitive's backdrop and popup
+   (`overlayClassName` / `className`): it centres the sheet, traps focus,
+   closes on Escape and the scrim, and plays its own enter/leave on
+   `[data-open]`/`[data-closed]`, so no motion is spelled here. No
+   `backdrop-filter`: the primitive animates this element's own opacity,
+   which would force the blur to be re-resolved on every frame — the worst
+   case for a mobile GPU. The flat scrim alone is what reads as the backdrop. */
+.eim-overlay {
+  background: var(--scrim);
+}
+
+.eim-modal {
+  width: calc(100% - 2 * var(--space-4));
+  max-width: 800px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  height: min(760px, 90dvh);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(17, 19, 24, 0.12), inset 0 1px 0 rgba(17, 19, 24, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The X is the primitive's own, in the sheet's corner; the header keeps
+   clear of it. */
+.eim-header {
+  padding: var(--space-6);
+  padding-right: calc(var(--space-6) + 40px);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.eim-header-text h2 {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.eim-header-text p {
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.eim-body {
+  padding: var(--space-6);
+  overflow-y: auto;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* Custom scrollbar for modal */
+.eim-body::-webkit-scrollbar {
+  width: 8px;
+}
+.eim-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.eim-body::-webkit-scrollbar-thumb {
+  background: var(--bg-glass-hover);
+  border-radius: var(--radius-sm);
+}
+@media (hover: hover) and (pointer: fine) {
+  .eim-body::-webkit-scrollbar-thumb:hover {
+    background: var(--bg-glass-hover);
+  }
+}
+
+/* The fields down a rail, the chosen field's topics beside it. The dialog
+   keeps one height whichever field is open (`.eim-modal`): the rail stays
+   put and only the topics scroll, inside their own panel. */
+.eim-body:has(> .eim-rail) {
+  overflow: hidden;
+}
+
+.eim-rail {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  gap: var(--space-6);
+}
+
+.eim-rail-list {
+  flex-direction: column;
+  align-items: stretch;
+  width: auto;
+  height: max-content;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.eim-rail > .eim-area {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-2);
+}
+
+.eim-rail-tab {
+  justify-content: flex-start;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .eim-rail-tab:not([data-active]):hover {
+    background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  }
+}
+
+.eim-rail-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+
+
+.eim-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.eim-area-count {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+}
+
+.eim-area-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.eim-area-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.eim-subcats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* The pill is the shared Toggle (`ui/toggle.jsx`) wearing this class: its
+   utilities live in the `utilities` layer, so these unlayered rules win.
+   `height: auto` and `white-space: normal` undo the toggle's fixed row
+   height and nowrap, which the pill never had. Picked, it is filled in ink:
+   the state is the pill itself, with no mark added inside it. */
+.eim-pill {
+  height: auto;
+  white-space: normal;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-default);
+  padding: 10px 18px;
+  border-radius: var(--radius-2xl);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform 160ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .eim-pill:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+}
+
+.eim-pill:active {
+  transform: scale(0.97);
+}
+
+.eim-pill[data-pressed] {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--bg-card);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .eim-pill[data-pressed]:hover {
+    border-color: var(--text-primary);
+    color: var(--bg-card);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eim-pill:active {
+    transform: none;
+  }
+}
+
+.eim-footer {
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-4);
+}
+
+.eim-selected-count {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+/* Loading state for button */
+.eim-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eim-spinner { animation-duration: 2.4s; }
+}
+
+@media (max-width: 768px) {
+  .eim-modal {
+    width: calc(100% - 2 * var(--space-2));
+    height: calc(100vh - 2 * var(--space-2));
+    height: calc(100dvh - 2 * var(--space-2));
+    max-height: none;
+    border-radius: var(--radius-lg);
+  }
+  .eim-body {
+    padding: var(--space-4);
+  }
+  .eim-header {
+    padding: var(--space-4);
+  }
+}
+
+/* ── Phone: the editor is a settings sheet (settings-sheet.css) ── */
+
+/* The switcher already names the field. */
+.settings-sheet-body .eim-area-title {
+  display: none;
+}
+
+.settings-sheet .eim-footer {
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
+}

@@ -7,7 +7,7 @@
 // A card sends an author to `/explorer/author/<id>?name=…` when it holds an
 // OpenAlex id and to `/explorer/author/<name>?arxivId=…` when it does not, and
 // the second door costs three round trips before the hero can paint
-// (src/utils/explorerPaths.js). This counts which door the feed actually hands
+// (src/utils/explorer-paths.ts). This counts which door the feed actually hands
 // out, over a signed-in feed served from a PRODUCTION build:
 //
 //   * DOM: every `.pc-author-link`, split by href — `?name=` is the fast
@@ -83,7 +83,7 @@ class CDP {
   }
 }
 
-// Reads the same rule the card applies (src/utils/explorerPaths.js) against the
+// Reads the same rule the card applies (src/utils/explorer-paths.ts) against the
 // snapshot, so the data census and the DOM census are comparable.
 const CENSUS = `(() => {
   const links = [...document.querySelectorAll('.pc-author-link')].map((a) => a.getAttribute('href') || '');

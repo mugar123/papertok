@@ -20,7 +20,7 @@ service cloud.firestore {
     }
 
     // OpenAlex's primary topic as a stored copy keeps it (`storedClassification`
-    // in src/models/Paper.ts): the topic, its subfield, field and domain, each
+    // in src/models/paper.ts): the topic, its subfield, field and domain, each
     // by id and name, and nothing else.
     function storedSubjectReference(value) {
       return value is map
@@ -49,7 +49,7 @@ service cloud.firestore {
     //
     // So the write moved to the Worker, which validates in real code with the
     // service identity (`worker/public-list-api.ts`) and holds the single
-    // definition of a valid public list in `src/services/publicListPayload.ts`,
+    // definition of a valid public list in `src/services/public-list-payload.ts`,
     // the same module the browser imports. Here, only two things remain true:
     // anyone may read a share link, and nobody may write one.
     //
@@ -466,7 +466,7 @@ service cloud.firestore {
             || 'endParagraphIndex' in request.resource.data);
       }
 
-      // The reader's own plain-words summaries (src/services/savedSummaryService.ts):
+      // The reader's own plain-words summaries (src/services/saved-summary-service.ts):
       // one per paper and level, keyed `<paperKey>.<level>`, written together
       // with the history row below in one batch. The client writes them only
       // for its own account and reads them back so that reopening a paper does

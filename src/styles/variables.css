@@ -522,7 +522,7 @@
 }
 
 /* A lighter band sweeping across a word that is still being looked up: the
-   card's "Checking" (PaperCard.css) and the library's (Institution.css). It
+   card's "Checking" (paper-card.css) and the library's (institution.css). It
    moves a mask, so the word keeps its own colour; the 300% mask size is set
    where it is used. */
 @keyframes checkingSweep {

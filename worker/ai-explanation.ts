@@ -1,10 +1,10 @@
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { QuotaRequest } from './request-quota-ledger.ts';
 
-import type { AIQuota } from '../src/models/Rewrite.ts';
-export type { AIQuota } from '../src/models/Rewrite.ts';
+import type { AIQuota } from '../src/models/rewrite.ts';
+export type { AIQuota } from '../src/models/rewrite.ts';
 
 export interface AIProviderPayload {
   error?: { details?: Array<{ retryDelay?: unknown; [key: string]: unknown }>; [key: string]: unknown };
@@ -14,7 +14,7 @@ export interface AIProviderPayload {
 type PdfResult = { bytes: Uint8Array<ArrayBuffer>; reason: '' }
   | { bytes: null; reason: 'unreachable' | 'not_pdf' | 'too_large' };
 
-import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.ts';
+import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/ai-explanation-access.ts';
 import { readBoundedBytes } from './bounded-body.ts';
 import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.ts';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';

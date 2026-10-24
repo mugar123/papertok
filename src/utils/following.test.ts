@@ -7,7 +7,7 @@ import {
   migrateLegacyAuthors,
   normalizeFollowId,
 } from './following.ts';
-import { getProjectDisplayName } from './entityMetadata.ts';
+import { getProjectDisplayName } from './entity-metadata.ts';
 
 test('normalizes provider URLs into stable ids', () => {
   assert.equal(normalizeFollowId('https://openalex.org/A123'), 'A123');

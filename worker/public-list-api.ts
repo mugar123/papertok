@@ -39,7 +39,7 @@ interface ListOperation<Key extends OperationPath> {
  * What the Worker checks that the rules used to:
  *  - the caller is signed in, verified against Identity Toolkit with no cache;
  *  - the caller owns the private list the publication is attached to;
- *  - the payload obeys every limit in publicListPayload.ts, which the browser
+ *  - the payload obeys every limit in public-list-payload.ts, which the browser
  *    imports too, so there is one definition of a valid public list;
  *  - `createdAt` never moves, enforced with an update mask rather than a read.
  *
@@ -56,7 +56,7 @@ import {
   publicPaperJoinKey,
   sanitizePublicList,
   sanitizePublicPaper,
-} from '../src/services/publicListPayload.ts';
+} from '../src/services/public-list-payload.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import {
   clearFieldsWrite,

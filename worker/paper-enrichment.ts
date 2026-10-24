@@ -1,16 +1,16 @@
-import type { Paper } from '../src/models/Paper.ts';
-import type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
-import type { EuropePmcRecord } from '../src/utils/europePmcRecord.ts';
+import type { Paper } from '../src/models/paper.ts';
+import type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
+import type { EuropePmcRecord } from '../src/utils/europe-pmc-record.ts';
 import type { WorkerEnv } from './env.ts';
 import type { StoreEnv } from './paper-store.ts';
 
-import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment } from '../src/utils/feedEnrichment.ts';
-import { fetchInspireAbstracts } from '../src/services/inspireAbstractService.ts';
-import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/openAlexWork.ts';
-import { mapICitePublication, mergeICiteEnrichment } from '../src/services/iCiteRecords.ts';
-import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europePmcRecords.ts';
-import { withCrossrefType } from '../src/services/feedPublicationRules.ts';
-import { normalizeDoi } from '../src/utils/publicNavigation.ts';
+import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment } from '../src/utils/feed-enrichment.ts';
+import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
+import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/open-alex-work.ts';
+import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
+import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
+import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
+import { normalizeDoi } from '../src/utils/public-navigation.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
 import { fetchWithDeadline } from './provider-runtime.ts';

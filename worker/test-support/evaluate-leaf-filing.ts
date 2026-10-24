@@ -1,7 +1,7 @@
 // Calibration of the leaf filing (worker/leaf-filing.ts) on a copy of the
 // paper store: how many held-out arXiv papers each rule files, and how many of
 // those under their own leaf; and how many of the area lanes' journal articles
-// each rule would file. Node only, like sqliteD1.ts: it runs the store's SQL
+// each rule would file. Node only, like sqlite-d1.ts: it runs the store's SQL
 // over node:sqlite, outside the Worker.
 //
 //   node worker/test-support/evaluate-leaf-filing.ts <store.sqlite | store.sql> [--similarity 0.5,0.6] [--margin 0.05,0.1]
@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { getAllLeafCategories } from '../../src/data/categoryTaxonomy.ts';
+import { getAllLeafCategories } from '../../src/data/category-taxonomy.ts';
 import { areaCentroids, closestLeaf, evaluateLeafFiling, leafCentroids, ruleFiles } from '../leaf-filing.ts';
 import { AREA_LANE_AREAS, areaLane, readVector } from '../paper-store.ts';
 

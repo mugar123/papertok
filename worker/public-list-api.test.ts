@@ -13,7 +13,7 @@ import {
   PublicListApiError,
 } from './public-list-api.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 
 const UID = 'alice-uid';

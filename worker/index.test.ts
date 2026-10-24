@@ -8,17 +8,17 @@ import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { encodePaperKey } from '../src/utils/publicNavigation.ts';
-import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publicationStatus.ts';
+import { encodePaperKey } from '../src/utils/public-navigation.ts';
+import { OPENALEX_PEER_REVIEWED_FILTER } from '../src/utils/publication-status.ts';
 import reportApi from './index.ts';
 import { PaperRewriteSession } from './ai-rewrite-session.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
 import { fetchWithDeadline, OPENALEX_HARVEST_DAILY_UNITS, OPENALEX_NEW_FOLLOWS_DAILY_UNITS, OPENALEX_OBSERVATION_MARGIN, OPENALEX_TIER_PERCENT, OPENALEX_UNIT_USD, readOpenAlexBudget } from './provider-runtime.ts';
 import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.ts';
-import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import type { WorkerEnv } from './env.ts';
 
 async function withWorkerFetchMock<Result>(fetchImplementation: typeof fetch, callback: () => Promise<Result>) {

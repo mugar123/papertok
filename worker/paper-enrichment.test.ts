@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
-import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { OPENALEX_TIER_PERCENT } from './provider-runtime.ts';
 
