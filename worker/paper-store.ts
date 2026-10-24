@@ -32,7 +32,7 @@ export type EmbeddingEnv = {
 export const CORPUS_DAYS = 90;
 // A liked paper the feed ranks by stays this long after a reader last did.
 export const KEEP_LIKED_DAYS = 30;
-const FEED_CANDIDATE_LIMIT = 4_000;
+export const FEED_CANDIDATE_LIMIT = 4_000;
 // At least this many of every JOURNAL_FLOOR_WINDOW ranks are articles of an
 // area's journal lane while the asked lanes hold any, and more where the
 // ranking puts more (PAP-107). OpenAlex dates an article by its day alone,
