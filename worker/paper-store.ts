@@ -44,9 +44,10 @@ const FEED_PAGE_SIZE = 15;
 // preprints.
 const JOURNAL_FLOOR = 3;
 // The area lanes a page reads share at most this many candidates, beside the
-// asked lanes' FEED_CANDIDATE_LIMIT rather than out of it: as a lane's share
-// of those, one area lane cut a single category's candidates to the newest
-// half. The floor's 3 ranks in 15 of a ranking as long as the asked lanes'.
+// asked lanes' FEED_CANDIDATE_LIMIT rather than out of it: counted as one of
+// the asked lanes, a single area lane would leave a one-category reader the
+// newest half of their own candidates. It is the floor's 3 ranks in 15 of a
+// ranking as long as the asked lanes'.
 const AREA_CANDIDATE_LIMIT = FEED_CANDIDATE_LIMIT * JOURNAL_FLOOR / FEED_PAGE_SIZE;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
