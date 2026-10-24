@@ -88,6 +88,15 @@ test('el aviso de correo solo sale cuando el servicio ha nombrado el problema', 
   );
 });
 
+test('a health check the Worker refused to run announces no email outage', () => {
+  // `/health/email` answers this code without asking Resend once the window's
+  // live probes are spent, so nothing is known about the provider.
+  assert.equal(
+    emailNudgeProblem({ loading: false, health: { configured: false, available: false, code: 'HEALTH_PROBE_LIMITED' } }),
+    null,
+  );
+});
+
 test('un servicio sano no tiene nada que avisar', () => {
   assert.equal(emailNudgeProblem({ loading: false, health: { configured: true, available: true, code: null } }), null);
   assert.equal(

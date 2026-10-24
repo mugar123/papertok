@@ -75,9 +75,10 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
  * not heard back" looks like. Reading that as a fault would announce an outage
  * to everyone on every cold load, including when the health request never
  * lands. And a service that says it is available is believed, whatever else it
- * reports.
+ * reports. `HEALTH_PROBE_LIMITED` means the Worker refused to run the check, so
+ * the status is unknown rather than a fault.
  */
 export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}) {
-  if (loading || !health?.code || health.available === true) return null;
+  if (loading || !health?.code || health.available === true || health.code === 'HEALTH_PROBE_LIMITED') return null;
   return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
 }

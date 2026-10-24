@@ -138,6 +138,9 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
 
   const toggleDisabled = loading || (!health.available && !draft.enabled) || (!hasFollows && !draft.enabled);
   const optionsDisabled = !draft.enabled || loading;
+  // The Worker refused to run the check, so nothing is known about the provider.
+  const statusUnknown = !loading && health.code === 'HEALTH_PROBE_LIMITED';
+  const providerDown = !loading && !health.available && !statusUnknown;
 
   // On a phone the same content is a bottom sheet, like the other sheets
   // Settings opens; the handle and a swipe take the place of the X.
@@ -146,7 +149,7 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
   const content = (
     <>
       <header>
-        <div className={`email-notification-icon${!loading && !health.available ? ' is-down' : ''}`}><Envelope size={20} aria-hidden="true" /></div>
+        <div className={`email-notification-icon${providerDown ? ' is-down' : ''}`}><Envelope size={20} aria-hidden="true" /></div>
         <div>
           <Title>{'Email updates'}</Title>
           <Description>{'Receive a weekly digest even when PaperTok is closed.'}</Description>
@@ -154,7 +157,13 @@ export default function EmailNotificationModal({ isOpen, onClose }: { isOpen: bo
       </header>
 
       <div className="email-notification-body" data-base-ui-swipe-ignore="">
-        {!loading && !health.available && (
+        {statusUnknown && (
+          <div className="email-notification-provider-warning is-info">
+            <strong>{'Email status unknown'}</strong>
+            <span>{'PaperTok could not check the email service just now. Reload the page in a few minutes to check again.'}</span>
+          </div>
+        )}
+        {providerDown && (
           <div className="email-notification-provider-warning">
             <strong>{'Email updates unavailable'}</strong>
             <span>{health.code === 'EMAIL_PROVIDER_AUTH_FAILED'

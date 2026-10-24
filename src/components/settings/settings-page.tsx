@@ -182,6 +182,14 @@ function emailStatus(preferences: ReturnType<typeof useEmailNotifications>['pref
       tone: 'neutral',
     };
   }
+  // The Worker refused to run the check, so nothing is known about the provider.
+  if (health.code === 'HEALTH_PROBE_LIMITED') {
+    return {
+      label: 'Unknown',
+      description: 'PaperTok could not check the email service just now',
+      tone: 'neutral',
+    };
+  }
   if (!health.available) {
     return {
       label: 'Unavailable',
