@@ -431,7 +431,7 @@ function DiscoveryPage() {
             <div className="settings-row-content">
               <h3 className="settings-row-title-line">
                 {copy.followedContent}{' '}
-                {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">{followedEntities.length}</span>}
+                {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">({followedEntities.length})</span>}
               </h3>
               <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
@@ -440,7 +440,7 @@ function DiscoveryPage() {
 
           <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">{selectedInterestCount}</span></h3>
+              <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">({selectedInterestCount})</span></h3>
               <p>{copy.interestsDescription}</p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
