@@ -36,9 +36,10 @@ test('SOURCE: a reset asked to keep the visible card merges the fresh page below
   const resetBranch = bounded(code, 'const addPage = (shown: Paper[]) => {', 'const nextHasMore =', 'the reset branch of loadPapers', 20);
   assert.match(
     resetBranch,
-    /if \(reset\) \{\s*return keepThroughVisible\s*\?\s*mergeFreshFeedPage\(shown, filtered, \{\s*anchorPaperIds: \[visiblePaperIdRef\.current\],?\s*\}\)\s*:\s*filtered;/,
-    'through the visible card the list stays; the fresh page follows',
+    /const kept = !reset \? shown\s*: keepThroughVisible \? mergeFreshFeedPage\(shown, \[\], \{\s*anchorPaperIds: \[visiblePaperIdRef\.current\],?\s*\}\) : \[\];/,
+    'through the visible card the list stays',
   );
+  assert.match(resetBranch, /return \[\.\.\.kept, \.\.\./, 'the fresh page follows');
 });
 
 test('SOURCE: the automatic retry after a failed reset keeps the option', async () => {
