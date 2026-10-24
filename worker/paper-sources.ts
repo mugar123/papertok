@@ -17,12 +17,14 @@ import {
 } from '../src/services/domain-source-records.ts';
 import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
+import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
+import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
 import { handleArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
 import { handleCore, handleEuropePmc, handleHuggingFacePapers, handleNasa, handleOpenReview, handleOsti, handlePubmed } from './source-api.ts';
-import { CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, database, daysFromNow, findWorks, ingestPapers, keepLiked, notableSince, publishedOf } from './paper-store.ts';
+import { AREA_LANE_AREAS, CORPUS_DAYS, FEED_CANDIDATE_LIMIT, NOTABLE_LANE_PREFIX, PaperStoreError, WORKING_PAPERS_LANE, areaLane, database, daysFromNow, findWorks, ingestPapers, keepLiked, notableSince, publishedOf } from './paper-store.ts';
 import { parseXmlDocument } from './xml-dom.ts';
 
 // Every source the feed reads, asked once a day for what it added to each
@@ -311,9 +313,15 @@ export const WORKING_PAPER_SERIES_IDS = [
   'S4210212089', // Federal Reserve Board, Finance and Economics Discussion Series
 ];
 
+// Subfields an area lane leaves out although the area's label covers them,
+// because the area's arXiv readers do not read them: Biomedical Engineering
+// was 60 of electrical engineering's 200 newest articles on 2026-10-23,
+// sensor materials, biomass conversion and tissue scaffolds among them.
+const AREA_LANE_LEFT_OUT: Readonly<Record<string, readonly string[]>> = { eess: ['2204'] };
+
 export type SourceName =
-  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-notable' | 'openalex-series' | 'openalex-follows' | 'openaire'
-  | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
+  | 'arxiv-search' | 'pubmed' | 'openalex-topics' | 'openalex-notable' | 'openalex-areas' | 'openalex-series' | 'openalex-follows'
+  | 'openaire' | 'biorxiv' | 'europepmc' | 'core' | 'osti' | 'nasa' | 'physics' | 'openreview' | 'huggingface';
 
 // `newFollow`: a lane harvested by the run a new follow started (paper-feed.ts).
 export interface LaneJob { source: SourceName; lane: string; newFollow?: boolean }
@@ -334,9 +342,10 @@ interface SourceSpec {
   // them: a followed entity's, and the specialist sources', whose first pages
   // the feed showed as they came (NASA's reports, CORE's repositories).
   keepsOld?: boolean;
-  // Lanes whose listing is OpenAlex's current record of each paper it keeps
+  // Lanes whose listing is OpenAlex's current record of each paper it returns
   // (the notable lanes' weekly one): it brings their counts, so the
-  // enrichment's refresh (paper-enrichment.ts REFRESH_DAYS) passes over them.
+  // enrichment's refresh (paper-enrichment.ts REFRESH_DAYS) passes over the
+  // papers a run filed, which a notable lane's rows record (`listed_until`).
   renewsEnrichment?: boolean;
   // A pause before each request, for a source that limits its pace rather
   // than its day (CORE allows a few requests every ten seconds).
@@ -510,7 +519,9 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   // Kept whatever their age (`keepsOld`): each week's listing renews them
-  // before KEPT_LISTING_DAYS run out, and one that drops out of the list leaves.
+  // before KEPT_LISTING_DAYS run out. One that drops out of the list leaves the
+  // lane when they do, even when a like or its date keeps it in the corpus
+  // (paper-store.ts `evictExpired`).
   'openalex-notable': {
     firstPages: 1, dailyPages: 1, dated: false, overlapDays: 0, keepsOld: true, renewsEnrichment: true,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -520,6 +531,28 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: NOTABLE_PER_LANE, sort: 'cited_by_count:desc', part: 'categories' }),
+  },
+  // The newest journal articles of a whole area, filed under the area. On
+  // 2026-10-23 a page of 200 with an abstract held the last one or two days of
+  // each area but finance's nine: about 22 (finance) to 370 (electrical
+  // engineering) a day. In the 90 days before, 23 % (statistics, economics) to
+  // 39 % (mechanical engineering) of the articles had none. So a night reads
+  // one page, the newest 200: one list call an area. Unlike the topic lanes,
+  // the area lanes take an article without an abstract (PAP-107); its card
+  // says it has none. OpenAlex lists IMF, Federal Reserve Board and Fed bank
+  // working papers as core journal articles; their cards say Working paper,
+  // so the lane leaves out the review rule's series.
+  'openalex-areas': {
+    firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
+    fetchPage: (env, { lane, page }) => openAlexLane(env, [
+      openAlexLabelFilterForArea(lane.slice('area:'.length)),
+      ...(AREA_LANE_LEFT_OUT[lane.slice('area:'.length)] || []).map(id => `primary_topic.subfield.id:!${id}`),
+      windowFilter(),
+      'type:article',
+      'is_retracted:false',
+      'primary_location.source.is_core:true',
+      OPENALEX_NOT_LISTED_SERIES_FILTER,
+    ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
   'openalex-series': {
     firstPages: 4, dailyPages: 2, dated: true, overlapDays: 14,
@@ -573,6 +606,7 @@ export function categoryLaneJobs(): LaneJob[] {
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
     ...TOPIC_LEAVES.map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
+    ...AREA_LANE_AREAS.map(area => ({ source: 'openalex-areas' as const, lane: areaLane(area) })),
   ];
   for (const leaf of LEAVES) {
     const plan = getDomainSourcePlan([leaf.id]);
@@ -640,12 +674,17 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
     stored += await ingestPapers(env, result.items, { keepUntil, now });
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
   }
-  // The papers this listing kept (their keeping date is its own) now carry
-  // OpenAlex's counts of today. One never enriched still gets its first
-  // enrichment, which also asks Crossref its type.
+  // Only the papers this run's pages filed in the lane carry OpenAlex's counts
+  // of today: their lane rows hold this run's keeping date (paper-store.ts
+  // `listed_until`), under the work each was filed or merged into. A record
+  // ingestPapers turned away (a placeholder title, a type the feed does not
+  // show) filed nothing, and one the listing no longer returns keeps its
+  // enrichment date however long the corpus keeps it (a recent paper, a liked
+  // one), so the refresh still comes for both. One never enriched still gets
+  // its first enrichment, which also asks Crossref its type.
   if (spec.renewsEnrichment) {
-    await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0 AND kept_until >= ?
-      AND id IN (SELECT work_id FROM work_lanes WHERE lane = ?)`).bind(new Date(now).toISOString(), keepUntil, lane).run();
+    await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
+      AND id IN (SELECT work_id FROM work_lanes WHERE lane = ? AND listed_until >= ?)`).bind(new Date(now).toISOString(), lane, keepUntil).run();
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
     ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, new Date(now).toISOString()).run();

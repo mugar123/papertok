@@ -5,8 +5,8 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
-import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired } from './paper-store.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
@@ -20,6 +20,8 @@ import { readPubmedEfetch } from '../src/utils/pubmed-efetch.ts';
 import { areaLabelForPaper, leavesForOpenAlexTopic, openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { getCategoryArea } from '../src/data/category-taxonomy.ts';
 import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { feedSeenFilter } from '../src/utils/seen-paper-filter.ts';
 
 // Captured from oaipmh.arxiv.org (ListRecords, arXivRaw, set=cs) on 2026-10-22,
 // trimmed to one record, its abstract shortened, plus a deleted record.
@@ -374,6 +376,124 @@ test('the 14 inherited leaves keep their lanes and the topics accepted in #236',
     'd712fc6dd9b51123876e8bbf61022a0172cde893fa03bb7aa394bfa16cd14d5f');
 });
 
+// ─── Journal articles of a whole area (PAP-107) ───
+
+// OpenAlex W7223244690 as returned on 2026-10-23 to the physics area's newest
+// articles (trimmed, abstract shortened): a closed article with no free copy.
+const closedPhysicsArticle = {
+  id: 'https://openalex.org/W7223244690',
+  doi: 'https://doi.org/10.7566/jpsj.95.111002',
+  title: 'High-harmonic Generation Spectroscopy in van der Waals Materials: Accessing Bloch Wavefunctions and Their Scattering Processes',
+  type: 'article',
+  publication_date: '2026-10-23',
+  publication_year: 2026,
+  authorships: [{ author: { id: 'https://openalex.org/A5102845839', display_name: 'Kento Uchida' }, institutions: [{ id: 'https://openalex.org/I22299242', display_name: 'Kyoto University' }] }],
+  abstract_inverted_index: invertedIndex('High-harmonic generation (HHG) has emerged as a promising tool for probing femtosecond-to-attosecond electron dynamics in crystalline solids.'),
+  primary_location: {
+    is_oa: false,
+    landing_page_url: 'https://doi.org/10.7566/jpsj.95.111002',
+    version: 'publishedVersion',
+    is_published: true,
+    source: { id: 'https://openalex.org/S119212824', display_name: 'Journal of the Physical Society of Japan', type: 'journal', is_core: true },
+  },
+  locations: [],
+  open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+  cited_by_count: 0,
+  primary_topic: {
+    id: 'https://openalex.org/T10566',
+    display_name: 'Laser-Matter Interactions and Applications',
+    subfield: { id: 'https://openalex.org/subfields/3107', display_name: 'Atomic and Molecular Physics, and Optics' },
+    field: { id: 'https://openalex.org/fields/31', display_name: 'Physics and Astronomy' },
+    domain: { id: 'https://openalex.org/domains/3', display_name: 'Physical Sciences' },
+  },
+};
+
+test("an area's journal lane asks OpenAlex for the core journal articles labelled as that area, with or without an abstract, and files them under the area, paywall and review as recorded", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  // The same article as OpenAlex lists one whose abstract it does not hold.
+  const withoutAbstract = { ...closedPhysicsArticle, id: 'https://openalex.org/W7223244691', doi: 'https://doi.org/10.7566/jpsj.95.111003', abstract_inverted_index: null };
+  const { urls, env } = relay(t, () => ({ results: [closedPhysicsArticle, withoutAbstract] }));
+  const { items } = await SOURCES['openalex-areas'].fetchPage(env, { lane: 'area:physics', page: 1, since: '', waits: { seconds: 0 } });
+  const [url] = urls;
+  for (const filter of ['primary_topic.field.id:31', 'type:article', 'is_retracted:false', 'primary_location.source.is_core:true', 'from_publication_date:2026-07-25', 'to_publication_date:2026-10-23']) {
+    assert.ok(filtersOf(url).includes(filter), filter);
+  }
+  assert.equal(filtersOf(url).some(filter => filter.startsWith('has_abstract')), false, 'an article without an abstract is listed too');
+  assert.equal(url.searchParams.get('sort'), 'publication_date:desc');
+  assert.equal(url.searchParams.has('search'), false);
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223244690', ['area:physics']], ['openalex:W7223244691', ['area:physics']]]);
+  assert.equal(hasUsableAIAbstract(items[1].paper.abstract), false, 'its abstract stays unknown');
+  const [{ paper }] = items;
+  // What the card's access chip reads (paper-status.ts): an explicit `false`,
+  // and no arXiv copy or PDF to call it open.
+  assert.deepEqual([paper.openAccess, paper.arxivId, paper.pdfUrl], [false, undefined, null]);
+  assert.equal(paper.peerReviewed, true, 'a journal article, by the review rule');
+  assert.equal(paper.workingPaper, undefined);
+  assert.equal(areaLabelForPaper(paper), 'Physics');
+  assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), [], 'no leaf is claimed for it');
+
+  // Engineering is read as electrical engineering unless a subfield names
+  // mechanical or civil work, and Economics as economics unless it is finance:
+  // each lane asks for what its label reads, and no paper twice. Electrical
+  // engineering's lane also leaves out Biomedical Engineering (2204), 60 of its
+  // 200 newest on 2026-10-23: sensor materials, biomass conversion, tissue
+  // scaffolds and cancer nanomedicine among them.
+  const areaFilters = async (lane: string) => {
+    await SOURCES['openalex-areas'].fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 } });
+    return filtersOf(urls.at(-1)!).filter(filter => filter.startsWith('primary_topic.')).sort();
+  };
+  assert.deepEqual(await areaFilters('area:eess'), [
+    'primary_topic.field.id:22',
+    ...['2202', '2203', '2204', '2205', '2206', '2210', '2211', '2212', '2215'].map(id => `primary_topic.subfield.id:!${id}`),
+  ]);
+  assert.deepEqual(await areaFilters('area:mech'), ['primary_topic.subfield.id:2202|2203|2206|2210|2211']);
+  assert.deepEqual(await areaFilters('area:econ'), ['primary_topic.field.id:20', 'primary_topic.subfield.id:!2003']);
+  assert.deepEqual(await areaFilters('area:q-fin'), ['primary_topic.subfield.id:2003']);
+});
+
+test("an area's journal lane leaves out the working-paper series OpenAlex lists as core journal articles, whose cards say Working paper", async t => {
+  // The listed series that held such articles in economics' and finance's
+  // 90 days to 2026-10-24: 64 of economics' 8,538 and 31 of finance's.
+  const series = [
+    { id: 'S4210171147', display_name: 'IMF Working Papers' },
+    { id: 'S4210225578', display_name: 'FEDS Notes' },
+    { id: 'S4210212089', display_name: 'Finance and Economics Discussion Series' },
+    FRBSF,
+    { id: 'S4210173933', display_name: 'Federal Reserve Bank of Kansas City, Research Working Papers' },
+  ];
+  const { urls, env } = relay(t, () => ({ results: [] }));
+  for (const lane of ['area:econ', 'area:q-fin', 'area:physics']) {
+    await SOURCES['openalex-areas'].fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 } });
+    const filters = filtersOf(urls.at(-1)!);
+    for (const source of series) {
+      assert.equal(mapOpenAlexWork(seriesWork('W1', '10.1/w1', 'article', source, null))?.workingPaper, true, `an article of ${source.display_name} is a working paper`);
+      assert.ok(filters.includes(`primary_location.source.id:!${source.id}`), `${lane} leaves out ${source.display_name}`);
+    }
+  }
+});
+
+// Statistics' label covers OpenAlex's Decision Sciences: of its 200 newest
+// articles on 2026-10-23, 107 were operations research and 40 information
+// systems, all labelled Statistics.
+test('the areas the feed fills from arXiv get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
+  const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
+  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
+});
+
+// The cost of the lanes: one list call an area a night, two on a lane's first run.
+test("an area's journal lane asks one page of 200 a night, and two on its first run", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const page = (number: number) => Array.from({ length: 200 }, (_, index) => ({
+    ...closedPhysicsArticle, id: `https://openalex.org/W${number}${String(index).padStart(3, '0')}`, doi: `https://doi.org/10.1/${number}.${index}`, title: `Journal article ${number}-${index} on high-harmonic spectroscopy`,
+  }));
+  const { urls, env } = relay(t, url => ({ results: page(Number(url.searchParams.get('page'))) }));
+  const { binding } = testD1();
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.deepEqual(urls.map(url => [url.searchParams.get('page'), url.searchParams.get('per-page')]), [['1', '200'], ['2', '200']]);
+  await harvestLane({ ...env, PAPER_STORE: binding }, { source: 'openalex-areas', lane: 'area:physics' });
+  assert.equal(urls.length, 3, 'a later run reads the newest page only');
+});
+
 test('a lane pages until the source reaches what the last run had, and records how far it got', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
   const work = (id: string, date: string) => ({ ...splicingWork, id: `https://openalex.org/${id}`, doi: `https://doi.org/10.1/${id}`, title: `Paper ${id}`, publication_date: date });
@@ -641,13 +761,16 @@ test("category and notable lanes stop at 3,000 of the harvest's OpenAlex units, 
   const topics = () => SOURCES['openalex-topics'].fetchPage(env, { ...request, lane: 'bio.mol' });
   const series = () => SOURCES['openalex-series'].fetchPage(env, { ...request, lane: 'series:working-papers' });
   const notable = () => SOURCES['openalex-notable'].fetchPage(env, { ...request, lane: 'notable:cs.CV' });
+  const area = () => SOURCES['openalex-areas'].fetchPage(env, { ...request, lane: 'area:physics' });
 
-  for (let call = 0; call < 2_998; call += 1) await topics();
+  for (let call = 0; call < 2_997; call += 1) await topics();
   await series();
   await notable();
+  await area();
   await assert.rejects(topics(), SourceRefused);
   await assert.rejects(series(), SourceRefused);
   await assert.rejects(notable(), SourceRefused);
+  await assert.rejects(area(), SourceRefused);
   assert.equal(openAlexCalls(), 3_000);
 
   // The nightly refresh's 700 and the new follows' 300, ten units a search.
@@ -832,6 +955,120 @@ test("a notable lane's weekly listing renews its papers' counts, so the enrichme
   // The new paper still gets its first enrichment: Crossref's type for its DOI.
   const typed = urls.filter(url => url.hostname === 'api.crossref.org').flatMap(url => url.searchParams.get('filter')!.split(','));
   assert.deepEqual(typed.sort(), ['doi:10.5555/joined-the-hundred', 'doi:10.5555/left-the-hundred']);
+});
+
+test("a notable lane's listing renews only the papers it returned, though the corpus keeps one it dropped for longer", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // Synthetic variants of the recorded work. A recent article is kept 90 days
+  // from its date, past the listing's 14.
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
+  const newcomer = { ...plsiWork, id: 'https://openalex.org/W1000000002', doi: 'https://doi.org/10.5555/joined-the-hundred', title: 'An article that has joined the most-cited hundred' };
+  let listing: unknown[] = [plsiWork, recent];
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  // That night's enrichment.
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  // A week on, the listing names the older one again and a new one, not the recent one.
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  listing = [plsiWork, newcomer];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000003': enriched,
+    'openalex:W1000000002': null,
+  });
+
+  // A listing that returns nothing renews nothing.
+  t.mock.timers.setTime(next + 7 * DAY);
+  listing = [];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next + 7 * DAY);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000003': enriched,
+    'openalex:W1000000002': null,
+  });
+});
+
+test("a notable lane's listing renews the row a record merged into, and not one whose record it turned away", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // The recorded work's arXiv version, looked up for a reader: OpenAlex's
+  // record shares its DOI. A synthetic variant of the recorded work that
+  // OpenAlex lists a week later with a placeholder title.
+  const arxiv = arxivRecordPaper({
+    arxivId: '1301.6705', title: 'Probabilistic Latent Semantic Indexing', abstract: 'Probabilistic Latent Semantic Indexing is a novel approach to automated document indexing.',
+    authors: ['Thomas Hofmann'], categories: ['cs.IR'], doi: '10.1145/3130348.3130370', journalRef: null, comments: null,
+    published: '2013-01-23T12:00:00.000Z', updated: '2013-01-23T12:00:00.000Z',
+  });
+  const untitledLater = { ...plsiWork, id: 'https://openalex.org/W1000000004', doi: 'https://doi.org/10.5555/untitled-later', title: 'An article OpenAlex lists without its title a week later' };
+  let listing: unknown[] = [plsiWork, untitledLater];
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await ingestPapers(store, [{ paper: arxiv, lanes: [] }], { keepUntil: daysFromNow(KEEP_LIKED_DAYS, first), now: first });
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  listing = [plsiWork, { ...untitledLater, title: 'Untitled', cited_by_count: 9999 }];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  // The stored record keeps last week's count, so the refresh still comes for it.
+  assert.deepEqual(enrichedAt(), { '1301.6705': new Date(next).toISOString(), 'openalex:W1000000004': enriched });
+});
+
+test('a notable lane drops a paper 14 days after the listing that last returned it, though a like or its date keeps it in the corpus', async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // Synthetic variants of the recorded work: an older one a reader liked, and
+  // a recent one its category lane also holds, kept 90 days from its date.
+  const liked = { ...plsiWork, id: 'https://openalex.org/W1000000001', doi: 'https://doi.org/10.5555/left-the-hundred', title: 'An article that has left the most-cited hundred' };
+  const recent = { ...plsiWork, id: 'https://openalex.org/W1000000003', doi: 'https://doi.org/10.5555/recent-and-cited', title: 'A recent article cited enough to make the hundred', publication_date: '2026-10-01', publication_year: 2026 };
+  let listing: unknown[] = [plsiWork, liked, recent];
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const lane = { source: 'openalex-notable' as const, lane: 'notable:cs.CV' };
+  await ingestPapers(store, [{ paper: mapOpenAlexWork(recent)!, lanes: ['cs.CV'] }], { now: first });
+  await harvestLane(store, lane, first);
+  const likedWorks = [...(await findWorks(binding, ['openalex:W1000000001'])).values()];
+  const ids = (sql: string) => (db.prepare(sql).all() as Array<{ id: string }>).map(row => row.id).sort();
+  const members = () => ids("SELECT w.paper ->> '$.id' AS id FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'notable:cs.CV'");
+
+  // From the next week the listing names only the first. A reader keeps
+  // ranking their feed by the one they liked.
+  listing = [plsiWork];
+  for (const days of [7, 14]) {
+    const night = first + days * DAY;
+    t.mock.timers.setTime(night);
+    await harvestLane(store, lane, night);
+    await keepLiked(binding, likedWorks, night);
+    await evictExpired(store, night);
+  }
+  assert.deepEqual(members(), ['openalex:W1000000001', 'openalex:W1000000003', 'openalex:W2107743791'], 'two weeks unlisted, still in the lane');
+  const now = first + 15 * DAY;
+  t.mock.timers.setTime(now);
+  await evictExpired(store, now);
+  assert.deepEqual(members(), ['openalex:W2107743791']);
+  assert.deepEqual(ids("SELECT paper ->> '$.id' AS id FROM works"), ['openalex:W1000000001', 'openalex:W1000000003', 'openalex:W2107743791'], 'the corpus keeps them');
+
+  // Another reader of cs.CV, who has seen nothing, is offered only the listed one as a notable card.
+  const page = await readFeedPage(store, parseFeedRequest({ categories: ['cs.CV'], pageSize: 15, seen: feedSeenFilter([]), notable: 3 }), { now });
+  assert.deepEqual(page.map(paper => [paper.id, paper._notable === true]), [['openalex:W1000000003', false], ['openalex:W2107743791', true]]);
 });
 
 test('every admitted leaf has a notable lane, asked again once a week has passed', async () => {

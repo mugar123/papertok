@@ -111,6 +111,16 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
 separate bounded steps; the diagram summarizes the resulting data flow.
 
+Area lanes (`area:<area>`) hold OpenAlex journal articles labeled with an area
+rather than one of its leaves. [paper-store.ts](worker/paper-store.ts) adds them
+to the candidates of a request that asks for the area's leaves and no follows,
+and keeps part of each feed page for them. After embedding,
+[leaf-filing.ts](worker/leaf-filing.ts) removes an article from its area lane
+once a leaf of the area holds it; in an area with a calibrated rule, it also
+files articles under the leaf their vectors match.
+[The paper-store contract](worker/README.md#paper-store) gives the areas,
+candidate limits and page floor.
+
 [paper-store-service.ts](src/services/paper-store-service.ts) requests corpus
 pages. Each page says which papers the reader has seen, as a Bloom filter, and
 asks the Worker to pass over them: [paper-store.ts](worker/paper-store.ts)
