@@ -2340,7 +2340,7 @@ export default function EntityExplorer({
                 <div className="ehc-author-institution-wrap">
                   <span className="ehc-author-institution ehc-author-institution--unknown">
                     <Buildings size={15} aria-hidden="true" />
-                    <span>{'Institution unknown'}</span>
+                    <span>{'Unknown institution'}</span>
                   </span>
                 </div>
               )}

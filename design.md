@@ -275,6 +275,9 @@ the voice of an index set by hand.
 - **Body UI** (400, 0.875rem, 1.5): controls, menus, form text.
 - **Label** (600, 0.6875rem, tracking 0.06em, uppercase): every small mono
   label — `font: var(--mono-label); letter-spacing: var(--mono-track);`.
+  A status badge (Settings' `.settings-status`: On, Off, Checking,
+  Unavailable) keeps the label's size and weight in sentence case, without the
+  tracking: it reads as a word, not a heading.
 
 The scale tokens are `--fs-xs … --fs-5xl`, weights `--fw-regular … bold`, line
 heights `--lh-tight / normal / relaxed`.
@@ -469,6 +472,13 @@ topics and funding are ruled rows, the field's rule in its ink and its topics'
 in a lighter one. Its heading and sections come in from the right one after
 another, and the back arrow brings the actions in from the left; opening the
 menu moves nothing inside it.
+
+Follow (`ui/follow-toggle.tsx`) speaks the rail's language wherever an author,
+institution, project or topic can be followed: the Explorer header, beside a
+Share glyph drawn the same way in the neutral rail, and search results. It is
+an icon alone at every width, a 24px `UserCirclePlus` in `--accent-sky` on a
+40px tap area, a `UserCircleMinus` filled once followed, pulsing on the press
+like Like and Save; "Follow" is its name and its `title` says Following once on.
 
 ### Status Screens (signature)
 An error, a not-found or an empty result is a glyph on a `56px` tinted square
