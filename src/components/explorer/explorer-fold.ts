@@ -15,8 +15,6 @@ const FOLD_OUT: Transition = {
   height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
 };
 
-// The rest of a list opening under its first rows and folding away again:
-// height and opacity, or opacity alone with reduced motion.
 export function foldMotion(reduce: boolean | null) {
   return {
     initial: reduce ? { opacity: 0 } : { opacity: 0, height: 0 },

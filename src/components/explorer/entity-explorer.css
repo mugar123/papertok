@@ -2323,10 +2323,7 @@
   }
 }
 
-/* ─── ORCID profile ───
-   The author's ORCID record as one box: career, about and links, each a
-   section under a rule. Records travelling in from past the edge (closing an
-   open career that scrolled) are clipped at the box, not drawn over the page. */
+/* ─── ORCID profile ─── */
 .orcid-profile {
   overflow: hidden;
   padding: var(--space-5);

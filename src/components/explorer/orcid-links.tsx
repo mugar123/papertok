@@ -19,8 +19,6 @@ function LinkRow({ link }: { link: Link }) {
   );
 }
 
-// The author's ORCID links, one per row: the first few, and the rest behind a
-// toggle that opens them the way the project participants open.
 export default function OrcidLinks({ links }: { links: Link[] }) {
   const id = useId();
   const [expanded, setExpanded] = useState(false);
