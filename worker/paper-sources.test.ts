@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
-import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
+import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
 import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -996,6 +996,38 @@ test("a notable lane's listing renews only the papers it returned, though the co
     'openalex:W1000000003': enriched,
     'openalex:W1000000002': null,
   });
+});
+
+test("a notable lane's listing renews the row a record merged into, and not one whose record it turned away", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // The recorded work's arXiv version, looked up for a reader: OpenAlex's
+  // record shares its DOI. A synthetic variant of the recorded work that
+  // OpenAlex lists a week later with a placeholder title.
+  const arxiv = arxivRecordPaper({
+    arxivId: '1301.6705', title: 'Probabilistic Latent Semantic Indexing', abstract: 'Probabilistic Latent Semantic Indexing is a novel approach to automated document indexing.',
+    authors: ['Thomas Hofmann'], categories: ['cs.IR'], doi: '10.1145/3130348.3130370', journalRef: null, comments: null,
+    published: '2013-01-23T12:00:00.000Z', updated: '2013-01-23T12:00:00.000Z',
+  });
+  const untitledLater = { ...plsiWork, id: 'https://openalex.org/W1000000004', doi: 'https://doi.org/10.5555/untitled-later', title: 'An article OpenAlex lists without its title a week later' };
+  let listing: unknown[] = [plsiWork, untitledLater];
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: listing } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await ingestPapers(store, [{ paper: arxiv, lanes: [] }], { keepUntil: daysFromNow(KEEP_LIKED_DAYS, first), now: first });
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  listing = [plsiWork, { ...untitledLater, title: 'Untitled', cited_by_count: 9999 }];
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  // The stored record keeps last week's count, so the refresh still comes for it.
+  assert.deepEqual(enrichedAt(), { '1301.6705': new Date(next).toISOString(), 'openalex:W1000000004': enriched });
 });
 
 test('a notable lane drops a paper 14 days after the listing that last returned it, though a like or its date keeps it in the corpus', async t => {

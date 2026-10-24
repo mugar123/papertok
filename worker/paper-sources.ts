@@ -345,7 +345,7 @@ interface SourceSpec {
   // Lanes whose listing is OpenAlex's current record of each paper it returns
   // (the notable lanes' weekly one): it brings their counts, so the
   // enrichment's refresh (paper-enrichment.ts REFRESH_DAYS) passes over the
-  // papers a run returned.
+  // papers a run filed, which a notable lane's rows record (`listed_until`).
   renewsEnrichment?: boolean;
   // A pause before each request, for a source that limits its pace rather
   // than its day (CORE allows a few requests every ten seconds).
@@ -666,29 +666,25 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   const since = reached ? daysFromNow(-spec.overlapDays, Date.parse(reached)) : daysFromNow(-CORPUS_DAYS, now);
   const keepUntil = spec.keepsOld ? daysFromNow(KEPT_LISTING_DAYS, now) : '';
   let stored = 0;
-  const listed: string[] = [];
   const pages = reached ? spec.dailyPages : spec.firstPages;
   const waits = { seconds: LANE_WAIT_SECONDS };
   for (let page = 1; page <= pages; page += 1) {
     if (spec.gapMs) await new Promise(resolve => setTimeout(resolve, spec.gapMs));
     const result = await spec.fetchPage(env, { lane, page, since, waits, newFollow });
     stored += await ingestPapers(env, result.items, { keepUntil, now });
-    listed.push(...result.items.flatMap(item => item.paper.id || []));
     if (!result.full || (spec.dated && result.newest && result.newest < since)) break;
   }
-  // Only the lane's papers this run's pages returned carry OpenAlex's counts of
-  // today: each is renewed under the work it was filed or merged into. One the
-  // listing no longer returns keeps its enrichment date, however long the
-  // corpus keeps it (a recent paper, a liked one), so the refresh still comes.
-  // One never enriched still gets its first enrichment, which also asks
-  // Crossref its type.
+  // Only the papers this run's pages filed in the lane carry OpenAlex's counts
+  // of today: their lane rows hold this run's keeping date (paper-store.ts
+  // `listed_until`), under the work each was filed or merged into. A record
+  // ingestPapers turned away (a placeholder title, a type the feed does not
+  // show) filed nothing, and one the listing no longer returns keeps its
+  // enrichment date however long the corpus keeps it (a recent paper, a liked
+  // one), so the refresh still comes for both. One never enriched still gets
+  // its first enrichment, which also asks Crossref its type.
   if (spec.renewsEnrichment) {
-    const workIds = [...new Set((await findWorks(db, listed)).values())];
-    if (workIds.length) {
-      await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
-        AND id IN (SELECT value FROM json_each(?)) AND id IN (SELECT work_id FROM work_lanes WHERE lane = ?)`)
-        .bind(new Date(now).toISOString(), JSON.stringify(workIds), lane).run();
-    }
+    await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
+      AND id IN (SELECT work_id FROM work_lanes WHERE lane = ? AND listed_until >= ?)`).bind(new Date(now).toISOString(), lane, keepUntil).run();
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)
     ON CONFLICT (source, lane) DO UPDATE SET harvested_through = excluded.harvested_through`).bind(source, lane, new Date(now).toISOString()).run();
