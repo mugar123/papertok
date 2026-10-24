@@ -3,7 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
-import { CORPUS_DAYS, daysFromNow, embedPending, evictExpired } from './paper-store.ts';
+import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
@@ -41,8 +41,9 @@ const FAILED_TURN_NIGHTS = [1, 2, 4, 7];
 // about 125): a lane that has started finishes within the step.
 const LANE_STEP_BUDGET_MS = 3 * 60_000;
 const LANES_PER_STEP = 5;
-// Backfill steps a lane gets a run; one that is done answers its later ones at once.
-const BACKFILL_STEPS = 3;
+// Sixty pages per lane per run, split into short steps so historical reads
+// release their Worker and D1 resources between groups of five pages.
+const BACKFILL_STEPS = 12;
 // A followed lane no request has written in this long (paper-feed.ts) is no
 // longer harvested.
 const FOLLOWED_LANE_DAYS = 14;
@@ -174,9 +175,9 @@ async function followedJobs(db: D1Database, now: number) {
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
 }
 
-async function embedAll(env: WorkerEnv, step: WorkflowStep, lanes?: string[]) {
+async function embedAll(env: WorkerEnv, step: WorkflowStep, lanes?: string[], phaseName = 'embed') {
   for (let batch = 0; ; batch += 1) {
-    const embedded = await step.do(`embed ${batch}`, PAGE_STEP, () => embedPending(env, EMBED_STEP_PAPERS, { lanes }));
+    const embedded = await step.do(`${phaseName} ${batch}`, PAGE_STEP, () => embedPending(env, EMBED_STEP_PAPERS, { lanes }));
     if (embedded === 0) break;
   }
 }
@@ -214,12 +215,13 @@ async function forgetFollowedLanes(db: D1Database, now: number) {
 /**
  * One run a day, as `PaperHarvestWorkflow` (instrumentation.ts): every arXiv
  * set harvested from where it last finished, every other source's lanes, the
- * notable lanes due their weekly listing, the lanes readers follow, the papers
- * past their keeping date removed, then enrichment and embedding of what
- * arrived within the day's budgets, and last the filing of the areas' journal
- * articles under leaves, which reads the vectors. A run for newly followed
- * lanes (`payload.lanes`) harvests those within the new follows' share of
- * OpenAlex and embeds only their papers: the rest of the corpus is the daily
+ * notable lanes due their weekly listing, the lanes readers follow, and
+ * embeddings before historical reads or maintenance. Each enriched batch is
+ * embedded before the next one; backfill has a final embedding pass within the
+ * same daily budget. Eviction follows them, and last the filing of the areas'
+ * journal articles under leaves, which reads the vectors. A run for newly
+ * followed lanes (`payload.lanes`) harvests those within the new follows' share
+ * of OpenAlex and embeds only their papers: the rest of the corpus is the daily
  * run's to embed.
  */
 export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEvent<{ lanes?: string[] } | undefined>>, step: WorkflowStep) {
@@ -269,6 +271,21 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
+  // Before eviction, which drops a notable paper two weeks after its last listing.
+  await phase('notable lanes', async () => runLaneJobs(env, step, 'notable', await step.do('notable lanes', () => notableLaneJobs(db, started))));
+  await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
+
+  await phase('enrich', async () => {
+    for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
+      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
+      for (let start = 0; start < enriched.workIds.length; start += EMBED_STEP_PAPERS) {
+        const ids = enriched.workIds.slice(start, start + EMBED_STEP_PAPERS);
+        await step.do(`embed enriched ${batch}:${start}`, PAGE_STEP, () => embedWorks(env, ids, undefined));
+      }
+      if (enriched.stop) break;
+    }
+  });
+  await phase('embed', () => embedAll(env, step));
   // Steps of a lane's backfillPages each, within an invocation's CPU and D1 queries.
   for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
     for (let round = 0; round < BACKFILL_STEPS; round += 1) {
@@ -276,21 +293,15 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
       if (!await phase(name, () => step.do(name, LANE_STEP, () => backfillLane(env, job)))) break;
     }
   }
-  // Before eviction, which drops a notable paper two weeks after its last listing.
-  await phase('notable lanes', async () => runLaneJobs(env, step, 'notable', await step.do('notable lanes', () => notableLaneJobs(db, started))));
-  await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
-  await phase('evict', () => step.do('evict', async () => {
-    await evictExpired(env, started);
-    await forgetFollowedLanes(db, started);
-  }));
-
-  await phase('enrich', async () => {
-    for (let batch = 0; batch < ENRICH_STEPS; batch += 1) {
-      const enriched = await step.do(`enrich ${batch}`, PAGE_STEP, () => enrichPending(env, ENRICH_STEP_PAPERS));
-      if (enriched === 0) break;
+  await phase('embed backfill', () => embedAll(env, step, undefined, 'embed backfill'));
+  await phase('evict', async () => {
+    let after: number | null = 0;
+    for (let batch = 0; after !== null; batch += 1) {
+      const cursor: number = after;
+      after = await step.do(`evict ${batch}`, PAGE_STEP, () => evictExpired(env, started, cursor));
     }
+    await step.do('forget followed lanes', () => forgetFollowedLanes(db, started));
   });
-  await phase('embed', () => embedAll(env, step));
   // Apart, so a failed recomputation still files by the last run's centroids.
   await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
   await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));

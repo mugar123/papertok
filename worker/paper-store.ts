@@ -39,19 +39,9 @@ export const FEED_CANDIDATE_LIMIT = 4_000;
 // The feed's page of corpus cards (FeedContext's PAGE_SIZE), and a request's
 // page when it names none.
 const FEED_PAGE_SIZE = 15;
-// At least this many of each page of the feed are articles of an area's
-// journal lane while the area lanes hold any, and more where the ranking
-// puts more (PAP-107). OpenAlex dates an article by its day alone, mostly the
-// day before the harvest, and that day sorts as its midnight, so newest first
-// the night's articles ranked behind a busy reader's whole day of arXiv
-// preprints.
-const JOURNAL_FLOOR = 3;
-// The area lanes a page reads share at most this many candidates, beside the
-// asked lanes' FEED_CANDIDATE_LIMIT rather than out of it: counted as one of
-// the asked lanes, a single area lane would leave a one-category reader the
-// newest half of their own candidates. It is the floor's 3 ranks in 15 of a
-// ranking as long as the asked lanes'.
-const AREA_CANDIDATE_LIMIT = FEED_CANDIDATE_LIMIT * JOURNAL_FLOOR / FEED_PAGE_SIZE;
+// Broad area candidates supplement the requested categories without taking
+// their retrieval budget. This bounds work, not the composition of a page.
+const AREA_CANDIDATE_LIMIT = 800;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_EXCLUDED = 200;
@@ -425,8 +415,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   for (const { from, into } of folded) {
     statements.push(
       db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, listed_until)
-        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?`).bind(into, from),
+      // A lane both rows are in keeps the later notable listing date.
+      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?
+        ON CONFLICT (lane, work_id) DO UPDATE SET listed_until = excluded.listed_until
+          WHERE excluded.listed_until > work_lanes.listed_until`).bind(into, from),
       db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
@@ -518,30 +511,48 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
  *   every paper its category trimmed. A later follow of that entity starts
  *   without those papers, until its own harvest lists them.
  */
-export async function evictExpired(env: StoreEnv, now = Date.now()) {
+// Each Workflow step scans at most 500 works, without loading their JSON.
+// The cursor is a primary key, so retries and deletions do not shift a page.
+export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): Promise<number | null> {
   const db = database(env);
   const cutoff = new Date(now).toISOString();
-  const { results: crowded } = await db.prepare('SELECT lane FROM work_lanes GROUP BY lane HAVING COUNT(*) > ?')
-    .bind(FEED_CANDIDATE_LIMIT).all<{ lane: string }>();
   const notableLanes = [...LEAF_IDS].map(leaf => `${NOTABLE_LANE_PREFIX}${leaf}`);
-  const trims = [
-    db.prepare('DELETE FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)) AND listed_until < ?').bind(JSON.stringify(notableLanes), cutoff),
-    ...crowded.map(({ lane }) => db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
-      SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT -1 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT)),
-  ];
-  for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
-  // Rows filed before publishedOf refused dates ahead leave too.
+  if (after === 0) {
+    await db.prepare('DELETE FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)) AND listed_until < ?')
+      .bind(JSON.stringify(notableLanes), cutoff).run();
+    const { results: crowded } = await db.prepare('SELECT lane FROM work_lanes GROUP BY lane HAVING COUNT(*) > ? LIMIT 10')
+      .bind(FEED_CANDIDATE_LIMIT).all<{ lane: string }>();
+    if (crowded.length) {
+      for (const { lane } of crowded) {
+        await db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
+          SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT 500 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT).run();
+      }
+      return 0;
+    }
+  }
   const ahead = new Date(now + DAY_MS).toISOString();
   const keeping = JSON.stringify([...LEAF_IDS, ...notableLanes, WORKING_PAPERS_LANE, ...AREA_LANE_AREAS.map(areaLane)]);
-  const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
-    AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id
-      AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes)))))`;
-  await db.batch([
-    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
-    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
-    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
-    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff, ahead, keeping),
-  ]);
+  const { results: scanned } = await db.prepare('SELECT id FROM works WHERE id > ? ORDER BY id LIMIT 500')
+    .bind(after).all<{ id: number }>();
+  if (scanned.length) {
+    const ids = JSON.stringify(scanned.map(row => row.id));
+    // Recheck retention inside the transaction: a like or harvest can arrive
+    // after the scan. Remove child rows only for works actually deleted.
+    await db.batch([
+      db.prepare(`DELETE FROM works WHERE id IN (SELECT value FROM json_each(?))
+        AND (liked_until IS NULL OR liked_until < ?) AND (kept_until < ? OR published > ?
+          OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
+            AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes))))`)
+        .bind(ids, cutoff, cutoff, ahead, keeping),
+      db.prepare(`DELETE FROM work_keys WHERE work_id IN (SELECT value FROM json_each(?))
+        AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_keys.work_id)`).bind(ids),
+      db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))
+        AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_vectors.work_id)`).bind(ids),
+      db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))
+        AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_lanes.work_id)`).bind(ids),
+    ]);
+  }
+  return scanned.length === 500 ? scanned.at(-1)!.id : null;
 }
 
 // ─── Embedding ───
@@ -656,11 +667,11 @@ export async function embedPending(env: StoreEnv, limit: number, { lanes }: { la
   return embedRows(env, rows, { subject: 'embedding:follows', tokens: FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS });
 }
 
-/** The given works that have no vector yet, embedded within the reader's share of today's budget. */
-export async function embedWorks(env: StoreEnv, workIds: number[], uid: string) {
+/** Embed these works within the daily budget; a reader's lookup also uses that reader's share. */
+export async function embedWorks(env: StoreEnv, workIds: number[], uid: string | undefined) {
   if (workIds.length === 0) return 0;
   const rows = await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length);
-  return embedRows(env, rows, { subject: `uid:${uid}`, tokens: READER_EMBEDDING_DAILY_TOKENS });
+  return embedRows(env, rows, uid === undefined ? undefined : { subject: `uid:${uid}`, tokens: READER_EMBEDDING_DAILY_TOKENS });
 }
 
 // ─── Reading ───
@@ -890,12 +901,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
     const shown = new Set(served.map(candidate => candidate?.workId));
     const ranked = await rankCandidates(db, lanes, query, now);
-    const fresh = ranked.ranks.filter(candidate => !shown.has(candidate.workId));
-    // Floored after the ranks served, so its windows start where a page does,
-    // and only for the feed's page: the app's exploration asks 2 to 8 cards of
-    // nearby categories, whose area lanes are the feed's own, and floored they
-    // would repeat the articles the feed's pages have placed.
-    ranking = [...served, ...(query.pageSize === FEED_PAGE_SIZE ? withJournalFloor(fresh) : fresh)];
+    ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
     notable = ranked.notable;
   }
   const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
@@ -1041,32 +1047,6 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
   };
-}
-
-/**
- * The order with at least JOURNAL_FLOOR area-lane articles in each page of
- * FEED_PAGE_SIZE ranks while any are left. The articles a page is owed take
- * its last ranks; every other candidate keeps its order. A journal article
- * filed under a leaf (a topic lane, PubMed) shares the leaf's lane with its
- * preprints, so only the area lanes' articles count here.
- */
-function withJournalFloor(ranked: RankedCandidate[]) {
-  const articles: number[] = [];
-  const others: number[] = [];
-  ranked.forEach((candidate, index) => (candidate.lanes.some(lane => AREA_LANES.has(lane)) ? articles : others).push(index));
-  if (articles.length === 0) return ranked;
-  const floored: RankedCandidate[] = [];
-  let [article, other, inWindow] = [0, 0, 0];
-  while (floored.length < ranked.length) {
-    const slot = floored.length % FEED_PAGE_SIZE;
-    if (slot === 0) inWindow = 0;
-    const owed = Math.min(JOURNAL_FLOOR - inWindow, articles.length - article);
-    const takesArticle = article < articles.length
-      && (other === others.length || owed >= FEED_PAGE_SIZE - slot || articles[article] < others[other]);
-    if (takesArticle) inWindow += 1;
-    floored.push(ranked[takesArticle ? articles[article++] : others[other++]]);
-  }
-  return floored;
 }
 
 // ─── Requests ───

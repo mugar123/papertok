@@ -190,7 +190,7 @@ function rankingCache(uid: string): RankingCache | undefined {
   const keyFor = async (key: string) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${uid}\n${key}`));
     const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-    return new Request(`https://papertok.internal/cache/store-ranking-v3/${hex}`);
+    return new Request(`https://papertok.internal/cache/store-ranking-v4/${hex}`);
   };
   return {
     async get(key) {
