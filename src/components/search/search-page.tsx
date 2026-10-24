@@ -255,13 +255,15 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     const scope = searchParams.get('scope');
     return SEARCH_FILTER_OPTIONS.find(option => option.id === scope)?.id ?? 'all';
   });
-  // The search and its scope live in the address too (replaced, never
-  // pushed), so Back from a result's page finds them again rather than an
-  // empty search.
-  useEffect(() => {
-    const term = query.trim();
-    setSearchParams(term ? { q: term, ...(activeSearchFilter !== 'all' && { scope: activeSearchFilter }) } : {}, { replace: true });
-  }, [query, activeSearchFilter, setSearchParams]);
+  // The search that runs and its scope live in the address too, so Back from
+  // a result's page finds them again rather than an empty search. Written once
+  // per search actually run (never per keystroke: browsers throttle
+  // replaceState), replacing the entry, and only when the address would change.
+  const writeSearchUrl = (term: string, scope: SearchScopeId) => {
+    const next = new URLSearchParams(term ? { q: term, ...(scope !== 'all' && { scope }) } : {});
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  };
+  const syncSearchUrl = useEffectEvent((term: string) => writeSearchUrl(term, activeSearchFilter));
   const [searchIssue, setSearchIssue] = useState<ReturnType<typeof describeSearchOutage>>(null);
 
   const [paperResults, setPaperResults] = useState<SearchResults['papers']>([]);
@@ -388,6 +390,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     if (!query.trim()) {
       requestRef.current?.controller.abort();
       const resetStateTimeout = setTimeout(() => {
+        syncSearchUrl('');
         clearResults();
         setIsSearching(false);
         setHasSearched(false);
@@ -401,6 +404,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
 
     timeoutRef.current = setTimeout(() => {
       void startSearch(query.trim());
+      syncSearchUrl(query.trim());
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
@@ -650,6 +654,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
   const handleSearchFilterChange = (filterId: SearchScopeId) => {
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
+    if (query.trim()) writeSearchUrl(query.trim(), filterId);
     // Only the answer for the scope on screen paints (search-page-run.ts).
     openSearchScope(requestRef.current, filterId, commit, () => setIsSearching(true));
   };

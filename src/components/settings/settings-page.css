@@ -250,9 +250,9 @@
   grid-column: 1;
 }
 
-/* ── Sign-in methods and the university: one line each, the name on the
-   left, the account or action on the right, on a phone too. The name keeps
-   its width and a long address ends in an ellipsis. ── */
+/* ── Sign-in methods: one line each, the name on the left, the account or
+   action on the right, on a phone too. The name keeps its width and a long
+   address ends in an ellipsis. ── */
 .settings-row.settings-row-inline {
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 56px;
@@ -284,6 +284,7 @@
   border-radius: var(--radius-full);
   background: var(--bg-primary);
   color: var(--text-tertiary);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;

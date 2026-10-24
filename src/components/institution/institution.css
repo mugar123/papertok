@@ -12,8 +12,6 @@
   background: var(--tint-blue-bg);
   color: var(--tint-blue-fg);
   font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
   vertical-align: middle;
   white-space: nowrap;
 }

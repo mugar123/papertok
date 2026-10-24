@@ -442,7 +442,7 @@
   border-radius: var(--radius-full);
   background: var(--bg-sunken);
   color: var(--text-tertiary);
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;

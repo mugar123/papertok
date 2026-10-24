@@ -1886,10 +1886,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             <p>{'Organize, annotate and share the papers you keep.'}</p>
           </header>
           <div className="lists-grid">
-            {/* The folders arrive in turn whenever the index opens: 40ms
-                apart, the delay capped at the sixth so a long grid is never
-                slow; opacity alone under reduced motion. A list just made
-                keeps its own entrance. */}
+            {/* The folders arrive in turn whenever the index opens, so the
+                grid does not land in one frame; the cap keeps a long grid
+                quick. A list just made keeps its own entrance. */}
             <AnimatePresence mode="popLayout">
             {displayLists.map((list, index) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
