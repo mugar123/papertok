@@ -1203,9 +1203,6 @@
   gap: var(--space-1);
 }
 
-/* Share beside Follow, in Follow's look (ui/follow-toggle.css): the feed's
-   glyph alone, here in the neutral rail. Doubled class: it has to outrank
-   the shared Button's size utilities. */
 .ehc-share.ehc-share {
   --rail: var(--text-secondary);
   width: 40px;
