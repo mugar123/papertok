@@ -275,8 +275,9 @@ export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
 }
 
 // Transient fields describe one fetch or one reader, never the paper.
+// `openAlex` is enrichment's copy of OpenAlex's answer, already merged into it.
 function storedPaper(paper: Paper): Paper {
-  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw')) as Paper;
+  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex')) as Paper;
   if (stored.authors?.length > STORED_AUTHORS) stored.authors = stored.authors.slice(0, STORED_AUTHORS);
   return stored;
 }
@@ -478,10 +479,11 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
   const followed = await followedLaneSet(db);
+  // Compared as stored: every OpenAlex merge adds back the payload a row drops.
   const changed = updates
-    .filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after))
-    .map(({ id, before, after }) => {
-      const paper = storedPaper(after);
+    .map(({ id, before, after }) => ({ id, before, paper: storedPaper(after) }))
+    .filter(({ before, paper }) => JSON.stringify(before) !== JSON.stringify(paper))
+    .map(({ id, before, paper }) => {
       const published = publishedOf(paper, now) || publishedOf(before, now);
       return {
         text: { id, paper: JSON.stringify(paper) },

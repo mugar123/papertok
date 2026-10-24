@@ -86,8 +86,8 @@ test('semantic and citation signals contribute to score', () => {
       id: 'paper-a',
       primaryCategory: 'cs.CL',
       published: '2025-01-01T00:00:00Z',
+      citationCount: 99,
       openAlex: {
-        cited_by_count: 99,
         concepts: [{ id: 'concept-1', score: 0.5 }],
       },
     },
@@ -157,7 +157,8 @@ test('every score component is bounded by its designed maximum', () => {
       primaryCategory: 'cs.AI',
       allCategories: ['cs.AI', 'cs.LG', 'cs.CL', 'cs.CV', 'cs.NE', 'stat.ML'],
       published: '2010-01-01T00:00:00Z',
-      openAlex: { cited_by_count: 5_000_000, concepts: extremeConcepts },
+      citationCount: 5_000_000,
+      openAlex: { concepts: extremeConcepts },
     },
     {
       now: NOW,
@@ -184,6 +185,16 @@ test('every score component is bounded by its designed maximum', () => {
   });
   assert.equal(learned.learnedAuthor, 30);
   assert.equal(learned.sessionInterest, 30);
+});
+
+test('the citation term reads the paper\'s own count, not the OpenAlex payload\'s', () => {
+  const profile = { now: NOW, categoryAffinities: {}, conceptAffinities: {}, temporalPreference: -1 };
+  const base = { id: 'paper-cited', primaryCategory: 'cs.AI', published: '2020-01-01T00:00:00Z', citationCount: 500, openAlex: { citationCount: 0 } };
+  const withPayload = scorePaperForRecommendation(base, profile);
+  const without = scorePaperForRecommendation({ ...base, openAlex: undefined }, profile);
+  assert.equal(withPayload.citations, without.citations);
+  assert.equal(withPayload.classicBoost, without.classicBoost);
+  assert.ok(withPayload.classicBoost > 0);
 });
 
 test('negative concept affinities subtract but stay bounded', () => {

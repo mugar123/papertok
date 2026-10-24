@@ -1295,3 +1295,29 @@ test("an enrichment step's papers are written back however long their text, with
   await rewriteWorks(env, stored.map(({ id, before }) => ({ id, before, after: { ...before, citationCount: 7, citationCountKnown: true } })));
   assert.equal(rows(db, "SELECT id FROM works WHERE paper ->> 'citationCount' = 7").length, 500);
 });
+
+test('a stored row keeps the merged citation count and drops the OpenAlex payload', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
+  const [stored] = rows(db, 'SELECT id, paper FROM works');
+  const before = JSON.parse(String(stored.paper)) as Paper;
+  // Enrichment merges OpenAlex's answer, which keeps its payload under `openAlex`.
+  const openAlex = { citationCount: 7, related_works: ['W1'] };
+  await rewriteWorks(env, [{ id: Number(stored.id), before, after: PaperBuilder.merge(before, openAlex, 'openalex') }], NOW);
+  const [row] = rows(db, "SELECT paper ->> 'openAlex' AS openAlex, paper ->> 'citationCount' AS citations FROM works");
+  assert.equal(row.openAlex, null);
+  assert.equal(Number(row.citations), 7);
+});
+
+test('a refresh whose OpenAlex answer changes nothing the row stores does not rewrite it', async () => {
+  const { env, db } = corpus();
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['cs.LG'] }], { now: NOW });
+  const openAlex = { citationCount: 7, related_works: ['W1'] };
+  const enrich = async () => {
+    const [stored] = rows(db, 'SELECT id, paper FROM works');
+    const before = JSON.parse(String(stored.paper)) as Paper;
+    return rewriteWorks(env, [{ id: Number(stored.id), before, after: PaperBuilder.merge(before, openAlex, 'openalex') }], NOW);
+  };
+  assert.equal(await enrich(), 1);
+  assert.equal(await enrich(), 0);
+});
