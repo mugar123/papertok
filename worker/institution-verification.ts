@@ -10,6 +10,10 @@ import { allowedOrigins } from './http.ts';
 
 export const INSTITUTION_VERIFICATION_PATH = '/institution/verification';
 const AUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+// Verification emails share the daily send limit (100 in production) with the
+// digest and test emails. With tests' 20, they leave the digest at least 60 a
+// day (Pablo, 2026-10-24). Each minute's ceiling is the same number.
+const GLOBAL_DAILY_LIMIT = 20;
 
 async function generateVerificationLink(env: WorkerEnv, email: string, target: URL) {
   const signal = AbortSignal.timeout(8_000);
@@ -70,7 +74,7 @@ export async function handleInstitutionVerificationRequest(request: Request, env
   for (const [period, subjectLimit] of [[Math.floor(now / 60_000), 1], [new Date(now).toISOString().slice(0, 10), 5]] as const) {
     for (const [kind, subject] of [['account', identity.uid], ['recipient', email]]) {
       const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
-        periodKey: `institution-verification:${kind}:${period}`, subject, subjectLimit, globalLimit: 500,
+        periodKey: `institution-verification:${kind}:${period}`, subject, subjectLimit, globalLimit: GLOBAL_DAILY_LIMIT,
       });
       if (!quota.accepted) {
         throw new InstitutionLinkError(quota.code ? 'INSTITUTION_VERIFICATION_UNAVAILABLE' : 'INSTITUTION_VERIFICATION_LIMIT', quota.code ? 503 : 429);

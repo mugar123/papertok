@@ -1,9 +1,10 @@
 type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { html: string; text: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
 import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -3701,4 +3702,134 @@ test('a source that runs out of deadline is still reported as a TIMEOUT', async 
     fetchDigestSource('https://upstream.example/', {}, { source: 'openalex', timeoutMs: 25 }),
     error => (error as Error & { code?: string; status?: number }).code === 'EMAIL_SOURCE_OPENALEX_TIMEOUT',
   ));
+});
+
+// POST /notifications/test for signed-in accounts, with Identity Toolkit,
+// Resend and the paper sources as doubles. One author follow is an OpenAlex
+// search and one arXiv topic is an arXiv query, so a test that reads its
+// sources makes at least one call to each.
+function testEmailHarness(t: TestContext) {
+  const env: WorkerEnv = {
+    ...identityEnvironment(createMemoryKv()),
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
+  };
+  const calls = { sources: 0, resend: 0 };
+  let uid = 'tester';
+  let clock = Date.UTC(2026, 9, 26, 9, 0, 30);
+  t.mock.method(Date, 'now', () => clock);
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === 'identitytoolkit.googleapis.com') {
+      return Response.json({ users: [{ localId: uid, email: `${uid}@example.com`, emailVerified: true }] });
+    }
+    if (url.hostname === 'api.resend.com') {
+      calls.resend += 1;
+      return Response.json({ id: `resend-${calls.resend}` });
+    }
+    calls.sources += 1;
+    return url.hostname === 'export.arxiv.org'
+      ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+      : Response.json({ results: [], meta: { count: 0 } });
+  });
+  const call = (method: string, pathname: string, body?: unknown) => handleEmailNotificationRequest(
+    new Request(`https://api.papertok.app${pathname}`, {
+      method,
+      headers: { authorization: 'Bearer id-token', 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
+    env,
+    pathname,
+  );
+  const arxivTopic = { type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics', externalIds: {}, metadata: { categoryIds: ['quant-ph'] } };
+  return {
+    env,
+    calls,
+    setAccount: (value: string) => { uid = value; },
+    advanceMinutes: (minutes: number) => { clock += minutes * 60_000; },
+    subscribe: () => call('PUT', '/notifications/preferences', { enabled: true, maxPapers: 5, follows: [digestFollow(), arxivTopic], previewItems: [] }),
+    unsubscribe: () => call('PUT', '/notifications/preferences', { enabled: false }),
+    sendTest: async () => {
+      const result = await call('POST', '/notifications/test');
+      assert.ok('ok' in result);
+      return result;
+    },
+  };
+}
+
+const refusedWith = (code: string, status: number) => (error: unknown) => {
+  const { code: actual, status: actualStatus } = error as { code?: string; status?: number };
+  assert.deepEqual({ code: actual, status: actualStatus }, { code, status });
+  return true;
+};
+
+test('unsubscribing and subscribing again does not give an account another test email in the same minute', async t => {
+  // Unsubscribing deleted the delivery state that held `lastTestAt`, and the
+  // new subscription's reservation was a new unit of the shared daily send
+  // limit, so a loop could spend the digest's day (DeepSec 628b6b0740).
+  const h = testEmailHarness(t);
+  await h.subscribe();
+  assert.equal((await h.sendTest()).ok, true);
+  const sourcesAfterFirst = h.calls.sources;
+  await h.unsubscribe();
+  await h.subscribe();
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_RATE_LIMIT', 429));
+  assert.equal(h.calls.resend, 1);
+  assert.equal(h.calls.sources, sourcesAfterFirst);
+});
+
+test('concurrent test requests from one account read the sources once and send one email', async t => {
+  const single = testEmailHarness(t);
+  await single.subscribe();
+  await single.sendTest();
+  const oneFanOut = single.calls.sources;
+  assert.ok(oneFanOut >= 2);
+  t.mock.restoreAll();
+
+  const h = testEmailHarness(t);
+  await h.subscribe();
+  const outcomes = await Promise.allSettled(Array.from({ length: 8 }, () => h.sendTest()));
+  assert.equal(outcomes.filter(outcome => outcome.status === 'fulfilled').length, 1);
+  for (const outcome of outcomes) {
+    if (outcome.status === 'rejected') refusedWith('EMAIL_TEST_RATE_LIMIT', 429)(outcome.reason);
+  }
+  assert.equal(h.calls.sources, oneFanOut);
+  assert.equal(h.calls.resend, 1);
+});
+
+test('an account gets three test emails a UTC day, and a refused test reads no source', async t => {
+  const h = testEmailHarness(t);
+  await h.subscribe();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.equal((await h.sendTest()).ok, true);
+    h.advanceMinutes(2);
+  }
+  const sourcesBefore = h.calls.sources;
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_DAILY_LIMIT', 429));
+  assert.equal(h.calls.sources, sourcesBefore);
+  assert.equal(h.calls.resend, 3);
+});
+
+test('all accounts together get twenty test emails a UTC day', async t => {
+  const h = testEmailHarness(t);
+  for (let account = 0; account < 20; account += 1) {
+    h.setAccount(`reader-${account}`);
+    await h.subscribe();
+    assert.equal((await h.sendTest()).ok, true);
+  }
+  h.advanceMinutes(1);
+  h.setAccount('reader-20');
+  await h.subscribe();
+  const sourcesBefore = h.calls.sources;
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_DAILY_LIMIT', 429));
+  assert.equal(h.calls.sources, sourcesBefore);
+  assert.equal(h.calls.resend, 20);
+});
+
+test('a test email without its quota ledger fails closed before reading a source', async t => {
+  const h = testEmailHarness(t);
+  delete h.env.REQUEST_QUOTA_LEDGER;
+  await h.subscribe();
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_UNAVAILABLE', 503));
+  assert.equal(h.calls.sources, 0);
+  assert.equal(h.calls.resend, 0);
 });

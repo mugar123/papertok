@@ -188,6 +188,29 @@ test('per-account and per-recipient limits survive different nonces and accounts
   assert.equal(h.messages.length, 1);
 });
 
+test('verification emails stop at twenty a UTC day, so the digest keeps the rest of the shared send limit', async t => {
+  // At 500 a day, 20 accounts sending 5 each spent all 100 production sends,
+  // and the weekly digest was refused until the next UTC day (DeepSec d3fa072522).
+  const h = harness(t);
+  h.env.EMAIL_DAILY_SEND_LIMIT = '100';
+  // One instant, so no request lands in another UTC day. The ID token is
+  // checked against this clock too.
+  const startedAt = Date.now();
+  t.mock.method(Date, 'now', () => startedAt);
+  const outcomes: Record<string, number> = {};
+  for (let account = 0; account < 100; account += 1) {
+    h.setIdentity(`account-${account}`);
+    const response = await worker.fetch(request({ email: `student-${account}@comunidadunir.net`, nonce: crypto.randomUUID() }), h.env);
+    const { code = 'sent' } = await response.json<{ code?: string }>();
+    outcomes[`${response.status} ${code}`] = (outcomes[`${response.status} ${code}`] || 0) + 1;
+  }
+  assert.deepEqual(outcomes, { '200 sent': 20, '429 INSTITUTION_VERIFICATION_LIMIT': 80 });
+  assert.equal(h.generated.length, 20);
+  assert.equal(h.messages.length, 20);
+  const digest = applyEmailDeliveryLedgerAction(h.ledger(), { action: 'reserve', reservationId: 'weekly-digest', limit: 100 });
+  assert.equal(digest.result.accepted, true);
+});
+
 test('the digest daily budget also caps verification emails before generating a credential', async t => {
   const h = harness(t);
   h.setLedger({ committed: 290, reserved: 0 });

@@ -87,6 +87,7 @@ import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
@@ -107,6 +108,11 @@ const MAX_PREVIEW_ITEMS = 20;
 const MAX_SENT_PAPER_KEYS = 400;
 const MAX_PREFERENCES_REQUEST_BYTES = 96 * 1024;
 const DEFAULT_DAILY_SEND_LIMIT = 100;
+// Test emails share the daily send limit with the digest and verification
+// emails, so one account may send 3 a day and all accounts together 20, a
+// fifth of production's 100 (Pablo, 2026-10-24).
+const TEST_ACCOUNT_DAILY_LIMIT = 3;
+const TEST_GLOBAL_DAILY_LIMIT = 20;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -2291,17 +2297,34 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   return deliverReservedDraft(env, reservationId, reservedDraft, now);
 }
 
+// The ledger holds these units by uid, so unsubscribing, which deletes the
+// delivery state and its `lastTestAt`, cannot reset them, and concurrent
+// requests cannot all pass. They are taken before any source is read and are
+// not given back: a test that fails after its reservation has already made its
+// source calls.
+async function reserveTestEmail(env: WorkerEnv, uid: string, now: number) {
+  for (const [periodKey, subjectLimit, code] of [
+    [`email-test:minute:${Math.floor(now / TEST_IDEMPOTENCY_WINDOW_MS)}`, 1, 'EMAIL_TEST_RATE_LIMIT'],
+    [`email-test:day:${utcDay(now)}`, TEST_ACCOUNT_DAILY_LIMIT, 'EMAIL_TEST_DAILY_LIMIT'],
+  ] as const) {
+    // The ledger needs a global ceiling for every period. The minute reuses the
+    // day's, which only a burst across many accounts could reach.
+    const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+      periodKey, subject: uid, subjectLimit, globalLimit: TEST_GLOBAL_DAILY_LIMIT,
+    });
+    if (quota.code) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    if (!quota.accepted) throw new EmailNotificationError(code, 429);
+  }
+}
+
 async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
   if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
-  const lastTestAt = Date.parse((subscription.lastTestAt || 0) as string);
-  if (lastTestAt && Date.now() - lastTestAt < 60_000) {
-    throw new EmailNotificationError('EMAIL_TEST_RATE_LIMIT', 429);
-  }
   const now = Date.now();
+  await reserveTestEmail(env, identity.uid, now);
   const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
   const result = await sendDigest(subscription, papers, env, {
     test: true,
