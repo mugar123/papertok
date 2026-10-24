@@ -23,10 +23,19 @@ const ENRICH_STEPS = 150;
 // followed search costs ten units, an entity one, of the 700 a day the
 // nightly refresh of followed lanes may spend (paper-sources.ts); once they
 // are spent, the run's other OpenAlex followed lanes wait and keep their turn.
+// A harvest that fails otherwise is the lane's turn too, and the lane is due
+// again only after FAILED_TURN_NIGHTS (`harvestFollowedLane`).
 // Neither asking for a lane again nor following new ones moves a lane ahead of
 // one due earlier, so lanes one account follows after another reader's lane
 // was refreshed, however many, wait behind it.
 const FOLLOWED_LANES_PER_RUN = 400;
+// The nights a followed lane waits after its first, second, third and later
+// failed turns in a row. One failure (a timeout, a provider's 5xx) costs the
+// lane its turn and no more. A lane that keeps failing, such as a search
+// OpenAlex answers with a 400, which still spends its ten units, is asked less
+// and less often, but at least once a week, so one that recovers waits a week
+// at most.
+const FAILED_TURN_NIGHTS = [1, 2, 4, 7];
 // Lanes a step works through before handing the rest to the next one, well
 // inside its timeout and D1's 1,000 queries per invocation (a lane is at most
 // about 125): a lane that has started finishes within the step.
@@ -55,14 +64,44 @@ export async function harvestStart(db: D1Database, set: string, now = Date.now()
 }
 
 /**
+ * A followed lane's turn in the run that started at `run`. The turn is
+ * recorded as failed before the harvest starts, so a lane whose step stops
+ * mid-lane past its timeout has had it too, and the step's retry passes the
+ * lane over: a lane has one turn a run. A harvest clears the failures. A
+ * budget refusal (`SourceRefused`) puts back what was there, so the lane keeps
+ * its turn.
+ */
+async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number) {
+  const db = env.PAPER_STORE!;
+  const turns = await db.prepare('SELECT failed_turns, retry_at FROM followed_lanes WHERE lane = ?').bind(job.lane)
+    .first<{ failed_turns: number; retry_at: string | null }>();
+  if (!turns) return harvestLane(env, job);
+  if (turns.retry_at && Date.parse(turns.retry_at) > run) return 0;
+  const record = (failed: number, retryAt: string | null) => db.prepare('UPDATE followed_lanes SET failed_turns = ?, retry_at = ? WHERE lane = ?')
+    .bind(failed, retryAt, job.lane).run();
+  const failed = turns.failed_turns + 1;
+  // From the start of that UTC day, so the nightly run of that day finds it due.
+  await record(failed, `${daysFromNow(FAILED_TURN_NIGHTS[Math.min(failed, FAILED_TURN_NIGHTS.length) - 1]).slice(0, 10)}T00:00:00.000Z`);
+  try {
+    const stored = await harvestLane(env, job);
+    await record(0, null);
+    return stored;
+  } catch (error) {
+    if (error instanceof SourceRefused) await record(turns.failed_turns, turns.retry_at);
+    throw error;
+  }
+}
+
+/**
  * Harvests lanes in order until the step's budget is spent, and returns how
  * many it went through. A lane that fails is logged and passed over: the
  * other lanes, and every other source, stay served. A source that refuses
  * for longer than a lane may wait (a spent daily budget, a minute's ceiling
  * still full after the lane waited one out) is passed over for the rest of
- * the step.
+ * the step. Followed lanes, harvested by the run that started at
+ * `followedRun`, each take their turn (`harvestFollowedLane`).
  */
-export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], budgetMs = LANE_STEP_BUDGET_MS, started = Date.now()) {
+export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], followedRun?: number, budgetMs = LANE_STEP_BUDGET_MS, started = Date.now()) {
   const refused = new Set<string>();
   let processed = 0;
   for (const job of jobs) {
@@ -70,7 +109,7 @@ export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], budgetMs = L
     processed += 1;
     if (refused.has(job.source)) continue;
     try {
-      await harvestLane(env, job);
+      await (followedRun === undefined ? harvestLane(env, job) : harvestFollowedLane(env, job, followedRun));
     } catch (error) {
       if (error instanceof SourceRefused) refused.add(job.source);
       console.warn(`Harvest of ${job.source} ${job.lane} failed`, error);
@@ -79,16 +118,18 @@ export async function harvestLanes(env: WorkerEnv, jobs: LaneJob[], budgetMs = L
   return processed;
 }
 
-async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jobs: LaneJob[]) {
+async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jobs: LaneJob[], followedRun?: number) {
   let remaining = jobs;
   // Step names are the replay keys, so each round gets its own number.
   for (let round = 0; remaining.length > 0; round += 1) {
     let processed = LANES_PER_STEP;
     try {
-      processed = await step.do(`${label}: lanes ${round}`, LANE_STEP, () => harvestLanes(env, remaining));
+      processed = await step.do(`${label}: lanes ${round}`, LANE_STEP, () => harvestLanes(env, remaining, followedRun));
     } catch (error) {
       // Past its retries (a lane that keeps timing out): the lanes the step
-      // may have reached are passed over, and harvested again tomorrow.
+      // may have reached are passed over, and harvested again tomorrow. A
+      // followed lane that timed out has had its turn, and the retries pass
+      // it over rather than time out on it again.
       console.error(`Harvest of ${label} lanes ${round} failed; passing over ${LANES_PER_STEP} lanes`, error);
     }
     remaining = remaining.slice(processed);
@@ -97,11 +138,15 @@ async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jo
 
 async function followedJobs(db: D1Database, now: number) {
   // lane_state's key starts with the source: naming the followed lanes'
-  // sources lets each lane's row be read by key.
+  // sources lets each lane's row be read by key. A lane whose last turn
+  // failed is due from when it may be asked again, behind the lanes
+  // harvested before then.
   const { results } = await db.prepare(`SELECT f.lane FROM followed_lanes f
     LEFT JOIN lane_state s ON s.source IN (SELECT value FROM json_each(?)) AND s.lane = f.lane
-    WHERE f.requested_at >= ? ORDER BY COALESCE(s.harvested_through, f.registered_at), f.requested_at DESC LIMIT ?`)
-    .bind(JSON.stringify(FOLLOWED_SOURCES), daysFromNow(-FOLLOWED_LANE_DAYS, now), FOLLOWED_LANES_PER_RUN).all<{ lane: string }>();
+    WHERE f.requested_at >= ? AND (f.retry_at IS NULL OR f.retry_at <= ?)
+    ORDER BY COALESCE(f.retry_at, s.harvested_through, f.registered_at), f.requested_at DESC LIMIT ?`)
+    .bind(JSON.stringify(FOLLOWED_SOURCES), daysFromNow(-FOLLOWED_LANE_DAYS, now), new Date(now).toISOString(), FOLLOWED_LANES_PER_RUN)
+    .all<{ lane: string }>();
   return results.map(row => followedLaneJob(row.lane)).filter(Boolean) as LaneJob[];
 }
 
@@ -159,7 +204,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   const followed = event.payload?.lanes;
   if (followed?.length) {
     const jobs = followed.map(followedLaneJob).filter(Boolean) as LaneJob[];
-    await runLaneJobs(env, step, 'followed', jobs.map(job => ({ ...job, newFollow: true })));
+    await runLaneJobs(env, step, 'followed', jobs.map(job => ({ ...job, newFollow: true })), started);
     await phase('embed', () => embedAll(env, step, followed));
     return;
   }
@@ -198,7 +243,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
   await phase('carry arXiv vectors', () => step.do('carry arXiv vectors', carryArxivVectors(db)));
 
   await phase('category lanes', () => runLaneJobs(env, step, 'categories', categoryLaneJobs()));
-  await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started))));
+  await phase('followed lanes', async () => runLaneJobs(env, step, 'followed', await step.do('followed lanes', () => followedJobs(db, started)), started));
   await phase('evict', () => step.do('evict', async () => {
     await evictExpired(env, started);
     await forgetFollowedLanes(db, started);

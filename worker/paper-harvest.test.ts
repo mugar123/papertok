@@ -14,8 +14,11 @@ import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 // The Workflow's steps run in place: a step's callback is called once, a sleep
 // is recorded and returns at once. `fail` names the steps that fail past their
 // retries; `skipLanes` answers the category lanes' steps as if every lane were
-// done, for a daily run whose lanes the test does not exercise.
-function workflowStep({ fail = () => false, skipLanes = false }: { fail?: (name: string) => boolean; skipLanes?: boolean } = {}) {
+// done, for a daily run whose lanes the test does not exercise. An attempt
+// running past `timeoutMs` is stopped, as a Workflow stops one past its
+// timeout and leaves its work unfinished, and the step is tried again within
+// its retries.
+function workflowStep({ fail = () => false, skipLanes = false, timeoutMs = 0 }: { fail?: (name: string) => boolean; skipLanes?: boolean; timeoutMs?: number } = {}) {
   const steps: string[] = [];
   const sleeps: Array<number | string> = [];
   const step = {
@@ -23,7 +26,16 @@ function workflowStep({ fail = () => false, skipLanes = false }: { fail?: (name:
       steps.push(name);
       if (fail(name)) throw new Error(`${name} failed past its retries`);
       if (skipLanes && /^categories: lanes \d+$/.test(name)) return Number.MAX_SAFE_INTEGER;
-      return (rest.at(-1) as () => Promise<unknown>)();
+      const callback = rest.at(-1) as () => Promise<unknown>;
+      if (!timeoutMs) return callback();
+      const retries = rest.length > 1 ? (rest[0] as { retries?: { limit: number } }).retries?.limit ?? 0 : 0;
+      for (let attempt = 0; ; attempt += 1) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timedOut = new Promise<'timed out'>(resolve => { timer = setTimeout(resolve, timeoutMs, 'timed out'); });
+        const result = await Promise.race([callback(), timedOut]).finally(() => clearTimeout(timer));
+        if (result !== 'timed out') return result;
+        if (attempt >= retries) throw new Error(`${name} timed out past its retries`);
+      }
     },
     async sleep(_name: string, duration: number | string) {
       sleeps.push(duration);
@@ -37,7 +49,7 @@ const dailyRun = () => ({ payload: undefined, timestamp: new Date(), instanceId:
 
 // The providers: `answer` when it has a response for the URL, otherwise an
 // empty OpenAlex list (through the Worker's relay).
-function providers(t: import('node:test').TestContext, answer: (url: URL) => Response | undefined = () => undefined) {
+function providers(t: import('node:test').TestContext, answer: (url: URL) => Response | Promise<Response> | undefined = () => undefined) {
   const asked: URL[] = [];
   const realFetch = globalThis.fetch;
   const realCaches = (globalThis as TestGlobals).caches;
@@ -244,6 +256,121 @@ test("one account following 40 new searches a day and asking again daily for all
   }
   const nightsWithout = refreshed.reduce((nights, done) => [...nights, done ? 0 : nights.at(-1)! + 1], [0]);
   assert.ok(Math.max(...nightsWithout) < 7, `refreshed on nights ${refreshed.map(done => (done ? 'Y' : '.')).join('')}`);
+});
+
+// The OpenAlex searches each night asks for, from the providers' requests.
+const searchesAsked = (asked: URL[]) => asked.filter(url => url.hostname === 'api.openalex.org' && url.searchParams.has('search'))
+  .map(url => url.searchParams.get('search')!);
+
+// A search OpenAlex answers with a 400 spends its ten units each time it is
+// asked and never records a harvest. 70 of them, followed before another
+// reader's lane, took the whole 700 every night, and that lane got none of it.
+test('followed lanes that fail every night take their turn and are asked less and less often, so a later lane is refreshed', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
+  const asked = providers(t, url => (url.searchParams.get('search')?.startsWith('broken ')
+    ? Response.json({ error: 'Invalid query' }, { status: 400 })
+    : undefined));
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const broken = Array.from({ length: 70 }, (_, index) => `query:broken ${index}`);
+  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
+  for (const lane of broken) {
+    follow.run(lane, '2026-10-20T12:00:00.000Z', '2026-10-10T12:00:00.000Z');
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-follows', ?, '2026-10-19T02:40:00.000Z')").run(lane);
+  }
+  follow.run('query:a narrow topic', '2026-10-20T12:00:00.000Z', '2026-10-20T12:00:00.000Z');
+
+  const nights = Array.from({ length: 22 }, (_, index) => index + 1);
+  const narrowNights: number[] = [];
+  const brokenNights = new Map(broken.map(lane => [lane.slice('query:'.length), [] as number[]]));
+  for (const night of nights) {
+    const at = Date.parse('2026-10-20T02:30:00Z') + night * 86_400_000;
+    // Asked for again every day, so none leaves the harvest.
+    db.prepare('UPDATE followed_lanes SET requested_at = ?').run(new Date(at - 3_600_000).toISOString());
+    t.mock.timers.setTime(at);
+    const before = asked.length;
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    for (const search of searchesAsked(asked.slice(before))) {
+      if (search === 'a narrow topic') narrowNights.push(night);
+      brokenNights.get(search)?.push(night);
+    }
+  }
+  // The broken searches were due before it on the first night, never after.
+  assert.deepEqual(narrowNights, nights.slice(1), `the narrow topic was asked on nights ${narrowNights.join(', ')}`);
+  // In the last 7 of the 22 nights, each broken search is asked once.
+  for (const [search, asks] of brokenNights) {
+    assert.equal(asks.filter(night => night > 15).length, 1, `${search} was asked on nights ${asks.join(', ')}`);
+  }
+});
+
+test('a followed lane the budget refuses keeps its turn: the next night it comes before the lanes due after it', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T02:30:00Z') });
+  const asked = providers(t);
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
+  // 70 searches due before it spend the 700 the first night.
+  for (let index = 0; index < 70; index += 1) follow.run(`query:search ${index}`, '2026-10-20T12:00:00.000Z', '2026-10-19T12:00:00.000Z');
+  follow.run('query:followed first', '2026-10-20T12:00:00.000Z', '2026-10-20T10:00:00.000Z');
+  follow.run('query:followed second', '2026-10-20T12:00:00.000Z', '2026-10-20T11:00:00.000Z');
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  assert.ok(!searchesAsked(asked).includes('followed first'), 'refused the first night');
+  // The 72 lanes ask for 720 units: the two the 700 leave out are the ones harvested last night.
+  t.mock.timers.setTime(Date.parse('2026-10-22T02:30:00Z'));
+  const before = asked.length;
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+  assert.deepEqual(searchesAsked(asked.slice(before)).slice(0, 2), ['followed first', 'followed second']);
+});
+
+test('a followed lane harvested after failing nights is asked again the night after its next failure', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-20T12:00:00Z') });
+  let failing = true;
+  const asked = providers(t, url => (failing && url.searchParams.get('search') === 'a flaky search'
+    ? new Response('Bad gateway', { status: 502 })
+    : undefined));
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)')
+    .run('query:a flaky search', '2026-10-20T12:00:00.000Z', '2026-10-20T12:00:00.000Z');
+  const askedOn: number[] = [];
+  let harvestedOn = 0;
+  for (let night = 1; night <= 16; night += 1) {
+    const at = Date.parse('2026-10-20T02:30:00Z') + night * 86_400_000;
+    db.prepare('UPDATE followed_lanes SET requested_at = ?').run(new Date(at - 3_600_000).toISOString());
+    // OpenAlex answers it again from the fifth night, until it is harvested once.
+    if (night === 5) failing = false;
+    t.mock.timers.setTime(at);
+    const before = asked.length;
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    if (searchesAsked(asked.slice(before)).length === 0) continue;
+    askedOn.push(night);
+    if (!failing && !harvestedOn) {
+      harvestedOn = night;
+      failing = true;
+    }
+  }
+  // Its failures had spaced its asks out; after the harvest, one failure costs it one night again.
+  const spaced = askedOn.filter(night => night <= harvestedOn);
+  assert.ok(harvestedOn > 5 && spaced.some((night, index) => night - spaced[index - 1] > 2), `asked on nights ${askedOn.join(', ')}`);
+  assert.deepEqual(askedOn.filter(night => night > harvestedOn).slice(0, 2), [harvestedOn + 1, harvestedOn + 2], `asked on nights ${askedOn.join(', ')}`);
+});
+
+// A lane that holds its step past the timeout never reaches the harvest's own
+// error handling.
+test("a followed lane that stops its step has had its turn: the step's retry harvests the lanes after it", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T02:30:00Z') });
+  const asked = providers(t, url => (url.searchParams.get('search') === 'a search that hangs' ? new Promise<Response>(() => {}) : undefined));
+  const { env, db } = corpus();
+  Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+  const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
+  follow.run('query:a search that hangs', '2026-10-20T12:00:00.000Z', '2026-10-20T10:00:00.000Z');
+  const authors = ['author:A1', 'author:A2', 'author:A3', 'author:A4'];
+  for (const lane of authors) follow.run(lane, '2026-10-20T12:00:00.000Z', '2026-10-20T11:00:00.000Z');
+  // Its steps' work takes milliseconds: 3 s is a step that stopped.
+  await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true, timeoutMs: 3_000 }).step);
+  const refreshed = db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-follows' ORDER BY lane").all().map(row => (row as { lane: string }).lane);
+  assert.deepEqual(refreshed, authors);
+  assert.deepEqual(searchesAsked(asked), ['a search that hangs']);
 });
 
 test('a lane step that fails past its retries passes over its lanes, not the rest of the run', async t => {
