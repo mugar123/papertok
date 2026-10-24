@@ -467,6 +467,12 @@
   cursor: pointer;
 }
 
+/* The switches are ruled like the rows of the other panels. */
+.profile-switch + .profile-switch {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--settings-panel-line);
+}
+
 .profile-switch-copy {
   display: flex;
   flex-direction: column;
