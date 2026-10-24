@@ -26,8 +26,8 @@ const LIKED_LOOKUP_MAX_PAPERS = 10;
 // the 2 s an inline lookup has, an answer arXiv sends later spends an app-wide
 // seat and files nothing.
 const LIKED_LOOKUP_DEADLINE_MS = ARXIV_PACE_MAX_WAIT_MS + ARXIV_UPSTREAM_TIMEOUT_MS + 1_000;
-// A known followed lane is written again only when it is asked for 7 days or
-// more after its last write; every write counts in the reader's and the app's
+// A known followed lane is written again only when it is asked for more than
+// 7 days after its last write; every write counts in the reader's and the app's
 // lanes for the day (below). Were it written again whenever asked a day after
 // its last write, 4,000 lanes asked for each morning would spend the app's day
 // every day, and a lane asked for after them would never be written again
