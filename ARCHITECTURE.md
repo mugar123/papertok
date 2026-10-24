@@ -111,6 +111,12 @@ provider for every reader. [paper-sources.ts](worker/paper-sources.ts) and
 [PaperBuilder](src/services/paper-builder.ts). Harvesting and embedding have
 separate bounded steps; the diagram summarizes the resulting data flow.
 
+A leaf's own lane (`cs.LG`, `econ.EM`) also holds OpenAlex journal articles:
+those of the topics or the journals and proceedings a labelled sample admitted
+for that leaf ([topic lanes](scripts/README-openalex-leaf-topics.md),
+[venue lanes](scripts/README-openalex-leaf-venues.md)). The leaf's readers get
+them beside its preprints, under the same ranking.
+
 Area lanes (`area:<area>`) hold OpenAlex journal articles labeled with an area
 rather than one of its leaves. [paper-store.ts](worker/paper-store.ts) adds them
 to the candidates of a request that asks for the area's leaves and no follows,

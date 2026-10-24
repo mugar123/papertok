@@ -588,7 +588,8 @@ test("a venue lane's articles reach the readers of its leaf alone, a paywalled o
   for (const paper of page) {
     // What the card's Subscription label reads (paper-status.ts): an explicit
     // `false`, and no arXiv copy or PDF to call it open.
-    assert.deepEqual([paper.openAccess, paper.arxivId, paper.pdfUrl], [false, undefined, null], paper.id);
+    assert.equal(paper.openAccess, false, paper.id);
+    assert.deepEqual([paper.arxivId, paper.pdfUrl, paper.openAccessPdfUrl].filter(Boolean), [], paper.id);
     assert.equal(paper.peerReviewed, true, `${paper.id}: a journal article, by the review rule`);
     assert.equal(paper.workingPaper, undefined);
   }

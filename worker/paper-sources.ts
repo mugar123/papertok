@@ -511,15 +511,15 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
   },
-  // The newest articles of the journals, and for computer science the
-  // proceedings, whose labelled sample stood for a leaf (PAP-104), filed under
-  // the leaf as a topic lane's are. One request a page names all the lane's
-  // sources. With or without an abstract, as the area lanes take them; the
-  // sources are the curated list, so neither `is_core` nor the series filter
-  // applies. On 2026-10-23 the lanes held 0.2 (stat.ML) to 22 (mech.thermo)
-  // articles a day. Physics of Fluids dates each issue, about 390 articles, by
-  // its first day: three pages a night keep a whole issue, where one would
-  // keep its newest 200.
+  // The newest articles of the journals, and in computer science, statistics
+  // and electrical engineering the proceedings, whose labelled sample stood
+  // for a leaf (PAP-104), filed under the leaf as a topic lane's are. One
+  // request a page names all the lane's sources. With or without an abstract,
+  // as the area lanes take them; the sources are named, so neither `is_core`
+  // nor the listed series' filter applies. In the 90 days to 2026-10-23 the
+  // lanes' sources published 0.2 (stat.ML) to 22 (mech.thermo) articles a day.
+  // Physics of Fluids dates each issue, about 390 articles, by its first day:
+  // three pages a night keep a whole issue, where one would keep its newest 200.
   'openalex-venues': {
     firstPages: 5, dailyPages: 3, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -601,6 +601,9 @@ export function categoryLaneJobs(): LaneJob[] {
     ...ARXIV_LABEL_LEAVES.map(leaf => ({ source: 'arxiv-search' as const, lane: leaf.id })),
     ...PUBMED_LEAVES.map(leaf => ({ source: 'pubmed' as const, lane: leaf.id })),
     ...LEAVES.filter(leaf => openAlexTopicFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-topics' as const, lane: leaf.id })),
+    // Before the series: a journal article and its working paper listed the
+    // same night merge into the journal's reviewed row, where the working
+    // paper's row, stored first, would keep its own identity (PaperBuilder.merge).
     ...LEAVES.filter(leaf => openAlexVenueFilterForLeaf(leaf.id)).map(leaf => ({ source: 'openalex-venues' as const, lane: leaf.id })),
     { source: 'openalex-series', lane: WORKING_PAPERS_LANE },
     ...AREA_LANE_AREAS.map(area => ({ source: 'openalex-areas' as const, lane: areaLane(area) })),
