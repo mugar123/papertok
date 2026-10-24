@@ -14,7 +14,7 @@ import { pickExplorationCategories } from '../utils/recommendationEngine.ts';
 import { applyKnownPublicationTypes, classifyFeedPublications, dropUnreachedPublications } from '../services/feedPublicationService.ts';
 import { isFeedPublication } from '../services/feedPublicationRules.ts';
 import { abstractWaitIds, openAbstractWait } from '../utils/feedAbstractWait.ts';
-import { mergeFreshFeedPage } from '../utils/feedReRankSplit.ts';
+import { mergeFreshFeedPage, splitFeedForReRank } from '../utils/feedReRankSplit.ts';
 
 import { mergeEuropePmcEnrichment } from '../services/europePmcRecords.ts';
 import { mergeICiteEnrichment } from '../services/iCiteRecords.ts';
@@ -949,6 +949,36 @@ test('a notable card the reader viewed is not offered again, however many cards 
   assert.equal(asked[0].seen?.has('notable-viewed'), true, 'the corpus is told the reader saw it');
   assert.equal(state.papers.length, 15);
   assert.ok(!state.papers.some(paper => paper.id === 'notable-viewed'), 'and the feed does not show it');
+});
+
+// The re-rank a like, a long read or the profile's load asks for, as the feed
+// runs it, with the queue's new order standing in for the ranking's: reversed.
+function reRanking(papers: FeedRecord[], visible: string) {
+  const state = { papers };
+  const reRankFeed = callbackIn(componentCallback('reRankFeed', 'calculateAndAttachScore'), {
+    startTransition: (update: () => void) => update(),
+    setPapers: (update: (previous: FeedRecord[]) => FeedRecord[]) => { state.papers = update(state.papers); },
+    splitFeedForReRank, placeNotableCards, visiblePaperIdRef: ref(visible),
+    diversifiedWeightedShuffle: (queue: FeedRecord[]) => [...queue].reverse(),
+    calculateAndAttachScore: () => 0, recommendationWeights: ref({}), logRankingBatch: () => {},
+  }) as (sourcePaperId: string | null) => void;
+  return { state, reRankFeed };
+}
+
+test('a re-rank reorders the cards after the reader and leaves every notable card at its place', () => {
+  const shown = placeNotableCards(records('card', 42), records('notable', 3).map(paper => ({ ...paper, _notable: true })), []);
+  assert.deepEqual(notableAt(shown), [[14, 'notable-0'], [29, 'notable-1'], [44, 'notable-2']]);
+  const others = (papers: FeedRecord[]) => papers.filter(paper => !paper._notable).map(paper => paper.id);
+  // The reader before every notable card, then past the first.
+  for (const visible of ['card-3', 'card-15']) {
+    const { state, reRankFeed } = reRanking(shown, visible);
+    reRankFeed(null);
+    assert.deepEqual(notableAt(state.papers), notableAt(shown), `the reader on ${visible}`);
+    const through = shown.findIndex(paper => paper.id === visible) + 1;
+    assert.deepEqual(state.papers.slice(0, through), shown.slice(0, through), 'the cards through the reader stay');
+    assert.notDeepEqual(others(state.papers), others(shown), 'the cards after them are reordered');
+    assert.deepEqual(others(state.papers).sort(), others(shown).sort(), 'and none is left out');
+  }
 });
 
 // A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).

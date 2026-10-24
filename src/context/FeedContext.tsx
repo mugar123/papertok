@@ -781,13 +781,16 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       const { locked, queue } = splitFeedForReRank(prevPapers, {
         anchorPaperIds: [sourcePaperId, visiblePaperIdRef.current],
       });
-      if (queue.length === 0) return prevPapers;
+      // The notable cards keep their places, one card in NOTABLE_EVERY
+      // counted from the last one before the queue; the ranking orders the rest.
+      const others = queue.filter(paper => !paper._notable);
+      if (others.length === 0) return prevPapers;
 
-      const newQueue = diversifiedWeightedShuffle(queue, {
+      const newQueue = placeNotableCards(diversifiedWeightedShuffle(others, {
         scorePaper: calculateAndAttachScore,
         weights: recommendationWeights.current,
         initialPapers: locked,
-      });
+      }), queue.filter(paper => paper._notable), locked);
       logRankingBatch('rerank queue', newQueue);
 
       return [...locked, ...newQueue];
