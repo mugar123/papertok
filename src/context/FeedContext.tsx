@@ -218,6 +218,11 @@ function demoSet(key: string, value: unknown) {
 
 // How many papers the followed entities add to a page.
 const FOLLOWED_PER_PAGE = 6;
+// The exploration cards a page after the first screen adds: up to
+// NEARBY_EXPLORATION_MAX from categories near the reader's, and
+// RANDOM_EXPLORATION from random ones when the reader is bored.
+const NEARBY_EXPLORATION_MAX = 8;
+const RANDOM_EXPLORATION = 2;
 
 /**
  * Papers of the reader's follows from the paper corpus: the Worker serves an
@@ -1294,7 +1299,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             // load can show: the corpus's fifteen, the follows' six and, after
             // the first screen, up to ten exploration cards (STEP 5).
             seen: sessionSeenPapers.current,
-            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : 10)),
+            notable: notablePlaces(cardsBefore, PAGE_SIZE + FOLLOWED_PER_PAGE + (reset ? 0 : NEARBY_EXPLORATION_MAX + RANDOM_EXPLORATION)),
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
@@ -1334,7 +1339,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
         const boredomThreshold = getBoredomThreshold();
         const exploreCount = currentBoredom >= boredomThreshold
-          ? Math.min(8, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
+          ? Math.min(NEARBY_EXPLORATION_MAX, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
           : 5; // Baseline exploration: cold-start users deserve real serendipity
 
         // The first screen already has a broad candidate pool. Defer exploration
@@ -1366,7 +1371,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
-          if (randomCats.length > 0) explorationPapers.push(...await explore(randomCats, 2));
+          if (randomCats.length > 0) explorationPapers.push(...await explore(randomCats, RANDOM_EXPLORATION));
         }
 
         // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
