@@ -311,7 +311,9 @@ public, GET and HEAD only, and need no `Origin`: they sit ahead of every Origin 
 the deployed shell (`https://papertok.app/index.html`, kept five minutes) with the page's own
 head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a page whose source
 is final about it is a 404 with `noindex`, a DOI or PMID OpenAlex has not indexed yet and a
-provider failure get the generic head. The record behind a paper or an entity is kept 24 hours, a
+provider failure get the generic head. A path that names no page is a 404 before admission or any
+lookup; that includes a DOI key with a whole `.` or `..` path segment, which the URL parser would
+otherwise resolve into another OpenAlex record's path. The record behind a paper or an entity is kept 24 hours, a
 list's five minutes (its owner can take it back), a missing page one hour and a
 failure two minutes, and the page is composed per request, always in English (`Accept-Language` is
 not consulted, so there is no `Vary: Accept-Language`). What a miss
@@ -434,7 +436,7 @@ The AI routes require a valid PaperTok Firebase ID token and keep provider crede
 
 Since 2026-10-06 every AI route (`/ai/rewrite`, `/ai/annotate`) answers through NaN Builders, an OpenAI-compatible EU cluster (`AI_PROVIDER = "nan"`, `NAN_API_KEY`, `NAN_MODEL = "deepseek-v4-flash"`); `AI_PROVIDER = "gemini"` switches all of them back to the Gemini models below. Every NaN call turns reasoning off through `chat_template_kwargs`: with it on, a rewrite spent its whole 16,384-token budget thinking and wrote nothing, and `reasoning_effort` is ignored on this model. `deepseek-v4-flash` takes `json_object` but not `json_schema`, so field contracts travel in the prompt. A rewrite hands NaN the paper as text: the Workers AI binding (`[ai] binding = "AI"`, used only for `toMarkdown`) converts the PDF in 1.5–3 s, and the first section arrives a few seconds later (a 15-page paper: first section at about 6 s, complete in about 33 s, measured 2026-10-06). When the conversion fails, NaN is handed the PDF itself, which works but costs about 45 s before the first token. NaN refuses with 402 when the model's monthly token allowance is spent (reported as `AI_QUOTA_EXHAUSTED`, resetting on the first of the month) and 429 at its 60 requests per minute or 7 concurrent requests per model (`AI_BUSY`). `/health/ai` probes only the provider `AI_PROVIDER` names; for NaN it checks that the configured `NAN_MODEL` is served and reports `paperText` for the binding.
 
-With `AI_PROVIDER = "gemini"`, `/ai/rewrite` streams from `AI_REWRITE_MODEL` (or `AI_MODEL` when that is unset) and retries the call that opens the stream once on `AI_FALLBACK_MODEL` when Gemini answers `AI_BUSY`, `AI_UNAVAILABLE` or `AI_QUOTA_EXHAUSTED`. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes.
+With `AI_PROVIDER = "gemini"`, `/ai/rewrite` streams from `AI_REWRITE_MODEL` (or `AI_MODEL` when that is unset) and retries the call that opens the stream once on `AI_FALLBACK_MODEL` when Gemini answers `AI_BUSY`, `AI_UNAVAILABLE` or `AI_QUOTA_EXHAUSTED`. A rewrite the fallback model wrote is stored in the shared cache under the primary model's key for two minutes (`DEGRADED_CACHE_SECONDS`) instead of 30 days, and its `meta.model` names the fallback model, so readers during the outage share it and readers after it get the primary model again. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes.
 
 Rewrite prompt v3 allocates the word budget across the whole document, including
 discussion and conclusion. University requests up to 24,000 output tokens; its
