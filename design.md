@@ -147,13 +147,13 @@ reference files — look at them when a rule is unclear:
 
 | File | What it shows |
 | --- | --- |
-| `src/components/Feed/PaperCard.css` | the card, the field colour, the voices |
-| `src/components/Reader/PaperReader.css` | long-form reading, floating controls |
-| `src/components/Layout/Navbar.css` | flat chrome, the brand thread |
-| `src/components/Search/SearchCommand.css` | overlay surfaces |
+| `src/components/feed/paper-card.css` | the card, the field colour, the voices |
+| `src/components/reader/paper-reader.css` | long-form reading, floating controls |
+| `src/components/layout/navbar.css` | flat chrome, the brand thread |
+| `src/components/search/search-command.css` | overlay surfaces |
 
-The Explorer (`src/components/Explorer/EntityExplorer.*`) and the sign-in modal
-(`src/components/Public/AuthPrompt.*`) are worked examples of the whole system.
+The Explorer (`src/components/explorer/entity-explorer.*`) and the sign-in modal
+(`src/components/public/auth-prompt.*`) are worked examples of the whole system.
 
 The seven numbered rules below are cited from code comments as
 "design.md, rule N"; they keep their numbers wherever they sit.
@@ -241,7 +241,7 @@ its rule, its category name and its tinted chips, and derive tints instead of
 hardcoding a second value —
 `background: color-mix(in srgb, var(--area-accent) 8%, var(--bg-card));`.
 Set `--area-accent` from the field with the `getAreaGradient()` helper pattern
-(see `EntityExplorer.tsx`).
+(see `entity-explorer.tsx`).
 
 **Rule 3 — The Yellow Thread Rule.** `--brand-yellow` marks only: the
 **engraved button's plate** (landing and onboarding only), the **active nav or
@@ -458,8 +458,8 @@ a second opens the list picker instead, saved or not. Connections is a toggle:
 wider than a phone it swaps the abstract for the citation map until it is pressed again; on
 a phone it opens the map as a sheet. Similar papers opens a feed of
 recommended papers in a full-screen layer that grows out of the button and
-folds back into it (`Feed/SimilarFeedLayer.tsx`). More opens the paper's options
-(`Feed/PaperMenu.tsx`), a dialog on desktop and a drawer on a phone: the
+folds back into it (`feed/similar-feed-layer.tsx`). More opens the paper's options
+(`feed/paper-menu.tsx`), a dialog on desktop and a drawer on a phone: the
 actions with a one-line hint each and their glyph on a tint of the action's own
 accent (About this paper, Mark as read, Not
 interested, the BibTeX/RIS exports), then the share destinations. About this
@@ -531,13 +531,13 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 
 ## Auth pattern
 
-`src/components/Public/AuthPrompt.tsx` owns Google and GitHub sign-in.
+`src/components/public/auth-prompt.tsx` owns Google and GitHub sign-in.
 An in-context action calls `requestAuthentication` (passed to screens as
 `onAuthRequired`) and opens the dialog over the current page.
 
 A guest who opens a protected route reaches onboarding with `authRequired`
-and `returnTo` in location state. `App.tsx` opens the same dialog there and
-`src/utils/authReturn.ts` keeps the validated destination across the session
+and `returnTo` in location state. `app.tsx` opens the same dialog there and
+`src/utils/auth-return.ts` keeps the validated destination across the session
 remount. After sign-in, the app completes onboarding when needed and returns
 the reader to that destination. Legacy `/login` links use this same flow.
 

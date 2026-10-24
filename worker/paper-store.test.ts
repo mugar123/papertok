@@ -1,5 +1,5 @@
-import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
-import type { OpenAlexLocation } from '../src/services/adapters/openAlexTypes.ts';
+import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
+import type { OpenAlexLocation } from '../src/services/adapters/open-alex-types.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -9,13 +9,13 @@ import {
   readFeedPage, readVector, rewriteWorks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
-import { PaperBuilder } from '../src/services/PaperBuilder.ts';
-import { mapAdsPaper } from '../src/services/domainSourceRecords.ts';
-import { mapHuggingFacePaper } from '../src/services/huggingFaceRecords.ts';
-import { mapPubmedSummary } from '../src/services/adapters/pubmedRecords.ts';
-import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
+import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { mapAdsPaper } from '../src/services/domain-source-records.ts';
+import { mapHuggingFacePaper } from '../src/services/hugging-face-records.ts';
+import { mapPubmedSummary } from '../src/services/adapters/pubmed-records.ts';
+import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 test('only arXiv identifiers reach the store lookup', () => {
   assert.equal(arxivIdOf('arxiv:2610.01234v2'), '2610.01234');

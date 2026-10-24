@@ -49,7 +49,7 @@ export async function handleRelated(request: Request, env: WorkerEnv, identity?:
     // `cacheResponse` and can itself add up to 2.5 s of sleep plus a couple of
     // ledger round trips, so the two no longer share a separate margin against
     // the browser. The client's abort budget for this route
-    // (`relatedPapersService.js`) was raised from 8 s to 11 s to hold both,
+    // (`related-papers-service.ts`) was raised from 8 s to 11 s to hold both,
     // rather than shrinking this deadline to carve room out of it: that would
     // hand a contended request -- one that hit the beat's wait precisely
     // because Semantic Scholar is already under pressure -- less time to talk

@@ -5,7 +5,7 @@ dialog. They are bundled with the app because publishers block hotlinking, and s
 the browser fetches nothing from a third party at runtime. A logo only identifies
 the platform the library reaches; it does not imply an endorsement or a
 relationship with PaperTok. Every platform in the Worker's `SERVICE_CATALOGUE`
-needs one here. `publisherLogos.test.ts` checks that bundled logos have a
+needs one here. `publisher-logos.test.ts` checks that bundled logos have a
 provenance row below and that SVGs cannot run scripts or load external resources.
 Catalogue-to-logo coverage is not checked automatically.
 

@@ -1,11 +1,11 @@
-import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
+import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
 
-import { PaperBuilder } from '../src/services/PaperBuilder.ts';
-import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
-import { hasUsableAIAbstract } from '../src/utils/aiExplanationAccess.ts';
-import { isPlaceholderPaperTitle } from '../src/utils/paperDisplayTitle.ts';
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
+import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
+import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day

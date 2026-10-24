@@ -1,4 +1,4 @@
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
 import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { FeedRequestBody, KeptRanking, RankingCache, StoreEnv } from './paper-store.ts';

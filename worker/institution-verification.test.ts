@@ -4,7 +4,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import type { WorkerEnv } from './env.ts';
 import type { TestNamespace } from './test-types.ts';
 import type { LedgerTransaction } from './ledger-storage.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import { handleInstitutionVerificationRequest } from './institution-verification.ts';
 import { resetAccessTokenCache } from './firebase-service-account.ts';
 import { applyEmailDeliveryLedgerAction, type DeliveryLedgerState } from './email-delivery-ledger.ts';

@@ -1,6 +1,6 @@
 import { captureWorkerException } from './error-tracking.ts';
 import { accountOwnsEmail } from './firebase-auth.ts';
-import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
+import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
 
@@ -78,10 +78,10 @@ interface ScheduleSummary {
 import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
-import { areaKeyForPaper } from '../src/utils/areaAccent.ts';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.ts';
+import { CATEGORIES } from '../src/data/category-taxonomy.ts';
+import { areaKeyForPaper } from '../src/utils/area-accent.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 
@@ -93,7 +93,7 @@ const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
 // Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
 // correos ya enviados llevan `/#/following` y siguen llegando a su sitio --
-// la puerta de index.html y utils/legacyHashRoute.js los traducen -- pero
+// la puerta de index.html y utils/legacy-hash-route.ts los traducen -- pero
 // este Worker se despliega por su cuenta, asi que lo que acuna a partir de
 // ahora es la ruta, no el fragmento.
 const PAPER_TOK_URL = 'https://papertok.app/following';

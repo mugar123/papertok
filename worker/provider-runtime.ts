@@ -130,7 +130,7 @@ export const OPENALEX_HARVEST_DAILY_UNITS = 4_000;
 export const OPENALEX_NEW_FOLLOWS_DAILY_UNITS = 300;
 // Names the tier on every refusal of the OpenAlex budget, so the client can
 // tell the Worker's own refusal of one request from OpenAlex refusing the key:
-// only the second closes OpenAlex for the whole tab. `openAlexClient.ts` reads
+// only the second closes OpenAlex for the whole tab. `open-alex-client.ts` reads
 // the same name.
 const OPENALEX_BUDGET_TIER_HEADER = 'x-papertok-budget-tier';
 // One list call, the unit every OpenAlex ceiling here counts in.
@@ -152,7 +152,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
-  // Ten minutes is what the browser cache in `src/utils/sourceCache.ts` already
+  // Ten minutes is what the browser cache in `src/utils/source-cache.ts` already
   // considered invisible staleness for a paper feed, and it is short enough that
   // a batch whose efetch half failed heals on its own rather than sitting behind
   // a six-hour TTL.
@@ -639,7 +639,7 @@ export async function reserveOpenAlexBudget(env: WorkerEnv, origin: string, budg
     // `retry-after` of several hours is a client that stops asking until
     // someone reloads the tab. It bounds how soon a client may ask again, not
     // when the tier reopens, so the browser shows no countdown for a refusal
-    // naming its tier (`isOpenAlexBudgetRefusal` in openAlexClient.ts). The
+    // naming its tier (`isOpenAlexBudgetRefusal` in open-alex-client.ts). The
     // harvest's subject is its day's share, so its every refusal is a day's.
     'retry-after': reservation.scope === 'global' || budget.tier === 'feed' ? '300' : '60',
   }) };

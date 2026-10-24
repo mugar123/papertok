@@ -8,8 +8,8 @@ import { carryArxivVectors, runPaperHarvest } from './paper-harvest.ts';
 import { handleCorpusFeed } from './paper-feed.ts';
 import { ingestPapers } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
 // The Workflow's steps run in place: a step's callback is called once, a sleep
 // is recorded and returns at once. `fail` names the steps that fail past their

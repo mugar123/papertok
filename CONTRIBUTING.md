@@ -89,7 +89,7 @@ it, and a structural rule over source belongs in `eslint.config.ts`. Deliberatel
 incomplete or invalid test inputs retain their original values: local type
 assertions describe the fixture boundary, not runtime validation.
 
-The shared paper contract and its parts live in `src/models/Paper.ts`.
+The shared paper contract and its parts live in `src/models/paper.ts`.
 `PaperBuilder` and its consumers import that contract. Use `Partial<Paper>` for
 enrichment metadata rather than a separate provider or component paper type.
 Missing metadata stays optional. A zero citation count with

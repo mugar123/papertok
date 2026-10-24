@@ -1,7 +1,7 @@
 import type { WorkerEnv } from './env.ts';
 import type { OpenAlexBudget, OpenAlexTier, UpstreamError } from './provider-runtime.ts';
 
-export type { OpenAlexWork } from '../src/services/adapters/openAlexTypes.ts';
+export type { OpenAlexWork } from '../src/services/adapters/open-alex-types.ts';
 
 import { sha256 } from './ai-explanation.ts';
 import { allowedOrigins, corsHeaders, json } from './http.ts';
@@ -20,7 +20,7 @@ import {
 
 const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
 // A work OpenAlex has not indexed is an answer. The author lookup in
-// `src/services/openAlexService.ts` asks for its paper's work, and for 51 of 56
+// `src/services/open-alex-service.ts` asks for its paper's work, and for 51 of 56
 // slow author links measured on 2026-09-07 that work was not indexed, so every
 // click on an author of the same paper billed the same 404 again. An hour lets a
 // newly indexed work show up the same day.

@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
-import { openAlexFilterForArea } from '../src/data/openAlexAreas.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { openAlexFilterForArea } from '../src/data/open-alex-areas.ts';
 
 interface Topic {
   id: string; display_name: string; keywords?: string[];
@@ -153,7 +153,7 @@ const { values } = parseArgs({ options: {
   catalogue: { type: 'string', default: fileURLToPath(new URL('./data/openalex-topic-catalogue.json', import.meta.url)) },
   reviews: { type: 'string', default: fileURLToPath(new URL('./data/openalex-topic-reviews.json', import.meta.url)) },
   report: { type: 'string', default: fileURLToPath(new URL('./data/openalex-leaf-topics-coverage.json', import.meta.url)) },
-  out: { type: 'string', default: fileURLToPath(new URL('../src/data/openAlexLeafTopics.generated.ts', import.meta.url)) },
+  out: { type: 'string', default: fileURLToPath(new URL('../src/data/open-alex-leaf-topics.generated.ts', import.meta.url)) },
   check: { type: 'boolean', default: false },
 } });
 const catalogue = readCatalogue(readJson(values.catalogue!));

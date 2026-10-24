@@ -1,4 +1,4 @@
-import type { PaperFollowMatch } from '../src/models/Paper.ts';
+import type { PaperFollowMatch } from '../src/models/paper.ts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -10,9 +10,9 @@ import { ingestPapers, quantize } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
 import { ARXIV_PACE_MAX_WAIT_MS, ARXIV_PACE_PERIOD_MS, ARXIV_UPSTREAM_TIMEOUT_MS, handleArxiv } from './arxiv-api.ts';
 import { handleRequest } from './router.ts';
-import { testD1 } from './test-support/sqliteD1.ts';
-import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { testD1 } from './test-support/sqlite-d1.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Synthetic, in the shape the arXiv harvest stores.
 const stored = arxivRecordPaper({
