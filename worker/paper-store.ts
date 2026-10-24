@@ -433,8 +433,11 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   for (const { from, into } of folded) {
     statements.push(
       db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      db.prepare(`INSERT OR IGNORE INTO work_lanes (lane, work_id, published, listed_until)
-        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?`).bind(into, from),
+      // A lane both rows are in keeps the later notable listing date.
+      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?
+        ON CONFLICT (lane, work_id) DO UPDATE SET listed_until = excluded.listed_until
+          WHERE excluded.listed_until > work_lanes.listed_until`).bind(into, from),
       db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),

@@ -224,6 +224,17 @@ test("a notable lane keeps a folded paper until its listing's date, then drops i
   assert.equal(rows(db, 'SELECT id FROM works').length, 1);
 });
 
+test('a fold of two rows of one notable lane keeps the later listing date', async () => {
+  const { env, db } = corpus();
+  const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
+  const [earlier, later] = ['2026-10-29T03:00:00.000Z', '2026-11-05T03:00:00.000Z'];
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: earlier });
+  await ingestPapers(env, [{ paper: journal, lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: later });
+  // Another source's record of both folds the journal's row into the arXiv one.
+  await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: NOW });
+  assert.deepEqual(rows(db, "SELECT listed_until FROM work_lanes WHERE lane = 'notable:cs.LG'").map(row => row.listed_until), [later]);
+});
+
 test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
   // Synthetic OpenAlex records as the harvest maps them, one harvest each, so
   // the stored row is the base of each later merge. OpenAlex's record of the
