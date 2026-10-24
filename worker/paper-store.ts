@@ -35,9 +35,10 @@ export const KEEP_LIKED_DAYS = 30;
 const FEED_CANDIDATE_LIMIT = 4_000;
 // At least this many of every JOURNAL_FLOOR_WINDOW ranks are articles of an
 // area's journal lane while the asked lanes hold any, and more where the
-// ranking puts more (PAP-107). Each night's articles carry their issue's date,
-// the day before at the latest, so newest first they ranked behind a busy
-// reader's whole arXiv day.
+// ranking puts more (PAP-107). OpenAlex dates an article by its day alone,
+// mostly the day before the harvest, and that day sorts as its midnight, so
+// newest first the night's articles ranked behind a busy reader's whole day
+// of arXiv preprints.
 const JOURNAL_FLOOR = 3;
 // The feed's page of corpus cards (FeedContext's PAGE_SIZE).
 const JOURNAL_FLOOR_WINDOW = 15;

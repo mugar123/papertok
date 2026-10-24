@@ -475,8 +475,8 @@ test("the follows' page reads no area lane: its categories stand for followed to
   assert.deepEqual(followed.map(item => [item.id, item._fetchedFor]), [['2610.00021', ['quant-ph']]]);
 });
 
-// An area's journal articles are dated by their issue, the day before the
-// harvest at the latest, so newest first a reader's whole arXiv day ranks
+// OpenAlex dates an area's journal articles by day alone, mostly the day
+// before the harvest, so newest first a reader's whole day of preprints ranks
 // ahead of them (PAP-107 cold-reader measurement, 2026-10-23).
 test("at least 3 of every 15 cards are the area's journal articles while its lane holds any, and more where they rank higher", async () => {
   const { env, db } = corpus();
