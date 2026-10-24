@@ -18,6 +18,11 @@ import { mapOpenAlexWork } from '../src/utils/open-alex-work.ts';
 import { testD1 } from './test-support/sqlite-d1.ts';
 import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
 
+async function evictAll(env: Parameters<typeof evictExpired>[0], now: number) {
+  let after: number | null = 0;
+  while (after !== null) after = await evictExpired(env, now, after);
+}
+
 test('only arXiv identifiers reach the store lookup', () => {
   assert.equal(arxivIdOf('arxiv:2610.01234v2'), '2610.01234');
   assert.equal(arxivIdOf('hep-th/9901001'), 'hep-th/9901001');
@@ -373,7 +378,7 @@ test('a paper past its keeping date leaves with its keys, lanes and vector', asy
   await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
   db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
   // Kept for the corpus's 90 days after 2026-10-10.
-  await evictExpired(env, Date.parse('2027-01-09T00:00:00Z'));
+  await evictAll(env, Date.parse('2027-01-09T00:00:00Z'));
   for (const table of ['works', 'work_keys', 'work_lanes', 'work_vectors']) {
     assert.equal(rows(db, `SELECT * FROM ${table}`).length, 0, table);
   }
@@ -406,7 +411,7 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.equal(page[0]._followedEntityMatches, undefined);
   // The like, due to leave on 2026-10-28, is kept while readers rank by it.
   assert.equal(rows(db, `SELECT liked_until FROM works WHERE id = ${idOf('2610.00001')}`)[0].liked_until, '2026-11-21T03:00:00.000Z');
-  await evictExpired(env, Date.parse('2026-11-01T00:00:00Z'));
+  await evictAll(env, Date.parse('2026-11-01T00:00:00Z'));
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
 });
 
@@ -491,7 +496,7 @@ test("a reader of any leaf of an area is served the area's journal articles, fil
   assert.deepEqual(await served(['hep-th']), [['openalex:W7223244690', undefined]], 'any physics leaf');
   assert.deepEqual(await served(['math.AG']), [], 'another area');
   assert.deepEqual(await served(['med.onco']), [], 'another area');
-  await evictExpired(env, NOW);
+  await evictAll(env, NOW);
   assert.deepEqual(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'area:physics'").length, 1);
   assert.equal(rows(db, 'SELECT id FROM works').length, 2, 'the area lane keeps its paper in the corpus');
 });
@@ -521,7 +526,7 @@ test("the follows' page reads no area lane: its categories stand for followed to
 // OpenAlex dates an area's journal articles by day alone, mostly the day
 // before the harvest, so newest first a reader's whole day of preprints ranks
 // ahead of them (PAP-107 cold-reader measurement, 2026-10-23).
-test("at least 3 of every 15 cards are the area's journal articles while its lane holds any, and more where they rank higher", async () => {
+test("journal articles and preprints compete by relevance without a per-page minimum", async () => {
   const { env, db } = corpus();
   const preprints = Array.from({ length: 20 }, (_, index) => ({
     ...arxivRecord, id: `2610.${30001 + index}`, arxivId: `2610.${30001 + index}`, title: `Quantum error correction, result ${index + 1}`,
@@ -550,12 +555,12 @@ test("at least 3 of every 15 cards are the area's journal articles while its lan
   };
   const preprintIds = preprints.map(paper => paper.id);
   const articleIds = articles.map(paper => paper.id);
-  // Newest first: the 12 newest preprints and the 3 newest articles, then the rest.
-  assert.deepEqual(await page(0), { preprints: preprintIds.slice(0, 12), articles: articleIds.slice(0, 3) });
-  assert.deepEqual(await page(1), { preprints: preprintIds.slice(12), articles: articleIds.slice(3) });
+  // Newest first, then by either kind of liked paper: no publication quota.
+  assert.deepEqual(await page(0), { preprints: preprintIds.slice(0, 15), articles: [] });
+  assert.deepEqual(await page(1), { preprints: preprintIds.slice(15), articles: articleIds });
   // By a like that puts every preprint first, the same.
-  assert.deepEqual(await page(0, [likedPreprint.id]), { preprints: preprintIds.slice(0, 12), articles: articleIds.slice(0, 3) });
-  // By one that puts the articles first, all five lead: the floor has no maximum.
+  assert.deepEqual(await page(0, [likedPreprint.id]), { preprints: preprintIds.slice(0, 15), articles: [] });
+  // All five relevant articles lead, even though they are older.
   assert.deepEqual(await page(0, [likedArticle.id]), { preprints: preprintIds.slice(0, 10), articles: articleIds });
 });
 
@@ -579,18 +584,18 @@ async function preprintsAndArticles() {
 
 // The app's exploration asks 5 to 8 cards of nearby categories at a random
 // page (FeedContext), which reads the same area lanes as the feed's page.
-test("a page of another size than the feed's 15 cards is ranked as it is: the floor holds the feed's own page", async () => {
-  const { env, preprintIds, articleIds } = await preprintsAndArticles();
+test("all page sizes use the same relevance order", async () => {
+  const { env, preprintIds } = await preprintsAndArticles();
   const ids = async (page: number, pageSize: number) => (await readFeedPage(env, parseFeedRequest({ categories: ['quant-ph'], page, pageSize }), { now: NOW }))
     .map(item => item.id);
   const pages = async (count: number, pageSize: number) => (await Promise.all(Array.from({ length: count }, (_, page) => ids(page, pageSize)))).flat();
   // Newest first, the 30 preprints come before every article.
   assert.deepEqual(await pages(6, 5), preprintIds);
   assert.deepEqual(await pages(3, 8), preprintIds.slice(0, 24));
-  assert.deepEqual((await ids(0, 15)).filter(id => id.startsWith('openalex:')), articleIds.slice(0, 3));
+  assert.deepEqual(await ids(0, 15), preprintIds.slice(0, 15));
 });
 
-test("each page of a ranking ranked again after the ranks served keeps the floor, and no paper comes back", async () => {
+test("reranking retains served ranks and relevance order without repeating papers", async () => {
   const { env, preprintIds, articleIds } = await preprintsAndArticles();
   // As the corpus feed keeps an order until its follow-up work ends: the ranks served only.
   const kept = new Map<string, KeptRanking>();
@@ -606,7 +611,7 @@ test("each page of a ranking ranked again after the ranks served keeps the floor
   await ingestPapers(env, [{ paper: newest, lanes: [] }], { now: NOW });
   const [second, third] = [await page(1), await page(2)];
   const articlesOf = (ids: string[]) => ids.filter(id => id.startsWith('openalex:'));
-  assert.deepEqual([first, second, third].map(articlesOf), [articleIds.slice(0, 3), articleIds.slice(3, 6), articleIds.slice(6)]);
+  assert.deepEqual([first, second, third].map(articlesOf), [[], [], articleIds]);
   assert.deepEqual(second.slice(0, 1), [newest.id], 'the paper that arrived starts the next page');
   assert.deepEqual([...first, ...second, ...third].sort(), [...preprintIds, newest.id, ...articleIds].sort(), 'every paper once');
 });
@@ -614,7 +619,7 @@ test("each page of a ranking ranked again after the ranks served keeps the floor
 // OpenAlex dates an article by its day alone, so one night's articles of every
 // area share their date: of each area's 200 newest on 2026-10-23, 191 computer
 // science and 197 physics articles were dated 2026-10-22 (PAP-107 review).
-test("one night's journal articles of two areas take turns in the floor's ranks, whichever area the request reads first", async () => {
+test("equally recent articles take turns across areas after newer candidates", async () => {
   const { env } = corpus();
   // A reader of an optimization and a learning category: 40 preprints of the last 20 hours.
   const preprints = Array.from({ length: 40 }, (_, index) => {
@@ -640,9 +645,9 @@ test("one night's journal articles of two areas take turns in the floor's ranks,
     const ids = (await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG', 'math.OC'], page }), { now: NOW })).map(item => item.id);
     return { cs: ids.filter(id => id.startsWith('openalex:W93')).length, math: ids.filter(id => id.startsWith('openalex:W94')).length };
   };
-  const [first, second] = [await areasOn(0), await areasOn(1)];
+  const [first, second] = [await areasOn(2), await areasOn(3)];
   assert.ok(first.cs > 0 && first.math > 0, `the first page holds both areas' articles: ${JSON.stringify(first)}`);
-  assert.deepEqual({ cs: first.cs + second.cs, math: first.math + second.math }, { cs: 3, math: 3 });
+  assert.deepEqual({ cs: first.cs + second.cs, math: first.math + second.math }, { cs: 6, math: 6 });
 });
 
 test("an area's journal lane is read beside a reader's own lanes, not out of their candidates: a like still finds a preprint 17 days back in a busy category", async () => {
@@ -671,7 +676,6 @@ test("an area's journal lane is read beside a reader's own lanes, not out of the
   db.exec('COMMIT');
   const page = await readFeedPage(env, parseFeedRequest({ categories: ['cs.LG'], positiveIds: ['2609.99999'] }), { now: NOW });
   assert.equal(page[0]?.id, '2610.12400');
-  assert.equal(page.filter(paper => paper.id.startsWith('openalex:')).length, 3, 'and the area lane still fills the floor');
 });
 
 test('the area lanes a request reads give at most 800 candidates together, in equal shares, though 800 does not divide by their number', async () => {
@@ -744,10 +748,35 @@ test('a lane keeps the newest papers a page can rank from, and a paper left in n
     lanes: ['cs.LG'],
   }));
   await ingestPapers(env, many, { now: NOW });
-  await evictExpired(env, NOW);
+  await evictAll(env, NOW);
   assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'cs.LG'").length, 4_000);
   assert.equal(rows(db, 'SELECT id FROM works').length, 4_000, 'the three oldest, in no lane now, are gone');
   assert.equal(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.04002'").length, 0);
+});
+
+test('eviction resumes through bounded batches and removes expired records with their children', async () => {
+  const { env, db } = corpus();
+  const insert = db.prepare("INSERT INTO works (id, paper, published, kept_until) VALUES (?, '{}', '2026-07-01', '2026-08-01')");
+  const key = db.prepare('INSERT INTO work_keys (key, work_id) VALUES (?, ?)');
+  const lane = db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('cs.CL', ?, '2026-07-01')");
+  const vector = db.prepare("INSERT INTO work_vectors (work_id, embedding) VALUES (?, x'01')");
+  for (let id = 1; id <= 1_200; id += 1) {
+    insert.run(id);
+    key.run(`id:expired-${id}`, id);
+    lane.run(id);
+    vector.run(id);
+  }
+  db.prepare('UPDATE works SET liked_until = ? WHERE id = 900').run(daysFromNow(30, NOW));
+  let cursor = await evictExpired(env, NOW);
+  assert.equal(rows(db, 'SELECT id FROM works').length, 700);
+  assert.equal(cursor, 500);
+  cursor = await evictExpired(env, NOW, cursor);
+  assert.equal(cursor, 1_000);
+  assert.equal(await evictExpired(env, NOW, cursor), null);
+  assert.deepEqual(rows(db, 'SELECT id FROM works').map(row => row.id), [900]);
+  for (const table of ['work_keys', 'work_lanes', 'work_vectors']) {
+    assert.deepEqual(rows(db, `SELECT work_id FROM ${table}`).map(row => row.work_id), [900]);
+  }
 });
 
 test("a vector keeps its leading dimensions, and a cut one compares like a whole one", () => {
@@ -912,7 +941,7 @@ test("a paper dated past tomorrow is not filed, and one filed before that rule l
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
   db.prepare("INSERT INTO works (id, paper, published, kept_until) VALUES (1, '{}', '2026-12-01T00:00:00.000Z', '2027-03-01T00:00:00.000Z')").run();
   db.prepare("INSERT INTO work_lanes (lane, work_id, published) VALUES ('med.cardio', 1, '2026-12-01T00:00:00.000Z')").run();
-  await evictExpired(env, NOW);
+  await evictAll(env, NOW);
   assert.equal(rows(db, 'SELECT id FROM works').length, 0);
 });
 
@@ -952,7 +981,7 @@ test('a paper only an unfollowed entity names leaves; a category, the working-pa
     { paper: paper('2610.00044', 'In the working-paper series'), lanes: ['series:working-papers'] },
   ], { now: NOW });
   db.prepare("INSERT INTO followed_lanes (lane, requested_at) VALUES ('author:A10', ?)").run(new Date(NOW).toISOString());
-  await evictExpired(env, NOW);
+  await evictAll(env, NOW);
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key LIKE 'arxiv:%' ORDER BY key").map(row => row.key), ['arxiv:2610.00042', 'arxiv:2610.00043', 'arxiv:2610.00044']);
   assert.equal(rows(db, "SELECT work_id FROM work_lanes WHERE lane = 'author:A9'").length, 1, 'the author lane still names the paper its category keeps');
 });

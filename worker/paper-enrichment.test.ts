@@ -80,7 +80,7 @@ const stored = (db: ReturnType<typeof testD1>['db']): Record<string, { paper: Pa
 test('stored papers get what the feed used to add to every page, once; an unknown one waits for a retry, a book leaves its lanes', async t => {
   providers(t);
   const { env, db } = await corpus();
-  assert.equal(await enrichPending(env, 50, NOW), 3);
+  assert.equal((await enrichPending(env, 50, NOW)).workIds.length, 3);
   const works = stored(db);
   assert.equal(works['2610.11111'].paper.citationCount, 7);
   assert.equal(works['2610.11111'].paper.citationCountKnown, true);
@@ -95,7 +95,7 @@ test('stored papers get what the feed used to add to every page, once; an unknow
   // The followed author and topic now find the enriched paper.
   const lanes = db.prepare(`SELECT lane FROM work_lanes WHERE work_id = (SELECT work_id FROM work_keys WHERE key = 'arxiv:2610.11111') ORDER BY lane`).all().map(row => (row as { lane: string }).lane);
   assert.deepEqual(lanes, ['author:A5023888391', 'cs.CL', 'topic:T10181']);
-  assert.equal(await enrichPending(env, 50, NOW), 0, 'nothing is asked twice');
+  assert.deepEqual(await enrichPending(env, 50, NOW), { workIds: [], stop: true }, 'nothing is asked twice');
 });
 
 // PAP-88: readers' card batches stop at 80 % of the day's OpenAlex ceiling.
@@ -110,7 +110,7 @@ test("readers' closed card-batch tier does not stop the harvest's enrichment", a
     periodKey: `openalex:day:${new Date().toISOString().slice(0, 10)}`, subject: 'readers', subjectLimit: ceiling, globalLimit: ceiling,
     amount: Math.floor(ceiling * OPENALEX_TIER_PERCENT.enrichment / 100) + 100,
   });
-  assert.equal(await enrichPending(env, 50, NOW), 3);
+  assert.equal((await enrichPending(env, 50, NOW)).workIds.length, 3);
   assert.equal(stored(db)['2610.11111'].paper.citationCount, 7);
 });
 
@@ -118,7 +118,7 @@ for (const status of [429, 502]) {
   test(`an OpenAlex that answers ${status} leaves the papers waiting for it to the next run, and marks the rest done`, async t => {
     providers(t, { openAlexStatus: status });
     const { env, db } = await corpus();
-    assert.equal(await enrichPending(env, 50, NOW), 0, 'the run stops asking');
+    assert.equal((await enrichPending(env, 50, NOW)).stop, true, 'the run stops asking');
     const works = stored(db);
     assert.equal(works['2610.11111'].enrichedAt, null);
     assert.equal(works['2610.22222'].enrichedAt, null);

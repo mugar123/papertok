@@ -561,9 +561,9 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
 
   await backfillLane(store, job);
-  assert.equal(terms.length, 20);
-  assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 21 });
-  await backfillLane(store, job);
+  assert.equal(terms.length, 5);
+  assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 6 });
+  for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
   assert.ok(terms.every(term => term.endsWith(' AND hasabstract AND 1800/01/01:2026/10/24[edat]')));
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
@@ -585,9 +585,9 @@ test("a refused page ends the lane's backfill for the run, which goes on from th
   const { terms, env } = pubmedListing(t);
   const { binding, db } = testD1();
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
-  await backfillLane({ ...env, PUBMED_GLOBAL_MINUTE_LIMIT: '5', PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
-  assert.equal(terms.length, 5, "the minute's five");
-  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 6);
+  await backfillLane({ ...env, PUBMED_GLOBAL_MINUTE_LIMIT: '3', PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 3, "the minute's three");
+  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 4);
 });
 
 for (const failure of ['answers with an error', 'cannot be reached'] as const) {
@@ -615,33 +615,39 @@ for (const failure of ['answers with an error', 'cannot be reached'] as const) {
     assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, 7);
     down = false;
     await backfillLane(store, job);
-    assert.equal(terms.length, 20, 'pages 7 to 26: a step reads 20 pages');
+    assert.equal(terms.length, 5, 'pages 7 to 11: a step releases resources after five pages');
   });
 }
 
-test('a backfill step cut short goes on next time from the page after the last one stored', async t => {
-  const { terms, env } = pubmedListing(t);
-  const { binding, db } = testD1();
-  db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
-  // A step the Worker stops partway, as its CPU limit does: here a write that throws.
-  let batches = 0;
-  const cut = { ...binding, prepare: binding.prepare.bind(binding), batch: (statements: D1PreparedStatement[]) => {
-    batches += 1;
-    if (batches === 5) throw new Error('Worker exceeded CPU time limit.');
-    return binding.batch(statements);
-  } } as unknown as D1Database;
-  await assert.rejects(backfillLane({ ...env, PAPER_STORE: cut }, { source: 'pubmed', lane: 'bio.zoo' }));
-  const reached = terms.length;
-  assert.ok(reached > 1);
-  assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, reached, 'the page it was cut on');
-});
+for (const failure of ['Worker exceeded CPU time limit.', 'D1_ERROR: out of memory: SQLITE_NOMEM']) {
+  test(`a backfill resumes without losing papers after ${failure}`, async t => {
+    const { terms, env } = pubmedListing(t);
+    const { binding, db } = testD1();
+    db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z')").run();
+    // A step the Worker stops partway, as its CPU limit does: here a write that throws.
+    let batches = 0;
+    const cut = { ...binding, prepare: binding.prepare.bind(binding), batch: (statements: D1PreparedStatement[]) => {
+      batches += 1;
+      if (batches === 5) throw new Error(failure);
+      return binding.batch(statements);
+    } } as unknown as D1Database;
+    await assert.rejects(backfillLane({ ...env, PAPER_STORE: cut }, { source: 'pubmed', lane: 'bio.zoo' }), /Backfill pubmed bio.zoo page 5 could not store 50 records/);
+    const reached = terms.length;
+    assert.equal(reached, 5);
+    assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number }).backfill_page, reached, 'the page it was cut on');
+    await backfillLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
+    assert.equal(db.prepare('SELECT count(*) AS n FROM works').get()?.n, 450, 'pages one to nine are stored exactly once');
+  });
+}
 
 test("a backfill ends at the last page the PubMed route serves, which answers any later one with it", async t => {
   const { terms, env } = pubmedListing(t, { endless: true });
   const { binding, db } = testD1();
   db.prepare("INSERT INTO lane_state (source, lane, harvested_through, backfill_until, backfill_page) VALUES ('pubmed', 'bio.zoo', '2026-10-24T03:00:00.000Z', '2026-10-20', 95)").run();
   await backfillLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
-  assert.equal(terms.length, 6, 'pages 95 to 100');
+  assert.equal(terms.length, 5, 'pages 95 to 99');
+  await backfillLane({ ...env, PAPER_STORE: binding }, { source: 'pubmed', lane: 'bio.zoo' });
+  assert.equal(terms.length, 6, 'the next step reaches page 100');
   assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number | null }).backfill_page, null);
 });
 
