@@ -1943,8 +1943,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
             <p>{'Organize, annotate and share the papers you keep.'}</p>
           </header>
           <div className="lists-grid">
-            <AnimatePresence initial={false} mode="popLayout">
-            {displayLists.map((list) => {
+            {/* The folders arrive in turn whenever the index opens: 40ms
+                apart, the delay capped at the sixth so a long grid is never
+                slow; opacity alone under reduced motion. A list just made
+                keeps its own entrance. */}
+            <AnimatePresence mode="popLayout">
+            {displayLists.map((list, index) => {
               const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
               const accent = resolveListColor(list);
               const behindIds = (list.paperIds || []).slice(0, 2).reverse();
@@ -1952,8 +1956,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
               return (
               <motion.div
                 {...cardMotion}
-                initial={isNew ? { opacity: 0, transform: 'scale(0.97)' } : false}
-                animate={{ opacity: 1, transform: 'scale(1)' }}
+                initial={isNew
+                  ? { opacity: 0, transform: 'scale(0.97)' }
+                  : { opacity: 0, transform: prefersReducedMotion ? 'translateY(0px)' : 'translateY(8px)' }}
+                animate={isNew
+                  ? { opacity: 1, transform: 'scale(1)' }
+                  : { opacity: 1, transform: 'translateY(0px)', transition: { duration: 0.24, ease: EASE_OUT, delay: Math.min(index, 6) * 0.04 } }}
                 transition={isNew ? { ...cardMotion.transition, delay: 0.14 } : cardMotion.transition}
                 key={list.id}
                 className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
