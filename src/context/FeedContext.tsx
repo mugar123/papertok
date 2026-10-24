@@ -349,7 +349,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
-  const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
+  // -1 (classic) to +1 (recent): likes, saves and long reads of papers a week
+  // or a year old move it. A notable card's leave it as it is: the feed chose
+  // that card for its citations, and it is years old by that choice.
+  const temporalPreference = useRef(0);
   const [initialRecommendationWeights] = useState(() => readRecommendationWeights());
   const recommendationWeights = useRef(initialRecommendationWeights);
   const boredomLevel = useRef(0); // 0 = happy, higher = more bored
@@ -1822,9 +1825,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       countEngagement(paperInput.id, { likes: 1 });
 
       // Update temporal preference
-      const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
-      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
+      if (!paper._notable) {
+        const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
+        else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
+      }
     }
     recordProfileEvent({
       paperId: paper.id,
@@ -2032,7 +2037,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // and in the PAP-86 audit's model of a signed-in session those walks were
     // about a tenth of its OpenAlex units (modelled, not measured). A like, a
     // save or an opened PDF still expands the graph.
-    if (timeInSeconds >= 10) {
+    if (timeInSeconds >= 10 && !paper._notable) {
       const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.05);
@@ -2175,10 +2180,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     boredomLevel.current = 0;
     // Attempt to update temporal preference
     if (paper) {
-      const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
-      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
-      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
-      
+      if (!paper._notable) {
+        const daysOld = (Date.now() - new Date(paper.published!).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
+        else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
+      }
+
       // Expand network via OpenAlex
       traverseAndExpandNetwork(paper);
     }

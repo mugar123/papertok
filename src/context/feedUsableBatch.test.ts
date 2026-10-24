@@ -1008,6 +1008,44 @@ test('a notable paper the reader already saved is left out once, and the next pa
   assert.ok(!state.papers.some(paper => paper.id === 'saved-classic'));
 });
 
+// A like, a save and a long read, as the feed's handlers take them in demo
+// mode, over the feed's own temporal preference.
+function engaging(temporalPreference: { current: number }) {
+  const scope = {
+    temporalPreference, boredomLevel: ref(0), profileSignals: ref(readProfileSignals(null)),
+    user: null, IS_DEMO: true, demoSet: () => {}, demoGet: () => ({}), withInteractionId: <T>(paper: T) => paper,
+    likedPaperIds: new Set<string>(), setLikedPaperIds: () => {}, savedPaperIdsRef: ref(new Set<string>()), setSavedPaperIds: () => {}, papers: [],
+    traverseAndExpandNetwork: () => {}, countEngagement: () => {}, recordProfileEvent: () => {},
+    reRankFeed: () => {}, scheduleReRank: () => {}, markPaperViewed: () => {},
+  };
+  const like = callbackIn(componentCallback('toggleLike', 'withInteractionId, recordProfileEvent, countEngagement, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork, trackEvent'), scope);
+  const save = callbackIn(componentCallback('markSaved', 'withInteractionId, papers, reRankFeed, recordProfileEvent, countEngagement, traverseAndExpandNetwork, user?.uid'), scope);
+  const view = callbackIn(componentCallback('trackViewTime', 'markPaperViewed, scheduleReRank, recordProfileEvent, countEngagement, user?.uid'), scope);
+  return { like, save, read: (paper: FeedRecord) => view(paper, 12) } as Record<'like' | 'save' | 'read', (paper: FeedRecord) => Promise<void>>;
+}
+
+// Every notable card is years old by the feed's choice, so engaging with one
+// says nothing about the age of the papers the reader wants next.
+test('liking, saving or reading notable cards keeps the next page newest first, unlike the same engagement with other old papers', async t => {
+  t.mock.method(console, 'log', () => {});
+  const published2017 = (id: string, notable: boolean) => ({ ...paperRecord(id), published: '2017-12-01T00:00:00.000Z', ...(notable ? { _notable: true } : {}) });
+  const orders: string[] = [];
+  for (const [engagement, times] of [['like', 4], ['save', 3], ['read', 7]] as const) {
+    for (const notable of [true, false]) {
+      const { env, run } = feed();
+      const handlers = engaging(env.temporalPreference);
+      for (let index = 0; index < times; index += 1) await handlers[engagement](published2017(`${engagement}-${index}`, notable));
+      Object.assign(env, { fetchCorpusPage: async ({ order }: { order: string }) => { orders.push(`${times} × ${engagement}, ${notable ? 'notable cards' : 'other papers from 2017'}: ${order}`); return records('corpus'); } });
+      await run(true);
+    }
+  }
+  assert.deepEqual(orders, [
+    '4 × like, notable cards: recent', '4 × like, other papers from 2017: relevance',
+    '3 × save, notable cards: recent', '3 × save, other papers from 2017: relevance',
+    '7 × read, notable cards: recent', '7 × read, other papers from 2017: relevance',
+  ]);
+});
+
 // A like asks the corpus for papers like the one just liked (traverseAndExpandNetwork).
 // The corpus may not have embedded that paper yet: the request says to wait
 // for it, which the feed's own pages never do.
