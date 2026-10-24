@@ -235,6 +235,27 @@ test('a reader who follows a hundred and twenty entities still gets their follow
   assert.deepEqual(ids((await ask(body)).papers), ['2610.70001']);
 });
 
+test("a reader's next pages from the kept order read each stored id once, however far they scroll", async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(450);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const binding = env.PAPER_STORE as D1Database;
+  const prepare = binding.prepare.bind(binding);
+  let idReads = 0;
+  t.mock.method(binding, 'prepare', (sql: string) => {
+    if (sql.includes("paper ->> '$.id'")) idReads += 1;
+    return prepare(sql);
+  });
+  const shown: string[] = [];
+  for (let page = 0; page < 30; page += 1) {
+    const answer = await ask({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(shown), skipsSeen: true });
+    assert.deepEqual(ids(answer.papers), ids(papers.slice(page * 15, (page + 1) * 15)), `page ${page}`);
+    shown.push(...ids(answer.papers));
+  }
+  assert.ok(idReads <= 3, `${idReads} reads of stored ids for thirty pages`);
+});
+
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {

@@ -687,8 +687,13 @@ export interface FeedQuery {
  * first without any. Each paper says which asked categories it was found in
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
-/** A reader's ranked candidates, kept for the pages after the first. */
-export interface RankedCandidate { workId: number; lanes: string[] }
+/**
+ * A reader's ranked candidates, kept for the pages after the first. `paperId`
+ * is the app's id of the paper once a page that skips seen papers has read it
+ * from its row, '' when the corpus no longer holds the work: the next pages
+ * check it against their filter without reading it again.
+ */
+export interface RankedCandidate { workId: number; lanes: string[]; paperId?: string }
 /**
  * The order a reader's pages were served from. `served` counts the ranks
  * pages have covered, including the empty ones of a page the order ran out
@@ -701,7 +706,10 @@ export interface RankedCandidate { workId: number; lanes: string[] }
 export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean; notable?: RankedCandidate[] }
 export interface RankingCache {
   get(key: string): Promise<KeptRanking | null>;
+  /** An order just ranked. */
   put(key: string, ranking: KeptRanking): Promise<void>;
+  /** A final order read from the cache, with the paper ids a page read since: kept as it is. */
+  update?(key: string, ranking: KeptRanking): Promise<void>;
 }
 
 /**
@@ -721,7 +729,9 @@ export interface RankingCache {
  * not hold, whatever `page` says, so a reload needs one request however many
  * pages the reader saw before (PAP-103); a false positive passes over a paper
  * the reader has not seen. When the order holds none, the page is the one
- * `page` names, papers the reader has seen, rather than none.
+ * `page` names, papers the reader has seen, rather than none. The paper ids
+ * the walk reads stay in the kept order, so a later page reads only the ones
+ * no page has read.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
@@ -755,6 +765,9 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (rankedAgain) {
     await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
       .catch(error => console.warn('Feed ranking not cached', error));
+  } else if (kept && (own?.read || unseen?.read)) {
+    await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable })
+      .catch(error => console.warn('Feed ranking not cached', error));
   }
   if (ranked.length === 0) return [];
   const notableIds = new Set(unseen?.unseen.map(candidate => candidate.workId));
@@ -778,26 +791,33 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
 
 /**
  * The first `wanted` of `ranks` whose papers the reader has not seen, in
- * order, and how many ranks the walk took to find them (`end`). The filter
- * holds the ids the app was served, so each candidate's is read from its
- * row: 200 the first time and twice as many each time after, so a reader who
- * has seen a few thousand papers costs a few reads.
+ * order, how many ranks the walk took to find them (`end`), and whether it
+ * read paper ids (`read`). The filter holds the ids the app was served, so a
+ * candidate's is read from its row, unless a walk already left it on the
+ * candidate (`paperId`): 200 ranks the first time and twice as many each time
+ * after, so a reader who has seen a few thousand papers costs a few reads.
  */
 async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number) {
   const unseen: RankedCandidate[] = [];
   let end = 0;
+  let read = false;
   for (let size = 200; end < ranks.length && unseen.length < wanted; size *= 2) {
     const chunk = ranks.slice(end, end + size);
-    const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
-      .bind(JSON.stringify(chunk.flatMap(candidate => (candidate ? [candidate.workId] : [])))).all<{ id: number; paper_id: string }>();
-    const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
+    const unread = chunk.filter((candidate): candidate is RankedCandidate => candidate !== null && candidate.paperId === undefined);
+    if (unread.length) {
+      const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
+        .bind(JSON.stringify(unread.map(candidate => candidate.workId))).all<{ id: number; paper_id: string | null }>();
+      const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
+      for (const candidate of unread) candidate.paperId = paperIds.get(candidate.workId) ?? '';
+      read = true;
+    }
     for (const candidate of chunk) {
       if (unseen.length === wanted) break;
       end += 1;
-      if (candidate && paperIds.has(candidate.workId) && !hasSeenPaper(seen, paperIds.get(candidate.workId))) unseen.push(candidate);
+      if (candidate?.paperId && !hasSeenPaper(seen, candidate.paperId)) unseen.push(candidate);
     }
   }
-  return { unseen, end };
+  return { unseen, end, read };
 }
 
 async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {

@@ -243,6 +243,7 @@ export async function handleCorpusFeed(
         kept = [key, ranking];
         await cache.put(key, { ranks: ranking.ranks.slice(0, ranking.served), served: ranking.served, final: false });
       },
+      update: (key, ranking) => cache.put(key, ranking),
     },
   });
   // Otherwise after the page, not before it: a lookup can take seconds
