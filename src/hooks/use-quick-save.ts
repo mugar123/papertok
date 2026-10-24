@@ -11,6 +11,7 @@ import { useLanguage } from '../context/language-context.tsx';
 import { readListsHoldingPaper, writeListMembership } from '../services/paper-list-membership.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
+import { pickerUndoToastId } from '../components/lists/picker-undo-toast.ts';
 import { markThenConfirm, runOneAtATime } from './quick-save-operation.ts';
 
 /**
@@ -68,6 +69,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
 
   const handleSaveToList = useCallback((paper: Paper) => {
     const id = interactionIdFor(paper)!;
+    toast.dismiss(pickerUndoToastId(paper.id));
     return oneAtATime(id, async () => {
       if (!savedPaperIds.has(id)) {
         try {

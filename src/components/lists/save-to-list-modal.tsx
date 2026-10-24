@@ -4,7 +4,7 @@ import type { OwnList } from '../../utils/own-lists.ts';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { db } from '../../services/firebase.ts';
+import { auth, db } from '../../services/firebase.ts';
 import { savedPaperDocRef } from '../../services/saved-paper-store.ts';
 import { collection, getDocs, doc, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/bounded-read.ts';
@@ -36,6 +36,7 @@ import { ArrowLeft, BookOpen, Check, ListPlus, LockSimple, Note, Plus, Tag, X } 
 import { libraryTags, suggestTags } from '../../utils/tag-suggestions.ts';
 import { areaLabelForPaper } from '../../utils/area-accent.ts';
 import { Button } from '../ui/button.tsx';
+import { toast } from 'sonner';
 import { toastError } from '../ui/toast.ts';
 import { Checkbox } from '../ui/checkbox.tsx';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.tsx';
@@ -45,6 +46,7 @@ import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
 import { Textarea } from '../ui/textarea.tsx';
 import { buildSavedPaperPayload } from '../../utils/saved-paper-payload.ts';
+import { pickerUndoToastId } from './picker-undo-toast.ts';
 import {
   ownListsAreFresh,
   ownListsCache,
@@ -493,6 +495,7 @@ export default function SaveToListModal({
   const handleSave = async () => {
     if (savingRef.current || saving || !hasWrites) return;
     savingRef.current = true;
+    toast.dismiss(pickerUndoToastId(paper.id));
     const finalTags = effectiveTags;
     const { toAdd, toRemove } = diffListSelection([...initialListIds], [...pendingListIds]);
     const metadataChanged = note !== baseline.note
@@ -566,6 +569,37 @@ export default function SaveToListModal({
       if (savesPaper) void markActivation();
 
       closeDialog();
+      const uid = user!.uid;
+      const undo = async () => {
+        if (auth.currentUser?.uid !== uid) return false;
+        await writeListMembership({ uid, paper, lists: toAdd.map(listById), added: false, language });
+        await writeListMembership({ uid, paper, lists: toRemove.map(listById), added: true, language });
+        if (readLaterChanged) await toggleReadLater(paper, baseline.readLater);
+        if (metadataChanged) await saveReadingMetadata(paper, { note: baseline.note, tags: baseline.tags });
+        if (savesPaper && !alreadySaved) await unmarkSaved(paper);
+        if (unsavesPaper) await markSaved(paper);
+        return true;
+      };
+      const destinations = [
+        ...(readLaterChanged && pendingReadLater ? ['Read later'] : []),
+        ...toAdd.map(listId => listById(listId).name || 'a list'),
+      ];
+      toast.success(
+        destinations.length === 0 ? 'Changes saved'
+          : destinations.length <= 2 ? `Saved to ${destinations.join(' and ')}`
+            : `Saved to ${destinations[0]} and ${destinations.length - 1} more`,
+        {
+          id: pickerUndoToastId(paper.id),
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              undo()
+                .then((undone) => { if (undone) toast.success('Save undone', { id: pickerUndoToastId(paper.id) }); })
+                .catch(() => toastError('Could not undo this change'));
+            },
+          },
+        },
+      );
     } catch (err) {
       console.error('Save and organize could not commit everything:', err);
       setSaveError(true);
