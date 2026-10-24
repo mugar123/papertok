@@ -3,6 +3,7 @@ import type { FollowEntity } from '../utils/following.ts';
 
 import { authenticatedWorkerFetch, workerSourceUrl } from './worker-api-client.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
+import { FEED_MAX_FOLLOWS, followLane } from '../utils/follow-lanes.ts';
 
 // Inside the feed's 4 s first-paint budget, with room for the response.
 const STORE_TIMEOUT_MS = 3_500;
@@ -62,7 +63,10 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
 export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const body = {
     categories,
-    follows: follows.map(({ type, canonicalId, displayName, metadata }) => ({
+    // Only the follows the Worker reads travel (`parseFeedRequest`): the first
+    // FEED_MAX_FOLLOWS with a lane. A topic follow that is one of the app's
+    // categories has none; it is asked for as that category.
+    follows: follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS).map(({ type, canonicalId, displayName, metadata }) => ({
       type,
       canonicalId,
       displayName,

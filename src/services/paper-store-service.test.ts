@@ -60,6 +60,17 @@ test('a page asks the corpus for the categories, follows and likes, and returns 
   assert.deepEqual(papers, [STORED]);
 });
 
+test('a page sends only the follows the Worker reads: the first twenty with a lane, and a followed category as its category', async () => {
+  const { asked, options } = harness(answered([]));
+  const authors: FollowEntity[] = Array.from({ length: 30 }, (_, index) => ({ type: 'author', canonicalId: `https://openalex.org/A${5_000_000_000 + index}`, displayName: `Followed author ${index}` }));
+  const category: FollowEntity = { type: 'topic', canonicalId: 'cs.LG', displayName: 'Machine Learning' };
+  const byName: FollowEntity = { type: 'institution', canonicalId: 'mit', displayName: 'MIT' };
+  await fetchCorpusPage({ categories: ['cs.LG'], follows: [category, byName, ...authors], page: 0, pageSize: 6 }, options);
+  const body = asked[0].body as { categories: string[]; follows: Array<{ canonicalId: string }> };
+  assert.deepEqual(body.categories, ['cs.LG']);
+  assert.deepEqual(body.follows.map(follow => follow.canonicalId), authors.slice(0, 20).map(follow => follow.canonicalId));
+});
+
 test('a page sends what the reader has seen as the filter the Worker reads, asks it to skip those papers, and asks for notable papers only with it', async () => {
   const { asked, options } = harness(answered([]));
   const seen = new Set(['2610.00001', 'openalex:W2107743791']);

@@ -598,7 +598,7 @@ export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise
     .filter(job => !recent.has(job.lane));
 }
 
-// The source that serves each kind of followed lane (paper-store.ts `followLane`).
+// The source that serves each kind of followed lane (`followLane` in src/utils/follow-lanes.ts).
 const FOLLOWED_LANE_SOURCES: Array<[RegExp, SourceName]> = [
   [/^author-name:/, 'arxiv-search'],
   [/^project:/, 'openaire'],

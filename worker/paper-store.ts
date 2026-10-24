@@ -8,6 +8,7 @@ import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
+import { FEED_MAX_FOLLOWS, entityLane, followLane } from '../src/utils/follow-lanes.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
@@ -35,7 +36,6 @@ export const CORPUS_DAYS = 90;
 export const KEEP_LIKED_DAYS = 30;
 export const FEED_CANDIDATE_LIMIT = 4_000;
 const FEED_MAX_CATEGORIES = 12;
-const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
 const FEED_MAX_EXCLUDED = 200;
 const DIVERSITY_POOL = 500;
@@ -195,14 +195,6 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // three listings' worth of each asked lane, newest first, so the newer papers
 // that dropped out do not cut the listing's oldest, most-cited ones.
 const NOTABLE_READ_PER_LANE = 300;
-const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
-const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
-
-function entityLane(value: unknown) {
-  const match = text(value).match(OPENALEX_ENTITY);
-  const id = (match?.[1] || match?.[2] || '').toUpperCase();
-  return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
-}
 
 /**
  * The lanes a paper belongs to by its own record, whichever source listed it:
@@ -949,29 +941,6 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
 // ─── Requests ───
 
 const CATEGORY_ID = /^[\w.-]{1,32}$/;
-const FOLLOW_TYPES = new Set(['author', 'topic', 'institution', 'project']);
-
-/**
- * The lane a followed entity is served from: the OpenAlex entity a paper
- * names, a search for a followed query or an author known by name only, or
- * a funded project. A topic that is one of the app's categories is asked for
- * as that category instead, and gets no lane here.
- */
-export function followLane(follow: { type?: unknown; canonicalId?: unknown; displayName?: unknown; metadata?: { query?: unknown; funder?: unknown } | null }) {
-  const type = text(follow?.type);
-  const canonicalId = text(follow?.canonicalId).split('/').pop()!.slice(0, 200);
-  if (!FOLLOW_TYPES.has(type) || !canonicalId) return '';
-  if (type === 'project') {
-    const funder = text(follow.metadata?.funder).slice(0, 80);
-    return `project:${funder ? `${funder}|` : ''}${canonicalId}`;
-  }
-  const entity = entityLane(canonicalId);
-  if (entity && (type === 'topic' ? /^(topic|concept):/.test(entity) : entity.startsWith(`${type}:`))) return entity;
-  if (LEAF_IDS.has(canonicalId)) return '';
-  const query = text(type === 'topic' ? follow.metadata?.query || follow.displayName : follow.displayName).toLowerCase().slice(0, 120);
-  if (!query) return '';
-  return type === 'author' ? `author-name:${query}` : type === 'topic' ? `query:${query}` : '';
-}
 
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;

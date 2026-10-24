@@ -34,12 +34,9 @@ test('followed authors and category topics come back as followed papers, each wi
   assert.equal(asked.length, 1, 'one request for every follow');
   const { seen: filter, ...request } = asked[0];
   assert.deepEqual(request, {
-    // The category topic is asked for as its category, and every follow goes as stored.
+    // The category topic is asked for as its category; the Worker reads no follow for it.
     categories: ['cs.LG'],
-    follows: [
-      { type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', metadata: {} },
-      { type: 'topic', canonicalId: 'cs.LG', displayName: 'Machine Learning', metadata: {} },
-    ],
+    follows: [{ type: 'author', canonicalId: 'A5023888391', displayName: 'Ana Pérez', metadata: {} }],
     positiveIds: ['2610.00001'], negativeIds: ['2610.00002'], excludedIds: ['2610.00003'],
     page: 2, pageSize: FOLLOWED_PER_PAGE, order: 'recent', skipsSeen: true,
   });

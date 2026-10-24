@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, followLane, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
+  arxivIdOf, daysFromNow, embedPending, embedWorks, evictExpired, ingestPapers, keysForPaperId, parseFeedRequest, quantize, rankBySimilarity,
   readFeedPage, readVector, rewriteWorks,
 } from './paper-store.ts';
 import { arxivRecordPaper } from './paper-sources.ts';
@@ -409,18 +409,6 @@ test('a page ranks its lanes by the liked papers, says what each was found under
   assert.equal(rows(db, `SELECT liked_until FROM works WHERE id = ${idOf('2610.00001')}`)[0].liked_until, '2026-11-21T03:00:00.000Z');
   await evictExpired(env, Date.parse('2026-11-01T00:00:00Z'));
   assert.deepEqual(rows(db, "SELECT key FROM work_keys WHERE key = 'arxiv:2610.00001'").length, 1, 'past its date, still ranked by');
-});
-
-test('a follow is served from the lane its entity names, and a followed category from the category itself', () => {
-  assert.equal(followLane({ type: 'author', canonicalId: 'https://openalex.org/A5023888391' }), 'author:A5023888391');
-  assert.equal(followLane({ type: 'institution', canonicalId: 'I1321305853' }), 'institution:I1321305853');
-  assert.equal(followLane({ type: 'topic', canonicalId: 'T10604' }), 'topic:T10604');
-  assert.equal(followLane({ type: 'topic', canonicalId: 'C41008148' }), 'concept:C41008148');
-  assert.equal(followLane({ type: 'topic', canonicalId: 'cs.LG' }), '', 'asked for as the category');
-  assert.equal(followLane({ type: 'topic', canonicalId: 'query:abc', displayName: 'Graph Neural Networks', metadata: { query: 'graph neural networks' } }), 'query:graph neural networks');
-  assert.equal(followLane({ type: 'author', canonicalId: 'yann-lecun', displayName: 'Yann LeCun' }), 'author-name:yann lecun');
-  assert.equal(followLane({ type: 'project', canonicalId: '101034344', metadata: { funder: 'EC' } }), 'project:EC|101034344');
-  assert.equal(followLane({ type: 'author', canonicalId: 'T10604' }), '', 'a topic id is no author, and there is no name to search');
 });
 
 test('feed feedback is optional, deduplicated, bounded and accepts only string IDs', () => {
