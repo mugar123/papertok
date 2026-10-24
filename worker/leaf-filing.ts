@@ -2,7 +2,7 @@ import type { StoreEnv } from './paper-store.ts';
 
 import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
 import { isArxivCategory } from '../src/services/arxivRecords.ts';
-import { AREA_LANE_AREAS, areaLane, cosine, database, quantize, readVector } from './paper-store.ts';
+import { AREA_LANE_AREAS, areaLane, cosine, database, quantize, readVector, unitVector } from './paper-store.ts';
 
 // The journal articles an area's lane brings in (paper-sources.ts
 // `openalex-areas`) say which area they belong to, not which leaf. One is
@@ -48,11 +48,12 @@ export function centroidOf(vectors: Int8Array[]) {
 /** The closest centroid's leaf and similarity, and its lead over the next; null with fewer than two leaves to tell apart. */
 export function closestLeaf(vector: Int8Array, centroids: ReadonlyMap<string, Int8Array>) {
   if (centroids.size < 2) return null;
+  const unit = unitVector(vector);
   let leaf = '';
   let best = -Infinity;
   let next = -Infinity;
   for (const [candidate, centroid] of centroids) {
-    const similarity = cosine(vector, centroid);
+    const similarity = cosine(unit, unitVector(centroid));
     if (similarity > best) {
       next = best;
       best = similarity;

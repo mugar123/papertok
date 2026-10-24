@@ -5,6 +5,18 @@ import { canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage }
 
 const page = (index: number, count = 15) => Array.from({ length: count }, (_, n) => ({ id: `page-${index}-${n}` }) as Paper);
 
+test('a reset whose exclusions leave no client-usable fallback restarts once without exclusions', () => {
+  for (const candidateCount of [0, 1]) {
+    assert.deepEqual(planUnshowablePage({ candidateCount, currentPage: 0, reset: true, excludedCount: 200, seenFallback: undefined, shownBeforeHere: [] }), { kind: 'relax-exclusions', page: 0 });
+  }
+  const seen = page(0, 1);
+  const carried = planUnshowablePage({ candidateCount: 2, currentPage: 0, reset: true, excludedCount: 0, seenFallback: undefined, shownBeforeHere: seen });
+  assert.deepEqual(carried, { kind: 'next-page', page: 1, seenFallback: { page: 0, papers: seen } });
+  if (carried.kind !== 'next-page') assert.fail('the relaxed page must carry its viewed-only paper');
+  assert.deepEqual(planUnshowablePage({ candidateCount: 0, currentPage: 1, reset: true, excludedCount: 0, seenFallback: carried.seenFallback, shownBeforeHere: [] }), { kind: 'show-seen', papers: seen });
+  assert.deepEqual(planUnshowablePage({ candidateCount: 0, currentPage: 0, reset: true, excludedCount: 0, seenFallback: undefined, shownBeforeHere: [] }), { kind: 'show-none' });
+});
+
 test('a page the reader has entirely liked, saved or dismissed goes one page on, carrying nothing to show again', () => {
   assert.deepEqual(
     planUnshowablePage({ candidateCount: 15, currentPage: 0, seenFallback: undefined, shownBeforeHere: [] }),

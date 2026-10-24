@@ -5,7 +5,7 @@ import type { CuratedSetName, InteractionDocumentData, InteractionEvent, Interac
 import type { ProfileLoadResult } from '../utils/interactionProfileLoader.ts';
 import type { RecentProperties, RecommendationContext } from '../utils/recommendationEngine.ts';
 // `savedAt` is set only on a snapshot read back from storage.
-interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean; savedAt?: number }
+interface FeedSnapshot { papers: Paper[]; page: number; hasMore: boolean; savedAt?: number; excludedIds?: string[] }
 interface PendingReRank { sourcePaperId: string | null; handle: number | null; isTimeout: boolean; requestedAt: number }
 export interface LibraryEntry {
   paperId: string; paper: Partial<Paper>; readLater?: boolean; readAt?: string | number | null;
@@ -26,7 +26,7 @@ export interface FeedContextValue {
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
   feedMode: string; setFeedMode: (mode: string) => void;
   /** `seenFallback`: a page of papers shown before, carried by a load that skipped past it. */
-  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] } }) => Promise<void>;
+  loadPapers: (reset?: boolean, mode?: string | null, pageOverride?: number, options?: { keepThroughVisible?: boolean; seenFallback?: { page: number; papers: Paper[] }; relaxExclusions?: boolean }) => Promise<void>;
   loadMore: () => void; refreshFeed: () => Promise<void>;
   getRecommendationProfileSnapshot: () => RecommendationProfileSnapshot;
   reportVisiblePaper: (id: string | null) => void;
@@ -176,7 +176,11 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
     }
     // A card can be saved before Crossref answered, or kept because the reader
     // was on it. Nothing is on screen before a restore, so a book known now leaves.
-    return { ...snapshot, papers: applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication) };
+    return {
+      ...snapshot,
+      excludedIds: Array.isArray(snapshot.excludedIds) ? snapshot.excludedIds.filter((id: unknown) => typeof id === 'string').slice(0, 200) : [],
+      papers: applyKnownPublicationTypes(snapshot.papers).filter(isFeedPublication),
+    };
   } catch {
     return null;
   }
@@ -213,8 +217,8 @@ const FOLLOWED_PER_PAGE = 6;
  * topic follow that is one of the app's categories is asked for as those
  * categories, and matched by the categories a paper was found under.
  */
-async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, categoryIdsOf }: {
-  page: number; order: string; positiveIds: string[]; categoryIdsOf: (follow: FollowEntity) => string[];
+async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], { page, order, positiveIds, negativeIds, excludedIds, categoryIdsOf }: {
+  page: number; order: string; positiveIds: string[]; negativeIds: string[]; excludedIds: string[]; categoryIdsOf: (follow: FollowEntity) => string[];
 }) {
   const categoryFollows = followedEntities
     .map(follow => ({ follow, categoryIds: follow.type === 'topic' ? categoryIdsOf(follow) : [] }))
@@ -223,6 +227,8 @@ async function fetchFollowedEntityCandidates(followedEntities: FollowEntity[], {
     categories: [...new Set(categoryFollows.flatMap(entry => entry.categoryIds))],
     follows: followedEntities,
     positiveIds,
+    negativeIds,
+    excludedIds,
     page,
     pageSize: FOLLOWED_PER_PAGE,
     order,
@@ -271,6 +277,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
   // Per-mode cache: { recent: { papers, page, hasMore }, top: { ... } }
   const feedCache = useRef<Record<string, FeedSnapshot>>({});
+  const feedExcludedIds = useRef<string[]>([]);
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set<string>());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set<string>());
@@ -858,7 +865,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       // once it has embedded it.
       const categories = [...new Set([paper.primaryCategory, ...(userPreferences || [])].filter(Boolean) as string[])].slice(0, MAIN_CATEGORIES);
       const related = categories.length > 0
-        ? await fetchCorpusPage({ categories, positiveIds: [paper.id], page: 0, pageSize: 15, waitForLikes: true }).catch(() => [])
+        ? await fetchCorpusPage({
+          categories, positiveIds: [paper.id], negativeIds: curatedIds(interactionProfile.current, 'notInterested').slice(0, 24),
+          excludedIds: [...sessionSeenPapers.current].reverse().slice(0, 200), page: 0, pageSize: 15, waitForLikes: true,
+        }).catch(() => [])
         : [];
       if (sessionId !== feedSessionId.current) return;
 
@@ -926,6 +936,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     activeUserId.current = userId;
     sessionSeenPapers.current = seenPapersForAccount(userId);
+    feedExcludedIds.current = [];
 
     // Switching accounts, or signing out, must clear the previous account's
     // papers immediately. This is the only place allowed to blank the sets: a
@@ -1133,7 +1144,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
+  const loadPapers = useCallback(async (reset = false, mode?: string | null, pageOverride?: number, { keepThroughVisible = false, seenFallback, relaxExclusions = false }: Parameters<FeedContextValue['loadPapers']>[3] = {}) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!recommendationProfileReady) return;
     // The ref, not `loading`: the scroll sentinel can fire before React commits
@@ -1147,7 +1158,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // that page.
     if (!reset && loading) {
       loadAfterCommit.current = {
-        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback }],
+        args: [reset, mode, pageOverride, { keepThroughVisible, seenFallback, relaxExclusions }],
         requestId: feedRequestId.current,
         sessionId: feedSessionId.current,
       };
@@ -1165,6 +1176,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
     const currentPage = pageOverride ?? (reset ? 0 : page);
+    // The snapshot lasts as long as the page offsets, including cache misses
+    // and browser restores. Removing newly seen rows would skip unread rows.
+    if (currentPage === 0) {
+      feedExcludedIds.current = relaxExclusions ? [] : [...new Set([
+        ...[...sessionSeenPapers.current].reverse(),
+        ...curatedIds(interactionProfile.current, 'read'),
+        ...curatedIds(interactionProfile.current, 'liked'),
+        ...curatedIds(interactionProfile.current, 'saved'),
+      ])].slice(0, 200);
+    }
+    const excludedIds = feedExcludedIds.current;
 
     const isAvailablePaper = (paper: Paper) => (
       isFeedPublication(paper)
@@ -1207,6 +1229,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           curatedIds(interactionProfile.current, 'liked'),
           curatedIds(interactionProfile.current, 'saved'),
         );
+        const negativeIds = curatedIds(interactionProfile.current, 'notInterested').slice(0, 24);
 
         // ─── STEP 3: The reader's categories and follows, from the paper corpus ───
         // One request stands for every source the feed reads: the Worker
@@ -1215,45 +1238,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // for the fifteen the page shows: the next page starts after them, so
         // a paper asked for and left out would never come back.
         // The follows are optional: they join the page if they answer in time.
-        const followedCandidatesPromise = followedEntities.length > 0
-          ? resolveWithin(
-            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(followedEntities, {
-              page: currentPage,
-              order: queryMode,
-              positiveIds,
-              categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
-            })),
-            OPTIONAL_SOURCE_RENDER_BUDGET_MS,
-            [],
-          )
-          : Promise.resolve<Paper[]>([]);
-        let mainPapers: Paper[] = [];
-        let mainFailed = false;
-        try {
-          mainPapers = await fetchCorpusPage({
-            categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
-            positiveIds,
-            page: currentPage,
-            pageSize: PAGE_SIZE,
-            order: queryMode,
-          });
-        } catch (e) {
-          console.error('Error fetching main papers:', e);
-          mainFailed = true;
-        }
-        mainPapers.forEach(p => { p._type = 'exploit'; });
-
-        // ─── STEP 4: Followed topics, authors, institutions and projects ───
-        const followedPapers = await followedCandidatesPromise;
-
-        // Only give up when the follows cannot bootstrap the feed either, nor
-        // the seen papers carried from an earlier page.
-        if (mainFailed && followedPapers.length === 0 && !seenFallback?.papers?.length) {
-          throw new Error('The paper store returned no usable papers.');
-        }
-
-        // ─── STEP 5: ADAPTIVE EXPLORATION (always baseline, more if bored) ───
-        const explorationPapers: Paper[] = [];
+        // Start exploration beside the main request, within the same render budget.
+        const explorationRequests: Promise<Paper[]>[] = [];
         const currentBoredom = boredomLevel.current;
         
         const userAreas = new Set<string>();
@@ -1278,14 +1264,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           ? Math.min(8, Math.floor((currentBoredom - boredomThreshold) / 2) + 5)
           : 5; // Baseline exploration: cold-start users deserve real serendipity
 
-        // The first screen already has a broad candidate pool. Defer exploration
-        // to later pages so initial entry is fast.
         const explore = async (categories: string[], count: number) => {
           const papers = await resolveWithin(fetchCorpusPage({
             categories: categories.slice(0, MAIN_CATEGORIES),
             page: Math.floor(Math.random() * 30 / count),
             pageSize: count,
             order: queryMode,
+            negativeIds,
+            excludedIds,
           }).catch((e) => {
             console.error('Error fetching explore papers:', e);
             return [];
@@ -1296,8 +1282,8 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           });
           return papers;
         };
-        if (!reset && nearbyCats.length > 0) {
-          explorationPapers.push(...await explore(nearbyCats, exploreCount));
+        if (nearbyCats.length > 0) {
+          explorationRequests.push(explore(nearbyCats, reset ? 2 : exploreCount));
         }
 
         // If highly bored, pull from completely random categories outside user areas
@@ -1307,7 +1293,49 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
             .slice(0, 2);
-          if (randomCats.length > 0) explorationPapers.push(...await explore(randomCats, 2));
+          if (randomCats.length > 0) explorationRequests.push(explore(randomCats, 2));
+        }
+
+        const followedCandidatesPromise = followedEntities.length > 0
+          ? resolveWithin(
+            loadTopicRetrieval().then(module => fetchFollowedEntityCandidates(followedEntities, {
+              page: currentPage,
+              order: queryMode,
+              positiveIds,
+              negativeIds,
+              excludedIds,
+              categoryIdsOf: follow => module.getFollowedTopicCategoryIds([follow]),
+            })),
+            OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+            [],
+          )
+          : Promise.resolve<Paper[]>([]);
+        let mainPapers: Paper[] = [];
+        let mainFailed = false;
+        try {
+          mainPapers = await fetchCorpusPage({
+            categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
+            positiveIds,
+            negativeIds,
+            excludedIds,
+            page: currentPage,
+            pageSize: PAGE_SIZE,
+            order: queryMode,
+          });
+        } catch (e) {
+          console.error('Error fetching main papers:', e);
+          mainFailed = true;
+        }
+        mainPapers.forEach(p => { p._type = 'exploit'; });
+
+        // ─── STEP 4: Followed topics, authors, institutions and projects ───
+        const followedPapers = await followedCandidatesPromise;
+
+        // Only give up when the follows cannot bootstrap the feed either, nor
+        // the seen papers carried from an earlier page.
+        const explorationPapers = (await Promise.all(explorationRequests)).flat();
+        if (mainFailed && followedPapers.length === 0 && explorationPapers.length === 0 && !seenFallback?.papers?.length) {
+          throw new Error('The paper store returned no usable papers.');
         }
 
         // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
@@ -1329,9 +1357,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const corePapers = Array.from(uniqueMap.values());
         newPapers = corePapers;
 
-        if (isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
-          throw new Error('The paper store has no papers for these interests yet.');
-        }
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
@@ -1353,13 +1378,22 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           !savedPaperIdsRef.current.has(p.id) &&
           !isKnownPaper(p.id)
         );
-        const plan = planUnshowablePage({ candidateCount: newPapers.length, currentPage, seenFallback, shownBeforeHere: bypassSeen });
+        const plan = planUnshowablePage({
+          candidateCount: newPapers.length, currentPage, seenFallback, shownBeforeHere: bypassSeen, reset,
+          excludedCount: activeMode === 'top' || activeMode === null ? excludedIds.length : 0,
+        });
+        if (plan.kind === 'relax-exclusions') {
+          return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true });
+        }
+        if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
+          throw new Error('The paper store has no papers for these interests yet.');
+        }
         if (plan.kind === 'next-page') {
           const nextPageToFetch = plan.page;
           console.log(`Every paper on page ${currentPage} was seen or acted on, fetching page ${nextPageToFetch} automatically...`);
           const loadNextPage = () => {
             if (requestId === feedRequestId.current && feedSessionId.current === activeSessionId) {
-              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback });
+              return loadPapersRef.current?.(reset, activeMode, nextPageToFetch, { keepThroughVisible, seenFallback: plan.seenFallback, relaxExclusions });
             }
           };
           // A reset goes on as this same load: the first screen keeps waiting
@@ -1422,7 +1456,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       setPapers(current => {
         const nextPapers = addPage(current);
         // The cache and the snapshot keep the list the reader sees.
-        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
+        feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore, excludedIds };
         // This write is synchronous and bypasses the debounce map on purpose —
         // it's the primary persist, not a merge, so it should land immediately.
         // But it shares its localStorage key (userId, preferenceSignature) with
@@ -1501,6 +1535,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (restoredFeedKeyRef.current === key) return;
     restoredFeedKeyRef.current = key;
     feedCache.current[mode] = snapshot;
+    feedExcludedIds.current = snapshot.excludedIds ?? [];
     // The restore shows these cards in this session, as a load would: a refresh
     // must not offer them again. Only a card's own report makes one "viewed".
     snapshot.papers.forEach(paper => sessionSeenPapers.current.add(paper.id));
@@ -1650,11 +1685,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     if (newMode === feedMode) return;
 
     // Save current state to cache
-    feedCache.current[feedMode] = { papers, page, hasMore };
+    feedCache.current[feedMode] = { papers, page, hasMore, excludedIds: feedExcludedIds.current };
 
     // Check if we have cached data for the new mode
     const cached = feedCache.current[newMode];
     if (cached && cached.papers.length > 0) {
+      feedExcludedIds.current = cached.excludedIds ?? [];
       // Re-filter cached papers to ensure newly liked/saved papers are removed
       const refiltered = cached.papers.filter(p => 
         !notInterestedIdsRef.current.has(p.id) && 

@@ -10,9 +10,11 @@ export const SEMANTIC_PROFILE_POSITIVE_CAP = 24;
  */
 export function selectSemanticProfilePositiveIds(liked: unknown[] = [], saved: unknown[] = [], cap = SEMANTIC_PROFILE_POSITIVE_CAP) {
   const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : SEMANTIC_PROFILE_POSITIVE_CAP;
-  const ids = [];
+  const ids: string[] = [];
+  if (limit === 0) return ids;
   const seen = new Set<string>();
-  for (const value of [...liked, ...saved]) {
+  const interleaved = Array.from({ length: Math.max(liked.length, saved.length) }, (_, index) => [liked[index], saved[index]]).flat();
+  for (const value of interleaved) {
     const id = String(value || '').trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);

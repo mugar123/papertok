@@ -56,6 +56,31 @@ test('a stored vector reads back the same whether D1 returns bytes or numbers', 
   assert.deepEqual([...readVector(stored.buffer)], [76, -102]);
 });
 
+test('a rejection demotes near copies, without penalizing a distant topic', () => {
+  const now = Date.parse('2026-10-22T00:00:00Z');
+  const rows = [
+    { id: 'copy', embedding: quantize([1, 0]), published: '2026-10-20' },
+    { id: 'other', embedding: quantize([0.6, 0.8]), published: '2026-10-20' },
+  ];
+  const baseline = rankBySimilarity(rows, [quantize([1, 0])], { now });
+  const rejected = rankBySimilarity(rows, [quantize([1, 0])], { now, negatives: [quantize([1, 0])] });
+  assert.deepEqual(baseline.map(({ row }) => row.id), ['copy', 'other']);
+  assert.deepEqual(rejected.map(({ row }) => row.id), ['other', 'copy']);
+  assert.equal(rejected[0].score, baseline[1].score);
+  assert.ok(rejected[1].semanticScore < rejected[0].semanticScore);
+});
+
+test('semantic diversity moves a second interest ahead of near duplicates and retains every candidate', () => {
+  const now = Date.parse('2026-10-22T00:00:00Z');
+  const rows = [
+    ...Array.from({ length: 20 }, (_, index) => ({ id: `copy-${index}`, embedding: quantize([1, 0]), published: '2026-10-20' })),
+    { id: 'second-interest', embedding: quantize([0.85, 0.53]), published: '2026-10-20' },
+  ];
+  const ranked = rankBySimilarity(rows, [quantize([1, 0])], { now });
+  assert.deepEqual(ranked.slice(0, 2).map(({ row }) => row.id), ['copy-0', 'second-interest']);
+  assert.equal(new Set(ranked.map(({ row }) => row.id)).size, 21);
+});
+
 // D1 answers a BLOB as an array of its unsigned bytes, and a ranked page
 // decodes up to 4,000 of them: 50 to 170 ms of Worker CPU in the #272 review.
 test("a page's vectors decode in a few milliseconds from the numbers D1 returns", () => {
@@ -397,6 +422,17 @@ test('a follow is served from the lane its entity names, and a followed category
   assert.equal(followLane({ type: 'author', canonicalId: 'T10604' }), '', 'a topic id is no author, and there is no name to search');
 });
 
+test('feed feedback is optional, deduplicated, bounded and accepts only string IDs', () => {
+  assert.deepEqual(parseFeedRequest(null).negativeIds, []);
+  assert.deepEqual(parseFeedRequest(null).excludedIds, []);
+  const query = parseFeedRequest({ negativeIds: [null, {}, 1, '', ' rejected ', 'rejected'], excludedIds: [false, ' seen ', 'seen'] });
+  assert.deepEqual(query.negativeIds, ['rejected']);
+  assert.deepEqual(query.excludedIds, ['seen']);
+  const many = parseFeedRequest({ negativeIds: Array.from({ length: 50 }, (_, index) => `negative-${index}`), excludedIds: Array.from({ length: 250 }, (_, index) => `seen-${index}`) });
+  assert.equal(many.negativeIds.length, 24);
+  assert.equal(many.excludedIds.length, 200);
+});
+
 test("the app's ids for a paper find it whichever form they take", () => {
   assert.deepEqual(keysForPaperId('arxiv:2610.11111v3'), ['id:arxiv:2610.11111v3', 'arxiv:2610.11111']);
   assert.deepEqual(keysForPaperId('W4391234567'), ['id:w4391234567', 'id:openalex:w4391234567']);
@@ -720,6 +756,42 @@ test("a reader's later pages read the order the first page ranked, and only thei
   const second = await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW, cache });
   assert.deepEqual(second.map(paper => paper.id), ['2610.00103', '2610.00102']);
   assert.deepEqual(await readFeedPage(env, parseFeedRequest({ categories: ['cs.CL'], page: 1, pageSize: 2 }), { now: NOW }), [], 'without the order, the page ranks again');
+});
+
+test('seen aliases are excluded before pagination, including provisional rankings and cache misses', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, Array.from({ length: 7 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.0030${index}`, arxivId: `2610.0030${index}`, doi: undefined, title: `Seen pagination example ${index}`, published: `2026-10-1${index}T00:00:00.000Z`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const stored = new Map<string, import('./paper-store.ts').KeptRanking>();
+  const cache = {
+    get: async (key: string) => stored.get(key) ?? null,
+    put: async (key: string, ranking: import('./paper-store.ts').KeptRanking) => { stored.set(key, { ...ranking, final: false }); },
+  };
+  const query = { categories: ['cs.CL'], excludedIds: ['arxiv:2610.00306v2', '2610.00305'], pageSize: 2 };
+  const first = await readFeedPage(env, parseFeedRequest(query), { now: NOW, cache });
+  assert.deepEqual(first.map(paper => paper.id), ['2610.00304', '2610.00303']);
+  const second = await readFeedPage(env, parseFeedRequest({ ...query, page: 1 }), { now: NOW, cache });
+  assert.deepEqual(second.map(paper => paper.id), ['2610.00302', '2610.00301']);
+  const missed = await readFeedPage(env, parseFeedRequest({ ...query, page: 1 }), { now: NOW });
+  assert.deepEqual(missed.map(paper => paper.id), ['2610.00302', '2610.00301']);
+  const refreshed = await readFeedPage(env, parseFeedRequest({ ...query, excludedIds: [...query.excludedIds, ...first.map(paper => paper.id)] }), { now: NOW, cache });
+  assert.deepEqual(refreshed.map(paper => paper.id), ['2610.00302', '2610.00301']);
+});
+
+test('a client can relax exhausted exclusions while positives and explicit rejections stay excluded', async () => {
+  const { env } = corpus();
+  await ingestPapers(env, Array.from({ length: 3 }, (_, index) => ({
+    paper: { ...arxivRecord, id: `2610.0040${index}`, arxivId: `2610.0040${index}`, doi: undefined, title: `Exhausted seen fallback ${index}`, published: `2026-10-1${index}T00:00:00.000Z`, allCategories: [], categories: [] },
+    lanes: ['cs.CL'],
+  })), { now: NOW });
+  const query = parseFeedRequest({ categories: ['cs.CL'], positiveIds: ['2610.00400'], negativeIds: ['2610.00401'], excludedIds: ['arxiv:2610.00402v2'], pageSize: 15 });
+  assert.deepEqual(await readFeedPage(env, query, { now: NOW }), []);
+  const relaxed = { ...query, excludedIds: [] };
+  assert.deepEqual((await readFeedPage(env, relaxed, { now: NOW })).map(paper => paper.id), ['2610.00402']);
+  assert.deepEqual(await readFeedPage(env, { ...relaxed, page: 1 }, { now: NOW }), []);
+  assert.deepEqual(await readFeedPage(env, { ...query, negativeIds: ['2610.00401', '2610.00402'] }, { now: NOW }), []);
 });
 
 // Workers AI, as the store calls it: one vector of the model's size per text.
