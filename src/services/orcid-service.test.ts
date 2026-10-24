@@ -5,7 +5,7 @@ import {
   settleWithin,
   withStubbedFetch,
 } from '../test-support/deadline-harness.ts';
-import { extractOrcid, fetchWithTimeout } from './orcid-service.ts';
+import { extractOrcid, fetchWithTimeout, getOrcidRecord } from './orcid-service.ts';
 
 test('extracts a clean ORCID from a bare id, a URL and a checksum ending in X', () => {
   assert.equal(extractOrcid('0000-0002-1825-0097'), '0000-0002-1825-0097');
@@ -29,4 +29,19 @@ test('the deadline covers an ORCID body that never finishes', async () => {
       'TimeoutError',
     );
   });
+});
+
+test('a job ORCID gives no end year keeps its end unknown', async () => {
+  const summary = (end?: string) => ({
+    'employment-summary': {
+      organization: { name: 'DataCite' },
+      'start-date': { year: { value: '2015' } },
+      ...(end ? { 'end-date': { year: { value: end } } } : {}),
+    },
+  });
+  const payload = {
+    'activities-summary': { employments: { 'affiliation-group': [{ summaries: [summary('2021')] }, { summaries: [summary()] }] } },
+  };
+  const record = await withStubbedFetch(async () => Response.json(payload), () => getOrcidRecord('0000-0003-1419-2405'));
+  assert.deepEqual(record?.employments.map((job) => job.endDate), ['2021', undefined]);
 });
