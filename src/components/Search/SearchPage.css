@@ -430,6 +430,14 @@
   flex-shrink: 0;
 }
 
+/* On a phone the header's page picker already says Search; the query
+   keeps the icon's width. */
+@media (max-width: 768px) {
+  .search-icon {
+    display: none;
+  }
+}
+
 @media (max-width: 520px) {
   .search-results {
     padding: var(--space-6) var(--space-3) var(--space-4);

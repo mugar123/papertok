@@ -1,10 +1,11 @@
 import type { AnimationEvent, MouseEvent, PointerEvent, RefObject } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Menu } from '@base-ui/react/menu';
 import { ruleTransform } from '../../utils/navRule.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useFeed } from '../../context/FeedContext.tsx';
-import { MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
+import { CaretDown, Check, MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
 import AccountMenu from './AccountMenu.tsx';
 import { shouldOpenSearchOnSlash } from './searchShortcut.ts';
 
@@ -70,6 +71,11 @@ function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string,
  * the arrival is handed out once, module-wide: a remount must not replay it.
  */
 let navbarHasArrived = false;
+
+const PAGE_PICKER_TABS = [
+  { to: '/feed', label: 'For you', Icon: Stack },
+  { to: '/following', label: 'Following', Icon: UserCheck },
+];
 
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, onSearchSlot }: { onOpenSearch?: () => void; searchOpen?: boolean; onSearchSlot?: (node: HTMLDivElement | null) => void }) {
   const { user } = useAuth();
@@ -220,6 +226,32 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
             connecting the two — and closing left nothing behind either. The
             transition is already on the element, so the state fades in and out
             rather than snapping. */}
+        {/* On a phone the field takes the tabs' place, so the tabs move into
+            this picker (hidden on wider screens, where the tabs show). */}
+        {onSearchPage && (
+          <Menu.Root>
+            <Menu.Trigger className="navbar-page-picker" aria-label={'Search, switch page'}>
+              {'Search'}
+              <CaretDown size={12} aria-hidden="true" />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Positioner className="account-menu-positioner" align="start" sideOffset={8}>
+                <Menu.Popup className="account-menu navbar-page-menu">
+                  {PAGE_PICKER_TABS.map(({ to, label, Icon }) => (
+                    <Menu.LinkItem key={to} className="account-menu-item" closeOnClick render={<Link to={to} />} onClick={to === '/feed' ? () => setFeedMode('top') : undefined}>
+                      <Icon size={17} aria-hidden="true" /> {label}
+                    </Menu.LinkItem>
+                  ))}
+                  <Menu.LinkItem className="account-menu-item" closeOnClick aria-current="page" render={<Link to={`/search${location.search}`} />}>
+                    <MagnifyingGlass size={17} aria-hidden="true" /> {'Search'}
+                    <Check size={15} aria-hidden="true" className="navbar-page-menu-check" />
+                  </Menu.LinkItem>
+                </Menu.Popup>
+              </Menu.Positioner>
+            </Menu.Portal>
+          </Menu.Root>
+        )}
+
         {onSearchPage ? (
           <div className="navbar-search-slot" ref={attachSearchSlot} />
         ) : (
