@@ -389,6 +389,32 @@ test('outages cost no followed lane a wait: the first night after one refreshes 
   }
 });
 
+// Past a ledger that cannot answer, OpenAlex is asked nothing and the lane is
+// not the reason: it keeps the place it had in the rotation.
+test('a followed lane harvested while the quota ledger cannot answer keeps its turn: the next night it comes before a lane due after it', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T02:30:00Z') });
+  const asked = providers(t);
+  for (const failure of ['error', 'throw'] as const) {
+    const { env, db } = corpus();
+    Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
+    let down = true;
+    env.REQUEST_QUOTA_LEDGER = failingLedger(env.REQUEST_QUOTA_LEDGER, () => (down ? failure : null));
+    const follow = db.prepare('INSERT INTO followed_lanes (lane, requested_at, registered_at) VALUES (?, ?, ?)');
+    follow.run('query:followed first', '2026-10-20T12:00:00.000Z', '2026-10-20T10:00:00.000Z');
+    t.mock.timers.setTime(Date.parse('2026-10-21T02:30:00Z'));
+    let before = asked.length;
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    assert.deepEqual(searchesAsked(asked.slice(before)), [], `${failure}: the outage night`);
+    // Followed after that run and before the next day.
+    follow.run('query:followed later', '2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z');
+    down = false;
+    t.mock.timers.setTime(Date.parse('2026-10-22T02:30:00Z'));
+    before = asked.length;
+    await runPaperHarvest(env, dailyRun(), workflowStep({ skipLanes: true }).step);
+    assert.deepEqual(searchesAsked(asked.slice(before)), ['followed first', 'followed later'], `${failure}: the night after`);
+  }
+});
+
 // OpenAlex failing one search after another every night looks, in one run,
 // like OpenAlex being down. Each failure is still that lane's turn, so 70 of
 // them, due before another reader's lane, do not keep it from its refresh.
