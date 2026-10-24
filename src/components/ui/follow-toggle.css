@@ -13,7 +13,7 @@
 }
 
 .follow-toggle {
-  transition: background var(--transition-fast), transform 160ms var(--ease-out);
+  transition: background var(--transition-fast), scale 150ms var(--ease-out);
 }
 
 .follow-toggle svg {
@@ -34,13 +34,14 @@
   }
 }
 
+/* Press feedback: the catalog's squeeze, cheap on a 32px box. */
 .follow-toggle:active:not(:disabled) {
-  transform: scale(var(--press-scale));
+  scale: var(--press-scale);
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* The press stays as a colour change; the squeeze is movement and goes. */
   .follow-toggle:active:not(:disabled) {
-    transform: none;
+    scale: none;
   }
 }
