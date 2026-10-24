@@ -103,7 +103,12 @@ test('each settings page is its own route, so the rail is links rather than a sc
   const jsx = await read('./SettingsPage.tsx');
   assert.match(jsx, /<NavLink\s+key=\{entry\.slug\}\s+to=\{`\/settings\/\$\{entry\.slug\}`\}\s+replace/);
   assert.doesNotMatch(jsx, /useSectionSpy/);
-  assert.deepEqual(jsx.match(/[\w?.()'-]+\.scrollIntoView\(/g), ["indexListRef.current?.querySelector('a.is-active')?.scrollIntoView("]);
+  // Two forms only: the rail beside the content, or the page picker where
+  // there is no room for it. No sideways strip in between to scroll.
+  assert.doesNotMatch(jsx, /scrollIntoView\(/);
+  const css = await read('./SettingsPage.css');
+  assert.match(css, /@media \(max-width: 900px\) \{[\s\S]*?\.settings-index \{\s*display: none;/);
+  assert.match(css, /@media \(min-width: 901px\) \{\s*\.settings-switcher \{\s*display: none;/);
 });
 
 test('the settings pages carry their own field and switch styles, with no public-profile editor behind them', async () => {

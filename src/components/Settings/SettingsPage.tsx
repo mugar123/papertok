@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import type { Icon } from '@phosphor-icons/react';
 import type { ReadingLevel } from '../../utils/userSettings.ts';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -554,16 +554,7 @@ export default function SettingsPage({ page = 'profile' }) {
   const activeIndex = Math.max(0, SETTINGS_PAGES.findIndex(entry => entry.slug === page));
   const active = SETTINGS_PAGES[activeIndex];
   const Page = PAGE_COMPONENTS[active.slug as keyof typeof PAGE_COMPONENTS];
-  // Below 900px the rail is a sideways strip, and every page remounts it
-  // scrolled to the start, which hid a later page's own tab past the edge.
-  // Brought in just clear of the strip's fading edge (`scroll-padding-inline`,
-  // SettingsPage.css).
-  const indexListRef = useRef<HTMLDivElement | null>(null);
-  const isPhone = useIsPhone();
   const [pagesOpen, setPagesOpen] = useState(false);
-  useLayoutEffect(() => {
-    indexListRef.current?.querySelector('a.is-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [activeIndex]);
 
   // The tab keeps saying which page this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
@@ -586,57 +577,55 @@ export default function SettingsPage({ page = 'profile' }) {
 
         <div className="settings-layout">
 
-          {isPhone ? (
-            <>
-              <button
-                type="button"
-                className="settings-switcher"
-                aria-haspopup="dialog"
-                aria-expanded={pagesOpen}
-                onClick={() => setPagesOpen(true)}
-              >
-                <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
-                <span className="settings-switcher-copy">
-                  <small>{copy.settingsPage}</small>
-                  <strong>{active.label}</strong>
-                </span>
-                <CaretDown size={16} aria-hidden="true" />
-              </button>
-              <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
-                <DrawerContent className="settings-pages-sheet">
-                  <DrawerHandle />
-                  <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
-                  <nav aria-label={copy.pagesLabel}>
-                    <ul className="settings-pages-list">
-                      {SETTINGS_PAGES.map(entry => (
-                        <li key={entry.slug}>
-                          <NavLink
-                            to={`/settings/${entry.slug}`}
-                            replace
-                            className={({ isActive }) => (isActive ? 'is-active' : '')}
-                            onClick={() => setPagesOpen(false)}
-                          >
-                            {({ isActive }) => (
-                              <>
-                                <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
-                                <span className="settings-pages-copy">
-                                  <strong>{entry.label}</strong>
-                                  <small>{entry.summary}</small>
-                                </span>
-                                {isActive && <Check size={16} aria-hidden="true" />}
-                              </>
-                            )}
-                          </NavLink>
-                        </li>
-                      ))}
-                    </ul>
-                  </nav>
-                </DrawerContent>
-              </Drawer>
-            </>
-          ) : (
+          {/* Both are rendered; SettingsPage.css shows the rail beside the
+              content and, where there is no room for it, the picker. */}
+          <button
+            type="button"
+            className="settings-switcher"
+            aria-haspopup="dialog"
+            aria-expanded={pagesOpen}
+            onClick={() => setPagesOpen(true)}
+          >
+            <span className="settings-switcher-icon"><active.Icon size={18} weight="fill" aria-hidden="true" /></span>
+            <span className="settings-switcher-copy">
+              <small>{copy.settingsPage}</small>
+              <strong>{active.label}</strong>
+            </span>
+            <CaretDown size={16} aria-hidden="true" />
+          </button>
+          <Drawer open={pagesOpen} onOpenChange={setPagesOpen}>
+            <DrawerContent className="settings-pages-sheet">
+              <DrawerHandle />
+              <DrawerTitle render={<h3 />} className="settings-pages-title">{copy.title}</DrawerTitle>
+              <nav aria-label={copy.pagesLabel}>
+                <ul className="settings-pages-list">
+                  {SETTINGS_PAGES.map(entry => (
+                    <li key={entry.slug}>
+                      <NavLink
+                        to={`/settings/${entry.slug}`}
+                        replace
+                        className={({ isActive }) => (isActive ? 'is-active' : '')}
+                        onClick={() => setPagesOpen(false)}
+                      >
+                        {({ isActive }) => (
+                          <>
+                            <entry.Icon size={20} weight={isActive ? 'fill' : 'regular'} aria-hidden="true" />
+                            <span className="settings-pages-copy">
+                              <strong>{entry.label}</strong>
+                              <small>{entry.summary}</small>
+                            </span>
+                            {isActive && <Check size={16} aria-hidden="true" />}
+                          </>
+                        )}
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </DrawerContent>
+          </Drawer>
           <nav className="settings-index" aria-label={copy.pagesLabel}>
-            <div ref={indexListRef} className="settings-index-list">
+            <div className="settings-index-list">
               {SETTINGS_PAGES.map(entry => (
                 <NavLink
                   key={entry.slug}
@@ -656,7 +645,6 @@ export default function SettingsPage({ page = 'profile' }) {
               ))}
             </div>
           </nav>
-          )}
 
           <div className="settings-content">
             <Page />
