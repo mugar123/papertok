@@ -172,8 +172,9 @@ export const MAX_VIEWED_IDS = 500;
 // The viewed notable cards the feed passes over as well. The corpus offers a
 // reader's unseen notable papers in one order, so one that only the ring
 // remembered would come back, once the ring forgot it, before any the reader
-// never saw. As many as one page reads (NOTABLE_CANDIDATE_LIMIT in
-// worker/paper-store.ts); about 30 kB inside `curated`, given up after the ring.
+// never saw. As many as the weekly listings of the 12 categories a page can
+// ask for (NOTABLE_PER_LANE in worker/paper-sources.ts); about 30 kB inside
+// `curated`, given up after the ring.
 export const MAX_VIEWED_NOTABLE_IDS = 1_200;
 
 export const MAX_CURATED_JSON_BYTES = 320000;
