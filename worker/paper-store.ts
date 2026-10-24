@@ -737,7 +737,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     const shown = new Set(served.map(candidate => candidate?.workId));
     const ranked = (await rankCandidates(db, lanes, query, now)).filter(candidate => !shown.has(candidate.workId));
     // Floored after the ranks served, so its windows start where a page does,
-    // and only for the feed's page: the app's exploration asks 2 to 8 cards of
+    // and only for the feed's page: the app's exploration asks 5 to 8 cards of
     // nearby categories, whose area lanes are the feed's own, and floored they
     // would repeat the articles the feed's pages have placed.
     ranking = [...served, ...(query.pageSize === FEED_PAGE_SIZE ? withJournalFloor(ranked) : ranked)];

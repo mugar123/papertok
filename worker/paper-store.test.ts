@@ -541,7 +541,7 @@ async function preprintsAndArticles() {
   return { ...store, preprintIds: preprints.map(paper => paper.id), articleIds: articles.map(paper => paper.id) };
 }
 
-// The app's exploration asks 2 to 8 cards of nearby categories at a random
+// The app's exploration asks 5 to 8 cards of nearby categories at a random
 // page (FeedContext), which reads the same area lanes as the feed's page.
 test("a page of another size than the feed's 15 cards is ranked as it is: the floor holds the feed's own page", async () => {
   const { env, preprintIds, articleIds } = await preprintsAndArticles();
