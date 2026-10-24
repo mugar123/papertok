@@ -143,19 +143,22 @@ test("a source's own sample passes only as the leaf's does: a full page of 15, a
 
 test('a lane keeps the types and the topic or author filter its sample asked with', t => {
   const { write, run, coverage } = setup(t);
+  const topics = sample({ extra: ['primary_topic.id:T2|T1'] });
   write({
     'cs.AI': { sample: sample({ types: 'article|conference-paper' }) },
+    'econ.TH': { sample: { ...topics, works: topics.works.map((work, index) => ({ ...work, primary_topic: index % 2 ? 'T1' : 'T2' })) } },
     'hep-ex': { sample: sample({ extra: ['authors_count:>99'] }) },
   });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(coverage().map(row => [row.leaf, row.filters]), [
     ['cs.AI', ['type:article|conference-paper']],
+    ['econ.TH', ['type:article', 'primary_topic.id:T1|T2']],
     ['hep-ex', ['type:article', 'authors_count:>99']],
   ]);
 });
 
-test('a sample that names the sampler, another filter, another window or a work outside its sources fails without overwriting output', t => {
+test('a sample that names the sampler, another filter, another window, a work outside its sources or topics, or works out of date order fails without overwriting output', t => {
   const { write, run, output } = setup(t);
   write({ 'econ.EM': { sample: sample() } });
   assert.equal(run().status, 0);
@@ -166,6 +169,8 @@ test('a sample that names the sampler, another filter, another window or a work 
     sample({ to: '2026-10-20' }),
     { ...sample(), works: sample().works.map((work, index) => (index ? work : { ...work, source: 'S999' })) },
     { ...sample(), labels: sample().labels.slice(1) },
+    { ...sample({ extra: ['primary_topic.id:T1'] }), works: sample().works.map(work => ({ ...work, primary_topic: 'T2' })) },
+    { ...sample(), works: sample().works.map((work, index) => ({ ...work, publication_date: `2026-10-${String(index + 1).padStart(2, '0')}` })) },
   ];
   for (const value of broken) {
     write({ 'econ.EM': { sample: value } });
