@@ -7,7 +7,11 @@ import { EASE_OUT } from '../../utils/motion-curves.ts';
 import { ruleTransform } from '../../utils/nav-rule.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
+import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
+import type { Icon } from '@phosphor-icons/react';
+import type { FeedTab, FeedTabKey } from '../../utils/feed-tabs.ts';
 import { CaretDown, Check, MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
+import { FEED_TABS } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
 import '../feed/share-panel.css';
 import useIsPhone from '../../hooks/use-is-phone.ts';
@@ -77,10 +81,33 @@ function useActiveTabRule(rowRef: RefObject<HTMLDivElement | null>, tab: string,
  */
 let navbarHasArrived = false;
 
-const PAGE_PICKER_TABS = [
-  { to: '/feed', label: 'For you', Icon: Stack },
-  { to: '/following', label: 'Following', Icon: UserCheck },
-];
+const TAB_ICONS: Record<FeedTabKey, Icon> = { home: Stack, following: UserCheck };
+
+function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRelease }: {
+  tab: FeedTab;
+  active: boolean;
+  onTabClick: (event: MouseEvent<HTMLAnchorElement>, tab: FeedTab) => void;
+  onTabPress: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => void;
+  onTabLift: (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => void;
+  onTabRelease: () => void;
+}) {
+  const TabIcon = TAB_ICONS[tab.key];
+  return (
+    <NavLink
+      to={tab.path}
+      end
+      data-tab={tab.key}
+      className={`navbar-link ${active ? 'active' : ''}`}
+      onClick={(event) => onTabClick(event, tab)}
+      onPointerDown={(event) => onTabPress(event, tab)}
+      onPointerUp={(event) => onTabLift(event, tab)}
+      onPointerCancel={onTabRelease}
+    >
+      <TabIcon size={15} aria-hidden="true" />
+      {tab.label}
+    </NavLink>
+  );
+}
 
 /**
  * The tabs as a menu on /search, where the field takes their place below
@@ -105,13 +132,16 @@ function PagePicker({ search }: { search: string }) {
           <DrawerHandle />
           <DrawerTitle render={<h2 />} className="pc-share-sheet-title">{'Go to'}</DrawerTitle>
           <ul className="pc-share-list">
-            {PAGE_PICKER_TABS.map(({ to, label, Icon }) => (
-              <li key={to}>
-                <Link to={to} className="pc-share-row" onClick={close}>
-                  <Icon size={20} aria-hidden="true" /> {label}
-                </Link>
-              </li>
-            ))}
+            {FEED_TABS.map(({ key, path, label }) => {
+              const TabIcon = TAB_ICONS[key];
+              return (
+                <li key={key}>
+                  <Link to={path} className="pc-share-row" onClick={close}>
+                    <TabIcon size={20} aria-hidden="true" /> {label}
+                  </Link>
+                </li>
+              );
+            })}
             <li>
               <Link to={`/search${search}`} className="pc-share-row" aria-current="page" onClick={close}>
                 <MagnifyingGlass size={20} aria-hidden="true" /> {'Search'}
@@ -129,11 +159,14 @@ function PagePicker({ search }: { search: string }) {
       <Menu.Portal>
         <Menu.Positioner className="account-menu-positioner" align="start" sideOffset={8}>
           <Menu.Popup className="account-menu navbar-page-menu">
-            {PAGE_PICKER_TABS.map(({ to, label, Icon }) => (
-              <Menu.LinkItem key={to} className="account-menu-item" closeOnClick render={<Link to={to} />}>
-                <Icon size={17} aria-hidden="true" /> {label}
-              </Menu.LinkItem>
-            ))}
+            {FEED_TABS.map(({ key, path, label }) => {
+              const TabIcon = TAB_ICONS[key];
+              return (
+                <Menu.LinkItem key={key} className="account-menu-item" closeOnClick render={<Link to={path} />}>
+                  <TabIcon size={17} aria-hidden="true" /> {label}
+                </Menu.LinkItem>
+              );
+            })}
             <Menu.LinkItem className="account-menu-item" closeOnClick aria-current="page" render={<Link to={`/search${search}`} />}>
               <MagnifyingGlass size={17} aria-hidden="true" /> {'Search'}
               <Check size={15} aria-hidden="true" className="navbar-page-menu-check" />
@@ -201,7 +234,8 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
     navbarHasArrived = true;
     setArriving(false);
   };
-  const { setFeedMode } = useFeed();
+  const { setFeedMode, refreshFeed, isRefreshing } = useFeed();
+  const followingUpdates = useFollowingUpdates();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -233,8 +267,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [onOpenSearch, onSearchPage]);
 
-  const isFollowingActive = pathname === '/following';
-  const isHomeActive = pathname === '/feed';
   // Which tab is current is the pathname, and nothing else. This used to also
   // require `feedMode === 'top'`, from a time when this feed had more than one
   // mode; `feedMode` has had exactly one reachable value since — FeedContext
@@ -248,7 +280,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
   // mode is ever added, this line and that `aria-current` have to be revisited
   // together: a `className` callback suppresses the appended class, but nothing
   // in NavLink's plain API gates `aria-current`.
-  const activeTab = isHomeActive ? 'home' : isFollowingActive ? 'following' : '';
+  const activeTab = FEED_TABS.find(tab => tab.path === pathname)?.key ?? '';
   const linksRef = useRef<HTMLDivElement | null>(null);
   /**
    * The press is remembered only to decide, on `pointerup`, whether the finger
@@ -267,11 +299,18 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
    * is, so the mark slowed, sped up and eased again — the glitch the reader
    * saw. One measurement, one curve.
    */
-  const touchRef = useRef<{ tab: string; x: number; y: number; at: number } | null>(null);
+  const touchRef = useRef<{ tab: FeedTabKey; x: number; y: number; at: number } | null>(null);
   const handledRef = useRef(0);
-  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: string) => {
+  const pressTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => {
     if (event.button !== 0 || event.pointerType !== 'touch') return;
-    touchRef.current = { tab, x: event.clientX, y: event.clientY, at: Date.now() };
+    touchRef.current = { tab: tab.key, x: event.clientX, y: event.clientY, at: Date.now() };
+  };
+  /** For you starts from its top mode; pressing the tab you are already on reloads its feed. */
+  const chooseTab = (tab: FeedTab) => {
+    if (tab.key === 'home') setFeedMode('top');
+    if (pathname !== tab.path) return;
+    if (tab.key === 'following') void followingUpdates.refresh();
+    else if (!isRefreshing) void refreshFeed();
   };
   const releasePress = () => {
     touchRef.current = null;
@@ -296,20 +335,25 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
    * synthesise one, or react-router would push the same route twice and Back
    * would need two presses.
    */
-  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: string, to: string) => {
+  const liftTab = (event: PointerEvent<HTMLAnchorElement>, tab: FeedTab) => {
     const start = touchRef.current;
     touchRef.current = null;
-    if (event.pointerType !== 'touch' || !start || start.tab !== tab) return;
+    if (event.pointerType !== 'touch' || !start || start.tab !== tab.key) return;
     if (Date.now() - start.at > 1500) return;
     if (Math.abs(event.clientX - start.x) > 12 || Math.abs(event.clientY - start.y) > 12) return;
     handledRef.current = Date.now();
-    if (tab === 'home') setFeedMode('top');
-    if (pathname !== to) void navigate(to);
+    chooseTab(tab);
+    if (pathname !== tab.path) void navigate(tab.path);
   };
-  const swallowSynthesisedClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (Date.now() - handledRef.current > 1500) return;
-    handledRef.current = 0;
-    event.preventDefault();
+  const handleTabClick = (event: MouseEvent<HTMLAnchorElement>, tab: FeedTab) => {
+    if (Date.now() - handledRef.current <= 1500) {
+      handledRef.current = 0;
+      event.preventDefault();
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (pathname === tab.path) event.preventDefault();
+    chooseTab(tab);
   };
   const rule = useActiveTabRule(linksRef, activeTab, activeTab);
 
@@ -386,32 +430,17 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, on
               nothing nested under /feed could ever mark this tab. React Router
               runs this onClick before its own and navigates unless it was
               defaultPrevented, so the mode reset rides along unchanged. */}
-          <NavLink
-            to="/feed"
-            end
-            data-tab="home"
-            className={`navbar-link ${isHomeActive ? 'active' : ''}`}
-            onClick={(event) => { swallowSynthesisedClick(event); setFeedMode('top'); }}
-            onPointerDown={(event) => pressTab(event, 'home')}
-            onPointerUp={(event) => liftTab(event, 'home', '/feed')}
-            onPointerCancel={releasePress}
-          >
-            <Stack size={15} aria-hidden="true" />
-            {'For you'}
-          </NavLink>
-
-          <NavLink
-            to="/following"
-            data-tab="following"
-            className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
-            onClick={swallowSynthesisedClick}
-            onPointerDown={(event) => pressTab(event, 'following')}
-            onPointerUp={(event) => liftTab(event, 'following', '/following')}
-            onPointerCancel={releasePress}
-          >
-            <UserCheck size={15} aria-hidden="true" />
-            {'Following'}
-          </NavLink>
+          {FEED_TABS.map(tab => (
+            <FeedTabLink
+              key={tab.key}
+              tab={tab}
+              active={pathname === tab.path}
+              onTabClick={handleTabClick}
+              onTabPress={pressTab}
+              onTabLift={liftTab}
+              onTabRelease={releasePress}
+            />
+          ))}
         </div>
 
         <div className="navbar-right">
