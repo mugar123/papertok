@@ -92,15 +92,11 @@ const SETTINGS_COPY = {
   discoveryDescription: 'Signals PaperTok uses to build your feeds.',
   followedContent: 'Following',
   loadingFollowing: 'Loading the content you follow...',
-  followedOne: 'followed entity',
-  followedMany: 'followed entities',
-  recommendationsSuffix: 'influence your recommendations',
+  followingDescription: 'Entities that influence your recommendations',
   viewAll: 'View all',
   viewAllFollowing: 'View all you follow',
   interests: 'Interests',
-  selectedOne: 'selected subcategory',
-  selectedMany: 'selected subcategories',
-  trainFeed: 'used to train your feed',
+  interestsDescription: 'Subcategories used to train your feed',
   selectedAreas: 'Selected areas',
   edit: 'Edit',
   editInterests: 'Edit interests',
@@ -425,14 +421,13 @@ function DiscoveryPage() {
       <section className="settings-section" aria-labelledby="settings-discovery-heading">
         <SectionHeading id="settings-discovery-heading" title={copy.discovery} description={copy.discoveryDescription} />
         <div className="settings-list">
-          <div className="settings-row">
+          <div className="settings-row settings-row-side">
             <div className="settings-row-content">
-              <h3>{copy.followedContent}</h3>
-              <p>
-                {followingLoading && followedEntities.length === 0
-                  ? copy.loadingFollowing
-                  : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
-              </p>
+              <h3 className="settings-row-title-line">
+                {copy.followedContent}
+                {!(followingLoading && followedEntities.length === 0) && <span className="settings-count">{followedEntities.length}</span>}
+              </h3>
+              <p>{followingLoading && followedEntities.length === 0 ? copy.loadingFollowing : copy.followingDescription}</p>
             </div>
             <RowAction Icon={CaretRight} label={copy.viewAllFollowing} text={copy.viewAll} onClick={() => (isPhone ? setIsFollowingOpen(true) : navigate('/settings/following'))} />
           </div>
@@ -440,10 +435,7 @@ function DiscoveryPage() {
           <div className="settings-row settings-row-side">
             <div className="settings-row-content">
               <h3 className="settings-row-title-line">{copy.interests} <span className="settings-count">{selectedInterestCount}</span></h3>
-              <p>
-                {selectedInterestCount}{' '}
-                {selectedInterestCount === 1 ? copy.selectedOne : copy.selectedMany} {copy.trainFeed}
-              </p>
+              <p>{copy.interestsDescription}</p>
             </div>
             <RowAction Icon={PencilSimple} label={copy.editInterests} text={copy.edit} onClick={() => setIsInterestsOpen(true)} />
             {selectedAreas.length > 0 && (
