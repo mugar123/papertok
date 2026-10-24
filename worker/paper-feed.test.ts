@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { WorkerEnv } from './env.ts';
-import { handleCorpusFeed } from './paper-feed.ts';
+import { handleCorpusFeed, handleStoreFeed } from './paper-feed.ts';
 import { ingestPapers, quantize } from './paper-store.ts';
-import { arxivRecordPaper } from './paper-sources.ts';
+import { ARXIV_HARVEST_SETS, arxivRecordPaper } from './paper-sources.ts';
+import { mapOpenAlexWork } from '../src/utils/openAlexWork.ts';
 import { testD1 } from './test-support/sqliteD1.ts';
 import { inMemoryQuotaLedger } from './test-support/quotaLedger.ts';
 
@@ -36,6 +37,40 @@ test("the corpus's copy of a paper comes back by any id the app holds for it, in
   assert.deepEqual(papers.map(paper => paper.id), ['2610.11111', '2610.11111']);
   assert.equal(papers[0].title, 'Sparse attention for long documents');
   await assert.rejects(ask({ categories: [] }), { code: 'LANES_REQUIRED' });
+});
+
+test("the bundles from before the corpus get a full page of arXiv papers, which an area lane's journal articles do not take", async () => {
+  const { env, db } = store();
+  for (const set of ARXIV_HARVEST_SETS) db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('arxiv-oai', ?, '2026-10-23')").run(set);
+  const preprints = Array.from({ length: 20 }, (_, index) => arxivRecordPaper({
+    arxivId: `2610.6${String(index + 1).padStart(4, '0')}`, title: `Parsing long documents, finding ${index + 1}`, abstract: 'We parse long documents.', authors: ['Ana Pérez'],
+    categories: ['cs.CL'], doi: null, journalRef: null, comments: null, published: new Date(Date.now() - (index + 1) * 3_600_000).toISOString(), updated: '',
+  }));
+  // Five days old: newest first, every preprint ranks ahead of them.
+  const articles = Array.from({ length: 5 }, (_, index) => mapOpenAlexWork({
+    id: `https://openalex.org/W8000${index + 1}`,
+    doi: `https://doi.org/10.1145/80000${index + 1}`,
+    title: `A computing journal article on document parsing, number ${index + 1}`,
+    type: 'article',
+    publication_date: new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 10),
+    authorships: [],
+    abstract_inverted_index: { Documents: [0], parsed: [1] },
+    primary_location: { is_oa: false, landing_page_url: `https://doi.org/10.1145/80000${index + 1}`, source: { id: 'https://openalex.org/S1', display_name: 'A Computing Journal', type: 'journal' } },
+    open_access: { is_oa: false, oa_status: 'closed', oa_url: null },
+    primary_topic: {
+      id: 'https://openalex.org/T1', display_name: 'A computing topic',
+      subfield: { id: 'https://openalex.org/subfields/1702', display_name: 'Artificial Intelligence' },
+      field: { id: 'https://openalex.org/fields/17', display_name: 'Computer Science' },
+    },
+  } as Parameters<typeof mapOpenAlexWork>[0])!);
+  await ingestPapers(env, [
+    ...preprints.map(item => ({ paper: item, lanes: [] })),
+    ...articles.map(item => ({ paper: item, lanes: ['area:cs'] })),
+  ]);
+  const legacy = await handleStoreFeed(new Request('https://papertok.internal/store/feed', {
+    method: 'POST', body: JSON.stringify({ categories: ['cs.CL'], page: 0, pageSize: 15 }),
+  }), env, { uid: 'reader-1' });
+  assert.deepEqual(legacy.papers.map(item => item.arxivId), preprints.slice(0, 15).map(item => item.arxivId));
 });
 
 test("a reader's new follows join the harvest at once, up to a daily allowance, and no reader is recorded with them", async () => {

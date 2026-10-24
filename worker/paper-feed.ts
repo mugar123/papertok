@@ -269,7 +269,8 @@ export async function handleStoreFeed(request: Request, env: FeedEnv, identity: 
   // oldest papers first; those bundles ask arXiv itself when this is empty.
   const harvested = await database(env).prepare("SELECT COUNT(*) AS sets FROM lane_state WHERE source = 'arxiv-oai'").first<{ sets: number }>();
   if ((harvested?.sets || 0) < ARXIV_HARVEST_SETS.length) return { papers: [] };
-  const papers = await readFeedPage(env, query);
+  // An area lane's articles would take ranks that the arXiv filter below empties.
+  const papers = await readFeedPage(env, { ...query, areaLanes: false });
   return {
     papers: papers.filter(paper => paper.arxivId && paper.sources?.primary === 'arxiv').map(paper => ({
       arxivId: paper.arxivId,
