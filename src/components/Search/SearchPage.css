@@ -8,72 +8,16 @@
  * the flat chrome and the yellow active tab.
  */
 
-/* The container is the Tabs root (the filter bar is its list, the results
-   its panel); the primitive's own gap is undone so the header keeps its rule
-   flush against the results. */
+/* Below the app's header, which holds this page's field. */
 .search-page-container {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  height: 100vh;
-  height: 100dvh;
-  width: 100vw;
+  height: calc(100dvh - var(--nav-total));
+  margin-top: var(--nav-total);
   background: var(--bg-primary);
   color: var(--text-primary);
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1000;
 }
 
-/* ─── Header ─── */
-/* The page is absolutely positioned over the navbar, so nothing above it is
-   holding the field off the top of the window — this padding is the only thing
-   that does. `--space-5` rather than the old 12px: the field was sitting hard
-   against the edge with no air, and on a notched phone it was under the notch. */
-.search-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding:
-    calc(var(--space-5) + env(safe-area-inset-top, 0px))
-    var(--space-4)
-    var(--space-3);
-  gap: var(--space-3);
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border-default);
-  z-index: 4;
-}
-
-.search-header-main {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: var(--space-3);
-}
-
-.search-back-btn {
-  background: none;
-  border: 1px solid transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  flex-shrink: 0;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .search-back-btn:hover {
-    background: var(--bg-glass-hover);
-    color: var(--text-primary);
-  }
-}
-
-.search-back-btn:focus-visible,
 .search-suggestion-chip:focus-visible,
 .search-retry-btn:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -86,9 +30,9 @@
   align-items: center;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 0 var(--space-3);
-  height: 42px;
+  height: 38px;
   transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
@@ -487,14 +431,6 @@
 }
 
 @media (max-width: 520px) {
-  .search-header {
-    padding-inline: var(--space-3);
-  }
-
-  .search-header-main {
-    gap: var(--space-2);
-  }
-
   .search-results {
     padding: var(--space-6) var(--space-3) var(--space-4);
   }

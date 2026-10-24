@@ -425,7 +425,9 @@ solid plate, never on the pattern (`.btn-engraved` / `.btn-halftone` in
 - **Navbar:** flat paper bar, 64px, a hairline under it. Tabs are Inter with the
   active one marked by a sliding yellow rule (the brand thread). The search bar
   sits on paper and takes Ink Wash on hover; ⌘K / Ctrl+K or `/` opens the
-  command palette, which grows from its own centre.
+  command palette, which grows from its own centre. On `/search` the bar holds
+  the search page's own field and scope instead, and the shortcut focuses it;
+  on a phone that field takes the tabs' place.
 - **Account menu:** a Base UI menu framed in `rule-default`, rows that take
   Sunken Paper when highlighted.
 

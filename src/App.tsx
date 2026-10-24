@@ -127,6 +127,8 @@ function AppContent() {
   // its own; measured 2026-09-22, Escape left the focus on `body`. A ref,
   // read at close time, so a button that re-rendered meanwhile still counts.
   const searchOpenerRef = useRef<HTMLElement | null>(null)
+  // Navbar's slot on /search, where SearchPage renders its field.
+  const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null)
   const openSearch = useCallback(() => {
     searchOpenerRef.current = document.activeElement instanceof HTMLElement
       && document.activeElement !== document.body
@@ -154,7 +156,7 @@ function AppContent() {
   const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/feed', '/lists', '/following', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
+  const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
   // user — reaching a paper from a list, a list from someone's shared link,
   // or an author from a card, must not feel like leaving the app. Measured
@@ -308,7 +310,7 @@ function AppContent() {
       <RouteAnnouncer />
       {/* The one place toasts render; anything calls `toast()` from 'sonner'. */}
       <Toaster />
-      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} />}
+      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} onSearchSlot={setSearchSlot} />}
       {/* Focus target for the skip link and for route changes (RouteAnnouncer).
           A div, not <main>: several routes render their own <main> inside. */}
       <div id="main-content" tabIndex={-1}>
@@ -402,7 +404,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <SearchPage onSaveToList={setSaveModalPaper} />
+                  <SearchPage onSaveToList={setSaveModalPaper} searchSlot={searchSlot} />
                 </PageTransition>
               </ProtectedRoute>
             }
