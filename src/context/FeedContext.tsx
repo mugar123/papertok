@@ -173,11 +173,14 @@ function feedSnapshotKey(userId: string | null | undefined, signature: string) {
 }
 
 // The card the account's For You opens on in this tab, from the place
-// FeedContainer keeps across a reload (feedResumeMemory), or -1 when the tab
-// has none there and For You opens on the first card.
+// FeedContainer keeps across a reload (feedResumeMemory): -1 when the tab has
+// none there and For You opens on the first card, and null when the reader
+// left it past every card of `papers`.
 function resumedCardIndex(userId: string | null, papers: Paper[]) {
   const place = feedResumeMemory.get(forYouScrollKey(userId));
-  return place.paperId ? resumeIndex({ papers, savedPaperId: place.paperId, savedIndex: place.index }) : -1;
+  if (!place.paperId) return -1;
+  if (place.index >= papers.length && !papers.some(paper => paper.id === place.paperId)) return null;
+  return resumeIndex({ papers, savedPaperId: place.paperId, savedIndex: place.index });
 }
 
 function readFeedSnapshot(userId: string | null | undefined, signature: string): (FeedSnapshot & { savedAt: number }) | null {
@@ -193,7 +196,17 @@ function readFeedSnapshot(userId: string | null | undefined, signature: string):
     // leaves: the next card takes its place (keepNotablePlaces). The cards
     // they met stay, books included, so their card keeps its id and index.
     const papers = applyKnownPublicationTypes(snapshot.papers);
-    const met = resumedCardIndex(userId, papers) + 1;
+    const reader = resumedCardIndex(userId, papers);
+    // The snapshot keeps the list's first cards (FEED_SNAPSHOT_MAX_PAPERS), and
+    // the reader left past them: it would open on one they met. It goes, with
+    // their place, and For You loads again from its first card.
+    if (reader === null) {
+      localStorage.removeItem(feedSnapshotKey(userId, signature));
+      feedResumeMemory.remember(forYouScrollKey(userId));
+      feedResumeMemory.persist(forYouScrollKey(userId));
+      return null;
+    }
+    const met = reader + 1;
     const ahead = papers.slice(met).filter(isFeedPublication);
     return { ...snapshot, papers: [
       ...papers.slice(0, met),
@@ -1629,7 +1642,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // Only the feed reports the card the reader is on, and a reload can open
     // another page. Until it reports, the card it will open on stands in, so a
     // late book and a re-rank keep each card on its side of the reader.
-    visiblePaperIdRef.current ??= snapshot.papers[resumedCardIndex(activeUserId.current, snapshot.papers)]?.id ?? null;
+    visiblePaperIdRef.current ??= snapshot.papers[resumedCardIndex(activeUserId.current, snapshot.papers) ?? -1]?.id ?? null;
     setPapers(snapshot.papers);
     setPage(snapshot.page || 0);
     setHasMore(snapshot.hasMore !== false);

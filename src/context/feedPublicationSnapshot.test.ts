@@ -19,7 +19,7 @@ type Publications = Pick<typeof import('../services/feedPublicationService.ts'),
 // it for `placeAccount`.
 function snapshots(publications: Publications = { applyKnownPublicationTypes }, place: { paperId: string; index: number } | null = null, placeAccount: string | null = 'test-user') {
   const stored = new Map<string, string>();
-  const storage = { getItem: (key: string) => stored.get(key) || null, setItem: (key: string, value: string) => stored.set(key, value) };
+  const storage = { getItem: (key: string) => stored.get(key) || null, setItem: (key: string, value: string) => stored.set(key, value), removeItem: (key: string) => stored.delete(key) };
   const session = new Map(place ? [[`${FEED_RESUME_STORAGE_PREFIX}${forYouScrollKey(placeAccount)}`, JSON.stringify(place)]] : []);
   const sessionStorage = { getItem: (key: string) => session.get(key) ?? null, setItem: (key: string, value: string) => { session.set(key, value); }, removeItem: (key: string) => { session.delete(key); } };
   const helpersFor = new Function(
@@ -127,6 +127,22 @@ for (const placeAccount of ['another-account', null]) {
     assert.deepEqual(restored.flatMap((paper, index) => (paper._notable ? [index + 1] : [])), [15]);
   });
 }
+
+// A snapshot keeps the list's first thirty cards. Restored for a reader past
+// them, it put them on its last card, a notable one they had met, and the
+// next notable card came more than fifteen cards later.
+test('a reader who left past the cards a snapshot keeps starts For You again from its first card, not on a card they met', () => {
+  const saved = placeNotableCards(Array.from({ length: 56 }, (_, index) => card(`card-${index}`)), ['notable-0', 'notable-1', 'notable-2', 'notable-3'].map(notable));
+  assert.equal(saved.length, 60);
+  // The reader left For You on the forty-first card.
+  const readerAt = 40;
+  const { readFeedSnapshot, writeFeedSnapshot, session } = snapshots({ applyKnownPublicationTypes }, { paperId: saved[readerAt].id, index: readerAt });
+  writeFeedSnapshot('test-user', 'cs.AI', { papers: saved, page: 3, hasMore: true });
+  assert.equal(readFeedSnapshot('test-user', 'cs.AI'), null, 'the snapshot does not hold their card');
+  assert.equal(readFeedSnapshot('test-user', 'cs.AI'), null, 'and is not restored on the next read either, with the reader on its first card');
+  // FeedContainer then opens the new load on its first card.
+  assert.equal(session.size, 0, 'their place is gone');
+});
 
 // The reader dismissed the notable card at 14, and the next one kept its place:
 // the thirtieth card they meet, the list's twenty-ninth.
