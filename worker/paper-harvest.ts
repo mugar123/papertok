@@ -36,8 +36,8 @@ const FOLLOWED_LANES_PER_RUN = 400;
 // its ten units, is asked less and less often: from its fourth rejection, no
 // sooner than 7 nights later, then behind every lane harvested before that date.
 const FAILED_TURN_NIGHTS = [1, 2, 4, 7];
-// Sixty pages per lane per run, split into short steps so historical reads
-// release their Worker and D1 resources between groups of five pages.
+// Sixty pages per lane per run, split into five-page steps so a retry replays
+// only one bounded group of historical reads.
 const BACKFILL_STEPS = 12;
 // A followed lane no request has written in this long (paper-feed.ts) is no
 // longer harvested.
@@ -113,8 +113,8 @@ async function harvestFollowedLane(env: WorkerEnv, job: LaneJob, run: number): P
 }
 
 async function runLaneJobs(env: WorkerEnv, step: WorkflowStep, label: string, jobs: LaneJob[], followedRun?: number) {
-  // Separate CPU budgets and replay keys: one failed lane must not repeat or
-  // discard other lanes' completed work.
+  // Separate replay keys: one failed lane must not repeat or discard other
+  // lanes' completed work. Steps can share an invocation's CPU allowance.
   for (const [round, job] of jobs.entries()) {
     let turn: FollowedTurn | null = null;
     try {
@@ -269,7 +269,7 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
     }
   });
   await phase('embed', () => embedAll(env, step));
-  // Steps of a lane's backfillPages each, within an invocation's CPU and D1 queries.
+  // Each retry replays at most the lane's backfillPages allowance.
   for (const job of categoryLaneJobs().filter(job => SOURCES[job.source].backfillPages)) {
     for (let round = 0; round < BACKFILL_STEPS; round += 1) {
       const name = `backfill ${job.source} ${job.lane}${round ? ` ${round}` : ''}`;

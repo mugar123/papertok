@@ -10,6 +10,12 @@ upload_source_maps = true
 # encendida hasta que el frontend haya migrado del todo.
 workers_dev = true
 
+# A harvest invocation can execute many persisted steps before it yields.
+# Its accumulated CPU exceeded the default 30 seconds in both ingestion and
+# embedding. This script-wide ceiling also applies to HTTP invocations.
+[limits]
+cpu_ms = 120_000
+
 # El Custom Domain del Worker. Cloudflare crea aqui el registro DNS y el
 # certificado al desplegar, y solo puede hacerlo con la zona papertok.app ya en
 # la cuenta: un deploy antes de mover los nameservers falla con "zone not
