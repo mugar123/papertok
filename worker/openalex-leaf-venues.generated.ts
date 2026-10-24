@@ -354,7 +354,7 @@ export const OPENALEX_LEAF_VENUES: Readonly<Record<string, { readonly sources: r
     sources: [
       'S187585107', // Journal of High Energy Physics (Springer Nature)
     ],
-    filters: ['type:article'],
+    filters: ['type:article', 'authors_count:<100'],
   },
   'math-ph': {
     sources: [

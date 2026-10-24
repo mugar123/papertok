@@ -2297,8 +2297,8 @@
     },
     "hep-th": {
       "sample": {
-        "capturedAt": "2026-10-24T02:06:37Z",
-        "query": "https://api.openalex.org/works?filter=primary_location.source.id:S187585107|S4210194812|S4210238095,type:article,from_publication_date:2026-07-25,to_publication_date:2026-10-23,is_retracted:false,has_abstract:true&sort=publication_date:desc&page=1&per-page=15&select=id,doi,title,type,publication_date,language,abstract_inverted_index,primary_location,open_access,primary_topic",
+        "capturedAt": "2026-10-24T02:20:25Z",
+        "query": "https://api.openalex.org/works?filter=primary_location.source.id:S187585107|S4210194812|S4210238095,type:article,from_publication_date:2026-07-25,to_publication_date:2026-10-23,is_retracted:false,has_abstract:true,authors_count:<100&sort=publication_date:desc&page=1&per-page=15&select=id,doi,title,type,publication_date,language,abstract_inverted_index,primary_location,open_access,primary_topic",
         "works": [
           {"id":"https://openalex.org/W4405902421","type":"article","title":"Yangian symmetry, GKZ equations and integrable Feynman graphs in conformal variables","publication_date":"2026-10-21","source":"S187585107"},
           {"id":"https://openalex.org/W4417295346","type":"article","title":"Bridging dS/CFT and celestial holography via Ward-Takahashi identities","publication_date":"2026-10-21","source":"S187585107"},

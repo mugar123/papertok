@@ -543,6 +543,8 @@ test('a leaf the venue gate admitted asks OpenAlex for the sources its sample fo
     'cs.AI': [['S139930977', 'S196139623'], ['type:article|conference-paper']],
     'cond-mat.supr-con': [['S24807848', 'S4210237713', 'S93909106'], ['type:article', 'primary_topic.id:T10037']],
     'hep-ex': [['S173952182', 'S187585107', 'S4210238307', 'S94052278'], ['type:article', 'authors_count:>99']],
+    // Its curator's filter: JHEP's large collaborations' results are hep-ex's.
+    'hep-th': [['S187585107'], ['type:article', 'authors_count:<100']],
   };
   for (const [leaf, [sources, sampledFilters]] of Object.entries(asked)) {
     assert.ok(venueLanes().includes(leaf), `${leaf} has a venue lane in the nightly harvest`);

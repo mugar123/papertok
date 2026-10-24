@@ -113,8 +113,10 @@ signal processing articles after about 2026-06, so its lane asks Signal
 Processing and Digital Signal Processing alone. Nine physics leaves keep a
 topic or author-count filter Pablo approved for them: hep-ph, hep-ex, nucl-ex,
 cond-mat.supr-con, cond-mat.quant-gas, cond-mat.mes-hall, astro-ph.GA,
-astro-ph.SR and physics.atom-ph. hep-th's sample, the same 15 with and without
-`authors_count:<100`, is recorded without it.
+astro-ph.SR and physics.atom-ph. hep-th keeps the `authors_count:<100` its
+curator chose: it leaves out the 43 results of large experimental
+collaborations JHEP published in the 90 days, and its 15 newest were the same
+with and without it.
 
 The passing leaves' samples asked for 433 sources. Their lanes ask for 242;
 the other 191 had no article on target among their leaf's 15 newest. 37 of

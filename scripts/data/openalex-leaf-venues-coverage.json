@@ -1173,7 +1173,8 @@
     "precision": 0.7333333333333333,
     "withAbstractOnly": true,
     "filters": [
-      "type:article"
+      "type:article",
+      "authors_count:<100"
     ],
     "bySource": {
       "S187585107": "11/15",
