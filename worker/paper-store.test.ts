@@ -208,6 +208,22 @@ test('a record that names two stored papers folds them into one, keeping one id 
   assert.deepEqual(rows(db, 'SELECT lane FROM work_lanes ORDER BY lane').map(row => row.lane), ['bio.comp', 'cs.CL', 'cs.LG']);
 });
 
+test("a notable lane keeps a folded paper until its listing's date, then drops it while the paper's categories keep it", async () => {
+  const { env, db } = corpus();
+  const journal = { ...mapOpenAlexWork({ id: 'https://openalex.org/W1', doi: 'https://doi.org/10.1000/sparse', title: 'Sparse attention for long documents (journal version)', publication_date: '2026-10-12' })!, doi: '10.1000/sparse' };
+  const listedUntil = Date.parse('2026-11-05T03:00:00Z');
+  await ingestPapers(env, [{ paper: arxivRecord, lanes: [] }], { now: NOW });
+  await ingestPapers(env, [{ paper: journal, lanes: ['notable:cs.LG'] }], { now: NOW, keepUntil: new Date(listedUntil).toISOString() });
+  // Another source's record of both folds the journal's row into the arXiv one.
+  await ingestPapers(env, [{ paper: { ...journal, id: 'openalex:W2', arxivId: '2610.11111' }, lanes: [] }], { now: NOW });
+  const notable = () => rows(db, "SELECT w.paper ->> '$.id' AS id FROM work_lanes l JOIN works w ON w.id = l.work_id WHERE l.lane = 'notable:cs.LG'").map(row => row.id);
+  await evictExpired(env, listedUntil - 86_400_000);
+  assert.deepEqual(notable(), ['2610.11111']);
+  await evictExpired(env, listedUntil + 86_400_000);
+  assert.deepEqual(notable(), []);
+  assert.equal(rows(db, 'SELECT id FROM works').length, 1);
+});
+
 test('a journal article keeps its row reviewed when a later harvest lists a record of it without an answer', async () => {
   // Synthetic OpenAlex records as the harvest maps them, one harvest each, so
   // the stored row is the base of each later merge. OpenAlex's record of the
