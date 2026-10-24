@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, Ref } from 'react';
+import type { Ref } from 'react';
 import { AnimatePresence, MotionConfig, animate, motion, useReducedMotion } from 'framer-motion';
 import { EASE_IN_OUT, EASE_OUT, MOTION_BASE_S, MOTION_SHEET_S } from '../../utils/motion-curves.ts';
 import type { CareerStop, LineSlot } from './career-stops.ts';
@@ -64,7 +64,7 @@ function Station({ ref, id, stop, at, side, column, onOrganization }: {
       <span className="career-axis" aria-hidden="true">
         <Dot kind={stop.kind} current={current} layoutId={`${id}-dot-${at}`} />
       </span>
-      <motion.div layoutId={`${id}-text-${at}`} layout="position" className="career-body">
+      <motion.div layout="position" className="career-body">
         <span className="career-years">
           <span className="visually-hidden">{`${KIND_LABEL[stop.kind]}, `}</span>
           {span ?? 'Dates not given'}
@@ -83,13 +83,13 @@ function Station({ ref, id, stop, at, side, column, onOrganization }: {
   );
 }
 
-function Fold({ ref, id, hidden, side, column }: {
-  ref?: Ref<HTMLLIElement>; id: string; hidden: CareerStop[]; side: Side; column: number;
+function Fold({ ref, hidden, side, column }: {
+  ref?: Ref<HTMLLIElement>; hidden: CareerStop[]; side: Side; column: number;
 }) {
   const span = foldYears(hidden);
   return (
     <motion.li ref={ref} initial={false} exit={{ opacity: 0, transition: FADE_AWAY }} className="career-stop" data-side={side} style={{ gridColumn: column }}>
-      <motion.div layoutId={`${id}-fold`} layout="position" className="career-body">
+      <motion.div layout="position" className="career-body">
         <span className="visually-hidden">{`${hidden.length} more records${span ? ',' : ''} `}</span>
         {span && <span className="career-years">{span}</span>}
       </motion.div>
@@ -98,7 +98,7 @@ function Fold({ ref, id, hidden, side, column }: {
 }
 
 // scaleX rather than a transform string: the layout projection composes it.
-function Segment({ dashed, style }: { dashed: boolean; style: CSSProperties }) {
+function Segment({ dashed, column }: { dashed: boolean; column: number }) {
   const reduce = useReducedMotion();
   const hidden = reduce ? { opacity: 0 } : { scaleX: 0 };
   const shown = reduce ? { opacity: 1 } : { scaleX: 1 };
@@ -107,7 +107,7 @@ function Segment({ dashed, style }: { dashed: boolean; style: CSSProperties }) {
       layout
       className={`career-rail${dashed ? ' is-dashed' : ''}`}
       aria-hidden="true"
-      style={{ ...style, originX: 0 }}
+      style={{ gridColumn: column, originX: 0 }}
       initial={hidden}
       animate={{ ...shown, transition: { duration: MOTION_BASE_S, ease: EASE_OUT, delay: reduce ? 0 : MOTION_SHEET_S } }}
       exit={{ ...hidden, transition: { duration: MOTION_BASE_S / 2, ease: EASE_OUT } }}
@@ -129,28 +129,20 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
     const body = bodyRef.current;
     if (!list || !body) return undefined;
     let last: number | null = null;
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
+      const { paddingLeft, paddingRight } = getComputedStyle(list);
+      setLineWidth(list.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight));
       const next = list.offsetHeight;
       if (next === last) return;
       if (last === null) body.style.height = `${next}px`;
       else animate(body, { height: `${next}px` }, reduce ? { duration: 0 } : MOVE);
       last = next;
-    });
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, [reduce]);
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) return undefined;
-    const measure = () => {
-      const { paddingLeft, paddingRight } = getComputedStyle(list);
-      setLineWidth(list.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight));
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(list);
     return () => observer.disconnect();
-  }, []);
+  }, [reduce]);
 
   const capacity = lineWidth === null ? Infinity : Math.max(3, Math.floor((lineWidth + STOP_GAP_PX) / (STOP_MIN_PX + STOP_GAP_PX)));
   const tooLong = career.length > capacity;
@@ -182,12 +174,10 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
       return;
     }
     const target = dotOf(foldedAt[0])?.getBoundingClientRect();
-    const offsets: Offsets = new Map();
-    for (const at of foldedAt.slice(1)) {
+    setClosing(new Map(foldedAt.slice(1).flatMap((at) => {
       const dot = dotOf(at)?.getBoundingClientRect();
-      if (dot && target) offsets.set(at, offsetTo(dot, target));
-    }
-    setClosing(offsets);
+      return dot && target ? [[at, offsetTo(dot, target)] as const] : [];
+    })));
     setExpanded(false);
   };
   useLayoutEffect(() => {
@@ -232,7 +222,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
               <>
                 <AnimatePresence initial={false}>
                   {shown.slice(0, -1).map((at, i) => (
-                    <Segment key={`seg-${at}`} dashed={at === 'fold'} style={{ gridColumn: `${i + 1} / span 1` }} />
+                    <Segment key={`seg-${at}`} dashed={at === 'fold'} column={i + 1} />
                   ))}
                 </AnimatePresence>
                 {fold >= 0 && (
@@ -245,7 +235,7 @@ export default function CareerTimeline({ career, onOrganization }: { career: Car
                 )}
                 <AnimatePresence initial={false} mode="popLayout" custom={closing}>
                   {shown.map((at, i) => (at === 'fold'
-                    ? <Fold key="fold" id={id} hidden={hidden} side={sideOf(at, i)} column={i + 1} />
+                    ? <Fold key="fold" hidden={hidden} side={sideOf(at, i)} column={i + 1} />
                     : <Station key={at} id={id} stop={career[at]} at={at} side={sideOf(at, i)} column={i + 1} onOrganization={onOrganization} />))}
                 </AnimatePresence>
               </>
