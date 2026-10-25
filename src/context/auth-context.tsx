@@ -385,7 +385,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       // still starts from every result of the first edit. Onboarding writes
       // no added list: its picks start established.
       const deselected = nextDeselected(userPreferences ?? [], newPreferences, deselectedPreferences);
-      const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences);
+      const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences, deselectedPreferences);
       setDeselectedPreferences(deselected);
       setAddedPreferences(added);
       await setDoc(doc(db, 'users', userId), {

@@ -109,12 +109,14 @@ export function nextDeselected(previousSelected: string[], nextSelected: string[
 /**
  * The subareas a reader has added to their interests since onboarding: the
  * ones added before and still selected, then the ones this edit selects for
- * the first time. A pick made at onboarding is never in it.
+ * the first time. A pick made at onboarding is never in it, and neither is a
+ * subarea the reader removed (`previousDeselected`) and selects again: that
+ * restores it, with what the app learned of it.
  */
-export function nextAdded(previousSelected: string[], nextSelected: string[], previousAdded: string[]) {
+export function nextAdded(previousSelected: string[], nextSelected: string[], previousAdded: string[], previousDeselected: string[]) {
   const selected = new Set(nextSelected);
-  const before = new Set(previousSelected);
-  return [...new Set([...previousAdded.filter(id => selected.has(id)), ...nextSelected.filter(id => !before.has(id))])];
+  const known = new Set([...previousSelected, ...previousDeselected]);
+  return [...new Set([...previousAdded.filter(id => selected.has(id)), ...nextSelected.filter(id => !known.has(id))])];
 }
 
 const progressOf = (examples: number, shown: number, learnedExamples: number, learnedShown: number) =>

@@ -303,19 +303,30 @@ test('the cold-added interests are the added ones still learning', () => {
 });
 
 test('nextAdded keeps what the reader adds now', () => {
-  assert.deepEqual(nextAdded(['quant-ph'], ['quant-ph', 'econ.EM'], []), ['econ.EM']);
+  assert.deepEqual(nextAdded(['quant-ph'], ['quant-ph', 'econ.EM'], [], []), ['econ.EM']);
 });
 
 test('nextAdded never counts an onboarding pick the reader keeps', () => {
-  assert.deepEqual(nextAdded(['quant-ph', 'hep-th'], ['hep-th', 'quant-ph'], []), []);
+  assert.deepEqual(nextAdded(['quant-ph', 'hep-th'], ['hep-th', 'quant-ph'], [], []), []);
 });
 
 test('nextAdded keeps earlier additions still selected, first, and drops removed ones', () => {
-  assert.deepEqual(nextAdded(['a', 'b', 'c'], ['b', 'c', 'd'], ['a', 'b']), ['b', 'd']);
+  assert.deepEqual(nextAdded(['a', 'b', 'c'], ['b', 'c', 'd'], ['a', 'b'], []), ['b', 'd']);
+});
+
+// ENG-137, ruling R21: selecting again a subarea the reader removed restores
+// it, with what it learned; it does not start again as an addition.
+test('nextAdded never counts a subarea the reader removed and selects again', () => {
+  const removed = nextDeselected(['quant-ph', 'hep-th'], ['quant-ph'], []);
+  const added = nextAdded(['quant-ph'], ['quant-ph', 'hep-th'], [], removed);
+  assert.deepEqual(added, []);
+  const input = memory({ selected: ['quant-ph', 'hep-th'], added, examples: examples('quant-ph', 1) });
+  assert.deepEqual(groupsOf(input), [{ categories: ['hep-th', 'quant-ph'], weight: 1 }]);
+  assert.deepEqual(coldAddedInterests(input), []);
 });
 
 test('nextAdded never repeats an id', () => {
-  assert.deepEqual(nextAdded(['a'], ['a', 'b', 'b'], ['a']), ['a', 'b']);
+  assert.deepEqual(nextAdded(['a'], ['a', 'b', 'b'], ['a'], []), ['a', 'b']);
 });
 
 // ENG-137, ruling R11: an old bundle or the onboarding can leave a subarea
