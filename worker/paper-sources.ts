@@ -19,7 +19,7 @@ import { OPENALEX_WORK_SEARCH_FIELDS, mapOpenAlexWork } from '../src/utils/open-
 import { openAlexTopicFilterForLeaf } from '../src/utils/area-accent.ts';
 import { openAlexLabelFilterForArea } from '../src/data/open-alex-areas.ts';
 import { OPENALEX_NOT_LISTED_SERIES_FILTER } from '../src/utils/publication-status.ts';
-import { handleArxiv } from './arxiv-api.ts';
+import { handleHarvestArxiv } from './arxiv-api.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
 import { handlePhysicsLiterature } from './physics-api.ts';
 import { SOURCE_MAX_PAGE, fetchWithDeadline } from './provider-runtime.ts';
@@ -380,7 +380,7 @@ const filed = (papers: Array<Partial<Paper> | null>, lane: string) => (papers.fi
 
 async function arxivSearch(env: SourceEnv, query: string, { page, lane, waits }: PageRequest) {
   const size = 50;
-  const response = await withShortWaits(waits, () => askRoute(handleArxiv, '/arxiv', {
+  const response = await withShortWaits(waits, () => askRoute(handleHarvestArxiv, '/arxiv', {
     search_query: query, start: (page - 1) * size, max_results: size, sortBy: 'submittedDate', sortOrder: 'descending',
   }, env));
   return pageOf(filed(parseArxivAtom(await response.text()).map(arxivRecordPaper), lane), size);
@@ -788,7 +788,7 @@ export async function backfillLane(env: SourceEnv, { source, lane }: LaneJob, no
 
 /** arXiv's records of these ids (at most 50), through the paced `/arxiv` route. */
 export async function fetchArxivPapers(env: WorkerEnv, arxivIds: string[]) {
-  const response = await askRoute(handleArxiv, '/arxiv', { id_list: arxivIds.slice(0, 50).join(','), max_results: Math.min(50, arxivIds.length) }, env);
+  const response = await askRoute(handleHarvestArxiv, '/arxiv', { id_list: arxivIds.slice(0, 50).join(','), max_results: Math.min(50, arxivIds.length) }, env);
   return parseArxivAtom(await response.text()).map(arxivRecordPaper);
 }
 

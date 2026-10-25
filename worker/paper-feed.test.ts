@@ -309,7 +309,10 @@ test("the lookup after the page files what arXiv sends at the end of the route's
   await ingestPapers(env, [{ paper: stored, lanes: [] }]);
   // Two readers' arXiv searches take this period's seat and the next one:
   // the first goes to arXiv, the second waits for its seat.
-  const searches = ['all:attention', 'all:sparsity'].map(query => handleArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`), env));
+  Object.assign(env, { PDF_RATE_LIMIT_SECRET: 'test-only-pdf-rate-limit-key-32-bytes' });
+  const searches = ['all:attention', 'all:sparsity'].map(query => handleArxiv(new Request(`https://papertok.internal/arxiv?search_query=${encodeURIComponent(query)}`, {
+    headers: { 'cf-connecting-ip': '192.0.2.1' },
+  }), env));
   await flush();
   t.mock.timers.tick(cacheReadMs);
   for (let turn = 0; arxivAsked < 1; turn += 1) {

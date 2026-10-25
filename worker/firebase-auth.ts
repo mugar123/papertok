@@ -3,6 +3,7 @@ import type { WorkerEnv } from './env.ts';
 export interface VerifiedIdentity {
   uid: string;
   email: string;
+  displayName?: string;
   /** Firebase's own flag, set only by sign-ins through a provider that verifies the address itself. */
   emailVerified: boolean;
   /** `emailVerified`, or a Google or GitHub identity carrying the same address (`accountOwnsEmail`). */
@@ -13,6 +14,7 @@ export interface VerifiedIdentity {
 interface LookupUser {
   localId?: string;
   email?: unknown;
+  displayName?: unknown;
   emailVerified?: unknown;
   providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
 }
@@ -195,6 +197,7 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
     ? {
       uid: user.localId,
       email: String(user.email || '').trim().toLowerCase(),
+      ...(typeof user.displayName === 'string' ? { displayName: user.displayName } : {}),
       emailVerified: user.emailVerified === true,
       ownsEmail: accountOwnsEmail(user),
       authTime: typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null,
