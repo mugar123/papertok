@@ -33,25 +33,27 @@ interface StoreOptions {
   apiBase?: string;
 }
 
+// fetch, and reading its body, reject with a TypeError when the connection
+// fails. Marked where the transfer fails, so a TypeError from code is not taken for it.
+function markUnreachable(error: unknown): never {
+  if (error instanceof TypeError) throw Object.assign(new Error('The paper store could not be reached', { cause: error }), { code: 'STORE_UNREACHABLE' });
+  throw error;
+}
+
 async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch, apiBase }: StoreOptions) {
   const response = await fetchWorker(workerSourceUrl('/store/papers', {}, apiBase), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
-  }).catch((error: unknown) => {
-    // fetch rejects with a TypeError when the request got no answer. Marked
-    // here, where the request fails, so a TypeError from code is not taken for it.
-    if (error instanceof TypeError) throw Object.assign(new Error('The paper store could not be reached', { cause: error }), { code: 'STORE_UNREACHABLE' });
-    throw error;
-  });
+  }).catch(markUnreachable);
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
     // is not JSON, such as a gateway's page, leaves the status alone.
     const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
     throw sourceResponseError('/store/papers', response.status, refusal);
   }
-  const { papers } = await response.json() as { papers?: Paper[] };
+  const { papers } = await response.json().catch(markUnreachable) as { papers?: Paper[] };
   // The Worker always answers a list, empty when nothing matches.
   if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
   return papers;

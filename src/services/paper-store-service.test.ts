@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FollowEntity } from '../utils/following.ts';
 import { fetchCorpusPage, fetchCorpusPapers } from './paper-store-service.ts';
+import { WorkerApiAuthError } from './worker-api-client.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 const WORKER = 'https://papertok-report-api.example';
@@ -155,6 +156,15 @@ test('a request that got no answer is marked unreachable, while a deadline or a 
   const timeout = new DOMException('The operation timed out.', 'TimeoutError');
   const { options: late } = harness(async () => { throw timeout; });
   await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, late), (error) => error === timeout);
+  const signedOut = new WorkerApiAuthError();
+  const { options: noSession } = harness(async () => { throw signedOut; });
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, noSession), (error) => error === signedOut);
+});
+
+test('a connection lost while the answer arrives is marked unreachable too', async () => {
+  const cut = new ReadableStream({ start(controller) { controller.error(new TypeError('network error')); } });
+  const { options } = harness(async () => new Response(cut, { status: 200 }));
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, options), { code: 'STORE_UNREACHABLE' });
 });
 
 test('an answer without a papers list is an invalid response, not an empty page', async () => {
