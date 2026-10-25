@@ -25,6 +25,17 @@ test('an arXiv category resolves exactly, then by its archive', () => {
   assert.equal(areaKeyForCategory('cs.NE'), 'cs');
 });
 
+// `constructor` is not an area, so the paper keeps what OpenAlex says of its
+// field. The topic is synthetic; OpenAlex was not queried.
+test('a category named like an Object.prototype member names no area', () => {
+  for (const name of ['constructor', 'toString', '__proto__']) {
+    assert.equal(areaKeyForCategory(name), null, name);
+    const paper = { primaryCategory: name, categories: [name], primaryTopic: { id: 'https://openalex.org/T1', field: { id: 'https://openalex.org/fields/16', display_name: 'Chemistry' } } };
+    assert.equal(areaKeyForPaper(paper), null, name);
+    assert.equal(areaLabelForPaper(paper), 'Chemistry', name);
+  }
+});
+
 /* Every category in arXiv's taxonomy (arxiv.org/category_taxonomy, 155 as of
    October 2026), under the area its archive belongs to. */
 const ARXIV_CATEGORIES_BY_AREA: Record<string, string[]> = {

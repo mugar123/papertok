@@ -82,14 +82,15 @@ export class SemanticScholarAdapter {
       abstract: raw.abstract || 'No abstract available.',
       authors: raw.authors?.map(a => ({ name: a.name, id: a.authorId })) || [],
       publishedDate: raw.year ? `${raw.year}-01-01` : null,
-      year: raw.year || new Date().getFullYear(),
+      year: raw.year || undefined,
       sourceName: raw.venue || '',
       sourceType: 'journal',
       publicationStatus: isPreprint ? 'preprint' : 'published',
-      openAccess: !!raw.isOpenAccess,
+      // An absent flag is not a paywall, and an absent count is not zero.
+      openAccess: typeof raw.isOpenAccess === 'boolean' ? raw.isOpenAccess : undefined,
       pdfUrl: raw.openAccessPdf?.url || null,
       landingPageUrl: raw.paperId ? `https://www.semanticscholar.org/paper/${raw.paperId}` : null,
-      citationsCount: raw.citationCount || 0,
+      citationsCount: raw.citationCount ?? undefined,
       referenceCount: raw.referenceCount || 0,
       provider: this.name,
       raw

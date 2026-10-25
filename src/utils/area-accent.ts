@@ -39,10 +39,10 @@ export function areaKeyForCategory(categoryId: unknown): keyof typeof CATEGORIES
   if (!categoryId || typeof categoryId !== 'string') return null;
 
   const category = categoryId.trim();
-  if (CATEGORIES[category]) return category;
+  if (Object.hasOwn(CATEGORIES, category)) return category;
 
   for (const [key, area] of Object.entries(CATEGORIES)) {
-    if ((area.subcategories as Record<string, { label: string }>)?.[category]) return key;
+    if (Object.hasOwn(area.subcategories, category)) return key;
   }
 
   // Not a prefix match: `math.AC` shares its first letters with `math-ph` and

@@ -268,12 +268,14 @@ export function getArxivArchiveArea(categoryId = '') {
  * Get the human-readable label for a given arXiv category.
  */
 export function getCategoryLabel(arxivCategory: string) {
-  if (CATEGORIES[arxivCategory]) {
+  // Own keys only: a stored category named `constructor` or `toString` is
+  // unknown, not a member inherited from Object.prototype.
+  if (Object.hasOwn(CATEGORIES, arxivCategory)) {
     const area = CATEGORIES[arxivCategory];
     return area.label || area.label;
   }
   for (const area of Object.values(CATEGORIES)) {
-    if (area.subcategories[arxivCategory]) {
+    if (Object.hasOwn(area.subcategories, arxivCategory)) {
       const category = area.subcategories[arxivCategory];
       return category.label || category.label;
     }
@@ -290,7 +292,7 @@ export function getCategoryLabel(arxivCategory: string) {
  */
 export function getCategoryArea(arxivCategory: string) {
   for (const [areaKey, area] of Object.entries(CATEGORIES)) {
-    if (arxivCategory in area.subcategories) {
+    if (Object.hasOwn(area.subcategories, arxivCategory)) {
       return areaKey;
     }
   }
