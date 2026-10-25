@@ -32,6 +32,8 @@ const ERROR_COPY = {
     EMAIL_PROVIDER_LIMIT: 'The sending limit has temporarily been reached.',
     EMAIL_PROVIDER_RATE_LIMIT: 'Resend is limiting requests for now. Try again in a few minutes.',
     EMAIL_TEST_RATE_LIMIT: 'Wait one minute before sending another test.',
+    EMAIL_TEST_DAILY_LIMIT: 'The daily limit for test emails has been reached. You can send another after 00:00 UTC.',
+    EMAIL_TEST_OPENALEX_BUDGET: "PaperTok has paused test emails to keep the day's OpenAlex budget for opening papers and the feed. You can send one again by 00:00 UTC at the latest.",
     EMAIL_TEST_RECIPIENT_RESTRICTED: 'Resend rejected this recipient. Check that the sender domain is verified.',
     EMAIL_DATA_LOADING: 'We are still loading what you follow. Try again in a few seconds.',
     EMAIL_FOLLOWS_REQUIRED: 'Follow at least one topic, author, institution, or project before enabling emails.',

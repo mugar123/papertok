@@ -8,7 +8,7 @@ import {
 
 test('a preview names its paper\'s field the way the card does, or not at all', () => {
   // The digest inks each paper with its field, so it needs the card's answer.
-  assert.equal(serializeUpdateForNotifications({ id: 'a', title: 'A', primaryCategory: 'cs.LG' }).area, 'cs');
+  assert.equal(serializeUpdateForNotifications({ id: 'a', title: 'A', primaryCategory: 'cs.LG' }).area, 'ai');
   assert.equal(serializeUpdateForNotifications({
     id: 'b',
     title: 'B',

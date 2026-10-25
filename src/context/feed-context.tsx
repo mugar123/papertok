@@ -20,6 +20,8 @@ export interface FeedContextValue {
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
   personalLibrary: Record<string, LibraryEntry>; libraryPapers: Record<string, Partial<Paper>>;
+  /** Whether the library has answered for this account and profile. */
+  personalLibraryReady: boolean;
   ensurePersonalLibrary: () => Promise<void>;
   interactionIdFor: (paper: Partial<Paper>) => string | undefined;
   libraryCopyFor: (paper: Partial<Paper>) => { id: string; paper: Partial<Paper> } | null;
@@ -32,12 +34,12 @@ export interface FeedContextValue {
   toggleLike: (paper: Paper) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
-  markSaved: (paper: Paper | string) => Promise<void>;
-  unmarkSaved: (paper: Paper | string) => Promise<void>;
+  markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
+  unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
-  toggleReadLater: (paper: Paper, value?: boolean) => Promise<boolean>;
+  toggleReadLater: (paper: Paper, value?: boolean, options?: { throwOnError: boolean }) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
   trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
   trackPdfOpened: (paper: Paper) => Promise<void>;
@@ -63,6 +65,7 @@ import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   logRankingBatch,
+  nearbyExplorationCategories,
   paperAffinitySignals,
   pickExplorationCategories,
   readRecommendationWeights,
@@ -290,6 +293,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // depend on it so they retry once the ids they need actually exist.
   const [interactionProfileGeneration, setInteractionProfileGeneration] = useState(0);
   const personalLibraryStatus = useRef<{ userId: string | null; generation: number; state: 'idle' | 'loading' | 'ready' }>({ userId: null, generation: -1, state: 'idle' });
+  // Which account and profile generation the library last answered for, so
+  // screens can tell a library still loading from one that is empty.
+  const [personalLibraryReadyFor, setPersonalLibraryReadyFor] = useState<string | null>(null);
 
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
@@ -565,6 +571,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         generation: fromCache ? -1 : interactionProfileGeneration,
         state: fromCache ? 'idle' : 'ready',
       };
+      if (!fromCache) setPersonalLibraryReadyFor(`${userId}:${interactionProfileGeneration}`);
     } catch (error) {
       console.error('Error loading reading library:', error);
       personalLibraryStatus.current = { userId, generation: -1, state: 'idle' };
@@ -1206,20 +1213,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const explorationRequests: Promise<Paper[]>[] = [];
         const currentBoredom = boredomLevel.current;
         
-        const userAreas = new Set<string>();
-        userPreferences.forEach(pref => {
-          const leaf = allCategories.find(c => c.id === pref);
-          if (leaf) userAreas.add(leaf.area);
-        });
-
         // Adjacent categories within the user's parent areas, chosen by what
         // exploring each of them has returned so far.
         const nearbyCats = pickExplorationCategories(
-          allCategories
-            .filter(c => userAreas.has(c.area))
-            .filter(c => !userPreferences.includes(c.id))
-            .filter(c => (profileSignals.current.categoryAffinities[c.id] || 0) >= -2)
-            .map(c => c.id),
+          nearbyExplorationCategories(userPreferences, profileSignals.current.categoryAffinities),
           profileSignals.current.categoryExposure,
         );
 
@@ -2057,9 +2054,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrIdInput: Paper | string) => {
+  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
+    if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
 
@@ -2111,6 +2109,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         await setDoc(ref, interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
+        if (options?.throwOnError) throw err;
       }
       // PAP-60, D6. The Save button and the save sheet write the savedPapers
       // document, and the button writes Read later, before this mark. A late
@@ -2129,9 +2128,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
    * merges over it. The interaction keeps `saved: false` rather than losing
    * the field, the same flag a rebuild of the aggregate reads.
    */
-  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string) => {
+  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
+    if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
 
@@ -2158,6 +2158,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }, { merge: true });
       } catch (err) {
         console.error('Error removing the saved mark:', err);
+        if (options?.throwOnError) throw err;
       }
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
@@ -2187,9 +2188,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [recordProfileEvent, user?.uid]);
 
-  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean) => {
+  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: { throwOnError: boolean }) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
+    if (auth.currentUser?.uid !== userId) return false;
     if (!userId || !paper?.id) return false;
     const nextValue = value ?? !personalLibrary[paper.id]?.readLater;
     const updatedAt = new Date().toISOString();
@@ -2228,6 +2230,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }), { merge: true });
     } catch (err) {
       console.error('Error updating read later:', err);
+      if (options?.throwOnError) {
+        if (auth.currentUser?.uid === userId) {
+          const previousValue = Boolean(personalLibrary[paper.id]?.readLater);
+          setPersonalLibrary(current => ({
+            ...current,
+            [paper.id]: { ...current[paper.id], readLater: previousValue },
+          }));
+          recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: previousValue });
+        }
+        throw err;
+      }
     }
     return nextValue;
   }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
@@ -2317,10 +2330,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // `userId` as its first statement (see `toggleLike` for the pattern) and
   // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
   // `user` beyond the id, which none of the current ones do.
+  // Generation 0 is before the profile arrived, when the library has no ids to ask for.
+  const personalLibraryReady = interactionProfileGeneration > 0
+    && personalLibraryReadyFor === `${user?.uid}:${interactionProfileGeneration}`;
+
   const value = useMemo(() => ({
     papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    libraryPapers,
+    libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
@@ -2333,7 +2350,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }), [
     papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    libraryPapers,
+    libraryPapers, personalLibraryReady,
     ensurePersonalLibrary,
     interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,

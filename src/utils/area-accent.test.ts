@@ -19,16 +19,18 @@ import { PaperBuilder } from '../services/paper-builder.ts';
    one field, labelled as another and stamped with the mark of a third. */
 
 test('an arXiv category resolves exactly, then by its archive', () => {
-  assert.equal(areaKeyForCategory('cs.AI'), 'cs');
+  assert.equal(areaKeyForCategory('cs.AI'), 'ai');
   assert.equal(areaKeyForCategory('quant-ph'), 'physics');
   // Not listed explicitly, reached by its archive.
-  assert.equal(areaKeyForCategory('cs.NE'), 'cs');
+  assert.equal(areaKeyForCategory('cs.IT'), 'cs');
 });
 
 /* Every category in arXiv's taxonomy (arxiv.org/category_taxonomy, 155 as of
-   October 2026), under the area its archive belongs to. */
+   October 2026), under the area that lists it or else the area its archive
+   belongs to. */
 const ARXIV_CATEGORIES_BY_AREA: Record<string, string[]> = {
-  cs: 'AI AR CC CE CG CL CR CV CY DB DC DL DM DS ET FL GL GR GT HC IR IT LG LO MA MM MS NA NE NI OH OS PF PL RO SC SD SE SI SY'.split(' ').map(id => `cs.${id}`),
+  cs: 'AR CC CE CG CR CY DB DC DL DM DS ET FL GL GR GT HC IR IT LO MA MM MS NA NI OH OS PF PL RO SC SD SE SI SY'.split(' ').map(id => `cs.${id}`),
+  ai: 'AI CL CV LG NE'.split(' ').map(id => `cs.${id}`),
   econ: ['econ.EM', 'econ.GN', 'econ.TH'],
   eess: ['eess.AS', 'eess.IV', 'eess.SP', 'eess.SY'],
   math: 'AC AG AP AT CA CO CT CV DG DS FA GM GN GR GT HO IT KT LO MG MP NA NT OA OC PR QA RA RT SG SP ST'.split(' ').map(id => `math.${id}`),
@@ -48,7 +50,7 @@ const ARXIV_CATEGORY_AREAS = Object.entries(ARXIV_CATEGORIES_BY_AREA)
 
 // Guessed from the first letters of the id, `math.AC` and `q-bio.NC` read as
 // physics (`math-ph`, `quant-ph`) and `nlin.CD` as no field at all.
-test('every arXiv category resolves to the area of its archive', () => {
+test('every arXiv category resolves to the area that lists it, else its archive\'s', () => {
   assert.equal(ARXIV_CATEGORY_AREAS.length, 155);
   assert.deepEqual(
     Object.fromEntries(ARXIV_CATEGORY_AREAS.map(([id]) => [id, areaKeyForCategory(id)])),
@@ -66,6 +68,16 @@ test("an arXiv category's chip, kicker and ink name the same area", () => {
     assert.equal(areaLabelForPaper(paper), area.label, id);
     assert.equal(areaAccentForPaper(paper), area.gradient, id);
   }
+});
+
+// ENG-113. arXiv 1706.03762 (Attention Is All You Need), as listed on arxiv.org:
+// primary cs.CL, cross-listed cs.LG. It reads as AI without either id changing.
+test('a language paper groups under Artificial Intelligence and keeps its arXiv categories', () => {
+  const paper = PaperBuilder.create({ id: '1706.03762', title: 'Attention Is All You Need', primaryCategory: 'cs.CL', categories: ['cs.CL', 'cs.LG'] });
+  assert.equal(areaKeyForPaper(paper), 'ai');
+  assert.equal(areaLabelForPaper(paper), 'Artificial Intelligence');
+  assert.equal(areaAccentForPaper(paper), 'var(--gradient-ai)');
+  assert.deepEqual([paper.primaryCategory, paper.categories], ['cs.CL', ['cs.CL', 'cs.LG']]);
 });
 
 test('an exact hit outranks a prefix hit, whatever the declaration order', () => {
@@ -98,6 +110,9 @@ test('an OpenAlex subfield that belongs elsewhere outranks its field', () => {
   assert.equal(areaKeyForPaper(work(2003, 20)), 'q-fin');
   assert.equal(areaKeyForPaper(work(2002, 20)), 'econ');
   assert.equal(areaKeyForPaper(work(2506, 25)), 'chemeng');
+  assert.equal(areaKeyForPaper(work(1702, 17)), 'ai');
+  assert.equal(areaKeyForPaper(work(1707, 17)), 'ai');
+  assert.equal(areaKeyForPaper(work(1705, 17)), 'cs');
 });
 
 // What the Explorer asks OpenAlex for is what its rows are labelled with, and
@@ -110,6 +125,7 @@ test('every area has an OpenAlex filter built from the tables that label its row
   assert.equal(openAlexFilterForArea('chemeng'), 'primary_topic.field.id:15|25');
   assert.equal(openAlexFilterForArea('mech'), 'primary_topic.subfield.id:2202|2203|2206|2210|2211');
   assert.equal(openAlexFilterForArea('q-fin'), 'primary_topic.subfield.id:2003');
+  assert.equal(openAlexFilterForArea('ai'), 'primary_topic.subfield.id:1702|1707');
   assert.equal(openAlexFilterForArea('nonsense'), null);
 });
 
@@ -124,18 +140,31 @@ test("a topic's or a concept's name alone is not a field", () => {
   }
 });
 
-// D3: OpenAlex fields this app has no area for (Chemistry, Social Sciences,
+// D3: OpenAlex fields this app has no area for (Social Sciences,
 // Psychology...) read as OpenAlex names them, with no field's ink.
 test('a field the app has no area for reads as OpenAlex names it, without an ink', () => {
   const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
-  const unmapped = sample.filter(work => ['16', '33'].includes(String(work.primary_topic?.field?.id).split('/').pop()!));
-  assert.equal(unmapped.length, 4);
+  const unmapped = sample.filter(work => String(work.primary_topic?.field?.id).split('/').pop() === '33');
+  assert.equal(unmapped.length, 2);
   for (const work of unmapped) {
     const paper = PaperBuilder.deduplicate([new OpenAlexAdapter().mapToStandard(work)])[0];
     assert.equal(areaKeyForPaper(paper), null, work.id);
     assert.equal(areaLabelForPaper(paper), work.primary_topic?.field?.display_name, work.id);
     assert.equal(areaAccentForPaper(paper), 'var(--gradient-brand)', work.id);
   }
+});
+
+test('a work OpenAlex files under Chemistry reads as Chemistry, with its ink', () => {
+  const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
+  const chemistry = sample.filter(work => String(work.primary_topic?.field?.id).split('/').pop() === '16');
+  assert.equal(chemistry.length, 2);
+  for (const work of chemistry) {
+    const paper = PaperBuilder.deduplicate([new OpenAlexAdapter().mapToStandard(work)])[0];
+    assert.equal(areaKeyForPaper(paper), 'chem', work.id);
+    assert.equal(areaLabelForPaper(paper), 'Chemistry', work.id);
+    assert.equal(areaAccentForPaper(paper), 'var(--gradient-chem)', work.id);
+  }
+  assert.equal(openAlexFilterForArea('chem'), 'primary_topic.field.id:16');
 });
 
 test('an arXiv category still wins over the topic name', () => {

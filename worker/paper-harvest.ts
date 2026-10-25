@@ -3,7 +3,7 @@ import type { WorkerEnv } from './env.ts';
 import type { LaneJob } from './paper-sources.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
-import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves } from './paper-store.ts';
+import { CORPUS_DAYS, daysFromNow, embedPending, embedWorks, evictExpired, thinLeaves, thinLeavesReport } from './paper-store.ts';
 import { ARXIV_HARVEST_SETS, FOLLOWED_SOURCES, SOURCES, SourceRefused, backfillLane, categoryLaneJobs, followedLaneJob, harvestArxivPage, harvestLane, notableLaneJobs } from './paper-sources.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers, storeLeafCentroids } from './leaf-filing.ts';
@@ -17,8 +17,17 @@ const EMBED_STEP_PAPERS = 256;
 // run's ENRICH_STEPS about 3,000 units of the nightly run's 3,700 of the
 // harvest's share of the day (provider-runtime.ts). A larger backlog drains
 // over the next runs.
+//
+// The steps of a run execute in one Worker invocation until a wait longer than
+// the Workflows engine's 5-minute grace period, so every step's subrequests
+// (fetches, D1 calls, Workers AI calls, the quota ledger, the cache) count
+// against the invocation's `limits.subrequests` of wrangler.toml together: the
+// lane phases' before, and then each enrichment batch with its two embedding
+// steps, about 100 in production on 2026-10-25. The longest enrichment phase,
+// ENRICH_STEPS batches, must fit in half of that limit, leaving the other half
+// to the lanes, the backfill and the eviction (paper-harvest.test.ts).
 const ENRICH_STEP_PAPERS = 500;
-const ENRICH_STEPS = 150;
+export const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, the longest due first: a lane is due from
 // its last harvest or, never harvested, from when it was first followed, and
 // the most recently written comes first among lanes due from the same time. A
@@ -285,7 +294,11 @@ export async function runPaperHarvest(env: WorkerEnv, event: Readonly<WorkflowEv
     }
     await step.do('forget followed lanes', () => forgetFollowedLanes(db, started));
   });
-  await phase('thin leaves', () => step.do('thin leaves', () => thinLeaves(db, started)));
+  await phase('thin leaves', () => step.do('thin leaves', async () => {
+    const report = thinLeavesReport(await thinLeaves(db, started));
+    console.log(report.line);
+    return report.summary;
+  }));
   // Apart, so a failed recomputation still files by the last run's centroids.
   await phase('leaf centroids', () => step.do('leaf centroids', () => storeLeafCentroids(env, started)));
   await phase('file area papers', () => step.do('file area papers', () => fileAreaPapers(env)));

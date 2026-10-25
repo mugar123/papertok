@@ -15,7 +15,8 @@ import { openLicenseFromCrossref } from '../utils/crossref-license.ts';
 const CROSSREF_WORKS_LIMIT = 30;
 const CROSSREF_AUTHORS_WORKS_LIMIT = 100;
 
-function stripMarkup(value: unknown) {
+// Crossref's abstracts are JATS XML; the text without its tags.
+export function stripMarkup(value: unknown) {
   return String(value || '')
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')

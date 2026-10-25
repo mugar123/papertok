@@ -1,11 +1,13 @@
 type DigestUpstream = { openAlex: { total: number; byQuery: Record<string, number> }; emailsTo: Record<string, { html: string; text: string; subject: string; headers: Record<string, string> }>; hosts: string[] };
 import type { WorkerEnv } from './env.ts';
 import type { DigestPaper, Follow, Subscription } from './email-notifications.ts';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import type { TestGlobals } from './test-types.ts';
 import assert from 'node:assert/strict';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadline-harness.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { readOpenAlexBudget, reserveOpenAlexBudget } from './provider-runtime.ts';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -315,10 +317,9 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
         abstract_inverted_index: invertedIndex(abstract),
       },
       {
-        // Chemistry (field 16) has no area of its own, and the topic's name
-        // ("Polymer ...") does not stand in for one: it read as Chemical
-        // Engineering by keyword (PAP-60). And an editorial's inverted index
-        // is its body, not an abstract.
+        // Chemistry (field 16) is read by its field, not by the topic's name
+        // ("Polymer ..."). And an editorial's inverted index is its body, not
+        // an abstract.
         id: 'https://openalex.org/WNAMED',
         type: 'editorial',
         display_name: 'Polymer membranes for water',
@@ -339,7 +340,7 @@ test('an OpenAlex work carries its field and a usable abstract into the digest',
     const byId = Object.fromEntries(papers.map(paper => [paper!.id, paper]));
     assert.equal(byId.WFIELD!.area, 'cs');
     assert.equal(byId.WFIELD!.abstract, abstract);
-    assert.equal(byId.WNAMED!.area, undefined);
+    assert.equal(byId.WNAMED!.area, 'chem');
     assert.equal('abstract' in byId.WNAMED!, false);
   } finally {
     restore();
@@ -585,6 +586,17 @@ test('maps native arXiv categories to their exact followed topics', () => {
   assert.equal(papers[0]!.url, 'https://arxiv.org/abs/2607.26058v1');
 });
 
+// ENG-113. A Computer Science follow stored while the area still held the AI leaves.
+test('a followed area reads its arXiv categories from the taxonomy, not from what the follow stored', () => {
+  const stored = { type: 'topic' as const, canonicalId: 'cs', displayName: 'Computer Science', metadata: { categoryIds: ['cs.AI', 'cs.LG', 'cs.RO'] } };
+  const categories = arxivCategoriesForFollow(stored);
+  assert.equal(categories.includes('cs.RO'), true);
+  assert.equal(categories.includes('cs.SE'), true);
+  assert.deepEqual(categories.filter(id => ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE'].includes(id)), []);
+  const leaf = { type: 'topic' as const, canonicalId: 'cs.LG', displayName: 'Machine Learning', metadata: { categoryIds: ['cs.LG'] } };
+  assert.deepEqual(arxivCategoriesForFollow(leaf), ['cs.LG']);
+});
+
 test('an arXiv entry carries its primary field and its summary into the digest', () => {
   const follows = [
     { type: 'topic' as const, canonicalId: 'math-ph', displayName: 'Mathematical Physics', metadata: { categoryIds: ['math-ph'] } },
@@ -621,7 +633,7 @@ test('an arXiv entry carries its primary field and its summary into the digest',
   assert.equal(byId['2608.00001']!.area, 'physics');
   assert.equal(byId['2608.00001']!.abstract, 'Integrable spin chains admit exact solutions.');
   // The primary category decides, not the cross-list that happens to come first.
-  assert.equal(byId['2608.00002']!.area, 'cs');
+  assert.equal(byId['2608.00002']!.area, 'ai');
   assert.equal('abstract' in byId['2608.00002']!, false);
 });
 
@@ -2402,6 +2414,31 @@ test('a preview or label sync keeps held papers, while changing followed IDs cle
   assert.equal((await storedSubscriptionWithState(kv, key))!.heldDigest, null);
 });
 
+// ENG-113. A held selection is keyed by the categories a followed area has
+// now, so the ids the follow stored when the area held other leaves do not
+// decide whether it is reused.
+test('a held digest follows an area by its current leaves, not by the ids the follow stored', async () => {
+  const area = (categoryIds: string[]): Follow => ({ type: 'topic', canonicalId: 'cs', displayName: 'Computer Science', externalIds: {}, metadata: { categoryIds } });
+  const { upstream, run, kv } = digestScheduleHarness({ follows: [digestFollow(), area(['cs.AI', 'cs.LG', 'cs.RO'])] });
+  upstream.sourcesUp = true;
+  upstream.provider = () => jsonResponse(429, { name: 'daily_quota_exceeded' });
+  const key = 'notification:subscription:schedule-reader';
+  await run('2026-07-27T07:00:00Z');
+  assert.ok((await storedSubscriptionWithState(kv, key))!.heldDigest, 'the outage holds the selection');
+
+  const save = (follows: Follow[]) => saveSubscription(
+    new Request('https://example.com/notifications/preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sync: true, enabled: true, follows, previewItems: [] }),
+    }),
+    { NOTIFICATION_STORE: kv },
+    { uid: 'schedule-reader', email: 'reader@example.com', displayName: 'Reader' },
+  );
+  await save([digestFollow(), area(['cs.RO', 'cs.CR'])]);
+  assert.ok((await storedSubscriptionWithState(kv, key))!.heldDigest, 'other stored ids for the same area keep it');
+});
+
 test('a held Tuesday digest retries a short Resend rate limit after 40 minutes', async () => {
   const { upstream, run, kv } = digestScheduleHarness({}, 1);
   upstream.sourcesUp = true;
@@ -3721,6 +3758,273 @@ test('a source that runs out of deadline is still reported as a TIMEOUT', async 
   ));
 });
 
+// POST /notifications/test for signed-in accounts, with Identity Toolkit,
+// Resend and the paper sources as doubles. One author follow is an OpenAlex
+// search and one arXiv topic is an arXiv query, so a test that reads its
+// sources makes at least one call to each.
+function testEmailHarness(t: TestContext) {
+  const env: WorkerEnv = {
+    ...identityEnvironment(createMemoryKv()),
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
+  };
+  const calls = { sources: 0, openAlex: 0, resend: 0 };
+  let uid = 'tester';
+  let clock = Date.UTC(2026, 9, 26, 9, 0, 30);
+  const globals = globalThis as TestGlobals;
+  if (!globals.caches) {
+    // The shared verifier remembers an identity in the Workers cache, which Node
+    // lacks. One that never hits keeps every request asking the Identity Toolkit
+    // double, so `setAccount` takes effect at once.
+    globals.caches = { default: { match: async () => undefined, put: async () => undefined } };
+    t.after(() => { delete globals.caches; });
+  }
+  let openAlexFailures = 0;
+  let arxivDown = false;
+  t.mock.method(Date, 'now', () => clock);
+  t.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === 'identitytoolkit.googleapis.com') {
+      return Response.json({ users: [{ localId: uid, email: `${uid}@example.com`, emailVerified: true }] });
+    }
+    if (url.hostname === 'api.resend.com') {
+      calls.resend += 1;
+      return Response.json({ id: `resend-${calls.resend}` });
+    }
+    calls.sources += 1;
+    if (arxivDown && url.hostname === 'export.arxiv.org') return new Response('', { status: 503 });
+    if (url.hostname === 'api.openalex.org') {
+      calls.openAlex += 1;
+      if (openAlexFailures > 0) {
+        openAlexFailures -= 1;
+        return new Response('', { status: 503 });
+      }
+    }
+    return url.hostname === 'export.arxiv.org'
+      ? new Response('<feed xmlns="http://www.w3.org/2005/Atom"></feed>')
+      : Response.json({ results: [], meta: { count: 0 } });
+  });
+  const call = (method: string, pathname: string, body?: unknown) => handleEmailNotificationRequest(
+    new Request(`https://api.papertok.app${pathname}`, {
+      method,
+      headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }),
+    env,
+    pathname,
+  );
+  const arxivTopic = { type: 'topic', canonicalId: 'quant-ph', displayName: 'Quantum Physics', externalIds: {}, metadata: { categoryIds: ['quant-ph'] } };
+  return {
+    env,
+    calls,
+    arxivTopic,
+    setAccount: (value: string) => { uid = value; },
+    advanceMinutes: (minutes: number) => { clock += minutes * 60_000; },
+    failOpenAlexTimes: (times: number) => { openAlexFailures = times; },
+    takeArxivDown: () => { arxivDown = true; },
+    now: () => new Date(clock).toISOString(),
+    subscribe: (follows: unknown[] = [digestFollow(), arxivTopic]) => call('PUT', '/notifications/preferences', { enabled: true, maxPapers: 5, follows, previewItems: [] }),
+    unsubscribe: () => call('PUT', '/notifications/preferences', { enabled: false }),
+    sendTest: async () => {
+      const result = await call('POST', '/notifications/test');
+      assert.ok('ok' in result);
+      return result;
+    },
+  };
+}
+
+const refusedWith = (code: string, status: number) => (error: unknown) => {
+  const { code: actual, status: actualStatus } = error as { code?: string; status?: number };
+  assert.deepEqual({ code: actual, status: actualStatus }, { code, status });
+  return true;
+};
+
+test('unsubscribing and subscribing again does not give an account another test email in the same minute', async t => {
+  // Unsubscribing deleted the delivery state that held `lastTestAt`, and the
+  // new subscription's reservation was a new unit of the shared daily send
+  // limit, so a loop could spend the digest's day (DeepSec 628b6b0740).
+  const h = testEmailHarness(t);
+  await h.subscribe();
+  assert.equal((await h.sendTest()).ok, true);
+  const sourcesAfterFirst = h.calls.sources;
+  await h.unsubscribe();
+  await h.subscribe();
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_RATE_LIMIT', 429));
+  assert.equal(h.calls.resend, 1);
+  assert.equal(h.calls.sources, sourcesAfterFirst);
+});
+
+test('concurrent test requests from one account read the sources once and send one email', async t => {
+  const single = testEmailHarness(t);
+  await single.subscribe();
+  await single.sendTest();
+  const oneFanOut = single.calls.sources;
+  assert.ok(oneFanOut >= 2);
+  t.mock.restoreAll();
+
+  const h = testEmailHarness(t);
+  await h.subscribe();
+  const outcomes = await Promise.allSettled(Array.from({ length: 8 }, () => h.sendTest()));
+  assert.equal(outcomes.filter(outcome => outcome.status === 'fulfilled').length, 1);
+  for (const outcome of outcomes) {
+    if (outcome.status === 'rejected') refusedWith('EMAIL_TEST_RATE_LIMIT', 429)(outcome.reason);
+  }
+  assert.equal(h.calls.sources, oneFanOut);
+  assert.equal(h.calls.resend, 1);
+});
+
+test('an account gets three test emails a UTC day, and a refused test reads no source', async t => {
+  const h = testEmailHarness(t);
+  await h.subscribe();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.equal((await h.sendTest()).ok, true);
+    h.advanceMinutes(2);
+  }
+  const sourcesBefore = h.calls.sources;
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_DAILY_LIMIT', 429));
+  assert.equal(h.calls.sources, sourcesBefore);
+  assert.equal(h.calls.resend, 3);
+});
+
+test('all accounts together get twenty test emails a UTC day', async t => {
+  const h = testEmailHarness(t);
+  for (let account = 0; account < 20; account += 1) {
+    h.setAccount(`reader-${account}`);
+    await h.subscribe();
+    assert.equal((await h.sendTest()).ok, true);
+  }
+  // In the same minute: the minute paces one account, so a burst across
+  // accounts is refused by the day's limit and gets its code.
+  h.setAccount('reader-20');
+  await h.subscribe();
+  const sourcesBefore = h.calls.sources;
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_DAILY_LIMIT', 429));
+  assert.equal(h.calls.sources, sourcesBefore);
+  assert.equal(h.calls.resend, 20);
+});
+
+test('a test email without its quota ledger fails closed before reading a source', async t => {
+  const h = testEmailHarness(t);
+  delete h.env.REQUEST_QUOTA_LEDGER;
+  await h.subscribe();
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_UNAVAILABLE', 503));
+  assert.equal(h.calls.sources, 0);
+  assert.equal(h.calls.resend, 0);
+});
+
+// The OpenAlex calls a test email makes are counted in the day's OpenAlex ledger
+// at the exploration tier, which closes at 60 % of the day's ceiling. With the
+// ceiling at 100 units that is 60 units; a search is ten and a list one.
+const searchedAuthor = digestFollow('0000-0002-1825-0097', 'Grace Hopper');
+
+async function openAlexDay(h: ReturnType<typeof testEmailHarness>) {
+  const { report } = await readOpenAlexBudget(h.env, h.now());
+  assert.ok(report);
+  return report;
+}
+
+test('a test email reserves each OpenAlex request in the day\'s ledger at the exploration tier', async t => {
+  const h = testEmailHarness(t);
+  await h.subscribe([digestFollow('A1'), searchedAuthor, h.arxivTopic]);
+  await h.sendTest();
+  assert.equal(h.calls.openAlex, 2);
+  const day = await openAlexDay(h);
+  assert.deepEqual(
+    { used: day.used, exploration: day.tiers.exploration.used, feed: day.tiers.feed.used, search: day.kinds.search.used, list: day.kinds.list.used },
+    { used: 11, exploration: 11, feed: 0, search: 10, list: 1 },
+  );
+});
+
+test('a test email reserves a retried OpenAlex request again', async t => {
+  const h = testEmailHarness(t);
+  await h.subscribe([searchedAuthor]);
+  h.failOpenAlexTimes(1);
+  await h.sendTest();
+  assert.equal(h.calls.openAlex, 2);
+  assert.equal((await openAlexDay(h)).used, 20);
+});
+
+test('a test email the exploration tier refuses sends nothing and does not call OpenAlex', async t => {
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
+  await h.subscribe([searchedAuthor, h.arxivTopic]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 0);
+  assert.equal(h.calls.resend, 0);
+  assert.equal((await openAlexDay(h)).used, 55);
+});
+
+test('a test email the exploration tier refuses fails whole when OpenAlex stands in for arXiv', async t => {
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
+  h.takeArxivDown();
+  await h.subscribe([h.arxivTopic]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 0);
+  assert.equal(h.calls.resend, 0);
+});
+
+test('a test email stops asking the ledger and OpenAlex once the tier has refused it', async t => {
+  // Five searches of ten units cannot fit under the tier's 60 with 55 spent, but
+  // four one-unit lists after them would. The test fails whole on the first
+  // refusal, so those lists must neither be billed nor sent: the day keeps its
+  // 55 units for the readers who still need them, and only the searches that
+  // had already asked can be counted as refused.
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  await reserveOpenAlexBudget(h.env, '', { units: 55, tier: 'exploration', kind: 'list' }, h.now());
+  const namedAuthors = ['Grace Hopper', 'Alan Turing', 'Ada Lovelace', 'Kurt Godel', 'John Neumann']
+    .map((name, index) => digestFollow(`0000-0002-1825-009${index}`, name));
+  await h.subscribe([...namedAuthors, ...['A11', 'A12', 'A13', 'A14'].map(id => digestFollow(id))]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 0);
+  assert.equal(h.calls.resend, 0);
+  const day = await openAlexDay(h);
+  assert.equal(day.tiers.exploration.used, 55);
+  assert.equal(day.used, 55);
+  assert.ok(day.tiers.exploration.refused < 5 * 10, 'the last search asked the ledger after the first refusal');
+});
+
+test('test emails stop at the exploration tier and leave the feed its share of the day', async t => {
+  const h = testEmailHarness(t);
+  h.env.OPENALEX_GLOBAL_DAILY_LIMIT = '100';
+  for (let account = 0; account < 6; account += 1) {
+    h.setAccount(`reader-${account}`);
+    await h.subscribe([searchedAuthor]);
+    await h.sendTest();
+  }
+  h.setAccount('reader-6');
+  await h.subscribe([searchedAuthor]);
+  await assert.rejects(h.sendTest(), refusedWith('EMAIL_TEST_OPENALEX_BUDGET', 429));
+  assert.equal(h.calls.openAlex, 6);
+  const harvest = await reserveOpenAlexBudget(h.env, '', { units: 30, tier: 'feed', kind: 'list' }, h.now());
+  assert.equal(harvest.error, undefined);
+  const day = await openAlexDay(h);
+  assert.deepEqual(
+    { used: day.used, exploration: day.tiers.exploration.used, feed: day.tiers.feed.used },
+    { used: 90, exploration: 60, feed: 30 },
+  );
+});
+
+const ledgerOutages = {
+  'answers with an error': async () => new Response('', { status: 500 }),
+  'cannot be reached': async (): Promise<Response> => { throw new Error('ledger unreachable'); },
+};
+for (const [outage, answer] of Object.entries(ledgerOutages)) {
+  test(`a test email fails closed when the OpenAlex ledger ${outage}`, async t => {
+    const h = testEmailHarness(t);
+    const ledger = h.env.REQUEST_QUOTA_LEDGER!;
+    h.env.REQUEST_QUOTA_LEDGER = {
+      idFromName: (name: string) => ledger.idFromName(name),
+      get: (id: unknown) => (String(id).startsWith('openalex:') ? { fetch: answer } : ledger.get(id as DurableObjectId)),
+    } as unknown as WorkerEnv['REQUEST_QUOTA_LEDGER'];
+    await h.subscribe([searchedAuthor, h.arxivTopic]);
+    await assert.rejects(h.sendTest(), refusedWith('EMAIL_UNAVAILABLE', 503));
+    assert.equal(h.calls.openAlex, 0);
+    assert.equal(h.calls.resend, 0);
+  });
+}
 
 test('notification authentication screens junk locally and reuses a verified identity for repeated requests', async () => {
   let lookups = 0;

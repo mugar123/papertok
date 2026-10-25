@@ -22,8 +22,8 @@ export const SEARCH_SECTIONS: SearchSection[] = ['papers', 'authors', 'instituti
 export const EMPTY_SEARCH: SearchSnapshot = { results: { papers: [], authors: [], institutions: [], topics: [], projects: [] }, pending: [], issues: [] };
 
 // The sections that ask OpenAlex a question of their own: the author search
-// is billed as ten list calls, the institution ranking and the topic
-// autocomplete as one each (worker/provider-runtime.ts).
+// is billed as ten list calls per request (up to two), the institution ranking
+// and the topic autocomplete as one each (worker/provider-runtime.ts).
 const ENTITY_SECTIONS: SearchSection[] = ['authors', 'institutions', 'topics'];
 
 // These include the services' own deadlines and enrichment. Expiry cancels
@@ -59,8 +59,8 @@ export interface EntitySearch {
  * source. Under All the papers go first and the entity sections follow once
  * the papers have settled: every debounced term is a papers search, but a
  * term abandoned before its papers answer is never searched for authors,
- * which costs as much again. Projects come from OpenAIRE and run beside the
- * papers.
+ * which can cost up to two more searches. Projects come from OpenAIRE and run
+ * beside the papers.
  */
 export function searchEntities(query: string, {
   signal, onUpdate, knownPapers = [], sources = providers, timeouts = SECTION_TIMEOUTS,
