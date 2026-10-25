@@ -82,7 +82,22 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
   'concept',
   'source',
 ]);
-const SEARCH_ENGINE_HOSTS = ['google.', 'bing.com', 'duckduckgo.com', 'search.yahoo.', 'ecosia.org', 'brave.com'];
+// A referrer counts when its whole host is listed, or is a subdomain of a listed
+// one. A name that merely contains an entry is another site: chatgpt.com holds
+// `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
+// per country, so those two are patterns. Google's search properties (web, Scholar,
+// Books, Images, News) count as search; Docs, Gmail, Gemini and the rest do not. The
+// Google apps on Android send their package name as the referrer.
+const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
+  /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com?\.)?[a-z]{2,3}$/,
+  'com.google.android.googlequicksearchbox',
+  'com.google.android.apps.searchlite',
+  'bing.com',
+  'duckduckgo.com',
+  /(?:^|\.)search\.yahoo\.(?:com?\.)?[a-z]{2,3}$/,
+  'ecosia.org',
+  'brave.com',
+];
 const SOCIAL_HOSTS = [
   'bsky.app',
   'facebook.com',
@@ -632,8 +647,10 @@ export async function trackProductEvent(eventName: ProductAnalyticsEvent, params
   return sendAnalyticsEvent(eventName, sanitizeProductEventParams(eventName, params, consent));
 }
 
-function hostnameMatches(hostname: string, patterns: string[]) {
-  return patterns.some(pattern => hostname === pattern || hostname.endsWith(`.${pattern}`) || hostname.includes(pattern));
+function hostnameMatches(hostname: string, patterns: readonly (string | RegExp)[]) {
+  return patterns.some(pattern => typeof pattern === 'string'
+    ? hostname === pattern || hostname.endsWith(`.${pattern}`)
+    : pattern.test(hostname));
 }
 
 export function inferAcquisitionChannel({
