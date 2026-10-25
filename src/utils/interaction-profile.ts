@@ -41,6 +41,9 @@ export interface ProfileSignals {
   categoryExposure: Record<string, CategoryExposure>;
   interactionCount: number;
   dwellMedianSeconds: number;
+  // The likes, saves and long reads the reader keeps, newest first, up to
+  // MAX_POSITIVE_EXAMPLES_PER_AREA for each area.
+  positiveExamples: PositiveExample[];
 }
 export interface StoredInteractionProfile {
   schemaVersion: number; updatedAt: string; affinities: string; curated: string; seenFilter?: string;
@@ -145,8 +148,10 @@ const IMPACT_VIEW_TIME_MIN = IMPACT_SKIP;
 const STRONG_READ_RATIO = 2;
 
 // What the personal recommendations are asked about: the most recent examples
-// across every interest, newest first.
-const MAX_POSITIVE_EXAMPLES = 50;
+// of each area, newest first. The cap is per area so an area the reader
+// deselects keeps its examples while they read others; the examples whose
+// category has no area share one allowance of their own.
+export const MAX_POSITIVE_EXAMPLES_PER_AREA = 24;
 
 // Each event fades what the session held before it by this factor, so the last
 // dozen cards dominate and an interest from twenty cards ago is nearly gone.
@@ -374,11 +379,24 @@ function recordExposure(profile: InteractionProfile, category: string, engaged: 
   if (leastShown) profile.exposure.delete(leastShown[0]);
 }
 
+// Keeps the first (newest) MAX_POSITIVE_EXAMPLES_PER_AREA examples of each
+// area, in their order. A category that names no area counts toward one shared
+// allowance, as the area of its own.
+function capExamplesPerArea(examples: PositiveExample[]) {
+  const kept = new Map<string, number>();
+  return examples.filter((example) => {
+    const area = areaKeyForCategory(example.category) ?? '';
+    const count = kept.get(area) ?? 0;
+    kept.set(area, count + 1);
+    return count < MAX_POSITIVE_EXAMPLES_PER_AREA;
+  });
+}
+
 function addPositive(profile: InteractionProfile, paperId: string, category: string) {
-  profile.positives = [
+  profile.positives = capExamplesPerArea([
     { id: paperId, category },
     ...profile.positives.filter(example => example.id !== paperId),
-  ].slice(0, MAX_POSITIVE_EXAMPLES);
+  ]);
 }
 
 function removePositive(profile: InteractionProfile, paperId: string) {
@@ -425,6 +443,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
     categoryExposure: {},
     interactionCount: 0,
     dwellMedianSeconds: DEFAULT_DWELL_MEDIAN_SECONDS,
+    positiveExamples: [],
   };
   if (!profile) return signals;
 
@@ -450,6 +469,7 @@ export function readProfileSignals(profile: InteractionProfile | null | undefine
   });
   signals.interactionCount = profile.counters.interactions;
   signals.dwellMedianSeconds = profile.dwell.median;
+  signals.positiveExamples = profile.positives.map(example => ({ ...example }));
   return signals;
 }
 
@@ -1001,17 +1021,16 @@ export function deserializeInteractionProfile(data: Partial<StoredInteractionPro
     profile.viewedNotable = storedIds(curated.viewedNotable, MAX_VIEWED_NOTABLE_IDS);
 
     if (Array.isArray(affinities.positives)) {
-      profile.positives = affinities.positives
+      profile.positives = capExamplesPerArea(affinities.positives
         .filter((pair): pair is [string, string] => Array.isArray(pair) && typeof pair[0] === 'string' && pair[0].length > 0)
-        .map(([id, category]) => ({ id, category: typeof category === 'string' ? category : '' }))
-        .slice(0, MAX_POSITIVE_EXAMPLES);
+        .map(([id, category]) => ({ id, category: typeof category === 'string' ? category : '' })));
     } else {
       // An aggregate written before the examples were kept: its likes and
       // saves are the examples, with no category on record for them.
       const liked = curatedIds(profile, 'liked');
       const saved = curatedIds(profile, 'saved');
       profile.positives = [...new Set([...liked, ...saved])]
-        .slice(0, MAX_POSITIVE_EXAMPLES)
+        .slice(0, MAX_POSITIVE_EXAMPLES_PER_AREA)
         .map(id => ({ id, category: '' }));
     }
   } catch {

@@ -9,6 +9,7 @@ import {
   INTERACTION_PROFILE_SCHEMA_VERSION,
   MAX_AFFINITY_JSON_BYTES,
   MAX_CURATED_JSON_BYTES,
+  MAX_POSITIVE_EXAMPLES_PER_AREA,
   MAX_VIEWED_IDS,
   MAX_VIEWED_NOTABLE_IDS,
   buildProfileFromInteractionDocuments,
@@ -135,6 +136,7 @@ test('a new profile is empty and at the current schema version', () => {
     categoryExposure: {},
     interactionCount: 0,
     dwellMedianSeconds: 6,
+    positiveExamples: [],
   });
   assert.equal(curatedIds(profile, 'liked').length, 0);
   assert.equal(isPaperKnown(profile, 'arxiv:2401.00001'), false);
@@ -428,6 +430,122 @@ test('likes, saves and long reads become examples, newest first; undoing or reje
   recordInteractionEvent(profile, { paperId: 'saved', kind: 'like', category: 'quant-ph' }, NOW);
   recordInteractionEvent(profile, { paperId: 'saved', kind: 'unsave', category: 'quant-ph' }, NOW);
   assert.deepEqual([...profile.positives], [{ id: 'saved', category: 'quant-ph' }]);
+});
+
+// A reader who deselects an area keeps its examples while reading others, so
+// the cap is per area and not one list that the newest area pushes out of.
+const likeEvents = (prefix: string, category: string, count: number) => Array.from({ length: count }, (_, index) => ({
+  paperId: `${prefix}${index}`, kind: 'like', category,
+}));
+
+test('the examples are capped per area, so a newer area never evicts an older one', () => {
+  const profile = createEmptyInteractionProfile();
+  likeEvents('phys', 'quant-ph', 30).forEach(event => recordInteractionEvent(profile, event, NOW));
+  likeEvents('econ', 'econ.EM', 30).forEach(event => recordInteractionEvent(profile, event, NOW));
+
+  const ids = profile.positives.map(example => example.id);
+  assert.equal(MAX_POSITIVE_EXAMPLES_PER_AREA, 24);
+  assert.equal(ids.length, 48);
+  assert.deepEqual(ids.filter(id => id.startsWith('phys')), Array.from({ length: 24 }, (_, index) => `phys${29 - index}`));
+  assert.deepEqual(ids.filter(id => id.startsWith('econ')), Array.from({ length: 24 }, (_, index) => `econ${29 - index}`));
+  assert.equal(ids[0], 'econ29', 'still newest first overall');
+});
+
+test('examples whose category has no area share one allowance of their own', () => {
+  const profile = createEmptyInteractionProfile();
+  likeEvents('none', '', 20).forEach(event => recordInteractionEvent(profile, event, NOW));
+  likeEvents('odd', 'Some Concept', 20).forEach(event => recordInteractionEvent(profile, event, NOW));
+  likeEvents('phys', 'quant-ph', 3).forEach(event => recordInteractionEvent(profile, event, NOW));
+
+  const ids = profile.positives.map(example => example.id);
+  assert.equal(ids.filter(id => !id.startsWith('phys')).length, 24);
+  assert.equal(ids.filter(id => id.startsWith('phys')).length, 3);
+  assert.equal(ids.includes('none0'), false, 'the oldest unassigned example went first');
+  assert.equal(ids.includes('odd19'), true);
+});
+
+test('serialising and reloading keeps the same examples in the same order', () => {
+  const profile = createEmptyInteractionProfile();
+  likeEvents('phys', 'quant-ph', 30).forEach(event => recordInteractionEvent(profile, event, NOW));
+  likeEvents('none', '', 5).forEach(event => recordInteractionEvent(profile, event, NOW));
+  likeEvents('econ', 'econ.EM', 30).forEach(event => recordInteractionEvent(profile, event, NOW));
+
+  const reloaded = deserializeInteractionProfile(serializeInteractionProfile(profile));
+  assert.ok(reloaded);
+  assert.equal(reloaded.positives.length, 24 + 5 + 24);
+  assert.deepEqual([...reloaded.positives], [...profile.positives]);
+});
+
+test('an aggregate stored with more examples than the cap per area is cut to it on load', () => {
+  const profile = createEmptyInteractionProfile();
+  const stored = serializeInteractionProfile(profile);
+  const crowded = JSON.parse(stored.affinities);
+  crowded.positives = [
+    ...Array.from({ length: 40 }, (_, index) => [`phys${index}`, 'quant-ph']),
+    ...Array.from({ length: 40 }, (_, index) => [`econ${index}`, 'econ.EM']),
+  ];
+
+  const reloaded = deserializeInteractionProfile({ ...stored, affinities: JSON.stringify(crowded) });
+  assert.ok(reloaded);
+  assert.equal(reloaded.positives.length, 48);
+  assert.equal(reloaded.positives[0].id, 'phys0');
+  assert.equal(reloaded.positives.some(example => example.id === 'phys24'), false);
+  assert.equal(reloaded.positives.some(example => example.id === 'econ23'), true);
+});
+
+test('a rebuild applies the same allowance per area, newest first', () => {
+  // Newest first, as the loader passes them.
+  const documents = [
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: `econ${index}`,
+      data: { liked: true, paperCategory: 'econ.EM', timestamp: NOW - index * 1000 },
+    })),
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: `phys${index}`,
+      data: { liked: true, paperCategory: 'quant-ph', timestamp: NOW - 100_000 - index * 1000 },
+    })),
+  ];
+  const ids = buildProfileFromInteractionDocuments(documents, { now: NOW }).positives.map(example => example.id);
+
+  assert.equal(ids.length, 48);
+  assert.deepEqual(ids.filter(id => id.startsWith('econ')), Array.from({ length: 24 }, (_, index) => `econ${index}`));
+  assert.deepEqual(ids.filter(id => id.startsWith('phys')), Array.from({ length: 24 }, (_, index) => `phys${index}`));
+});
+
+test('the signals expose the examples with their category, newest first', () => {
+  const profile = createEmptyInteractionProfile();
+  recordInteractionEvent(profile, { paperId: 'a', kind: 'like', category: 'cs.AI' }, NOW);
+  recordInteractionEvent(profile, { paperId: 'b', kind: 'save', category: '' }, NOW);
+
+  assert.deepEqual(readProfileSignals(profile, NOW).positiveExamples, [
+    { id: 'b', category: '' },
+    { id: 'a', category: 'cs.AI' },
+  ]);
+  assert.deepEqual(readProfileSignals(null, NOW).positiveExamples, []);
+});
+
+test('an example for every area at 300-character ids still fits the stored budget with the learned maps', () => {
+  const profile = createEmptyInteractionProfile();
+  const areaCategories = ['quant-ph', 'cs.LG', 'cs.AI', 'math.AC', 'stat.ML', 'econ.EM', 'q-fin.PM', 'eess.SP',
+    'physics', 'q-bio.NC', 'cond-mat.mes-hall', 'astro-ph.GA', 'nlin.CD', 'hep-th'];
+  areaCategories.forEach((category, areaIndex) => {
+    for (let index = 0; index < 30; index += 1) {
+      recordInteractionEvent(profile, {
+        paperId: `10.1000/${areaIndex}-${index}-`.padEnd(300, 'x'), kind: 'like', category,
+        concepts: [{ id: `C${areaIndex}-${index}`, score: 0.5 }], authorIds: [`A${areaIndex}-${index}`],
+      }, NOW);
+    }
+  });
+  for (let index = 0; index < 30; index += 1) {
+    recordInteractionEvent(profile, { paperId: `none-${index}-`.padEnd(300, 'y'), kind: 'like', category: '' }, NOW);
+  }
+
+  const stored = serializeInteractionProfile(profile);
+  const reloaded = deserializeInteractionProfile(stored);
+  assert.ok(reloaded);
+  assert.ok(stored.affinities.length <= MAX_AFFINITY_JSON_BYTES, `affinities are ${stored.affinities.length}`);
+  assert.equal(reloaded.concepts.size, profile.concepts.size, 'no learned concept was given up for the examples');
+  assert.equal(reloaded.positives.length, profile.positives.length);
 });
 
 test('a rebuild recovers the examples and the exposure from the documents', () => {
