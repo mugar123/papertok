@@ -997,8 +997,8 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // the model's, whatever reason the model gave for its own.
         const stoppedBy = droppedSections > 0 ? 'SECTION_CAP' : finishReason;
         // The key names the model that was asked first. What the fallback wrote
-        // carries its own name and is kept only as long as an outage, so readers
-        // get the primary model again once it recovers.
+        // carries its own name and is kept for DEGRADED_CACHE_SECONDS, after
+        // which the primary model is asked again.
         const fellBack = activeModel !== model;
         // A regenerate skipped the cache read, so the entry it would overwrite may
         // be complete. Only a complete result from the primary model is worth
