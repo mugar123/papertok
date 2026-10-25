@@ -147,6 +147,22 @@ npm run worker:deploy:dry-run
 npm run worker:deploy -- --tag "$(git rev-parse --short HEAD)" # GET /health then names this commit
 ```
 
+The deployment script bundles into `.wrangler/posthog-worker`, injects and uploads
+PostHog source maps, then uploads that bundle with `--no-bundle`. The `Data`
+rules in `wrangler.toml` match `.ttf` and `.png` files in both their source
+folders and the emitted directory, where filenames carry a hash prefix.
+Restricting those rules to `share-card-assets/` omits the emitted fonts and
+illustrations from the final upload; a bundled dry-run alone does not catch it.
+After changing asset rules, also package the emitted bundle:
+
+```bash
+npx wrangler deploy --dry-run --outdir .wrangler/asset-check
+npx wrangler deploy .wrangler/asset-check/instrumentation.js --no-bundle --dry-run --outdir .wrangler/asset-check-final
+```
+
+The final package must contain the renderer’s four fonts, three PNG
+illustrations and two compiled WebAssembly modules.
+
 Resend delivers the weekly digest and university verification links. Both
 `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are required. The sender is public, so
 `RESEND_FROM_EMAIL` is a variable in `wrangler.toml` rather than a secret. Verify its
