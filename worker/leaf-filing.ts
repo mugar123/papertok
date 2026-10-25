@@ -18,9 +18,11 @@ export interface FilingRule { similarity: number; margin: number }
 
 /**
  * Each area's rule, set by calibration on labelled journal articles
- * (test-support/calibrate-leaf-filing.ts). An area has one only where the
- * filed held-out articles were at least 90% correct (leaf-filing-calibration.md);
- * every other area's journal articles stay at area level.
+ * (test-support/calibrate-leaf-filing.ts). An area has one only where at
+ * least 90% of the held-out filings the labels decide were correct; filings
+ * they leave undecided are reported as unknown, outside that share
+ * (leaf-filing-calibration.md). Every other area's journal articles stay at
+ * area level.
  */
 export const LEAF_FILING_RULES: Readonly<Record<string, FilingRule>> = Object.freeze({
   math: { similarity: 0.58, margin: 0.065 },
