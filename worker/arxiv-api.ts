@@ -34,12 +34,12 @@ const PUBLIC_SEAT = (slot: number) => slot % 2 === 0;
 // fresh as one fetched twice -- and with one upstream call every three seconds
 // for the whole app, every call the cache saves is a seat somebody else gets.
 const ARXIV_CACHE_SECONDS = 60 * 60;
-// The misses one caller may send in a UTC minute: half of the twenty seats the
-// beat has, so one address cannot hold every seat. That half is also every
-// seat PUBLIC_SEAT leaves a request from outside the Worker, so one address
-// can still take all of those. The paper harvest asks in-process
-// (`handleHarvestArxiv`) and spends no caller's allowance.
-const ARXIV_CALLER_MINUTE_LIMIT = 10;
+// The misses one address may send in a UTC minute: 5, half of the 10 seats
+// PUBLIC_SEAT leaves a request from outside the Worker. One address, such as a
+// script or a university behind one NAT, cannot take every public seat; two
+// can, and everyone behind one NAT shares these 5. The paper harvest asks
+// in-process (`handleHarvestArxiv`) and spends no caller's allowance.
+const ARXIV_CALLER_MINUTE_LIMIT = 5;
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
 function safeArxivParam(name: string, rawValue: unknown) {

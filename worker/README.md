@@ -206,7 +206,7 @@ app, kept as a beat in the request-quota ledger (`worker/upstream-pace.ts`), wit
 request waiting at most 4 s for a seat and refused with 429 `PROVIDER_RATE_LIMITED`
 (`retry-after: 4`) when none is free. A missing ledger, or one that answers with an error,
 lets the request go to arXiv unpaced. A request from
-outside the Worker, signed in or not, first spends a miss of its address's allowance (10 a
+outside the Worker, signed in or not, first spends a miss of its address's allowance (5 a
 minute, see [Public lookup caller limits](#public-lookup-caller-limits)) and may then take
 only every other seat, 10 misses a minute for the whole app, so cache-busting queries cannot
 hold every seat however many addresses send them. The allowance alone would not stop that: a
@@ -228,8 +228,9 @@ can hold every seat: the liked-paper lookups
 ask for the ids a reader sends to `POST /store/papers` (`{ ids }`, or `positiveIds` missing
 from the corpus), so one account, within its `PROVIDER_USER_MINUTE_LIMIT` requests a minute,
 can keep every seat taken. Anonymous readers still share their half with whoever else is
-asking: an address's allowance is as large as that half, so one address can still take all
-of it.
+asking: an address's allowance is half of that half, so one address cannot take all of it
+and two can. Everyone behind one address, such as a university NAT, shares those 5 misses a
+minute.
 
 `/resources/figures?arxiv_id=` returns up to six figures of an arXiv paper, read from
 arxiv.org/html and ar5iv, which are asked at the same time. A result with figures is kept at
@@ -802,7 +803,7 @@ existing secret before deploying these routes. Local requests need a test
 
 | Route | Per IP, per UTC minute | Shared protection |
 | --- | --- | --- |
-| `/arxiv` | 10 cache misses | The one-call-per-three-seconds beat, of which these requests take only every other seat (10 a minute, app-wide) |
+| `/arxiv` | 5 cache misses | The one-call-per-three-seconds beat, of which these requests take only every other seat (10 a minute, app-wide) |
 | `/oa` | 120 cache misses | No shared quota; Unpaywall and Crossref deadlines still apply |
 | Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
 | `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |

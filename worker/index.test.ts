@@ -1230,7 +1230,7 @@ const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 // One anonymous script sending cache-busting queries used to hold every seat
 // a caller could wait for, and the Worker's own lookups (a reader's liked
 // papers, the harvest's arXiv lanes) were refused with it. The allowance per
-// address does not stop it: three misses fit within one address's ten, and a
+// address does not stop it: three misses fit within one address's five, and a
 // script can spread more over several addresses, such as one IPv6 /64.
 test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
   // The last millisecond of a three-second period: three seats lie within the
@@ -4551,7 +4551,7 @@ test('share lookups stop one IP before the shared ceiling and leave other IPs ro
   });
 });
 
-test('arXiv stops one IP at ten misses while another IP can take the next paced seat', async t => {
+test('arXiv stops one IP at five misses while another IP can take the next paced seat', async t => {
   const start = Date.parse('2026-10-25T12:00:00Z');
   t.mock.timers.enable({ apis: ['Date'], now: start });
   const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, PDF_RATE_LIMIT_SECRET: CALLER_SECRET };
@@ -4562,20 +4562,20 @@ test('arXiv stops one IP at ten misses while another IP can take the next paced 
   }, async () => {
     const ask = (ip: string) => reportApi.fetch(new Request(ARXIV_URL, { headers: { 'cf-connecting-ip': ip } }), env);
     // A request from outside the Worker takes only every other seat, six
-    // seconds apart: these ten are every such seat of the minute.
-    for (let i = 0; i < 10; i += 1) {
+    // seconds apart: these five are half of such seats in the minute.
+    for (let i = 0; i < 5; i += 1) {
       t.mock.timers.setTime(start + i * 6000);
       assert.equal((await ask('192.0.2.1')).status, 200);
     }
-    // The minute's last millisecond: the next such seat, the next minute's
-    // first, is a millisecond away, but this IP's allowance is spent.
-    t.mock.timers.setTime(start + 59_999);
+    // The sixth miss arrives at a public seat nobody has taken, so only this
+    // IP's spent allowance can refuse it.
+    t.mock.timers.setTime(start + 30_000);
     const refused = await ask('192.0.2.1');
     assert.equal(refused.status, 429);
-    assert.equal(refused.headers.get('retry-after'), '1', 'refused by the allowance until the minute ends, not by the beat');
-    assert.equal(upstreamCalls, 10);
+    assert.equal(refused.headers.get('retry-after'), '30', 'refused by the allowance until the minute ends, not by the beat');
+    assert.equal(upstreamCalls, 5);
     assert.equal((await ask('198.51.100.7')).status, 200);
-    assert.equal(upstreamCalls, 11);
+    assert.equal(upstreamCalls, 6);
   });
 });
 
