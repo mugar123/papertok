@@ -84,3 +84,9 @@ test("the page says the server counts a signed-in reader's requests per account,
   assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
 });
 
+test('the page says a sign-in that continues in the tab briefly keeps its trip in session storage', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // auth-identity-service.ts keeps { providerId, surface, returnTo } until the page comes back or is restored after Back.
+  assert.match(html, /session storage briefly holds the provider, the part of the app that asked and the page to return to[^.]*removed when the page comes back[^.]*after Back/);
+});
+
