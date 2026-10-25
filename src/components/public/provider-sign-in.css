@@ -16,13 +16,15 @@
 /* "Preparing sign-in…" (PreparingNote), or the failure and its Try again.
    The height holds its line once the text has gone. */
 .provider-preparing {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
   min-height: calc(var(--fs-xs) * var(--lh-normal));
   margin: 0;
   color: var(--text-tertiary);
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
+}
+
+/* Inline, so the note follows the surface's own text-align; Try again sits on
+   the text's line and wraps below it on a narrow screen. */
+.provider-preparing > button {
+  margin-inline-start: var(--space-2);
 }
