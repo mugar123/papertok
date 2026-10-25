@@ -7,7 +7,6 @@ import { ArrowsClockwise, Intersect, X } from '@phosphor-icons/react';
 import { Dialog, DialogContent } from '../ui/dialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { SourceAttribution } from '../ui/source-attribution.tsx';
 import Petri from '../onboarding/petri.tsx';
 import ScientificText from '../scientific-text.ts';
 import FeedContainer from './feed-container.tsx';
@@ -16,7 +15,6 @@ import { useFeed } from '../../context/feed-context.tsx';
 import { useOverlayHistory } from '../../hooks/use-overlay-history.ts';
 import { loadSimilarPapers } from '../../services/similar-feed-service.ts';
 import { withoutNotInterested } from '../../utils/following-feed.ts';
-import { SEMANTIC_SCHOLAR_HOME } from '../../utils/semantic-scholar-attribution.ts';
 import { isSignInRequiredError } from '../../utils/sign-in-required.ts';
 import './similar-feed-layer.css';
 
@@ -191,7 +189,7 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
   // pointer move re-rendered the whole feed inside it on every frame.
   const pullTo = (px: number) => layerRef.current?.style.setProperty('--similar-drag', `${px}px`);
   const startDrag = (event: PointerEvent<HTMLElement>) => {
-    if (event.pointerType === 'mouse' || (event.target as Element).closest('button, a')) return;
+    if (event.pointerType === 'mouse' || (event.target as Element).closest('button')) return;
     drag.current = { from: event.clientY, by: 0 };
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragging(true);
@@ -249,14 +247,9 @@ export default function SimilarFeedLayer({ anchor, origin, onClosed, onOpenPdf, 
           </Button>
           <div className="similar-context">
             <span className="similar-kicker"><Intersect size={13} aria-hidden="true" />{'Similar to'}</span>
-            <div className="similar-heading">
-              <span ref={titleRef} className="similar-anchor" tabIndex={-1}>
-                <ScientificText>{anchor.title}</ScientificText>
-              </span>
-              {/* Every paper in the layer is a Semantic Scholar recommendation,
-                  in every phase, so the credit is the layer's, not a card's. */}
-              <SourceAttribution className="similar-source" lead="Recommended by" href={SEMANTIC_SCHOLAR_HOME} />
-            </div>
+            <span ref={titleRef} className="similar-anchor" tabIndex={-1}>
+              <ScientificText>{anchor.title}</ScientificText>
+            </span>
           </div>
           {/* Keyed by phase, so each step of the wait arrives as a new word. */}
           <span key={phase} className="similar-status" data-pending={phase === 'finding' || phase === 'classifying' || undefined}>{status}</span>
