@@ -138,9 +138,12 @@ const JATS_ABSTRACT = /<(?:[a-z][\w.-]*:)?abstract(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a
 const JATS_SECTION_TITLE = /<(?:[a-z][\w.-]*:)?sec(?:\s[^<>]*)?>\s*<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>([\s\S]*?)<\/(?:[a-z][\w.-]*:)?title\s*>/gi;
 const JATS_TITLE = /<(?:[a-z][\w.-]*:)?title(?:\s[^<>]*)?>[\s\S]*?<\/(?:[a-z][\w.-]*:)?title\s*>/gi;
 
+// A publisher may wrap the abstract's own heading in a section too.
+const JATS_HEADINGS = new Set(['abstract', 'summary']);
+
 function sectionLabel(_match: string, title: string) {
-  const label = stripMarkup(title);
-  if (!label) return ' ';
+  const label = stripMarkup(preferTexAlternatives(title));
+  if (!label || JATS_HEADINGS.has(label.replace(/[:.]$/, '').toLowerCase())) return ' ';
   return /[:.]$/.test(label) ? ` ${label} ` : ` ${label}: `;
 }
 
