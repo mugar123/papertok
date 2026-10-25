@@ -213,7 +213,9 @@ function ProfileAccountPage() {
   const [linking, setLinking] = useState<string | null>(null);
   // Until the window can open inside the press (usePopupReady), Connect is
   // disabled but keeps focus.
-  const preparing = !usePopupReady(popupReadiness);
+  const readiness = usePopupReady(popupReadiness);
+  const preparing = readiness === 'preparing';
+  const waiting = readiness !== 'ready';
   const preparingId = useId();
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
   const [institutionOpen, setInstitutionOpen] = useState(false);
@@ -279,7 +281,7 @@ function ProfileAccountPage() {
                 <h3 className="settings-method-name"><method.Icon size={16} aria-hidden="true" />{method.label}</h3>
                 {!method.linked && (
                   <>
-                    <PreparingNote id={`${preparingId}-${method.id}`} preparing={preparing} keepLine={false} />
+                    <PreparingNote id={`${preparingId}-${method.id}`} state={readiness} onRetry={() => popupReadiness.retry()} keepLine={false} />
                     <span id={`${preparingId}-${method.id}-hint`} className="visually-hidden">{copy.methodUnlinked}</span>
                   </>
                 )}
@@ -297,10 +299,10 @@ function ProfileAccountPage() {
                   size="sm"
                   className="settings-row-action"
                   onClick={() => { void handleLink(method); }}
-                  disabled={Boolean(linking) || preparing}
-                  focusableWhenDisabled={preparing}
+                  disabled={Boolean(linking) || waiting}
+                  focusableWhenDisabled={waiting}
                   aria-label={linking === method.id ? copy.connecting(method.label) : copy.connect(method.label)}
-                  aria-describedby={preparing ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
+                  aria-describedby={waiting ? `${preparingId}-${method.id}-hint ${preparingId}-${method.id}` : `${preparingId}-${method.id}-hint`}
                 >
                   {linking === method.id || preparing
                     ? <CircleNotch size={15} className="settings-spin" aria-hidden="true" />

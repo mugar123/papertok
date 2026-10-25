@@ -13,9 +13,13 @@
   }
 }
 
-/* "Preparing sign-in…" (PreparingNote). The height holds its line once the
-   text has gone. */
+/* "Preparing sign-in…" (PreparingNote), or the failure and its Try again.
+   The height holds its line once the text has gone. */
 .provider-preparing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
   min-height: calc(var(--fs-xs) * var(--lh-normal));
   margin: 0;
   color: var(--text-tertiary);

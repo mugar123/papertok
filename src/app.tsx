@@ -154,7 +154,7 @@ function AppContent() {
   // which cannot work it out for itself, because it is kept mounted inside a
   // <Routes> still providing the location it was rendered for.
   const pageTransitionCustom = usePageTransitionCustom()
-  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
+  const { user, loading: authLoading, onboardingComplete, profileLoadError, reopenSignIn } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/feed', '/lists', '/following', '/search', '/settings', '/settings/profile', '/settings/discovery', '/settings/reading', '/settings/notifications', '/settings/privacy', '/settings/following']
   // The paper, list and entity pages keep the app chrome for a signed-in
@@ -198,6 +198,15 @@ function AppContent() {
   if (authArrivalKey && authArrivalKey !== consumedAuthArrival) {
     setConsumedAuthArrival(authArrivalKey)
     if (!user) setAuthPromptOpen(true)
+  }
+  // A sign-in that went through this tab and came back without a session
+  // (auth-context.tsx) finds its dialog open again, as a closed popup leaves it,
+  // with the destination it carried still waiting. Once: the flag clears on
+  // the next attempt, and a session remounts this component.
+  const [reopenedSignIn, setReopenedSignIn] = useState(false)
+  if (reopenSignIn && !user && !reopenedSignIn) {
+    setReopenedSignIn(true)
+    setAuthPromptOpen(true)
   }
   useEffect(() => {
     if (!authArrivalKey) return

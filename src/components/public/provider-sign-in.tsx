@@ -1,4 +1,6 @@
+import type { PopupReadinessState } from '../../services/popup-redirect-resolver.ts';
 import { useState } from 'react';
+import { Button } from '../ui/button.tsx';
 import './provider-sign-in.css';
 
 // The parts both places with the Google and GitHub buttons draw (the sign-in
@@ -16,21 +18,37 @@ export function ProviderSpinner() {
 }
 
 // Under buttons that are disabled until their window can open inside the
-// press (usePopupReady): "Preparing sign-in…", in a polite status that also
-// describes them. When the wait ends a screen reader hears "Sign-in ready."
-// and the line stays, empty, so the buttons do not move as they turn usable.
-// The welcome passes `keepLine={false}`: its provider stack is positioned by
-// its top edge, so the buttons stay put without the line, which would only
-// push the sign-in error under it further down.
+// press (usePopupReady), in a polite status that also describes them:
+// "Preparing sign-in…" while the load runs, and "Sign-in could not load." with
+// Try again once it failed or ran too long. When the wait ends a screen reader
+// hears "Sign-in ready." and the line stays, empty, so the buttons do not move
+// as they turn usable. The welcome passes `keepLine={false}`: its provider
+// stack is positioned by its top edge, so the buttons stay put without the
+// line, which would only push the sign-in error under it further down.
 // Mounted with nothing to wait for, it takes no room and says nothing.
 // Settings and the institution link use it too.
-export function PreparingNote({ id, preparing, keepLine = true }: { id: string; preparing: boolean; keepLine?: boolean }) {
-  // A readiness only ever turns ready (PopupReadiness), so only a note that
-  // mounted preparing has a wait to report the end of.
-  const [waited] = useState(preparing);
+export function PreparingNote({ id, state, onRetry, keepLine = true }: { id: string; state: PopupReadinessState; onRetry: () => void; keepLine?: boolean }) {
+  // Only a note that has shown a wait has the end of one to report.
+  const [waited, setWaited] = useState(state !== 'ready');
+  if (state !== 'ready' && !waited) setWaited(true);
+  // Try again leaves as the load restarts, so the focus moves first to the
+  // control this note describes, disabled until the load ends.
+  const retry = () => {
+    const described = [...document.querySelectorAll<HTMLElement>('[aria-describedby]')]
+      .find(element => element.getAttribute('aria-describedby')?.split(' ').includes(id));
+    described?.focus();
+    onRetry();
+  };
   return (
-    <p id={id} role="status" className={waited && (preparing || keepLine) ? 'provider-preparing' : 'sr-only'}>
-      {preparing ? 'Preparing sign-in…' : waited && <span className="sr-only">Sign-in ready.</span>}
+    <p className={waited && (state !== 'ready' || keepLine) ? 'provider-preparing' : 'sr-only'}>
+      <span id={id} role="status">
+        {state === 'preparing' && 'Preparing sign-in…'}
+        {state === 'failed' && 'Sign-in could not load.'}
+        {state === 'ready' && waited && <span className="sr-only">Sign-in ready.</span>}
+      </span>
+      {state === 'failed' && (
+        <Button variant="outline" size="sm" onClick={retry}>Try again</Button>
+      )}
     </p>
   );
 }
