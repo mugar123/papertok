@@ -4,6 +4,7 @@ import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   FEED_SHUFFLE_POOL_CAP,
+  nearbyExplorationCategories,
   paperAffinitySignals,
   pickExplorationCategories,
   scorePaperForRecommendation,
@@ -353,6 +354,14 @@ test('exploration keeps offering what holds the reader, still tries the unseen a
   assert.ok(picks['q-fin.ST'] / draws > 0.1, `unseen category drawn ${picks['q-fin.ST']} times`);
   assert.ok(picks['q-fin.RM'] / draws < 0.02, `skipped category drawn ${picks['q-fin.RM']} times`);
   assert.deepEqual(pickExplorationCategories(['a', 'b', 'c', 'd'], {}, 3, random).length, 3);
+});
+
+test('exploration for an AI reader stays within AI, and a CS reader explores no AI', () => {
+  assert.deepEqual(nearbyExplorationCategories(['cs.LG']), ['cs.AI', 'cs.CV', 'cs.CL', 'cs.NE']);
+  assert.deepEqual(nearbyExplorationCategories(['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE']), []);
+  assert.deepEqual(nearbyExplorationCategories(['cs.LG'], { 'cs.CV': -3 }), ['cs.AI', 'cs.CL', 'cs.NE']);
+  assert.deepEqual(nearbyExplorationCategories(['cs.RO']).filter(id => ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE'].includes(id)), []);
+  assert.ok(nearbyExplorationCategories(['cs.RO']).includes('cs.CR'));
 });
 
 test('diversified shuffle limits consecutive papers from the same category', () => {
