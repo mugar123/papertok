@@ -689,6 +689,12 @@ const PaperCard = memo(function PaperCard({
   const markFigureLoaded = useCallback((url: string) => {
     setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
   }, []);
+  // `load` arrives before an async-decoded picture can paint, and the entrance
+  // then ran on an empty plate with the figure popping in partway. `decode()`
+  // waits for the frame that has it; a refusal still shows what loaded.
+  const revealFigure = useCallback((image: HTMLImageElement, url: string) => {
+    void image.decode().catch(() => {}).then(() => markFigureLoaded(url));
+  }, [markFigureLoaded]);
 
   // A clipping comes back WITH its page, not on a clock of its own.
   //
@@ -1395,8 +1401,10 @@ const PaperCard = memo(function PaperCard({
   // the panel changes the column's height (see pinSheet).
   useEffect(() => {
     // A failed preload is retried by the lazy render that opens the sheet.
-    if (isCardIdle && hasRelated && !isPhone && !publicMode) RelatedPapersSheet.preload().catch(() => {});
-  }, [isCardIdle, hasRelated, isPhone, publicMode]);
+    // Phones too: their drawer suspended on the first open and React held the
+    // empty fallback before the sheet could start rising.
+    if (isCardIdle && hasRelated && !publicMode) RelatedPapersSheet.preload().catch(() => {});
+  }, [isCardIdle, hasRelated, publicMode]);
 
   const toggleRelated = (next: boolean) => {
     if (!isPhone && !publicMode) {
@@ -1867,8 +1875,8 @@ const PaperCard = memo(function PaperCard({
                 // then the event never comes and the clipping never appears. The
                 // ref catches the ones that were already done on mount; `onLoad`
                 // catches the rest.
-                ref={(node) => { if (node?.complete && node.naturalWidth > 0) markFigureLoaded(item.url); }}
-                onLoad={() => markFigureLoaded(item.url)}
+                ref={(node) => { if (node?.complete && node.naturalWidth > 0 && !loadedFigures.has(item.url)) revealFigure(node, item.url); }}
+                onLoad={(event) => revealFigure(event.currentTarget, item.url)}
               />
             </figure>
           ))}
@@ -1894,8 +1902,8 @@ const PaperCard = memo(function PaperCard({
               alt=""
               loading="lazy"
               decoding="async"
-              ref={(node) => { if (node?.complete && node.naturalWidth > 0) markFigureLoaded(figures[0].url); }}
-              onLoad={() => markFigureLoaded(figures[0].url)}
+              ref={(node) => { if (node?.complete && node.naturalWidth > 0 && !loadedFigures.has(figures[0].url)) revealFigure(node, figures[0].url); }}
+              onLoad={(event) => revealFigure(event.currentTarget, figures[0].url)}
             />
           )}
         </div>

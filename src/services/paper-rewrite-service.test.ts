@@ -7,7 +7,9 @@ import {
   canRewritePaper,
   createNdjsonParser,
   getRewritablePdfUrl,
+  lastKnownAIUses,
   PaperRewriteError,
+  rememberAIUses,
   rewriteCacheKey,
   rewriteKeeping,
   rewritePaper,
@@ -273,4 +275,11 @@ test('a guest, or a reader whose saved copy could not be read, is not saved over
     rewriteKeeping({ ...signedInSameAccount, keepInAccount: false, done: { sectionCount: 1 } }),
     { incomplete: false, cache: true, save: false },
   );
+});
+
+test('a remembered uses count opens only the reader of the account it belongs to', () => {
+  rememberAIUses('uid-a', { remainingUses: 997, dailyLimit: 1000 });
+  assert.deepEqual(lastKnownAIUses('uid-a'), { remainingUses: 997, dailyLimit: 1000 });
+  assert.equal(lastKnownAIUses('uid-b'), null);
+  assert.equal(lastKnownAIUses(undefined), null);
 });

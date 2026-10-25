@@ -148,6 +148,27 @@ export async function fetchRemainingAIUses({ signal }: { signal?: AbortSignal } 
   }
 }
 
+export type AIUses = { remainingUses: number; dailyLimit: number | null; unlimited?: boolean };
+let lastAIUses: { uid: string; uses: AIUses } | null = null;
+
+/**
+ * The count this tab last heard for the account, so the reader opens with its
+ * pill instead of growing it a round trip later. The reader still asks again.
+ */
+export function lastKnownAIUses(uid: string | null | undefined) {
+  return uid && lastAIUses?.uid === uid ? lastAIUses.uses : null;
+}
+
+export function rememberAIUses(uid: string, uses: AIUses) {
+  lastAIUses = { uid, uses };
+}
+
+/** Asks once per account and tab, ahead of the first reader. */
+export function primeAIUses(uid: string) {
+  if (lastKnownAIUses(uid)) return;
+  void fetchRemainingAIUses().then(uses => { if (uses && !lastKnownAIUses(uid)) rememberAIUses(uid, uses); });
+}
+
 export function canRewritePaper(paper: RewritePaperInput | null | undefined) {
   return Boolean(getRewritablePdfUrl(paper));
 }

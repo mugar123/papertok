@@ -7,6 +7,7 @@ import { AnimatePresence } from 'framer-motion'
 import { waitForPendingWrites } from 'firebase/firestore'
 import { db } from './services/firebase.ts'
 import { flushAllInteractionProfiles } from './services/interaction-profile-store.ts'
+import { primeAIUses } from './services/paper-rewrite-service.ts'
 import PageTransition from './components/layout/page-transition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/use-page-transition-custom.ts'
 import { useOverlayHistory } from './hooks/use-overlay-history.ts'
@@ -243,6 +244,7 @@ function AppContent() {
   const sessionUid = user?.uid ?? null
   useEffect(() => {
     if (!sessionUid) return
+    let cancelled = false
     const prefetch = () => {
       const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
       const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
@@ -270,11 +272,17 @@ function AppContent() {
       // opened in a session used to pay the chunk and the fallback throttle.
       EntityExplorer.preload().catch(() => {})
       import('./components/reader/paper-reader.tsx').catch(() => {})
+      // The reader's uses pill, so it is there when the reader opens. Not after
+      // the session changed: the request would carry the next account's token.
+      if (!cancelled) primeAIUses(sessionUid)
       SearchCommand.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [sessionUid])
 
   // The href stays for assistive technology; the click is handled here rather

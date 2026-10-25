@@ -1,9 +1,8 @@
 import type { KeyboardEvent, ReactNode, Ref } from 'react';
 import type { Paper } from '../../models/paper.ts';
-import type { RewriteSection, ClientRewriteMeta } from '../../services/paper-rewrite-service.ts';
+import type { AIUses, RewriteSection, ClientRewriteMeta } from '../../services/paper-rewrite-service.ts';
 import type { PassageAnnotation } from '../../hooks/use-passage-annotations.ts';
 import type { ReadingLevel } from '../../utils/user-settings.ts';
-type ReaderQuota = { dailyLimit: number | null; remainingUses: number; unlimited?: boolean };
 interface PaperReaderProps {
   paper: Partial<Paper>; onClose: () => void;
   originRect?: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'> | null;
@@ -29,9 +28,11 @@ import {
   canRewritePaper,
   fetchRemainingAIUses,
   getCachedRewrite,
+  lastKnownAIUses,
   PAPER_REWRITE_LEVELS,
   PaperRewriteError,
   rewriteCacheKey,
+  rememberAIUses,
   rewritePaper,
 } from '../../services/paper-rewrite-service.ts';
 import { indexHighlightsByParagraph, passageSegments } from '../../services/user-highlight-service.ts';
@@ -405,7 +406,14 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
    * and never on a cache hit or a failure — so the reader asks for the number
    * itself and then keeps it up to date from whatever the stream reports.
    */
-  const [quota, setQuota] = useState<ReaderQuota | null>(null);
+  const [seededQuota] = useState(() => lastKnownAIUses(uid));
+  const [quota, setQuota] = useState<AIUses | null>(seededQuota);
+  // Another account's count must not be shown, or remembered, as this one's.
+  const [quotaUid, setQuotaUid] = useState(uid);
+  if (quotaUid !== uid) {
+    setQuotaUid(uid);
+    setQuota(null);
+  }
   const [stage, setStage] = useState('source');
   const abortRef = useRef<AbortController | null>(null);
   // The reader's own scroll container, so a touch selection outside it (e.g.
@@ -686,12 +694,17 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     if (!uid) return undefined;
     const controller = new AbortController();
     void fetchRemainingAIUses({ signal: controller.signal }).then(fresh => {
-      // Only when nothing better has arrived: a rewrite that started while this
-      // was in flight already reported a newer number on its `meta` line.
-      if (fresh) setQuota(current => current ?? fresh);
+      // Only over the seed, which an unanswered request also takes away: a
+      // rewrite that started while this was in flight already reported a
+      // newer number on its `meta` line.
+      setQuota(current => (current === null || current === seededQuota ? fresh : current));
     });
     return () => controller.abort();
-  }, [uid]);
+  }, [seededQuota, uid]);
+
+  useEffect(() => {
+    if (uid && quota) rememberAIUses(uid, quota);
+  }, [quota, uid]);
 
   const noteQuota = useCallback((remainingUses: number) => {
     setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses }));
@@ -1050,7 +1063,9 @@ export default function PaperReader({ paper, onClose, originRect = null, closeRe
     : '50% 62%';
 
   const usesQuota = quota && !quota.unlimited && quota.dailyLimit ? { left: quota.remainingUses, limit: quota.dailyLimit } : null;
-  const canSpendUse = quota ? Boolean(quota.unlimited) || quota.remainingUses > 0 : true;
+  // The seed is for the pill only: an allowance spent yesterday must not
+  // refuse a use before the worker has said what is left today.
+  const canSpendUse = quota && quota !== seededQuota ? Boolean(quota.unlimited) || quota.remainingUses > 0 : true;
   // Only a signed-in reader can ask the worker at all, and their copy is the one
   // a new rewrite replaces. `error` here is a failed attempt to write it again,
   // which left the reused summary on screen.
