@@ -92,7 +92,7 @@ import { Toggle } from '../ui/toggle.tsx';
 import { useFollowing } from '../../context/following-context.tsx';
 import { useLanguage } from '../../context/language-context.tsx';
 import { getProjectForPaper } from '../../services/open-aire-service.ts';
-import { authorExplorerPath } from '../../utils/explorer-paths.ts';
+import { authorExplorerPath, projectExplorerPath } from '../../utils/explorer-paths.ts';
 import { Link } from 'react-router-dom';
 import { useStableNavigate } from '../../hooks/use-stable-navigate.ts';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -1695,7 +1695,7 @@ const PaperCard = memo(function PaperCard({
     // identifier is the OpenAIRE id, which names one project.
     const path = publicMode
       ? getPublicEntityPath('project', projectRouteId, { includeName: true, name: project.acronym })
-      : `/explorer/project/${encodeURIComponent(projectRouteId!)}?name=${encodeURIComponent(project.acronym!)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+      : projectExplorerPath({ id: projectRouteId!, name: project.acronym!, funder: project.funder }, paperId);
     void trackEvent('select_content', {
       content_type: 'project',
       surface: analyticsSurface,

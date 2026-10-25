@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { authorExplorerPath, openAlexAuthorId } from './explorer-paths.ts';
+import { authorExplorerPath, openAlexAuthorId, projectExplorerPath } from './explorer-paths.ts';
 
 test('an author with an OpenAlex id opens by id, name riding along for the masthead', () => {
   assert.equal(
@@ -66,5 +66,28 @@ test('signed out, the name-only door keeps the paper too', () => {
   assert.equal(
     authorExplorerPath({ name: 'Li WN' }, { id: 'pmid:42774036', pmid: '42774036' }, { publicMode: true }),
     '/public/entity/author/Li%20WN?paper=pmid%3A42774036',
+  );
+});
+
+// `&`, `#` and `+` in a paper id must not end the value, add a query key or
+// start a fragment.
+test('the project link carries any paper id whole, whatever characters it holds', () => {
+  const project = { id: 'corda__h2020::1234abcd', name: 'ERC Starting', funder: 'EC' };
+  const open = (paperId: string) => new URL(projectExplorerPath(project, paperId), 'https://papertok.app');
+
+  for (const paperId of ['2401.12345', 'openalex:W123', 'ads:2019A&A...623A..72B', '10.1000/a&b=c', '10.5555/a+b', '10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-#']) {
+    const url = open(paperId);
+    assert.equal(url.searchParams.get('arxivId'), paperId, paperId);
+    assert.deepEqual([...url.searchParams.keys()], ['name', 'funder', 'arxivId'], `${paperId} adds no query key`);
+    assert.equal(url.hash, '', `${paperId} starts no fragment`);
+    assert.equal(url.searchParams.get('name'), 'ERC Starting');
+    assert.equal(url.searchParams.get('funder'), 'EC');
+  }
+});
+
+test('the project link for an arXiv id is the one earlier versions produced', () => {
+  assert.equal(
+    projectExplorerPath({ id: 'corda__h2020::1234abcd', name: 'ERC Starting', funder: 'EC' }, '2401.12345'),
+    '/explorer/project/corda__h2020%3A%3A1234abcd?name=ERC%20Starting&funder=EC&arxivId=2401.12345',
   );
 });
