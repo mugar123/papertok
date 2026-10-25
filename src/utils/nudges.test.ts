@@ -91,6 +91,24 @@ test('el aviso de correo solo sale cuando el servicio ha nombrado el problema', 
   );
 });
 
+test('a health check the Worker refused to run announces no email outage', () => {
+  // `/health/email` answers this code without asking Resend once the window's
+  // live probes are spent, so nothing is known about the provider.
+  assert.equal(
+    emailNudgeProblem({ loading: false, health: { configured: false, available: false, code: 'HEALTH_PROBE_LIMITED' } }),
+    null,
+  );
+});
+
+test('a quota ledger that is missing or failing announces no email outage', () => {
+  // With no ledger to reserve a probe in, `/health/email` answers this code
+  // without asking Resend.
+  assert.equal(
+    emailNudgeProblem({ loading: false, health: { configured: false, available: false, code: 'PROVIDER_QUOTA_NOT_CONFIGURED' } }),
+    null,
+  );
+});
+
 test('un servicio sano no tiene nada que avisar', () => {
   assert.equal(emailNudgeProblem({ loading: false, health: { configured: true, available: true, code: null } }), null);
   assert.equal(
@@ -116,15 +134,19 @@ test('a reader who has not dismissed this policy version is owed the notice', ()
   );
 });
 
-test('an account opened after the day of the change is not told about it', () => {
+test('an account opened on or after the day of the change is not told about it', () => {
   const version = '2026-10-22';
   assert.equal(privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Tue, 20 Oct 2026 09:00:00 GMT' }), true);
   assert.equal(
-    privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Thu, 22 Oct 2026 23:00:00 GMT' }),
+    privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Wed, 21 Oct 2026 23:59:00 GMT' }),
     true,
-    'the same day may be before the change went out',
+    'the day before is an account that read the old policy',
   );
-  assert.equal(privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Fri, 23 Oct 2026 08:00:00 GMT' }), false);
+  assert.equal(
+    privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'Thu, 22 Oct 2026 08:00:00 GMT' }),
+    false,
+    'a change is published the day it is dated, so a new account that day started under it',
+  );
   assert.equal(privacyNoticeOwed({ version, acknowledged: null, accountCreated: 'not a date' }), true, 'an unknown start is told');
   assert.equal(
     privacyNoticeOwed({ version: '2026-11-05', acknowledged: '2026-10-22', accountCreated: 'Fri, 23 Oct 2026 08:00:00 GMT' }),

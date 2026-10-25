@@ -1,3 +1,5 @@
+import { emailServiceState } from './email-health.ts';
+
 type NudgeStorage = Pick<Storage, 'getItem' | 'setItem'>;
 /**
  * The small panels that ask for something once and then never again, such as
@@ -88,15 +90,15 @@ export function rememberPrivacyNotice(uid: string | null | undefined, version: s
 
 /**
  * Whether a reader still has to hear about policy `version`. An account
- * created after the day of the change started under the policy as it is and
- * has nothing to be told. A visitor without an account, or an account whose
+ * created on or after the day of the change started under the policy as it is
+ * and has nothing to be told. A visitor without an account, or an account whose
  * creation date is unknown, is told, since nothing shows they arrived later.
  */
 export function privacyNoticeOwed({ version, acknowledged, accountCreated }: { version: string; acknowledged: string | null; accountCreated?: string | null }) {
   if (acknowledged === version) return false;
   const created = accountCreated ? new Date(accountCreated) : null;
   if (!created || Number.isNaN(created.getTime())) return true;
-  return created.toISOString().slice(0, 10) <= version.slice(0, 10);
+  return created.toISOString().slice(0, 10) < version.slice(0, 10);
 }
 
 /** One of the pending ones, at random, or nothing at all. */
@@ -115,9 +117,10 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
  * not heard back" looks like. Reading that as a fault would announce an outage
  * to everyone on every cold load, including when the health request never
  * lands. And a service that says it is available is believed, whatever else it
- * reports.
+ * reports. A check the Worker did not run leaves the status unknown
+ * (`emailServiceState`), which is not a fault either.
  */
 export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}) {
-  if (loading || !health?.code || health.available === true) return null;
+  if (loading || !health?.code || emailServiceState(health) !== 'down') return null;
   return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
 }

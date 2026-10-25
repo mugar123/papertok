@@ -1,5 +1,6 @@
-import { captureWorkerException } from './error-tracking.ts';
-import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/Paper.ts';
+import { captureEmailSendLimit, captureWorkerException } from './error-tracking.ts';
+import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.ts';
+import type { Paper, PaperFollowMatch, PaperSubject } from '../src/models/paper.ts';
 import type { OpenAlexWork } from './openalex-api.ts';
 import type { Delivery, DeliveryInput, DeliveryDraft, DeliveryDraftInput, DeliveryLedgerPayload, DeliveryLedgerResult, DeliveryLedgerState } from './email-delivery-ledger.ts';
 
@@ -29,16 +30,14 @@ interface DeliveryState {
   lastCheckedAt?: string; lastSentAt?: string; lastTestAt?: string; sentPaperKeys?: string[];
   lastDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
   lastTestDelivery?: Partial<ReturnType<typeof lastDeliveryStatus>>;
+  heldDigest?: { papers: DigestPaper[]; sourceReport: SourceReportInput; selectedAt: string; selectionKey: string } | null;
+  owedCurrentWeek?: boolean;
 }
 export interface Subscription extends Partial<Preferences>, DeliveryState {
   uid?: string; email?: string; displayName?: string; follows?: Follow[]; previewItems?: DigestPaper[];
   unsubscribeToken?: string; stateId?: string; createdAt?: string; updatedAt?: string;
 }
-interface EmailAccount {
-  localId?: string; email?: string; displayName?: unknown; emailVerified?: boolean;
-  providerUserInfo?: Array<{ providerId?: unknown; email?: unknown }>;
-}
-type EmailIdentity = Awaited<ReturnType<typeof verifyFirebaseIdentity>>;
+type EmailIdentity = { uid: string; email: string; displayName: string };
 interface ArxivEntry {
   id?: unknown; title?: unknown; summary?: unknown; doi?: unknown; published?: unknown; updated?: unknown; journal_ref?: unknown;
   category?: { '@_term'?: unknown } | Array<{ '@_term'?: unknown }>;
@@ -49,12 +48,14 @@ interface ArxivEntry {
 type DigestOpenAlexWork = OpenAlexWork & { keywords?: PaperSubject[]; categories?: string[] };
 interface OpenAlexPayload { results: DigestOpenAlexWork[] }
 export type OpenAlexRequests = Map<string, Promise<OpenAlexPayload>>;
+type OpenAlexReservation = (url: URL) => Promise<void>;
 type OpenAirePid = { '@classname'?: unknown; '$'?: unknown };
 type OpenAireResult = { metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: OpenAirePid | OpenAirePid[] } } } };
 interface OpenAirePayload { response?: { results?: { result?: OpenAireResult | OpenAireResult[] } } }
 interface DeliveryOptions { test?: boolean; now?: number }
 interface CollectOptions extends DeliveryOptions { openAlexRequests?: OpenAlexRequests | null }
-interface SendOptions extends DeliveryOptions { key?: string; sourceReport?: SourceReport }
+// `editionAt` is when the papers were selected: a held edition keeps its own week.
+interface SendOptions extends DeliveryOptions { key?: string; sourceReport?: SourceReport; editionAt?: number }
 interface StatusOptions { kind?: string; paperCount?: number; partial?: boolean; code?: string; sourceReport?: SourceReportInput }
 interface ProviderPayload { name?: string; code?: string; message?: string; id?: string; messageId?: string; messageIds?: string[] }
 interface DeliveryOutcome {
@@ -77,22 +78,24 @@ interface ScheduleSummary {
 import type { WorkerEnv } from './env.ts';
 
 import { XMLParser } from 'fast-xml-parser';
-import { CATEGORIES } from '../src/data/categoryTaxonomy.ts';
-import { areaKeyForPaper } from '../src/utils/areaAccent.ts';
-import { usableOpenAlexAbstract } from '../src/utils/openAlexAbstract.ts';
-import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.ts';
+import { CATEGORIES, getAreaLeaves } from '../src/data/category-taxonomy.ts';
+import { areaKeyForPaper } from '../src/utils/area-accent.ts';
+import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
+import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
+import { reserveRequestQuota } from './request-quota-ledger.ts';
+import { openAlexCostFor } from './openalex-api.ts';
+import { reserveOpenAlexBudget } from './provider-runtime.ts';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
 const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
-const BREVO_API = 'https://api.brevo.com/v3';
 const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
 // Ruta real desde el 18-09-2026: la app dejo de vivir en el fragmento. Los
 // correos ya enviados llevan `/#/following` y siguen llegando a su sitio --
-// la puerta de index.html y utils/legacyHashRoute.js los traducen -- pero
+// la puerta de index.html y utils/legacy-hash-route.ts los traducen -- pero
 // este Worker se despliega por su cuenta, asi que lo que acuna a partir de
 // ahora es la ruta, no el fragmento.
 const PAPER_TOK_URL = 'https://papertok.app/following';
@@ -103,7 +106,12 @@ const MAX_QUERIED_FOLLOWS = 24;
 const MAX_PREVIEW_ITEMS = 20;
 const MAX_SENT_PAPER_KEYS = 400;
 const MAX_PREFERENCES_REQUEST_BYTES = 96 * 1024;
-const DEFAULT_DAILY_SEND_LIMIT = 290;
+const DEFAULT_DAILY_SEND_LIMIT = 100;
+// Test emails share the daily send limit with the digest and verification
+// emails, so one account may send 3 a day and all accounts together 20, a
+// fifth of production's 100 (Pablo, 2026-10-24).
+const TEST_ACCOUNT_DAILY_LIMIT = 3;
+const TEST_GLOBAL_DAILY_LIMIT = 20;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
 const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
@@ -113,28 +121,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DIGEST_FRESHNESS_DAYS = 10;
 // What the lead story's excerpt can draw on; the excerpt itself is shorter.
 const DIGEST_ABSTRACT_MAX_LENGTH = 600;
-
-/**
- * The twelve field inks of the light theme (`--gradient-*` in
- * src/styles/variables.css), keyed like `CATEGORIES`. An email cannot read the
- * app's custom properties, so the values are copied here, and a test holds
- * them to the stylesheet. Every one is at least 4.9:1 on white, so a field
- * name set in its own ink stays readable at mono-label size.
- */
-const FIELD_INKS = Object.freeze({
-  physics: '#4f46e5',
-  cs: '#c2410c',
-  math: '#7e22ce',
-  stat: '#1d4ed8',
-  econ: '#0f766e',
-  'q-fin': '#0e7490',
-  eess: '#a16207',
-  mech: '#475569',
-  civil: '#92400e',
-  chemeng: '#4d7c0f',
-  med: '#be123c',
-  bio: '#15803d',
-});
 
 const SCHEDULE_HISTORY_TTL_SECONDS = 14 * 24 * 60 * 60;
 const DELIVERY_LEDGER_TTL_SECONDS = 3 * 24 * 60 * 60;
@@ -146,7 +132,6 @@ const DIGEST_SOURCE_TIMEOUT_MS = 5_000;
 const DIGEST_SOURCE_RETRY_MAX_DELAY_MS = 1_000;
 const MAX_SHARED_OPENALEX_REQUESTS = 200;
 const EMAIL_PROVIDER_TIMEOUT_MS = 12_000;
-const EMAIL_IDENTITY_TIMEOUT_MS = 8_000;
 const EMAIL_HEALTH_TIMEOUT_MS = 8_000;
 const SCHEDULE_PROCESSING_BUDGET_MS = 12 * 60 * 1000;
 const SCHEDULE_MIN_BATCH_REMAINING_MS = 3 * 60 * 1000;
@@ -195,6 +180,12 @@ export class EmailDigestTransientError extends EmailNotificationError {
     this.sourceReport = sourceReport;
   }
 }
+
+// A test email's OpenAlex request that the ledger would not take (429
+// `EMAIL_TEST_OPENALEX_BUDGET`) or could not be asked about (503
+// `EMAIL_UNAVAILABLE`). It ends the whole test: a digest built from the sources
+// that did answer would reach the reader as if it were complete.
+class TestOpenAlexBudgetError extends EmailNotificationError {}
 
 class DigestSourceError extends Error {
   declare source: string | undefined;
@@ -549,9 +540,8 @@ function sanitizePaper(input: PaperInput = {}) {
     openAccess: Boolean(input.openAccess),
     url: safeUrl(input.landingPageUrl || input.pdfUrl || (input.doi ? `https://doi.org/${input.doi}` : '')),
     matches,
-    // Both stay missing rather than guessed: a paper of no known field is set
-    // in ink with no field name, and one without an abstract has no excerpt.
-    ...(Object.hasOwn(FIELD_INKS, area) ? { area } : {}),
+    // A field or abstract with no evidence stays absent.
+    ...(Object.hasOwn(CATEGORIES, area) ? { area } : {}),
     ...(abstract ? { abstract } : {}),
   };
 }
@@ -610,12 +600,12 @@ function sourceBucket(report: SourceReport | null | undefined, source: string) {
 function recordSourceFailure(report: SourceReport | null | undefined, source: string, code: string) {
   if (!report) return;
   report.failed += 1;
-  sourceBucket(report, source!)!.failed += 1;
+  sourceBucket(report, source)!.failed += 1;
   report.failureCodes[code] = (report.failureCodes[code] || 0) + 1;
 }
 
 function digestSourceError(source: string, error: unknown) {
-  if (error instanceof DigestSourceError) return error;
+  if (error instanceof DigestSourceError || error instanceof TestOpenAlexBudgetError) return error;
   return new DigestSourceError(
     source,
     `EMAIL_SOURCE_${sourceCodeName(source)}_INVALID_RESPONSE`,
@@ -641,13 +631,18 @@ function wait(delayMs: number) {
   return new Promise<void>(resolve => setTimeout(resolve, delayMs));
 }
 
+// `beforeAttempt` runs ahead of every attempt, the retry too, so a source that
+// is metered counts each call it will receive. What it throws ends the call
+// without another attempt.
 async function fetchDigestSource(input: RequestInfo | URL, init: RequestInit | undefined, {
   source,
   report,
   timeoutMs = DIGEST_SOURCE_TIMEOUT_MS,
-}: { source?: string; report?: SourceReport | null; timeoutMs?: number } = {}) {
+  beforeAttempt,
+}: { source?: string; report?: SourceReport | null; timeoutMs?: number; beforeAttempt?: () => Promise<void> } = {}) {
   let lastError;
   for (let attempt = 0; attempt < DIGEST_SOURCE_MAX_ATTEMPTS; attempt += 1) {
+    await beforeAttempt?.();
     if (report) {
       const bucket = sourceBucket(report, source!)!;
       report.requestAttempts += 1;
@@ -704,13 +699,13 @@ async function fetchDigestSource(input: RequestInfo | URL, init: RequestInit | u
 async function trackDigestSource<T>(report: SourceReport | null | undefined, source: string, operation: () => Promise<T>) {
   if (report) {
     report.attempted += 1;
-    sourceBucket(report, source!)!.attempted += 1;
+    sourceBucket(report, source)!.attempted += 1;
   }
   try {
     const result = await operation();
     if (report) {
       report.succeeded += 1;
-      sourceBucket(report, source!)!.succeeded += 1;
+      sourceBucket(report, source)!.succeeded += 1;
     }
     return result;
   } catch (error) {
@@ -728,11 +723,13 @@ function isArxivCategory(value: unknown) {
   ));
 }
 
+function followCategoryIds(follow: FollowInput = {}) {
+  return getAreaLeaves(follow.canonicalId) ?? (Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : []);
+}
+
 function arxivCategoriesForFollow(follow: FollowInput = {}) {
-  const metadataCategories = Array.isArray(follow.metadata?.categoryIds)
-    ? follow.metadata.categoryIds
-    : [];
-  const candidates = metadataCategories.length ? metadataCategories : [follow.canonicalId];
+  const categoryIds = followCategoryIds(follow);
+  const candidates = categoryIds.length ? categoryIds : [follow.canonicalId];
   return [...new Set(candidates.map(category => cleanText(category, 80)).filter(isArxivCategory))];
 }
 
@@ -819,50 +816,6 @@ async function fetchArxivTopicUpdates(follows: Follow[], sourceReport?: SourceRe
   });
 }
 
-const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
-
-/**
- * FIREBASE_WEB_API_KEY is public, so the Worker cannot assume the console only
- * offers Google and GitHub: any sign-up method that hands over an unverified
- * address would otherwise subscribe a stranger's inbox to the digest.
- * Firebase does not always flag federated sign-ins as verified, so an identity
- * provider that vouched for the same address counts as proof of possession.
- */
-function accountOwnsEmail(account: EmailAccount) {
-  if (account?.emailVerified === true) return true;
-  const email = cleanText(account?.email, 320).toLowerCase();
-  return (account?.providerUserInfo || []).some(provider => (
-    TRUSTED_EMAIL_PROVIDERS.has(cleanText(provider?.providerId, 40).toLowerCase())
-    && cleanText(provider?.email, 320).toLowerCase() === email
-  ));
-}
-
-async function verifyFirebaseIdentity(request: Request, env: WorkerEnv) {
-  const authorization = request.headers.get('authorization') || '';
-  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
-  if (!env.FIREBASE_WEB_API_KEY) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-
-  const response = await fetchWithDeadline(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ idToken: token }),
-  }, EMAIL_IDENTITY_TIMEOUT_MS);
-  const payload = await response.json<{ users?: EmailAccount[] }>().catch(() => ({} as { users?: EmailAccount[] }));
-  const account = payload?.users?.[0];
-  if (!response.ok || !account?.localId || !account?.email) {
-    throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
-  }
-  if (!accountOwnsEmail(account)) {
-    throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
-  }
-  return {
-    uid: account.localId,
-    email: cleanText(account.email, 320),
-    displayName: cleanText(account.displayName, 160),
-  };
-}
-
 function publicSubscription(subscription: Subscription | null, email: string) {
   return {
     enabled: Boolean(subscription?.enabled),
@@ -882,6 +835,8 @@ const DELIVERY_STATE_FIELDS: Array<keyof DeliveryState> = [
   'sentPaperKeys',
   'lastDelivery',
   'lastTestDelivery',
+  'heldDigest',
+  'owedCurrentWeek',
 ];
 
 function deliveryStateKey(subscriptionKey: string, subscription: Subscription | null) {
@@ -913,6 +868,17 @@ function subscriptionGeneration(subscription: Subscription = {}) {
     subscription.unsubscribeToken || subscription.createdAt || subscription.uid,
     200,
   )}`;
+}
+
+function heldDigestSelectionKey(subscription: Subscription = {}) {
+  const follows = (subscription.follows || []).map(follow => JSON.stringify([
+    follow.type,
+    follow.canonicalId,
+    follow.externalIds?.ror || '',
+    follow.metadata?.query || '',
+    [...new Set(followCategoryIds(follow))].sort(),
+  ])).sort();
+  return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows]);
 }
 
 async function loadSubscriptionRecord(env: WorkerEnv, key: string) {
@@ -973,7 +939,7 @@ async function deleteSubscription(env: WorkerEnv, uid: string, subscription: Sub
 export async function purgeEmailSubscription(env: WorkerEnv, uid: string) {
   if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
   const key = `${SUBSCRIPTION_PREFIX}${uid}`;
-  const subscription = await env.NOTIFICATION_STORE!.get<Subscription>(key, 'json');
+  const subscription = await env.NOTIFICATION_STORE.get<Subscription>(key, 'json');
   await Promise.all([
     env.NOTIFICATION_STORE.delete(key),
     env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription || { uid })),
@@ -1023,6 +989,12 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
   }
   const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
   const unsubscribeKey = `${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`;
+  const selectionChanged = Boolean(existing?.heldDigest) && heldDigestSelectionKey(existing!) !== heldDigestSelectionKey({
+    ...existingRaw,
+    ...(sync ? {} : preferences),
+    email: identity.email,
+    follows,
+  });
   // A subscriber's app syncs on every open, usually with nothing new, and each
   // write costs two KV puts. The token index is still checked: a save whose
   // index put failed leaves an enabled subscription whose unsubscribe link
@@ -1034,6 +1006,7 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     && existingRaw.displayName === identity.displayName
     && JSON.stringify(existingRaw.follows) === JSON.stringify(follows)
     && JSON.stringify(existingRaw.previewItems) === JSON.stringify(previewItems)
+    && !selectionChanged
   ) {
     if (await env.NOTIFICATION_STORE.get(unsubscribeKey) !== identity.uid) {
       await env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid);
@@ -1061,6 +1034,9 @@ async function saveSubscription(request: Request, env: WorkerEnv, identity: Emai
     env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
     env.NOTIFICATION_STORE.put(unsubscribeKey, identity.uid),
   ]);
+  if (selectionChanged) {
+    await updateDeliveryState(env, key, subscription, () => ({ heldDigest: null }));
+  }
   return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
 }
 
@@ -1123,17 +1099,21 @@ function openAlexRequestKey(url: string | URL) {
 // retries it would have had on its own. Without a map (the test email), every
 // call goes upstream as before. Answers stay whole and in memory for the rest
 // of the run, so the map is capped; once full, a new question is asked unshared
-// rather than pushing out an answer a later reader may still need.
+// rather than pushing out an answer a later reader may still need. `reserve`
+// is the test email's ledger gate (`reserveOpenAlexForTest`), run before every
+// attempt of a request.
 function fetchOpenAlexDigestPayload(
   url: URL,
   sourceReport: SourceReport | null | undefined,
   openAlexRequests: OpenAlexRequests | null,
   limit = MAX_SHARED_OPENALEX_REQUESTS,
+  reserve: OpenAlexReservation | null = null,
 ) {
   const request = async () => {
     const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
       source: 'openalex',
       report: sourceReport,
+      beforeAttempt: reserve ? () => reserve(url) : undefined,
     });
     const payload = await response.json<OpenAlexPayload>();
     if (!Array.isArray(payload?.results)) {
@@ -1154,7 +1134,7 @@ function fetchOpenAlexDigestPayload(
   return shared;
 }
 
-async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
+async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.now(), sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null, reserve: OpenAlexReservation | null = null) {
   const id = normalizeId(follow.canonicalId);
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - DIGEST_FRESHNESS_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -1179,7 +1159,7 @@ async function fetchOpenAlexUpdates(follow: Follow, env: WorkerEnv, now = Date.n
   url.searchParams.set('sort', 'publication_date:desc');
   url.searchParams.set('per-page', '6');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests);
+    const payload = await fetchOpenAlexDigestPayload(url, sourceReport, openAlexRequests, undefined, reserve);
     let works = payload?.results || [];
     if (follow.type === 'topic' && isQueryTopicId(id)) {
       const query = topicSearchQuery(follow);
@@ -1208,7 +1188,7 @@ async function fetchExplorationUpdates(env: WorkerEnv, now = Date.now(), sourceR
   });
 }
 
-async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
+async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null, reserve: OpenAlexReservation | null = null) {
   const requestUrl = new URL('https://api.openaire.eu/search/publications');
   requestUrl.searchParams.set('format', 'json');
   requestUrl.searchParams.set('size', '10');
@@ -1237,7 +1217,7 @@ async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?
   openAlexUrl.searchParams.set('filter', `doi:${dois.map(doi => doi.replace(/^https?:\/\/doi\.org\//i, '')).join('|')}`);
   openAlexUrl.searchParams.set('per-page', '10');
   return trackDigestSource(sourceReport, 'openalex', async () => {
-    const openAlexPayload = await fetchOpenAlexDigestPayload(openAlexUrl, sourceReport, openAlexRequests);
+    const openAlexPayload = await fetchOpenAlexDigestPayload(openAlexUrl, sourceReport, openAlexRequests, undefined, reserve);
     return (openAlexPayload?.results || []).map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
   });
 }
@@ -1412,6 +1392,31 @@ function digestFollowsForWindow(follows: Follow[] | undefined, now = Date.now())
   return allFollows.slice(offset).concat(allFollows.slice(0, offset)).slice(0, MAX_QUERIED_FOLLOWS);
 }
 
+// A test email reserves every OpenAlex attempt in the day's ledger at the
+// exploration tier before sending it, so test emails stop together with readers'
+// searches at that tier's share of the day's ceiling and leave the tiers above
+// it theirs. `now` names the day, as it does for the test's own limits.
+async function reserveOpenAlexForTest(env: WorkerEnv, url: URL, now: number) {
+  const { units, kind } = openAlexCostFor(url);
+  const reservation = await reserveOpenAlexBudget(env, '', { units, kind, tier: 'exploration' }, new Date(now).toISOString())
+    .catch((error: unknown) => {
+      console.warn('OpenAlex ledger unreachable for a test email', error);
+      return null;
+    });
+  if (reservation && !reservation.error) return;
+  throw reservation?.error?.status === 429
+    ? new TestOpenAlexBudgetError('EMAIL_TEST_OPENALEX_BUDGET', 429)
+    : new TestOpenAlexBudgetError('EMAIL_UNAVAILABLE', 503);
+}
+
+// `mapWithConcurrency` settles every follow, which would turn the refusal into
+// one failed source among others.
+function rethrowTestOpenAlexBudgetError(results: PromiseSettledResult<unknown>[]) {
+  for (const result of results) {
+    if (result.status === 'rejected' && result.reason instanceof TestOpenAlexBudgetError) throw result.reason;
+  }
+}
+
 async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   test = false,
   now = Date.now(),
@@ -1422,10 +1427,24 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   if (!follows.length) return { papers: [], sourceReport };
   const arxivFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length > 0);
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
+  // A test fails whole on its first refusal and the ledger remembers none: a
+  // one-unit list asked after a ten-unit search was refused would be accepted,
+  // billing readers' share and calling OpenAlex for an email that is never sent.
+  // Requests already waiting on the ledger keep their own answer.
+  let testRefusal: unknown = null;
+  const reserve: OpenAlexReservation | null = test ? async (url) => {
+    if (testRefusal) throw testRefusal;
+    try {
+      await reserveOpenAlexForTest(env, url, now);
+    } catch (error) {
+      testRefusal ??= error;
+      throw error;
+    }
+  } : null;
   const indexedFreshPromise = mapWithConcurrency(indexedFollows, 4, follow => (
     follow.type === 'project'
-      ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests)
-      : fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests)
+      ? fetchProjectUpdates(follow, env, sourceReport, openAlexRequests, reserve)
+      : fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests, reserve)
   ));
   const arxivFreshPromise = (async () => {
     if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
@@ -1439,8 +1458,9 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
       const fallbackResults = await mapWithConcurrency(
         arxivFollows,
         2,
-        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests),
+        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport, openAlexRequests, reserve),
       );
+      rethrowTestOpenAlexBudgetError(fallbackResults);
       return {
         papers: fallbackResults
           .filter(result => result.status === 'fulfilled')
@@ -1450,6 +1470,7 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
     }
   })();
   const [indexedResults, arxivResult] = await Promise.all([indexedFreshPromise, arxivFreshPromise]);
+  rethrowTestOpenAlexBudgetError(indexedResults);
   const indexedFresh = indexedResults
     .filter(result => result.status === 'fulfilled')
     .flatMap(result => result.value);
@@ -1498,31 +1519,12 @@ async function collectDigestPapers(subscription: Subscription, env: WorkerEnv, {
   return { papers, sourceReport };
 }
 
-function requestedEmailProvider(env: WorkerEnv) {
-  const requested = cleanText(env.EMAIL_PROVIDER, 20).toLowerCase();
-  if (requested === 'brevo' || requested === 'resend') return requested;
-  if (env.BREVO_API_KEY) return 'brevo';
-  if (env.RESEND_API_KEY) return 'resend';
-  return '';
-}
-
 function configuredEmailProvider(env: WorkerEnv) {
-  const provider = requestedEmailProvider(env);
-  if (provider === 'brevo' && env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) return provider;
-  if (provider === 'resend' && env.RESEND_API_KEY) return provider;
-  return '';
+  return env.RESEND_API_KEY && env.RESEND_FROM_EMAIL ? 'resend' : '';
 }
 
-function resolveBrevoSender(env: WorkerEnv) {
-  return {
-    name: cleanText(env.BREVO_FROM_NAME, 70) || 'PaperTok',
-    email: cleanText(env.BREVO_FROM_EMAIL, 320),
-  };
-}
-
-async function resolveResendSender(env: WorkerEnv) {
-  if (env.RESEND_FROM_EMAIL) return cleanText(env.RESEND_FROM_EMAIL, 320);
-  return 'PaperTok <onboarding@resend.dev>';
+function resolveResendSender(env: WorkerEnv) {
+  return cleanText(env.RESEND_FROM_EMAIL, 320);
 }
 
 const kvDeliveryLedgerLocks = new WeakMap<KVNamespace, Map<string, Promise<unknown>>>();
@@ -1659,7 +1661,10 @@ async function reserveEmailDelivery(env: WorkerEnv, reservationId: string, now: 
     retryWindowMs: DELIVERY_PENDING_RETRY_WINDOW_MS,
     ...(draft ? { draft } : {}),
   }, now);
-  if (!result.accepted) throw new EmailNotificationError('EMAIL_PROVIDER_LIMIT', 429);
+  if (!result.accepted) {
+    if (result.alert) captureEmailSendLimit();
+    throw new EmailNotificationError('EMAIL_PROVIDER_LIMIT', 429);
+  }
   return result;
 }
 
@@ -1702,17 +1707,9 @@ function resendSendErrorCode(status: number, payload: ProviderPayload = {}) {
   );
   if (testRecipientRestricted) return 'EMAIL_TEST_RECIPIENT_RESTRICTED';
   if (status === 401 || status === 403) return 'EMAIL_PROVIDER_AUTH_FAILED';
-  if (status === 429) return 'EMAIL_PROVIDER_LIMIT';
-  return 'EMAIL_SEND_FAILED';
-}
-
-function brevoSendErrorCode(status: number, payload: ProviderPayload = {}) {
-  const providerMessage = cleanText(`${payload?.code || ''} ${payload?.message || ''}`, 1_000);
-  if (status === 401 || status === 403) return 'EMAIL_PROVIDER_AUTH_FAILED';
-  if (status === 429) return 'EMAIL_PROVIDER_LIMIT';
-  if (status === 400 && /sender|not valid|not verified|unauthorized/i.test(providerMessage)) {
-    return 'EMAIL_SENDER_NOT_VERIFIED';
-  }
+  if (status === 429) return ['daily_quota_exceeded', 'monthly_quota_exceeded'].includes(payload?.name || '')
+    ? 'EMAIL_PROVIDER_LIMIT'
+    : 'EMAIL_PROVIDER_RATE_LIMIT';
   return 'EMAIL_SEND_FAILED';
 }
 
@@ -1723,27 +1720,26 @@ function providerOutcomeDefinitelyRejected(status: number) {
 }
 
 const EMAIL_COPY = {
-  nameplate: 'The PaperTok Weekly',
-  standfirst: 'New research from the people, topics and places you follow',
-  edition: 'Weekly edition',
-  editionFor: (name: string) => `Weekly edition for ${name}`,
-  paperCount: (count: number) => (count === 1 ? '1 paper' : `${count} papers`),
-  followReason: (names: string[]) => `You follow ${names.slice(0, 2).join(' and ')}`,
+  nameplate: 'PaperTok',
+  subject: (week: string) => `Your papers for the week of ${week}`,
+  greeting: (name: string) => (name ? `Hi ${name},` : 'Hi there,'),
+  paperCount: (count: number) => (count === 1 ? '1 new paper' : `${count} new papers`),
+  emptyHeadline: 'Your email is ready',
+  introduction: 'Welcome to your weekly selection of papers we think you might find interesting.',
   outsideFollows: 'Outside your follows',
-  alsoInEdition: 'Also in this edition',
+  alsoInEdition: 'More to read',
+  leadLabel: 'Start here',
   byline: (authors: string) => `By ${authors}`,
   andOthers: 'and others',
   authorUnavailable: 'Authors unavailable',
-  citations: (count: number) => `${count} ${count === 1 ? 'citation' : 'citations'}`,
-  openAccess: 'Open access',
   readPaper: 'Read the paper',
-  andMore: (count: number) => `, and ${count} more`,
   testSubject: 'PaperTok: test email',
   testKicker: 'Test email',
-  testBody: 'Your PaperTok email works. The weekly edition arrives on Monday mornings when there is something new from what you follow.',
+  testBody: 'Your PaperTok email works. We prepare your weekly edition on Monday when there are new papers. Sending limits may delay delivery.',
   empty: 'Your connection is ready. We have not found recent publications from what you follow yet.',
-  openInbox: 'Open my feed',
-  colophon: 'The PaperTok Weekly · Every Monday',
+  closingTitle: "That's all for this edition.",
+  closingBody: 'There is more waiting in your feed.',
+  openInbox: 'Explore my feed',
   footer: 'You are receiving this email because you turned on email updates in PaperTok.',
   unsubscribe: 'Unsubscribe',
   emailUpdates: 'Email updates',
@@ -1769,17 +1765,16 @@ function subscriptionLanguage() {
   return 'en';
 }
 
-// The light theme's ground, ink and rules (src/styles/variables.css), copied
-// for the same reason as FIELD_INKS.
+// The light theme's paper, ink and rules (src/styles/variables.css). A mail
+// client cannot read the app's custom properties, so the values are copied.
 const EMAIL_PALETTE = Object.freeze({
-  page: '#f7f7f8', // --bg-secondary
-  sheet: '#ffffff', // --bg-card
-  ink: '#111318', // --text-primary, --border-ink
-  inkHover: '#2b2f38', // --accent-primary-hover: the unsubscribe page's button
-  secondary: '#5b6270', // --text-secondary
-  tertiary: '#6b7280', // --text-tertiary
-  rule: '#e6e7ea', // --border-subtle
-  frame: '#d3d5db', // --border-default
+  page: '#ebeae5', // --bg-secondary: the ink wash around the sheet
+  sheet: '#fbf8f0', // --bg-card
+  ink: '#1d2b53', // --text-primary, --border-ink
+  inkHover: '#3e4a6b', // --accent-primary-hover: the unsubscribe page's button
+  secondary: '#46527a', // --text-secondary
+  tertiary: '#5a6488', // --text-tertiary
+  frame: '#d6ccb6', // --border-default
   brand: '#ffd21e', // --brand-yellow: the PT mark and nothing else
 });
 
@@ -1791,9 +1786,7 @@ const EMAIL_FONTS = Object.freeze({
   mono: "'IBM Plex Mono',Menlo,Consolas,monospace",
 });
 
-const DIGEST_EXCERPT_LENGTH = 280;
-const DIGEST_SUBJECT_MAX_LENGTH = 90;
-const DIGEST_PREHEADER_MAX_LENGTH = 140;
+const DIGEST_EXCERPT_LENGTH = 180;
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -1807,18 +1800,20 @@ function editionDate(now: number) {
   return `${WEEKDAY_NAMES[date.getUTCDay()]}, ${date.getUTCDate()} ${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
-function publicationLabel(value: string | undefined) {
-  const time = Date.parse(value || '');
-  if (!Number.isFinite(time)) return '';
-  const date = new Date(time);
-  return `${date.getUTCDate()} ${MONTH_NAMES[date.getUTCMonth()].slice(0, 3)} ${date.getUTCFullYear()}`;
+/** The Monday that opens the edition's week, so each week's subject differs. */
+function editionWeek(now: number) {
+  const date = new Date(now);
+  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - ((date.getUTCDay() + 6) % 7)));
+  return `${monday.getUTCDate()} ${MONTH_NAMES[monday.getUTCMonth()]}`;
 }
 
+// Counted in code points, so a cut never leaves half of an astral character.
 function truncateAtWord(value: string, maxLength: number) {
-  if (value.length <= maxLength) return value;
-  const head = value.slice(0, maxLength);
+  const characters = Array.from(value);
+  if (characters.length <= maxLength) return value;
+  const head = characters.slice(0, maxLength).join('');
   const boundary = head.lastIndexOf(' ');
-  const kept = boundary > 0 ? head.slice(0, boundary) : head.slice(0, maxLength - 1);
+  const kept = boundary > 0 ? head.slice(0, boundary) : characters.slice(0, maxLength - 1).join('');
   return `${kept.replace(/[\s,;:.]+$/, '')}…`;
 }
 
@@ -1866,14 +1861,8 @@ function isDiscovery(paper: DigestPaper) {
   return !(paper.matches || []).length;
 }
 
-function paperReason(paper: DigestPaper) {
-  const names = (paper.matches || []).map(match => match.displayName).filter(Boolean) as string[];
-  return names.length ? EMAIL_COPY.followReason(names) : EMAIL_COPY.outsideFollows;
-}
-
-function paperField(paper: DigestPaper) {
-  if (!Object.hasOwn(FIELD_INKS, paper.area || '')) return { label: '', ink: EMAIL_PALETTE.ink };
-  return { label: CATEGORIES[paper.area as keyof typeof FIELD_INKS].label, ink: FIELD_INKS[paper.area as keyof typeof FIELD_INKS] };
+function fieldLabel(area = '') {
+  return Object.hasOwn(CATEGORIES, area) ? CATEGORIES[area].label : '';
 }
 
 function paperByline(paper: DigestPaper, { lead = false } = {}) {
@@ -1885,147 +1874,98 @@ function paperByline(paper: DigestPaper, { lead = false } = {}) {
   return lead ? EMAIL_COPY.byline(names) : names;
 }
 
-function paperMeta(paper: DigestPaper) {
-  return [
-    publicationLabel(paper.published),
-    paper.journal,
-    paper.citationCount ? EMAIL_COPY.citations(paper.citationCount) : '',
-    paper.openAccess ? EMAIL_COPY.openAccess : '',
-  ].filter(Boolean).join(' · ');
+const DIGEST_PREHEADER_MAX_LENGTH = 120;
+
+/** The subject names no paper; the preheader beside it carries the lead title. */
+function digestPreheader(papers: DigestPaper[]) {
+  const opening = `${EMAIL_COPY.paperCount(papers.length)}${papers.length === 1 ? ': ' : ', starting with: '}`;
+  return `${opening}${truncateAtWord(renderScientificText(papers[0].title), DIGEST_PREHEADER_MAX_LENGTH - opening.length)}`;
 }
 
-function textKicker(paper: DigestPaper) {
-  const field = paperField(paper).label.toUpperCase();
-  return isDiscovery(paper)
-    ? [EMAIL_COPY.outsideFollows.toUpperCase(), field].filter(Boolean).join(' · ')
-    : [field, paperReason(paper)].filter(Boolean).join(' · ');
+function monoStyle({ size = 11, color = EMAIL_PALETTE.tertiary, tracking = '0.06em' }: { size?: number; color?: string; tracking?: string } = {}) {
+  return `font:600 ${size}px/1.5 ${EMAIL_FONTS.mono};letter-spacing:${tracking};text-transform:uppercase;color:${color}`;
 }
 
-function digestSubject(lead: DigestPaper | null, count: number) {
-  if (!lead) return EMAIL_COPY.nameplate;
-  const more = count > 1 ? EMAIL_COPY.andMore(count - 1) : '';
-  return `${truncateAtWord(renderScientificText(lead.title), DIGEST_SUBJECT_MAX_LENGTH - more.length)}${more}`;
+function storyLink(paper: DigestPaper) {
+  return `<a href="${escapeHtml(paper.url || PAPER_TOK_URL)}" style="color:${EMAIL_PALETTE.ink};text-decoration:underline;text-decoration-color:${EMAIL_PALETTE.frame};text-decoration-thickness:1px;text-underline-offset:4px">${renderScientificHtml(paper.title)}</a>`;
 }
 
-function monoStyle({ size = 11, color = EMAIL_PALETTE.tertiary, weight = 600, tracking = '0.06em' }: { size?: number; color?: string; weight?: number; tracking?: string } = {}) {
-  return `font:${weight} ${size}px/1.5 ${EMAIL_FONTS.mono};letter-spacing:${tracking};text-transform:uppercase;color:${color}`;
+// Phosphor's bold CaretRight (the app's icon set) in paper ink, rasterised
+// because mail clients strip inline SVG. Decorative: the label stands alone.
+const EMAIL_CARET_URL = 'https://papertok.app/email/caret-right.png';
+
+/** The link carries the padding so all of it is clickable; Outlook, which drops padding on a link, reads the cell's. */
+function emailButton(href: string, label: string) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:${EMAIL_PALETTE.ink};border-radius:3px;mso-padding-alt:14px 20px 14px 22px"><a href="${escapeHtml(href)}" style="display:inline-block;padding:14px 20px 14px 22px;font:600 15px/1 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.sheet};text-decoration:none">${escapeHtml(label)}&nbsp;<img src="${EMAIL_CARET_URL}" width="12" height="12" alt="" style="display:inline-block;width:12px;height:12px;border:0;vertical-align:-1px"></a></td></tr></table>`;
 }
 
-// The field rule: the 34 × 3 bar the app sets above a headline.
-function fieldRule(ink: string) {
-  return `<div style="width:34px;height:3px;background:${ink};line-height:3px;font-size:0">&nbsp;</div>`;
+function sectionHeading(label: string, count = 0) {
+  return `<h2 class="pt-h2" style="margin:0 0 18px;font:500 30px/1.15 ${EMAIL_FONTS.serif};letter-spacing:-0.02em;color:${EMAIL_PALETTE.ink}">${escapeHtml(label)}${count ? ` <span style="font-weight:700">(${count})</span>` : ''}</h2>`;
 }
 
-function storyLink(paper: DigestPaper, style: string) {
-  return `<a href="${escapeHtml(paper.url || PAPER_TOK_URL)}" style="${style}">${renderScientificHtml(paper.title)}</a>`;
+// A gray hairline on every side sets each paper apart from the next.
+const STORY_FRAME = `border:1px solid ${EMAIL_PALETTE.frame};border-radius:3px`;
+
+function storyDetails(paper: DigestPaper, { lead = false } = {}) {
+  return `<p style="margin:${lead ? 0 : '8px 0 0'};font:400 14px/1.5 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(paperByline(paper, { lead }))}</p>
+${isDiscovery(paper) ? `<p style="margin:10px 0 0"><span style="display:inline-block;padding:3px 7px;border:1px solid ${EMAIL_PALETTE.frame};border-radius:2px;${monoStyle({ size: 10, color: EMAIL_PALETTE.secondary })}">${EMAIL_COPY.outsideFollows}</span></p>` : ''}`;
 }
 
 function renderLeadStory(paper: DigestPaper) {
-  const field = paperField(paper);
-  const reason = `<span style="color:${EMAIL_PALETTE.tertiary}">${escapeHtml(isDiscovery(paper) ? EMAIL_COPY.outsideFollows : paperReason(paper))}</span>`;
-  const label = field.label ? `<span style="color:${field.ink}">${escapeHtml(field.label)}</span> · ` : '';
   const excerpt = renderScientificExcerpt(paper.abstract);
-  const meta = paperMeta(paper);
-  const url = escapeHtml(paper.url || PAPER_TOK_URL);
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:26px 0">
-${fieldRule(field.ink)}
-<p style="margin:12px 0 0;${monoStyle()}">${label}${reason}</p>
-<h2 class="pt-lead" style="margin:10px 0 12px;font:600 34px/1.12 ${EMAIL_FONTS.serif};letter-spacing:-0.02em;color:${EMAIL_PALETTE.ink}">${storyLink(paper, `color:${EMAIL_PALETTE.ink};text-decoration:none`)}</h2>
-${excerpt.html ? `<p style="margin:0 0 14px;font:400 17px/1.55 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.ink}">${excerpt.html}</p>` : ''}
-<p style="margin:0;font:400 14px/1.5 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(paperByline(paper, { lead: true }))}</p>
-${meta ? `<p style="margin:6px 0 0;${monoStyle({ tracking: '0.04em' })}">${escapeHtml(meta)}</p>` : ''}
-<p style="margin:14px 0 0"><a href="${url}" style="font:600 14px/1 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.ink};text-decoration:underline">${escapeHtml(EMAIL_COPY.readPaper)}&nbsp;→</a></p>
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:36px 0 40px">
+${sectionHeading(EMAIL_COPY.leadLabel)}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${STORY_FRAME}"><tr><td class="pt-card" style="padding:24px 26px 26px">
+<h3 class="pt-lead" style="margin:0 0 14px;font:600 26px/1.2 ${EMAIL_FONTS.serif};letter-spacing:-0.015em;color:${EMAIL_PALETTE.ink}">${storyLink(paper)}</h3>
+${excerpt.html ? `<p style="margin:0 0 16px;font:400 17px/1.55 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.ink}">${excerpt.html}</p>` : ''}
+${storyDetails(paper, { lead: true })}
+<div style="margin:22px 0 0">${emailButton(paper.url || PAPER_TOK_URL, EMAIL_COPY.readPaper)}</div>
+</td></tr></table>
 </td></tr></table>`;
 }
 
-function renderBrief(paper: DigestPaper) {
-  const field = paperField(paper);
-  const meta = paperMeta(paper);
-  const small = { size: 10.5 };
-  if (isDiscovery(paper)) {
-    // The exploration pick is set apart in a ruled box, like an editor's note.
-    return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${EMAIL_PALETTE.ink};background:${EMAIL_PALETTE.page}"><tr><td style="padding:14px 14px 16px">
-<p style="margin:0;${monoStyle({ ...small, color: EMAIL_PALETTE.ink })}"><span aria-hidden="true">★ </span>${escapeHtml(EMAIL_COPY.outsideFollows)}</p>
-${field.label ? `<p style="margin:6px 0 0;${monoStyle({ ...small, color: field.ink })}">${escapeHtml(field.label)}</p>` : ''}
-<h3 style="margin:6px 0 8px;font:600 18px/1.25 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.ink}">${storyLink(paper, `color:${EMAIL_PALETTE.ink};text-decoration:none`)}</h3>
-<p style="margin:0;font:400 13px/1.5 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(paperByline(paper))}</p>
-${meta ? `<p style="margin:5px 0 0;${monoStyle({ ...small, color: EMAIL_PALETTE.secondary, tracking: '0.04em' })}">${escapeHtml(meta)}</p>` : ''}
-</td></tr></table>`;
-  }
-  return `${fieldRule(field.ink)}
-${field.label ? `<p style="margin:10px 0 0;${monoStyle({ ...small, color: field.ink })}">${escapeHtml(field.label)}</p>` : ''}
-<h3 style="margin:${field.label ? 7 : 10}px 0 8px;font:600 19px/1.25 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.ink}">${storyLink(paper, `color:${EMAIL_PALETTE.ink};text-decoration:none`)}</h3>
-<p style="margin:0;font:400 13px/1.5 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(paperByline(paper))}</p>
-${meta ? `<p style="margin:5px 0 0;${monoStyle({ ...small, tracking: '0.04em' })}">${escapeHtml(meta)}</p>` : ''}
-<p style="margin:5px 0 0;${monoStyle({ ...small, tracking: '0.04em' })}">${escapeHtml(paperReason(paper))}</p>`;
-}
-
-// Two columns of briefs; a phone stacks them (the media query in the head).
 function renderBriefs(papers: DigestPaper[]) {
-  const rows = [];
-  for (let index = 0; index < papers.length; index += 2) {
-    const [first, second] = papers.slice(index, index + 2);
-    if (index > 0) {
-      rows.push(`<tr><td colspan="2" style="border-top:1px solid ${EMAIL_PALETTE.rule};height:20px;font-size:0;line-height:0">&nbsp;</td></tr>`);
-    }
-    rows.push(`<tr>
-<td class="pt-col" width="50%" valign="top" style="width:50%;padding:0 16px 22px 0">${renderBrief(first)}</td>
-${second
-    ? `<td class="pt-col pt-col-second" width="50%" valign="top" style="width:50%;padding:0 0 22px 16px;border-left:1px solid ${EMAIL_PALETTE.rule}">${renderBrief(second)}</td>`
-    : '<td class="pt-col" width="50%" style="width:50%;font-size:0">&nbsp;</td>'}
-</tr>`);
-  }
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows.join('')}</table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${papers.map(paper => `<tr><td style="padding:0 0 14px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${STORY_FRAME}"><tr><td class="pt-card" style="padding:18px 22px 20px">
+<h3 style="margin:0;font:600 21px/1.28 ${EMAIL_FONTS.serif};letter-spacing:-0.01em;color:${EMAIL_PALETTE.ink}">${storyLink(paper)}</h3>
+${storyDetails(paper)}
+</td></tr></table></td></tr>`).join('')}<tr><td style="height:26px;line-height:26px;font-size:0">&nbsp;</td></tr></table>`;
 }
 
+function joinNames(names: string[]) {
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+/** The edition's known fields, named once below the introduction. */
 function editionIndex(papers: DigestPaper[]) {
-  const fields = [...new Set(papers.map(paper => paper.area).filter(area => Object.hasOwn(FIELD_INKS, area || '')))];
-  return [
-    escapeHtml(EMAIL_COPY.paperCount(papers.length)),
-    ...fields.map(area => `<span style="color:${FIELD_INKS[area as keyof typeof FIELD_INKS]}">${escapeHtml(CATEGORIES[area as keyof typeof FIELD_INKS].label)}</span>`),
-  ].join('&nbsp;&nbsp;·&nbsp;&nbsp;');
+  const names = [...new Set(papers.map(paper => fieldLabel(paper.area).toLowerCase()).filter(Boolean))];
+  return names.length ? `About ${joinNames(names)}.` : '';
 }
 
-/**
- * The weekly digest, set as the front page of a small newspaper in the app's
- * own language: a serif nameplate over a double rule, the strongest paper as
- * the lead story with an excerpt of its abstract, the rest as two columns of
- * briefs, and the exploration pick boxed apart. Each paper wears its field's
- * ink; one of no known field wears the brand ink and no field name.
- *
- * Tables and inline styles, because that is what mail clients render; the
- * one stylesheet only stacks the columns on a phone.
- */
+/** Tables and inline styles keep the digest readable across mail clients. */
 function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubscribeUrl: string, test: boolean, { now = Date.now() } = {}) {
   const firstName = cleanText(subscription?.displayName, 160).split(' ')[0];
-  const edition = firstName ? EMAIL_COPY.editionFor(firstName) : EMAIL_COPY.edition;
+  const greeting = EMAIL_COPY.greeting(firstName);
   const dateline = editionDate(now);
   // collectDigestPapers ranks the followed papers first, the discovery last.
   const lead = papers[0] || null;
   const rest = papers.filter(paper => paper !== lead);
   const others = [...rest.filter(paper => !isDiscovery(paper)), ...rest.filter(isDiscovery)];
-  const subject = test ? EMAIL_COPY.testSubject : digestSubject(lead, papers.length);
-  const preheader = test
-    ? EMAIL_COPY.testBody
-    : truncateAtWord(
-      others.map(paper => renderScientificText(paper.title)).join(' · ')
-        || renderScientificExcerpt(lead?.abstract).text
-        || EMAIL_COPY.standfirst,
-      DIGEST_PREHEADER_MAX_LENGTH,
-    );
-  const ink = EMAIL_PALETTE.ink;
+  const subject = test ? EMAIL_COPY.testSubject : EMAIL_COPY.subject(editionWeek(now));
+  const preheader = test ? EMAIL_COPY.testBody : lead ? digestPreheader(papers) : EMAIL_COPY.empty;
+  const headline = papers.length ? `${EMAIL_COPY.paperCount(papers.length)} for you` : EMAIL_COPY.emptyHeadline;
+  const { ink, sheet, secondary, tertiary } = EMAIL_PALETTE;
+  const { serif, sans, mono } = EMAIL_FONTS;
+  const index = editionIndex(papers);
 
   const testNotice = test
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:22px 0 0">
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding:26px 0 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px dashed ${EMAIL_PALETTE.frame}"><tr><td style="padding:14px 16px">
 <p style="margin:0;${monoStyle({ color: ink })}">${escapeHtml(EMAIL_COPY.testKicker)}</p>
-<p style="margin:6px 0 0;font:400 15px/1.55 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(EMAIL_COPY.testBody)}</p>
-</td></tr></table>`
+<p style="margin:6px 0 0;font:400 15px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.testBody)}</p>
+</td></tr></table></td></tr></table>`
     : '';
   const stories = lead
-    ? `${renderLeadStory(lead)}${others.length
-      ? `<h2 style="margin:0;padding:8px 0 18px;border-top:1px solid ${ink};${monoStyle({ size: 10.5, color: ink, tracking: '0.08em' })}">${escapeHtml(EMAIL_COPY.alsoInEdition)}</h2>${renderBriefs(others)}`
-      : ''}`
-    : `<p style="margin:0;padding:26px 0;font:400 15px/1.55 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.secondary}">${escapeHtml(EMAIL_COPY.empty)}</p>`;
+    ? `${renderLeadStory(lead)}${others.length ? `${sectionHeading(EMAIL_COPY.alsoInEdition, others.length)}${renderBriefs(others)}` : ''}`
+    : `<p style="margin:0;padding:30px 0;font:400 16px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.empty)}</p>`;
 
   const html = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">
@@ -2033,64 +1973,62 @@ function renderDigest(subscription: Subscription, papers: DigestPaper[], unsubsc
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light">
 <title>${escapeHtml(subject)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
 <style>
 @media (max-width:620px){
-.pt-shell{padding:22px 18px 26px!important}
-.pt-nameplate{font-size:34px!important}
-.pt-lead{font-size:26px!important}
-.pt-strip-cell{display:block!important;text-align:left!important;padding:0 0 6px!important}
-.pt-col{display:block!important;width:auto!important;padding:0 0 20px!important;border-left:0!important}
-.pt-col-second{border-top:1px solid ${EMAIL_PALETTE.rule}!important;padding-top:20px!important}
+.pt-outer{padding:0!important}
+.pt-shell{padding:24px 20px 30px!important}
+.pt-h1{font-size:32px!important}
+.pt-h2{font-size:25px!important}
+.pt-lead{font-size:23px!important}
+.pt-card{padding:20px 18px 22px!important}
 }
 </style>
 </head><body style="margin:0;padding:0;background:${EMAIL_PALETTE.page};color:${ink};-webkit-text-size-adjust:100%">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all">${escapeHtml(preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${EMAIL_PALETTE.page}"><tr><td align="center" style="padding:28px 10px">
-<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:640px;background:${EMAIL_PALETTE.sheet};border:1px solid ${EMAIL_PALETTE.frame}"><tr><td class="pt-shell" style="padding:26px 36px 30px">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-bottom:1px solid ${ink}"><tr>
-<td class="pt-strip-cell" style="padding:0 0 9px;${monoStyle({ size: 10.5, color: ink, tracking: '0.08em' })}">${escapeHtml(dateline)}</td>
-<td class="pt-strip-cell" align="right" style="padding:0 0 9px;${monoStyle({ size: 10.5, tracking: '0.08em' })}">${escapeHtml(edition)}</td>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${EMAIL_PALETTE.page}"><tr><td class="pt-outer" align="center" style="padding:32px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${sheet};border:1px solid ${EMAIL_PALETTE.frame}"><tr><td class="pt-shell" style="padding:30px 40px 36px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td valign="middle" style="width:40px"><div aria-hidden="true" style="width:30px;height:30px;background:${EMAIL_PALETTE.brand};border-radius:3px;text-align:center;font:600 12px/30px ${mono};color:${ink}">PT</div></td>
+<td valign="middle"><p style="margin:0;font:600 21px/1 ${serif};letter-spacing:-0.01em;color:${ink}">${escapeHtml(EMAIL_COPY.nameplate)}</p></td>
+<td align="right" valign="middle" style="${monoStyle({ size: 10, tracking: '0.05em' })}">${escapeHtml(dateline)}</td>
 </tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:22px 0 6px">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="middle" style="padding-right:14px"><div aria-hidden="true" style="width:38px;height:38px;background:${EMAIL_PALETTE.brand};border-radius:3px;box-shadow:3px 3px 0 ${ink};text-align:center;font:600 16px/38px ${EMAIL_FONTS.mono};color:${ink}">PT</div></td>
-<td valign="middle"><h1 class="pt-nameplate" style="margin:0;font:600 48px/1 ${EMAIL_FONTS.serif};letter-spacing:-0.03em;color:${ink}">${escapeHtml(EMAIL_COPY.nameplate)}</h1></td>
-</tr></table>
-</td></tr>
-<tr><td align="center" style="padding:6px 0 14px;font:italic 400 15px/1.4 ${EMAIL_FONTS.serif};color:${EMAIL_PALETTE.secondary}">${escapeHtml(EMAIL_COPY.standfirst)}</td></tr>
-</table>
-<div style="border-top:3px double ${ink};height:0;line-height:0;font-size:0">&nbsp;</div>
-${papers.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-bottom:1px solid ${EMAIL_PALETTE.frame}"><tr><td align="center" style="padding:9px 0;${monoStyle({ size: 10.5, color: EMAIL_PALETTE.secondary, tracking: '0.08em' })}">${editionIndex(papers)}</td></tr></table>` : ''}
+<div style="margin:18px 0 0;border-top:2px solid ${ink};height:0;line-height:0;font-size:0">&nbsp;</div>
+<p style="margin:32px 0 0;font:italic 400 19px/1.4 ${serif};color:${secondary}">${escapeHtml(greeting)}</p>
+<h1 class="pt-h1" style="margin:6px 0 0;font:600 40px/1.08 ${serif};letter-spacing:-0.025em;color:${ink}">${escapeHtml(headline)}</h1>
+${lead ? `<p style="margin:16px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.introduction)}</p>` : ''}
+${index ? `<p style="margin:6px 0 0;font:400 16px/1.6 ${sans};color:${secondary}">${escapeHtml(index)}</p>` : ''}
 ${testNotice}
 ${stories}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:3px double ${ink}">
-<tr><td style="padding:20px 0 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:${ink};border-radius:3px"><a href="${PAPER_TOK_URL}" style="display:inline-block;padding:12px 20px;font:600 14px/1 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.sheet};text-decoration:none">${escapeHtml(EMAIL_COPY.openInbox)}</a></td></tr></table></td></tr>
-<tr><td style="padding:22px 0 0;${monoStyle({ size: 10.5, tracking: '0.05em' })}">${escapeHtml(EMAIL_COPY.colophon)}</td></tr>
-<tr><td style="padding:6px 0 0;font:400 12px/1.6 ${EMAIL_FONTS.sans};color:${EMAIL_PALETTE.tertiary}">${escapeHtml(EMAIL_COPY.footer)} <a href="${escapeHtml(unsubscribeUrl)}" style="color:${EMAIL_PALETTE.secondary};text-decoration:underline">${escapeHtml(EMAIL_COPY.unsubscribe)}</a>.</td></tr>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:2px solid ${ink}">
+<tr><td style="padding:28px 0 0">
+${lead ? `<p style="margin:0 0 6px;font:600 22px/1.25 ${serif};color:${ink}">${escapeHtml(EMAIL_COPY.closingTitle)}</p>` : ''}
+<p style="margin:0 0 18px;font:400 15px/1.55 ${sans};color:${secondary}">${escapeHtml(EMAIL_COPY.closingBody)}</p>
+${emailButton(PAPER_TOK_URL, EMAIL_COPY.openInbox)}
+</td></tr>
+<tr><td style="padding:30px 0 0;font:400 12px/1.6 ${sans};color:${tertiary}">${escapeHtml(EMAIL_COPY.footer)} <a href="${escapeHtml(unsubscribeUrl)}" style="color:${secondary};text-decoration:underline">${escapeHtml(EMAIL_COPY.unsubscribe)}</a>.</td></tr>
 </table>
 </td></tr></table>
 </td></tr></table>
 </body></html>`;
 
   const storyText = (paper: DigestPaper, { isLead = false } = {}) => {
-    const lines = [textKicker(paper), renderScientificText(paper.title)];
+    const lines = [renderScientificText(paper.title)];
     if (isLead) {
       const excerpt = renderScientificExcerpt(paper.abstract).text;
       if (excerpt) lines.push(excerpt);
     }
     lines.push(paperByline(paper, { lead: isLead }));
-    const meta = paperMeta(paper);
-    if (meta) lines.push(meta);
+    if (isDiscovery(paper)) lines.push(EMAIL_COPY.outsideFollows);
     lines.push(paper.url || PAPER_TOK_URL);
     return lines.join('\n');
   };
   const blocks = [
-    `${EMAIL_COPY.nameplate.toUpperCase()}\n${dateline} · ${edition}`,
+    `${EMAIL_COPY.nameplate.toUpperCase()}\n${dateline}`,
+    [greeting, headline, ...(lead ? [EMAIL_COPY.introduction] : []), ...(index ? [index] : [])].join('\n'),
     ...(test ? [`${EMAIL_COPY.testKicker.toUpperCase()}\n${EMAIL_COPY.testBody}`] : []),
-    ...(lead ? [storyText(lead, { isLead: true })] : [EMAIL_COPY.empty]),
-    ...(others.length ? [EMAIL_COPY.alsoInEdition.toUpperCase(), ...others.map(paper => storyText(paper))] : []),
-    `${EMAIL_COPY.openInbox}: ${PAPER_TOK_URL}\n${EMAIL_COPY.unsubscribe}: ${unsubscribeUrl}`,
+    ...(lead ? [`${EMAIL_COPY.leadLabel.toUpperCase()}\n${storyText(lead, { isLead: true })}`] : [EMAIL_COPY.empty]),
+    ...(others.length ? [`${EMAIL_COPY.alsoInEdition.toUpperCase()} (${others.length})`, ...others.map(paper => storyText(paper))] : []),
+    `${lead ? `${EMAIL_COPY.closingTitle} ` : ''}${EMAIL_COPY.closingBody}\n${EMAIL_COPY.openInbox}: ${PAPER_TOK_URL}\n\n${EMAIL_COPY.footer}\n${EMAIL_COPY.unsubscribe}: ${unsubscribeUrl}`,
   ];
   return { html, text: blocks.join('\n\n'), subject };
 }
@@ -2118,63 +2056,15 @@ async function fetchEmailProvider(input: RequestInfo | URL, init: RequestInit) {
   return fetchWithDeadline(input, init, EMAIL_PROVIDER_TIMEOUT_MS);
 }
 
-async function sendWithBrevo(subscription: Pick<Subscription, 'email' | 'displayName'>, content: DeliveryDraft['content'], unsubscribeUrl: string | null, env: WorkerEnv, { test = false, idempotencyKey, verification = false }: { test?: boolean; idempotencyKey?: string; verification?: boolean } = {}) {
-  const sender = resolveBrevoSender(env);
-  const response = await fetchEmailProvider(`${BREVO_API}/smtp/email`, {
-    method: 'POST',
-    headers: {
-      'api-key': env.BREVO_API_KEY!,
-      accept: 'application/json',
-      'content-type': 'application/json',
-      'user-agent': 'PaperTok/1.0',
-    },
-    body: JSON.stringify({
-      sender,
-      to: [{
-        email: subscription.email,
-        ...(subscription.displayName ? { name: cleanText(subscription.displayName, 160) } : {}),
-      }],
-      subject: content.subject,
-      htmlContent: content.html,
-      textContent: content.text,
-      headers: {
-        idempotencyKey,
-        // RFC 8058 one-click: Gmail and Yahoo score sender reputation on it, and
-        // /notifications/unsubscribe already accepts a bodyless POST.
-        ...(unsubscribeUrl ? {
-          'List-Unsubscribe': `<${unsubscribeUrl}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        } : {}),
-      },
-      tags: [verification ? 'papertok-institution-verification' : test ? 'papertok-test' : 'papertok-following-digest'],
-    }),
-  });
-  const payload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
-  if (!response.ok) {
-    if (response.status === 400 && /duplicate_parameter/i.test(cleanText(
-      `${payload?.code || ''} ${payload?.message || ''}`,
-      500,
-    ))) {
-      return null;
-    }
-    const code = brevoSendErrorCode(response.status, payload);
-    console.error('Brevo rejected email', response.status, code);
-    const error = new EmailNotificationError(code, response.status === 429 ? 429 : 502);
-    error.deliveryRejected = providerOutcomeDefinitelyRejected(response.status);
-    throw error;
-  }
-  return payload?.messageId || payload?.messageIds?.[0] || null;
-}
-
-async function sendWithResend(subscription: Subscription, content: DeliveryDraft['content'], unsubscribeUrl: string, env: WorkerEnv, { idempotencyKey }: { test?: boolean; idempotencyKey?: string } = {}) {
-  const from = await resolveResendSender(env);
+async function sendWithResend(subscription: Pick<Subscription, 'email'>, content: DeliveryDraft['content'], unsubscribeUrl: string | null, env: WorkerEnv, idempotencyKey: string) {
+  const from = resolveResendSender(env);
   const response = await fetchEmailProvider(`${RESEND_API}/emails`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${env.RESEND_API_KEY}`,
       'content-type': 'application/json',
       'user-agent': 'PaperTok/1.0',
-      'idempotency-key': idempotencyKey!,
+      'idempotency-key': idempotencyKey,
     },
     body: JSON.stringify({
       from,
@@ -2182,16 +2072,17 @@ async function sendWithResend(subscription: Subscription, content: DeliveryDraft
       subject: content.subject,
       html: content.html,
       text: content.text,
-      headers: {
+      ...(unsubscribeUrl ? { headers: {
         'List-Unsubscribe': `<${unsubscribeUrl}>`,
         'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-      },
+      } } : {}),
     }),
   });
   const payload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
   if (!response.ok) {
     const code = resendSendErrorCode(response.status, payload);
-    console.error('Resend rejected digest', response.status, code);
+    if (code === 'EMAIL_PROVIDER_LIMIT') captureEmailSendLimit();
+    console.error('Resend rejected email', response.status, code);
     const error = new EmailNotificationError(code, response.status === 429 ? 429 : 502);
     error.deliveryRejected = providerOutcomeDefinitelyRejected(response.status);
     throw error;
@@ -2258,6 +2149,8 @@ function deliveryStatePatch(currentState: DeliveryState, delivery: Delivery, sta
     lastCheckedAt: sentAt,
     lastSentAt: sentAt,
     sentPaperKeys,
+    heldDigest: null,
+    owedCurrentWeek: false,
     lastDelivery: lastDeliveryStatus(status, sentAt, {
       paperCount: delivery.paperCount,
       partial: delivery.partial,
@@ -2277,21 +2170,22 @@ function papersForCurrentSubscription(papers: DigestPaper[], subscription: Subsc
   )).slice(0, subscription.maxPapers || 5);
 }
 
-function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], provider: string, env: WorkerEnv, {
+function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], env: WorkerEnv, {
   test = false,
   now = Date.now(),
   sourceReport = createSourceReport(),
+  editionAt = now,
 }: SendOptions = {}) {
   const workerBase = cleanText(env.WORKER_PUBLIC_URL, 500)
     || 'https://api.papertok.app';
   const unsubscribeUrl = `${workerBase}/notifications/unsubscribe?token=${encodeURIComponent(subscription.unsubscribeToken!)}`;
   return {
-    provider,
+    provider: 'resend',
     recipient: {
       email: subscription.email,
       displayName: subscription.displayName,
     },
-    content: renderDigest(subscription, papers, unsubscribeUrl, test, { now }),
+    content: renderDigest(subscription, papers, unsubscribeUrl, test, { now: editionAt }),
     unsubscribeUrl,
     delivery: {
       kind: test ? 'test' : 'digest',
@@ -2305,21 +2199,18 @@ function buildDeliveryDraft(subscription: Subscription, papers: DigestPaper[], p
 }
 
 async function deliverReservedDraft(env: WorkerEnv, reservationId: string, draft: Omit<DeliveryDraft, 'recipient'> & { recipient: Pick<Subscription, 'email' | 'displayName'> }, now: number, {
-  test = false,
   ledgerTime = now,
-}: { test?: boolean; ledgerTime?: number } = {}): Promise<DeliveryOutcome> {
+}: { ledgerTime?: number } = {}): Promise<DeliveryOutcome> {
   const idempotencyKey = reservationId;
+  if (draft.provider !== 'resend') {
+    // A pre-migration Brevo response may have been lost. Treat the old
+    // reservation as uncertain instead of sending a duplicate through Resend.
+    await commitEmailDelivery(env, reservationId, draft.delivery, ledgerTime);
+    return { reconciled: true, uncertain: true, delivery: draft.delivery };
+  }
   let providerId;
   try {
-    providerId = draft.provider === 'brevo'
-      ? await sendWithBrevo(draft.recipient, draft.content, draft.unsubscribeUrl, env, { test, idempotencyKey })
-      : await sendWithResend(
-        draft.recipient,
-        draft.content,
-        draft.unsubscribeUrl,
-        env,
-        { test, idempotencyKey },
-      );
+    providerId = await sendWithResend(draft.recipient, draft.content, draft.unsubscribeUrl, env, idempotencyKey);
   } catch (error) {
     if ((error as EmailNotificationError)?.deliveryRejected) await releaseEmailDelivery(env, reservationId, now);
     if (error instanceof EmailNotificationError) throw error;
@@ -2392,6 +2283,7 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
   sourceReport = createSourceReport(),
+  editionAt = now,
 }: SendOptions = {}): Promise<DeliveryOutcome> {
   const provider = configuredEmailProvider(env);
   if (!provider) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
@@ -2407,10 +2299,11 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
   if (!test && !currentPapers.length) {
     return { cancelled: true, reconciled: true };
   }
-  const draft = buildDeliveryDraft(latest, currentPapers, provider, env, {
+  const draft = buildDeliveryDraft(latest, currentPapers, env, {
     test,
     now,
     sourceReport,
+    editionAt,
   });
   const reservation = await reserveEmailDelivery(env, reservationId, now, draft);
   if (reservation.duplicate) {
@@ -2431,7 +2324,27 @@ async function sendDigest(subscription: Subscription, papers: DigestPaper[], env
     }
   }
   const reservedDraft = reservation.draft || draft;
-  return deliverReservedDraft(env, reservationId, reservedDraft, now, { test });
+  return deliverReservedDraft(env, reservationId, reservedDraft, now);
+}
+
+// The ledger holds these units by uid, so unsubscribing, which deletes the
+// delivery state and its `lastTestAt`, cannot reset them, and concurrent
+// requests cannot all pass. They are taken before any source is read and are
+// not given back: a test that fails after its reservation has already made its
+// source calls.
+async function reserveTestEmail(env: WorkerEnv, uid: string, now: number) {
+  // The minute paces one account and counts nothing app-wide (`globalAmount`
+  // 0), so a burst across accounts is refused by the day's limit, with its code.
+  for (const [periodKey, subjectLimit, globalAmount, code] of [
+    [`email-test:minute:${Math.floor(now / TEST_IDEMPOTENCY_WINDOW_MS)}`, 1, 0, 'EMAIL_TEST_RATE_LIMIT'],
+    [`email-test:day:${utcDay(now)}`, TEST_ACCOUNT_DAILY_LIMIT, 1, 'EMAIL_TEST_DAILY_LIMIT'],
+  ] as const) {
+    const quota = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+      periodKey, subject: uid, subjectLimit, globalLimit: TEST_GLOBAL_DAILY_LIMIT, globalAmount,
+    });
+    if (quota.code) throw new EmailNotificationError('EMAIL_UNAVAILABLE', 503);
+    if (!quota.accepted) throw new EmailNotificationError(code, 429);
+  }
 }
 
 async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
@@ -2440,11 +2353,8 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
   const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
   if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
-  const lastTestAt = Date.parse((subscription.lastTestAt || 0) as string);
-  if (lastTestAt && Date.now() - lastTestAt < 60_000) {
-    throw new EmailNotificationError('EMAIL_TEST_RATE_LIMIT', 429);
-  }
   const now = Date.now();
+  await reserveTestEmail(env, identity.uid, now);
   const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
   const result = await sendDigest(subscription, papers, env, {
     test: true,
@@ -2471,7 +2381,18 @@ async function testSubscription(env: WorkerEnv, identity: EmailIdentity) {
 }
 
 export async function handleEmailNotificationRequest(request: Request, env: WorkerEnv, pathname: string) {
-  const identity = await verifyFirebaseIdentity(request, env);
+  let verified;
+  try {
+    verified = await verifyFirebaseIdentity(request, env);
+  } catch (error) {
+    if (!(error instanceof WorkerAuthError)) throw error;
+    const code = error.code === 'AUTH_REQUIRED' ? 'EMAIL_AUTH_REQUIRED'
+      : error.code === 'AUTH_NOT_CONFIGURED' ? 'EMAIL_NOT_CONFIGURED' : 'EMAIL_UNAVAILABLE';
+    throw new EmailNotificationError(code, error.status);
+  }
+  if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
+  if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
+  const identity = { uid: verified.uid, email: verified.email, displayName: cleanText(verified.displayName, 160) };
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
@@ -2500,8 +2421,8 @@ const UNSUBSCRIBE_PAGE_HEADERS = Object.freeze({
 });
 
 /**
- * The page an unsubscribe link opens, set on the digest's own paper: its
- * masthead in miniature over the double rule, a mono kicker, a serif headline,
+ * The page an unsubscribe link opens, set on the digest's paper and ink: its
+ * masthead in miniature over a double rule, a mono kicker, a serif headline,
  * one sentence and an ink action. A browser page rather than an email, so one
  * stylesheet carries what style attributes cannot (focus, hover, the phone
  * size). The CSP admits nothing else: no script and no web fonts, so each
@@ -2637,48 +2558,13 @@ export async function getEmailScheduleHealth(env: WorkerEnv, now = Date.now()): 
 }
 
 export async function checkEmailProviderHealth(env: WorkerEnv) {
-  const provider = requestedEmailProvider(env);
+  const provider = 'resend';
   if (!configuredEmailProvider(env)) {
-    return { configured: false, available: false, provider: provider || null, code: 'EMAIL_NOT_CONFIGURED' };
-  }
-
-  if (provider === 'brevo') {
-    try {
-      const response = await fetchWithDeadline(`${BREVO_API}/senders`, {
-        headers: {
-          'api-key': env.BREVO_API_KEY!,
-          accept: 'application/json',
-          'user-agent': 'PaperTok/1.0',
-        },
-      }, EMAIL_HEALTH_TIMEOUT_MS);
-      if (response.status === 401 || response.status === 403) {
-        return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_AUTH_FAILED' };
-      }
-      if (!response.ok) {
-        return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
-      }
-      const payload = await response.json<{ senders?: Array<{ active?: boolean; email?: string }> }>().catch(() => ({} as { senders?: Array<{ active?: boolean; email?: string }> }));
-      const senderEmail = cleanText(env.BREVO_FROM_EMAIL, 320).toLowerCase();
-      const activeSender = (payload?.senders || []).some(sender => (
-        sender?.active && cleanText(sender.email, 320).toLowerCase() === senderEmail
-      ));
-      if (!activeSender) {
-        return { configured: true, available: false, provider, code: 'EMAIL_SENDER_NOT_VERIFIED' };
-      }
-      return {
-        configured: true,
-        available: true,
-        provider,
-        senderMode: 'brevo-verified-sender',
-        permissionLimited: false,
-      };
-    } catch {
-      return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
-    }
+    return { configured: false, available: false, provider, code: 'EMAIL_NOT_CONFIGURED' };
   }
 
   try {
-    const response = await fetchWithDeadline(`${RESEND_API}/domains?limit=1`, {
+    const response = await fetchWithDeadline(`${RESEND_API}/domains?limit=100`, {
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,
         accept: 'application/json',
@@ -2689,47 +2575,54 @@ export async function checkEmailProviderHealth(env: WorkerEnv) {
       const errorPayload = await response.json<ProviderPayload>().catch((): ProviderPayload => ({}));
       // A "sending access" (restricted) Resend key can send emails but is not
       // allowed to list domains, so this probe comes back as 401 with
-      // name "restricted_api_key". That is a VALID credential — the provider is
-      // available, just permission-limited — so we must not report it as an
-      // auth failure. See https://resend.com/docs/api-reference/errors
+      // name "restricted_api_key". This does not prove that the sender domain
+      // is verified, so report unknown sender status rather than an auth failure.
+      // See https://resend.com/docs/api-reference/errors
       // Status alone is not enough: a bare 401/403 without this marker means a
       // genuinely rejected key (revoked, suspended, blocked) and must fail closed.
-      const isRestrictedKey = errorPayload?.name === 'restricted_api_key'
-        || /restricted/i.test(errorPayload?.message || '');
+      const isRestrictedKey = response.status === 401 && (
+        errorPayload?.name === 'restricted_api_key'
+        || /restricted/i.test(errorPayload?.message || '')
+      );
       if (isRestrictedKey) {
         return {
           configured: true,
-          available: true,
+          available: false,
           provider,
-          senderMode: env.RESEND_FROM_EMAIL ? 'verified-domain' : 'resend-test',
           permissionLimited: true,
+          code: 'EMAIL_SENDER_STATUS_UNKNOWN',
         };
       }
       console.warn('Resend health probe rejected', response.status, errorPayload?.name || 'unknown');
       return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_AUTH_FAILED' };
     }
     if (!response.ok) return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
-    const payload = await response.json<{ data?: Array<{ status?: string }> }>().catch(() => ({} as { data?: Array<{ status?: string }> }));
-    const verified = (payload?.data || []).some(domain => domain.status === 'verified');
+    const payload = await response.json<{ data?: Array<{ name?: string; status?: string }> }>()
+      .catch((): { data?: Array<{ name?: string; status?: string }> } => ({}));
+    if (!Array.isArray(payload.data)) {
+      return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
+    }
+    const senderDomain = resolveResendSender(env).replace(/^.*@/, '').replace(/>$/, '').toLowerCase();
+    const senderDomainRecord = payload.data.find(domain => domain.name?.toLowerCase() === senderDomain);
+    const verified = senderDomainRecord?.status === 'verified';
+    if (senderDomainRecord?.status === 'partially_verified') {
+      return { configured: true, available: false, provider, code: 'EMAIL_SENDER_STATUS_UNKNOWN' };
+    }
     return {
       configured: true,
-      available: true,
+      available: verified,
       provider,
-      senderMode: env.RESEND_FROM_EMAIL || verified ? 'verified-domain' : 'resend-test',
+      ...(verified ? { senderMode: 'verified-domain' } : { code: 'EMAIL_SENDER_NOT_VERIFIED' }),
     };
   } catch {
     return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_UNAVAILABLE' };
   }
 }
 
-// Monday's weekly digest may be retried on Tuesday, and only on Tuesday, when
-// this week's last attempt failed because the sources were unavailable. That
-// failure is raised while papers are collected, before any delivery is
-// reserved, so no email can stand behind it. A send failure may have been
-// delivered, a send this week was delivered, and a failure from an earlier week
-// is not this week's digest: none of them starts a new digest before next
-// Monday. Wednesday remains recovery-only for Tuesday's reservations. A
-// failure stamped after `now` is not a failure of this week's past.
+// A source failure can retry on Tuesday. A definitively rejected send can
+// retry through Sunday: the local ledger refuses before reserving and Resend's
+// 429 response is a refusal. Other send failures may have delivered, so only
+// their existing reservation is recovered.
 function isWeeklySourceFailureRetry(subscription: Subscription, now: Date, dayStart: number) {
   if (now.getUTCDay() !== 2) return false;
   const weekStart = dayStart - DAY_MS;
@@ -2744,22 +2637,41 @@ function isWeeklySourceFailureRetry(subscription: Subscription, now: Date, daySt
     && failedAt <= now.getTime();
 }
 
+function isWeeklyRejectedSendRetry(subscription: Subscription, now: Date, dayStart: number) {
+  if (now.getUTCDay() === 1) return false;
+  const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
+  const lastSent = Date.parse(subscription.lastSentAt || '');
+  if (Number.isFinite(lastSent) && lastSent >= weekStart) return false;
+  const lastDelivery = subscription.lastDelivery;
+  const failedAt = Date.parse(lastDelivery?.at || '');
+  return lastDelivery?.status === 'failed'
+    && ['EMAIL_PROVIDER_LIMIT', 'EMAIL_PROVIDER_RATE_LIMIT'].includes(lastDelivery.code || '')
+    && Number.isFinite(failedAt)
+    && failedAt >= weekStart
+    && failedAt <= now.getTime();
+}
+
 // Monday, whatever frequency the record stored: see DIGEST_FREQUENCY.
 function isSubscriptionCalendarDue(subscription: Subscription, now: Date) {
   if (!subscription?.enabled) return false;
   const lastSent = Date.parse((subscription.lastSentAt || 0) as string);
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return (now.getUTCDay() === 1 && (!lastSent || lastSent < dayStart))
-    || isWeeklySourceFailureRetry(subscription, now, dayStart);
+    || (now.getUTCDay() !== 1 && subscription.owedCurrentWeek === true)
+    || isWeeklySourceFailureRetry(subscription, now, dayStart)
+    || isWeeklyRejectedSendRetry(subscription, now, dayStart);
 }
 
 function isSubscriptionDue(subscription: Subscription, now: Date) {
   if (!isSubscriptionCalendarDue(subscription, now)) return false;
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const lastSent = Date.parse(subscription.lastSentAt || '');
+  if (subscription.owedCurrentWeek && Number.isFinite(lastSent) && lastSent >= dayStart) return false;
   const lastDeliveryAt = Date.parse((subscription.lastDelivery?.at || 0) as string);
   if (!Number.isFinite(lastDeliveryAt) || lastDeliveryAt < dayStart) return true;
   const elapsed = now.getTime() - lastDeliveryAt;
   if (subscription.lastDelivery?.status === 'invalid') return false;
+  if (subscription.lastDelivery?.status === 'failed' && subscription.lastDelivery.code === 'EMAIL_PROVIDER_LIMIT') return false;
   if (subscription.lastDelivery?.status === 'empty') return elapsed >= EMPTY_RETRY_INTERVAL_MS;
   if (subscription.lastDelivery?.status === 'failed') return elapsed >= FAILURE_RETRY_INTERVAL_MS;
   return true;
@@ -2767,13 +2679,6 @@ function isSubscriptionDue(subscription: Subscription, now: Date) {
 
 function shouldInspectPreviousDay(subscription: Subscription, now: Date) {
   return isSubscriptionCalendarDue(subscription, now) || [2, 3].includes(now.getUTCDay());
-}
-
-// The days on which `shouldInspectPreviousDay` can hold for anyone: Monday's
-// digest, Tuesday's source-failure retry, and the reconciliation of the day
-// before on Tuesday and Wednesday.
-function isDigestWorkDay(now: Date) {
-  return [1, 2, 3].includes(now.getUTCDay());
 }
 
 function allowsNewScheduledDelivery(now: Date) {
@@ -2821,9 +2726,12 @@ async function recordSubscriptionOutcome(env: WorkerEnv, key: string, subscripti
   paperCount = 0,
   partial = false,
   sourceReport,
-}: StatusOptions = {}) {
+  heldDigest,
+}: StatusOptions & { heldDigest?: DeliveryState['heldDigest'] } = {}) {
   return updateDeliveryState(env, key, subscription, () => ({
     lastCheckedAt: at,
+    ...(['empty', 'invalid'].includes(status) ? { owedCurrentWeek: false } : {}),
+    ...(heldDigest === undefined ? {} : { heldDigest }),
     lastDelivery: lastDeliveryStatus(status, at, {
       code,
       paperCount,
@@ -2833,13 +2741,20 @@ async function recordSubscriptionOutcome(env: WorkerEnv, key: string, subscripti
   }));
 }
 
-async function persistScheduledDelivery(env: WorkerEnv, key: string, subscription: Subscription, delivery: DeliveryOutcome): Promise<ScheduledOutcome> {
+async function persistScheduledDelivery(env: WorkerEnv, key: string, subscription: Subscription, delivery: DeliveryOutcome, now: Date, selectedAt: string | undefined): Promise<ScheduledOutcome> {
   const status = delivery.uncertain ? 'uncertain' : delivery.reconciled ? 'reconciled' : 'sent';
+  const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
+  const selectedTime = Date.parse(selectedAt || '');
+  const carriedFromLastWeek = Number.isFinite(selectedTime) && selectedTime < weekStart && selectedTime >= weekStart - 7 * DAY_MS;
   const updated = await updateDeliveryState(
     env,
     key,
     subscription,
-    state => deliveryStatePatch(state, delivery.delivery!, status),
+    state => ({
+      ...deliveryStatePatch(state, delivery.delivery!, status),
+      owedCurrentWeek: carriedFromLastWeek,
+    }),
   );
   if (!updated && delivery.sent) {
     return {
@@ -2875,7 +2790,9 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     }
     return { invalid: true, failureCodes: { [code]: 1 } };
   }
-  let sourceReport;
+  let sourceReport: SourceReport | undefined;
+  let attemptedPapers: DigestPaper[] | undefined;
+  let heldSelectedAt: string | undefined;
   try {
     const resumed = await resumeScheduledDelivery(subscription, env, {
       now: now.getTime(),
@@ -2884,24 +2801,47 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
     if (resumed) {
       if (resumed.invalid) {
         const code = 'EMAIL_SUBSCRIPTION_INVALID';
-        await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+        await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, heldDigest: null });
         return { invalid: true, failureCodes: { [code]: 1 } };
       }
       if (resumed.pending || resumed.cancelled) return { skipped: true };
-      return persistScheduledDelivery(env, key.name, subscription, resumed);
+      return persistScheduledDelivery(
+        env, key.name, subscription, resumed, now,
+        subscription.heldDigest?.selectionKey === heldDigestSelectionKey(subscription)
+          ? subscription.heldDigest.selectedAt
+          : undefined,
+      );
     }
 
     if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now)) {
       return { skipped: true };
     }
 
-    const collected = await collectDigestPapers(subscription, env, {
-      now: now.getTime(),
-      openAlexRequests,
-    });
-    sourceReport = collected.sourceReport;
-    if (!collected.papers.length) {
-      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport });
+    const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const weekStart = dayStart - ((now.getUTCDay() + 6) % 7) * DAY_MS;
+    const held = subscription.heldDigest;
+    const selectedAt = Date.parse(held?.selectedAt || '');
+    const selectionKey = heldDigestSelectionKey(subscription);
+    if (
+      held?.papers?.length
+      && held.selectionKey === selectionKey
+      && Number.isFinite(selectedAt)
+      && selectedAt >= weekStart - 7 * DAY_MS
+      && selectedAt <= now.getTime()
+    ) {
+      attemptedPapers = held.papers;
+      sourceReport = mergeSourceReports(createSourceReport(), held.sourceReport);
+      heldSelectedAt = held.selectedAt;
+    } else {
+      const collected = await collectDigestPapers(subscription, env, {
+        now: now.getTime(),
+        openAlexRequests,
+      });
+      attemptedPapers = collected.papers;
+      sourceReport = collected.sourceReport;
+    }
+    if (!attemptedPapers.length) {
+      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport, heldDigest: null });
       return {
         empty: true,
         partial: false,
@@ -2910,15 +2850,16 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
       };
     }
 
-    const delivery = await sendDigest(subscription, collected.papers, env, {
+    const delivery = await sendDigest(subscription, attemptedPapers, env, {
       now: now.getTime(),
       key: key.name,
       sourceReport,
+      editionAt: heldSelectedAt ? Date.parse(heldSelectedAt) : undefined,
     });
     if (delivery.pending) return { skipped: true, sources: compactSourceReport(sourceReport) };
     if (delivery.invalid) {
       const code = 'EMAIL_SUBSCRIPTION_INVALID';
-      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport });
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport, heldDigest: null });
       return {
         invalid: true,
         sources: compactSourceReport(sourceReport),
@@ -2926,7 +2867,7 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
       };
     }
     if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
-    return persistScheduledDelivery(env, key.name, subscription, delivery);
+    return persistScheduledDelivery(env, key.name, subscription, delivery, now, heldSelectedAt);
   } catch (error) {
     captureWorkerException(error, 'schedule');
     sourceReport ||= (error as EmailNotificationError)?.sourceReport;
@@ -2939,7 +2880,18 @@ async function processScheduledSubscription(env: WorkerEnv, key: { name: string 
         subscription,
         'failed',
         checkedAt,
-        { code, sourceReport },
+        {
+          code,
+          sourceReport,
+          heldDigest: ['EMAIL_PROVIDER_LIMIT', 'EMAIL_PROVIDER_RATE_LIMIT'].includes(code) && attemptedPapers?.length
+            ? {
+              papers: attemptedPapers,
+              sourceReport: compactSourceReport(sourceReport),
+              selectedAt: heldSelectedAt || checkedAt,
+              selectionKey: heldDigestSelectionKey(subscription),
+            }
+            : null,
+        },
       );
     } catch (recordError) {
       console.warn('Could not persist subscription delivery failure', (recordError as Error)?.message || recordError);
@@ -2979,11 +2931,10 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
   if (ledgerMissing) {
     console.error('Email delivery ledger binding is missing; refusing to send without an atomic daily limit');
   }
-  // Thursday to Sunday every subscription would be read only to be skipped: a KV
-  // list per three subscribers, two reads each and a cursor write per page, in
-  // every window. The window still records that it ran, for `/health/email`.
+  // The schedule also scans Thursday through Sunday for subscriptions held by
+  // an earlier day's provider limit.
   const disabled = !env.NOTIFICATION_STORE || !provider || ledgerMissing;
-  if (!env.NOTIFICATION_STORE || disabled || !isDigestWorkDay(now)) {
+  if (!env.NOTIFICATION_STORE || disabled) {
     const summary: ScheduleSummary = {
       scheduledAt: now.toISOString(),
       completedAt: new Date().toISOString(),
@@ -3108,7 +3059,6 @@ export async function runEmailNotificationSchedule(env: WorkerEnv, scheduledTime
 }
 
 export const emailNotificationInternals = {
-  brevoSendErrorCode,
   // Exported for the F2 deadline regressions: the tests need to hand them a
   // 25 ms deadline instead of waiting out the real one.
   fetchDigestSource,
@@ -3135,7 +3085,6 @@ export const emailNotificationInternals = {
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
-  fieldInks: FIELD_INKS,
   readBoundedJson,
   allowsNewScheduledDelivery,
   digestFollowsForWindow,
@@ -3147,25 +3096,13 @@ export const emailNotificationInternals = {
   scheduleStatusKey: SCHEDULE_STATUS_KEY,
 };
 
-// The app's current light theme (src/styles/variables.css). EMAIL_PALETTE
-// still carries the digest's earlier grey and black, so this email names its own.
-const VERIFICATION_PALETTE = Object.freeze({
-  wash: '#ebeae5', // --bg-secondary
-  paper: '#fbf8f0', // --bg-primary
-  ink: '#1d2b53', // --text-primary, --accent-primary
-  secondary: '#46527a', // --text-secondary
-  tertiary: '#5a6488', // --text-tertiary
-  rule: '#d6ccb6', // --border-default
-});
-
 // Petri holding up her key (PetriKey), rasterised because mail clients do not
 // draw SVG. Decorative: the email reads the same with images blocked.
 const VERIFICATION_ART_URL = 'https://papertok.app/email/petri-key.png';
 
 /** The verification screens' empty state, set as an email: Petri, title, line and ink action. */
 function renderInstitutionVerificationEmail(email: string, link: string) {
-  const { wash, paper, ink, secondary, tertiary, rule } = VERIFICATION_PALETTE;
-  const { brand } = EMAIL_PALETTE;
+  const { page: wash, sheet: paper, ink, secondary, tertiary, frame: rule, brand } = EMAIL_PALETTE;
   const { serif, sans } = EMAIL_FONTS;
   const href = escapeHtmlCharacters(link);
   const address = escapeHtmlCharacters(email);
@@ -3204,7 +3141,7 @@ If the button does not work, paste this link into the same browser:<br>
 export async function sendInstitutionVerificationEmail(
   env: WorkerEnv, email: string, reservationSeed: string, createLink: () => Promise<string>,
 ) {
-  if (!env.BREVO_API_KEY || !env.BREVO_FROM_EMAIL) {
+  if (!configuredEmailProvider(env)) {
     throw new EmailNotificationError('INSTITUTION_VERIFICATION_UNAVAILABLE', 503);
   }
   const now = Date.now();
@@ -3223,7 +3160,7 @@ export async function sendInstitutionVerificationEmail(
       html: renderInstitutionVerificationEmail(email, link),
     };
     sending = true;
-    await sendWithBrevo({ email, displayName: '' }, content, null, env, { idempotencyKey: reservationId, verification: true });
+    await sendWithResend({ email }, content, null, env, reservationId);
     await commitEmailDelivery(env, reservationId, { kind: 'verification', sentAt: new Date(now).toISOString() }, now);
   } catch (error) {
     if (!sending || (error instanceof EmailNotificationError && error.deliveryRejected)) {

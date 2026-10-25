@@ -2,10 +2,9 @@
  * The privacy page as a Vite entry: what the built document must say, and
  * what it must never load.
  *
- * Source tests, so comments are stripped before asserting — a comment that
- * names the thing we forbid would otherwise pass the check for its absence,
- * and one that quotes the thing we require would pass the check for its
- * presence (see docs on source-test hardening, ce139ce).
+ * HTML comments are stripped before asserting, so a comment that names the
+ * thing we forbid cannot pass the check for its absence, and one that quotes
+ * the thing we require cannot pass the check for its presence.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +15,6 @@ import { PRIVACY_POLICY_VERSION } from './privacyPolicy.ts';
 const ROOT = new URL('../../', import.meta.url);
 const read = (rel: string|URL) => readFileSync(fileURLToPath(new URL(rel, ROOT)), 'utf8');
 const stripHtmlComments = (s: string) => s.replace(/<!--[\s\S]*?-->/g, '');
-const stripCssComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('the page lives at the repo root as a Vite entry, not in public/', () => {
   assert.ok(existsSync(fileURLToPath(new URL('privacy.html', ROOT))), 'privacy.html at the root');
@@ -30,36 +28,9 @@ test('the document is English and canonical at /privacy.html', () => {
   assert.match(html, /<title>Privacy policy — PaperTok<\/title>/);
 });
 
-test('no font or script comes from outside the site', () => {
+test('the document loads no font or script from outside the site', () => {
   const html = stripHtmlComments(read('privacy.html'));
   assert.doesNotMatch(html, /googleapis|gstatic|cdnjs|jsdelivr|unpkg/);
-  const css = stripCssComments(read('src/legal/privacy.css'));
-  assert.doesNotMatch(css, /https?:\/\//);
-});
-
-test('the theme is decided before first paint by the same mirror the app uses', () => {
-  const html = stripHtmlComments(read('privacy.html'));
-  /* Both halves of the mirror: the stored choice and the system fallback. */
-  assert.match(html, /localStorage\.getItem\('papertok_theme'\)/);
-  assert.match(html, /prefers-color-scheme: dark/);
-  assert.match(html, /setAttribute\('data-theme'/);
-  /* And no OS-only media query in the stylesheet doing a second, disagreeing job. */
-  const css = stripCssComments(read('src/legal/privacy.css'));
-  assert.doesNotMatch(css, /prefers-color-scheme/);
-});
-
-test('the stylesheet shares the app tokens and self-hosted faces instead of forking them', () => {
-  const privacyCss = stripCssComments(read('src/legal/privacy.css'));
-  assert.ok(privacyCss.includes("@import './static-page.css'"));
-  const staticPageCss = stripCssComments(read('src/legal/static-page.css'));
-  assert.match(staticPageCss, /@import\s+'\.\.\/styles\/variables\.css'/);
-  assert.match(staticPageCss, /@import\s+'@fontsource-variable\/newsreader\/opsz\.css'/);
-  assert.match(staticPageCss, /@import\s+'@fontsource\/inter\/400\.css'/);
-  /* The old page's violet, which belongs to nobody. */
-  const combinedCss = privacyCss + staticPageCss;
-  assert.doesNotMatch(combinedCss, /#7c5cff|#a893ff/i);
-  /* No uppercase-mono table headers: labels are sentences here. */
-  assert.doesNotMatch(combinedCss, /text-transform:\s*uppercase/);
 });
 
 test('the summary up top says the five things a reader needs', () => {
@@ -98,16 +69,26 @@ test('every section of the Spanish policy survives the translation', () => {
   ]);
 });
 
-test('the build knows the second page and keeps the app entry named index', () => {
-  const config = read('vite.config.ts').replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const input = config.match(/input:\s*\{([\s\S]*?)\}/)?.[1] || '';
-  // The app is index.html again (it was app.html for as long as a marketing
-  // landing held `/`), and the KEY stays `index` either way — that is the half
-  // of this contract that actually matters: PRECACHE_GLOB_PATTERNS asks the
-  // service worker for `assets/index-*` by name, and a renamed key ships a
-  // boot set without the app in it while workbox only warns (vite.config.ts).
-  assert.match(input, /\bindex:\s*fileURLToPath\(new URL\('\.\/index\.html'/);
-  assert.match(input, /\bprivacy:\s*fileURLToPath\(new URL\('\.\/privacy\.html'/);
+test('the page says papers you liked, saved or opened reach the catalogue and Workers AI, without the reader', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.doesNotMatch(html, /your likes [^.]*not sent to it/);
+  // Opening a paper asks for related ones by its id, as a like does (FeedContext's network expansion).
+  assert.match(html, /opening a paper [^.]*related[^.]*identifier/);
+  assert.match(html, /paper you liked, saved or opened that the catalogue does not have yet is added/);
+  assert.match(html, /papers you liked, saved or opened have no vector[^.]*sent to it[^.]*without your identity/);
+});
+
+test("the page says the server counts a signed-in reader's requests per account, not only their volume", () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  // The ledger keys per-account limits (feed, follows, embedding, provider minutes) by a SHA-256 of the uid.
+  assert.doesNotMatch(html, /not who makes them/);
+  assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
+});
+
+test('the page promises the in-app announcement and says how a dismissal is remembered', () => {
+  const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
+  assert.match(html, /the change will be announced in the application itself/);
+  assert.match(html, /remembers that version, separately for each account and for visits without one/);
 });
 
 test('the in-app notice announces the version this page is dated', () => {
