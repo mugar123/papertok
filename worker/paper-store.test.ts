@@ -175,6 +175,29 @@ test("the source a row came from replaces its title and abstract when it lists t
   assert.deepEqual([stored('pmid:42900003').title, stored('pmid:42900003').abstract], ['A cardiology trial (corrected)', 'We randomised 400 patients.']);
 });
 
+// ENG-105: W7222919853 was stored with a funding note as its abstract before
+// the OpenAlex mapper refused one. Its listing now maps without an abstract, and
+// "a listing without an abstract keeps the stored one" kept the note for good.
+test('a funding note stored as the abstract is replaced when its source lists the paper without one', async () => {
+  const { env, db } = corpus();
+  const note = 'Semyon Malamud gratefully acknowledges the financial';
+  const listed = mapOpenAlexWork({
+    id: 'https://openalex.org/W7222919853',
+    title: 'Infinite Factor Structure in Conditional Asset Pricing',
+    type: 'report',
+    publication_date: '2026-10-20',
+    abstract_inverted_index: { Semyon: [0], Malamud: [1], gratefully: [2], acknowledges: [3], the: [4], financial: [5] },
+  })!;
+  assert.equal(listed.abstract, 'No abstract available.');
+  const stored = () => JSON.parse(String(rows(db, 'SELECT paper FROM works')[0].paper));
+  await ingestPapers(env, [{ paper: { ...listed, abstract: note }, lanes: ['area:physics'] }], { now: NOW });
+  db.exec(`INSERT INTO work_vectors (work_id, embedding) SELECT id, x'01' FROM works`);
+  assert.equal(stored().abstract, note);
+  await ingestPapers(env, [{ paper: listed, lanes: ['area:physics'] }], { now: NOW });
+  assert.equal(stored().abstract, 'No abstract available.');
+  assert.equal(rows(db, 'SELECT work_id FROM work_vectors').length, 0, 'the paper is embedded again, by its title');
+});
+
 // Hugging Face lists arXiv papers with the title and abstract it copied from
 // arXiv. A night whose arXiv sets fail still runs the Hugging Face lane, so
 // that lane can start a row, which then never took a new arXiv version.

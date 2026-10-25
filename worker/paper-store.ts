@@ -6,6 +6,7 @@ import type { QuotaPart } from './request-quota-ledger.ts';
 import { PaperBuilder } from '../src/services/paper-builder.ts';
 import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
 import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { opensAsFrontMatter } from '../src/utils/open-alex-abstract.ts';
 import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
@@ -377,10 +378,12 @@ const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.pri
 
 // A row's title and abstract are those of the source it was built from, and
 // that source listing it again (a new arXiv version) replaces them, where
-// `merge` only fills a gap. A listing without an abstract keeps the stored one.
+// `merge` only fills a gap. A listing without an abstract keeps the stored one,
+// unless that opens as a funding note, thanks or a disclaimer: a row an earlier
+// Worker filed with one (ENG-105) has no abstract once its source lists it.
 function withOwnText(row: Paper, own: Paper | undefined): Paper {
   if (!own) return row;
-  return hasUsableAIAbstract(own.abstract)
+  return hasUsableAIAbstract(own.abstract) || opensAsFrontMatter(row.abstract)
     ? { ...row, title: own.title, abstract: own.abstract }
     : { ...row, title: own.title };
 }

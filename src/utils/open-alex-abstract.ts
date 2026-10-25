@@ -52,6 +52,11 @@ const FRONT_MATTER_OPENINGS = [
   /^the views expressed (?:herein|here|in this)/i,
 ];
 
+/** Whether `text` opens as front matter: a funding note, thanks or a disclaimer. */
+export function opensAsFrontMatter(text: unknown) {
+  return typeof text === 'string' && FRONT_MATTER_OPENINGS.some(opening => opening.test(text.trim()));
+}
+
 /** Whether a work of `type` has an abstract; a work of unknown type may. */
 export function typeHasAbstract(type: unknown) {
   return !TYPES_WITHOUT_ABSTRACT.has(String(type || '').toLowerCase());
@@ -65,7 +70,7 @@ export function typeHasAbstract(type: unknown) {
 export function isPlausibleAbstract(text: unknown, type?: unknown) {
   return typeof text === 'string'
     && text.length >= MIN_ABSTRACT_LENGTH && text.length <= MAX_ABSTRACT_LENGTH
-    && !FRONT_MATTER_OPENINGS.some(opening => opening.test(text.trim()))
+    && !opensAsFrontMatter(text)
     && typeHasAbstract(type);
 }
 
