@@ -822,7 +822,7 @@ async function verifyEmailIdentity(request: Request, env: WorkerEnv) {
   return {
     uid: identity.uid,
     email: identity.email,
-    displayName: cleanText(identity.displayName, 160),
+    displayName: identity.displayName,
   };
 }
 

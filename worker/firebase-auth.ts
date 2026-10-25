@@ -76,6 +76,9 @@ const IDENTITY_TOOLKIT_TIMEOUT_MS = 4000;
 /** A token this close to expiry is still worth asking Google about. */
 const CLOCK_SKEW_SECONDS = 60;
 
+/** The width of a name in a subscription and in the delivery ledger's recipient. */
+const MAX_DISPLAY_NAME_LENGTH = 160;
+
 function decodeSegment(segment: string): { exp?: unknown; aud?: unknown; auth_time?: unknown } | null {
   const binary = atob(segment.replace(/-/g, '+').replace(/_/g, '/'));
   const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
@@ -196,7 +199,10 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
   // that carries it; a token it refuses never gets this far.
   //
   // `displayName` is here for the email routes, which store it with the
-  // subscription. Like the email, it sits in the 60 s cache entry below.
+  // subscription. Like the email, it sits in the 60 s cache entry below, so it
+  // is collapsed and capped here, where the provider's string enters, to the
+  // width the subscription keeps. Only the notification writes read it today,
+  // and they skip the cache.
   const identity = user?.localId
     ? {
       uid: user.localId,
@@ -204,7 +210,7 @@ export async function verifyIdToken(token: string, env: WorkerEnv, { allowCache 
       emailVerified: user.emailVerified === true,
       ownsEmail: accountOwnsEmail(user),
       authTime: typeof claims.auth_time === 'number' && Number.isFinite(claims.auth_time) ? claims.auth_time : null,
-      displayName: String(user.displayName || '').trim(),
+      displayName: String(user.displayName || '').replace(/\s+/g, ' ').trim().slice(0, MAX_DISPLAY_NAME_LENGTH),
     }
     : null;
   if (!lookup.ok || !identity) throw new WorkerAuthError('AUTH_REQUIRED', 401);

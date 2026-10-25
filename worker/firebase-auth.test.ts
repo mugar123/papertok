@@ -169,6 +169,15 @@ test('an address is normalised, so a match cannot turn on capitals or spacing', 
   assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), IDENTITY);
 });
 
+test('an account name is collapsed and capped where it enters, so neither a caller nor the cache holds an unbounded provider string', async () => {
+  // Identity Toolkit passes on whatever the sign-in provider supplied, and the
+  // same object is what the 60 s identity cache stores for every route that reads it.
+  stubUser({ localId: UID, email: EMAIL, emailVerified: true, displayName: `  Ada \n  Lovelace ${'x'.repeat(500)}` });
+  const { displayName } = await verify(fakeIdToken({ aud: PROJECT_ID }));
+  assert.equal(displayName, `Ada Lovelace ${'x'.repeat(147)}`);
+  assert.equal(displayName.length, 160);
+});
+
 test('an account with no address at all resolves to an empty one, never to undefined', async () => {
   stubUser({ localId: UID });
   assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false, ownsEmail: false, authTime: null, displayName: '' });
