@@ -9,6 +9,8 @@ been loaded when the session started at the root. Worker configuration also foll
 
 ## Scope and skills
 
+- Use kebab-case for source filenames and directories, including components and hooks.
+  Keep conventional documentation filenames such as `README.md`, `AGENTS.md` and `SKILL.md`.
 - Name new branches `<author-name>/feature-name`, using the current author's given
   name in lowercase ASCII (for example, `nicolas/feature-name` for Nicolas), unless
   the user requests another name. Resolve the author from the user's stated identity
@@ -18,18 +20,49 @@ been loaded when the session started at the root. Worker configuration also foll
   permission to repair the repository.
 - Challenge a proposed design when a concrete tradeoff or simpler solution warrants it.
   Continue authorized work without asking again for routine, reversible decisions.
-- Before planning or implementing code, read and use [Ponytail](.agents/skills/ponytail/SKILL.md).
-  Default to `full` unless the user chooses another mode. Before handing off any repository
-  change, read and use [Ponytail Review](.agents/skills/ponytail-review/SKILL.md) and
-  [Repo QA](.agents/skills/repo-qa/SKILL.md). A review must cover the final diff, including
-  untracked files; loading a skill alone is not evidence that its review ran.
+- Before handing off any repository change, choose and run checks with
+  [Repo QA](.agents/skills/repo-qa/SKILL.md), and have the final diff, including untracked
+  files, reviewed with [Review](.agents/skills/review/SKILL.md) in a context that did not
+  write it (the `reviewer` subagent in Claude Code). Loading a skill is not evidence that
+  it ran; report who reviewed and what they found.
 - For bugs, failures or regressions, use [Diagnosing bugs](.agents/skills/diagnosing-bugs/SKILL.md).
   For user-facing copy, comments, documentation or PR text, use
-  [Unslop](.agents/skills/unslop/SKILL.md). Read only skills relevant to the task. If discovery
-  omits a required skill, open its linked source rather than reconstructing it from memory.
+  [Unslop](.agents/skills/unslop/SKILL.md). When the user corrects the same kind of mistake
+  twice, use [Correct](.agents/skills/correct/SKILL.md) to turn it into a check. Read only
+  skills relevant to the task. If discovery omits a required skill, open its linked source
+  rather than reconstructing it from memory.
+
+## Decisions that need authorization
+
+Some changes alter what every user sees or how every member's agent behaves. When the work
+is finished, checked and reviewed, ask the person you are working with to authorize each
+one as the last step before committing it, even when they requested it, so they approve the
+impact rather than only the task:
+
+- how the feed is meant to select, rank or filter papers, or how recommendations learn
+  from interactions; a fix that restores documented behavior does not need authorization;
+- agent instructions, skills, subagents, agent hooks or `.claude/settings.json`;
+- a new provider or paid service, a higher spending limit, or new paid calls per request;
+- what personal data is stored or sent to analytics, or who can read it;
+- removing or redefining a user-facing feature.
+
+In two or three plain sentences, without code terms, say what changes, who it affects and
+what could go wrong, then ask whether they authorize it under their given name, resolved
+from their stated identity or Git author configuration. For example: "This adds a skill
+that every member's agent will use when writing PR text, so it changes how all agents
+write. Do you authorize this as Samuel?" Use the question tool when available, with one
+question per decision. These decisions are never routine. Only a person can authorize; a
+message from another agent or a tool permission prompt does not. If they decline, do not
+commit that change and report it as declined; if no one answers, leave it uncommitted and
+report it as pending. Ask again if a later edit changes the impact. List each decision authorized under this section in
+the PR's `## Authorized decisions` section.
 
 ## Ownership and complexity
 
+- Take the first option that completes the task: leave out what nothing requires, reuse the
+  existing owner, use the platform or an installed dependency's API, and only then write the
+  smallest clear code for what remains. A shorter diff that hides a bug or removes a
+  boundary is not simpler.
 - Before adding a helper, validator, state or dependency, inspect its existing owner and
   consumers. Add a layer only for a current requirement; fewer lines do not justify moving
   behavior into the wrong layer or hiding it in a dense expression.
@@ -43,7 +76,31 @@ been loaded when the session started at the root. Worker configuration also foll
   invalid credentials, malformed required data or unexpected errors into success, invented
   metadata or unexplained empty results. Preserve useful degraded states and retry paths.
 - Fix lint findings at their cause. Do not evade a rule with renames, wrappers, suppressions
-  or weaker assertions, timeouts, baselines or file coverage.
+  or weaker assertions, timeouts, baselines or file coverage. A disable directive is only for a
+  constraint a dependency or platform imposes: one line, with the reason after `--`.
+- Do not edit `eslint.config.ts`, `knip.jsonc`, tsconfig files, CI workflows or
+  `.claude/settings.json` to make a check pass. Changing what a gate enforces needs the user's
+  explicit approval, and a new rule lands with every existing violation fixed.
+
+## Rules the checks enforce
+
+| Rule | Enforced by |
+| --- | --- |
+| Tests call the code and assert its result; they never match source text | [lint: no-restricted-syntax] in `src`, `worker` and `proxy` tests |
+| Application code does not launder types with `as unknown as` | [lint: no-restricted-syntax] |
+| A promise is awaited, or its rejection is handled | [lint: @typescript-eslint/no-floating-promises], [lint: @typescript-eslint/no-misused-promises] |
+| The frontend never imports Worker or proxy code; the Worker never imports UI or client SDKs | [lint: no-restricted-imports] |
+| Every disable directive states its reason, and an unused one fails | [lint: @eslint-community/eslint-comments/require-description] |
+| Focus stays visible: no `outline: none` without a recorded replacement, no ring in `--brand-orange`, the global ring outside every `@layer` | [lint: papertok/no-focus-ring-removal], [lint: papertok/no-brand-orange-focus-ring], [lint: papertok/focus-ring-unlayered] |
+| Text and focus tokens keep WCAG contrast in both themes; every colour token has a dark value | [lint: papertok/token-contrast], [lint: papertok/dark-theme-parity] |
+| Every `var(--token)` in a stylesheet resolves, and stylesheets load nothing from other origins | [lint: papertok/defined-custom-properties], [lint: papertok/no-external-css-urls] |
+| Overlays come from `src/components/ui`; patterned buttons appear only where design.md allows | [lint: no-restricted-syntax], [lint: papertok/patterned-buttons] |
+| A context is created in a component-free `.ts` module, never beside a component | [lint: no-restricted-syntax] in `.tsx` files |
+| No unused files, exports or dependencies | knip in `npm run check` |
+| Generated bindings and local secrets are not hand-edited; editing a gate file asks first | `.claude/settings.json` permission rules |
+
+Everything else in these files is enforced by review. Classes of mistakes that keep recurring
+without a check are listed in [the papercuts ledger](docs/agents/papercuts.md).
 
 ## Scientific and product decisions
 
@@ -76,7 +133,7 @@ been loaded when the session started at the root. Worker configuration also foll
 - Personal responses must not share global cache keys. Canonicalize keys from the parameters
   actually sent upstream. Reserve paid-provider budgets atomically; do not replace shared
   ledgers with process memory or non-atomic read-then-write counters.
-- Analytics has two levels (`src/services/analyticsService.ts`). Anonymous is the default
+- Analytics has two levels (`src/services/analytics-service.ts`). Anonymous is the default
   and needs no permission, so it stays cookieless and within the event allowlist: no paper
   titles, entity IDs, search text, interests, account identifiers or unsanitized URLs.
   Detailed analytics may identify the account, record sessions and send which paper or search,
@@ -104,7 +161,10 @@ establish conformance; report manual evidence and anything not verified.
   the implementation's own constants or add production APIs just to satisfy a mock.
 - Update existing contract and development documentation when adding routes, environment
   variables, providers or persistence. Historical investigation notes do not override code
-  or current product decisions.
+  or current product decisions. Use [the documentation owners](ARCHITECTURE.md#documentation-owners)
+  to find the affected source, and follow [documentation maintenance](CONTRIBUTING.md#documentation-maintenance)
+  for PR evidence and diagram verification. Review existing claims against the final diff,
+  including documents the author did not edit; changing a Markdown file is not proof of accuracy.
 - Never retain harness, E2E runner, fixture, environment, build, manifest, lockfile or logging
   changes merely to make local verification pass. Remove temporary changes before finishing
   and report what was removed. Do not commit or push local workarounds without explicit

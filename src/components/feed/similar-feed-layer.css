@@ -1,0 +1,298 @@
+/* ============================================
+   Similar papers — a feed of its own over the page
+
+   The popup of `ui/dialog` arrives as a centred sheet; the layer is the
+   viewport, so the sheet is undone here, in this unlayered rule, the way the
+   reader undoes it (paper-reader.css). Its header stands exactly where the
+   navbar does (`--nav-total`), so the feed inside lays out as on the page:
+   `.feed-wrapper` and `.feed-empty` already start below that height.
+   ============================================ */
+
+.similar-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 12051;
+  max-width: none;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-secondary);
+  /* The rail button's box, from similar-feed-layer.tsx: the layer grows out of it and,
+     closed with the X, Escape or Back, folds back into it. */
+  clip-path: inset(0 round 0);
+  transform: translateY(var(--similar-drag, 0px));
+  transition: transform 200ms var(--ease-out-cubic);
+}
+
+.similar-layer.is-dragging {
+  transition: none;
+}
+
+/* An animation, not a transition: Base UI holds the closing popup only while
+   `getAnimations()` reports one on it (design.md, traps). The ground starts
+   as the button's violet tint so the layer reads as the button opening up. */
+.similar-layer[data-open] {
+  animation: similarGrow var(--motion-sheet) var(--ease-out-cubic) both;
+}
+
+.similar-layer[data-closed] {
+  animation: similarFold 240ms var(--ease-in-out) both;
+}
+
+/* Pulled down past the threshold: it carries on the way the finger sent it. */
+.similar-layer[data-closed][data-dropped-by='drag'] {
+  animation: similarDrop 240ms var(--ease-out) both;
+}
+
+/* A link in the layer took the page somewhere else: there is no button left to
+   fold into, so it only steps aside for the page arriving. */
+.similar-layer[data-closed][data-dropped-by='route'] {
+  animation: fadeOut 160ms var(--ease-out) both;
+}
+
+/* The content waits until the clip has nearly opened: while the clip is still
+   moving tens of pixels a frame, painted borders were measured slipping up to
+   8px past its edge for a frame or two (Chrome, 1280x800). */
+.similar-layer[data-open] :is(.similar-head, .similar-body) {
+  animation: fadeIn 160ms linear 100ms both;
+}
+
+.similar-layer[data-closed]:not([data-dropped-by='drag']) :is(.similar-head, .similar-body) {
+  animation: fadeOut 120ms linear both;
+}
+
+@keyframes similarGrow {
+  from { clip-path: var(--similar-origin); background-color: var(--tint-violet-bg); }
+  to { clip-path: inset(0 round 0); background-color: var(--bg-secondary); }
+}
+
+@keyframes similarFold {
+  from { clip-path: inset(0 round 0); background-color: var(--bg-secondary); }
+  to { clip-path: var(--similar-origin); background-color: var(--tint-violet-bg); }
+}
+
+@keyframes similarDrop {
+  from { transform: translateY(var(--similar-drag, 0px)); }
+  to { transform: translateY(100%); }
+}
+
+.similar-scrim[data-open] {
+  animation: fadeIn 300ms var(--ease-out) both;
+}
+
+.similar-scrim[data-closed] {
+  animation: fadeOut 320ms var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .similar-layer,
+  .similar-layer[data-closed][data-dropped-by='drag'] {
+    transition: none;
+  }
+
+  .similar-layer[data-open],
+  .similar-layer[data-open] :is(.similar-head, .similar-body) {
+    animation: fadeIn 150ms var(--ease-out) both;
+  }
+
+  .similar-layer[data-closed],
+  .similar-layer[data-closed][data-dropped-by='drag'] {
+    animation: fadeOut 140ms var(--ease-out) both;
+  }
+}
+
+/* ── The header, in the navbar's place ── */
+
+.similar-layer {
+  --similar-bar: var(--nav-height);
+  --similar-strip: 40px;
+  --nav-total: calc(var(--similar-bar) + var(--inset-top) + var(--similar-strip));
+}
+
+.similar-head {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-total);
+  padding: var(--inset-top) 0 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: var(--similar-bar) 1fr;
+  align-items: center;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-default);
+  touch-action: none;
+}
+
+.similar-grab {
+  display: none;
+}
+
+.similar-close {
+  grid-area: 1 / 1;
+  margin-left: var(--space-3);
+}
+
+.similar-status {
+  grid-area: 1 / 3;
+  margin-right: var(--space-5);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  /* Opacity runs linear and the travel on the curve: expo on opacity flashes. */
+  animation:
+    fadeIn 320ms linear backwards,
+    similar-status-in 320ms var(--ease-out-expo) backwards;
+}
+
+/* While the papers are found and classified, a band of ink sweeps the word
+   left to right, the way it is read. Its darkest point is the primary ink and
+   its lightest the tertiary one, so the label never drops below its contrast. */
+.similar-status[data-pending] {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--text-tertiary) 35%,
+    var(--text-primary) 50%,
+    var(--text-tertiary) 65%
+  ) 100% 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation:
+    fadeIn 320ms linear backwards,
+    similar-status-in 320ms var(--ease-out-expo) backwards,
+    similar-status-sweep 1.6s var(--ease-in-out) 320ms infinite;
+}
+
+@keyframes similar-status-in {
+  from { translate: -8px 0; }
+}
+
+@keyframes similar-status-sweep {
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .similar-status,
+  .similar-status[data-pending] {
+    animation: fadeIn 150ms linear backwards;
+  }
+
+  .similar-status[data-pending] {
+    color: var(--text-tertiary);
+    background: none;
+  }
+}
+
+.similar-context {
+  grid-area: 2 / 1 / 3 / -1;
+  align-self: stretch;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-5);
+  border-top: 1px solid var(--tint-violet-line);
+  background: var(--tint-violet-bg);
+}
+
+.similar-kicker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--tint-violet-fg);
+}
+
+.similar-anchor {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+/* Wider than a phone, the band's line stands in the middle, over the feed's
+   centred column; a long title still ellipsises inside the band. */
+@media (min-width: 769px) {
+  .similar-context {
+    justify-content: center;
+  }
+}
+
+/* A phone: the navbar's shorter bar, a 44px X and smaller type. */
+@media (max-width: 768px) {
+  .similar-layer {
+    --similar-bar: var(--nav-height-mobile);
+  }
+
+  .similar-close {
+    width: 44px;
+    height: 44px;
+    margin-left: var(--space-1);
+  }
+
+  .similar-close svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .similar-status {
+    margin-right: var(--space-4);
+    font-size: 0.625rem;
+  }
+
+  .similar-context {
+    gap: var(--space-2);
+    padding: 0 var(--space-4);
+  }
+
+  .similar-kicker {
+    font-size: 0.625rem;
+  }
+
+  .similar-anchor {
+    font-size: 0.875rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .similar-grab {
+    display: block;
+    position: absolute;
+    top: calc(var(--inset-top) + 4px);
+    left: 50%;
+    width: 32px;
+    height: 4px;
+    margin-left: -16px;
+    border-radius: var(--radius-full);
+    background: var(--border-default);
+  }
+}
+
+/* ── The body: the feed, or the wait, or what went wrong ── */
+
+.similar-body {
+  position: absolute;
+  inset: 0;
+}
+
+/* The end card is a status screen standing in a full-height snap slot. */
+.similar-end {
+  height: 100%;
+  margin: 0 auto;
+  padding: var(--space-8);
+  justify-content: center;
+}

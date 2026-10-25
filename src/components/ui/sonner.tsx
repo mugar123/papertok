@@ -1,15 +1,15 @@
-import type { ComponentProps, CSSProperties } from 'react';
+import type { ComponentProps } from 'react';
 
 import { CheckCircle, CircleNotch, Info, Warning, XCircle } from '@phosphor-icons/react';
 import { Toaster as Sonner } from 'sonner';
-import { useTheme } from '../../context/ThemeContext.tsx';
-import useIsPhone from '../../hooks/useIsPhone.ts';
+import { useTheme } from '../../context/theme-context.tsx';
+import useIsPhone from '../../hooks/use-is-phone.ts';
 
 /**
  * shadcn's Sonner wrapper, adapted: the theme comes from the app's own
  * ThemeContext (the light or dark actually in effect), the icons are Phosphor,
  * and the surface uses the app's tokens; on a phone it sits at the top.
- * Mounted once in App.jsx; anywhere
+ * Mounted once in app.tsx; anywhere
  * else calls `toast()` from 'sonner'. Sonner announces each toast to screen
  * readers through its own live region.
  */
@@ -36,7 +36,7 @@ function Toaster(props: ComponentProps<typeof Sonner>) {
         '--normal-text': 'var(--text-primary)',
         '--normal-border': 'var(--border-default)',
         '--border-radius': 'var(--radius-lg)',
-      } as CSSProperties}
+      }}
       toastOptions={{ style: { fontFamily: 'var(--font-body)' } }}
       {...props}
     />

@@ -1,24 +1,24 @@
 /**
  * Live check for the paper search coverage: the three searches that used to
  * miss papers that exist upstream, run against the real providers through the
- * PaperTok Worker, exactly as `paperSearchService.js` composes them.
+ * PaperTok Worker, exactly as `paper-search-service.ts` composes them.
  *
  *   node scripts/diagnostics/search-coverage-check.mjs
  *
  * Consumes quota: three OpenAlex calls on the Worker's daily budget plus three
  * paced arXiv calls, and one more OpenAlex call per case with the OLD filter
  * to show the difference (`--no-before` skips those). Not part of `npm test`;
- * the offline pin is `src/services/paperSearchService.test.js`.
+ * the offline pin is `src/services/paper-search-service.test.ts`.
  *
  * Env: PAPER_API_BASE (default https://api.papertok.app), ORIGIN (an allowed
  * origin; default https://papertok.app). Exit code 1 when a case fails.
  */
 
 import { XMLParser } from 'fast-xml-parser';
-import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from '../../src/services/adapters/OpenAlexAdapter.ts';
-import { identifyOpenAlexUrl } from '../../src/services/openAlexClient.ts';
-import { PaperBuilder } from '../../src/services/PaperBuilder.ts';
-import { rankPaperSearchResults } from '../../src/utils/searchRelevance.ts';
+import { OPENALEX_SEARCH_TYPES, OpenAlexAdapter } from '../../src/services/adapters/open-alex-adapter.ts';
+import { identifyOpenAlexUrl } from '../../src/services/open-alex-client.ts';
+import { PaperBuilder } from '../../src/services/paper-builder.ts';
+import { rankPaperSearchResults } from '../../src/utils/search-relevance.ts';
 
 const API_BASE = (process.env.PAPER_API_BASE || 'https://api.papertok.app').replace(/\/$/, '');
 const ORIGIN = process.env.ORIGIN || 'https://papertok.app';

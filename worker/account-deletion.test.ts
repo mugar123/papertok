@@ -1,7 +1,7 @@
 import type { FirestoreData, FirestoreWrite, QueryOptions } from './firestore-admin.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import {
   ACCOUNT_DELETE_PATH,
   AccountDeletionError,
@@ -82,7 +82,7 @@ function memoryAdmin<Documents extends Record<string, FirestoreData>>(seed: Docu
         const patch = decodeFields(write.update!.fields);
         if (write.updateMask) {
           const next = { ...(documents[key] || {}) };
-          for (const field of write.updateMask!.fieldPaths) {
+          for (const field of write.updateMask.fieldPaths) {
             if (field in patch) next[field] = patch[field];
             else delete next[field];
           }
@@ -218,8 +218,9 @@ test('deletes its comments and the reports naming it, then finishes the tree', a
       });
       if (result.complete) break;
     }
-    assert.equal(result!.complete, true);
-    assert.equal(result!.stage, 'auth');
+    assert.ok(result);
+    assert.equal(result.complete, true);
+    assert.equal(result.stage, 'auth');
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c1`], undefined);
     assert.equal(admin.documents[`papers/${PAPER_KEY}/comments/c2`].authorUid, 'other');
     assert.equal(admin.documents['reports/r1'], undefined);
@@ -276,7 +277,7 @@ test('saved summaries are swept a page at a time, by name, without reading their
   admin.runQuery = (async (options: QueryOptions) => {
     asked.push(options);
     return runQuery(options);
-  }) as typeof admin.runQuery;
+  });
 
   const first = await runAccountDeletionSlice(admin, UID, {}, { idToken: 'x' });
   assert.deepEqual(first, { complete: false, stage: 'userTree' });
@@ -297,7 +298,7 @@ test('a profile pointing at somebody else\'s handle does not free that handle', 
     fetchImpl: async () => new Response('{}', { status: 200 }),
   });
 
-  assert.equal(result!.complete, true);
+  assert.equal(result.complete, true);
   assert.deepEqual(admin.documents[`handles/${HANDLE}`], { uid: 'victim' });
   assert.equal(admin.documents[`userProfiles/${UID}`], undefined);
 });
@@ -323,7 +324,8 @@ test('a write that lands between the sweep and the Auth delete is swept too', as
     if (result.complete) break;
   }
 
-  assert.equal(result!.complete, true);
+  assert.ok(result);
+  assert.equal(result.complete, true);
   assert.equal(admin.documents[`users/${UID}/highlights/late`], undefined);
 });
 
@@ -343,7 +345,8 @@ test('paper stubs lose their createdBy attribution', async () => {
     if (result.complete) break;
   }
 
-  assert.equal(result!.complete, true);
+  assert.ok(result);
+  assert.equal(result.complete, true);
   // The stub is shared: everybody else's saves point at it. Only the name goes.
   assert.equal(admin.documents['papers/p1'].createdBy, undefined);
   assert.equal(admin.documents['papers/p1'].title, 'T');
@@ -359,7 +362,7 @@ test('USER_NOT_FOUND on Auth delete still completes, so a retry after Auth is go
       { status: 400 },
     ),
   });
-  assert.equal(result!.complete, true);
+  assert.equal(result.complete, true);
 });
 
 test('a sign-in that is not recent is refused before anything is deleted', async () => {

@@ -19,21 +19,25 @@ instructions-only handoff can use the documentation checks below.
 
 | Change | Required evidence |
 | --- | --- |
-| Instructions, skills or prose only | Review activation and instruction conflicts; validate skill frontmatter and local links; run `git diff --check` and `npm run security:secrets`. Application builds do not verify prose. |
+| Instructions, skills or prose only | Review activation and instruction conflicts; validate skill frontmatter; run the local link check in [documentation maintenance](../../../CONTRIBUTING.md#documentation-maintenance), `git diff --check` and `npm run security:secrets`. Render changed Mermaid diagrams and check them against their linked source files. Application builds do not verify prose. |
 | Runtime behavior | Run the closest existing tests first, then `npm run check` before commit or publication. Shared feed or routing changes need the full check before handoff too. |
 | Executable tooling or quality gate | Exercise the actual invoked command and a concrete invalid case it must reject. Verify its caller and intended file coverage. A script nobody invokes is not a gate. |
 | Firestore rules or permissions | Run `npm run test:rules` as well as the relevant application checks; `npm run check` does not include the rules emulator. Test allowed and denied ownership cases. |
 | Worker route or frontend/Worker contract | Check valid and invalid requests and affected callers, documentation, `npm run check` and Worker packaging. State whether live configuration was verified separately. |
 | UI behavior or styling | Check relevant states in the browser and manual keyboard behavior as described below, plus the applicable code checks. |
 
-`npm run check` runs the secret scan, ESLint, TypeScript checks, Node tests, Vite build and
-`npm run worker:deploy:dry-run`. A dry-run packages the Worker without deploying.
-Do not report it as a live API or production check.
+`npm run check` runs the secret scan, ESLint (including the type-aware rules), knip,
+TypeScript checks, Node tests, Vite build and `npm run worker:deploy:dry-run`. A dry-run
+packages the Worker without deploying. Do not report it as a live API or production check.
+In Claude Code, a Stop hook also lints the files changed on the branch and in the working
+tree; it does not replace the full check.
 
 For a focused Node test, use `node --test <affected-file.test.ts>` with exact
 paths found in the checkout. Add tests only when the task changes behavior
-that needs coverage. State expected output independently of the implementation;
-the test must be able to detect the reported defect or broken contract.
+that needs coverage. Call the module the way its users do and state the expected
+output independently of the implementation; the test must be able to detect the
+reported defect or broken contract. Behavior inside a `.tsx` component is tested
+through the `.ts` module that owns it, never by matching the component's source.
 
 ## UI evidence
 

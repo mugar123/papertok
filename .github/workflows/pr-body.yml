@@ -1,0 +1,40 @@
+name: PR description
+
+# The description must report documentation impact, verification and review
+# (.github/pull_request_template.md). The checker comes from the base branch,
+# not from the pull request, so a pull request cannot change the check that
+# judges it; only the description text is read from the event.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-body-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    name: pr-body
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      # pull_request_target checks out the base branch, never the pull request.
+      - name: Checkout the base branch's checker
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Check the description
+        run: node scripts/check-pr-body.ts
