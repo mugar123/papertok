@@ -120,7 +120,9 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 # Plan: on 2026-10-25, after the runs of 10-23 and 10-24, count the works
 # without a vector in D1. Under a day's new papers (~5,000), set this back to
 # "7500000", the free allocation, and deploy: past the backlog, 60M only lets a
-# fault spend ~$0.40 a day. Otherwise keep it one more night and count again.
+# fault, or a day of many new follows (the nightly run embeds what their own
+# runs leave), spend past 7.5M, at most ~$0.40 a day. Otherwise keep it one more
+# night and count again.
 EMBEDDING_DAILY_TOKEN_LIMIT = "60000000"
 
 # Also holds the OpenAlex relay's shared answers under the `openalex:v1:` prefix
