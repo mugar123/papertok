@@ -1056,6 +1056,17 @@ test('a page reads each notable lane by year: 25 of every year, a slice that mov
     shortDays.push(ids);
   }
   assert.deepEqual(new Set(shortDays.flat()), new Set(short.map(paper => paper.id)));
+
+  // A year past a hundred (a listing and its drop-outs) is read whole within ceil(110 / 25) = 5 days.
+  const long = notableYear(2018, 110);
+  await ingestPapers(store.env, long.map(paper => ({ paper, lanes: ['notable:cs.AI'] })), { now: NOW, keepUntil: LISTED_UNTIL });
+  const longDays: string[][] = [];
+  for (let day = 0; day < 5; day += 1) {
+    const ids = (await notableRead(store, ['notable:cs.AI'], NOW + day * DAY)).map(candidate => candidate.id);
+    assert.equal(ids.length, 25);
+    longDays.push(ids);
+  }
+  assert.deepEqual(new Set(longDays.flat()), new Set(long.map(paper => paper.id)), 'five days offer every row of a year of 110');
 });
 
 test('a paper in two notable lanes is read once with both, and a lane or year without rows reads nothing', async () => {

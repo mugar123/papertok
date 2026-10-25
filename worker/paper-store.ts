@@ -206,15 +206,15 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // out of the two listings before it (`work_lanes.listed_until`), whatever else
 // keeps the paper in the corpus (a like, its date, another lane). A page reads
 // NOTABLE_READ_PER_YEAR of each of the ten years of each asked lane: a slice
-// that moves on with the UTC day, taken modulo the year's own count, so a year
-// of 100 is read in NOTABLE_YEAR_SLICES disjoint slices, a year of 40 in
-// overlapping ones and a year of two every day. That is 250 candidates a lane
+// that moves on by that many rows each UTC day, taken modulo the year's own
+// count n, so every row of a year is read within ceil(n / 25) days: four
+// disjoint slices for a year of 100, overlapping ones for a year of 40 and
+// every day for a year of two. That is 250 candidates a lane
 // at most, so the candidates and vectors ranked per request stay within the 300
 // a lane the newest-first read took; numbering the years reads every row of the
 // lane's window from its index (about 1,000). How many of them a reader sees
 // is ENG-128's.
 const NOTABLE_READ_PER_YEAR = 25;
-const NOTABLE_YEAR_SLICES = 4;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
 // from arXiv: PubMed lists journal articles for every leaf of medicine and
@@ -889,18 +889,18 @@ async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidat
 
 /**
  * The notable lanes' candidates at `now`: of each year of the window, the
- * NOTABLE_READ_PER_YEAR rows of the day's slice (NOTABLE_YEAR_SLICES), newest
+ * NOTABLE_READ_PER_YEAR rows of the day's slice, newest
  * first, in one statement per lane. A notable lane keeps a paper two weeks past
  * its last listing; from 1 January, the year that left the window is not read.
  */
 export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<Candidate[]> {
-  const offset = (Math.floor(now / DAY_MS) % NOTABLE_YEAR_SLICES) * NOTABLE_READ_PER_YEAR;
+  const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(`SELECT work_id, published FROM (
       SELECT work_id, published,
-             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC) AS rn,
+             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
              COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
       FROM work_lanes WHERE lane = ? AND published >= ?
-    ) WHERE (rn - 1 + ?) % n < ? ORDER BY published DESC`).bind(lane, notableSince(now), offset, NOTABLE_READ_PER_YEAR)));
+    ) WHERE (rn - 1 + ?) % n < ? ORDER BY published DESC, work_id`).bind(lane, notableSince(now), offset, NOTABLE_READ_PER_YEAR)));
   return mergeLaneRows(lanes, perLane);
 }
 
@@ -1081,7 +1081,8 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
   // A liked paper is not offered again, and keeps its vector in the corpus. A
   // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
   const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
-  // A paper of the reader's notable lanes comes only as a notable card.
+  // A paper of the day's notable read comes only as a notable card; the rest
+  // of a notable lane can still come as a rank of the reader's own lanes.
   const inNotableLanes = new Set(notableCandidates.map(candidate => candidate.workId));
   const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !inNotableLanes.has(candidate.workId));
   const offeredNotable = notableCandidates.filter(candidate => !excluded.has(candidate.workId));
