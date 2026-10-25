@@ -192,21 +192,21 @@ const LEAF_IDS = new Set(LEAVES.map(leaf => leaf.id));
 // the series say a paper is economics, not which branch.
 export const WORKING_PAPERS_LANE = 'series:working-papers';
 const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
-// The most-cited papers of a category published from 1 January NOTABLE_YEARS
+// The most-cited papers of a category published in each of the NOTABLE_YEARS
 // years before the current UTC year (paper-sources.ts), filed under
 // `notable:<category>`. A page that says what the reader has seen adds the
 // ones the reader has not, for the app to give one card in every
 // NOTABLE_EVERY (src/utils/feed-enrichment.ts) (Pablo, 2026-10-23).
 export const NOTABLE_LANE_PREFIX = 'notable:';
-const NOTABLE_YEARS = 10;
+export const NOTABLE_YEARS = 10;
 /** The first day of the notable window: the listing asks from it, and a page reads none older. */
 export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
-// A notable lane holds its weekly listing of 100 (NOTABLE_PER_LANE in
-// paper-sources.ts) and, for 14 days, what dropped out of the two listings
-// before it (`work_lanes.listed_until`), whatever else keeps the paper in the
-// corpus (a like, its date, another lane). A page reads three listings' worth
-// of each asked lane, newest first, so the newer papers that dropped out do
-// not cut the listing's oldest, most-cited ones.
+// A notable lane holds its weekly listing of 1,000, 100 of each of those ten
+// years (NOTABLE_PER_YEAR in paper-sources.ts), and, for 14 days, what dropped
+// out of the two listings before it (`work_lanes.listed_until`), whatever else
+// keeps the paper in the corpus (a like, its date, another lane). A page reads
+// three listings' worth of each asked lane, newest first, so the newer papers
+// that dropped out do not cut the listing's oldest, most-cited ones.
 const NOTABLE_READ_PER_LANE = 300;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
