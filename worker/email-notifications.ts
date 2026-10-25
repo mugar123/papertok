@@ -2312,7 +2312,8 @@ export async function handleEmailNotificationRequest(request: Request, env: Work
   }
   if (!verified.email) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
   if (!verified.ownsEmail) throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
-  const identity = { uid: verified.uid, email: verified.email, displayName: cleanText(verified.displayName, 160) };
+  // The verifier already collapsed and capped the name.
+  const identity = { uid: verified.uid, email: verified.email, displayName: verified.displayName ?? '' };
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
