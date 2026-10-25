@@ -1044,8 +1044,8 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         upstreamStatus,
         refunded,
         // A rewrite that succeeded but was not stored is the truncation guard
-        // firing (or a regenerate cut short), and it is the only way to see it
-        // happening from the logs.
+        // firing (or a regenerate cut short or answered by the fallback model),
+        // and it is the only way to see it happening from the logs.
         cached: cachedWrite,
         outcome: sections.length === 0
           ? (rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE')
