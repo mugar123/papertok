@@ -600,11 +600,11 @@ test('falls back to the STANDARD view and reports that the abstract is missing',
   assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 403], ['STANDARD', 200]]);
 });
 
-test('records what every view answered when Scopus refuses both of them', async () => {
+test('records what every view answered when Scopus refuses all of them', async () => {
   const response = await withWorkerFetchMock(
     async () => new Response(
-      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
-      { status: 500, headers: { 'X-ELS-ReqId': 'req-42' } },
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHORIZATION_ERROR', statusText: 'The requestor is not authorized to access the requested view' } } }),
+      { status: 401, headers: { 'X-ELS-ReqId': 'req-42' } },
     ),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
@@ -616,9 +616,31 @@ test('records what every view answered when Scopus refuses both of them', async 
   const health = await response.json<{ available: boolean; view: unknown; code: string; attempts: Array<{ view: unknown; requestId: string }> }>();
   assert.equal(health.available, false);
   assert.equal(health.view, null);
-  assert.equal(health.code, 'GENERAL_SYSTEM_ERROR');
+  assert.equal(health.code, 'AUTHORIZATION_ERROR');
   assert.deepEqual(health.attempts.map(attempt => attempt.view), ['COMPLETE', 'STANDARD', 'DEFAULT']);
   assert.equal(health.attempts[0].requestId, 'req-42');
+});
+
+test('stops at the first view when the egress refuses the Worker, and reports the egress code', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withWorkerFetchMock(
+    async url => {
+      requestedViews.push(new URL(url as string | URL).searchParams.get('view'));
+      return new Response(JSON.stringify({ code: 'PROXY_AUTH_REQUIRED' }), { status: 401 });
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), healthProbeEnv(SCOPUS_EGRESS)),
+  );
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 503);
+  const health = await response.json<{ available: boolean; status: number; code: string; attempts: Array<{ view: unknown; status: unknown }> }>();
+  assert.equal(health.available, false);
+  assert.equal(health.status, 401);
+  assert.equal(health.code, 'PROXY_AUTH_REQUIRED');
+  assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 401]]);
 });
 
 test('reports a COMPLETE view that carries the abstract', async () => {
@@ -1240,6 +1262,27 @@ for (const [route, extraEnv] of SOURCE_ROUTES) {
     assert.equal(seenSignal.aborted, false);
   });
 }
+
+// The view ladder exists for an account that lacks a view. An Elsevier outage
+// says nothing about the view, so it must not make every miss cost one call per
+// rung while Elsevier is already struggling.
+test('asks Scopus once per miss while Elsevier answers 500', async () => {
+  const requestedViews: Array<string | null> = [];
+  const response = await withStubbedFetch(async url => {
+    requestedViews.push(new URL(String(url)).searchParams.get('view'));
+    return new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
+      { status: 500 },
+    );
+  }, () => withCachedIdentity(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { ...AUTHENTICATED_ENV, ...SCOPUS_EGRESS })));
+
+  assert.deepEqual(requestedViews, ['COMPLETE']);
+  assert.equal(response.status, 502);
+  assert.equal((await response.json<{ upstreamStatus: number }>()).upstreamStatus, 500);
+});
 
 // CORE answered in 7-8 s when measured; the shared six-second deadline cut
 // every such search into a 502 before the edge cache could keep it.
