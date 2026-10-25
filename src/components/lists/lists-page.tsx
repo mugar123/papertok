@@ -981,6 +981,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
   // Coming back from a paper restores the list that was open. Once per id: the
   // state survives in the history entry, so coming back after closing the list
   // must not snap it open again.
+  const [indexReturn] = useState(() => createIndexReturn(window));
   const autoOpenedListId = useRef<string | null>(null);
   useEffect(() => {
     const targetId = location.state?.openListId;
@@ -995,10 +996,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
       // effect and cancels the pending open. Marking it early meant the
       // retry was refused and the list never opened at all.
       autoOpenedListId.current = targetId;
+      indexReturn.resume(targetId, location.state?.indexTop);
       void openList(target);
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [displayLists, location.state, openList]);
+  }, [displayLists, location.state, openList, indexReturn]);
 
   /**
    * A paper in a list opens its card, not the PDF: the card is the whole
@@ -1026,7 +1028,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     if (expandedList) {
       void navigate(location.pathname, {
         replace: true,
-        state: { openListId: expandedList, pageMotion: 'still' },
+        state: { openListId: expandedList, indexTop: indexReturn.top(), pageMotion: 'still' },
       });
     }
     // `stored`: this copy is what the list saved, not the paper — the page
@@ -1062,7 +1064,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     exit: 'exit',
   };
 
-  const [indexReturn] = useState(() => createIndexReturn(window));
   const enterList = (list: OwnList) => {
     indexReturn.leave(list.id);
     void openList(list);
@@ -1837,7 +1838,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
                             <ListRowAuthors
                               paper={paper}
                               onNavigate={() => {
-                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList } });
+                                if (expandedList) void navigate(location.pathname, { replace: true, state: { openListId: expandedList, indexTop: indexReturn.top() } });
                               }}
                             />
                           )}

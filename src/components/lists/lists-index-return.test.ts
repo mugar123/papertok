@@ -49,6 +49,40 @@ test('an index that no open came from stays where the page puts it', () => {
   assert.deepEqual(log, []);
 });
 
+test('a paper opened from the list takes the position along, and closing the reopened list returns to it', () => {
+  // Opening a paper unmounts the page: the page that reopens the list is a new one.
+  const first = page(3611);
+  const leaving = createIndexReturn(first.view);
+  leaving.leave('list_13');
+  first.view.scrollY = 0;
+  const carried = leaving.top();
+  assert.equal(carried, 3611);
+
+  const second = page(0);
+  const returning = createIndexReturn(second.view);
+  returning.resume('list_13', carried);
+  returning.arrive((listId) => second.name(listId));
+  assert.deepEqual(second.log, [
+    'scroll to 3611, instant',
+    'list_13 into sight, nearest, instant',
+    'list_13 focus, preventScroll true',
+  ]);
+});
+
+test('a position that was never recorded, or comes back damaged, is not returned to', () => {
+  const { log, view, name } = page(500);
+  const index = createIndexReturn(view);
+  assert.equal(index.top(), null);
+  for (const carried of [undefined, null, '730', Number.NaN, Number.POSITIVE_INFINITY, -1, {}]) {
+    index.resume('list_2', carried);
+    index.arrive((listId) => name(listId));
+  }
+  assert.deepEqual(log, []);
+  index.resume('list_2', 0); // the top of the index is a position, unlike a missing one
+  index.arrive((listId) => name(listId));
+  assert.deepEqual(log, ['scroll to 0, instant', 'list_2 into sight, nearest, instant', 'list_2 focus, preventScroll true']);
+});
+
 test('a list deleted while open leaves the position restored and nothing to focus', () => {
   const { log, view } = page(730);
   const index = createIndexReturn(view);

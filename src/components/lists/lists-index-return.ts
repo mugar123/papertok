@@ -21,12 +21,28 @@ export function createIndexReturn(view: IndexView) {
 
   return {
     /**
-     * The reader opens a list from the index. Only that open calls this: a
-     * list reopened on the way back from a paper has no index position in
-     * this visit to return to.
+     * The reader opens a list from the index.
      */
     leave(listId: string) {
       left = { top: view.scrollY, listId };
+    },
+
+    /**
+     * The index position recorded by `leave`, for the history entry: opening a
+     * paper unmounts the page, and the page that comes back builds a new one.
+     */
+    top() {
+      return left?.top ?? null;
+    },
+
+    /**
+     * A list reopened on the way back from a paper carries the position its
+     * history entry kept. The entry is untrusted, so only a finite position
+     * from the top of the index counts; anything else is left alone.
+     */
+    resume(listId: string, top: unknown) {
+      if (typeof top !== 'number' || !Number.isFinite(top) || top < 0) return;
+      left = { top, listId };
     },
 
     /**
