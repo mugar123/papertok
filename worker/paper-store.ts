@@ -1116,9 +1116,9 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     // A page asked by number needs every rank served, empty ones included, at
     // its place. A paper liked or rejected since leaves its rank empty: a page
     // that finds nothing unseen falls back on these ranks, and would send it
-    // again. A walk drops empty ranks, so its fallback page is counted over the
-    // ranks that remain and starts further down by the empty ranks before its
-    // first paper.
+    // again. A walk drops empty ranks, and the others past the limit it carries
+    // (`keptPassed`), so its fallback page is counted over the ranks that remain
+    // and starts further down by the ranks dropped before its first paper.
     let served = Array.from({ length: passed }, (_, index) => {
       const candidate = kept!.ranks[index] ?? null;
       return candidate && !ranked.excluded.has(candidate.workId) ? candidate : null;
