@@ -1395,7 +1395,7 @@ test('every admitted leaf has a notable lane, asked again once a week has passed
   const { binding, db } = testD1();
   const now = Date.parse('2026-10-30T02:40:00Z');
   const lanes = async () => (await notableLaneJobs(binding as never, now)).map(job => `${job.source} ${job.lane}`);
-  assert.deepEqual((await lanes()).sort(), topicLanes().map(leaf => `openalex-notable notable:${leaf}`).sort());
+  assert.deepEqual(await lanes(), topicLanes().sort().map(leaf => `openalex-notable notable:${leaf}`), 'the first night lists every lane, by lane id');
   const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-notable', ?, ?)");
   // Last week's run reached cs.CV later in the night than this run has.
   harvested.run('notable:cs.CV', '2026-10-23T04:10:00.000Z');
@@ -1404,4 +1404,29 @@ test('every admitted leaf has a notable lane, asked again once a week has passed
   assert.ok(due.includes('openalex-notable notable:cs.CV'), 'seven days on');
   assert.ok(!due.includes('openalex-notable notable:cs.SE'), 'six days on');
   assert.equal(due.length, topicLanes().length - 1);
+});
+
+test('a night lists every never-harvested notable lane and at most eight due again, the longest unlisted first', async () => {
+  const now = Date.parse('2026-10-30T02:40:00Z');
+  const leaves = topicLanes().sort();
+  const nightWith = async (rows: Array<[string, string]>) => {
+    const { binding, db } = testD1();
+    const harvested = db.prepare("INSERT INTO lane_state (source, lane, harvested_through) VALUES ('openalex-notable', ?, ?)");
+    for (const [leaf, through] of rows) harvested.run(`notable:${leaf}`, through);
+    return (await notableLaneJobs(binding as never, now)).map(job => job.lane);
+  };
+  // Harvested eight days ago, each a minute after the next leaf by id, so the longest unlisted is the last leaf.
+  const eightDaysAgo = (index: number) => new Date(Date.parse('2026-10-22T03:00:00Z') + (leaves.length - index) * 60_000).toISOString();
+
+  assert.deepEqual(
+    await nightWith(leaves.filter(leaf => leaf !== 'cs.CV').map(leaf => [leaf, '2026-10-22T03:00:00.000Z'])),
+    ['cs.CV', ...leaves.filter(leaf => leaf !== 'cs.CV').slice(0, 8)].map(leaf => `notable:${leaf}`),
+    'the new lane, then eight of those due again, a tie by lane id',
+  );
+  assert.deepEqual(
+    await nightWith(leaves.map((leaf, index) => [leaf, eightDaysAgo(index)])),
+    leaves.slice(-8).reverse().map(leaf => `notable:${leaf}`),
+    'eight of those due again, the oldest harvest first',
+  );
+  assert.deepEqual(await nightWith(leaves.map(leaf => [leaf, '2026-10-27T03:00:00.000Z'])), [], 'none harvested in the last six days');
 });

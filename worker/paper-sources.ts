@@ -441,6 +441,7 @@ async function openAlexLane(env: SourceEnv, filter: string, { page, lane, perPag
 // this year's notable cards first.
 export const NOTABLE_PER_YEAR = 100;
 const NOTABLE_LANE_DAYS = 7;
+export const NOTABLE_LANES_PER_NIGHT = 8;
 
 /** The year a notable lane's page lists: page 1 is the oldest of the NOTABLE_YEARS, page NOTABLE_YEARS the last completed one. */
 export function notableListedYear(page: number, now = Date.now()): number {
@@ -677,16 +678,28 @@ export function categoryLaneJobs(): LaneJob[] {
 }
 
 /**
- * The notable lane of each leaf with a topic lane, unless it was harvested in
- * the last NOTABLE_LANE_DAYS days. Counted in UTC days, so a lane is due a
- * week on even when this run reaches it earlier in the night than last week's.
+ * The notable lanes a night lists, of the leaves with a topic lane: every lane
+ * never harvested, by lane id, then at most NOTABLE_LANES_PER_NIGHT not
+ * harvested in the last NOTABLE_LANE_DAYS days, the oldest harvest first.
+ * Every new lane runs at once so that a lane's first listing does not wait
+ * behind others' (the first cycle fills in one night). Re-listings are capped
+ * because a lane re-ingests up to 1,000 rows a step and CPU accumulates across
+ * an invocation (`wrangler.toml` `[limits]`). Counted in UTC days, so a lane
+ * is due a week on even when this run reaches it earlier in the night than
+ * last week's.
  */
 export async function notableLaneJobs(db: D1Database, now = Date.now()): Promise<LaneJob[]> {
-  const { results } = await db.prepare("SELECT lane FROM lane_state WHERE source = 'openalex-notable' AND harvested_through >= ?")
-    .bind(day(daysFromNow(1 - NOTABLE_LANE_DAYS, now))).all<{ lane: string }>();
-  const recent = new Set(results.map(row => row.lane));
-  return TOPIC_LEAVES.map(leaf => ({ source: 'openalex-notable' as const, lane: `${NOTABLE_LANE_PREFIX}${leaf.id}` }))
-    .filter(job => !recent.has(job.lane));
+  const { results } = await db.prepare("SELECT lane, harvested_through FROM lane_state WHERE source = 'openalex-notable'")
+    .all<{ lane: string; harvested_through: string }>();
+  const harvested = new Map(results.map(row => [row.lane, row.harvested_through]));
+  const dueBefore = day(daysFromNow(1 - NOTABLE_LANE_DAYS, now));
+  const lanes = TOPIC_LEAVES.map(leaf => `${NOTABLE_LANE_PREFIX}${leaf.id}`).sort();
+  const due = lanes.flatMap(lane => {
+    const through = harvested.get(lane);
+    return through !== undefined && through < dueBefore ? [{ lane, through }] : [];
+  }).sort((a, b) => a.through < b.through ? -1 : a.through > b.through ? 1 : 0);
+  return [...lanes.filter(lane => !harvested.has(lane)), ...due.slice(0, NOTABLE_LANES_PER_NIGHT).map(({ lane }) => lane)]
+    .map(lane => ({ source: 'openalex-notable' as const, lane }));
 }
 
 // The source that serves each kind of followed lane (paper-store.ts `followLane`).
