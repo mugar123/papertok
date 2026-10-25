@@ -1,6 +1,6 @@
 import { cva } from 'class-variance-authority';
 
-/** Lives apart from switch.tsx so that file exports only a component. */
+// Lives apart from switch.tsx so that file exports only a component.
 // Track, thumb and travel are all rem, so the switch grows with the browser's
 // text size as one piece. The track is `box-content`: its 1px hairline sits
 // outside the rem box, and the thumb keeps the same inset on every side.
