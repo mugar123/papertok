@@ -1155,6 +1155,13 @@ test("an admitted leaf's notable lane lists each of the ten completed years befo
   const { urls, env } = relay(t, () => ({ results: [plsiWork] }));
   const page = (n: number) => SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.CV', page: n, since: '', waits: { seconds: 0 } });
   await page(1); await page(10);
+  assert.deepEqual(filtersOf(urls[0]).sort(), [
+    ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
+    'from_publication_date:2016-01-01',
+    'to_publication_date:2016-12-31',
+    'is_retracted:false',
+    'primary_location.source.is_core:true',
+  ].sort());
   assert.ok(filtersOf(urls[0]).includes('from_publication_date:2016-01-01') && filtersOf(urls[0]).includes('to_publication_date:2016-12-31'));
   assert.ok(filtersOf(urls[1]).includes('from_publication_date:2025-01-01') && filtersOf(urls[1]).includes('to_publication_date:2025-12-31'));
   assert.equal(urls[0].searchParams.get('sort'), 'cited_by_count:desc');
@@ -1197,7 +1204,7 @@ test('a page refused mid-lane leaves the lane due again and keeps the pages alre
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
   const now = Date.now();
   const { env } = relay(t, url => ({ results: notableYear(listedYear(url), 100) }));
-  // Readers have spent all but three units of the harvest's share of the day.
+  // Readers have spent all but three units of the harvest tier's share of the day.
   const ceiling = 1_000;
   Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });
   await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
