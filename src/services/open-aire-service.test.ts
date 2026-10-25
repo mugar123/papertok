@@ -291,12 +291,13 @@ test('a bare grant code takes its funder into the publications query, and no fun
   assert.equal(requests[1].searchParams.has('relProjectFundingShortName'), false);
 });
 
-test("a page past Graph's 10,000-result window ends the list without a request", async () => {
+test("a page past Graph's 10,000-result window ends the list without a request, and without a total", async () => {
   const requests: URL[] = [];
   CACHE.clear();
   try {
     await withStubbedFetch(graphFetch(requests, () => publications([MONETIZATION_PUBLICATION], 20_000)), async () => {
-      assert.deepEqual(await getPapersByProject(TAILOR_PROJECT.id, 334), { arxivIds: [], dois: [], total: 0 });
+      // The project has 20,000 publications, so 0 would be a count nobody asked for.
+      assert.deepEqual(await getPapersByProject(TAILOR_PROJECT.id, 334), { arxivIds: [], dois: [], total: null });
       assert.equal(requests.length, 0, 'page 334 would start at result 10,021: Graph answers 400');
       assert.equal((await getPapersByProject(TAILOR_PROJECT.id, 333)).arxivIds.length, 1);
       assert.equal(requests[0].searchParams.get('page'), '333');

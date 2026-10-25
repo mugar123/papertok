@@ -23,7 +23,8 @@ export interface Project {
   // Graph V3 project records carry no measures (ENG-28), so nothing sets these.
   measures?: { citations?: number; downloads?: number; views?: number; influentialResults?: number }; openAccess?: boolean;
 }
-interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number; }
+// `total` is null for a page that was never requested: its size is not known.
+interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number | null; }
 
 import { deduplicateProjectParticipants } from '../utils/entity-metadata.ts';
 import { withEnforcedDeadline } from '../utils/request-deadline.ts';
@@ -230,8 +231,9 @@ function projectOfPublication(publication: GraphPublication): Project | null {
  */
 export async function getPapersByProject(projectCode: string, page = 1, { funder = '' } = {}) {
   if (!projectCode) return { arxivIds: [], dois: [], total: 0 };
-  // Graph refuses offsets past 10,000 with a 400; the list ends there.
-  if (page * PROJECT_PAGE_SIZE > OPENAIRE_OFFSET_LIMIT) return { arxivIds: [], dois: [], total: 0 };
+  // Graph refuses offsets past 10,000 with a 400; the list ends there. The
+  // project's size is not known without asking, and 0 would claim it is empty.
+  if (page * PROJECT_PAGE_SIZE > OPENAIRE_OFFSET_LIMIT) return { arxivIds: [], dois: [], total: null };
 
   // See getProjectDetails: a bare grant code needs the funder to disambiguate,
   // an OpenAIRE id already carries it. The cache key includes the funder for

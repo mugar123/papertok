@@ -1096,7 +1096,8 @@ export default function EntityExplorer({
            // these identifiers still have to be resolved into papers below,
            // and what OpenAIRE returned is not what the reader ends up seeing.
            projectUsableIds = arxivIds.length + dois.length;
-           total = res.total;
+           // No total means the page was past what OpenAIRE lists, so it ends here.
+           total = res.total ?? page * 30;
         } else if (type === 'author') {
             let papersFromOA: Paper[] = [];
             let arxPapersFromNative: Paper[] = [];
