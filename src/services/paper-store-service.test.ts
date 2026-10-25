@@ -149,6 +149,14 @@ test("a store refusal keeps the Worker's status and code", async () => {
   });
 });
 
+test('a request that got no answer is marked unreachable, while a deadline or a session failure keeps its own error', async () => {
+  const { options: offline } = harness(async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, offline), { code: 'STORE_UNREACHABLE' });
+  const timeout = new DOMException('The operation timed out.', 'TimeoutError');
+  const { options: late } = harness(async () => { throw timeout; });
+  await assert.rejects(fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15 }, late), (error) => error === timeout);
+});
+
 test('an answer without a papers list is an invalid response, not an empty page', async () => {
   for (const body of ['{}', '{"papers":null}', '{"papers":{}}']) {
     const { options } = harness(async () => new Response(body, { status: 200 }));

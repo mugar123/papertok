@@ -45,7 +45,12 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
   if (knownCode === 'STORE_RESPONSE_INVALID' || error instanceof SyntaxError) {
     return { reason: 'invalid_response', ...(knownCode ? { code: knownCode } : {}) };
   }
-  // fetch rejects with a TypeError when the request never got an answer.
-  if (error instanceof TypeError) return { reason: 'network' };
+  // The store service marks a request that got no answer (paper-store-service.ts);
+  // a TypeError from our own code is not one.
+  if (knownCode === 'STORE_UNREACHABLE') return { reason: 'network', code: knownCode };
+  // Getting the Firebase token failed before any request was made.
+  if (knownCode?.startsWith('auth/')) {
+    return { reason: knownCode === 'auth/network-request-failed' ? 'network' : 'session', code: knownCode };
+  }
   return { reason: 'unexpected' };
 }

@@ -105,7 +105,7 @@ const CATEGORIES: Readonly<Record<string, Set<string>>> = Object.freeze({
   feed_failure_reason: new Set(['timeout', 'network', 'session', 'auth', 'rate_limited', 'rejected', 'server', 'invalid_response', 'empty', 'unexpected']),
   // The codes /store/papers answers with (worker/router.ts, worker/paper-store.ts,
   // worker/firebase-auth.ts) and the client's own; any other becomes 'other'.
-  feed_error: new Set(['LANES_REQUIRED', 'INVALID_JSON', 'PAYLOAD_TOO_LARGE', 'SEEN_INVALID', 'RATE_LIMITED', 'PAPER_STORE_UNAVAILABLE', 'PAPER_STORE_FAILED', 'EMBEDDINGS_UNAVAILABLE', 'EMBEDDINGS_INVALID', 'AUTH_REQUIRED', 'AUTH_NOT_CONFIGURED', 'AUTH_UNAVAILABLE', 'PROVIDER_AUTH_UNAVAILABLE', 'WORKER_AUTH_REQUIRED', 'WORKER_ORIGIN_NOT_ALLOWED', 'STORE_RESPONSE_INVALID', 'other']),
+  feed_error: new Set(['LANES_REQUIRED', 'INVALID_JSON', 'PAYLOAD_TOO_LARGE', 'SEEN_INVALID', 'RATE_LIMITED', 'PAPER_STORE_UNAVAILABLE', 'PAPER_STORE_FAILED', 'EMBEDDINGS_UNAVAILABLE', 'EMBEDDINGS_INVALID', 'AUTH_REQUIRED', 'AUTH_NOT_CONFIGURED', 'AUTH_UNAVAILABLE', 'PROVIDER_AUTH_UNAVAILABLE', 'WORKER_AUTH_REQUIRED', 'WORKER_ORIGIN_NOT_ALLOWED', 'STORE_RESPONSE_INVALID', 'STORE_UNREACHABLE', 'auth/network-request-failed', 'auth/user-token-expired', 'auth/user-disabled', 'auth/too-many-requests', 'auth/internal-error', 'other']),
   activation_age: new Set(['day_0', 'day_1', 'days_2_6', 'days_7_13', 'days_14_29', 'days_30_59', 'days_60_plus']),
   ai_feature: new Set(['rewrite', 'annotation']),
   ai_quota_scope: new Set(['user', 'provider']),

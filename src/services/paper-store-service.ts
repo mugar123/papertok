@@ -39,6 +39,11 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
+  }).catch((error: unknown) => {
+    // fetch rejects with a TypeError when the request got no answer. Marked
+    // here, where the request fails, so a TypeError from code is not taken for it.
+    if (error instanceof TypeError) throw Object.assign(new Error('The paper store could not be reached', { cause: error }), { code: 'STORE_UNREACHABLE' });
+    throw error;
   });
   if (!response.ok) {
     // The Worker's `code` says why it refused (worker/router.ts); a body that
