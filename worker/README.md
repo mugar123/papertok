@@ -419,7 +419,7 @@ Both ceilings are one call to the day's `RequestQuotaLedger` object, which check
 | enrichment | 80% | `works` lists filtered only by `doi`, `openalex`, `ids.openalex` or `locations.landing_page_url` (cards already shown, followed DOIs), and the share pages' billed lookups. |
 | exploration | 60% | Graph expansions (`select=id,ids`), every search, `/citation-graph`, autocomplete, profile pages and lookups, and any shape not listed above. |
 
-`openAlexCostFor` in `openalex-api.ts` reads the tier from the rebuilt upstream URL, the same one the cache key and the bill come from. It reads no client header or parameter, so a cached bundle gets its tier from what it asks for and one URL always has one tier for a reader. The feed's topic lanes and series are exploration when a reader asks for them: the browser no longer does, and the harvest spends `feed` through `handleHarvestOpenAlex` whatever it asks. Entity lookups cost nothing, reserve nothing and are never refused; the ledger sees them only through the reading their answer files. Tiers rank organic demand; they are not an abuse control. A scripted caller can shape a URL to look essential (a `works` DOI filter with `per-page=1`), and with the minute ceiling at 3000 units one script can still spend the whole day, essential included, in about three minutes. Per-IP or per-identity limits would be the abuse control; the ceiling remains the frontier. The shares are code, not variables, because changing a variable needs a Worker deploy all the same; retune them from `/health/openalex/budget`. Edge and KV are read before any reservation, so a closed tier still serves stored answers.
+`openAlexCostFor` in `openalex-api.ts` reads the tier from the rebuilt upstream URL, the same one the cache key and the bill come from. It reads no client header or parameter, so a cached bundle gets its tier from what it asks for and one URL always has one tier for a reader. The feed's topic lanes and series are exploration when a reader asks for them: the browser no longer does, and the harvest spends `feed` through `handleHarvestOpenAlex` whatever it asks. Entity lookups cost nothing, reserve nothing and are never refused; the ledger sees them only through the reading their answer files. Tiers rank organic demand. Reader misses also reserve a per-IP allowance of 300 units per UTC minute in the same transaction as the shared minute and daily ceilings, regardless of tier. Networks behind NAT share that allowance; multiple IPs can still spend the shared ceilings. The shares are code, not variables, because changing a variable needs a Worker deploy all the same; retune them from `/health/openalex/budget`. Edge and KV are read before any reservation, so a closed tier still serves stored answers.
 
 Every refusal of the budget, at the minute ceiling, a tier's share or the full ceiling, is the Worker's own `429 { code: 'PROVIDER_RATE_LIMITED' }` with `x-papertok-budget-tier: <tier>`, exposed beside `retry-after`. The browser's OpenAlex client (`src/services/open-alex-client.ts`) fails only that request when the header is there, and closes OpenAlex for the whole tab only on a 429 without it, which is OpenAlex refusing the key. Closing the tab on a tier refusal would stop the opened paper, card enrichment and the free lookups the tiers protect. A closed tier is asked again on the next user action, which costs one Worker request and one ledger transaction, not OpenAlex units. Searches are exploration, so they pause from 60% of the day's ceiling: the search page then says OpenAlex searches are paused and that PaperTok keeps the rest of the day's budget for opening papers and the feed, and the recent-impact score says its request is paused (`isOpenAlexBudgetRefusal`). An Explorer page's publications and authors lists are exploration too; when the Worker refuses one and neither the browser's saved copy nor another source (an institution's Crossref rows) fills it, the list says PaperTok has paused it (`explorerListErrorCode`) instead of asking the reader to check their connection. None of these blames OpenAlex or counts down the refusal's `retry-after`, because a new reading can reopen the tier sooner; all give 00:00 UTC as the latest it reopens, and the search page and the Explorer lists keep Retry. This contract change runs the other way from a new route: deploy the frontend to production before the Worker. A bundle without the header check closes OpenAlex for the whole tab on any tier refusal, so once the day passes 60% a refused search would stop the opened paper, card enrichment and the free lookups in that tab for five minutes. Vercel builds production from a push to `main`; a branch push builds only a Preview.
 
@@ -531,6 +531,13 @@ variable is set. Nothing is verified here — the signature check stays with `ac
 a string that could not have been issued by Firebase no longer costs an upstream call. The screen
 runs after the identity cache, which only ever holds verified identities.
 
+Notification routes use this same verifier and its 60-second identity cache,
+including the verified display name used in digest greetings. They still require
+an email address whose ownership Firebase proves. Invalid credentials remain
+`401 EMAIL_AUTH_REQUIRED`, missing configuration is `503 EMAIL_NOT_CONFIGURED`,
+and an unreachable verifier is `503 EMAIL_UNAVAILABLE`. Recipient addresses use
+the shared verifier’s trimmed, lowercase form.
+
 The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
 allowance (`PUBLIC_LIST_USER_DAILY_LIMIT`, `PUBLIC_LIST_GLOBAL_DAILY_LIMIT`) is reserved, so a
@@ -610,8 +617,8 @@ Cloudflare-provided IP and therefore an allowance too.
 
 The ledger schedules deletion for the end of that minute plus 60 seconds (at
 most two minutes after reservation). Cloudflare alarm delays or failures can
-retain the expired counters longer; they do not apply to the next minute. Other
-ledger users retain the existing three-day cleanup policy. The privacy notice
+retain the expired counters longer; they do not apply to the next minute. The daily OpenAlex and share
+ledgers retain the existing three-day cleanup policy. The privacy notice
 in [privacy.html](../privacy.html) describes this security processing.
 
 An exhausted allowance returns JSON `PROVIDER_RATE_LIMITED`, HTTP 429,
@@ -691,3 +698,36 @@ localhost or 127.0.0.1. Verify the deployed frontend uses the custom domain
 before publishing this setting; older bundles configured with the native host
 would lose access to the API. The production bundle inspected on 25 October
 2026 configures `https://api.papertok.app`.
+
+## Public lookup caller limits
+
+Public cache misses on `/arxiv`, `/oa`, billed `/openalex/*` requests and
+`/share/*` lookups reuse the PDF relay’s `CF-Connecting-IP` normalization and
+`PDF_RATE_LIMIT_SECRET`. The HMAC includes the route namespace and UTC minute;
+no raw address is sent to the quota ledger, analytics or logs. Configure that
+existing secret before deploying these routes. Local requests need a test
+`CF-Connecting-IP` header and a secret of at least 32 characters.
+
+| Route | Per IP, per UTC minute | Shared protection |
+| --- | --- | --- |
+| `/arxiv` | 10 cache misses | Existing one-call-per-three-seconds beat |
+| `/oa` | 120 cache misses | No shared quota; Unpaywall and Crossref deadlines still apply |
+| Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
+| `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
+
+OpenAlex and share attach the caller as the existing reservation’s second
+subject, so a refused caller spends no shared quota. Their minute-specific
+identifiers expire with the daily ledger’s three-day cleanup. arXiv and OA have
+no existing shared reservation: each takes a caller-only reservation, with
+cleanup scheduled one minute after the window ends. arXiv gives that unit back
+when pacing refuses a seat. Its existing ledger-outage behavior remains
+unpaced service; OA, OpenAlex and share do not call their providers if the
+quota ledger is unavailable. Missing caller identity or secret refuses lookup
+when a caller reservation is required. A share refusal serves the generic
+page; other refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
+
+Edge-cache hits, OpenAlex shared-cache hits and free entity lookups reserve no
+caller allowance. In-process paper harvesting uses its existing provider
+budgets and pacing without a visitor IP. The public router cannot select those
+harvest entry points. Test these paths with `node --test worker/index.test.ts
+worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.test.ts`.
