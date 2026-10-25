@@ -18,15 +18,14 @@ export interface FilingRule { similarity: number; margin: number }
 
 /**
  * Each area's rule, set by calibration on labelled journal articles
- * (test-support/calibrate-leaf-filing.ts). An area has one only where at
- * least 90% of the held-out filings the labels decide were correct; filings
- * they leave undecided are reported as unknown, outside that share
- * (leaf-filing-calibration.md). Every other area's journal articles stay at
- * area level.
+ * (test-support/calibrate-leaf-filing.ts). An area gets one only where at
+ * least 90% of the held-out filings the labels decide are correct; filings
+ * they leave undecided are reported as unknown, outside that share. No area
+ * reaches it (leaf-filing-calibration.md), so none has a rule: no journal
+ * article is filed under a leaf by similarity, and one no leaf's lane holds
+ * stays at area level.
  */
-export const LEAF_FILING_RULES: Readonly<Record<string, FilingRule>> = Object.freeze({
-  math: { similarity: 0.58, margin: 0.065 },
-});
+export const LEAF_FILING_RULES: Readonly<Record<string, FilingRule>> = Object.freeze({});
 
 // A leaf's centroid is the mean of its newest arXiv papers with a vector. A
 // leaf with fewer than MIN_CENTROID_PAPERS has none, and nothing is filed

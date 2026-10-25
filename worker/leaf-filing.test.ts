@@ -95,7 +95,7 @@ test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers oth
   await ingestPapers(store.env, stray.map(paper => ({ paper, lanes: ['quant-ph'] })), { now: NOW });
   stray.forEach((paper, index) => store.setVector(`id:${paper.id.toLowerCase()}`, vector({ 5: 1 }, 300 + index)));
 
-  // Only filing reads them, and only in an area with a rule: the shipped rules have none for physics.
+  // Only filing reads them, and only in an area with a rule: the shipped rules have none.
   assert.equal(await storeLeafCentroids(store.env, NOW), 0);
   assert.deepEqual(store.db.prepare('SELECT leaf FROM leaf_centroids').all(), []);
   assert.equal(await storeLeafCentroids(store.env, NOW, PHYSICS_RULE), 2);
@@ -108,7 +108,7 @@ test("a leaf's centroid is the mean of its own arXiv papers' vectors; papers oth
   assert.ok(cosine(centroids.get('hep-th')!.vector, vector({ 0: 1 }, 1)) > 0.95);
 });
 
-test('an area lane holds only what no leaf of the area holds: without a rule nothing is filed under a leaf, a rule files only clear matches', async () => {
+test('an area lane holds only what no leaf of the area holds: shipped rules file nothing under a leaf, a calibrated rule files only clear matches', async () => {
   const store = corpus();
   await arxivPapers(store, 'hep-th', 60, 0, 0);
   await arxivPapers(store, 'quant-ph', 60, 1, 100);
@@ -128,7 +128,7 @@ test('an area lane holds only what no leaf of the area holds: without a rule not
   await fileAreaPapers(store.env);
   assert.ok(store.lane('quant-ph').includes(w4));
   assert.deepEqual(store.lane('area:physics'), [w1, w2, w3].sort((a, b) => a - b), 'the preprint\'s leaf holds the published version');
-  assert.ok(!store.lane('hep-th').includes(w1), 'physics has no shipped rule: nothing is filed under a leaf');
+  assert.ok(!store.lane('hep-th').includes(w1), 'no shipped rule: nothing is filed under a leaf');
 
   await fileAreaPapers(store.env, PHYSICS_RULE);
   assert.deepEqual(store.lane('area:physics'), [w2, w3].sort((a, b) => a - b), 'between two leaves, or close to none, it stays at area level');
@@ -175,12 +175,10 @@ const HELD_OUT = JSON.parse(readFileSync(new URL('./test-support/leaf-filing-hel
 }>;
 
 // The calibration's held-out outcome of each shipped rule. An area added to
-// the fixture needs its own line here.
-const HELD_OUT_TALLIES: Record<string, { areaLevel: number; correct: number; wrong: number; unknown: number }> = {
-  math: { areaLevel: 112, correct: 48, wrong: 1, unknown: 10 },
-};
+// the fixture needs its own line here; none reaches the bar today.
+const HELD_OUT_TALLIES: Record<string, { areaLevel: number; correct: number; wrong: number; unknown: number }> = {};
 
-test('the shipped rules file the held-out labelled articles as calibrated: in mathematics, 48 of 49 decided filings correct', async () => {
+test('a rule ships only with its held-out labelled articles, and files them as calibrated', async () => {
   assert.deepEqual(Object.keys(LEAF_FILING_RULES), Object.keys(HELD_OUT), 'each shipped rule has its held-out articles');
   for (const [area, { centroids, articles }] of Object.entries(HELD_OUT)) {
     const store = corpus();
