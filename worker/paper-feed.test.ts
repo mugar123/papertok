@@ -672,6 +672,24 @@ test('a first page that continues goes on with the walk of the order kept for th
   assert.deepEqual(ids((await ask(request(0, [], { continues: true, excludedIds: [] }))).papers), ids(papers.slice(0, 15)), 'no order kept for these exclusions');
 });
 
+// A rejection or a like since the last page ranks again after the ranks the
+// walk passed; the papers it excludes leave those too. Here the reader has seen
+// every paper, so the page is the one its number names, papers seen before.
+test('a page that goes on with a walk after the reader rejected its first papers sends none of them, though the reader has seen every paper', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(45);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
+  assert.deepEqual(ids((await ask(request(0, []))).papers), ids(papers.slice(0, 15)));
+  assert.deepEqual(ids((await ask(request(1, ids(papers.slice(0, 15))))).papers), ids(papers.slice(15, 30)));
+  // The reader rejects the first page's papers, has seen the rest elsewhere, then follows someone.
+  const rejected = { negativeIds: ids(papers.slice(0, 15)) };
+  const continued = await ask(request(0, ids(papers), { ...rejected, continues: true }));
+  assert.deepEqual(ids(continued.papers), ids(papers.slice(15, 30)));
+  assert.deepEqual(ids((await ask(request(0, ids(papers), rejected), 'reader-2')).papers), ids(papers.slice(15, 30)), 'as without the kept order');
+});
+
 // Counted in Workers Logs (worker/README.md): a later page of a walk whose
 // order this data center does not hold, after a move to another one, an early
 // eviction or a break of more than two hours.

@@ -1002,10 +1002,11 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * lanes in the same order, `order`, likes and rejections (`rankedBy`, a
  * digest, so the entry holds no liked paper's id) serves the next pages as it
  * is. Otherwise a next page keeps the ranks served and the ones walked past,
- * and the notable papers walked past, and ranks the rest again; a page that
- * skips seen papers keeps of those the ones `keptPassed` keeps. With the ids
- * the walks read (`paperId`), the entry tells which ranks at the top of the
- * reader's ranking their filter held.
+ * less the papers liked or rejected since, and the notable papers walked
+ * past, and ranks the rest again; a page that skips seen papers keeps of
+ * those the ones `keptPassed` keeps. With the ids the walks read
+ * (`paperId`), the entry tells which ranks at the top of the reader's
+ * ranking their filter held.
  */
 export interface KeptRanking {
   ranks: Array<RankedCandidate | null>;
@@ -1110,8 +1111,13 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (rankedAgain) {
     const ranked = await rankCandidates(db, lanes, query, now);
     const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
-    let served = Array.from({ length: passed }, (_, index) => kept!.ranks[index] ?? null);
     // Page numbers need every rank served, empty ones included, at its place.
+    // A paper liked or rejected since leaves its rank empty: a page that finds
+    // nothing unseen falls back on these ranks, and would send it again.
+    let served = Array.from({ length: passed }, (_, index) => {
+      const candidate = kept!.ranks[index] ?? null;
+      return candidate && !ranked.excluded.has(candidate.workId) ? candidate : null;
+    });
     if (query.skipsSeen) ({ ranks: served, walked } = keptPassed(served, walked, ranked.ranks, FEED_CANDIDATE_LIMIT + AREA_CANDIDATE_LIMIT));
     const shown = new Set(served.map(candidate => candidate?.workId));
     const notablePassed = keptPassed(notable.slice(0, notableWalked), notableWalked, ranked.notable, NOTABLE_READ_PER_YEAR * NOTABLE_YEARS * FEED_MAX_CATEGORIES);
@@ -1275,7 +1281,7 @@ async function walkPastDropped(db: D1Database, walk: Awaited<ReturnType<typeof u
   walk.read = true;
 }
 
-async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[]; excluded: Set<number> }> {
   const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
   const positiveIds = [...new Set(query.positiveIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
   const negativeIds = [...new Set(query.negativeIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
@@ -1311,6 +1317,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // The closest notable papers first, without recency: they are years old by design.
     notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
       .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
+    excluded,
   };
 }
 
