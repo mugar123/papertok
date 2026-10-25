@@ -422,13 +422,16 @@ the same request from other networks answers normally. Scopus is therefore reach
 Deploy egress in `proxy/README.md`, which is the only place the Elsevier key lives.
 
 `/health/scopus` measures that whole chain. It runs one minimal search and reports whether the
-egress is configured, whether an institutional token is in play, the upstream status, Elsevier's own
-error code, the view that answered, whether that view carried an abstract, and the remaining
+egress is configured, whether an institutional token is in play, the upstream status, Elsevier's
+error code (or the egress's own code, such as `PROXY_AUTH_REQUIRED`, when the egress answered), the
+view that answered, whether that view carried an abstract, and the remaining
 provider quota — never a key or a token. It tries `COMPLETE`, then `STANDARD`, then the endpoint
 default, and records what each one answered, so a failure names which view was refused and why.
-`/sources/scopus` walks the same views. Only Elsevier's refusal of a view (400, 401, 403 or 406)
-moves on to the next one. A 5xx, a 429 and the egress refusing this Worker's secret
-(`PROXY_AUTH_REQUIRED`) end the walk at the first view, so an outage costs one call per request
+`/sources/scopus` walks the same views. Any 400, 401, 403 or 406 moves on to the next view.
+Elsevier refuses a view with these statuses, but an invalid key, a malformed query and the egress's
+own `INVALID_QUERY` get the same statuses and also walk the ladder. The one exception is the egress
+refusing this Worker's secret (`PROXY_AUTH_REQUIRED`). Every other answer, a 5xx or a 429
+included, ends the walk at the view that received it, so an outage costs one call per request
 instead of three. A probe costs one upstream call per view it tries, up to three unless
 `SCOPUS_VIEW` pins one. The answer is served from the edge cache for ten minutes, and a miss
 probes only within the live health probe ceiling described with `GET /health` below: one probe per
@@ -657,6 +660,7 @@ deletion still removes stored profile and showcase data. The rules accept a lega
 
 `SCOPUS_VIEW` optionally pins the Elsevier search view to `COMPLETE` or `STANDARD`.
 Without it, `scopus-api.ts` tries `COMPLETE`, then `STANDARD`, then the upstream
-default while Elsevier answers 400, 401, 403 or 406. Any other answer, a 5xx included,
-ends the walk. A pinned view is not retried with another view. Set it only on the Worker;
+default while the answer is a 400, 401, 403 or 406. Any other answer, a 5xx included,
+ends the walk, and so does the egress refusing the Worker's secret (`PROXY_AUTH_REQUIRED`).
+A pinned view is not retried with another view. Set it only on the Worker;
 it does not enable Scopus discovery.
