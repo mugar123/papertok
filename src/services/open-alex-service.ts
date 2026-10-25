@@ -26,14 +26,14 @@ export type RecentImpact = Partial<ReturnType<typeof calculateEntityRecentImpact
 import { openAlexTypeaheadExpression } from './open-alex-search-query.ts';
 import { CATEGORIES } from '../data/categories.ts';
 import { areaKeyForCategory } from '../utils/area-accent.ts';
-import { openAlexFilterForArea } from '../data/open-alex-areas.ts';
+import { openAlexLabelFilterForArea } from '../data/open-alex-areas.ts';
 import { usableOpenAlexAbstract } from '../utils/open-alex-abstract.ts';
 import { OPENALEX_PEER_REVIEWED_FILTER, openAlexIsWorkingPaper, openAlexPeerReviewed, openAlexPublicationStatus } from '../utils/publication-status.ts';
 import { usableOpenAlexConcepts } from '../utils/open-alex-concepts.ts';
 import { matchesAuthorName } from '../utils/author-name-match.ts';
 import { paperReferenceFor } from '../utils/explorer-paths.ts';
 import { normalizeDoi as normalizePublicDoi, normalizePmid } from '../utils/public-navigation.ts';
-import { withRequestDeadline } from '../utils/request-deadline.ts';
+import { withEnforcedDeadline, withRequestDeadline } from '../utils/request-deadline.ts';
 import {
   applyInstitutionWorksFallback,
   calculateEntityRecentImpact,
@@ -587,33 +587,45 @@ export async function enrichAuthorInstitutionLocalization<T extends OpenAlexAuth
 
 /** Author-name search does not support fuzzy operators; work bylines do. */
 async function searchAuthorSuggestions(query: string, options: RequestOptions): Promise<OpenAlexAuthor[]> {
-  const expression = openAlexTypeaheadExpression(query) || JSON.stringify(query);
+  const expression = openAlexTypeaheadExpression(query);
+  // Keep exact bylines out of competition with highly cited fuzzy matches.
+  // OpenAlex reads | as OR even inside quotes; accents stay, since folding
+  // them finds far fewer bylines. The search ignores case and spacing, so
+  // dropping both lets variants share one cached URL.
+  const expressions = [JSON.stringify(query.replaceAll('|', ' ').replace(/\s+/g, ' ').toLowerCase())];
+  if (expression?.includes(' OR ')) expressions.push(expression);
+  const { signal } = withEnforcedDeadline({ signal: options.signal }, 5000);
   const url = new URL('https://api.openalex.org/works');
-  url.searchParams.set('filter', `raw_author_name.search:${expression}`);
   url.searchParams.set('per-page', '25');
   url.searchParams.set('select', 'id,authorships');
   // A short exact surname can otherwise fill the page with fuzzy first names
   // before a well-established surname completion reaches the client.
   url.searchParams.set('sort', 'cited_by_count:desc');
   try {
-    const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url.toString(), {
-      timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal: options.signal,
-    });
-    const authors = new Map<string, OpenAlexAuthor>();
-    for (const work of data.results || []) {
-      for (const authorship of work.authorships || []) {
-        const author = authorship.author;
-        if (!author?.id || !author.display_name || authors.has(author.id)) continue;
-        const institution = authorship.institutions?.[0];
-        authors.set(author.id, {
-          id: author.id, display_name: author.display_name,
-          institution: institution?.display_name || null,
-          institutionData: institution,
-          works_count: null, cited_by_count: null,
-        });
+    for (const candidateExpression of expressions) {
+      signal.throwIfAborted();
+      url.searchParams.set('filter', `raw_author_name.search:${candidateExpression}`);
+      const data = await openAlexJson<OpenAlexPage<OpenAlexWork>>(url.toString(), {
+        timeoutMs: 5000, retries: 0, cacheTtlMs: 10 * 60 * 1000, signal,
+      });
+      const authors = new Map<string, OpenAlexAuthor>();
+      for (const work of data.results || []) {
+        for (const authorship of work.authorships || []) {
+          const author = authorship.author;
+          if (!author?.id || !author.display_name || authors.has(author.id)) continue;
+          const institution = authorship.institutions?.[0];
+          authors.set(author.id, {
+            id: author.id, display_name: author.display_name,
+            institution: institution?.display_name || null,
+            institutionData: institution,
+            works_count: null, cited_by_count: null,
+          });
+        }
       }
+      const relevant = filterRelevantSearchResults(query, [...authors.values()], authorSearchValues, { minimumScore: 80 }).slice(0, 10);
+      if (relevant.length > 0) return relevant;
     }
-    return filterRelevantSearchResults(query, [...authors.values()], authorSearchValues, { minimumScore: 80 }).slice(0, 10);
+    return [];
   } catch (error) {
     if (options.throwOnError) throw error;
     return [];
@@ -1404,7 +1416,8 @@ export async function getWorksByEntity(type: string|undefined, id: string|undefi
     filterParams += `,primary_location.is_published:true,${OPENALEX_PEER_REVIEWED_FILTER}`;
   }
   if (filters.category) {
-    const areaFilter = openAlexFilterForArea(areaKeyForCategory(filters.category));
+    const areaKey = areaKeyForCategory(filters.category);
+    const areaFilter = areaKey && openAlexLabelFilterForArea(areaKey);
     if (areaFilter) filterParams += `,${areaFilter}`;
   }
   if (filters.dateRange) {
