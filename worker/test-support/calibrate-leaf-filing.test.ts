@@ -26,7 +26,7 @@ test('calibration files clear articles, leaves those between two leaves at area 
     arxiv: [
       ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
       ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
-      // Two computer science leaves whose papers point the same way.
+      // Two artificial intelligence leaves whose papers point the same way.
       ...many(60, index => ({ id: `2610.3${index}`, leaf: 'cs.AI', vector: vector({ 2: 1 }, 200 + index) })),
       ...many(60, index => ({ id: `2610.4${index}`, leaf: 'cs.LG', vector: vector({ 2: 1 }, 300 + index) })),
     ],
@@ -45,7 +45,7 @@ test('calibration files clear articles, leaves those between two leaves at area 
     ],
   };
   const report = calibrateLeafFiling(dataset);
-  assert.deepEqual(report.map(row => [row.area, row.enabled]), [['physics', true], ['cs', false], ['mech', false]]);
+  assert.deepEqual(report.map(row => [row.area, row.enabled]), [['physics', true], ['ai', false], ['mech', false]]);
 
   const physics = report[0];
   assert.deepEqual(physics.split, { calibration: 50, heldOut: 50 });
