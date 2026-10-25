@@ -808,9 +808,9 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 6 });
   for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
-  // With or without an abstract, less PubMed's non-research types, the backfill's day last.
-  const notResearch = ' NOT (editorial[pt] OR letter[pt] OR comment[pt] OR news[pt] OR "published erratum"[pt] OR "retraction of publication"[pt])';
-  assert.ok(terms.every(term => !term.includes('hasabstract') && term.endsWith(`)${notResearch} AND 1800/01/01:2026/10/24[edat]`)), terms[0]);
+  // Any record with an abstract, and one without unless it is an editorial, a letter or a comment; the backfill's day last.
+  const admitted = ' AND (hasabstract OR NOT (editorial[pt] OR letter[pt] OR comment[pt]))';
+  assert.ok(terms.every(term => term.endsWith(`)${admitted} AND 1800/01/01:2026/10/24[edat]`)), terms[0]);
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
 
   t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
@@ -824,6 +824,18 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   terms.length = 0;
   await backfillLane(store, job);
   assert.equal(terms.length, 0, 'a finished backfill asks nothing more');
+});
+
+// `/sources/pubmed` turns away a query over 500 characters (`safeSourceQuery`).
+test("every PubMed lane's query, a backfill's included, fits the route's 500 characters", async t => {
+  const { urls, env } = relay(t, url => (url.pathname.endsWith('/esearch.fcgi') ? { esearchresult: { count: '0', idlist: [] } } : { result: {} }));
+  const lanes = categoryLaneJobs().filter(job => job.source === 'pubmed').map(job => job.lane);
+  Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: String(lanes.length) });
+  for (const lane of lanes) await SOURCES.pubmed.fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 }, until: '2026-10-24' });
+  const terms = urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).map(url => url.searchParams.get('term')!);
+  assert.equal(terms.length, lanes.length);
+  const longest = terms.reduce((a, b) => (b.length > a.length ? b : a));
+  assert.ok(longest.length <= 500, `${longest.length} characters: ${longest}`);
 });
 
 test("a refused page ends the lane's backfill for the run, which goes on from that page next run", async t => {
@@ -965,7 +977,7 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
   const firstPage = urls.find(url => url.pathname.endsWith('/esearch.fcgi'))!.searchParams.get('term')!;
-  assert.equal(firstPage.includes('hasabstract'), false, 'a record without an abstract is listed too');
+  assert.ok(firstPage.endsWith(') AND (hasabstract OR NOT (editorial[pt] OR letter[pt] OR comment[pt]))'), 'a record without an abstract is listed too, unless it is an editorial, a letter or a comment');
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 

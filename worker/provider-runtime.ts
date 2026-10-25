@@ -385,9 +385,9 @@ async function reserveCallerGate(request: Request, quota: CacheOptions['callerMi
 // it is wall-clock time already slept into, and `awaitUpstreamSlot` only ever
 // proposes the current second or a later one, so it would refuse to re-grant
 // one already elapsed. That is safe only because no gate runs after an
-// accepted beat today -- the paced routes, `/sources/s2`, `/related` and
-// never pass `openAlexBudget` -- but a route that combined both would leak
-// this seat, with nothing left downstream to catch it.
+// accepted beat today -- the paced routes `/sources/s2`, `/related` and
+// `/enrich/s2` never pass `openAlexBudget` -- but a route that combined both
+// would leak this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling: MinuteCeiling | undefined, env: WorkerEnv, origin: string) {
   if (!ceiling?.paced) return null;
   const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });

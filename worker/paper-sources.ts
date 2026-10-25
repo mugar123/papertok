@@ -511,11 +511,13 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
-      // With or without an abstract (ENG-129). PubMed lists editorials, letters,
-      // comments, news, errata and retraction notices as journal records, and
-      // the ingestion's type rule does not know them, so the query leaves them out.
+      // With or without an abstract (ENG-129). PubMed lists editorials, letters
+      // and comments as journal records; one with an abstract was always
+      // admitted, as a letter, and one without is left out here. The other
+      // non-research types (errata, retraction notices, news, obituaries and
+      // the like) are dropped at ingestion by the type `PUBTYPE_MAP` gives them.
       const response = await withShortWaits(waits, () => askRoute(handlePubmed, '/sources/pubmed', {
-        q: `(${pubmedCategoryQuery([lane])}) NOT (editorial[pt] OR letter[pt] OR comment[pt] OR news[pt] OR "published erratum"[pt] OR "retraction of publication"[pt])${added}`,
+        q: `(${pubmedCategoryQuery([lane])}) AND (hasabstract OR NOT (editorial[pt] OR letter[pt] OR comment[pt]))${added}`,
         page, limit: 50,
       }, env));
       const payload = await response.json<Parameters<typeof readPubmedPayload>[0]>();
