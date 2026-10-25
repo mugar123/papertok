@@ -97,10 +97,10 @@ asks once a night, one with under 400 twice. From the curators' 90-day counts,
 the 80 lanes ask about 133 list calls a night, 240 at most, and 152 on their
 first night. cs.SY and eess.SY send the same request, which the relay answers
 from its store the second time. The lanes spend from the 3,000 of the
-harvest's 4,000 units a day that the category lanes share with the weekly
-notable lanes: with the topic lanes (195 at most), the area lanes (9) and the
+harvest's 4,000 units a day that the category lanes share with the notable
+lanes: with the topic lanes (195 at most), the area lanes (9) and the
 working-paper series (4), a night's category calls are at most 448, and the
-notable lanes add 39 one night a week.
+notable lanes add 390 on their first night and at most 80 a night after.
 
 The lanes' papers also cost enrichment calls (`worker/paper-enrichment.ts`),
 which spend what the lanes leave of the nightly run's 3,700 units. Every 14
