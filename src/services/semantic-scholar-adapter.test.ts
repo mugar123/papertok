@@ -131,13 +131,13 @@ test('a Semantic Scholar record keeps the year and the zero it reports, and only
     adapter.mapToStandard({ paperId: 'b'.repeat(40), title: 'A reported work', year: 2019, citationCount: 0, isOpenAccess }),
   ])[0];
 
-  const closed = build(false);
-  assert.equal(closed.year, 2019);
-  assert.equal(closed.citationCount, 0);
-  assert.equal(closed.citationCountKnown, true);
+  const noOpenCopy = build(false);
+  assert.equal(noOpenCopy.year, 2019);
+  assert.equal(noOpenCopy.citationCount, 0);
+  assert.equal(noOpenCopy.citationCountKnown, true);
   // `isOpenAccess: false` means Semantic Scholar found no open copy, not that the paper is paywalled.
-  assert.equal(closed.openAccess, undefined);
-  assert.equal(accessStatusForPaper(closed), null);
+  assert.equal(noOpenCopy.openAccess, undefined);
+  assert.equal(accessStatusForPaper(noOpenCopy), null);
   assert.equal(accessStatusForPaper(build(true)), 'open');
 });
 

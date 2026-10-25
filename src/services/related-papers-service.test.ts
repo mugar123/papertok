@@ -48,7 +48,7 @@ test('a related paper is open on a true flag or a PDF link, and a false flag is 
   const record = (hex: string, title: string, extra: object) => ({ paperId: hex.repeat(40), title, externalIds: {}, ...extra });
   const fetchWorker = async () => new Response(JSON.stringify({ recommendedPapers: [
     record('a', 'Silent', {}),
-    record('b', 'Closed', { isOpenAccess: false }),
+    record('b', 'No open copy found', { isOpenAccess: false }),
     record('c', 'Open', { isOpenAccess: true }),
     record('d', 'Has a PDF', { openAccessPdf: { url: 'https://example.org/d.pdf' } }),
   ] }));
@@ -56,7 +56,7 @@ test('a related paper is open on a true flag or a PDF link, and a false flag is 
   const related = await getRelatedPapers({ id: 'arxiv:2607.12345', arxivId: '2607.12345' }, 8, { fetchWorker, apiBase: WORKER });
   const chip = Object.fromEntries(related.map(paper => [paper.title, accessStatusForPaper(paper)]));
 
-  assert.deepEqual(chip, { Silent: null, Closed: null, Open: 'open', 'Has a PDF': 'open' });
+  assert.deepEqual(chip, { Silent: null, 'No open copy found': null, Open: 'open', 'Has a PDF': 'open' });
 });
 
 test('does not interpret another provider id or a malformed hash as a Semantic Scholar id', () => {
