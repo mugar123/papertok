@@ -606,11 +606,11 @@ Workers Logs stores the Worker's `console.*` lines. The per-request invocation l
 with its search text or unsubscribe token. The stored lines are the route handlers' error details,
 the AI rewrite and annotation outcomes, the email schedule summary, the nightly harvest's phase
 failures and its thin-leaves line (step 8 of [Paper store](#paper-store)), a fixed line,
-`Feed walk has no kept order past its first page`, for each page with `skipsSeen` past the first
-that finds no order kept for its reader (`readFeedPage`; it names no reader and no paper, and counts
-the walks that started again from the top because another location answered, the cache evicted the
-entry early or the reader was away more than 2 hours; a load's main page and follows' page each
-log one), and one `{ route, status }`
+`Feed walk has no kept order to go on with`, for each page with `skipsSeen` that goes on with a walk
+(one past the first, or a first one that sends `continues`) and finds no order kept for its reader
+(`readFeedPage`; it names no reader and no paper, and counts the walks that started again from the
+top because another location answered, the cache evicted the entry early or the reader was away
+more than 2 hours; a load's main page and follows' page each log one), and one `{ route, status }`
 line from `worker/index.ts` for every 429 or 5xx answer, including an uncaught throw (logged as
 500). Its `route` is the fixed part of the path, such as `/openalex/works`, `/share` or
 `/notifications/unsubscribe`, never an id, a query string or an address. On the Workers Free plan

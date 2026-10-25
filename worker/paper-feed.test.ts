@@ -712,6 +712,26 @@ test('a later page of a walk with no order kept logs a line that names neither t
   assert.ok(!lines[0].includes('reader-') && !lines[0].includes('2610.'), lines[0]);
 });
 
+// A first page that continues (a follow change) goes on with a walk too: when
+// its order is gone, the walk starts again from the top, which the line counts
+// as it does for a later page.
+test('a first page that continues a walk with no order kept logs the line of a later page', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(30);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const logged = t.mock.method(console, 'log', () => {});
+  const walk = (page: number, extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter([]), skipsSeen: true, ...extra });
+  await ask(walk(0));
+  await ask(walk(0, { continues: true }));
+  assert.equal(logged.mock.callCount(), 0, 'a first page that starts a walk, and one that continues a walk whose order is kept');
+  await ask(walk(0, { continues: true }), 'reader-2');
+  await ask(walk(1), 'reader-3');
+  const lines = logged.mock.calls.map(call => call.arguments.join(' '));
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], lines[1], 'the line a later page logs');
+});
+
 // How long a reader's order is kept (privacy.html): a walk's, two hours from
 // its last page; one paged by number, 15 minutes. Without it, a page is
 // ranked from the top, where a paper filed since comes first.

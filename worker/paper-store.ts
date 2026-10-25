@@ -1096,12 +1096,14 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notable: query.notable > 0,
   });
   const rankedBy = await rankingInputs(lanes, query);
-  const kept = (query.page > 0 || query.continues) && cache ? await cache.get(cacheKey).catch(() => null) : null;
-  // Counted in Workers Logs, without the reader or a paper: a walk past its
-  // first page whose order this location does not hold, so it starts again
-  // from the top. Another location answered, the cache evicted the entry
-  // early, or the reader was away longer than WALK_KEPT_MS.
-  if (!kept && cache && query.skipsSeen && query.page > 0) console.log('Feed walk has no kept order past its first page');
+  const goesOn = query.page > 0 || query.continues;
+  const kept = goesOn && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  // Counted in Workers Logs, without the reader or a paper: a page that goes
+  // on with a walk (one past the first, or a first one that continues) whose
+  // order this location does not hold, so the walk starts again from the top.
+  // Another location answered, the cache evicted the entry early, or the
+  // reader was away longer than WALK_KEPT_MS.
+  if (!kept && goesOn && cache && query.skipsSeen) console.log('Feed walk has no kept order to go on with');
   const keptMs = query.skipsSeen ? WALK_KEPT_MS : RANKING_KEPT_MS;
   const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
   let ranking = kept?.ranks ?? [];
