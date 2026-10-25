@@ -31,6 +31,11 @@ function decodeHtmlEntity(entity: string) {
   }
 }
 
+/** `text` with its named entities above, and its numeric ones, decoded. */
+export function decodeHtmlEntities(text: string) {
+  return text.replace(/&(?:amp|gt|lt|quot|apos|nbsp|minus|le|ge|times|#39|#\d+|#x[\da-f]+);/gi, decodeHtmlEntity);
+}
+
 /**
  * JATS does not deposit a formula: it deposits one COMPLETE compilable
  * document per formula, preamble and all, inside a `<tex-math>` — and next to
@@ -72,6 +77,11 @@ function closeDocument(content: string) {
   return content.includes('\\begin{document}') && !content.includes('\\end{document}')
     ? `${content}\\end{document}`
     : content;
+}
+
+/** `text` with each `<alternatives>` reduced to its `<tex-math>` spelling, when it has one. */
+export function preferTexAlternatives(text: string) {
+  return text.replace(ALTERNATIVES, (block, body) => TEX_MATH.exec(body)?.[1] ?? body);
 }
 
 function translateScripts(formula: string) {
@@ -158,17 +168,15 @@ export function normalizeScientificMarkup(text: unknown) {
   // `<alternatives>` is resolved while its tags still stand, which is what
   // makes the choice independent of the order the publisher wrote the two
   // spellings in — both orders occur in the wild.
-  const chosen = String(text)
+  const chosen = preferTexAlternatives(String(text)
     .replace(XML_COMMENT, '')
     .replace(XML_PROCESSING_INSTRUCTION, '')
     .replace(CDATA_SECTION, (section, content) => closeDocument(content))
-    .replace(CDATA_MARKER, '')
-    .replace(ALTERNATIVES, (block, body) => TEX_MATH.exec(body)?.[1] ?? body);
+    .replace(CDATA_MARKER, ''));
 
-  return unwrapStandaloneDocuments(chosen)
+  return decodeHtmlEntities(unwrapStandaloneDocuments(chosen)
     .replace(/<br\s*\/?>/gi, ' ')
-    .replace(SCIENTIFIC_MARKUP_TAG, '')
-    .replace(/&(?:amp|gt|lt|quot|apos|nbsp|minus|le|ge|times|#39|#\d+|#x[\da-f]+);/gi, decodeHtmlEntity)
+    .replace(SCIENTIFIC_MARKUP_TAG, ''))
     .replace(/\s+/g, ' ')
     .trim();
 }

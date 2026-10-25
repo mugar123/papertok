@@ -511,8 +511,16 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: async (env, { lane, page, waits, until }) => {
       // Newest added first; a backfill reads only what was added by its first day.
       const added = until ? ` AND 1800/01/01:${until.replace(/-/g, '/')}[edat]` : '';
+      // With or without an abstract (ENG-129). PubMed lists editorials, letters
+      // and comments as journal records; one with an abstract was always
+      // admitted, as a letter, and one without is left out here. esearch has
+      // no unary NOT (it drops the operator and warns), so the exclusion is a
+      // binary NOT. The other non-research types (errata, retraction notices,
+      // news, obituaries and the like) are dropped at ingestion by the type
+      // `PUBTYPE_MAP` gives them.
       const response = await withShortWaits(waits, () => askRoute(handlePubmed, '/sources/pubmed', {
-        q: `(${pubmedCategoryQuery([lane])}) AND hasabstract${added}`, page, limit: 50,
+        q: `(${pubmedCategoryQuery([lane])}) NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)${added}`,
+        page, limit: 50,
       }, env));
       const payload = await response.json<Parameters<typeof readPubmedPayload>[0]>();
       const papers = readPubmedPayload(payload, { internalCategories: [lane], parseXml: parseXmlDocument });
@@ -525,7 +533,6 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexTopicFilterForLeaf(lane),
       windowFilter(),
-      'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: 200, part: 'categories' }),
@@ -560,7 +567,6 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
       openAlexTopicFilterForLeaf(lane.slice(NOTABLE_LANE_PREFIX.length)),
       notableWindowFilter(),
-      'has_abstract:true',
       'is_retracted:false',
       'primary_location.source.is_core:true',
     ].join(','), { page, lane, perPage: NOTABLE_PER_LANE, sort: 'cited_by_count:desc', part: 'categories' }),
@@ -570,11 +576,11 @@ export const SOURCES: Record<SourceName, SourceSpec> = {
   // each area but finance's nine: about 22 (finance) to 370 (electrical
   // engineering) a day. In the 90 days before, 23 % (statistics, economics) to
   // 39 % (mechanical engineering) of the articles had none. So a night reads
-  // one page, the newest 200: one list call an area. Unlike the topic lanes,
-  // the area lanes take an article without an abstract (PAP-107); its card
-  // says it has none. OpenAlex lists IMF, Federal Reserve Board and Fed bank
-  // working papers as core journal articles; their cards say Working paper,
-  // so the lane leaves out the review rule's series.
+  // one page, the newest 200: one list call an area. The area lanes take an
+  // article without an abstract (PAP-107), as the topic and notable lanes do
+  // (ENG-129); its card says it has none. OpenAlex lists IMF, Federal Reserve
+  // Board and Fed bank working papers as core journal articles; their cards
+  // say Working paper, so the lane leaves out the review rule's series.
   'openalex-areas': {
     firstPages: 2, dailyPages: 1, dated: true, overlapDays: 14,
     fetchPage: (env, { lane, page }) => openAlexLane(env, [
@@ -718,9 +724,14 @@ export async function harvestLane(env: SourceEnv, { source, lane, newFollow }: L
   // show) filed nothing, and one the listing no longer returns keeps its
   // enrichment date however long the corpus keeps it (a recent paper, a liked
   // one), so the refresh still comes for both. One never enriched still gets
-  // its first enrichment, which also asks Crossref its type.
+  // its first enrichment, which also asks Crossref its type. The listing does
+  // not renew a paper without an abstract either (the placeholder is shorter
+  // than the 40 characters of `isPlausibleAbstract`): the refresh is what asks
+  // for its abstract again, at about one OpenAlex refresh call per 50 such
+  // papers every 14 days.
   if (spec.renewsEnrichment) {
     await db.prepare(`UPDATE works SET enriched_at = ? WHERE enriched_at IS NOT NULL AND enrich_misses = 0
+      AND LENGTH(COALESCE(paper ->> '$.abstract', '')) >= 40
       AND id IN (SELECT work_id FROM work_lanes WHERE lane = ? AND listed_until >= ?)`).bind(new Date(now).toISOString(), lane, keepUntil).run();
   }
   await db.prepare(`INSERT INTO lane_state (source, lane, harvested_through) VALUES (?, ?, ?)

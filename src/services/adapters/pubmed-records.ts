@@ -165,10 +165,17 @@ export function assignPubmedCategory(paper: Paper, internalCategories?: string[]
 //
 // Ordered: `Preprint` wins over everything (PubMed tags preprints as such and
 // nothing else about the record contradicts it), and `Review` before
-// `Journal Article` because a review carries both.
+// `Journal Article` because a review carries both. Errata, retraction
+// notices, expressions of concern and front matter can carry `Journal
+// Article` too, so they also come before it; `isFeedPublication` leaves their
+// types out. `Retracted Publication`, the retracted article itself, is not
+// among them.
 const PUBTYPE_MAP: Array<[RegExp, string]> = [
   [/preprint/i, 'preprint'],
   [/review/i, 'review'],
+  [/published erratum/i, 'erratum'],
+  [/retraction of publication|expression of concern/i, 'retraction'],
+  [/^(news|obituary|biography|portrait|interview|introductory journal article)$/i, 'paratext'],
   [/journal article/i, 'article'],
   [/letter|comment|editorial/i, 'letter'],
   [/clinical trial|randomized/i, 'article'],

@@ -68,13 +68,17 @@ Do not use `api.papertok.app` or its key. Send one request per leaf, one at a
 time, stop on a quota rejection, and do not retry. On 2026-10-23 an anonymous
 list request cost 1 of the IP's 1,000 daily credits (`x-ratelimit-*` headers).
 
-Use exactly the Worker lane's filters: sorted `primary_topic.id` values joined
-by `|`, `type:article`, the last 90 UTC days through the capture day,
-`has_abstract:true`, `is_retracted:false`, and
-`primary_location.source.is_core:true`. Set `sort=publication_date:desc`,
-`page=1`, `per-page=15`: the sample is the 15 newest articles. The gate rejects
-text, field and subfield works queries. The catalogue may use subfield queries;
-the feed and its samples may not.
+Use the Worker lane's filters: sorted `primary_topic.id` values joined by `|`,
+`type:article`, the last 90 UTC days through the capture day,
+`is_retracted:false`, and `primary_location.source.is_core:true`, and add
+`has_abstract:true`, since the labellers read each article's abstract. The
+lane itself takes articles without an abstract too (ENG-129), so the gate's
+evidence covers only articles with one: every review's query asks
+`has_abstract:true`. How well the articles without one fit their leaf is not
+measured yet; measuring it is part of the check after the lanes deploy. Set
+`sort=publication_date:desc`, `page=1`, `per-page=15`: the sample is the 15
+newest articles. The gate rejects text, field and subfield works queries. The
+catalogue may use subfield queries; the feed and its samples may not.
 
 Keep the entire returned page while labelling. Prepare a separate, shuffled
 review sheet with only the target leaf, opaque row IDs, titles and decoded

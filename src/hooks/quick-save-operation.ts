@@ -16,19 +16,57 @@ export function runOneAtATime(inFlight: Set<string>, id: string, operation: () =
  * operation began: an Undo can land on a paper the reader has saved again by
  * hand, and a refused Undo must not take that save back.
  */
-export async function markThenConfirm({ alreadySaved, issued, mark, unmark, confirm }: {
+export async function markThenConfirm({ alreadySaved, issued, mark, unmark, confirm, onSaved }: {
   alreadySaved: boolean;
   issued: Promise<unknown> | null;
   mark: () => Promise<void>;
   unmark: () => Promise<void>;
   confirm: () => Promise<void>;
+  onSaved: () => void;
 }) {
-  void mark();
   try {
-    await issued;
+    await Promise.all([issued, mark()]);
     await confirm();
   } catch (error) {
     if (!alreadySaved) void unmark();
+    throw error;
+  }
+  if (!alreadySaved) onSaved();
+}
+
+export async function unmarkThenConfirm<T>({ unmark, confirm, restore, onRemoved }: {
+  unmark: () => Promise<void>;
+  confirm: () => Promise<T | null>;
+  restore: () => Promise<void>;
+  onRemoved: () => void;
+}) {
+  try {
+    await unmark();
+    const result = await confirm();
+    if (result === null) {
+      await restore();
+      return null;
+    }
+    onRemoved();
+    return result;
+  } catch (error) {
+    await restore();
+    throw error;
+  }
+}
+
+export async function writeSaveDestinations({ previousReadLater, nextReadLater, writeReadLater, writeLists }: {
+  previousReadLater: boolean;
+  nextReadLater: boolean;
+  writeReadLater: (value: boolean) => Promise<unknown>;
+  writeLists: () => Promise<void>;
+}) {
+  const changedReadLater = previousReadLater !== nextReadLater;
+  if (changedReadLater) await writeReadLater(nextReadLater);
+  try {
+    await writeLists();
+  } catch (error) {
+    if (changedReadLater) await writeReadLater(previousReadLater);
     throw error;
   }
 }

@@ -112,9 +112,7 @@ const SETTINGS_COPY = {
   usageAnalytics: 'Usage analytics',
   usageAnalyticsDescription: 'Control what PaperTok measures to improve the app.',
   analyticsToggleLabel: 'Allow usage analytics',
-  analyticsHint: 'Counts pages and actions anonymously, without cookies; never your searches, papers, interests or account. Saved on the spot.',
-  detailedAnalyticsLabel: 'Detailed analytics',
-  detailedAnalyticsHint: 'Links what you do to your account: the papers you open, how long you read, what you search, and recordings of your sessions with typed text hidden. Uses cookies.',
+  analyticsHint: 'Measures repeat visits, papers viewed and opened, and reading time. Uses a persistent browser identifier linked to your account when signed in. Saved in this browser.',
   institution: 'University',
   institutionDescription: 'Verify your university email to link your library.',
   institutionLinked: (name: string) => `Verified with ${name}.`,
@@ -381,22 +379,7 @@ function PrivacyPage() {
             checked={analyticsConsent !== ANALYTICS_CONSENT.DENIED}
             aria-label={copy.analyticsToggleLabel}
             onCheckedChange={checked => { void updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.ANONYMOUS : ANALYTICS_CONSENT.DENIED,
-            ); }}
-          />
-        </Label>
-        {/* Turning this on also turns analytics on; off leaves it anonymous. */}
-        <Label className="profile-switch">
-          <span className="profile-switch-copy">
-            <span className="profile-switch-label">{copy.detailedAnalyticsLabel}</span>
-            <span className="profile-switch-hint">{copy.detailedAnalyticsHint}</span>
-          </span>
-          <Switch
-            className="settings-toggle"
-            checked={analyticsConsent === ANALYTICS_CONSENT.DETAILED}
-            aria-label={copy.detailedAnalyticsLabel}
-            onCheckedChange={checked => { void updateAnalyticsConsent(
-              checked ? ANALYTICS_CONSENT.DETAILED : ANALYTICS_CONSENT.ANONYMOUS,
+              checked ? ANALYTICS_CONSENT.ENABLED : ANALYTICS_CONSENT.DENIED,
             ); }}
           />
         </Label>

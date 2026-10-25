@@ -6,7 +6,7 @@ import test from 'node:test';
 import type { TestGlobals } from './test-types.ts';
 import type { WorkerEnv } from './env.ts';
 import { SOURCES, SourceRefused, WORKING_PAPER_SERIES_IDS, arxivRecordPaper, backfillLane, categoryLaneJobs, harvestLane, ingestPaperIds, notableLaneJobs, openAlexVenueFilterForLeaf, parseOaiPage, splitRawAuthors } from './paper-sources.ts';
-import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
+import { FEED_CANDIDATE_LIMIT, KEEP_LIKED_DAYS, daysFromNow, embedPending, evictExpired, findWorks, ingestPapers, keepLiked, parseFeedRequest, readFeedPage } from './paper-store.ts';
 import { enrichPending } from './paper-enrichment.ts';
 import { fileAreaPapers } from './leaf-filing.ts';
 import { handleHarvestOpenAlex, handleOpenAlex } from './openalex-api.ts';
@@ -266,15 +266,40 @@ test("a category's OpenAlex lane asks by its measured topic IDs, not by text, an
   assert.equal(urls[0].searchParams.has('search'), false);
   const topics = filters.find(filter => filter.startsWith('primary_topic.id:'))!.slice('primary_topic.id:'.length).split('|');
   assert.ok(topics.length > 0 && topics.every(id => leavesForOpenAlexTopic(id).join() === 'bio.mol'));
-  for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true', 'to_publication_date:2026-10-21']) {
+  for (const filter of ['type:article', 'is_retracted:false', 'primary_location.source.is_core:true', 'to_publication_date:2026-10-21']) {
     assert.ok(filters.includes(filter), filter);
   }
+  assert.equal(filters.some(filter => filter.startsWith('has_abstract')), false, 'an article without an abstract is listed too');
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7222916812', ['bio.mol']]]);
   assert.equal(items[0].paper.primaryCategory, undefined, 'filed under the lane, not given it as its field');
 
   // Aerospace conference papers were 19 of 20 relevant in the gate; structural ones 0 of 2.
   await SOURCES['openalex-topics'].fetchPage(env, { lane: 'mech.aero', page: 1, since: '', waits: { seconds: 0 } });
   assert.ok(filtersOf(urls[1]).includes('type:article|conference-paper'));
+});
+
+test("a topic lane's article without an abstract is filed saying it has none, and embedded by its title", async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-21T05:21:00Z') });
+  const { env } = relay(t, () => ({ results: [{ ...splicingWork, abstract_inverted_index: null }] }));
+  const { items } = await SOURCES['openalex-topics'].fetchPage(env, { lane: 'bio.mol', page: 1, since: '', waits: { seconds: 0 } });
+  assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7222916812', ['bio.mol']]]);
+  const [{ paper }] = items;
+  assert.equal(paper.abstract, 'No abstract available.');
+  assert.equal(hasUsableAIAbstract(paper.abstract), false, 'its abstract stays unknown');
+
+  const { binding, db } = testD1();
+  const embedded: string[] = [];
+  const AI = { run: async (_model: string, { text }: { text: string[] }) => {
+    embedded.push(...text);
+    return { data: text.map(() => Array.from({ length: 1024 }, (_, index) => (index === 0 ? 1 : 0))) };
+  } };
+  const store = { ...env, PAPER_STORE: binding, AI } as Parameters<typeof embedPending>[0];
+  await ingestPapers(store, items);
+  assert.equal(await embedPending(store, 10), 1);
+  assert.deepEqual(embedded, [splicingWork.title]);
+  const filed = db.prepare("SELECT work_id FROM work_lanes WHERE lane = 'bio.mol'").all();
+  assert.equal(filed.length, 1);
+  assert.deepEqual(db.prepare('SELECT work_id FROM work_vectors').all(), filed, 'the filed article has a vector');
 });
 
 // ─── Which leaves get an OpenAlex topic lane: the precision gate's decisions ───
@@ -329,9 +354,12 @@ test('an arXiv leaf the precision gate admitted gets a journal-article lane for 
     const sampled = new URL(reviews[leaf].query).searchParams.get('filter')!.split(',');
     assert.deepEqual(topicsOf(filters), topics, leaf);
     assert.ok(topics.every(id => topicsOf(sampled).includes(id)), `${leaf} asks only for topics its sample asked for`);
-    for (const filter of ['type:article', 'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true']) {
+    for (const filter of ['type:article', 'is_retracted:false', 'primary_location.source.is_core:true']) {
       assert.ok(filters.includes(filter) && sampled.includes(filter), `${leaf}: ${filter}`);
     }
+    // Labelling the sample needed abstracts; the lane takes articles without one.
+    assert.ok(sampled.includes('has_abstract:true'), leaf);
+    assert.equal(filters.some(filter => filter.startsWith('has_abstract')), false, leaf);
   }
   const { items } = await SOURCES['openalex-topics'].fetchPage(env, { lane: 'q-fin.GN', page: 1, since: '', waits: { seconds: 0 } });
   assert.deepEqual(items.map(item => [item.paper.id, item.lanes]), [['openalex:W7223183626', ['q-fin.GN']]]);
@@ -783,7 +811,9 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 6 });
   for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
-  assert.ok(terms.every(term => term.endsWith(' AND hasabstract AND 1800/01/01:2026/10/24[edat]')));
+  // Any record with an abstract, and one without unless it is an editorial, a letter or a comment; the backfill's day last.
+  const admitted = ' NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)';
+  assert.ok(terms.every(term => term.endsWith(`)${admitted} AND 1800/01/01:2026/10/24[edat]`)), terms[0]);
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
 
   t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
@@ -797,6 +827,18 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   terms.length = 0;
   await backfillLane(store, job);
   assert.equal(terms.length, 0, 'a finished backfill asks nothing more');
+});
+
+// `/sources/pubmed` turns away a query over 500 characters (`safeSourceQuery`).
+test("every PubMed lane's query, a backfill's included, fits the route's 500 characters", async t => {
+  const { urls, env } = relay(t, url => (url.pathname.endsWith('/esearch.fcgi') ? { esearchresult: { count: '0', idlist: [] } } : { result: {} }));
+  const lanes = categoryLaneJobs().filter(job => job.source === 'pubmed').map(job => job.lane);
+  Object.assign(env, { PUBMED_GLOBAL_MINUTE_LIMIT: String(lanes.length) });
+  for (const lane of lanes) await SOURCES.pubmed.fetchPage(env, { lane, page: 1, since: '', waits: { seconds: 0 }, until: '2026-10-24' });
+  const terms = urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).map(url => url.searchParams.get('term')!);
+  assert.equal(terms.length, lanes.length);
+  const longest = terms.reduce((a, b) => (b.length > a.length ? b : a));
+  assert.ok(longest.length <= 500, `${longest.length} characters: ${longest}`);
 });
 
 test("a refused page ends the lane's backfill for the run, which goes on from that page next run", async t => {
@@ -937,6 +979,8 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.ok(refusal instanceof SourceRefused, 'the lane ends for this run once it has waited out one minute');
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
+  const firstPage = urls.find(url => url.pathname.endsWith('/esearch.fcgi'))!.searchParams.get('term')!;
+  assert.ok(firstPage.endsWith(') NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)'), 'a record without an abstract is listed too, unless it is an editorial, a letter or a comment');
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
@@ -1114,12 +1158,12 @@ test("an admitted leaf's notable lane asks for its topics' most-cited articles o
   const { urls, env } = relay(t, () => ({ results: [plsiWork] }));
   const { items } = await SOURCES['openalex-notable'].fetchPage(env, { lane: 'notable:cs.CV', page: 1, since: '', waits: { seconds: 0 } });
   assert.equal(urls[0].searchParams.get('sort'), 'cited_by_count:desc');
-  // The leaf's own topics and types, as its journal lane asks, over ten years.
+  // The leaf's own topics and types, as its journal lane asks, over ten years,
+  // with or without an abstract.
   assert.deepEqual(filtersOf(urls[0]).sort(), [
     ...openAlexTopicFilterForLeaf('cs.CV')!.split(','),
     'from_publication_date:2016-01-01',
     'to_publication_date:2026-10-23',
-    'has_abstract:true',
     'is_retracted:false',
     'primary_location.source.is_core:true',
   ].sort());
@@ -1223,6 +1267,31 @@ test("a notable lane's listing renews only the papers it returned, though the co
     'openalex:W2107743791': new Date(next).toISOString(),
     'openalex:W1000000003': enriched,
     'openalex:W1000000002': null,
+  });
+});
+
+test("a notable lane's listing does not renew a paper without an abstract, so the refresh still asks for one", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  // A synthetic variant of the recorded work that OpenAlex lists without an abstract.
+  const withoutAbstract = { ...plsiWork, id: 'https://openalex.org/W1000000004', doi: 'https://doi.org/10.5555/cited-without-abstract', title: 'A most-cited article OpenAlex lists without its abstract', abstract_inverted_index: null };
+  const { env } = relay(t, url => (url.searchParams.get('sort') === 'cited_by_count:desc' ? { results: [plsiWork, withoutAbstract] } : { results: [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding } as never;
+  const enrichedAt = () => Object.fromEntries((db.prepare("SELECT paper ->> '$.id' AS id, enriched_at FROM works").all() as Array<{ id: string; enriched_at: string | null }>)
+    .map(row => [row.id, row.enriched_at]));
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, first);
+  // That night's enrichment, which found no abstract.
+  const enriched = new Date(first).toISOString();
+  db.prepare('UPDATE works SET enriched_at = ?').run(enriched);
+
+  const next = first + 7 * DAY;
+  t.mock.timers.setTime(next);
+  await harvestLane(store, { source: 'openalex-notable', lane: 'notable:cs.CV' }, next);
+  assert.deepEqual(enrichedAt(), {
+    'openalex:W2107743791': new Date(next).toISOString(),
+    'openalex:W1000000004': enriched,
   });
 });
 
