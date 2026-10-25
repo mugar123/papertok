@@ -1067,10 +1067,12 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * last walk sent, not from the top, and so does a first page that `continues`
  * when the reader's order is kept. When the order holds none, the page is
  * the one `page` names, papers the reader has seen, rather than none; it goes
- * on past the works the corpus has dropped, as a walk does. Past the last
- * page it is none, as for a page asked by number there. The
- * paper ids the walk reads stay in the kept order, so a later page reads only
- * the ones no page has read.
+ * on past the works the corpus has dropped, as a walk does. It still starts
+ * at the rank `page` names, so it can send again the papers that the page
+ * before it reached past dropped works; the app lists none twice and asks for
+ * the next page. Past the last page it is none, as for a page asked by number
+ * there. The paper ids the walk reads stay in the kept order, so a later page
+ * reads only the ones no page has read.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
