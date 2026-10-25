@@ -699,6 +699,11 @@ const SILENCE = Symbol('nothing reached the reader');
  * the callbacks already queued have run (`setImmediate`), and the reader still
  * holds nothing. A fixed allowance would measure the machine: under load a
  * correct rewrite's first event sometimes missed 200 ms.
+ *
+ * This leans on an ordering: the pump's meta write cannot finish until the reader
+ * pulls, so a correct rewrite has its first event queued before the stage is
+ * reached. A macrotask hop added between that write and the stage would need a
+ * longer wait here.
  */
 async function firstEventBefore(reader: Promise<ReadableStreamDefaultReader>, stage: { reached: Promise<void> }) {
   const firstEvent = reader.then(async (open) => {
