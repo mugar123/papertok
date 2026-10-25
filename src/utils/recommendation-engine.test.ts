@@ -658,8 +658,10 @@ test('exploration for an AI reader stays within AI, and a CS reader explores no 
 
 test('exploration never reaches an area the reader did not pick, removals or not', () => {
   const ai = leavesOf('ai');
-  assert.ok(nearbyExplorationCategories(['cs.LG'], {}, ['hep-th']).every(id => ai.includes(id)));
-  assert.ok(nearbyExplorationCategories(['cs.LG', 'quant-ph'], {}, ['hep-th']).every(id => ai.includes(id) || leavesOf('physics').includes(id)));
+  const aiReader = nearbyExplorationCategories(['cs.LG'], {}, ['hep-th']);
+  assert.ok(aiReader.length > 0 && aiReader.every(id => ai.includes(id)));
+  const twoAreas = nearbyExplorationCategories(['cs.LG', 'quant-ph'], {}, ['hep-th']);
+  assert.ok(twoAreas.length > 0 && twoAreas.every(id => ai.includes(id) || leavesOf('physics').includes(id)));
 });
 
 test('exploration skips the subareas the reader removed', () => {
