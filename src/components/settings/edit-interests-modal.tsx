@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/auth-context.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
-import { INTEREST_AREAS } from '../../data/categories.ts';
+import { CATEGORIES } from '../../data/categories.ts';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.tsx';
 import { Drawer, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.tsx';
 import { Button } from '../ui/button.tsx';
@@ -28,7 +28,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   const { userPreferences, updatePreferences } = useAuth();
   const [selected, setSelected] = useState(new Set<string>());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeArea, setActiveArea] = useState(() => Object.keys(INTEREST_AREAS)[0]);
+  const [activeArea, setActiveArea] = useState(() => Object.keys(CATEGORIES)[0]);
   const isPhone = useIsPhone();
 
   // Initialize selection when modal opens
@@ -36,10 +36,10 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     if (isOpen && userPreferences) {
       const timeoutId = setTimeout(() => {
         setSelected(new Set(userPreferences));
-        const firstFollowed = Object.keys(INTEREST_AREAS).find(areaKey => (
-          Object.keys(INTEREST_AREAS[areaKey].subcategories).some(subKey => userPreferences.includes(subKey))
+        const firstFollowed = Object.keys(CATEGORIES).find(areaKey => (
+          Object.keys(CATEGORIES[areaKey].subcategories).some(subKey => userPreferences.includes(subKey))
         ));
-        setActiveArea(firstFollowed || Object.keys(INTEREST_AREAS)[0]);
+        setActiveArea(firstFollowed || Object.keys(CATEGORIES)[0]);
       }, 0);
       return () => clearTimeout(timeoutId);
     }
@@ -59,7 +59,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   };
 
   const toggleArea = (areaKey: string) => {
-    const subKeys = Object.keys(INTEREST_AREAS[areaKey].subcategories);
+    const subKeys = Object.keys(CATEGORIES[areaKey].subcategories);
     const allSelected = subKeys.every(k => selected.has(k));
     
     setSelected((prev) => {
@@ -91,11 +91,11 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
     }
   };
 
-  const counted = (areaKey: string) => Object.keys(INTEREST_AREAS[areaKey].subcategories).filter(k => selected.has(k)).length;
+  const counted = (areaKey: string) => Object.keys(CATEGORIES[areaKey].subcategories).filter(k => selected.has(k)).length;
 
   /** One field's topics, with its count and its Select all. */
   const fieldTopics = (areaKey: string) => {
-    const area = INTEREST_AREAS[areaKey];
+    const area = CATEGORIES[areaKey];
     const subKeys = Object.keys(area.subcategories);
     const count = counted(areaKey);
     const allSelected = count === subKeys.length;
@@ -150,7 +150,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
   );
 
   if (isPhone) {
-    const area = INTEREST_AREAS[activeArea];
+    const area = CATEGORIES[activeArea];
     return (
       <Drawer open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}>
         <DrawerContent className="settings-sheet is-tall" overlayClassName="settings-sheet-backdrop">
@@ -167,7 +167,7 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
                 </span>
               </SelectTrigger>
               <SelectContent alignItemWithTrigger={false} sideOffset={6}>
-                {Object.entries(INTEREST_AREAS).map(([areaKey, entry]) => {
+                {Object.entries(CATEGORIES).map(([areaKey, entry]) => {
                   const picked = counted(areaKey);
                   return (
                     <SelectItem key={areaKey} value={areaKey} className="settings-sheet-option">
@@ -208,14 +208,14 @@ export default function EditInterestsModal({ isOpen, onClose }: { isOpen: boolea
               topics beside it. */}
           <Tabs value={activeArea} onValueChange={value => setActiveArea(value as string)} orientation="vertical" className="eim-rail">
             <TabsList variant="pill" className="eim-rail-list" aria-label={'Research fields'}>
-              {Object.entries(INTEREST_AREAS).map(([areaKey, area]) => (
+              {Object.entries(CATEGORIES).map(([areaKey, area]) => (
                 <TabsTrigger key={areaKey} value={areaKey} className="eim-rail-tab">
                   <area.icon size={18} aria-hidden="true" style={counted(areaKey) ? { color: area.gradient } : undefined} />
                   <span className="eim-rail-label">{area.label}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
-            {Object.keys(INTEREST_AREAS).map(areaKey => (
+            {Object.keys(CATEGORIES).map(areaKey => (
               <TabsContent key={areaKey} value={areaKey} className="eim-area">
                 {fieldTopics(areaKey)}
               </TabsContent>

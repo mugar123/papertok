@@ -3,6 +3,7 @@ import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { leavesForOpenAlexTopic } from './area-accent.ts';
+import { getAllLeafCategories } from '../data/category-taxonomy.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
@@ -692,6 +693,18 @@ function sampleBeta(alpha: number, beta: number, random: () => number) {
  * gets its chance; one shown often and skipped draws low and stops being
  * offered; one that keeps holding the reader keeps coming back.
  */
+/**
+ * The leaves exploration chooses from: the other leaves of the areas the
+ * reader's preferences belong to, less any the reader has turned away from.
+ */
+export function nearbyExplorationCategories(preferences: string[], affinities: Record<string, number> = {}) {
+  const leaves = getAllLeafCategories();
+  const areas = new Set(leaves.filter(leaf => preferences.includes(leaf.id)).map(leaf => leaf.area));
+  return leaves
+    .filter(leaf => areas.has(leaf.area) && !preferences.includes(leaf.id) && (affinities[leaf.id] || 0) >= -2)
+    .map(leaf => leaf.id);
+}
+
 export function pickExplorationCategories(
   categoryIds: string[],
   exposure: Record<string, { shown: number; engaged: number }> = {},

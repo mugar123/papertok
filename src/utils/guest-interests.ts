@@ -2,7 +2,7 @@ type GuestStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 type GuestAnswer = { areas?: unknown; topics?: unknown; readingLevel?: unknown; emailDigest?: unknown; institutionEmail?: unknown };
 
-import { INTEREST_AREAS } from '../data/categories.ts';
+import { CATEGORIES } from '../data/categories.ts';
 import { normalizeReadingPreferences } from './user-settings.ts';
 import { institutionDomainOf } from './institution-domain.ts';
 
@@ -28,7 +28,7 @@ import { institutionDomainOf } from './institution-domain.ts';
  */
 export const GUEST_INTERESTS_STORAGE_KEY = 'papertok_guestInterests';
 
-const AREA_KEYS = Object.freeze(Object.keys(INTEREST_AREAS));
+const AREA_KEYS = Object.freeze(Object.keys(CATEGORIES));
 
 function getStorage(storage?: GuestStorage | null) {
   if (storage) return storage;
@@ -43,7 +43,7 @@ function getStorage(storage?: GuestStorage | null) {
 /**
  * Unknown keys dropped, duplicates folded, taxonomy order kept: the stored
  * list is always something every consumer (the feed plan, the onboarding)
- * can hand straight to INTEREST_AREAS.
+ * can hand straight to CATEGORIES.
  */
 export function normalizeGuestAreas(areas: unknown) {
   if (!Array.isArray(areas)) return [];
@@ -60,7 +60,7 @@ export function normalizeGuestTopics(topics: unknown, areas: unknown) {
   if (!Array.isArray(topics)) return [];
   const wanted = new Set(topics.filter(topic => typeof topic === 'string'));
   return normalizeGuestAreas(areas)
-    .flatMap(key => Object.keys(INTEREST_AREAS[key].subcategories))
+    .flatMap(key => Object.keys(CATEGORIES[key].subcategories))
     .filter(id => wanted.has(id));
 }
 
@@ -95,7 +95,7 @@ function guestSeedLists(areas: unknown, perArea: number, topics: unknown) {
   const chosen = normalizeGuestAreas(areas);
   const narrowed = new Set(normalizeGuestTopics(topics, chosen));
   return chosen.map((key) => {
-    const all = Object.keys(INTEREST_AREAS[key].subcategories);
+    const all = Object.keys(CATEGORIES[key].subcategories);
     const picked = all.filter(id => narrowed.has(id));
     return picked.length > 0 ? picked : all.slice(0, perArea);
   });
