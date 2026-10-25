@@ -15,6 +15,20 @@ const AUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 // day (Pablo, 2026-10-24). Each minute's ceiling is the same number.
 const GLOBAL_DAILY_LIMIT = 20;
 
+// The emailed link carries a one-time sign-in credential, so it leads only to
+// the production app: www and the apex keep separate storage, and the nonce is
+// in the one that asked. CORS also admits loopback and legacy origins against
+// production, so a loopback app is accepted only by a Worker reached on
+// loopback. Plain `wrangler dev` reports the api.papertok.app route as the
+// request URL; worker/README.md gives the flag that keeps loopback.
+const APP_ORIGINS = new Set(['https://papertok.app', 'https://www.papertok.app']);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function isLinkOrigin(origin: string, request: Request) {
+  return APP_ORIGINS.has(origin)
+    || (LOOPBACK_HOSTS.has(new URL(request.url).hostname) && LOOPBACK_HOSTS.has(new URL(origin).hostname));
+}
+
 async function generateVerificationLink(env: WorkerEnv, email: string, target: URL) {
   const signal = AbortSignal.timeout(8_000);
   const boundedFetch: typeof fetch = (input, init) => fetch(input, { ...init, signal });
@@ -49,7 +63,9 @@ async function generateVerificationLink(env: WorkerEnv, email: string, target: U
 export async function handleInstitutionVerificationRequest(request: Request, env: WorkerEnv) {
   if (request.method !== 'POST') throw new InstitutionLinkError('METHOD_NOT_ALLOWED', 405);
   const origin = request.headers.get('origin');
-  if (!origin || !allowedOrigins(env).has(origin)) throw new InstitutionLinkError('ORIGIN_NOT_ALLOWED', 403);
+  if (!origin || !allowedOrigins(env).has(origin) || !isLinkOrigin(origin, request)) {
+    throw new InstitutionLinkError('ORIGIN_NOT_ALLOWED', 403);
+  }
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: false });
   // The requester has to be a proven owner of an address, so an account minted
   // against the public API key cannot have university inboxes mailed. Firebase

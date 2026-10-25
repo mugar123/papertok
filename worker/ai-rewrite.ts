@@ -73,6 +73,7 @@ import {
   nanPdfPart,
 } from './nan-client.ts';
 import { extractPaperText, formatPaperTextForPrompt } from './paper-text.ts';
+import { DEGRADED_CACHE_SECONDS } from './provider-runtime.ts';
 
 // Bump when the prompt or output budget changes so cached rewrites use that policy.
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v3';
@@ -573,12 +574,12 @@ export function cacheableFinish(finishReason: unknown, droppedSections = 0) {
   return null;
 }
 
-async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite) {
+async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite, ttlSeconds: number) {
   const target = rewriteStore(env);
   if (!target) return;
   try {
     await target.store.put(`${target.prefix}${key}`, JSON.stringify(value), {
-      expirationTtl: REWRITE_CACHE_TTL_SECONDS,
+      expirationTtl: ttlSeconds,
     });
   } catch {
     // A missed cache write only costs a future regeneration.
@@ -995,15 +996,20 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // Where the reader's copy stops. Past the cap that is our cut rather than
         // the model's, whatever reason the model gave for its own.
         const stoppedBy = droppedSections > 0 ? 'SECTION_CAP' : finishReason;
+        // The key names the model that was asked first. What the fallback wrote
+        // carries its own name and is kept only as long as an outage, so readers
+        // get the primary model again once it recovers.
+        const fellBack = activeModel !== model;
         // A regenerate skipped the cache read, so the entry it would overwrite may
-        // be complete. Only a complete result is worth replacing it with.
-        cachedWrite = regenerate ? finish === 'complete' : finish !== null;
+        // be complete. Only a complete result from the primary model is worth
+        // replacing it with; the lighter model's text does not displace it.
+        cachedWrite = regenerate ? finish === 'complete' && !fellBack : finish !== null;
         if (cachedWrite) {
           await writeCachedRewrite(env, cacheKey, {
-            meta,
+            meta: fellBack ? { ...meta, model: activeModel } : meta,
             sections,
             truncated: finish === 'truncated',
-          });
+          }, fellBack ? DEGRADED_CACHE_SECONDS : REWRITE_CACHE_TTL_SECONDS);
         }
         await send({
           type: 'done',

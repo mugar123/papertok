@@ -15,8 +15,11 @@ const privateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKe
 const token = fakeIdToken({ aud: 'papertok-168df', sub: 'primary' });
 const nonce = '4cfcdddf-40ac-40b1-89c4-269dbfa6518a';
 
-function request(body: unknown = { email: 'Student@comunidadunir.net', nonce }, { origin = 'https://papertok.app', authorization = `Bearer ${token}`, method = 'POST' } = {}) {
-  return new Request('https://api.papertok.app/institution/verification', {
+function request(body: unknown = { email: 'Student@comunidadunir.net', nonce }, {
+  origin = 'https://papertok.app', authorization = `Bearer ${token}`, method = 'POST',
+  url = 'https://api.papertok.app/institution/verification',
+} = {}) {
+  return new Request(url, {
     method, headers: { origin, authorization, 'content-type': 'application/json' },
     ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
   });
@@ -155,6 +158,40 @@ test('origin, method, authentication, verified account and input gates prevent s
   await assert.rejects(handleInstitutionVerificationRequest(request(), h.env), { code: 'INSTITUTION_ACCOUNT_NOT_VERIFIED' });
   assert.equal(h.generated.length, 0);
   assert.equal(h.messages.length, 0);
+});
+
+test('the emailed link leads to the production app, or to a loopback app only from a Worker on loopback', async t => {
+  // CORS admits loopback and the legacy GitHub Pages origin against the
+  // production API, but the link carries a one-time sign-in credential.
+  const h = harness(t);
+  for (const origin of ['http://localhost:5173', 'https://mugar123.github.io']) {
+    const response = await worker.fetch(request(undefined, { origin }), h.env);
+    assert.equal(response.status, 403, origin);
+    assert.deepEqual(await response.json(), { code: 'ORIGIN_NOT_ALLOWED' });
+  }
+  // A Worker reached on loopback admits a loopback app only, not every origin
+  // CORS admits.
+  for (const host of ['localhost:8787', '127.0.0.1:8787', '[::1]:8787']) {
+    const url = `http://${host}/institution/verification`;
+    const response = await worker.fetch(request(undefined, { origin: 'https://mugar123.github.io', url }), h.env);
+    assert.equal(response.status, 403, host);
+    assert.deepEqual(await response.json(), { code: 'ORIGIN_NOT_ALLOWED' });
+  }
+  assert.equal(h.generated.length, 0);
+  assert.equal(h.messages.length, 0);
+
+  const sentTo: string[] = [];
+  for (const [account, origin, url] of [
+    ['www-reader', 'https://www.papertok.app', 'https://api.papertok.app/institution/verification'],
+    ['local-developer', 'http://localhost:5173', 'http://localhost:8787/institution/verification'],
+  ]) {
+    h.setIdentity(account);
+    const response = await worker.fetch(request({ email: `${account}@comunidadunir.net`, nonce }, { origin, url }), h.env);
+    assert.equal(response.status, 200, origin);
+    const link = h.messages.at(-1)!.text.split('\n').find(line => /^https?:\/\//.test(line))!;
+    sentTo.push(new URL(link).origin);
+  }
+  assert.deepEqual(sentTo, ['https://www.papertok.app', 'http://localhost:5173']);
 });
 
 test('an account that signed in with GitHub can request a link although Firebase never flags it as verified', async t => {
