@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { markThenConfirm, runOneAtATime } from './quick-save-operation.ts';
+import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestinations } from './quick-save-operation.ts';
 
 function deferred() {
   let resolve!: () => void;
@@ -114,4 +114,114 @@ test('restoring an already saved paper does not report another save', async () =
     onSaved: () => { events.push('saved'); },
   });
   assert.deepEqual(events, []);
+});
+
+test('a save waits for its interaction write and never reports a refused saved mark', async () => {
+  const interaction = deferred();
+  const events: string[] = [];
+  const pending = markThenConfirm({
+    alreadySaved: false,
+    issued: Promise.resolve(),
+    mark: () => interaction.promise,
+    unmark: async () => { events.push('unmarked'); },
+    confirm: async () => {},
+    onSaved: () => { events.push('saved'); },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(events, []);
+  interaction.resolve();
+  await pending;
+  assert.deepEqual(events, ['saved']);
+
+  const refusedEvents: string[] = [];
+  const refusal = new Error('interaction-write-refused');
+  const refused = Promise.reject(refusal);
+  void refused.catch(() => {});
+  await assert.rejects(markThenConfirm({
+    alreadySaved: false,
+    issued: Promise.resolve(),
+    mark: () => refused,
+    unmark: async () => { refusedEvents.push('unmarked'); },
+    confirm: async () => {},
+    onSaved: () => { refusedEvents.push('saved'); },
+  }), error => error === refusal);
+  assert.deepEqual(refusedEvents, ['unmarked']);
+});
+
+test('removal waits for the saved-state write even when no list holds the paper', async () => {
+  const interaction = deferred();
+  const events: string[] = [];
+  const pending = unmarkThenConfirm({
+    unmark: () => interaction.promise,
+    confirm: async () => { events.push('confirmed'); return true; },
+    restore: async () => { events.push('restored'); },
+    onRemoved: () => { events.push('removed'); },
+  });
+  await Promise.resolve();
+  assert.deepEqual(events, []);
+  interaction.resolve();
+  assert.equal(await pending, true);
+  assert.deepEqual(events, ['confirmed', 'removed']);
+});
+
+test('a refused saved-state write restores the mark and never reports removal', async () => {
+  const events: string[] = [];
+  const refusal = new Error('permission-denied');
+  const interaction = Promise.reject(refusal);
+  void interaction.catch(() => {});
+  await assert.rejects(unmarkThenConfirm({
+    unmark: () => interaction,
+    confirm: async () => true,
+    restore: async () => { events.push('restored'); },
+    onRemoved: () => { events.push('removed'); },
+  }), error => error === refusal);
+  assert.deepEqual(events, ['restored']);
+});
+
+test('a refused Read later write or incomplete list lookup does not report removal', async () => {
+  for (const incomplete of [false, true]) {
+    const events: string[] = [];
+    const pending = unmarkThenConfirm({
+      unmark: async () => {},
+      confirm: async () => {
+        if (incomplete) return null;
+        throw new Error('read-later-write-refused');
+      },
+      restore: async () => { events.push('restored'); },
+      onRemoved: () => { events.push('removed'); },
+    });
+    if (incomplete) assert.equal(await pending, null);
+    else await assert.rejects(pending, /read-later-write-refused/);
+    assert.deepEqual(events, ['restored']);
+  }
+});
+
+test('a refused Read later write leaves persisted list memberships intact for removal and Undo', async () => {
+  for (const removing of [false, true]) {
+    const lists = new Set(removing ? ['reading'] : []);
+    await assert.rejects(writeSaveDestinations({
+      previousReadLater: removing,
+      nextReadLater: !removing,
+      writeReadLater: async () => { throw new Error('read-later-refused'); },
+      writeLists: async () => {
+        if (removing) lists.delete('reading');
+        else lists.add('reading');
+      },
+    }), /read-later-refused/);
+    assert.deepEqual([...lists], removing ? ['reading'] : []);
+  }
+});
+
+test('a refused list batch restores the previous persisted Read later value for removal and Undo', async () => {
+  for (const previousReadLater of [false, true]) {
+    let readLater = previousReadLater;
+    await assert.rejects(writeSaveDestinations({
+      previousReadLater,
+      nextReadLater: !previousReadLater,
+      writeReadLater: async value => { readLater = value; },
+      writeLists: async () => { throw new Error('membership-refused'); },
+    }), /membership-refused/);
+    assert.equal(readLater, previousReadLater);
+  }
 });

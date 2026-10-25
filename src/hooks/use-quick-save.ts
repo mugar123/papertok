@@ -13,7 +13,7 @@ import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
 import { auth } from '../services/firebase.ts';
 import { pickerUndoToastId } from '../components/lists/picker-undo-toast.ts';
-import { markThenConfirm, runOneAtATime } from './quick-save-operation.ts';
+import { markThenConfirm, runOneAtATime, unmarkThenConfirm, writeSaveDestinations } from './quick-save-operation.ts';
 
 /**
  * A card's Save button, the same wherever the card is: a tap saves the paper
@@ -47,6 +47,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
   );
 
   const restoreSave = useCallback(async (paper: Paper, lists: OwnList[], readLater: boolean) => {
+    if (auth.currentUser?.uid !== user?.uid) return;
     const id = interactionIdFor(paper)!;
     const latest = saveState.current;
     // The saved document is issued before the mark, so a late OpenAlex topic
@@ -56,19 +57,26 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
       issued: user
         ? setDoc(savedPaperDocRef(user.uid, paper.id), buildSavedPaperPayload(paper, new Date().toISOString()), { merge: true })
         : null,
-      mark: () => latest.markSaved(paper),
-      unmark: () => latest.unmarkSaved(paper),
+      mark: () => latest.markSaved(paper, { throwOnError: true }),
+      unmark: async () => {
+        if (auth.currentUser?.uid === user?.uid) await latest.unmarkSaved(paper);
+      },
       confirm: async () => {
-        if (user) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
+        if (auth.currentUser?.uid !== user?.uid) return;
+        const previousReadLater = Boolean(latest.personalLibrary[id]?.readLater);
+        await writeSaveDestinations({
+          previousReadLater,
+          nextReadLater: readLater || previousReadLater,
+          writeReadLater: value => latest.toggleReadLater(paper, value, { throwOnError: true }),
+          writeLists: async () => {
+            if (user) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
+          },
+        });
       },
       onSaved: () => {
         if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'add', surface, paper_id: paper.id });
       },
     });
-    // Not awaited: Read later flips in the same tick and its write never
-    // rejects, so waiting for its acknowledgement would only hold the paper
-    // against the next tap for one more round trip.
-    if (readLater && !latest.personalLibrary[id]?.readLater) void latest.toggleReadLater(paper);
   }, [interactionIdFor, language, surface, trackEvent, user]);
 
   const handleSaveToList = useCallback((paper: Paper) => {
@@ -88,27 +96,41 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void, surfa
         return;
       }
       const readLater = Boolean(personalLibrary[id]?.readLater);
-      // The button empties now; which lists held the paper is read after.
-      void unmarkSaved(paper);
-      let held: OwnList[] | null;
+      let lists: OwnList[];
       try {
-        held = user ? await readListsHoldingPaper(user.uid, paper.id) : [];
-        if (held && user) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
+        const held = await unmarkThenConfirm({
+          unmark: () => unmarkSaved(paper, { throwOnError: true }),
+          confirm: async () => {
+            const held = user ? await readListsHoldingPaper(user.uid, paper.id) : [];
+            if (!held) return null;
+            await writeSaveDestinations({
+              previousReadLater: readLater,
+              nextReadLater: false,
+              writeReadLater: value => toggleReadLater(paper, value, { throwOnError: true }),
+              writeLists: async () => {
+                if (user) await writeListMembership({ uid: user.uid, paper, lists: held, added: false, language });
+              },
+            });
+            return held;
+          },
+          restore: async () => {
+            if (auth.currentUser?.uid !== user?.uid) return;
+            await markSaved(paper);
+          },
+          onRemoved: () => {
+            if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface, paper_id: paper.id });
+          },
+        });
+        if (!held) {
+          // A full page may hide more lists: let the picker show them all.
+          onSaveToList(paper);
+          return;
+        }
+        lists = held;
       } catch {
-        void markSaved(paper);
         toast.error('Could not remove this paper');
         return;
       }
-      if (!held) {
-        // A full page of lists may hide more that hold the paper: the picker
-        // shows them all, and the paper stays saved until the reader chooses.
-        void markSaved(paper);
-        onSaveToList(paper);
-        return;
-      }
-      if (readLater) void toggleReadLater(paper);
-      if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface, paper_id: paper.id });
-      const lists = held;
       toast('Removed from your saved papers', {
         action: {
           label: 'Undo',
