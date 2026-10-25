@@ -59,8 +59,9 @@ const FRONT_MATTER_OPENINGS = [
   /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thanks?|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
   // Case-sensitive, so "the Data Science Institute" stays a funder.
   /^(?:[Tt]h(?:is|e)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|[Rr]esearch\s+reported\s+in\s+this\s+(?:publication|article|paper))\s+(?:was|is|has\s+been)\s+(?:\w+ly\s+)?(?:supported|funded)(?:,?\s+in\s+(?:whole\s*,?\s+or\s+in\s+)?part\s*,?)?\s+by\b(?!\s+(?:(?:the|a|an|new)\s+)?(?:data|evidence|findings|results|experiments?|simulations?|observations|records|surveys?)\b)/,
-  /^(?:this|the)\s+(?:work|research|project|study)\s+has\s+received\s+funding\s+from\b/i,
-  /^funded\s+by\s+the\s+european\s+union\b/i,
+  /^(?:(?:this|the)\s+(?:work|research|project|study|paper|article|publication|trial|manuscript)|the\s+research\s+leading\s+to\s+these\s+results)\s+(?:has\s+)?received\s+funding\s+from\b/i,
+  // Case-sensitive: a capitalized funder name, so "Funded by venture capital" stays an abstract.
+  /^(?:Co-?)?[Ff]unded\s+by\s+(?:the\s+)?\p{Lu}/u,
   /^this\s+material\s+is\s+based\s+(?:up)?on\s+work\s+(?:\w+ly\s+)?supported\s+by\b/i,
   /^the views expressed (?:herein|here|in this)/i,
 ];
@@ -69,7 +70,10 @@ const FRONT_MATTER_OPENINGS = [
 export function opensAsFrontMatter(text: unknown) {
   if (typeof text !== 'string') return false;
   const opening = text.trim().replace(FOOTNOTE_MARKER, '');
-  return FRONT_MATTER_OPENINGS.some(pattern => pattern.test(opening));
+  // The lower-cased text catches all-capitals and title-case notes; the
+  // case-sensitive patterns still see the original.
+  const lowered = opening.toLowerCase();
+  return FRONT_MATTER_OPENINGS.some(pattern => pattern.test(opening) || pattern.test(lowered));
 }
 
 /** Whether a work of `type` has an abstract; a work of unknown type may. */

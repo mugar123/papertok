@@ -98,6 +98,7 @@ test('an opening that says what supported or funded the work is front matter unl
     // Semantic Scholar text reaches the check without its whitespace collapsed.
     'This study is supported by  data from the Health and Retirement Study and examines retirement timing across cohorts.',
     'This study is supported by\n data from the Health and Retirement Study and examines retirement timing across cohorts.',
+    'Funded by venture capital, the startup market in this study grew twice as fast as the rest of the economy over the decade.',
   ]) {
     assert.equal(isPlausibleAbstract(text), true, text);
   }
@@ -121,6 +122,18 @@ test('an opening that says what supported or funded the work is front matter unl
     'Funded by the European Union. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the European Union.',
     'This article was supported by the National Natural Science Foundation of China (No. 12345678).',
     'This trial was funded by the NIHR Health Technology Assessment programme (project 16/31/101).',
+    // The opening is matched whatever its case; only the data or evidence exception is case-sensitive.
+    'THIS WORK WAS SUPPORTED BY THE NATIONAL INSTITUTES OF HEALTH UNDER GRANT R01 HL123456.',
+    'This Work Was Supported By The National Science Foundation Under Grant No. 1234567.',
+    // Any funder named with a capital after "(Co-)funded by".
+    'Funded by the Deutsche Forschungsgemeinschaft (DFG, German Research Foundation) – Project-ID 123456789 – SFB 1234.',
+    'Co-funded by the European Union. Views and opinions expressed are however those of the author(s) only.',
+    'Funded by NIHR under programme grant RP-PG-0000-00000 for a cohort of 10,000 adults.',
+    // "Has received funding from" for any subject a supported-by note has, and FP7's.
+    'This paper has received funding from the European Union\'s Horizon 2020 research and innovation programme under grant agreement No 123456.',
+    'This publication has received funding from the European Research Council under grant agreement No 123456.',
+    'This work received funding from the European Research Council under grant agreement No 123456.',
+    'The research leading to these results has received funding from the European Research Council under the European Union\'s Seventh Framework Programme (FP7/2007-2013).',
   ]) {
     assert.equal(isPlausibleAbstract(text), false, text);
   }
