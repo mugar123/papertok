@@ -79,7 +79,7 @@ import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDism
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
 import { readStoredClassification, storedClassification } from '../models/paper.ts';
-import { serializeLibraryPaper } from '../utils/reading-library.ts';
+import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
@@ -1763,7 +1763,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
-          paperAbstract: paper.summary?.substring(0, 500),
+          paperAbstract: abstractExcerpt(paper) || undefined,
           // The same copy a save keeps. A like used to store only the title
           // and three authors, so the row on the Liked tab knew no DOI, no
           // arXiv id and no year for the paper — nothing to build a link or a
@@ -1815,7 +1815,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
-          paperAbstract: paper.summary?.substring(0, 500),
+          paperAbstract: abstractExcerpt(paper) || undefined,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });
@@ -2102,7 +2102,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         if (paper?.title) interactionData.paperTitle = paper.title;
         if (paper?.authors?.length) interactionData.paperAuthors = paper.authors.slice(0, 3);
         if (paper?.primaryCategory) interactionData.paperCategory = paper.primaryCategory;
-        if (paper?.summary) interactionData.paperAbstract = paper.summary.substring(0, 500);
+        if (abstractExcerpt(paper)) interactionData.paperAbstract = abstractExcerpt(paper);
         // The same copy a like keeps. The library reads this record before any
         // savedPapers document, and without a copy a saved paper had no field
         // to show (PAP-60).

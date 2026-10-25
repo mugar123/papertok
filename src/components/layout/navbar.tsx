@@ -1,15 +1,20 @@
 import type { AnimationEvent, MouseEvent, PointerEvent, RefObject } from 'react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Menu } from '@base-ui/react/menu';
+import { useReducedMotion } from 'framer-motion';
+import { animateSize, EASE_OUT } from '../../utils/motion-curves.ts';
 import { ruleTransform } from '../../utils/nav-rule.ts';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useFeed } from '../../context/feed-context.tsx';
 import { useFollowingUpdates } from '../../context/following-updates-context.tsx';
 import type { Icon } from '@phosphor-icons/react';
 import type { FeedTab, FeedTabKey } from '../../utils/feed-tabs.ts';
-import { MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
+import { CaretDown, Check, MagnifyingGlass, Stack, UserCheck } from '@phosphor-icons/react';
 import { FEED_TABS } from '../../utils/feed-tabs.ts';
 import AccountMenu from './account-menu.tsx';
+import RailMenu from '../feed/rail-menu.tsx';
+import { DrawerClose } from '../ui/drawer.tsx';
 import { shouldOpenSearchOnSlash } from './search-shortcut.ts';
 
 // The palette's chord is shown the way this keyboard spells it (search-shortcut.ts takes both).
@@ -103,7 +108,81 @@ function FeedTabLink({ tab, active, onTabClick, onTabPress, onTabLift, onTabRele
   );
 }
 
-export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
+function PagePicker({ search }: { search: string }) {
+  const searchRow = `/search${search}`;
+  return (
+    <RailMenu
+      title={'Go to'}
+      side="bottom"
+      align="start"
+      trigger={(
+        <button type="button" className="navbar-page-picker" aria-label={'Search, switch page'}>
+          {'Search'}
+          <CaretDown size={12} aria-hidden="true" />
+        </button>
+      )}
+      menu={(
+        <>
+          {FEED_TABS.map(({ key, path, label }) => {
+            const TabIcon = TAB_ICONS[key];
+            return (
+              <Menu.LinkItem key={key} className="pc-share-menu-item" closeOnClick render={<Link to={path} />}>
+                <TabIcon size={16} aria-hidden="true" /> {label}
+              </Menu.LinkItem>
+            );
+          })}
+          <Menu.LinkItem className="pc-share-menu-item navbar-page-row" closeOnClick aria-current="page" render={<Link to={searchRow} />}>
+            <MagnifyingGlass size={16} aria-hidden="true" /> {'Search'}
+            <Check size={15} aria-hidden="true" className="navbar-page-check" />
+          </Menu.LinkItem>
+        </>
+      )}
+      sheet={(
+        <>
+          {FEED_TABS.map(({ key, path, label }) => {
+            const TabIcon = TAB_ICONS[key];
+            return (
+              <li key={key}>
+                <Link to={path} className="pc-share-row">
+                  <TabIcon size={20} aria-hidden="true" /> {label}
+                </Link>
+              </li>
+            );
+          })}
+          <li>
+            <DrawerClose className="pc-share-row navbar-page-row" aria-current="page">
+              <MagnifyingGlass size={20} aria-hidden="true" /> {'Search'}
+              <Check size={18} aria-hidden="true" className="navbar-page-check" />
+            </DrawerClose>
+          </li>
+        </>
+      )}
+    />
+  );
+}
+
+function useSearchFieldResize(fieldRef: RefObject<HTMLElement | null>, onSearchPage: boolean) {
+  const widthRef = useRef(0);
+  const reduceMotion = useReducedMotion();
+
+  useLayoutEffect(() => {
+    const field = fieldRef.current;
+    const from = widthRef.current;
+    if (!field || reduceMotion || !from || !field.offsetWidth) return;
+    // The field's flex rules would override the width it animates through.
+    animateSize(field, 'width', from, 260, EASE_OUT, { flex: 'none' });
+  }, [fieldRef, onSearchPage, reduceMotion]);
+
+  useEffect(() => {
+    const field = fieldRef.current;
+    if (!field) return;
+    const observer = new ResizeObserver(() => { widthRef.current = field.offsetWidth; });
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [fieldRef, onSearchPage]);
+}
+
+export default function Navbar({ onOpenSearch = () => {}, searchOpen = false, onSearchSlot }: { onOpenSearch?: () => void; searchOpen?: boolean; onSearchSlot?: (node: HTMLDivElement | null) => void }) {
   const { user } = useAuth();
   const [arriving, setArriving] = useState(() => !navbarHasArrived);
   const handleArrived = (event: AnimationEvent<HTMLElement>) => {
@@ -119,18 +198,28 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
+  const onSearchPage = pathname === '/search';
+  const searchFieldRef = useRef<HTMLElement | null>(null);
+  const attachSearchField = useCallback((node: HTMLElement | null) => {
+    searchFieldRef.current = node;
+  }, []);
+  const attachSearchSlot = useCallback((node: HTMLDivElement | null) => {
+    searchFieldRef.current = node;
+    onSearchSlot?.(node);
+  }, [onSearchSlot]);
+  useSearchFieldResize(searchFieldRef, onSearchPage);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       // Bound on `window`, so a modal dialog's inertness does not filter it:
       // the guard has to be asked explicitly (search-shortcut.ts).
-      if (!shouldOpenSearchOnSlash(event, document)) return;
+      if (onSearchPage || !shouldOpenSearchOnSlash(event, document)) return;
       event.preventDefault();
       onOpenSearch();
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [onOpenSearch]);
+  }, [onOpenSearch, onSearchPage]);
 
   // Which tab is current is the pathname, and nothing else. This used to also
   // require `feedMode === 'top'`, from a time when this feed had more than one
@@ -228,7 +317,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
       onAnimationEnd={handleArrived}
       aria-label={'Main navigation'}
     >
-      <div className="navbar-inner">
+      <div className={onSearchPage ? 'navbar-inner navbar-inner--search' : 'navbar-inner'}>
         {/* Sin `aria-label`. El botón ya se llama a sí mismo: el nombre sale de
             `.navbar-brand-word`, que dice «PaperTok» en texto. Con el
             `aria-label` puesto, la regla de 2.5.3 comparaba «PaperTok» con lo
@@ -249,21 +338,28 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           <span className="navbar-brand-word">Paper<span>Tok</span></span>
         </button>
 
+        {onSearchPage && <PagePicker search={location.search} />}
+
         {/* Open, the bar holds the state it put the reader in. Without it you
             clicked a bar and a sheet appeared somewhere else, with nothing
             connecting the two — and closing left nothing behind either. The
             transition is already on the element, so the state fades in and out
             rather than snapping. */}
-        <button
-          type="button"
-          className={`navbar-search ${searchOpen ? 'is-open' : ''}`}
-          onClick={onOpenSearch}
-          aria-expanded={searchOpen}
-        >
-          <MagnifyingGlass size={15} aria-hidden="true" />
-          <span>{'Search papers, authors, topics...'}</span>
-          <kbd aria-hidden="true">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
-        </button>
+        {onSearchPage ? (
+          <div className="navbar-search-slot" ref={attachSearchSlot} />
+        ) : (
+          <button
+            type="button"
+            ref={attachSearchField}
+            className={`navbar-search ${searchOpen ? 'is-open' : ''}`}
+            onClick={onOpenSearch}
+            aria-expanded={searchOpen}
+          >
+            <MagnifyingGlass size={15} aria-hidden="true" />
+            <span>{'Search papers, authors, topics...'}</span>
+            <kbd aria-hidden="true">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd>
+          </button>
+        )}
 
         <div className="navbar-links" ref={linksRef}>
           <span
@@ -302,16 +398,17 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
         </div>
 
         <div className="navbar-right">
-          <button
-            className={`navbar-icon-btn navbar-icon-btn--search-compact ${searchOpen ? 'is-open' : ''}`}
-            aria-expanded={searchOpen}
-            onClick={onOpenSearch}
-            title={'Search'}
-            aria-label={'Search'}
-          >
-            <MagnifyingGlass size={17} />
-          </button>
-
+          {!onSearchPage && (
+            <button
+              className={`navbar-icon-btn navbar-icon-btn--search-compact ${searchOpen ? 'is-open' : ''}`}
+              aria-expanded={searchOpen}
+              onClick={onOpenSearch}
+              title={'Search'}
+              aria-label={'Search'}
+            >
+              <MagnifyingGlass size={17} />
+            </button>
+          )}
 
           {user && (
             <div className="navbar-profile">
