@@ -239,8 +239,9 @@ function shareLanes(groups: PlannedGroup[], maxLanes: number) {
  * first, since the Worker gives an area's article to the first on a tie.
  *
  * Each group takes its weight's share of `maxPositives` (at least one when it
- * has any) from its area's newest examples, and examples of no area fill
- * whatever room the groups leave.
+ * has any) from its newest examples: a cold group's from its own area, the
+ * established group's from every area that is neither dormant nor
+ * cold-added. Examples of no area fill whatever room the groups leave.
  */
 export function planInterestGroups(
   input: InterestMemoryInput,

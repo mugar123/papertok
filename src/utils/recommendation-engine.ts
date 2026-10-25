@@ -374,8 +374,9 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     ? Math.max(weights.minPreferenceShare, 1 - (interestProgress[category] || 0) * (1 - weights.minPreferenceShare))
     : establishedShare);
   const preferenceShare = Math.min(1, ...(chosenAsPrimary.length > 0 ? chosenAsPrimary : matched).map(shareOf));
-  // What the reader learned about a subject they left, or never picked, stays
-  // stored but ranks nothing here. A follow and the card's own signals still do.
+  // What the reader learned about a subject they removed stays stored but
+  // ranks nothing on a card of it alone (isDormant); a subject they never
+  // picked ranks as it always did. A follow and the card's own signals still do.
   const isActive = !context.dormantCategories?.length
     || chosenDirectly.length > 0
     || !isDormant(paper, categorySignals, context.dormantCategories);

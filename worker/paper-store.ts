@@ -1150,8 +1150,10 @@ function groupsOfCandidate(groups: FeedGroup[]) {
  * `exampleCategories`; else the area its primary category names (a working
  * paper's `econ`), or else the areas whose journal lanes list it, matched
  * against the areas of those categories. A like of a known area no group
- * holds ranks none: the reader left that area, and its likes sleep. Only a
- * like with no evidence ranks every group.
+ * holds ranks none. The app's established group holds every leaf but the
+ * ones the reader removed, so that is a like of a removed subarea, or of an
+ * area the reader never picked when every group is an added one. Only a like
+ * with no evidence ranks every group.
  */
 function groupsOfLike(groups: FeedGroup[]) {
   const exampleAreas = groups.map(group => areasOfLeaves(group.exampleCategories));
