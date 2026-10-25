@@ -22,6 +22,14 @@ export function getMissingAbstractDois(papers: Paper[]) {
     .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
 }
 
+// Crossref and Semantic Scholar hold publisher abstracts in every area, so any
+// OpenAlex paper with a DOI and no abstract can be asked of them.
+export function recoverableAbstractDois(papers: Paper[]) {
+  return [...new Set(papers
+    .filter(paper => paper.sources.primary === 'openalex' && !hasUsableAIAbstract(paper.abstract))
+    .map(paper => normalizeDoi(paper.doi)).filter(Boolean))].sort();
+}
+
 /**
  * Cards without an abstract that a request still running can supply one for:
  * OpenAlex enrichment, Europe PMC by PubMed ID, or recovery from arXiv or INSPIRE.
@@ -34,25 +42,40 @@ export function abstractsInFlight(papers: Paper[], running: { openAlex: boolean;
   )).map(paper => paper.id));
 }
 
+const arxivKey = (paper: Partial<Paper>) => normalizeArxivId(paper.arxivId).replace(/v\d+$/, '');
+const doiKey = (paper: Partial<Paper>) => normalizeDoi(paper.doi);
+// The sources that recover an abstract, in order of preference, and what each
+// record is matched by.
+const ABSTRACT_SOURCES = [
+  { source: 'arxiv', key: arxivKey },
+  { source: 'inspire', key: doiKey },
+  { source: 'crossref', key: doiKey },
+  { source: 'semantic-scholar', key: doiKey },
+];
+
+/**
+ * Recovered abstracts for OpenAlex papers without one: arXiv's by arXiv ID,
+ * then INSPIRE's, Crossref's and Semantic Scholar's by DOI. The first source
+ * with a usable abstract for a paper gives it, and is recorded in `enrichedBy`.
+ */
 export function mergeFeedAbstracts(papers: Paper[], records: Partial<Paper>[]) {
-  const abstracts = new Map(records
-    .filter(paper => paper.sources?.primary === 'arxiv')
-    .filter(paper => hasUsableAIAbstract(paper.abstract))
-    .map(paper => [normalizeArxivId(paper.arxivId).replace(/v\d+$/, ''), paper.abstract]));
-  const doiAbstracts = new Map(records
-    .filter(paper => paper.sources?.primary === 'inspire' && hasUsableAIAbstract(paper.abstract))
-    .map(paper => [normalizeDoi(paper.doi), paper.abstract]));
+  const sources = ABSTRACT_SOURCES.map(({ source, key }) => ({
+    source,
+    key,
+    abstracts: new Map(records
+      .filter(record => record.sources?.primary === source && hasUsableAIAbstract(record.abstract))
+      .map(record => [key(record), record.abstract])),
+  }));
   let changed = false;
   const merged = papers.map(paper => {
     if (paper.sources.primary !== 'openalex' || hasUsableAIAbstract(paper.abstract)) return paper;
-    const id = normalizeArxivId(paper.arxivId).replace(/v\d+$/, '');
-    const arxivAbstract = id && abstracts.get(id);
-    const doi = normalizeDoi(paper.doi);
-    const abstract = arxivAbstract || (doi && doiAbstracts.get(doi));
-    if (!abstract) return paper;
+    const recovered = sources
+      .map(({ source, key, abstracts }) => ({ source, abstract: key(paper) ? abstracts.get(key(paper)) : undefined }))
+      .find(({ abstract }) => abstract);
+    if (!recovered) return paper;
     changed = true;
     // Recovery supplies only text; it must not replace publication or access metadata.
-    return PaperBuilder.merge(paper, { abstract }, arxivAbstract ? 'arxiv' : 'inspire');
+    return PaperBuilder.merge(paper, { abstract: recovered.abstract }, recovered.source);
   });
   return changed ? merged : papers;
 }

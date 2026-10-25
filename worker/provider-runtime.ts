@@ -200,10 +200,12 @@ const PROVIDER_IDENTITY_QUOTA: IdentityMinuteQuota = Object.freeze({
 // makes: origin gate plus edge cache plus a global per-minute ceiling reserved
 // only after a cache miss.
 //
-// `/related` shares the `s2` namespace with `/sources/s2`
-// on purpose. All three spend the same Semantic Scholar allowance, and a
-// ceiling that only covered one of them would leave alive exactly the failure
-// this replaces -- a limiter that counts per caller instead of per provider.
+// `/related` shares the `s2` namespace with `/sources/s2` on purpose, and so
+// does `/enrich/s2`, the batch the corpus enrichment sends for itself
+// (`reserveInternalCall`). All three spend the same Semantic Scholar
+// allowance, and a ceiling that only covered one of them would leave alive
+// exactly the failure this replaces -- a limiter that counts per caller instead
+// of per provider.
 //
 // `paced` puts a route on the one-a-second beat of `upstream-pace.js` under its
 // minute ceiling. Semantic Scholar is the provider that needs it: it admits one
@@ -223,6 +225,7 @@ const SHARED_MINUTE_CEILINGS: Readonly<Partial<Record<string, MinuteCeiling>>> =
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  '/enrich/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
 
 // The key is built from the values the handler is about to send upstream, never
@@ -452,6 +455,19 @@ async function reserveGates(request: Request, origin: string, env: WorkerEnv, op
     await releaseHeld(env, held);
     throw error;
   }
+}
+
+// The gates of `path`'s shared ceiling for a call the Worker sends for itself,
+// with no reader to charge and nothing to cache: the minute ceiling and, for a
+// paced provider, the beat. True when the call may go; on a refusal every unit
+// taken goes back, and a ledger that cannot be reached throws.
+export async function reserveInternalCall(path: string, env: WorkerEnv) {
+  const ceiling = SHARED_MINUTE_CEILINGS[path];
+  if (!ceiling) throw new Error(`No shared ceiling for ${path}`);
+  const held: QuotaRequest[] = [];
+  const refusal = await reserveGates(new Request(`https://papertok.internal${path}`), '', env, {}, ceiling, held);
+  if (refusal) await releaseHeld(env, held);
+  return !refusal;
 }
 
 // `ttl` may be a function of the payload, because whether an answer deserves its

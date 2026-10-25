@@ -5,11 +5,13 @@ import {
   abstractsInFlight,
   getOpenAlexEnrichmentId,
   joinNotablePage,
+  mergeFeedAbstracts,
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   notablePlaces,
   placeNotableCards,
   preserveFeedAbstracts,
+  recoverableAbstractDois,
 } from './feed-enrichment.ts';
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {
@@ -239,4 +241,34 @@ test('a card is loading only while a request that can supply its abstract is run
   assert.deepEqual([...abstractsInFlight(papers, all)], ['pubmed', 'linked', 'physics-doi']);
   assert.deepEqual([...abstractsInFlight(papers, { ...all, recovery: false })], ['pubmed']);
   assert.deepEqual([...abstractsInFlight(papers, { openAlex: false, europePmc: false, recovery: false })], []);
+});
+
+test('the DOIs whose abstract a publisher record can supply: OpenAlex papers without one, in any area, each once', () => {
+  const papers = [
+    { id: 'W1', doi: 'https://doi.org/10.5555/Clinical-Trial', primaryCategory: 'med.onc', abstract: 'No abstract available.' },
+    { id: 'W2', doi: '10.1016/j.nuclphysb.2011.08.011', primaryCategory: 'hep-th', abstract: '' },
+    { id: 'W3', doi: '10.5555/clinical-trial', abstract: '' },
+    { id: 'W4', doi: '10.1000/with-text', abstract: 'Publisher text.' },
+    { id: 'W5', abstract: '' },
+    { id: 'pubmed:9', doi: '10.1000/pubmed-record', abstract: '', primary: 'pubmed' },
+  ].map(({ primary = 'openalex', ...paper }) => ({ title: `Synthetic paper ${paper.id}`, authors: [], ...paper, sources: { primary, enrichedBy: [] } }));
+  assert.deepEqual(recoverableAbstractDois(papers), ['10.1016/j.nuclphysb.2011.08.011', '10.5555/clinical-trial']);
+});
+
+test('recovered abstracts apply in the order arXiv, INSPIRE, Crossref, Semantic Scholar, and only to the paper they name', () => {
+  const paper = { id: 'W7', arxivId: '2601.00001', doi: '10.1000/shared', title: 'Synthetic paper W7', authors: [], abstract: 'No abstract available.', sources: { primary: 'openalex', enrichedBy: [] } } as Paper;
+  const record = (primary: string, abstract: string) => ({ arxivId: '2601.00001', doi: 'https://doi.org/10.1000/SHARED', abstract, sources: { primary, enrichedBy: [] } });
+  const records = [record('semantic-scholar', 'From Semantic Scholar.'), record('crossref', 'From Crossref.'), record('inspire', 'From INSPIRE.'), record('arxiv', 'From arXiv.')];
+  const merged = (kept: Partial<Paper>[]) => mergeFeedAbstracts([paper], kept)[0];
+  assert.equal(merged(records).abstract, 'From arXiv.');
+  assert.deepEqual(merged(records).sources.enrichedBy, ['arxiv']);
+  assert.equal(merged(records.slice(0, 3)).abstract, 'From INSPIRE.');
+  assert.equal(merged(records.slice(0, 2)).abstract, 'From Crossref.');
+  assert.deepEqual(merged(records.slice(0, 2)).sources.enrichedBy, ['crossref']);
+  assert.equal(merged(records.slice(0, 1)).abstract, 'From Semantic Scholar.');
+  assert.deepEqual(merged(records.slice(0, 1)).sources.enrichedBy, ['semantic-scholar']);
+  // A placeholder is not a usable abstract, and a record for another DOI is not this paper's.
+  assert.equal(merged([record('crossref', 'No abstract available.'), record('semantic-scholar', 'From Semantic Scholar.')]).abstract, 'From Semantic Scholar.');
+  const unrelated = [{ doi: '10.1000/other', abstract: 'Another paper.', sources: { primary: 'crossref', enrichedBy: [] } }];
+  assert.equal(mergeFeedAbstracts([{ ...paper, arxivId: undefined }], unrelated)[0].abstract, 'No abstract available.');
 });

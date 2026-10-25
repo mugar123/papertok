@@ -4,8 +4,10 @@ import type { EuropePmcRecord } from '../src/utils/europe-pmc-record.ts';
 import type { WorkerEnv } from './env.ts';
 import type { StoreEnv } from './paper-store.ts';
 
-import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment } from '../src/utils/feed-enrichment.ts';
+import { getMissingAbstractDois, getMissingArxivAbstractIds, getOpenAlexEnrichmentId, mergeFeedAbstracts, mergeOpenAlexEnrichment, needsOpenAlexEnrichment, recoverableAbstractDois } from '../src/utils/feed-enrichment.ts';
+import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
 import { fetchInspireAbstracts } from '../src/services/inspire-abstract-service.ts';
+import { stripMarkup } from '../src/services/crossref-institution-service.ts';
 import { OPENALEX_ENRICHMENT_SELECT, mapOpenAlexEnrichmentWork } from '../src/utils/open-alex-work.ts';
 import { mapICitePublication, mergeICiteEnrichment } from '../src/services/i-cite-records.ts';
 import { mapEuropePmcResult, mergeEuropePmcEnrichment } from '../src/services/europe-pmc-records.ts';
@@ -13,14 +15,15 @@ import { withCrossrefType } from '../src/services/feed-publication-rules.ts';
 import { normalizeDoi } from '../src/utils/public-navigation.ts';
 import { handleHarvestOpenAlex } from './openalex-api.ts';
 import { handleICite } from './source-api.ts';
-import { fetchWithDeadline } from './provider-runtime.ts';
+import { fetchWithDeadline, reserveInternalCall } from './provider-runtime.ts';
 import { database, rewriteWorks } from './paper-store.ts';
 import { fetchArxivPapers } from './paper-sources.ts';
 
 // What the feed used to add to every page it showed, added once to each stored
 // paper instead: OpenAlex's citations, topics, authors and access; iCite's and
 // Europe PMC's for PubMed papers; Crossref's type for OpenAlex's own records,
-// which drops books. The same mappers and merges the browser ran.
+// which drops books; the abstracts OpenAlex lacks. The same mappers and merges
+// the browser ran.
 
 const USER_AGENT = 'PaperTok/1.0 (mailto:app@papertok.io)';
 const DAY_MS = 86_400_000;
@@ -36,6 +39,8 @@ const ID_CHUNK = 50;
 const ICITE_CHUNK = 200;
 const EUROPE_PMC_CHUNK = 100;
 const CROSSREF_CHUNK = 20;
+// The most ids Semantic Scholar's batch endpoint takes in one call.
+const S2_RECOVERY_BATCH = 500;
 
 type EnrichEnv = StoreEnv & WorkerEnv;
 interface Row { id: number; paper: string; enrich_misses: number }
@@ -119,25 +124,59 @@ async function europePmcRecords(pmids: string[]) {
   return byPmid;
 }
 
-async function crossrefTypes(dois: string[]) {
-  const types = new Map<string, string>();
+interface CrossrefRecord { type?: string; abstract?: string }
+
+/** Crossref's type of each work, and its abstract when Crossref has a usable one, by DOI. */
+async function crossrefRecords(dois: string[]) {
+  const records = new Map<string, CrossrefRecord>();
   for (const chunk of chunks(dois, CROSSREF_CHUNK)) {
     const url = new URL('https://api.crossref.org/works');
     url.search = new URLSearchParams({
       filter: chunk.map(doi => `doi:${doi}`).join(','),
-      select: 'DOI,type',
+      select: 'DOI,type,abstract',
       rows: String(chunk.length),
       mailto: 'app@papertok.io',
     }).toString();
     const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 15_000);
     if (!response.ok) continue;
-    const payload = await response.json<{ message?: { items?: Array<{ DOI?: unknown; type?: unknown }> } }>();
+    const payload = await response.json<{ message?: { items?: Array<{ DOI?: unknown; type?: unknown; abstract?: unknown }> } }>();
     for (const work of payload?.message?.items || []) {
       const doi = normalizeDoi(work?.DOI);
-      if (chunk.includes(doi) && typeof work?.type === 'string' && /^[a-z-]+$/.test(work.type)) types.set(doi, work.type);
+      if (!chunk.includes(doi)) continue;
+      const type = typeof work?.type === 'string' && /^[a-z-]+$/.test(work.type) ? work.type : undefined;
+      const abstract = stripMarkup(work?.abstract);
+      records.set(doi, { type, abstract: hasUsableAIAbstract(abstract) ? abstract : undefined });
     }
   }
-  return types;
+  return records;
+}
+
+/**
+ * Semantic Scholar's abstracts for up to S2_RECOVERY_BATCH DOIs, in one batch
+ * call within the `s2` allowance readers' related papers spend. A refused
+ * reservation sends nothing; a refused or failed call recovers nothing.
+ */
+async function semanticScholarAbstracts(env: EnrichEnv, dois: string[]): Promise<Partial<Paper>[]> {
+  const asked = dois.slice(0, S2_RECOVERY_BATCH);
+  if (!(await reserveInternalCall('/enrich/s2', env))) return [];
+  const response = await fetchWithDeadline('https://api.semanticscholar.org/graph/v1/paper/batch?fields=externalIds,abstract', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      'user-agent': USER_AGENT,
+      ...(env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {}),
+    },
+    body: JSON.stringify({ ids: asked.map(doi => `DOI:${doi}`) }),
+  }, 15_000);
+  if (!response.ok) return [];
+  const payload = await response.json<Array<{ externalIds?: { DOI?: unknown }; abstract?: unknown } | null>>();
+  // An unknown id answers null; a record names the DOI it is for.
+  return (Array.isArray(payload) ? payload : []).flatMap(record => {
+    const doi = normalizeDoi(record?.externalIds?.DOI);
+    if (!asked.includes(doi) || typeof record?.abstract !== 'string') return [];
+    return [{ doi, abstract: record.abstract, sources: { primary: 'semantic-scholar', enrichedBy: [] } }];
+  });
 }
 
 interface PendingRow extends Row { refresh: boolean }
@@ -195,8 +234,13 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
   let enriched = mergeOpenAlexEnrichment(papers, openAlex);
   enriched = mergeICiteEnrichment(enriched, iCite);
   enriched = mergeEuropePmcEnrichment(enriched, europePmc);
-  // The abstract recovery the feed ran on its pages: arXiv's own text for an
-  // OpenAlex card on arXiv, INSPIRE's by DOI for a physics card.
+  // The abstract of an OpenAlex paper listed without one, from the first
+  // source that has it: arXiv's own text for a paper on arXiv, INSPIRE's by
+  // DOI for a physics paper, then Crossref's publisher record, which the type
+  // call below brings, and last Semantic Scholar's. Semantic Scholar is one
+  // batch call a step: it shares a one-a-second allowance with readers'
+  // related papers. A source that fails recovers nothing; the paper keeps no
+  // abstract and the refresh asks again.
   const missingArxiv = getMissingArxivAbstractIds(enriched);
   const missingDois = getMissingAbstractDois(enriched);
   const recovered = [
@@ -208,8 +252,11 @@ export async function enrichPending(env: EnrichEnv, limit: number, now = Date.no
     .filter(paper => paper.sources?.primary === 'openalex')
     .map(paper => normalizeDoi(paper.doi))
     .filter(doi => doi && !doi.includes(',') && doi.length <= 240))];
-  const types = crossrefDois.length ? await crossrefTypes(crossrefDois).catch(() => new Map<string, string>()) : new Map<string, string>();
-  enriched = enriched.map(paper => withCrossrefType(paper, types.get(normalizeDoi(paper.doi))));
+  const crossref = crossrefDois.length ? await crossrefRecords(crossrefDois).catch(() => new Map<string, CrossrefRecord>()) : new Map<string, CrossrefRecord>();
+  enriched = enriched.map(paper => withCrossrefType(paper, crossref.get(normalizeDoi(paper.doi))?.type));
+  enriched = mergeFeedAbstracts(enriched, [...crossref].flatMap(([doi, { abstract }]) => (abstract ? [{ doi, abstract, sources: { primary: 'crossref', enrichedBy: [] } }] : [])));
+  const stillMissing = recoverableAbstractDois(enriched);
+  if (stillMissing.length) enriched = mergeFeedAbstracts(enriched, await semanticScholarAbstracts(env, stillMissing).catch(() => []));
 
   await rewriteWorks(env, rows.map((row, index) => ({ id: row.id, before: papers[index], after: enriched[index] })), now);
   // A paper OpenAlex should have known but did not counts a miss. One waiting
