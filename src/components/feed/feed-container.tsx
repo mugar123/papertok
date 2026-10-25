@@ -56,8 +56,7 @@ import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../.
 import { feedResumeMemory, forYouScrollKey } from '../../utils/feed-resume-memory.ts';
 import { SKIP_EXIT_MS, SKIP_RETURN_MS, skipExitSlot } from '../../utils/feed-skip-exit.ts';
 import { pullStartFrom, pullTakesOver, pullProgress, pullTravelPx, pullOutcome } from '../../utils/feed-pull-to-refresh.ts';
-import { tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
-import { FEED_TABS } from '../../utils/feed-tabs.ts';
+import { feedTabPathForSurface, tabSwipeTarget } from '../../utils/feed-tab-swipe.ts';
 import { LONG_PRESS_MS } from './long-press.ts';
 import './feed-container.css';
 import { EASE_OUT, EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
@@ -1140,7 +1139,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [feedNode, canPull, setPull, landPull]);
 
   const navigate = useNavigate();
-  const tabPath = FEED_TABS.find(tab => tab.scrollKey === scrollKey)?.path;
+  const tabPath = feedTabPathForSurface(surfaceKey);
   useEffect(() => {
     const el = swipeNode;
     if (!el || !tabPath) return undefined;
