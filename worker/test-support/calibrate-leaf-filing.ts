@@ -7,14 +7,20 @@
 // The dataset holds vectors in the stored form (paper-store.ts `quantize`, as
 // base64), embedded from the text the corpus embeds:
 //   { "arxiv": [{ "id", "leaf", "vector" }],          recent arXiv papers whose primary category is the leaf
-//     "labelled": [{ "id", "vector", "labels": { "<leaf>": "on" | "off" | "doubt" }, "arxivIds"? }],
-//     "areaSamples": [{ "id", "area", "vector" }] }   recent articles of each area lane
+//     "labelled": [{ "id", "vector", "labels": { "<leaf>": "on" | "off" | "doubt" }, "arxivIds"?, "openAlex"? }],
+//     "areaSamples": [{ "id", "area", "vector", "openAlex"? }] }   recent articles of each area lane
+// `openAlex` is { "source", "type", "primaryTopic", "authors" } from the
+// article's OpenAlex record: its journal's source id, its work type, its
+// primary topic id (or null) and its number of authors.
 // Each leaf with at least 50 arXiv papers gets a centroid, as storeLeafCentroids
 // gives one. A labelled article whose OpenAlex record names one of those arXiv
 // papers as its preprint (`arxivIds`) is left out: its own preprint would be in
 // the centroid it is scored against, and in the corpus that preprint's leaf
-// already holds it, so similarity never files it. Each area's other labelled
-// articles are split in two with a fixed seed.
+// already holds it, so similarity never files it. So is an article, labelled or
+// sampled from an area lane, that the venue lane of a leaf of the area takes
+// (openalex-leaf-venues.generated.ts): the harvest files it under that leaf by
+// its journal, and it leaves the area lane before similarity is tried. Each
+// area's other labelled articles are split in two with a fixed seed.
 // On the calibration half, the chosen rule is the one that files the most
 // articles correctly at CALIBRATION_PRECISION or more; the held-out half then
 // measures it once. An area gets a rule only when its held-out precision
@@ -31,14 +37,16 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getAllLeafCategories } from '../../src/data/category-taxonomy.ts';
 import { type FilingRule, areaCentroids, closestLeaf, leafCentroids, ruleFiles } from '../leaf-filing.ts';
+import { OPENALEX_LEAF_VENUES } from '../openalex-leaf-venues.generated.ts';
 import { AREA_LANE_AREAS } from '../paper-store.ts';
 
 type Label = 'on' | 'off' | 'doubt';
-interface LabelledArticle { id: string; vector: string; labels: Record<string, Label>; arxivIds?: string[] }
+interface OpenAlexFields { source: string | null; type: string; primaryTopic: string | null; authors: number }
+interface LabelledArticle { id: string; vector: string; labels: Record<string, Label>; arxivIds?: string[]; openAlex?: OpenAlexFields }
 interface CalibrationDataset {
   arxiv: Array<{ id: string; leaf: string; vector: string }>;
   labelled: LabelledArticle[];
-  areaSamples: Array<{ id: string; area: string; vector: string }>;
+  areaSamples: Array<{ id: string; area: string; vector: string; openAlex?: OpenAlexFields }>;
 }
 
 const SEED = 107;
@@ -91,13 +99,46 @@ function scoredArticles(dataset: CalibrationDataset) {
   return dataset.labelled.filter(article => !article.arxivIds?.some(id => sampled.has(id)));
 }
 
+const LEAF_AREA = new Map(getAllLeafCategories().map(leaf => [leaf.id, leaf.area]));
+
 /** The articles with a label on a leaf of the area, with only those labels. */
 function areaArticles(labelled: LabelledArticle[], area: string) {
-  const leafArea = new Map(getAllLeafCategories().map(leaf => [leaf.id, leaf.area]));
   return labelled.flatMap(article => {
-    const labels = Object.fromEntries(Object.entries(article.labels).filter(([leaf]) => leafArea.get(leaf) === area));
+    const labels = Object.fromEntries(Object.entries(article.labels).filter(([leaf]) => LEAF_AREA.get(leaf) === area));
     return Object.keys(labels).length ? [{ ...article, labels }] : [];
   });
+}
+
+type VenueLanes = typeof OPENALEX_LEAF_VENUES;
+
+/** Whether this venue lane lists the article's source and every filter it sends matches the article. */
+function venueLaneTakes({ sources, filters }: VenueLanes[string], record: OpenAlexFields) {
+  if (!record.source || !sources.includes(record.source)) return false;
+  return filters.every(filter => {
+    const field = filter.slice(0, filter.indexOf(':'));
+    const value = filter.slice(filter.indexOf(':') + 1);
+    if (field === 'type') return value.split('|').includes(record.type);
+    if (field === 'primary_topic.id') return record.primaryTopic !== null && value.split('|').includes(record.primaryTopic);
+    if (field === 'authors_count' && /^[<>]\d+$/.test(value)) {
+      return value.startsWith('>') ? record.authors > Number(value.slice(1)) : record.authors < Number(value.slice(1));
+    }
+    throw new Error(`No reading of the venue lane filter ${filter}`);
+  });
+}
+
+/** Whether a venue lane of one of the area's leaves takes the article, so it never reaches similarity filing. */
+const takenByVenueLane = (area: string, record: OpenAlexFields | undefined, venues: VenueLanes) => record !== undefined
+  && Object.entries(venues).some(([leaf, lane]) => LEAF_AREA.get(leaf) === area && venueLaneTakes(lane, record));
+
+/** The area's labelled articles the calibration scores, and how many each exclusion left out. */
+function calibrationArticles(dataset: CalibrationDataset, area: string, venues: VenueLanes) {
+  const labelled = areaArticles(dataset.labelled, area);
+  const withoutPreprints = areaArticles(scoredArticles(dataset), area);
+  const articles = withoutPreprints.filter(article => !takenByVenueLane(area, article.openAlex, venues));
+  return {
+    articles,
+    leftOut: { centroidPreprint: labelled.length - withoutPreprints.length, venueLane: withoutPreprints.length - articles.length },
+  };
 }
 
 interface Article { labels: Record<string, Label>; positive: boolean; closest: ReturnType<typeof closestLeaf> }
@@ -132,7 +173,7 @@ interface AreaCalibration {
   area: string;
   centroids: string[];
   labelledArticles: number;
-  leftOutWithCentroidPreprint: number;
+  leftOut: { centroidPreprint: number; venueLane: number };
   labelsPerLeaf: Record<string, Record<Label, number>>;
   split?: { calibration: number; heldOut: number };
   rule?: FilingRule;
@@ -142,17 +183,16 @@ interface AreaCalibration {
     recall: number | null; recallInterval: Interval;
     shareFiled: number | null; shareFiledInterval: Interval;
   };
-  areaLaneSample?: { papers: number; filed: number; share: number | null; interval: Interval };
+  areaLaneSample?: { papers: number; leftOutByVenueLane: number; filed: number; share: number | null; interval: Interval };
   enabled: boolean;
   reason: string;
 }
 
-export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibration[] {
+export function calibrateLeafFiling(dataset: CalibrationDataset, venues: VenueLanes = OPENALEX_LEAF_VENUES): AreaCalibration[] {
   const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
-  const scored = scoredArticles(dataset);
   return AREA_LANE_AREAS.flatMap((area): AreaCalibration[] => {
     const own = areaCentroids(area, centroids);
-    const articles = areaArticles(scored, area);
+    const { articles, leftOut } = calibrationArticles(dataset, area, venues);
     if (articles.length === 0) return [];
     const labelsPerLeaf: Record<string, Record<Label, number>> = {};
     for (const article of articles) {
@@ -161,8 +201,7 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
         labelsPerLeaf[leaf][label] += 1;
       }
     }
-    const leftOutWithCentroidPreprint = areaArticles(dataset.labelled, area).length - articles.length;
-    const summary = { area, centroids: [...own.keys()], labelledArticles: articles.length, leftOutWithCentroidPreprint, labelsPerLeaf };
+    const summary = { area, centroids: [...own.keys()], labelledArticles: articles.length, leftOut, labelsPerLeaf };
     if (own.size < 2) return [{ ...summary, enabled: false, reason: 'fewer than two leaves with a centroid' }];
 
     const [calibration, heldOut] = calibrationSplit(articles).map(half => half.map(article => ({
@@ -189,7 +228,8 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
     const decided = test.correct + test.wrong;
     const precision = ratio(test.correct, decided);
     const enabled = decided >= MIN_HELD_OUT_DECIDED && test.correct / decided >= REQUIRED_PRECISION;
-    const lane = dataset.areaSamples.filter(paper => paper.area === area);
+    const sampled = dataset.areaSamples.filter(paper => paper.area === area);
+    const lane = sampled.filter(paper => !takenByVenueLane(area, paper.openAlex, venues));
     const laneFiled = lane.filter(paper => ruleFiles(closestLeaf(vectorOf(paper.vector), own), rule)).length;
     return [{
       ...summary,
@@ -202,7 +242,10 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
         recall: ratio(test.correct, test.positives), recallInterval: wilson(test.correct, test.positives),
         shareFiled: ratio(test.filed, test.papers), shareFiledInterval: wilson(test.filed, test.papers),
       },
-      areaLaneSample: { papers: lane.length, filed: laneFiled, share: ratio(laneFiled, lane.length), interval: wilson(laneFiled, lane.length) },
+      areaLaneSample: {
+        papers: lane.length, leftOutByVenueLane: sampled.length - lane.length,
+        filed: laneFiled, share: ratio(laneFiled, lane.length), interval: wilson(laneFiled, lane.length),
+      },
       enabled,
       reason: enabled ? `held-out precision ${precision} over ${decided} decided filings`
         : decided < MIN_HELD_OUT_DECIDED ? `${decided} decided held-out filings, under ${MIN_HELD_OUT_DECIDED}` : `held-out precision ${test.correct}/${decided}, under ${REQUIRED_PRECISION}`,
@@ -215,7 +258,7 @@ function heldOutFixture(dataset: CalibrationDataset, areas: string[]) {
   const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
   const entries = areas.map(area => {
     const own = Object.fromEntries([...areaCentroids(area, centroids)].map(([leaf, vector]) => [leaf, Buffer.from(vector.buffer).toString('base64')]));
-    const [, heldOut] = calibrationSplit(areaArticles(scoredArticles(dataset), area));
+    const [, heldOut] = calibrationSplit(calibrationArticles(dataset, area, OPENALEX_LEAF_VENUES).articles);
     const articles = heldOut.sort((a, b) => a.id.localeCompare(b.id)).map(({ id, labels, vector }) => JSON.stringify({ id, labels, vector }));
     return `${JSON.stringify(area)}: {\n"centroids": ${JSON.stringify(own)},\n"articles": [\n${articles.join(',\n')}\n]}`;
   });
