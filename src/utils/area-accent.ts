@@ -23,6 +23,7 @@ import type { Paper } from '../models/paper.ts';
 // email digest, and `categories.ts` attaches the React icons.
 import { CATEGORIES, getArxivArchiveArea } from '../data/category-taxonomy.ts';
 import { OPENALEX_LEAF_TOPICS } from '../data/open-alex-leaf-topics.generated.ts';
+import { OPENALEX_NOTABLE_LEAF_TOPICS } from '../data/open-alex-notable-leaf-topics.generated.ts';
 import { OPENALEX_FIELD_AREAS, OPENALEX_SUBFIELD_AREAS } from '../data/open-alex-areas.ts';
 
 const FALLBACK = 'var(--gradient-brand)';
@@ -104,6 +105,20 @@ export function openAlexTopicFilterForLeaf(leaf: string) {
   if (!topics) return null;
   const types = leaf === 'mech.aero' ? 'article|conference-paper' : 'article';
   return `primary_topic.id:${[...topics].sort().join('|')},type:${types}`;
+}
+
+/**
+ * The works filter for one leaf's notable lane (ENG-129): the topic lane's
+ * filter when the leaf has one, as the most-cited articles of the topics the
+ * gate found on target; otherwise the topics the notable sample found on
+ * target, articles only (OPENALEX_NOTABLE_LEAF_TOPICS, the second map the
+ * generator writes, from a blind sample of the 15 most cited of the ten
+ * completed years, the lane's own population); null when neither sample
+ * admitted the leaf.
+ */
+export function openAlexNotableFilterForLeaf(leaf: string) {
+  const topics = OPENALEX_NOTABLE_LEAF_TOPICS[leaf];
+  return openAlexTopicFilterForLeaf(leaf) ?? (topics ? `primary_topic.id:${[...topics].sort().join('|')},type:article` : null);
 }
 
 /** The leaves whose topic list holds this OpenAlex topic, given its ID or URL. */

@@ -64,6 +64,7 @@ import {
   filterRelevantSearchResults,
   institutionProminenceWeight,
   institutionSearchValues,
+  normalizeSearchText,
   scoreSearchMatch,
   authorSearchValues,
 } from '../utils/search-relevance.ts';
@@ -835,23 +836,14 @@ export async function searchInstitutions(query: string, options: InstitutionOpti
   return [];
 }
 
-function normalizeTopicSearchValue(value = '') {
-  return String(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
 function scoreTopicMatch(query: string, values: Array<string | undefined>) {
-  const normalizedQuery = normalizeTopicSearchValue(query);
+  const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return -1;
 
   const queryTokens = normalizedQuery.split(' ').filter(Boolean);
   let bestScore = -1;
   values.forEach((value: string|undefined, index: number) => {
-    const normalizedValue = normalizeTopicSearchValue(value);
+    const normalizedValue = normalizeSearchText(value);
     if (!normalizedValue) return;
     const sourceWeight = Math.max(0, 4 - index);
     const approximate = scoreSearchMatch(normalizedQuery, [normalizedValue]);
@@ -951,12 +943,12 @@ export async function searchConcepts(query: string, options: RequestOptions = {}
     });
 
     const seen = new Set(localTopics.flatMap(topic => [
-      normalizeTopicSearchValue(topic.display_name),
-      normalizeTopicSearchValue(topic.label),
+      normalizeSearchText(topic.display_name),
+      normalizeSearchText(topic.label),
     ]).filter(Boolean));
     const remoteTopics = (data?.topics || data?.results || []).flatMap(topic => {
       const id = String(topic?.id || '').split('/').pop()!;
-      const nameKey = normalizeTopicSearchValue(topic?.display_name);
+      const nameKey = normalizeSearchText(topic?.display_name);
       if (!/^T\d+$/i.test(id) || !nameKey || seen.has(nameKey)) return [];
       seen.add(nameKey);
       return [{
