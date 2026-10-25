@@ -16,6 +16,8 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
+  /** Why the load behind `error` failed, as fixed labels for diagnostics. */
+  loadFailure: FeedLoadFailure | null;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -76,6 +78,7 @@ import {
 } from '../utils/user-scoped-storage.ts';
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { emptyFirstPageError, feedLoadFailure, type FeedLoadFailure } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
@@ -231,7 +234,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Why the last load failed (ENG-116); the reader sees one error state for all of them.
+  const [loadFailure, setLoadFailure] = useState<FeedLoadFailure | null>(null);
+  const error = loadFailure ? 'FEED_LOAD_FAILED' : null;
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1136,7 +1141,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const activeSessionId = feedSessionId.current;
 
     setLoading(true);
-    setError(null);
+    setLoadFailure(null);
     
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
@@ -1266,7 +1271,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           )
           : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
-        let mainFailed = false;
+        let mainFailure: { error: unknown } | null = null;
         try {
           mainPapers = await fetchCorpusPage({
             categories: rankedPreferences.slice(0, MAIN_CATEGORIES),
@@ -1285,7 +1290,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           });
         } catch (e) {
           console.error('Error fetching main papers:', e);
-          mainFailed = true;
+          mainFailure = { error: e };
         }
         mainPapers.forEach(p => { p._type = 'exploit'; });
 
@@ -1295,8 +1300,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         // Only give up when the follows cannot bootstrap the feed either, nor
         // the seen papers carried from an earlier page.
         const explorationPapers = (await Promise.all(explorationRequests)).flat();
-        if (mainFailed && followedPapers.length === 0 && explorationPapers.length === 0 && !seenFallback?.papers?.length) {
-          throw new Error('The paper store returned no usable papers.');
+        if (mainFailure && followedPapers.length === 0 && explorationPapers.length === 0 && !seenFallback?.papers?.length) {
+          // The store's own error, so the reader's error state keeps its cause.
+          throw mainFailure.error;
         }
 
         // ─── STEP 6: Merge, deduplicate, score, and shuffle ───
@@ -1350,7 +1356,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           return loadPapersRef.current?.(reset, activeMode, plan.page, { keepThroughVisible, relaxExclusions: true });
         }
         if ((activeMode === 'top' || activeMode === null) && isEmptyFirstPage(reset, newPapers.length, seenFallback)) {
-          throw new Error('The paper store has no papers for these interests yet.');
+          throw emptyFirstPageError();
         }
         if (plan.kind === 'next-page') {
           const nextPageToFetch = plan.page;
@@ -1454,9 +1460,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }, 0);
       }
 
-    } catch {
+    } catch (failure) {
       if (requestId === feedRequestId.current) {
-        setError('FEED_LOAD_FAILED');
+        setLoadFailure(feedLoadFailure(failure));
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.
@@ -2325,7 +2331,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
   // `user` beyond the id, which none of the current ones do.
   const value = useMemo(() => ({
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, loadFailure, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary,
@@ -2338,7 +2344,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, loadFailure, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary,

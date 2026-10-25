@@ -261,6 +261,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const papers = source ? source.papers : feed.papers;
   const loading = source ? source.loading : feed.loading;
   const error = source ? source.error : feed.error;
+  // Only the For You feed says why its load failed.
+  const loadFailure = source ? null : feed.loadFailure;
   const hasMore = source ? Boolean(source.hasMore) : feed.hasMore;
   const loadMore = useMemo(
     () => (source ? (source.loadMore || (() => {})) : feed.loadMore),
@@ -1050,8 +1052,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
   const feedFailed = displayState === FEED_DISPLAY_STATES.ERROR;
   useEffect(() => {
-    if (feedFailed) void trackEvent('app_error', { kind: 'feed_load_failed' });
-  }, [feedFailed, trackEvent]);
+    if (!feedFailed) return;
+    void trackEvent('app_error', {
+      kind: 'feed_load_failed',
+      ...(loadFailure ? { reason: loadFailure.reason, status: loadFailure.status, error_code: loadFailure.code } : {}),
+    });
+  }, [feedFailed, loadFailure, trackEvent]);
 
   // Pull-to-refresh, touch only, and only where the pill exists: a source
   // without a refresh of its own (the Similar layer) has nothing to pull.

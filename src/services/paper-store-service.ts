@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import type { FollowEntity } from '../utils/following.ts';
 
-import { authenticatedWorkerFetch, workerSourceUrl } from './worker-api-client.ts';
+import { authenticatedWorkerFetch, sourceResponseError, workerSourceUrl } from './worker-api-client.ts';
 import { feedSeenFilter } from '../utils/seen-paper-filter.ts';
 
 // Inside the feed's 4 s first-paint budget, with room for the response.
@@ -40,9 +40,16 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(STORE_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`Paper store returned ${response.status}`);
+  if (!response.ok) {
+    // The Worker's `code` says why it refused (worker/router.ts); a body that
+    // is not JSON, such as a gateway's page, leaves the status alone.
+    const refusal = await response.json().catch(() => null) as { code?: unknown } | null;
+    throw sourceResponseError('/store/papers', response.status, refusal);
+  }
   const { papers } = await response.json() as { papers?: Paper[] };
-  return Array.isArray(papers) ? papers : [];
+  // The Worker always answers a list, empty when nothing matches.
+  if (!Array.isArray(papers)) throw Object.assign(new Error('/store/papers answered without a papers list'), { code: 'STORE_RESPONSE_INVALID' });
+  return papers;
 }
 
 /**
