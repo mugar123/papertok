@@ -81,8 +81,9 @@ function isPublicRoute(path: string) {
 }
 
 // A paper's page was /public/paper/:key until ENG-44. vercel.json moves that
-// address permanently, but the document the service worker serves offline never
-// asks the server for it, and neither does `npm run dev`. The route matched, so
+// address permanently, but some visits never ask the server for it: the document
+// the service worker serves offline, `npm run dev`, and the in-app hash-era route.
+// The route matched, so
 // `legacyPaperPath` knows the path; the query and fragment carry over.
 function LegacyPaperRedirect() {
   const { pathname, search, hash } = useLocation()

@@ -366,7 +366,8 @@ anonymously, so the rules decide as they do for a visitor. These are **new** rou
 Worker before the frontend, and check them with a crawler user agent. The release that moved a
 paper's page to `/paper/…` (ENG-44) reverses that order once: the Worker's canonical and list links
 name `/paper/…`, which a frontend from before it answers with its 404 page, so deploy the frontend
-first.
+first, and deploy the Worker right after, because until then a crawler on `/paper/…` gets the old
+Worker's page, whose canonical still names the redirecting `/public/paper/…`.
 
 A looked-up entity previews with its own card: `/share/image/entity/:type/:id`, a 1200x630
 PNG this Worker draws (`worker/share-image.ts`, laid out in `worker/share-card.ts`, drawn with
