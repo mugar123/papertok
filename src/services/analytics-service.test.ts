@@ -252,6 +252,8 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://notgoogle.example.org/': 'referral',
     'https://www.yahoo.com/': 'referral',
     'https://search.yahoo.example.org/': 'referral',
+    'https://notsearch.yahoo.com/': 'referral',
+    'https://google.com.evil.example/': 'referral',
     'https://chatgpt.com/': 'referral',
     'https://copilot.microsoft.com/': 'referral',
     'https://teams.microsoft.com/': 'referral',
