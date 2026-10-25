@@ -63,6 +63,7 @@ import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   logRankingBatch,
+  nearbyExplorationCategories,
   paperAffinitySignals,
   pickExplorationCategories,
   readRecommendationWeights,
@@ -1206,20 +1207,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         const explorationRequests: Promise<Paper[]>[] = [];
         const currentBoredom = boredomLevel.current;
         
-        const userAreas = new Set<string>();
-        userPreferences.forEach(pref => {
-          const leaf = allCategories.find(c => c.id === pref);
-          if (leaf) userAreas.add(leaf.area);
-        });
-
         // Adjacent categories within the user's parent areas, chosen by what
         // exploring each of them has returned so far.
         const nearbyCats = pickExplorationCategories(
-          allCategories
-            .filter(c => userAreas.has(c.area))
-            .filter(c => !userPreferences.includes(c.id))
-            .filter(c => (profileSignals.current.categoryAffinities[c.id] || 0) >= -2)
-            .map(c => c.id),
+          nearbyExplorationCategories(userPreferences, profileSignals.current.categoryAffinities),
           profileSignals.current.categoryExposure,
         );
 

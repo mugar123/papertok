@@ -462,7 +462,8 @@ test("an area's journal lane asks OpenAlex for the core journal articles labelle
   assert.deepEqual([paper.primaryCategory, ...(paper.categories || [])].filter(category => getCategoryArea(category!)), [], 'no leaf is claimed for it');
 
   // Engineering is read as electrical engineering unless a subfield names
-  // mechanical or civil work, and Economics as economics unless it is finance:
+  // mechanical or civil work, Economics as economics unless it is finance, and
+  // Computer Science as such unless it is AI or computer vision:
   // each lane asks for what its label reads, and no paper twice. Electrical
   // engineering's lane also leaves out Biomedical Engineering (2204), 60 of its
   // 200 newest on 2026-10-23: sensor materials, biomass conversion, tissue
@@ -478,6 +479,8 @@ test("an area's journal lane asks OpenAlex for the core journal articles labelle
   assert.deepEqual(await areaFilters('area:mech'), ['primary_topic.subfield.id:2202|2203|2206|2210|2211']);
   assert.deepEqual(await areaFilters('area:econ'), ['primary_topic.field.id:20', 'primary_topic.subfield.id:!2003']);
   assert.deepEqual(await areaFilters('area:q-fin'), ['primary_topic.subfield.id:2003']);
+  assert.deepEqual(await areaFilters('area:cs'), ['primary_topic.field.id:17', 'primary_topic.subfield.id:!1702', 'primary_topic.subfield.id:!1707']);
+  assert.deepEqual(await areaFilters('area:ai'), ['primary_topic.subfield.id:1702|1707']);
 });
 
 test("an area's journal lane leaves out the working-paper series OpenAlex lists as core journal articles, whose cards say Working paper", async t => {
@@ -506,7 +509,7 @@ test("an area's journal lane leaves out the working-paper series OpenAlex lists 
 // systems, all labelled Statistics.
 test('the areas the feed fills from arXiv get a journal lane, but statistics; medicine and biology, whose every leaf PubMed serves, do not', () => {
   const lanes = categoryLaneJobs().filter(job => job.source === 'openalex-areas').map(job => job.lane).sort();
-  assert.deepEqual(lanes, ['area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
+  assert.deepEqual(lanes, ['area:ai', 'area:chemeng', 'area:civil', 'area:cs', 'area:econ', 'area:eess', 'area:math', 'area:mech', 'area:physics', 'area:q-fin']);
 });
 
 // The cost of the lanes: one list call an area a night, two on a lane's first run.
