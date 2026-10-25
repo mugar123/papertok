@@ -30,9 +30,9 @@ test('an arXiv category resolves exactly, then by its archive', () => {
 test('a category named like an Object.prototype member names no area', () => {
   for (const name of ['constructor', 'toString', '__proto__']) {
     assert.equal(areaKeyForCategory(name), null, name);
-    const paper = { primaryCategory: name, categories: [name], primaryTopic: { id: 'https://openalex.org/T1', field: { id: 'https://openalex.org/fields/16', display_name: 'Chemistry' } } };
+    const paper = { primaryCategory: name, categories: [name], primaryTopic: { id: 'https://openalex.org/T1', field: { id: 'https://openalex.org/fields/33', display_name: 'Social Sciences' } } };
     assert.equal(areaKeyForPaper(paper), null, name);
-    assert.equal(areaLabelForPaper(paper), 'Chemistry', name);
+    assert.equal(areaLabelForPaper(paper), 'Social Sciences', name);
   }
 });
 

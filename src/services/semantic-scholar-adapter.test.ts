@@ -125,7 +125,7 @@ test('a Semantic Scholar record that omits its year, citations and open-access f
   assert.equal(accessStatusForPaper(row), null);
 });
 
-test('a Semantic Scholar record keeps the year, the zero and the open-access answer it reports', () => {
+test('a Semantic Scholar record keeps the year and the zero it reports, and only isOpenAccess: true says open', () => {
   const adapter = new SemanticScholarAdapter();
   const build = (isOpenAccess: boolean) => PaperBuilder.deduplicate([
     adapter.mapToStandard({ paperId: 'b'.repeat(40), title: 'A reported work', year: 2019, citationCount: 0, isOpenAccess }),
@@ -135,8 +135,9 @@ test('a Semantic Scholar record keeps the year, the zero and the open-access ans
   assert.equal(closed.year, 2019);
   assert.equal(closed.citationCount, 0);
   assert.equal(closed.citationCountKnown, true);
-  // Semantic Scholar's own `false` is an answer, as OpenAlex's `is_oa: false` is.
-  assert.equal(accessStatusForPaper(closed), 'subscription');
+  // `isOpenAccess: false` means Semantic Scholar found no open copy, not that the paper is paywalled.
+  assert.equal(closed.openAccess, undefined);
+  assert.equal(accessStatusForPaper(closed), null);
   assert.equal(accessStatusForPaper(build(true)), 'open');
 });
 

@@ -86,10 +86,12 @@ export class SemanticScholarAdapter {
       sourceName: raw.venue || '',
       sourceType: 'journal',
       publicationStatus: isPreprint ? 'preprint' : 'published',
-      // An absent flag is not a paywall, and an absent count is not zero.
-      openAccess: typeof raw.isOpenAccess === 'boolean' ? raw.isOpenAccess : undefined,
+      // `isOpenAccess: false` means Semantic Scholar found no open copy, not that
+      // the paper is paywalled.
+      openAccess: raw.isOpenAccess === true ? true : undefined,
       pdfUrl: raw.openAccessPdf?.url || null,
       landingPageUrl: raw.paperId ? `https://www.semanticscholar.org/paper/${raw.paperId}` : null,
+      // An absent count is not zero.
       citationsCount: raw.citationCount ?? undefined,
       referenceCount: raw.referenceCount || 0,
       provider: this.name,
