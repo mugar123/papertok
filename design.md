@@ -24,6 +24,7 @@ colors:
   accent-success: "#067647"
   field-physics: "#4f46e5"
   field-cs: "#c2410c"
+  field-ai: "#a21caf"
   field-math: "#7e22ce"
   field-stat: "#1d4ed8"
   field-econ: "#0f766e"
@@ -34,7 +35,7 @@ colors:
   field-chemeng: "#4d7c0f"
   field-med: "#be123c"
   field-bio: "#15803d"
-  field-chem: "#a21caf"
+  field-chem: "#a13170"
   night-paper: "#14161d"
   night-card: "#1b1c23"
   night-ink: "#f4ecd8"
@@ -182,7 +183,7 @@ yellow does not flip — a mark that changes value stops being a mark.
 **Key Characteristics:**
 - One ink (Navy) on Warm Proof Paper; the welcome page adds a paper grain.
 - Three voices: serif prose, mono machine data, Inter controls.
-- Colour only from the data (the thirteen field inks) or from an action's meaning.
+- Colour only from the data (the fourteen field inks) or from an action's meaning.
 - Spot Yellow as a thread, never a highlight reel.
 - Near-square corners, visible hairlines, no shadows anywhere.
 - Patterned buttons (engraved, halftone) only on the landing and onboarding.
@@ -211,7 +212,7 @@ that only the data is allowed to pick.
 - **Link Blue** (`link-blue`): the secondary accent, for links in running text.
 
 ### Tertiary
-- **The thirteen field inks** (`field-physics` … `field-chem`, the
+- **The fourteen field inks** (`field-physics` … `field-chem`, the
   `--gradient-*` variables): flat print inks, one per research field, each
   legible as text on paper. A paper or entity carries its field as
   `--area-accent`. `--gradient-brand` is ink, the fallback when no field

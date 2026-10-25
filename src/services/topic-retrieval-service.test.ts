@@ -156,6 +156,13 @@ test('keeps exact category results ahead of metadata-query supplements', async (
   assert.deepEqual(result.papers.map(paper => paper.id), ['exact', 'generic']);
 });
 
+// ENG-113. A Computer Science follow stored while the area still held the AI leaves.
+test('a followed area asks for its leaves as the taxonomy has them, not as the follow stored them', () => {
+  const plan = resolveTopicRetrievalPlan({ canonicalId: 'cs', displayName: 'Computer Science', metadata: { categoryIds: ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.RO'] } });
+  assert.equal(plan.categoryIds.includes('cs.RO'), true);
+  assert.deepEqual(plan.categoryIds.filter(id => ['cs.AI', 'cs.LG', 'cs.CV', 'cs.CL', 'cs.NE'].includes(id)), []);
+});
+
 test('excluded providers are not asked, and the exact category request still is', async () => {
   const topic = { canonicalId: 'cs.NI', displayName: 'Networking and Internet Architecture', metadata: { categoryIds: ['cs.NI'] } };
   const calls: string[] = [];

@@ -44,11 +44,11 @@ test('the cat-embryo paper stays Biology in every stored copy', () => {
 // The tester's card. Its stored copy read Computer Science only because a
 // concept name contained "artificial intelligence"; the topic it came from
 // was gone.
-test("the AI survey stays Computer Science, and its topic's ids survive the copy", () => {
+test("the AI survey stays Artificial Intelligence, and its topic's ids survive the copy", () => {
   const paper = feedPaper(namedWork('W4233888153'));
-  assert.equal(areaLabelForPaper(paper), 'Computer Science');
+  assert.equal(areaLabelForPaper(paper), 'Artificial Intelligence');
   for (const [copy, stored] of storedCopies(paper)) {
-    assert.equal(areaLabelForPaper(stored), 'Computer Science', copy);
+    assert.equal(areaLabelForPaper(stored), 'Artificial Intelligence', copy);
     assert.equal(stored.primaryTopic?.id, 'https://openalex.org/T13904', copy);
     assert.equal(stored.primaryTopic?.subfield?.id, 'https://openalex.org/subfields/1702', copy);
     assert.equal(stored.primaryTopic?.field?.id, 'https://openalex.org/fields/17', copy);
@@ -96,13 +96,13 @@ test('a save over a copy stored before PAP-60 reads as the card does', () => {
     { title: paper.title, primaryCategory: 'hep-th', savedAt: '2026-10-01T12:00:00.000Z' },
     throughFirestore(buildSavedPaperPayload(paper, '2026-10-21T12:00:00.000Z')),
   );
-  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: paper.id, ...savedPapers })), 'Computer Science', 'savedPapers document');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: paper.id, ...savedPapers })), 'Artificial Intelligence', 'savedPapers document');
 
   const interaction = mergeIntoStored(
     { liked: true, paper: { id: paper.id, title: paper.title, primaryCategory: 'hep-th', categories: ['hep-th'] } },
     { saved: true, paper: throughFirestore(serializeLibraryPaper(paper)) },
   );
-  assert.equal(areaLabelForPaper(paperLegacyAdapter(interaction.paper as Partial<Paper>)), 'Computer Science', 'interaction copy');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter(interaction.paper as Partial<Paper>)), 'Artificial Intelligence', 'interaction copy');
 });
 
 // PAP-60, D6. Past the first page, OpenAlex answers after a card is shown,

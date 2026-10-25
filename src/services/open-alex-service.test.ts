@@ -1049,6 +1049,11 @@ test('an entity page filtered by area asks OpenAlex for the fields that label th
     assert.ok(works, `asked for works, got ${urls.join(' ')}`);
     assert.match(works, /filter=author\.id:A123,primary_topic\.field\.id:24\|27\|28\|29\|30\|35\|36(&|$)/);
     assert.doesNotMatch(works, /concepts\.id/);
+
+    // Computer Science leaves out the subfields that label a row as AI.
+    urls.length = 0;
+    await getWorksByEntity('author', 'A123', 'cited_by_count:desc', 1, '', { category: 'cs' }, 'Ada Lovelace');
+    assert.match(urls.find(url => url.includes('/works?'))!, /filter=author\.id:A123,primary_topic\.field\.id:17,primary_topic\.subfield\.id:!1702,primary_topic\.subfield\.id:!1707(&|$)/);
   } finally {
     openAlexClient.fetchImpl = realFetch;
   }
@@ -1407,25 +1412,151 @@ test('an institution page gets Crossref before the screen budget runs out', asyn
 });
 
 
-test('author suggestions recover a typo plus surname prefix in one byline request without inventing metrics', async t => {
+test('author suggestions retrieve exact names before highly cited fuzzy matches can displace them', async t => {
+  const requests: string[] = [];
+  // Synthetic pages: broad matching fills all 25 slots before Mario's work.
+  const broadWorks = Array.from({ length: 25 }, (_, index) => ({
+    id: `https://openalex.org/W${index}`,
+    authorships: [{ author: { id: `https://openalex.org/A${index}`, display_name: 'Mario Amados' } }],
+  }));
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    requests.push(String(url));
+    const filter = new URL(url).searchParams.get('filter')!;
+    return Response.json({ results: filter.includes(' OR ') ? broadWorks : [{
+      id: 'https://openalex.org/W100',
+      authorships: [{ author: { id: 'https://openalex.org/A5034580028', display_name: 'Mario Amado' } }],
+    }] });
+  });
+
+  const results = await searchAuthors('Mario Amado', { typeahead: true, throwOnError: true });
+
+  assert.deepEqual(results.map(author => author.id), ['https://openalex.org/A5034580028']);
+  assert.equal(requests.length, 1, 'an exact match needs no approximate search');
+  assert.equal(new URL(requests[0]).searchParams.get('filter'), 'raw_author_name.search:"mario amado"');
+});
+
+test('author suggestions keep a typed pipe from splitting the exact byline search', async t => {
+  const filters: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    filters.push(new URL(url).searchParams.get('filter')!);
+    return Response.json({ results: [] });
+  });
+
+  await searchAuthors('José | Amado', { typeahead: true, throwOnError: true });
+
+  assert.equal(filters[0], 'raw_author_name.search:"josé amado"');
+});
+
+test('author suggestions recover a typo plus surname prefix after an empty exact search without inventing metrics', async t => {
   const requests: string[] = [];
   t.mock.method(openAlexClient, 'fetch', async (url: string | URL, options: { retries?: number }) => {
     requests.push(String(url));
     assert.equal(options.retries, 0);
+    if (!new URL(url).searchParams.get('filter')!.includes(' OR ')) return Response.json({ results: [] });
     return Response.json({ results: [{ id: 'https://openalex.org/W123', authorships: [
       { author: { id: 'https://openalex.org/A1', display_name: 'Geoffrey E. Hinton' }, institutions: [{ display_name: 'University of Toronto' }] },
       { author: { id: 'https://openalex.org/A2', display_name: 'Unrelated Coauthor' } },
     ] }] });
   });
   const results = await searchAuthors('Geofrey Hin', { typeahead: true, throwOnError: true });
-  assert.equal(requests.length, 1);
-  assert.equal(new URL(requests[0]).searchParams.get('sort'), 'cited_by_count:desc');
-  assert.match(new URL(requests[0]).searchParams.get('filter')!, /raw_author_name.search:.*geofrey~1 AND hin\*/);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests.map(url => new URL(url).searchParams.get('sort')), ['cited_by_count:desc', 'cited_by_count:desc']);
+  assert.match(new URL(requests[1]).searchParams.get('filter')!, /raw_author_name.search:.*geofrey~1 AND hin\*/);
   assert.deepEqual(results.map(author => author.id), ['https://openalex.org/A1']);
   assert.equal(results[0].display_name, 'Geoffrey E. Hinton');
   assert.equal(results[0].works_count, null);
   assert.equal(results[0].cited_by_count, null);
   assert.equal(results[0].institution, 'University of Toronto');
+});
+
+test('author suggestions recover an unfinished surname when exact bylines have no relevant canonical names', async t => {
+  let requests = 0;
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    requests += 1;
+    const approximate = new URL(url).searchParams.get('filter')!.includes(' OR ');
+    return Response.json({ results: [{ authorships: [{ author: approximate
+      ? { id: 'https://openalex.org/A1', display_name: 'Geoffrey E. Hinton' }
+      : { id: 'https://openalex.org/A2', display_name: 'Unrelated Coauthor' },
+    }] }] });
+  });
+
+  const results = await searchAuthors('Geoffrey Hin', { typeahead: true, throwOnError: true });
+
+  assert.deepEqual(results.map(author => author.id), ['https://openalex.org/A1']);
+  assert.equal(requests, 2);
+});
+
+test('author suggestions finish an empty search after at most two requests and do not repeat literal-only queries', async t => {
+  const requests: string[] = [];
+  t.mock.method(openAlexClient, 'fetch', async (url: string | URL) => {
+    requests.push(String(url));
+    return Response.json({ results: [] });
+  });
+
+  assert.deepEqual(await searchAuthors('Missing Researcher', { typeahead: true, throwOnError: true }), []);
+  assert.equal(requests.length, 2);
+  requests.length = 0;
+  assert.deepEqual(await searchAuthors('Li', { typeahead: true, throwOnError: true }), []);
+  assert.equal(requests.length, 1);
+});
+
+test('author suggestions propagate either request failure instead of treating it as an empty search', async t => {
+  for (const failingRequest of [1, 2]) {
+    let requests = 0;
+    const failure = new Error('Provider unavailable');
+    const fetch = t.mock.method(openAlexClient, 'fetch', async (_url: string | URL, options: { retries?: number }) => {
+      requests += 1;
+      assert.equal(options.retries, 0);
+      if (requests === failingRequest) throw failure;
+      return Response.json({ results: [] });
+    });
+
+    await assert.rejects(searchAuthors(`Unavailable Researcher ${failingRequest}`, { typeahead: true, throwOnError: true }),
+      error => error === failure);
+    assert.equal(requests, failingRequest);
+    fetch.mock.restore();
+  }
+});
+
+test('author suggestions do not start a fallback after the reader cancels the exact request', async t => {
+  const controller = new AbortController();
+  let requests = 0;
+  t.mock.method(openAlexClient, 'fetch', async () => {
+    requests += 1;
+    controller.abort();
+    return Response.json({ results: [] });
+  });
+
+  await assert.rejects(searchAuthors('Cancelled Researcher', {
+    typeahead: true, throwOnError: true, signal: controller.signal,
+  }), { name: 'AbortError' });
+  assert.equal(requests, 1);
+});
+
+test('author suggestions cancel the approximate fetch within the original search budget', async t => {
+  const signals: AbortSignal[] = [];
+  const originalFetch = openAlexClient.fetchImpl;
+  t.after(() => { openAlexClient.fetchImpl = originalFetch; });
+  openAlexClient.fetchImpl = async (_url, options = {}) => {
+    const signal = options.signal;
+    assert.ok(signal);
+    signals.push(signal);
+    if (signals.length === 1) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      return Response.json({ results: [] });
+    }
+    await new Promise<void>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
+    return Response.json({ results: [] });
+  };
+
+  const outcome = await settleWithin(6000, () => assert.rejects(searchAuthors('Deadline Researcher', {
+    typeahead: true, throwOnError: true,
+  }), { name: 'OpenAlexRequestError', code: 'aborted' }));
+  assert.equal(outcome, 'resolved');
+  assert.equal(signals.length, 2);
+  assert.equal(signals[1].aborted, true);
 });
 
 test('local and remote topic suggestions tolerate typos with one provider request', async t => {
@@ -1446,7 +1577,7 @@ test('local and remote topic suggestions tolerate typos with one provider reques
 // PAP-86: the search page's author search is a search, which the relay
 // reserves ten list calls for on every miss. It carried the client's default
 // of two more attempts after a 5xx, each of them a fresh reservation for the
-// same outage; the typeahead branch above already asks once.
+// same outage; the typeahead branch also stops on the first failure.
 test('the author search asks once when OpenAlex answers a 5xx', async () => {
   const realFetch = openAlexClient.fetchImpl;
   let requests = 0;
