@@ -50,8 +50,51 @@
         "T14311",
         "T14363"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10002%7CT10020%7CT10022%7CT10049%7CT10382%7CT10425%7CT10490%7CT10523%7CT10566%7CT10622%7CT10657%7CT10666%7CT10682%7CT10739%7CT10923%7CT10988%7CT11050%7CT11175%7CT11177%7CT11262%7CT11414%7CT11449%7CT11484%7CT11603%7CT11666%7CT11683%7CT11804%7CT11853%7CT11897%7CT11965%7CT11993%7CT12004%7CT12077%7CT12220%7CT12612%7CT13493%7CT13531%7CT14311%7CT14363%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 3,
+      "precision": 0.2,
+      "byTopic": {
+        "T10002": "0/9",
+        "T10020": "1/1",
+        "T10022": "0/0",
+        "T10049": "0/0",
+        "T10382": "0/0",
+        "T10425": "0/0",
+        "T10490": "0/0",
+        "T10523": "0/0",
+        "T10566": "0/1",
+        "T10622": "0/0",
+        "T10657": "0/2",
+        "T10666": "0/0",
+        "T10682": "2/2",
+        "T10739": "0/0",
+        "T10923": "0/0",
+        "T10988": "0/0",
+        "T11050": "0/0",
+        "T11175": "0/0",
+        "T11177": "0/0",
+        "T11262": "0/0",
+        "T11414": "0/0",
+        "T11449": "0/0",
+        "T11484": "0/0",
+        "T11603": "0/0",
+        "T11666": "0/0",
+        "T11683": "0/0",
+        "T11804": "0/0",
+        "T11853": "0/0",
+        "T11897": "0/0",
+        "T11965": "0/0",
+        "T11993": "0/0",
+        "T12004": "0/0",
+        "T12077": "0/0",
+        "T12220": "0/0",
+        "T12612": "0/0",
+        "T13493": "0/0",
+        "T13531": "0/0",
+        "T14311": "0/0",
+        "T14363": "0/0"
+      }
     },
     {
       "leaf": "cond-mat.supr-con",
@@ -66,8 +109,15 @@
         "T11766",
         "T12491"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10037%7CT11766%7CT12491%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11,
+      "precision": 0.7333333333333333,
+      "byTopic": {
+        "T10037": "10/14",
+        "T11766": "1/1",
+        "T12491": "0/0"
+      }
     },
     {
       "leaf": "cond-mat.str-el",
@@ -86,8 +136,17 @@
         "T11682",
         "T11758"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10037%7CT10607%7CT10681%7CT11682%7CT11758%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "byTopic": {
+        "T10037": "2/4",
+        "T10607": "0/1",
+        "T10681": "0/0",
+        "T11682": "8/10",
+        "T11758": "0/0"
+      }
     },
     {
       "leaf": "cond-mat.mtrl-sci",
@@ -184,8 +243,98 @@
         "T14076",
         "T14184"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10074%7CT10079%7CT10083%7CT10090%7CT10097%7CT10107%7CT10131%7CT10179%7CT10192%7CT10204%7CT10245%7CT10275%7CT10306%7CT10310%7CT10311%7CT10321%7CT10440%7CT10474%7CT10478%7CT10511%7CT10592%7CT10607%7CT10612%7CT10735%7CT10811%7CT10865%7CT10886%7CT10903%7CT10922%7CT10939%7CT11025%7CT11087%7CT11162%7CT11169%7CT11222%7CT11224%7CT11240%7CT11242%7CT11277%7CT11279%7CT11286%7CT11315%7CT11341%7CT11342%7CT11442%7CT11471%7CT11646%7CT11661%7CT11699%7CT11708%7CT11758%7CT11766%7CT11782%7CT11842%7CT11878%7CT11881%7CT11887%7CT11907%7CT11915%7CT11940%7CT11948%7CT12038%7CT12046%7CT12149%7CT12200%7CT12299%7CT12302%7CT12340%7CT12358%7CT12420%7CT12427%7CT12506%7CT12529%7CT12588%7CT12613%7CT12875%7CT12938%7CT13039%7CT13104%7CT13159%7CT13249%7CT13463%7CT13465%7CT13889%7CT14076%7CT14184%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 5,
+      "precision": 0.3333333333333333,
+      "byTopic": {
+        "T10074": "0/0",
+        "T10079": "1/3",
+        "T10083": "0/0",
+        "T10090": "0/0",
+        "T10097": "0/0",
+        "T10107": "0/0",
+        "T10131": "0/1",
+        "T10179": "0/0",
+        "T10192": "0/0",
+        "T10204": "0/0",
+        "T10245": "0/1",
+        "T10275": "1/1",
+        "T10306": "0/0",
+        "T10310": "0/0",
+        "T10311": "0/0",
+        "T10321": "0/0",
+        "T10440": "0/0",
+        "T10474": "0/0",
+        "T10478": "0/0",
+        "T10511": "0/0",
+        "T10592": "0/0",
+        "T10607": "0/0",
+        "T10612": "0/0",
+        "T10735": "0/0",
+        "T10811": "0/0",
+        "T10865": "0/0",
+        "T10886": "0/0",
+        "T10903": "0/0",
+        "T10922": "0/0",
+        "T10939": "0/0",
+        "T11025": "0/0",
+        "T11087": "0/0",
+        "T11162": "0/5",
+        "T11169": "0/0",
+        "T11222": "0/0",
+        "T11224": "1/1",
+        "T11240": "0/0",
+        "T11242": "0/0",
+        "T11277": "0/0",
+        "T11279": "0/0",
+        "T11286": "0/0",
+        "T11315": "0/0",
+        "T11341": "0/0",
+        "T11342": "0/0",
+        "T11442": "0/0",
+        "T11471": "0/0",
+        "T11646": "0/0",
+        "T11661": "0/0",
+        "T11699": "0/0",
+        "T11708": "0/0",
+        "T11758": "0/0",
+        "T11766": "0/0",
+        "T11782": "0/0",
+        "T11842": "0/0",
+        "T11878": "0/0",
+        "T11881": "0/0",
+        "T11887": "0/0",
+        "T11907": "0/0",
+        "T11915": "0/0",
+        "T11940": "0/0",
+        "T11948": "0/0",
+        "T12038": "0/1",
+        "T12046": "1/1",
+        "T12149": "0/0",
+        "T12200": "0/0",
+        "T12299": "0/0",
+        "T12302": "0/0",
+        "T12340": "0/0",
+        "T12358": "0/0",
+        "T12420": "0/0",
+        "T12427": "0/0",
+        "T12506": "0/0",
+        "T12529": "0/0",
+        "T12588": "0/0",
+        "T12613": "0/0",
+        "T12875": "0/0",
+        "T12938": "0/0",
+        "T13039": "0/0",
+        "T13104": "1/1",
+        "T13159": "0/0",
+        "T13249": "0/0",
+        "T13463": "0/0",
+        "T13465": "0/0",
+        "T13889": "0/0",
+        "T14076": "0/0",
+        "T14184": "0/0"
+      }
     },
     {
       "leaf": "cond-mat.mes-hall",
@@ -210,8 +359,20 @@
         "T10657",
         "T10913"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10022%7CT10049%7CT10083%7CT10275%7CT10321%7CT10382%7CT10657%7CT10913%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "byTopic": {
+        "T10022": "0/0",
+        "T10049": "2/2",
+        "T10083": "2/3",
+        "T10275": "4/4",
+        "T10321": "1/1",
+        "T10382": "0/0",
+        "T10657": "4/5",
+        "T10913": "0/0"
+      }
     },
     {
       "leaf": "cond-mat.soft",
@@ -236,8 +397,20 @@
         "T11915",
         "T12274"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10306%7CT10615%7CT10721%7CT11379%7CT11419%7CT11471%7CT11915%7CT12274%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11,
+      "precision": 0.7333333333333333,
+      "byTopic": {
+        "T10306": "0/0",
+        "T10615": "1/1",
+        "T10721": "1/4",
+        "T11379": "1/1",
+        "T11419": "3/3",
+        "T11471": "0/1",
+        "T11915": "2/2",
+        "T12274": "3/3"
+      }
     },
     {
       "leaf": "cond-mat.quant-gas",
@@ -252,8 +425,15 @@
         "T11804",
         "T11965"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10425%7CT11804%7CT11965%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 5,
+      "precision": 0.3333333333333333,
+      "byTopic": {
+        "T10425": "3/4",
+        "T11804": "2/11",
+        "T11965": "0/0"
+      }
     },
     {
       "leaf": "hep-th",
@@ -268,8 +448,15 @@
         "T10224",
         "T11415"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10025%7CT10224%7CT11415%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "byTopic": {
+        "T10025": "10/10",
+        "T10224": "0/5",
+        "T11415": "0/0"
+      }
     },
     {
       "leaf": "hep-ph",
@@ -286,8 +473,16 @@
         "T10921",
         "T11090"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10048%7CT10224%7CT10921%7CT11090%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "byTopic": {
+        "T10048": "6/8",
+        "T10224": "3/4",
+        "T10921": "0/0",
+        "T11090": "1/3"
+      }
     },
     {
       "leaf": "hep-ex",
@@ -304,8 +499,16 @@
         "T10921",
         "T11044"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10048%7CT10527%7CT10921%7CT11044%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "byTopic": {
+        "T10048": "8/12",
+        "T10527": "0/0",
+        "T10921": "1/2",
+        "T11044": "1/1"
+      }
     },
     {
       "leaf": "astro-ph.CO",
@@ -318,8 +521,14 @@
         "T10095",
         "T11090"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10095%7CT11090%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 12,
+      "precision": 0.8,
+      "byTopic": {
+        "T10095": "11/12",
+        "T11090": "1/3"
+      }
     },
     {
       "leaf": "astro-ph.GA",
@@ -334,8 +543,15 @@
         "T10477",
         "T12450"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10026%7CT10477%7CT12450%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "byTopic": {
+        "T10026": "12/14",
+        "T10477": "1/1",
+        "T12450": "0/0"
+      }
     },
     {
       "leaf": "astro-ph.SR",
@@ -352,8 +568,16 @@
         "T10477",
         "T10744"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10039%7CT10251%7CT10477%7CT10744%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "byTopic": {
+        "T10039": "13/13",
+        "T10251": "0/0",
+        "T10477": "0/0",
+        "T10744": "0/2"
+      }
     },
     {
       "leaf": "astro-ph.EP",
@@ -370,8 +594,16 @@
         "T10406",
         "T12788"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10039%7CT10325%7CT10406%7CT12788%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 1,
+      "precision": 0.06666666666666667,
+      "byTopic": {
+        "T10039": "1/15",
+        "T10325": "0/0",
+        "T10406": "0/0",
+        "T12788": "0/0"
+      }
     },
     {
       "leaf": "gr-qc",
@@ -388,8 +620,16 @@
         "T10463",
         "T11960"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10025%7CT10095%7CT10463%7CT11960%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 8,
+      "precision": 0.5333333333333333,
+      "byTopic": {
+        "T10025": "0/0",
+        "T10095": "0/7",
+        "T10463": "8/8",
+        "T11960": "0/0"
+      }
     },
     {
       "leaf": "math-ph",
@@ -411,8 +651,24 @@
         "T13400",
         "T14500"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10588%7CT10896%7CT10899%7CT11022%7CT11152%7CT11205%7CT11545%7CT11654%7CT11680%7CT13234%7CT13400%7CT14500%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 1,
+      "precision": 0.06666666666666667,
+      "byTopic": {
+        "T10588": "0/5",
+        "T10896": "0/1",
+        "T10899": "0/0",
+        "T11022": "0/1",
+        "T11152": "1/2",
+        "T11205": "0/6",
+        "T11545": "0/0",
+        "T11654": "0/0",
+        "T11680": "0/0",
+        "T13234": "0/0",
+        "T13400": "0/0",
+        "T14500": "0/0"
+      }
     },
     {
       "leaf": "nucl-th",
@@ -425,8 +681,14 @@
         "T10093",
         "T10224"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10093%7CT10224%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 5,
+      "precision": 0.3333333333333333,
+      "byTopic": {
+        "T10093": "1/4",
+        "T10224": "4/11"
+      }
     },
     {
       "leaf": "nucl-ex",
@@ -443,8 +705,16 @@
         "T11949",
         "T13414"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10093%7CT11044%7CT11949%7CT13414%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 4,
+      "precision": 0.26666666666666666,
+      "byTopic": {
+        "T10093": "4/6",
+        "T11044": "0/9",
+        "T11949": "0/0",
+        "T13414": "0/0"
+      }
     },
     {
       "leaf": "physics.optics",
@@ -483,8 +753,27 @@
         "T12612",
         "T13493"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10245%7CT10490%7CT10566%7CT10666%7CT10739%7CT10988%7CT11025%7CT11050%7CT11449%7CT11484%7CT11575%7CT11723%7CT11897%7CT12612%7CT13493%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "byTopic": {
+        "T10245": "8/8",
+        "T10490": "3/3",
+        "T10566": "0/1",
+        "T10666": "0/0",
+        "T10739": "0/0",
+        "T10988": "2/2",
+        "T11025": "0/0",
+        "T11050": "1/1",
+        "T11449": "0/0",
+        "T11484": "0/0",
+        "T11575": "0/0",
+        "T11723": "0/0",
+        "T11897": "0/0",
+        "T12612": "0/0",
+        "T13493": "0/0"
+      }
     },
     {
       "leaf": "physics.atom-ph",
@@ -509,8 +798,20 @@
         "T12004",
         "T12220"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10425%7CT10523%7CT11177%7CT11414%7CT11683%7CT11993%7CT12004%7CT12220%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "byTopic": {
+        "T10425": "10/10",
+        "T10523": "1/1",
+        "T11177": "0/1",
+        "T11414": "1/1",
+        "T11683": "0/0",
+        "T11993": "0/0",
+        "T12004": "2/2",
+        "T12220": "0/0"
+      }
     },
     {
       "leaf": "physics.flu-dyn",
@@ -535,8 +836,20 @@
         "T11751",
         "T12141"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10173%7CT10360%7CT10940%7CT11012%7CT11254%7CT11694%7CT11751%7CT12141%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 13,
+      "precision": 0.8666666666666667,
+      "byTopic": {
+        "T10173": "1/3",
+        "T10360": "7/7",
+        "T10940": "1/1",
+        "T11012": "0/0",
+        "T11254": "0/0",
+        "T11694": "3/3",
+        "T11751": "1/1",
+        "T12141": "0/0"
+      }
     },
     {
       "leaf": "physics.plasm-ph",
@@ -559,8 +872,19 @@
         "T12077",
         "T13769"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10251%7CT10346%7CT10384%7CT10781%7CT11603%7CT12077%7CT13769%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "byTopic": {
+        "T10251": "0/3",
+        "T10346": "4/4",
+        "T10384": "3/5",
+        "T10781": "2/3",
+        "T11603": "0/0",
+        "T12077": "0/0",
+        "T13769": "0/0"
+      }
     },
     {
       "leaf": "physics.bio-ph",
@@ -578,8 +902,19 @@
         "T12859",
         "T14488"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10379%7CT10540%7CT10874%7CT11324%7CT12381%7CT12859%7CT14488%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 1,
+      "precision": 0.06666666666666667,
+      "byTopic": {
+        "T10379": "0/4",
+        "T10540": "1/1",
+        "T10874": "0/1",
+        "T11324": "0/2",
+        "T12381": "0/0",
+        "T12859": "0/7",
+        "T14488": "0/0"
+      }
     },
     {
       "leaf": "physics.comp-ph",
@@ -598,8 +933,17 @@
         "T11948",
         "T13650"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10002%7CT10591%7CT11751%7CT11948%7CT13650%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 3,
+      "precision": 0.2,
+      "byTopic": {
+        "T10002": "2/9",
+        "T10591": "0/0",
+        "T11751": "0/0",
+        "T11948": "0/0",
+        "T13650": "1/6"
+      }
     },
     {
       "leaf": "cs.RO",
@@ -1186,8 +1530,17 @@
         "T11871",
         "T13500"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10136%7CT10243%7CT10968%7CT11871%7CT13500%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 0,
+      "precision": 0,
+      "byTopic": {
+        "T10136": "0/4",
+        "T10243": "0/10",
+        "T10968": "0/0",
+        "T11871": "0/1",
+        "T13500": "0/0"
+      }
     },
     {
       "leaf": "math.DG",
@@ -1409,8 +1762,21 @@
         "T12535",
         "T12814"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10320%7CT10845%7CT11303%7CT11612%7CT11901%7CT12072%7CT12101%7CT12535%7CT12814%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 7,
+      "precision": 0.4666666666666667,
+      "byTopic": {
+        "T10320": "2/3",
+        "T10845": "2/9",
+        "T11303": "0/0",
+        "T11612": "1/1",
+        "T11901": "1/1",
+        "T12072": "0/0",
+        "T12101": "0/0",
+        "T12535": "1/1",
+        "T12814": "0/0"
+      }
     },
     {
       "leaf": "stat.ME",
@@ -1441,8 +1807,23 @@
         "T13141",
         "T14374"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10136%7CT10206%7CT10243%7CT10845%7CT11235%7CT11871%7CT11911%7CT12205%7CT13030%7CT13141%7CT14374%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 6,
+      "precision": 0.4,
+      "byTopic": {
+        "T10136": "0/0",
+        "T10206": "0/7",
+        "T10243": "4/4",
+        "T10845": "1/1",
+        "T11235": "0/0",
+        "T11871": "0/1",
+        "T11911": "0/0",
+        "T12205": "0/0",
+        "T13030": "0/1",
+        "T13141": "1/1",
+        "T14374": "0/0"
+      }
     },
     {
       "leaf": "stat.AP",
@@ -1469,8 +1850,21 @@
         "T13797",
         "T14374"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10206%7CT11235%7CT11443%7CT11918%7CT12205%7CT13141%7CT13546%7CT13797%7CT14374%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 1,
+      "precision": 0.06666666666666667,
+      "byTopic": {
+        "T10206": "1/13",
+        "T11235": "0/0",
+        "T11443": "0/0",
+        "T11918": "0/0",
+        "T12205": "0/0",
+        "T13141": "0/1",
+        "T13546": "0/0",
+        "T13797": "0/0",
+        "T14374": "0/1"
+      }
     },
     {
       "leaf": "stat.CO",
@@ -1489,8 +1883,17 @@
         "T13398",
         "T13487"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT11901%7CT12056%7CT12814%7CT13398%7CT13487%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 11,
+      "precision": 0.7333333333333333,
+      "byTopic": {
+        "T11901": "1/1",
+        "T12056": "5/5",
+        "T12814": "0/1",
+        "T13398": "5/7",
+        "T13487": "0/1"
+      }
     },
     {
       "leaf": "stat.TH",
@@ -1509,8 +1912,17 @@
         "T11871",
         "T13500"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10136%7CT10243%7CT10968%7CT11871%7CT13500%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 0,
+      "precision": 0,
+      "byTopic": {
+        "T10136": "0/4",
+        "T10243": "0/10",
+        "T10968": "0/0",
+        "T11871": "0/1",
+        "T13500": "0/0"
+      }
     },
     {
       "leaf": "econ.EM",
@@ -1529,8 +1941,17 @@
         "T11911",
         "T12205"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10136%7CT10845%7CT11270%7CT11911%7CT12205%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 5,
+      "precision": 0.3333333333333333,
+      "byTopic": {
+        "T10136": "0/3",
+        "T10845": "5/10",
+        "T11270": "0/0",
+        "T11911": "0/1",
+        "T12205": "0/1"
+      }
     },
     {
       "leaf": "econ.GN",
@@ -1619,8 +2040,91 @@
         "T14501",
         "T14503"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10208%7CT10391%7CT10393%7CT10438%7CT10471%7CT10605%7CT10632%7CT10758%7CT10785%7CT10804%7CT10841%7CT10987%7CT10991%7CT11014%7CT11043%7CT11059%7CT11257%7CT11270%7CT11621%7CT11674%7CT11711%7CT11762%7CT11770%7CT11792%7CT11898%7CT11911%7CT12052%7CT12137%7CT12394%7CT12446%7CT12641%7CT12708%7CT12722%7CT12825%7CT12851%7CT13007%7CT13042%7CT13138%7CT13227%7CT13237%7CT13255%7CT13278%7CT13370%7CT13387%7CT13389%7CT13399%7CT13407%7CT13411%7CT13442%7CT13472%7CT13547%7CT13588%7CT13713%7CT13825%7CT13894%7CT13949%7CT13961%7CT14008%7CT14051%7CT14066%7CT14094%7CT14113%7CT14129%7CT14143%7CT14213%7CT14223%7CT14230%7CT14231%7CT14261%7CT14294%7CT14325%7CT14334%7CT14370%7CT14404%7CT14424%7CT14467%7CT14491%7CT14501%7CT14503%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 8,
+      "precision": 0.5333333333333333,
+      "byTopic": {
+        "T10208": "6/6",
+        "T10391": "0/0",
+        "T10393": "0/0",
+        "T10438": "0/0",
+        "T10471": "0/2",
+        "T10605": "0/0",
+        "T10632": "0/0",
+        "T10758": "0/0",
+        "T10785": "0/1",
+        "T10804": "0/2",
+        "T10841": "0/0",
+        "T10987": "0/0",
+        "T10991": "0/0",
+        "T11014": "0/0",
+        "T11043": "0/0",
+        "T11059": "2/2",
+        "T11257": "0/0",
+        "T11270": "0/0",
+        "T11621": "0/0",
+        "T11674": "0/0",
+        "T11711": "0/1",
+        "T11762": "0/0",
+        "T11770": "0/0",
+        "T11792": "0/0",
+        "T11898": "0/0",
+        "T11911": "0/1",
+        "T12052": "0/0",
+        "T12137": "0/0",
+        "T12394": "0/0",
+        "T12446": "0/0",
+        "T12641": "0/0",
+        "T12708": "0/0",
+        "T12722": "0/0",
+        "T12825": "0/0",
+        "T12851": "0/0",
+        "T13007": "0/0",
+        "T13042": "0/0",
+        "T13138": "0/0",
+        "T13227": "0/0",
+        "T13237": "0/0",
+        "T13255": "0/0",
+        "T13278": "0/0",
+        "T13370": "0/0",
+        "T13387": "0/0",
+        "T13389": "0/0",
+        "T13399": "0/0",
+        "T13407": "0/0",
+        "T13411": "0/0",
+        "T13442": "0/0",
+        "T13472": "0/0",
+        "T13547": "0/0",
+        "T13588": "0/0",
+        "T13713": "0/0",
+        "T13825": "0/0",
+        "T13894": "0/0",
+        "T13949": "0/0",
+        "T13961": "0/0",
+        "T14008": "0/0",
+        "T14051": "0/0",
+        "T14066": "0/0",
+        "T14094": "0/0",
+        "T14113": "0/0",
+        "T14129": "0/0",
+        "T14143": "0/0",
+        "T14213": "0/0",
+        "T14223": "0/0",
+        "T14230": "0/0",
+        "T14231": "0/0",
+        "T14261": "0/0",
+        "T14294": "0/0",
+        "T14325": "0/0",
+        "T14334": "0/0",
+        "T14370": "0/0",
+        "T14404": "0/0",
+        "T14424": "0/0",
+        "T14467": "0/0",
+        "T14491": "0/0",
+        "T14501": "0/0",
+        "T14503": "0/0"
+      }
     },
     {
       "leaf": "econ.TH",
@@ -1641,8 +2145,18 @@
         "T11742",
         "T12137"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10785%7CT10991%7CT11031%7CT11182%7CT11742%7CT12137%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 6,
+      "precision": 0.4,
+      "byTopic": {
+        "T10785": "0/3",
+        "T10991": "0/0",
+        "T11031": "1/1",
+        "T11182": "1/1",
+        "T11742": "0/6",
+        "T12137": "4/4"
+      }
     },
     {
       "leaf": "q-fin.ST",
@@ -3211,8 +3725,23 @@
         "T13128",
         "T13325"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10180%7CT10212%7CT10532%7CT10640%7CT10683%7CT10908%7CT11460%7CT11630%7CT13079%7CT13128%7CT13325%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "byTopic": {
+        "T10180": "1/1",
+        "T10212": "3/4",
+        "T10532": "0/2",
+        "T10640": "1/2",
+        "T10683": "3/3",
+        "T10908": "0/0",
+        "T11460": "1/1",
+        "T11630": "0/0",
+        "T13079": "0/0",
+        "T13128": "0/1",
+        "T13325": "0/1"
+      }
     },
     {
       "leaf": "chem.electro",
@@ -3233,8 +3762,18 @@
         "T11434",
         "T11947"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10018%7CT10030%7CT10179%7CT10212%7CT11434%7CT11947%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 15,
+      "precision": 1,
+      "byTopic": {
+        "T10018": "6/6",
+        "T10030": "7/7",
+        "T10179": "0/0",
+        "T10212": "0/0",
+        "T11434": "2/2",
+        "T11947": "0/0"
+      }
     },
     {
       "leaf": "chem.inorg",
@@ -3264,8 +3803,28 @@
         "T13217",
         "T13361"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10096%7CT10353%7CT10464%7CT10807%7CT10973%7CT11279%7CT11281%7CT11286%7CT11746%7CT11747%7CT12136%7CT12228%7CT12557%7CT12646%7CT13217%7CT13361%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 10,
+      "precision": 0.6666666666666666,
+      "byTopic": {
+        "T10096": "10/12",
+        "T10353": "0/0",
+        "T10464": "0/3",
+        "T10807": "0/0",
+        "T10973": "0/0",
+        "T11279": "0/0",
+        "T11281": "0/0",
+        "T11286": "0/0",
+        "T11746": "0/0",
+        "T11747": "0/0",
+        "T12136": "0/0",
+        "T12228": "0/0",
+        "T12557": "0/0",
+        "T12646": "0/0",
+        "T13217": "0/0",
+        "T13361": "0/0"
+      }
     },
     {
       "leaf": "chem.org",
@@ -3336,8 +3895,73 @@
         "T14318",
         "T14459"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10013%7CT10092%7CT10274%7CT10354%7CT10405%7CT10548%7CT10578%7CT10701%7CT10721%7CT10817%7CT10835%7CT10871%7CT10909%7CT10956%7CT11298%7CT11440%7CT11441%7CT11549%7CT11611%7CT11746%7CT11748%7CT11790%7CT11831%7CT11989%7CT12189%7CT12191%7CT12228%7CT12240%7CT12251%7CT12270%7CT12318%7CT12410%7CT12458%7CT12526%7CT12527%7CT12562%7CT12570%7CT12653%7CT12852%7CT12893%7CT12973%7CT13013%7CT13105%7CT13115%7CT13124%7CT13160%7CT13208%7CT13230%7CT13239%7CT13265%7CT13304%7CT13489%7CT13568%7CT13649%7CT13833%7CT13859%7CT13876%7CT14099%7CT14297%7CT14318%7CT14459%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 9,
+      "precision": 0.6,
+      "byTopic": {
+        "T10013": "0/0",
+        "T10092": "0/0",
+        "T10274": "2/2",
+        "T10354": "0/0",
+        "T10405": "0/1",
+        "T10548": "0/0",
+        "T10578": "0/0",
+        "T10701": "5/5",
+        "T10721": "0/1",
+        "T10817": "0/0",
+        "T10835": "0/0",
+        "T10871": "0/0",
+        "T10909": "0/0",
+        "T10956": "0/0",
+        "T11298": "0/0",
+        "T11440": "0/1",
+        "T11441": "0/1",
+        "T11549": "0/0",
+        "T11611": "0/0",
+        "T11746": "0/0",
+        "T11748": "0/0",
+        "T11790": "0/0",
+        "T11831": "0/0",
+        "T11989": "0/0",
+        "T12189": "1/1",
+        "T12191": "1/1",
+        "T12228": "0/0",
+        "T12240": "0/1",
+        "T12251": "0/0",
+        "T12270": "0/0",
+        "T12318": "0/0",
+        "T12410": "0/0",
+        "T12458": "0/0",
+        "T12526": "0/0",
+        "T12527": "0/0",
+        "T12562": "0/0",
+        "T12570": "0/1",
+        "T12653": "0/0",
+        "T12852": "0/0",
+        "T12893": "0/0",
+        "T12973": "0/0",
+        "T13013": "0/0",
+        "T13105": "0/0",
+        "T13115": "0/0",
+        "T13124": "0/0",
+        "T13160": "0/0",
+        "T13208": "0/0",
+        "T13230": "0/0",
+        "T13239": "0/0",
+        "T13265": "0/0",
+        "T13304": "0/0",
+        "T13489": "0/0",
+        "T13568": "0/0",
+        "T13649": "0/0",
+        "T13833": "0/0",
+        "T13859": "0/0",
+        "T13876": "0/0",
+        "T14099": "0/0",
+        "T14297": "0/0",
+        "T14318": "0/0",
+        "T14459": "0/0"
+      }
     },
     {
       "leaf": "chem.phys",
@@ -3361,8 +3985,23 @@
         "T13297",
         "T13539"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10002%7CT10798%7CT11129%7CT11177%7CT12044%7CT12274%7CT12327%7CT12852%7CT13253%7CT13297%7CT13539%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "passed",
+      "sampleSize": 15,
+      "onTarget": 14,
+      "precision": 0.9333333333333333,
+      "byTopic": {
+        "T10002": "14/14",
+        "T10798": "0/0",
+        "T11129": "0/0",
+        "T11177": "0/0",
+        "T12044": "0/1",
+        "T12274": "0/0",
+        "T12327": "0/0",
+        "T12852": "0/0",
+        "T13253": "0/0",
+        "T13297": "0/0",
+        "T13539": "0/0"
+      }
     },
     {
       "leaf": "chem.spectro",
@@ -3384,8 +4023,24 @@
         "T13675",
         "T14068"
       ],
-      "status": "not-reviewed",
-      "sampleUrl": "https://api.openalex.org/works?filter=primary_topic.id%3AT10519%7CT10532%7CT10683%7CT10908%7CT11111%7CT11809%7CT12195%7CT12748%7CT12967%7CT13604%7CT13675%7CT14068%2Ctype%3Aarticle%2Cfrom_publication_date%3A2016-01-01%2Cto_publication_date%3A2025-12-31%2Chas_abstract%3Atrue%2Cis_retracted%3Afalse%2Cprimary_location.source.is_core%3Atrue&sort=cited_by_count%3Adesc&page=1&per-page=15&select=id%2Cdoi%2Ctitle%2Ctype%2Cpublication_date%2Cpublication_year%2Clanguage%2Cabstract_inverted_index%2Cprimary_location%2Copen_access%2Cprimary_topic%2Ccited_by_count"
+      "status": "rejected",
+      "sampleSize": 15,
+      "onTarget": 2,
+      "precision": 0.13333333333333333,
+      "byTopic": {
+        "T10519": "0/9",
+        "T10532": "0/1",
+        "T10683": "0/2",
+        "T10908": "0/0",
+        "T11111": "2/2",
+        "T11809": "0/0",
+        "T12195": "0/0",
+        "T12748": "0/0",
+        "T12967": "0/0",
+        "T13604": "0/1",
+        "T13675": "0/0",
+        "T14068": "0/0"
+      }
     }
   ]
 }

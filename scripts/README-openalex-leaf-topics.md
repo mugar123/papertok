@@ -219,6 +219,33 @@ once: about 1,000 papers a lane against the embedding ceiling of the night
 (`EMBEDDING_DAILY_TOKEN_LIMIT`, `wrangler.toml`), so size the batch against it.
 Leaves are sampled by area, the areas with no notable lane at all first.
 
+### The 2026-10-25 notable sample, batch 1
+
+107 anonymous requests between 16:51 and 16:55 UTC, one per distinct proposal
+of the 110 leaves, all answered 200 with 15 articles. Batch 1 is the 38 leaves
+of the areas with no notable lane at all (physics 24, statistics 5, economics
+3, chemistry 6) and `math.ST`, whose proposal is `stat.TH`'s. **An agent
+(Claude Fable 5.1) labelled this batch blind, not a person**: Nicolás asked not
+to wait for his own labels. The sheets held titles and decoded abstracts in
+shuffled rows with opaque ids; doubt was recorded as `uncertain`; the labels
+were joined to work ids after each sheet. Read the evidence as an agent's
+reading of 15 abstracts a leaf. New labels for the same sample replace these.
+
+| Decision | Leaves |
+| --- | --- |
+| `passed` | 17: `cond-mat.supr-con`, `cond-mat.str-el`, `cond-mat.mes-hall`, `cond-mat.soft`, `hep-th`, `hep-ph`, `hep-ex`, `astro-ph.CO`, `astro-ph.GA`, `astro-ph.SR`, `physics.optics`, `physics.atom-ph`, `physics.flu-dyn`, `stat.CO`, `chem.electro`, `chem.inorg`, `chem.phys` |
+| `rejected` | 22, among them `physics.plasm-ph`, `chem.anal` and `chem.org` at 9 of 15 and `gr-qc` and `econ.GN` at 8 |
+
+Five pass at exactly 10 of 15 (`cond-mat.str-el`, `hep-th`, `hep-ph`, `hep-ex`,
+`chem.inorg`). The 17 lanes ask for 48 topics and spend 170 units a week; with
+56 notable lanes the nightly share stays at eight. The most-cited articles of
+a subfield are often its tools and reference works: `quant-ph` and
+`physics.comp-ph` returned quantum-chemistry codes, the statistics leaves
+systematic-review guidelines and R packages, `math-ph` deep-learning inverse
+problems, `chem.spectro` proteomics repositories, `astro-ph.EP` Gaia and MESA
+papers. Authorized by Nicolás on 2026-10-25 (ENG-138, where the per-leaf
+table is).
+
 ## The 2026-10-23 sample (PAP-99)
 
 107 anonymous requests, one per proposed leaf, between 08:04 and 08:05 UTC, all
