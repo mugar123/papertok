@@ -10,8 +10,21 @@ workers_dev = false
 # A harvest invocation can execute many persisted steps before it yields.
 # Its accumulated CPU exceeded the default 30 seconds in both ingestion and
 # embedding. This script-wide ceiling also applies to HTTP invocations.
+#
+# Its subrequests accumulate the same way: fetches, D1 calls (a batch is one),
+# Workers AI calls, the quota ledger and the cache, until a wait longer than the
+# Workflows engine's 5-minute grace period moves the run to a new invocation.
+# On 2026-10-25 the first by-year run reached the 10,000 default after its lane
+# phases (about 6,000) and 38 enrichment batches (about 100 each): the step
+# failed on its first attempt and on the retries at 1, 2 and 4 minutes, all in
+# the same invocation, and ran on the fifth attempt, after 8 minutes, in a fresh
+# one. The longest run the code allows comes to about 50,000 (worker/README.md,
+# step 5); the enrichment phase alone is kept within half of this value by a
+# test. Subrequests are not billed themselves; each provider's calls stay
+# bounded by its budget.
 [limits]
 cpu_ms = 120_000
+subrequests = 100_000
 
 # The share card's renderer (worker/share-card-render.ts): its two
 # WebAssembly engines travel compiled, the only way a Worker may run them, and
