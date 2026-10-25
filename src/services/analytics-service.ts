@@ -90,7 +90,7 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // Google apps on Android send their package name as the referrer and are filed like
 // their sites: the Google, Google Go and News apps as search, YouTube as social.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
-  /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com?\.)?[a-z]{2,3}$/,
+  /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com?\.)?(?:com|cat|[a-z]{2})$/,
   'com.google.android.googlequicksearchbox',
   'com.google.android.apps.searchlite',
   'com.google.android.apps.magazines',
