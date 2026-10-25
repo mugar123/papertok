@@ -1,4 +1,5 @@
 import type { FirestoreData, FirestoreWrite, QueryOptions } from './firestore-admin.ts';
+import type { TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
@@ -391,6 +392,10 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
   // Identity Toolkit still knows the account until accounts:delete returns, so
   // the notification route accepts a settings save that lands after the purge.
   const restore = stubIdentityLookup();
+  // An empty identity cache, so this test fails only when the purge is missing,
+  // not when the notification write's cache rule changes (email-notifications.test.ts owns that).
+  const originalCaches = (globalThis as TestGlobals).caches;
+  (globalThis as TestGlobals).caches = { default: { match: async () => null, put: async () => undefined } };
   const store = kvStore();
   const env = {
     ...SERVICE,
@@ -424,6 +429,8 @@ test('a digest turned on while the Auth delete is in flight is purged too', asyn
     assert.equal(result.complete, true);
     assert.equal(store.data.has(`notification:subscription:${UID}`), false);
   } finally {
+    if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+    else (globalThis as TestGlobals).caches = originalCaches;
     restore();
   }
 });
