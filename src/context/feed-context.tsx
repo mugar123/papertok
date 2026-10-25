@@ -76,7 +76,7 @@ import {
 } from '../utils/user-scoped-storage.ts';
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import { addViewedPapers, leavesLoadedAccount, markSeenLatest, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
-import { PAGE_SIZE, canFetchNextPage, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { PAGE_SIZE, canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { FOLLOWED_PER_PAGE, fetchFollowedEntityCandidates, mergeFollowEntityMatches } from './feed-follows.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
@@ -1106,9 +1106,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     // How the page joins the list, with the card the reader is on when it does.
     const pageJoin = () => ({ reset, keepThroughVisible, visiblePaperId: visiblePaperIdRef.current, notableAfter: notableAfterRef.current });
     const cardsBefore = cardsBeforePage(papers, pageJoin());
+    // A follow change's first page goes on with the session's walk, under its snapshot.
+    const continues = continuesWalk({ reset, keepThroughVisible, currentPage, relaxExclusions, workerSkipsSeen: workerSkipsSeen.current });
     // The snapshot lasts as long as the page offsets, including cache misses
     // and browser restores. Removing newly seen rows would skip unread rows.
-    if (currentPage === 0) {
+    if (currentPage === 0 && !continues) {
       feedExcludedIds.current = relaxExclusions ? [] : [...new Set([
         ...[...sessionSeenPapers.current].reverse(),
         ...curatedIds(interactionProfile.current, 'read'),
@@ -1248,6 +1250,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
             page: currentPage,
             pageSize: PAGE_SIZE,
             order: queryMode,
+            continues,
             // Unseen notable papers for the places of the largest page this
             // load can show: the corpus's fifteen, the follows' six and the
             // exploration cards (two on the first screen, up to ten after it);

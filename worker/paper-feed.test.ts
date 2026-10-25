@@ -330,12 +330,18 @@ test("the lookup after the page files what arXiv sends at the end of the route's
 });
 
 // This location's cache, where a reader's ranking is kept for their next pages.
+// As in Cloudflare's, an entry is gone once its `max-age` has passed.
 function rankingCaches(t: TestContext) {
   const entries = new Map<string, Response>();
+  const expiries = new Map<string, number>();
   const realCaches = (globalThis as { caches?: unknown }).caches;
   (globalThis as { caches?: unknown }).caches = { default: {
-    match: async (request: Request) => entries.get(request.url)?.clone() ?? undefined,
-    put: async (request: Request, response: Response) => { entries.set(request.url, response); },
+    match: async (request: Request) => ((expiries.get(request.url) ?? 0) > Date.now() ? entries.get(request.url)?.clone() : undefined),
+    put: async (request: Request, response: Response) => {
+      const maxAge = Number(/max-age=(\d+)/.exec(response.headers.get('cache-control') ?? '')?.[1] ?? 0);
+      entries.set(request.url, response);
+      expiries.set(request.url, Date.now() + maxAge * 1_000);
+    },
   } };
   t.after(() => { (globalThis as { caches?: unknown }).caches = realCaches; });
   return entries;
@@ -646,6 +652,71 @@ test("a reader's next pages from the kept order read each stored id once, howeve
   assert.ok(idReads <= 3, `${idReads} reads of stored ids for thirty pages`);
 });
 
+// A filter that holds nothing shows where a walk starts. A first page that
+// says it continues (a follow change, FeedContext) goes on with the walk the
+// reader's order kept; one that does not, as every bundle before it asks,
+// starts a new walk from the top, as does one whose order is gone.
+test('a first page that continues goes on with the walk of the order kept for the reader, and one that does not starts from the top', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(60);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], excludedIds: ['2609.99999'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
+  await ask(request(0, []));
+  await ask(request(1, ids(papers.slice(0, 15))));
+  assert.deepEqual(ids((await ask(request(0, [], { continues: true }))).papers), ids(papers.slice(15, 30)));
+  assert.deepEqual(ids((await ask(request(0, []))).papers), ids(papers.slice(0, 15)));
+  await ask(request(1, ids(papers.slice(0, 15))));
+  assert.deepEqual(ids((await ask(request(0, [], { continues: 'true' }))).papers), ids(papers.slice(0, 15)), 'only true continues');
+  assert.deepEqual(ids((await ask(request(0, [], { continues: true }), 'reader-2')).papers), ids(papers.slice(0, 15)), 'no order kept for this reader');
+  assert.deepEqual(ids((await ask(request(0, [], { continues: true, excludedIds: [] }))).papers), ids(papers.slice(0, 15)), 'no order kept for these exclusions');
+});
+
+// Counted in Workers Logs (worker/README.md): a later page of a walk whose
+// order this data center does not hold, after a move to another one, an early
+// eviction or a break of more than two hours.
+test('a later page of a walk with no order kept logs a line that names neither the reader nor a paper', async t => {
+  rankingCaches(t);
+  const { env, ask } = store();
+  const papers = recent(30);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const logged = t.mock.method(console, 'log', () => {});
+  const walk = (page: number) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter([]), skipsSeen: true });
+  await ask(walk(0));
+  await ask(walk(1));
+  await ask({ categories: ['cs.CL'], page: 1, pageSize: 15 }, 'reader-2');
+  assert.equal(logged.mock.callCount(), 0, 'a first page, a page of a kept order, and a page asked by number');
+  await ask(walk(1), 'reader-3');
+  await ask(walk(4), 'reader-4');
+  const lines = logged.mock.calls.map(call => call.arguments.join(' '));
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], lines[1], 'the same line for every reader');
+  assert.ok(!lines[0].includes('reader-') && !lines[0].includes('2610.'), lines[0]);
+});
+
+// How long a reader's order is kept (privacy.html): a walk's, two hours from
+// its last page; one paged by number, 15 minutes. Without it, a page is
+// ranked from the top, where a paper filed since comes first.
+test('a walk 90 minutes after its last page goes on past the papers it sent, while a page asked by number 20 minutes after its last one is ranked from the top', async t => {
+  rankingCaches(t);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const { env, ask } = store();
+  const papers = recent(60);
+  await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+  const byNumber = (page: number) => ({ categories: ['cs.CL'], page, pageSize: 15 });
+  const walk = (page: number, seen: string[]) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true });
+  assert.deepEqual(ids((await ask(byNumber(0))).papers), ids(papers.slice(0, 15)));
+  await ask(walk(0, []), 'reader-2');
+  assert.deepEqual(ids((await ask(walk(1, ids(papers.slice(0, 15))), 'reader-2')).papers), ids(papers.slice(15, 30)));
+  t.mock.timers.tick(20 * 60_000);
+  await ingestPapers(env, [{ paper: paper('2610.70001', 'Filed during the break', 0), lanes: [] }]);
+  assert.deepEqual(ids((await ask(byNumber(1))).papers), ids(papers.slice(14, 29)));
+  t.mock.timers.tick(70 * 60_000);
+  // A filter that no longer holds the first page's papers: the walk goes on
+  // past them, and the paper filed since comes right after the ranks it passed.
+  assert.deepEqual(ids((await ask(walk(2, ids(papers.slice(15, 30))), 'reader-2')).papers), ['2610.70001', ...ids(papers.slice(30, 44))]);
+});
+
 // The app asks for one page more on every load, the follows' page included.
 test('a session past its hundredth load still gets the next papers of its ranking, while a page asked by number stops at page 100', async t => {
   rankingCaches(t);
@@ -729,7 +800,7 @@ for (const [removed, name] of dropped) {
 
 // A walk past 600 seen papers leaves the ids of the first 1,400 ranks on the
 // kept order; the corpus then drops the 400 works after the ones it sent (an
-// eviction, or folds, within the order's 15 minutes), and the next walk lands
+// eviction, or folds, within the order's two hours), and the next walk lands
 // on them, whatever the page size.
 for (const pageSize of [1, 15, 30]) {
   test(`a page of ${pageSize} past 400 works the corpus dropped behind the kept order costs a few reads, whatever its size`, async t => {
@@ -763,6 +834,11 @@ const SESSION_CATEGORIES = ['cs.AI', 'cs.CL', 'cs.CV', 'cs.LG', 'cs.RO', 'cs.IR'
 const SESSION_RANKS = 3_000;
 const rankedPaper = (rank: number) => `2610.${String(rank).padStart(5, '0')}`;
 const notablePaper = (rank: number) => `1901.${String(rank).padStart(5, '0')}`;
+// A category the reader follows during the session (FeedContext adds a
+// followed topic's categories to the main request).
+const FOLLOWED_TOPIC = 'cs.PL';
+const topicPaper = (rank: number) => `2612.${String(rank).padStart(5, '0')}`;
+const isTopicPaper = (paperId: string) => paperId.startsWith('2612.');
 // The last year a notable lane reads (readNotableCandidates): the session's
 // notable papers are older, and the ones the harvest files are of this year.
 const lastNotableYear = new Date().getUTCFullYear() - 1;
@@ -779,13 +855,18 @@ const viewedRanks = (count: number) => Array.from({ length: count }, (_, index) 
  * paper it has seen (FeedContext.loadPapers), shows the rest of the corpus's
  * page, places two of its unseen notable cards, and adds 14 cards of the
  * follows and exploration. `request` changes a load's request, and
- * `minutesPerLoad` moves the clock after each load. With `filing`, the
- * harvest files two recent papers and a notable one after each load, newer
- * than any before: a ranking made after that puts them first.
+ * `minutesPerLoad` moves the clock after each load, `pause` before one. With
+ * `filing`, the harvest files two recent papers and a notable one after each
+ * load, newer than any before: a ranking made after that puts them first.
+ * The corpus also holds 300 papers of FOLLOWED_TOPIC, which the reader does
+ * not ask for: they are ten minutes apart, so the newest 150 are newer than
+ * the papers a walk reaches after 100 loads.
  */
-async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, filing = false, request }: { minutesPerLoad?: number; filing?: boolean; request?: (load: number) => object } = {}) {
+async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, pause, filing = false, request }: {
+  minutesPerLoad?: number; pause?: { load: number; minutes: number }; filing?: boolean; request?: (load: number) => object;
+} = {}) {
   rankingCaches(t);
-  if (minutesPerLoad) t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  if (minutesPerLoad || pause) t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   const { env, db, ask } = store();
   // The loads come seconds apart, past the ceiling of a reader's pages a minute.
   Object.assign(env, { PROVIDER_USER_MINUTE_LIMIT: '1000' });
@@ -801,6 +882,11 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
     insertWork.run(SESSION_RANKS + rank + 1, JSON.stringify({ id: notablePaper(rank), title: `Notable paper ${rank}`, authors: [] }), listed, '2099-01-01T00:00:00.000Z');
     insertLane.run(`notable:${category}`, SESSION_RANKS + rank + 1, listed);
   }
+  for (let rank = 0; rank < 300; rank += 1) {
+    const published = new Date(Date.now() - (10 * rank + 5) * 60_000).toISOString();
+    insertWork.run(2 * SESSION_RANKS + rank + 1, JSON.stringify({ id: topicPaper(rank), title: `Topic paper ${rank}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
+    insertLane.run(FOLLOWED_TOPIC, 2 * SESSION_RANKS + rank + 1, published);
+  }
   db.exec('COMMIT');
 
   const uid = 'heavy-reader';
@@ -812,7 +898,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
 
   const session: Array<{ main: string[]; shown: string[]; placed: string[]; filed: string[] }> = [];
   let otherCards = 0;
-  let workId = 2 * SESSION_RANKS;
+  let workId = 3 * SESSION_RANKS;
   const file = (paperId: string, lane: string, published: string) => {
     workId += 1;
     insertWork.run(workId, JSON.stringify({ id: paperId, title: `Paper ${paperId}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
@@ -820,6 +906,7 @@ async function longSession(t: TestContext, loads: number, { minutesPerLoad = 0, 
     return paperId;
   };
   for (let load = 0; load < loads; load += 1) {
+    if (pause?.load === load) t.mock.timers.tick(pause.minutes * 60_000);
     const { papers } = await ask({ categories: SESSION_CATEGORIES, page: load, pageSize: 15, seen: feedSeenFilter(feedSeenIds(seen, true)), skipsSeen: true, notable: 5, ...request?.(load) }, uid);
     const known = papers.filter(item => seen.has(item.id));
     known.forEach(item => passOver(item.id));
@@ -856,25 +943,62 @@ function assertSupplied(session: Awaited<ReturnType<typeof longSession>>) {
   assert.ok(missed.length <= 0.02 * filed.length, `${missed.length} of ${filed.length} papers filed during the session never came: ${missed.slice(0, 5)}`);
 }
 
-// On 52d08080 every page walked from the top of the ranking, and the app could
-// not put back into the filter a paper that had left its 2,000 newest ids: the
-// notable cards stopped after about 12 loads, the ranking after about 60.
-test('a reader who viewed 1,200 notable cards and 500 papers before gets new papers and notable cards on each of 90 loads', async t => {
-  const session = await longSession(t, 90);
-  assertSupplied(session);
-  // Every paper ranked before the last one the session got so far, and
-  // neither got nor viewed before, was passed over as seen: a false positive
-  // of the filter, which no later walk goes back to. After every load from the
-  // 20th (300 papers) on, they are about 1% of the unseen papers walked past.
+// Every paper of the ranking before the last one the session got so far, and
+// neither got nor viewed before, was passed over as seen: a false positive of
+// the filter, which no later walk goes back to. After every load from the 20th
+// (300 papers) on, they are about 1% of the unseen papers walked past.
+function assertFewPassedOver(session: Awaited<ReturnType<typeof longSession>>) {
   const viewedBefore = new Set(viewedRanks(500).map(rankedPaper));
   const rates = session.slice(19).map((_, index) => {
-    const got = new Set(session.slice(0, index + 20).flatMap(load => load.main));
+    const got = new Set(session.slice(0, index + 20).flatMap(load => load.main).filter(id => !isTopicPaper(id)));
     const last = Math.max(...[...got].map(id => Number(id.slice(5))));
     const passed = Array.from({ length: last }, (_, rank) => rankedPaper(rank)).filter(id => !got.has(id) && !viewedBefore.has(id)).length;
     return passed / (passed + got.size);
   });
   const worst = Math.max(...rates);
   assert.ok(worst <= 0.012, `${(100 * worst).toFixed(2)}% of the unseen papers passed over after ${rates.indexOf(worst) + 20} loads`);
+}
+
+// On 52d08080 every page walked from the top of the ranking, and the app could
+// not put back into the filter a paper that had left its 2,000 newest ids: the
+// notable cards stopped after about 12 loads, the ranking after about 60.
+test('a reader who viewed 1,200 notable cards and 500 papers before gets new papers and notable cards on each of 90 loads', async t => {
+  const session = await longSession(t, 90);
+  assertSupplied(session);
+  assertFewPassedOver(session);
+});
+
+// After about 65 loads the filter no longer holds the session's first papers,
+// so a walk from the top of the ranking would send them again, 15 a load, for
+// as many loads as the session had (ENG-103). A walk's order lasts two hours
+// from its last page; one ranked 15 minutes ago or more is ranked again after
+// the ranks the walk passed.
+for (const minutes of [20, 45, 90]) {
+  test(`a reader back after ${minutes} minutes away from their 100th load gets new papers and notable cards on each of the next 40 loads`, async t => {
+    const session = await longSession(t, 140, { pause: { load: 100, minutes } });
+    assertSupplied(session);
+    assertFewPassedOver(session);
+  });
+}
+
+// A follow change keeps the reader's cards through the one they are on and
+// asks for a first page again (FeedContext, `keepThroughVisible`), which goes
+// on with the session's walk (`continues`): a topic follow adds its category
+// to the main request, an author follow leaves it as it was.
+const followAt = (load: number, extra: object = {}) => (at: number) => (at < load ? {} : { page: at - load, ...(at === load ? { continues: true } : {}), ...extra });
+
+test('a topic followed after 100 loads brings its papers on the next load, and no paper the session was shown comes back', async t => {
+  const session = await longSession(t, 140, { request: followAt(100, { categories: [...SESSION_CATEGORIES, FOLLOWED_TOPIC] }) });
+  assertSupplied(session);
+  assertFewPassedOver(session);
+  // The topic's papers newer than where the walk was come right after the ranks it passed.
+  assert.equal(session[100].shown.filter(isTopicPaper).length, 15);
+});
+
+test('an author followed after 100 loads leaves the walk of the main page where it was', async t => {
+  const session = await longSession(t, 140, { request: followAt(100) });
+  assertSupplied(session);
+  assertFewPassedOver(session);
 });
 
 test('a ranking kept for 15 minutes is ranked again after the papers the session passed over, and none comes back', async t => {

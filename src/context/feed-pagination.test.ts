@@ -1,7 +1,7 @@
 import type { Paper } from '../models/paper.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canFetchNextPage, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
+import { canFetchNextPage, continuesWalk, hasSeenRanking, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
 import { joinFeedPage } from './feed-notable-cards.ts';
 import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 
@@ -175,4 +175,21 @@ test('a seen notable card, or a Worker that pages by number, does not say the re
     planUnshowablePage({ candidateCount: 15, currentPage: 0, seenFallback: undefined, shownBeforeHere: page(0), rankingSeen: false }),
     { kind: 'next-page', page: 1, seenFallback: { page: 0, papers: page(0) } },
   );
+});
+
+// ENG-103: a follow change keeps the cards through the one the reader is on
+// and asks for the first page again. From a Worker that skips seen papers,
+// that page goes on with the session's walk, under the session's exclusion
+// snapshot, so the Worker finds the order it kept for the session.
+test("only a follow change's first page goes on with the walk, and only from a Worker that skips seen papers", () => {
+  const followChange = { reset: true, keepThroughVisible: true, currentPage: 0, relaxExclusions: false, workerSkipsSeen: true };
+  assert.equal(continuesWalk(followChange), true);
+  const others = {
+    'a refresh, an interests edit or a reload': { keepThroughVisible: false },
+    'a later page, which goes on anyway': { reset: false, currentPage: 3 },
+    "the follow change's next page": { currentPage: 1 },
+    'the first page again without exclusions': { relaxExclusions: true },
+    'a Worker that pages by number': { workerSkipsSeen: false },
+  };
+  for (const [name, other] of Object.entries(others)) assert.equal(continuesWalk({ ...followChange, ...other }), false, name);
 });

@@ -90,6 +90,20 @@ test('a page sends what the reader has seen as the filter the Worker reads, asks
   assert.ok(!('seen' in without) && !('skipsSeen' in without) && !('notable' in without), 'a page that says nothing of what was seen asks for no notable papers');
 });
 
+// ENG-103: a follow change's first page goes on with the session's walk. A
+// Worker before it reads the same request as a first page.
+test('a first page that goes on with the walk says so beside the filter, and is otherwise the same request', async () => {
+  const { asked, options } = harness(answered([]));
+  const seen = new Set(['2610.00001']);
+  await fetchCorpusPage({ categories: ['cs.LG'], excludedIds: ['2610.00002'], page: 0, pageSize: 15, seen, continues: true }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], excludedIds: ['2610.00002'], page: 0, pageSize: 15, seen }, options);
+  await fetchCorpusPage({ categories: ['cs.LG'], page: 0, pageSize: 15, continues: true }, options);
+  const [continuing, starting, byNumber] = asked.map(entry => entry.body as Record<string, unknown>);
+  assert.deepEqual(continuing, { ...starting, continues: true });
+  assert.ok(!('continues' in starting), 'a first page starts a new walk unless it says so');
+  assert.ok(!('continues' in byNumber), 'a page that does not skip seen papers has no walk to go on with');
+});
+
 test('a page returns whether the Worker passed over the papers the filter holds', async () => {
   const seen = new Set(['2610.00001']);
   const skipping = harness(async () => new Response(JSON.stringify({ papers: [STORED], skipsSeen: true }), { status: 200 }));

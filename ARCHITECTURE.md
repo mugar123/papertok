@@ -134,7 +134,10 @@ pages. Each page says which papers the reader has seen, as a Bloom filter, and
 asks the Worker to pass over them: [paper-store.ts](worker/paper-store.ts)
 walks the reader's kept ranking past the filter, so a reload is one request
 however many pages the reader saw, and each later page goes on from where the
-last walk stopped.
+last walk stopped. The walk is kept for 2 hours after its last page, and the
+first page a change of follows asks for goes on with it (`continues`), so
+neither a shorter break nor a follow sends again the papers the filter no
+longer holds.
 [feed-pagination.ts](src/context/feed-pagination.ts) decides when a page the
 feed cannot show goes one page on, and shows the page again when the reader
 has seen their whole ranking.

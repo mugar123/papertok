@@ -24,6 +24,9 @@ export interface CorpusPageRequest {
   // after its own: only unseen ones, for the app to place (placeNotableCards).
   seen?: Iterable<string>;
   notable?: number;
+  // With `seen`, a first page goes on with the walk of the order the Worker
+  // kept for the same request (continuesWalk in src/context/feed-pagination.ts).
+  continues?: boolean;
   /**
    * Rank by the likes only once the corpus has fetched and embedded the ones
    * it lacks, which can take seconds: for More like this, never a feed page.
@@ -61,7 +64,7 @@ async function askStore(body: unknown, { fetchWorker = authenticatedWorkerFetch,
  * that skips seen papers pages by number for bundles that send `seen` only
  * for notable papers.
  */
-export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
+export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [], negativeIds = [], excludedIds = [], page, pageSize, order = 'recent', seen, notable = 0, continues = false, waitForLikes = false }: CorpusPageRequest, options: StoreOptions = {}) {
   const read = follows.filter(follow => followLane(follow)).slice(0, FEED_MAX_FOLLOWS);
   const body = {
     categories,
@@ -83,7 +86,7 @@ export function fetchCorpusPage({ categories = [], follows = [], positiveIds = [
     page,
     pageSize,
     order,
-    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}) } : {}),
+    ...(seen ? { seen: feedSeenFilter(seen), skipsSeen: true, ...(notable > 0 ? { notable } : {}), ...(continues ? { continues } : {}) } : {}),
     ...(waitForLikes ? { waitForLikes } : {}),
   };
   while (body.excludedIds.length && new TextEncoder().encode(JSON.stringify(body.excludedIds)).byteLength > 6_000) body.excludedIds.pop();

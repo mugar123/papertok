@@ -5,7 +5,7 @@ import type { FeedRequestBody, KeptRanking, RankingCache, StoreEnv } from './pap
 import type { QuotaRequest } from './request-quota-ledger.ts';
 
 import {
-  FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, RANKING_KEPT_MS, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
+  FEED_LAST_PAGE, KEEP_LIKED_DAYS, PaperStoreError, database, daysFromNow, embedWorks, findWorks, parseFeedRequest, readFeedPage,
   readPapersByIds, reserveFeedRequest,
 } from './paper-store.ts';
 import { followedLaneJob, ingestPaperIds } from './paper-sources.ts';
@@ -178,7 +178,9 @@ async function registerFollowedLanes(env: FeedEnv, uid: string, lanes: string[],
 /**
  * The reader's ranking in this location's cache, under a key built from the
  * verified uid and the request: one reader's order is never another's. Each
- * write keeps it for RANKING_KEPT_MS.
+ * write keeps it for the time readFeedPage gives (WALK_KEPT_MS for a walk,
+ * RANKING_KEPT_MS otherwise). Nothing can list the entries by reader, so
+ * deleting an account leaves them to expire (privacy.html).
  *
  * The path names the entry's shape. Workers before KeptRanking keep a plain
  * list under `store-ranking/` and slice whatever they find there, so a
@@ -198,9 +200,9 @@ function rankingCache(uid: string): RankingCache | undefined {
       const cached = await caches.default.match(await keyFor(key));
       return cached ? cached.json<KeptRanking>() : null;
     },
-    async put(key, ranking) {
+    async put(key, ranking, keptMs) {
       await caches.default.put(await keyFor(key), new Response(JSON.stringify(ranking), {
-        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${RANKING_KEPT_MS / 1_000}` },
+        headers: { 'content-type': 'application/json', 'cache-control': `max-age=${keptMs / 1_000}` },
       }));
     },
   };
@@ -294,23 +296,23 @@ export async function handleCorpusFeed(
   // Finished in time: the ranking below reads what it stored.
   if (lookup && await settlesWithin(lookup, LIKES_WAIT_MS)) lookup = null;
   const cache = rankingCache(identity.uid);
-  let kept: [string, KeptRanking] | null = null;
+  let kept: [string, KeptRanking, number] | null = null;
   const papers = await readFeedPage(env, query, {
     cache: cache && {
       get: key => cache.get(key),
       // The ranks served and walked past, and the notable papers walked past,
       // at once, so that a next page asked before the work below ends goes on
       // after them.
-      put: async (key, ranking) => {
-        kept = [key, ranking];
+      put: async (key, ranking, keptMs) => {
+        kept = [key, ranking, keptMs];
         await cache.put(key, {
           ...ranking,
           ranks: ranking.ranks.slice(0, Math.max(ranking.served, ranking.walked)),
           notable: ranking.notable.slice(0, ranking.notableWalked),
           final: false,
-        });
+        }, keptMs);
       },
-      update: (key, ranking) => cache.put(key, ranking),
+      update: (key, ranking, keptMs) => cache.put(key, ranking, keptMs),
     },
   });
   // Otherwise after the page, not before it: a lookup can take seconds

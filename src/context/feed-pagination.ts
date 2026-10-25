@@ -42,6 +42,27 @@ export function hasSeenRanking({ papers, skipsSeen }: { papers: Paper[]; skipsSe
 }
 
 /**
+ * Whether a load's main request goes on with the walk of the session's
+ * ranking (`continues`, ENG-103) instead of starting one: the first page a
+ * change of follows asks for, which keeps the cards through the one the reader
+ * is on, from a Worker that skips seen papers. The load then keeps the
+ * session's exclusion snapshot, so the request names the order the Worker
+ * kept. A new walk would start at the top of the ranking and send again, 15 a
+ * load, every paper the session was shown that the filter no longer holds. A
+ * refresh, an interests edit and a reload start a new walk, as before; a
+ * Worker that pages by number gets the request it got before.
+ */
+export function continuesWalk({ reset, keepThroughVisible, currentPage, relaxExclusions, workerSkipsSeen }: {
+  reset: boolean;
+  keepThroughVisible: boolean;
+  currentPage: number;
+  relaxExclusions: boolean;
+  workerSkipsSeen: boolean;
+}) {
+  return reset && keepThroughVisible && currentPage === 0 && !relaxExclusions && workerSkipsSeen;
+}
+
+/**
  * A page none of whose papers can be shown. An entirely excluded page still
  * proves the corpus has results, so the load goes one page on (not more: the
  * corpus ranks the same way on every load, so a longer move would pass over

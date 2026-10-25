@@ -960,6 +960,10 @@ export interface FeedQuery {
   // A page that skips seen papers, asked for past the last page (`page` then
   // holds the last): when its walk finds no unseen paper, it has no papers.
   pastLastPage: boolean;
+  // A first page that skips seen papers and goes on with the walk of the
+  // order kept under its key, as a later page does, rather than start a new
+  // one: the app asks for it after a change of follows (ENG-103).
+  continues: boolean;
   // How many unseen notable papers the page adds after its own, at most.
   notable: number;
   // Whether the page also reads the area lanes of the asked categories' areas.
@@ -981,7 +985,8 @@ export interface FeedQuery {
 export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number; paperId?: string }
 /**
  * The order a reader's pages were served from, in an entry of the reader's
- * alone, kept for 15 minutes from the last page that changed it. `served`
+ * alone, kept from the last page that changed it for WALK_KEPT_MS when its
+ * pages skip seen papers, RANKING_KEPT_MS otherwise. `served`
  * counts the ranks of the pages served by their numbers, including the empty
  * ones of a page the order ran out on, which `ranks` holds as null.
  *
@@ -1012,17 +1017,27 @@ export interface KeptRanking {
   rankedAt: number;
   rankedBy: string;
 }
+/** Keeps each order for `keptMs` from its last write. */
 export interface RankingCache {
   get(key: string): Promise<KeptRanking | null>;
   /** An order just ranked. */
-  put(key: string, ranking: KeptRanking): Promise<void>;
+  put(key: string, ranking: KeptRanking, keptMs: number): Promise<void>;
   /** An order read from the cache, with what its page changed: the pages served, the ids read, where the walks stopped. */
-  update?(key: string, ranking: KeptRanking): Promise<void>;
+  update?(key: string, ranking: KeptRanking, keptMs: number): Promise<void>;
 }
 
-// How long a reader's ranked candidates serve the pages after the first: about
-// a reading session. The entry lasts as long from the last page that changes it.
+// How long an order serves the pages after the first as it was ranked
+// (`rankedAt`); after that a page ranks it again after the ranks already
+// passed, so papers filed since come next. An order paged by number is kept
+// as long from the last page that changed it.
 export const RANKING_KEPT_MS = 15 * 60_000;
+// How long a walk's order (pages that skip seen papers) is kept from the last
+// page that changed it. A walk whose order is gone starts again from the top
+// of the ranking and sends again, 15 a page, every paper the session was shown
+// that the reader's filter no longer holds: past about 65 loads, for about as
+// many loads as the session had. Two hours cover breaks of 20, 45 and 90
+// minutes (ENG-103); privacy.html states this lifetime.
+export const WALK_KEPT_MS = 2 * 60 * 60_000;
 
 /** The lanes in their order, `order`, the likes and the rejections an order is ranked by, as a digest (`rankedBy`). */
 async function rankingInputs(lanes: string[], query: FeedQuery) {
@@ -1048,7 +1063,8 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * not hold, whatever `page` says, so a reload needs one request however many
  * pages the reader saw before (PAP-103); a false positive passes over a paper
  * the reader has not seen. A later page walks on from the first paper the
- * last walk sent, not from the top. When the order holds none, the page is
+ * last walk sent, not from the top, and so does a first page that `continues`
+ * when the reader's order is kept. When the order holds none, the page is
  * the one `page` names, papers the reader has seen, rather than none; past
  * the last page it is none, as for a page asked by number there. The
  * paper ids the walk reads stay in the kept order, so a later page reads only
@@ -1079,7 +1095,13 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     notable: query.notable > 0,
   });
   const rankedBy = await rankingInputs(lanes, query);
-  const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  const kept = (query.page > 0 || query.continues) && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  // Counted in Workers Logs, without the reader or a paper: a walk past its
+  // first page whose order this location does not hold, so it starts again
+  // from the top. Another location answered, the cache evicted the entry
+  // early, or the reader was away longer than WALK_KEPT_MS.
+  if (!kept && cache && query.skipsSeen && query.page > 0) console.log('Feed walk has no kept order past its first page');
+  const keptMs = query.skipsSeen ? WALK_KEPT_MS : RANKING_KEPT_MS;
   const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
   let ranking = kept?.ranks ?? [];
   let notable = kept?.notable ?? [];
@@ -1126,12 +1148,12 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   };
   const through = own?.unseen.length ? own.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
-    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy })
+    await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
   } else if (kept) {
     const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
     if (own?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
-      await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks })
+      await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
         .catch(error => console.warn('Feed ranking not cached', error));
     }
   }
@@ -1298,7 +1320,7 @@ const CATEGORY_ID = /^[\w.-]{1,32}$/;
 
 export interface FeedRequestBody {
   categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
-  seen?: unknown; skipsSeen?: unknown; notable?: unknown; waitForLikes?: unknown;
+  seen?: unknown; skipsSeen?: unknown; continues?: unknown; notable?: unknown; waitForLikes?: unknown;
 }
 
 export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
@@ -1336,6 +1358,7 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     seen,
     skipsSeen,
     pastLastPage: skipsSeen && page > FEED_MAX_PAGE,
+    continues: skipsSeen && body?.continues === true,
     notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
     // Not for the follows' request, even when no follow has a lane of its own
     // (a category topic): there the categories stand for followed topics
