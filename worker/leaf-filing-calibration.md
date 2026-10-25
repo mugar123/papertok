@@ -55,10 +55,13 @@ The first calibration, on the same dataset before ENG-104 was merged, also
 scored the articles the venue lanes now take. It chose similarity 0.58 and
 margin 0.065 for mathematics: 48 of 49 decided held-out filings were correct
 (0.893–0.996), and 10 more were unknown, so 48 of 59 filed articles were known
-to be correct. Physics reached 0.84 (37/44) and computer science 0.76 (25/33),
-both under the bar. Split by journal, in a check outside the committed
-command, that mathematics rule filed 33 of the 87 held-out articles from
-journals a mathematics venue lane now takes: 31 correct and 2 unknown. It
+to be correct. Physics reached 0.88 (22/25) and computer science 0.78 (25/32),
+both under the bar. After the seven articles whose preprint builds a centroid
+(six physics, one computer science) were left out, still before the venue
+lanes, the rules chosen reached 0.84 (37/44) and 0.76 (25/33); mathematics has
+no such article and did not change. Split by journal, in a check outside the
+committed command, that mathematics rule filed 33 of the 87 held-out articles
+from journals a mathematics venue lane now takes: 31 correct and 2 unknown. It
 filed 26 of the 84 from other journals: 17 correct, 1 wrong and 8 unknown.
 Only articles of the second kind still reach similarity, and their 18 decided
 filings are under the 30 the bar asks for.
