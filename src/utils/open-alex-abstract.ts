@@ -39,6 +39,19 @@ const TYPES_WITHOUT_ABSTRACT = new Set(['editorial', 'letter', 'erratum', 'parat
 const MAX_ABSTRACT_LENGTH = 6000;
 const MIN_ABSTRACT_LENGTH = 40;
 
+// Working papers often open with their funding note, thanks or disclaimer, and
+// an index can hold that and nothing else: NBER's w35910 (W7222919853) had
+// "Semyon Malamud gratefully acknowledges the financial" as its abstract
+// (ENG-105). Text that opens this way is front matter, not an abstract.
+const FRONT_MATTER_OPENINGS = [
+  /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*[:.-]/i,
+  /^(?:\S+\s+){0,6}gratefully acknowledges?\b/i,
+  /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
+  /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thank|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
+  /^(?:this|the)\s+(?:work|research|project|study|paper)\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)\s+by\b/i,
+  /^the views expressed (?:herein|here|in this)/i,
+];
+
 /** Whether a work of `type` has an abstract; a work of unknown type may. */
 export function typeHasAbstract(type: unknown) {
   return !TYPES_WITHOUT_ABSTRACT.has(String(type || '').toLowerCase());
@@ -46,11 +59,13 @@ export function typeHasAbstract(type: unknown) {
 
 /**
  * Whether `text`, from any source, can be the abstract of a work of `type`:
- * its length is that of an abstract, and the type, when known, has one.
+ * its length is that of an abstract, it does not open as front matter (a
+ * funding note, thanks or a disclaimer), and the type, when known, has one.
  */
 export function isPlausibleAbstract(text: unknown, type?: unknown) {
   return typeof text === 'string'
     && text.length >= MIN_ABSTRACT_LENGTH && text.length <= MAX_ABSTRACT_LENGTH
+    && !FRONT_MATTER_OPENINGS.some(opening => opening.test(text.trim()))
     && typeHasAbstract(type);
 }
 

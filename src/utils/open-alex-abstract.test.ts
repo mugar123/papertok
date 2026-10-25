@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { reconstructOpenAlexAbstract, usableOpenAlexAbstract } from './open-alex-abstract.ts';
+import { isPlausibleAbstract, reconstructOpenAlexAbstract, usableOpenAlexAbstract } from './open-alex-abstract.ts';
 
 // Builds an inverted index from plain text, the way OpenAlex stores it.
 function invertedIndexOf(text: string) {
@@ -37,6 +37,31 @@ test('text too long to be an abstract, or too short to be one, is not an abstrac
   assert.equal(usableOpenAlexAbstract({ type: 'article', abstract_inverted_index: tooLong }), '');
   assert.equal(usableOpenAlexAbstract({ type: 'article', abstract_inverted_index: invertedIndexOf('Lettre') }), '');
   assert.equal(usableOpenAlexAbstract({ type: 'article', abstract_inverted_index: invertedIndexOf('in volume 57, e8.') }), '');
+});
+
+// W7222919853, NBER working paper w35910 "Infinite Factor Structure in
+// Conditional Asset Pricing": OpenAlex's index holds only the start of its
+// funding note, and the Economics feed showed it as the abstract (ENG-105).
+test('a funding acknowledgement is not an abstract', () => {
+  const acknowledgement = 'Semyon Malamud gratefully acknowledges the financial';
+  assert.equal(usableOpenAlexAbstract({ type: 'report', abstract_inverted_index: invertedIndexOf(acknowledgement) }), '');
+  for (const text of [
+    'We thank seminar participants at Columbia and Wharton for helpful comments and suggestions.',
+    'The authors acknowledge financial support from the Swiss National Science Foundation.',
+    'Acknowledgements: we are grateful to the editor and two anonymous referees.',
+    'This research was supported by the National Science Foundation under grant SES-1234567.',
+    'The views expressed herein are those of the authors and do not necessarily reflect the views of the National Bureau of Economic Research.',
+  ]) {
+    assert.equal(isPlausibleAbstract(text), false, text);
+  }
+});
+
+test('an abstract that mentions support or thanks later on is still an abstract', () => {
+  const abstract = 'We study how firms respond to credit supply shocks. Using bank-level data, we find that support from relationship lenders acknowledges the role of soft information.';
+  assert.equal(usableOpenAlexAbstract({ type: 'article', abstract_inverted_index: invertedIndexOf(abstract) }), abstract);
+  assert.equal(isPlausibleAbstract('This paper studies how financial support for students changes enrolment, and we thank no one in particular.'), true);
+  assert.equal(isPlausibleAbstract('Existing literature rarely acknowledges the financial burden of informal caregiving on households.'), true);
+  assert.equal(isPlausibleAbstract('Acknowledging uncertainty in climate projections changes how planners weigh adaptation options.'), true);
 });
 
 test('a work with no index, or no work, has no abstract', () => {
