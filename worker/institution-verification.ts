@@ -1,6 +1,6 @@
 import type { WorkerEnv } from './env.ts';
 import { readBoundedJson } from './bounded-body.ts';
-import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { institutionDomainOf } from '../src/utils/institution-domain.ts';
 import { verifyFirebaseIdentity } from './firebase-auth.ts';
 import { getAccessToken, isServiceAccountConfigured } from './firebase-service-account.ts';
 import { InstitutionLinkError } from './institution-link.ts';
@@ -10,6 +10,19 @@ import { allowedOrigins } from './http.ts';
 
 export const INSTITUTION_VERIFICATION_PATH = '/institution/verification';
 const AUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
+// The emailed link carries a one-time sign-in credential, so it leads only to
+// the production app: www and the apex keep separate storage, and the nonce is
+// in the one that asked. CORS also admits loopback and legacy origins against
+// production, so a loopback app is accepted only by a Worker reached on
+// loopback. Plain `wrangler dev` reports the api.papertok.app route as the
+// request URL; worker/README.md gives the flag that keeps loopback.
+const APP_ORIGINS = new Set(['https://papertok.app', 'https://www.papertok.app']);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function isLinkOrigin(origin: string, request: Request) {
+  return APP_ORIGINS.has(origin)
+    || (LOOPBACK_HOSTS.has(new URL(request.url).hostname) && LOOPBACK_HOSTS.has(new URL(origin).hostname));
+}
 
 async function generateVerificationLink(env: WorkerEnv, email: string, target: URL) {
   const signal = AbortSignal.timeout(8_000);
@@ -45,9 +58,14 @@ async function generateVerificationLink(env: WorkerEnv, email: string, target: U
 export async function handleInstitutionVerificationRequest(request: Request, env: WorkerEnv) {
   if (request.method !== 'POST') throw new InstitutionLinkError('METHOD_NOT_ALLOWED', 405);
   const origin = request.headers.get('origin');
-  if (!origin || !allowedOrigins(env).has(origin)) throw new InstitutionLinkError('ORIGIN_NOT_ALLOWED', 403);
+  if (!origin || !allowedOrigins(env).has(origin) || !isLinkOrigin(origin, request)) {
+    throw new InstitutionLinkError('ORIGIN_NOT_ALLOWED', 403);
+  }
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: false });
-  if (!identity.emailVerified) throw new InstitutionLinkError('INSTITUTION_ACCOUNT_NOT_VERIFIED', 403);
+  // The requester has to be a proven owner of an address, so an account minted
+  // against the public API key cannot have university inboxes mailed. Firebase
+  // flags no GitHub sign-in as verified, so the flag alone is not that test.
+  if (!identity.ownsEmail) throw new InstitutionLinkError('INSTITUTION_ACCOUNT_NOT_VERIFIED', 403);
   const body = await readBoundedJson<{ email?: unknown; nonce?: unknown }>(request, 2_048, {
     tooLarge: () => new InstitutionLinkError('BODY_TOO_LARGE', 413),
     invalid: () => new InstitutionLinkError('INVALID_BODY', 400),
@@ -60,7 +78,7 @@ export async function handleInstitutionVerificationRequest(request: Request, env
   if (typeof body?.nonce !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.nonce)) {
     throw new InstitutionLinkError('INVALID_BODY', 400);
   }
-  if (!isServiceAccountConfigured(env) || !env.BREVO_API_KEY || !env.BREVO_FROM_EMAIL) {
+  if (!isServiceAccountConfigured(env) || !env.RESEND_API_KEY || !env.RESEND_FROM_EMAIL) {
     throw new InstitutionLinkError('INSTITUTION_VERIFICATION_UNAVAILABLE', 503);
   }
   const now = Date.now();

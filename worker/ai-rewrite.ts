@@ -1,12 +1,12 @@
 import { captureWorkerException } from './error-tracking.ts';
 import type { WorkerEnv } from './env.ts';
-import type { Paper } from '../src/models/Paper.ts';
+import type { Paper } from '../src/models/paper.ts';
 import type { AIProviderPayload } from './ai-explanation.ts';
 
 type RewriteLevel = keyof typeof REWRITE_LEVELS;
 type ExplanationContext = ReturnType<typeof normalizePaperForExplanation>;
-import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/Rewrite.ts';
-export type { RewriteSection } from '../src/models/Rewrite.ts';
+import type { RewriteHighlight, RewriteMeta, RewriteSection } from '../src/models/rewrite.ts';
+export type { RewriteSection } from '../src/models/rewrite.ts';
 interface CachedRewrite { meta: RewriteMeta; sections: RewriteSection[]; truncated?: boolean }
 type RewriteSource = { text: string; truncated: boolean; textReason: string; pdfBase64?: never }
   | { pdfBase64: string; textReason?: string; text?: never; truncated?: never };
@@ -73,6 +73,7 @@ import {
   nanPdfPart,
 } from './nan-client.ts';
 import { extractPaperText, formatPaperTextForPrompt } from './paper-text.ts';
+import { DEGRADED_CACHE_SECONDS } from './provider-runtime.ts';
 
 // Bump when the prompt or output budget changes so cached rewrites use that policy.
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v3';
@@ -573,12 +574,12 @@ export function cacheableFinish(finishReason: unknown, droppedSections = 0) {
   return null;
 }
 
-async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite) {
+async function writeCachedRewrite(env: WorkerEnv, key: string, value: CachedRewrite, ttlSeconds: number) {
   const target = rewriteStore(env);
   if (!target) return;
   try {
     await target.store.put(`${target.prefix}${key}`, JSON.stringify(value), {
-      expirationTtl: REWRITE_CACHE_TTL_SECONDS,
+      expirationTtl: ttlSeconds,
     });
   } catch {
     // A missed cache write only costs a future regeneration.
@@ -657,7 +658,7 @@ function streamRequestFailed(error: unknown) {
  * PDF's, so "the attached paper" is still what it rewrites.
  */
 async function requestNanStream({ env, paper, level, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   const prompt = buildRewritePrompt(paper, level);
   const content = source.text
     ? `${prompt}\n\n${formatPaperTextForPrompt(source.text, { truncated: source.truncated })}`
@@ -691,7 +692,7 @@ async function requestNanStream({ env, paper, level, source, model, signal }: Mo
 }
 
 async function requestGeminiStream({ env, paper, level, language, source, model, signal }: ModelRequest) {
-  const config = REWRITE_LEVELS[level as RewriteLevel];
+  const config = REWRITE_LEVELS[level];
   let upstream;
   try {
     upstream = await fetch(
@@ -995,15 +996,20 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // Where the reader's copy stops. Past the cap that is our cut rather than
         // the model's, whatever reason the model gave for its own.
         const stoppedBy = droppedSections > 0 ? 'SECTION_CAP' : finishReason;
+        // The key names the model that was asked first. What the fallback wrote
+        // carries its own name and is kept only as long as an outage, so readers
+        // get the primary model again once it recovers.
+        const fellBack = activeModel !== model;
         // A regenerate skipped the cache read, so the entry it would overwrite may
-        // be complete. Only a complete result is worth replacing it with.
-        cachedWrite = regenerate ? finish === 'complete' : finish !== null;
+        // be complete. Only a complete result from the primary model is worth
+        // replacing it with; the lighter model's text does not displace it.
+        cachedWrite = regenerate ? finish === 'complete' && !fellBack : finish !== null;
         if (cachedWrite) {
           await writeCachedRewrite(env, cacheKey, {
-            meta,
+            meta: fellBack ? { ...meta, model: activeModel } : meta,
             sections,
             truncated: finish === 'truncated',
-          });
+          }, fellBack ? DEGRADED_CACHE_SECONDS : REWRITE_CACHE_TTL_SECONDS);
         }
         await send({
           type: 'done',

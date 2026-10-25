@@ -481,7 +481,8 @@ test('reassembles a section split across provider chunks', async () => {
   }
   assert.equal(sections.length, 1);
   assert.equal(sections[0].paragraphs[0], 'Split across two frames.');
-  assert.equal(end!.rawText, line);
+  assert.ok(end);
+  assert.equal(end.rawText, line);
 });
 
 test('reports the finish reason and raw text when nothing parses', async () => {
@@ -1266,6 +1267,70 @@ test('a 503 from flash before any token is retried once on the fallback model', 
   assert.equal(events.some((event) => event.type === 'ping' && event.model === 'gemini-3.5-flash-lite'), true);
   // The rewrite arrived: there is nothing to give back.
   assert.equal(state.release, 0);
+});
+
+test('a rewrite the fallback wrote is stored briefly, under the name of the model that wrote it', async () => {
+  const store = fakeRewriteStore();
+  const models: string[] = [];
+  const env = {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+
+  await runRewrite({ provider: failingPrimary(models) }, env);
+
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(store.entries.size, 1);
+  const [entry] = [...store.entries.values()];
+  assert.equal(JSON.parse(entry.value).meta.model, 'gemini-3.5-flash-lite');
+  // Minutes, not the thirty days a primary rewrite is kept for, and no less than
+  // the sixty seconds KV accepts.
+  const ttl = entry.ttl ?? 0;
+  assert.ok(ttl >= 60 && ttl <= 120, `ttl ${entry.ttl}`);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[0].model, 'gemini-3.5-flash-lite');
+});
+
+test('a regenerate the fallback answered leaves the complete primary rewrite for later opens', async () => {
+  const store = fakeRewriteStore();
+  const models: string[] = [];
+  const env = {
+    ...REWRITE_ENV,
+    AI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(newLedgerState()),
+  };
+  await runRewrite({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'Primary version.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, env);
+  const stored = [...store.entries];
+  assert.equal(stored.length, 1);
+
+  const { events } = await runRewrite({ provider: failingPrimary(models) }, env, { regenerate: true });
+  assert.deepEqual(models, ['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
+  assert.equal(events.at(-1)!.type, 'done');
+  assert.equal(events.at(-1)!.model, 'gemini-3.5-flash-lite');
+  // The reader got the lighter model's text, but a thirty-day entry is not
+  // given up for two minutes of it.
+  assert.deepEqual([...store.entries], stored);
+
+  const { events: replay } = await runRewrite({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, env);
+  assert.equal(replay[0].cached, true);
+  assert.equal(replay[0].model, 'gemini-3.5-flash');
+  assert.equal(replay[1].paragraphs![0], 'Primary version.');
 });
 
 test('the provider own daily wall on flash is worth trying on flash-lite', async () => {

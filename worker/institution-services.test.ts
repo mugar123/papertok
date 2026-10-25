@@ -1,15 +1,16 @@
-import type { TestGlobals } from './test-types.ts';
+import type { TestCache, TestGlobals } from './test-types.ts';
 import test from 'node:test';
 import type { WorkerEnv } from './env.ts';
 import type { InstitutionQuery } from './institution-access.ts';
-type ServicesOptions = { token?: string | null; resolver?: Resolver; store?: ReturnType<typeof memoryStore> | null };
+type ServicesOptions = { token?: string | null; resolver?: Resolver; store?: ReturnType<typeof memoryStore> | null; env?: WorkerEnv; uid?: string; edge?: TestCache };
 type Resolver = (issn: string, target?: URL) => Response | Promise<Response>;
 
 import assert from 'node:assert/strict';
 import { GETFTR_BATCH_SIZE, InstitutionAccessError, findResolver } from './institution-access.ts';
 import { SERVICE_CATALOGUE, VERDICT_TTL_MS, lookupInstitutionServices, probeKey, servicesStoreKey } from './institution-services.ts';
 import reportApi from './index.ts';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { inMemoryQuotaLedger } from './test-support/quota-ledger.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 
 // Captured 2026-10-13 from the USAL Alma resolver (svc_dat=CTO), cut down to
 // the keys the parser reads: Cell, ISSN 0092-8674, 2020.
@@ -291,7 +292,7 @@ const HAWAII_SYSTEM_ROR = 'https://ror.org/03tzaeb71';
 test('the Hawaiʻi system is refused rather than listed from Mānoa\'s library', async () => {
   const stub = upstreams();
   await assert.rejects(
-    lookupInstitutionServices({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR } as InstitutionQuery, { fetchImpl: stub.fetchImpl }),
+    lookupInstitutionServices({ domain: 'hawaii.edu', rorId: HAWAII_SYSTEM_ROR }, { fetchImpl: stub.fetchImpl }),
     error => (error as Error & { code?: string; status?: number }).code === 'INSTITUTION_NOT_SUPPORTED' && (error as Error & { code?: string; status?: number }).status === 404,
   );
   assert.equal(stub.calls.length, 0);
@@ -437,21 +438,46 @@ function memoryStore({ put }: { put?: (key: string, value: string) => Promise<vo
   return store as unknown as KVNamespace & { values: Map<string, string> };
 }
 
-/** The route through the Worker's own dispatch, with the store its verdicts land in. */
-async function requestServices(search: string, { token = TOKEN, resolver = () => xml(CTO_ENTITLED), store = memoryStore() }: ServicesOptions = {}) {
+/**
+ * An edge cache that keeps what is put for its `max-age`, by the clock the
+ * test runs on.
+ */
+function edgeCache(): Pick<Cache, 'match' | 'put'> {
+  const entries = new Map<string, { response: Response; expiresAt: number }>();
+  const keyOf = (request: RequestInfo | URL) => (request instanceof Request ? request.url : String(request));
+  return {
+    match: async (request) => {
+      const entry = entries.get(keyOf(request));
+      return entry && Date.now() < entry.expiresAt ? entry.response.clone() : undefined;
+    },
+    put: async (request, response) => {
+      const seconds = Number(response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] || 0);
+      entries.set(keyOf(request), { response: response.clone(), expiresAt: Date.now() + seconds * 1000 });
+    },
+  };
+}
+
+/**
+ * The route through the Worker's own dispatch, with the store its verdicts land
+ * in. Each request has a ledger of its own unless `env` brings one, and an edge
+ * cache that keeps nothing unless `edge` is given.
+ */
+async function requestServices(search: string, { token = TOKEN, resolver = () => xml(CTO_ENTITLED), store = memoryStore(), env = {}, uid = 'alice-uid', edge }: ServicesOptions = {}) {
   const calls: string[] = [];
   const originalFetch = globalThis.fetch;
   const originalCaches = (globalThis as TestGlobals).caches;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     calls.push(url.host);
-    if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: 'alice-uid' }] });
+    if (url.pathname.endsWith('accounts:lookup')) return jsonResponse({ users: [{ localId: uid }] });
     if (url.host === 'eu01.alma.exlibrisgroup.com' || url.host === 'na03.alma.exlibrisgroup.com' || url.host === 'ca01.alma.exlibrisgroup.com' || url.host === SFX_HOST) return resolver(url.searchParams.get('rft.issn')!, url);
+    // GetFTR has no verdict on any DOI, so every platform goes to the resolver.
+    if (url.host === 'entitlements.prod.getft.io') return jsonResponse({ entitlements: [] });
     throw new Error(`unexpected upstream ${url}`);
   };
   // The identity check keeps its answers at the edge; the list no longer does.
   (globalThis as TestGlobals).caches = {
-    default: {
+    default: edge || {
       match: async (): Promise<Response | null | undefined> => null,
       put: async (): Promise<void> => {},
     },
@@ -459,7 +485,7 @@ async function requestServices(search: string, { token = TOKEN, resolver = () =>
   try {
     const response = await reportApi.fetch(new Request(`https://api.papertok.test/institution/services?${search}`, {
       headers: { origin: 'https://papertok.app', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    }), { ...ROUTE_ENV, INSTITUTION_SERVICES_STORE: store ?? undefined });
+    }), { ...ROUTE_ENV, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding, INSTITUTION_SERVICES_STORE: store ?? undefined, ...env });
     return { response, body: await response.json<Awaited<ReturnType<typeof lookupInstitutionServices>>>(), calls, store: store! };
   } finally {
     globalThis.fetch = originalFetch;
@@ -621,6 +647,157 @@ test('the route refuses a missing session or a malformed domain before any provi
     assert.equal(store.values.size, 0);
     if (upstreamCalls) assert.deepEqual(calls, upstreamCalls);
   }
+});
+
+test('each account and the whole app have an hourly allowance of library checks, and a refused one asks no provider', async (t) => {
+  // Before the test token expires, forty minutes before the hour ends.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:20:00Z') });
+  const env = {
+    ...GETFTR_ENV,
+    REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding,
+    INSTITUTION_SERVICES_USER_HOURLY_LIMIT: '2',
+    INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT: '3',
+  };
+  const store = memoryStore();
+  // A new entityId each time: with GetFTR's key, a new record to fill.
+  let request = 0;
+  const ask = (uid: string) => {
+    request += 1;
+    return requestServices(new URLSearchParams({ domain: 'usal.es', entityId: `https://idp.example.org/${request}` }).toString(), { env, store, uid });
+  };
+  for (const uid of ['alice-uid', 'alice-uid']) {
+    const { response, calls } = await ask(uid);
+    assert.equal(response.status, 200);
+    assert.ok(calls.includes('entitlements.prod.getft.io') && calls.includes('eu01.alma.exlibrisgroup.com'), calls.join(', '));
+  }
+  const records = store.values.size;
+  const aliceRefused = await ask('alice-uid');
+  const bob = await ask('bob-uid');
+  assert.equal(bob.response.status, 200);
+  const bobRefused = await ask('bob-uid');
+  for (const refused of [aliceRefused, bobRefused]) {
+    assert.equal(refused.response.status, 429);
+    assert.deepEqual(refused.body, { code: 'INSTITUTION_LOOKUP_LIMIT' });
+    assert.equal(refused.response.headers.get('retry-after'), '2400');
+    assert.equal(refused.response.headers.get('cache-control'), 'no-store');
+    assert.equal(refused.response.headers.get('access-control-allow-origin'), 'https://papertok.app');
+    assert.deepEqual(refused.calls, ['identitytoolkit.googleapis.com']);
+  }
+  // Alice's two, Bob's one: the third record is Bob's.
+  assert.equal(store.values.size, records + 1);
+});
+
+test('the client\'s ten requests for a library fit in an account\'s hour', async () => {
+  const env = { REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+  const store = memoryStore();
+  for (let request = 0; request < 10; request += 1) {
+    const { response } = await requestServices('domain=usal.es', { env, store });
+    assert.equal(response.status, 200, `request ${request + 1}`);
+  }
+});
+
+test('a library whose resolver failed every probe is not probed again for half an hour', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:00:00Z') });
+  const edge = edgeCache();
+  const store = memoryStore();
+  const down = () => new Response('down', { status: 503 });
+  const resolverCalls = (calls: string[]) => calls.filter(host => host === 'eu01.alma.exlibrisgroup.com').length;
+  const failed = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(failed.response.status, 502);
+  assert.ok(resolverCalls(failed.calls) > 0);
+  const again = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(again.response.status, 502);
+  assert.deepEqual(again.body, { code: 'ACCESS_LOOKUP_UNAVAILABLE' });
+  assert.equal(resolverCalls(again.calls), 0);
+  // Another library is asked as usual.
+  const other = await requestServices('domain=usc.edu', { edge, store, resolver: () => xml(CTO_NONE) });
+  assert.equal(other.response.status, 200);
+  assert.ok(other.calls.includes('na03.alma.exlibrisgroup.com'));
+  // A minute before the half hour, a resolver that is back is still not asked.
+  t.mock.timers.tick(29 * 60 * 1000);
+  const remembered = await requestServices('domain=usal.es', { edge, store, resolver: () => xml(CTO_NONE) });
+  assert.equal(resolverCalls(remembered.calls), 0);
+  t.mock.timers.tick(60 * 1000);
+  const recovered = await requestServices('domain=usal.es', { edge, store, resolver: () => xml(CTO_NONE) });
+  assert.equal(recovered.response.status, 200);
+  assert.equal(resolverCalls(recovered.calls), SERVICE_CATALOGUE.length);
+});
+
+test('a remembered resolver failure leaves the stored verdicts in a partial list and stores nothing over them', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-01-15T12:00:00Z') });
+  const edge = edgeCache();
+  const store = memoryStore();
+  const read = await requestServices('domain=usal.es', { edge, store, resolver: issn => xml(issn === ISSN_OF.nature ? ctoWith('Nature') : CTO_NONE) });
+  assert.deepEqual(read.body.services.map(service => service.id), ['nature']);
+  // A catalogue entry the store has no verdict for, while the resolver is down.
+  const [key] = store.values.keys();
+  const record = JSON.parse(store.values.get(key)!) as Record<string, unknown>;
+  delete record[probeKey(SERVICE_CATALOGUE.find(entry => entry.id === 'economist')!)];
+  store.values.set(key, JSON.stringify(record));
+  const down = () => new Response('down', { status: 503 });
+  const failing = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(failing.response.status, 200);
+  assert.equal(failing.body.partial, true);
+  const remembered = await requestServices('domain=usal.es', { edge, store, resolver: down });
+  assert.equal(remembered.response.status, 200);
+  assert.equal(remembered.body.partial, true);
+  assert.deepEqual(remembered.body.services.map(service => service.id), ['nature']);
+  assert.ok(remembered.calls.every(host => host === 'identitytoolkit.googleapis.com'), remembered.calls.join(', '));
+  assert.equal(store.values.get(key), JSON.stringify(record));
+});
+
+test('a failing resolver is remembered for its library whatever institution ids readers send', async () => {
+  const edge = edgeCache();
+  const store = memoryStore();
+  const down = () => new Response('down', { status: 503 });
+  const ask = (entityId: string) => requestServices(new URLSearchParams({ domain: 'usal.es', entityId }).toString(), { edge, store, env: GETFTR_ENV, resolver: down });
+  const failed = await ask(ENTITY_ID);
+  assert.equal(failed.response.status, 502);
+  assert.ok(failed.calls.includes('eu01.alma.exlibrisgroup.com'));
+  // Another id is a record of its own and goes to GetFTR, but not to the same resolver.
+  const other = await ask('https://idp.example.org/other');
+  assert.equal(other.response.status, 502);
+  assert.ok(other.calls.includes('entitlements.prod.getft.io'));
+  assert.equal(other.calls.filter(host => host === 'eu01.alma.exlibrisgroup.com').length, 0);
+});
+
+test('a GetFTR stall until the deadline does not mark the resolver it left no time as failing', async (t) => {
+  // The request's deadline: a stalled GetFTR runs it out, the clock reaching
+  // 12 s as the signal aborts. As on the platform, an aborted signal sends nothing.
+  let deadline = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', () => {
+    deadline = new AbortController();
+    return deadline.signal;
+  });
+  let clock = 0;
+  let stall = true;
+  let resolverSent = 0;
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    const signal = init.signal!;
+    if (signal.aborted) throw signal.reason;
+    const url = new URL(String(input));
+    if (url.host === 'entitlements.prod.getft.io') {
+      if (!stall) return jsonResponse({ entitlements: [] });
+      clock = 12_000;
+      deadline.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+      throw signal.reason;
+    }
+    if (url.host === 'eu01.alma.exlibrisgroup.com') {
+      resolverSent += 1;
+      return xml(CTO_NONE);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  const failures = edgeCache();
+  const lookup = () => lookupInstitutionServices({ domain: 'usal.es', entityId: ENTITY_ID }, { fetchImpl, env: GETFTR_ENV, now: () => clock, failures });
+  await assert.rejects(lookup(), error => error instanceof InstitutionAccessError && error.status === 502);
+  assert.equal(resolverSent, 0);
+  // GetFTR and the resolver healthy: the resolver is asked about everything.
+  stall = false;
+  clock = 0;
+  const healthy = await lookup();
+  assert.equal(healthy.partial, false);
+  assert.equal(resolverSent, SERVICE_CATALOGUE.length);
 });
 
 
@@ -869,7 +1046,6 @@ test('journal candidates keep canonical editions and discovery provenance withou
     assert.equal(entry.id, `journal-${entry.issn}`);
     assert.ok(entry.eissn);
     assert.equal(entry.doi, undefined);
-    // The frontend's publisherLogos test checks every reference against bundled assets.
     assert.ok(entry.platformId);
     assert.ok(entry.sources && entry.sources.length >= 2);
     for (const source of entry.sources) assert.equal(new URL(source).protocol, 'https:');

@@ -70,6 +70,18 @@ test('serializes concurrent reservations against the daily delivery limit', asyn
   assert.equal(Math.max(first.body.reserved!, second.body.reserved!), 1);
 });
 
+test('marks only the first refusal of a daily ledger for an alert', async () => {
+  const ledger = new EmailDeliveryLedger({ storage: new MemoryDurableObjectStorage() });
+  await callLedger(ledger, { action: 'reserve', reservationId: 'digest:user-a', limit: 1 });
+  const firstRefusal = await callLedger(ledger, { action: 'reserve', reservationId: 'digest:user-b', limit: 1 });
+  const nextRefusal = await callLedger(ledger, { action: 'reserve', reservationId: 'verification:user-c', limit: 1 });
+
+  assert.equal(firstRefusal.body.accepted, false);
+  assert.equal(firstRefusal.body.alert, true);
+  assert.equal(nextRefusal.body.accepted, false);
+  assert.equal(nextRefusal.body.alert, false);
+});
+
 test('returns duplicate reservations without consuming quota or committing twice', async () => {
   const ledger = new EmailDeliveryLedger({ storage: new MemoryDurableObjectStorage() });
   const reserved = await callLedger(ledger, {

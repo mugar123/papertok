@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 
 // Enough of a parsed XML document for the readers written against the
-// browser's DOMParser (src/utils/pubmedEfetch.ts) to run in the Worker, which
+// browser's DOMParser (src/utils/pubmed-efetch.ts) to run in the Worker, which
 // has none: `textContent`, `getAttribute`, and `querySelector(All)` for type
 // selectors joined by descendant (space) and child (`>`) combinators, the only
 // selectors those readers use.

@@ -26,8 +26,7 @@
      the PDF conversions ship an alpha channel — while their ink is black,
      because it was drawn for a white page. Theming the plate therefore does not
      theme the ink on it; it only takes the paper away and leaves black on
-     near-black. Anything that frames a figure we did not draw belongs here.
-     `paperCardFigureContrast.test.js` composites the two and holds the result. */
+     near-black. Anything that frames a figure we did not draw belongs here. */
   --bg-figure-plate: #ffffff;
   /* "Glass" now means a faint ink wash: light surfaces read better with a
      tint of the text color than with translucent white. */
@@ -48,7 +47,6 @@
   --accent-primary-hover: #3e4a6b;
   --accent-primary-glow: rgba(29, 43, 83, 0.12);
   --accent-secondary: #1a5fd0;
-  --accent-secondary-glow: rgba(26, 95, 208, 0.16);
 
   /* Brand marks — the yellow only ever sits behind or beside ink. */
   --brand-yellow: #ffd21e;
@@ -58,8 +56,8 @@
      as a golden box on every field and every palette row (user feedback,
      2026-08-29), and the indicator's job is "you are here", not "look at me".
      Ink is the app's own marking vocabulary (--border-ink) and holds ~17:1 on
-     every surface, far past the 3:1 of WCAG 1.4.11 — contrast.test.js keeps
-     measuring it. Same value as --border-ink on purpose, declared separately
+     every surface, far past the 3:1 of WCAG 1.4.11 — the papertok/token-contrast
+     lint rule keeps measuring it. Same value as --border-ink on purpose, declared separately
      because the two flip for different reasons. */
   --focus-ring: #1d2b53;
   /* Ink, in both themes. The yellow is the one surface whose value does not
@@ -88,9 +86,7 @@
   --accent-sky-line: #c2e0f2;
 
   --accent-like: #d92d20;
-  --accent-like-glow: rgba(217, 45, 32, 0.16);
   --accent-save: #b45309;
-  --accent-save-glow: rgba(180, 83, 9, 0.16);
   --accent-success: #067647;
   --accent-danger: #d92d20;
 
@@ -130,12 +126,13 @@
      Flat, print-ink colors. The variables keep the `gradient-*` names the
      components already reference, but they resolve to solid colors so a
      category can tint a rule, a dot or a label without a haze. */
-  /* Twelve fields, twelve separated hues. They were colliding before —
+  /* Fourteen fields, fourteen separated hues. They were colliding before —
      econ and chemeng were the same value, and physics/math/mech were three
      shades of violet — so cards looked identical across unrelated subjects.
      Every value is dark enough to be legible as text on white. */
   --gradient-physics: #4f46e5;  /* indigo */
   --gradient-cs: #c2410c;       /* burnt orange */
+  --gradient-ai: #a21caf;       /* fuchsia */
   --gradient-math: #7e22ce;     /* purple */
   --gradient-stat: #1d4ed8;     /* blue */
   --gradient-econ: #0f766e;     /* teal */
@@ -146,9 +143,9 @@
   --gradient-chemeng: #4d7c0f;  /* olive */
   --gradient-med: #be123c;      /* rose */
   --gradient-bio: #15803d;      /* green */
+  --gradient-chem: #a13170;     /* raspberry */
 
   --gradient-brand: #1d2b53;
-  --gradient-brand-hover: #3e4a6b;
 
   /* ── List colours ──
      The palette a list is painted with. Deliberately NOT the `--gradient-*`
@@ -167,8 +164,7 @@
 
      The result is a tighter contrast band than the field inks manage on their
      own — 5.2:1 to 6.0:1 against white, against their 4.9:1 to 7.6:1 — so every
-     colour carries a 3px rule and a 20px icon equally well. Regenerate with
-     scripts/list-palette.mjs rather than by hand. */
+     colour carries a 3px rule and a 20px icon equally well. Keep the palette within these contrast and gamut bounds. */
   --list-ochre: #a14f16;
   --list-olive: #7b6816;
   --list-green: #2d7d17;
@@ -196,7 +192,6 @@
   --fs-xl: 1.25rem;
   --fs-2xl: 1.5rem;
   --fs-3xl: 1.875rem;
-  --fs-4xl: 2.25rem;
   --fs-5xl: 3rem;
 
   --fw-regular: 400;
@@ -206,7 +201,6 @@
 
   --lh-tight: 1.2;
   --lh-normal: 1.5;
-  --lh-relaxed: 1.7;
 
   /* Mono metadata is always uppercase-ish and tightly tracked. */
   --mono-label: 600 0.6875rem/1 var(--font-mono);
@@ -224,7 +218,6 @@
   --space-10: 2.5rem;
   --space-12: 3rem;
   --space-16: 4rem;
-  --space-20: 5rem;
   --space-24: 6rem;
 
   /* ── Border Radius ──
@@ -247,13 +240,11 @@
   --shadow-lg: none;
   --shadow-xl: none;
   --shadow-glow-primary: 0 0 0 3px var(--accent-primary-glow);
-  --shadow-glow-secondary: 0 0 0 3px var(--accent-secondary-glow);
 
   /* ── Transitions ── */
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
   --transition-slow: 320ms ease;
-  --transition-spring: 500ms cubic-bezier(0.16, 1, 0.3, 1);
   /* The arrival curve the app already runs on — rise, settle, the
      explorer's error — as a token, so the route transition names it instead
      of adding one more copy of the literal. */
@@ -296,11 +287,8 @@
   --unfold-close: 200ms;
 
   /* ── Z-index ── */
-  --z-base: 1;
   --z-nav: 100;
-  --z-modal: 200;
   --z-overlay: 300;
-  --z-toast: 400;
 
   /* ── Safe-area insets ──
      With viewport-fit=cover the notch and the home indicator become our
@@ -347,8 +335,8 @@
    same hue, as much of the original chroma as sRGB holds, at one shared
    lightness per family — field inks at oklch L 0.70, list colours at 0.68,
    action accents at 0.72, tint foregrounds at 0.76 over backgrounds at 0.235.
-   Lifting the whole family at once is what keeps twelve fields telling
-   themselves apart on ink (min 6.4:1 against the page), and it is why a light
+   Lifting the whole family at once is what keeps fourteen fields telling
+   themselves apart on ink (min 6.0:1 against the page), and it is why a light
    foreground on a coloured surface becomes a dark one here: on this side every
    accent is the light half of the pair. Regenerate the same way the list
    palette is regenerated — hue and chroma from the light value, lightness from
@@ -390,13 +378,12 @@
   --accent-primary-hover: #d2ccbc;
   --accent-primary-glow: rgba(244, 236, 216, 0.16);
   --accent-secondary: #6ea4ff;
-  --accent-secondary-glow: rgba(110, 164, 255, 0.22);
 
   /* Brand yellow, brand orange and `--text-on-brand` are not redefined: they
      are the same mark on both sides. The soft yellow is a surface, though, so
      it becomes the darkest amber that still reads as the same wash. */
   --brand-yellow-soft: #35290b;
-  /* The brand yellow, as a literal so contrast.test.js can measure it:
+  /* The brand yellow, as a literal so papertok/token-contrast can measure it:
      9.8:1 on the dark soft wash. */
   --text-on-brand-soft: #ffd21e;
   /* Paper-on-ink, mirroring the light side's ink-on-paper: the orange ring is
@@ -418,9 +405,7 @@
   --accent-sky-line: #274253;
 
   --accent-like: #fe7461;
-  --accent-like-glow: rgba(254, 116, 97, 0.24);
   --accent-save: #ec864a;
-  --accent-save-glow: rgba(236, 134, 74, 0.24);
   --accent-success: #5fbb87;
   --accent-danger: #fe7461;
 
@@ -453,10 +438,11 @@
   --grain: 0.18;
 
   /* ── Category accents ──
-     The twelve field inks at oklch L 0.70. Hue and chroma are the light
+     The fourteen field inks at oklch L 0.70. Hue and chroma are the light
      value's; only the lightness is the family's. */
   --gradient-physics: #8792ff;  /* indigo */
   --gradient-cs: #f67145;       /* burnt orange */
+  --gradient-ai: #df61ec;       /* fuchsia */
   --gradient-math: #b57cfe;     /* purple */
   --gradient-stat: #6d9afe;     /* blue */
   --gradient-econ: #58b0a7;     /* teal */
@@ -467,9 +453,9 @@
   --gradient-chemeng: #7eb04d;  /* olive */
   --gradient-med: #ff6173;      /* rose */
   --gradient-bio: #57b66f;      /* green */
+  --gradient-chem: #e570ad;     /* raspberry */
 
   --gradient-brand: #f4ecd8;
-  --gradient-brand-hover: #d2ccbc;
 
   /* ── List colours ──
      The same eight hues at oklch L 0.68, so the family still reads as one
@@ -540,7 +526,7 @@
 }
 
 /* A lighter band sweeping across a word that is still being looked up: the
-   card's "Checking" (PaperCard.css) and the library's (Institution.css). It
+   card's "Checking" (paper-card.css) and the library's (institution.css). It
    moves a mask, so the word keeps its own colour; the 300% mask size is set
    where it is used. */
 @keyframes checkingSweep {

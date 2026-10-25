@@ -9,7 +9,7 @@ interface ScopusPayload {
 }
 
 
-import { buildScopusSearchQuery } from '../src/services/scopusQuery.ts';
+import { buildScopusSearchQuery } from '../src/services/scopus-query.ts';
 import { corsHeaders, json } from './http.ts';
 import { boundedText, cacheResponse, fetchWithDeadline, safeSourceQuery, sourceCacheParams, sourceRequestContext, SOURCE_CACHE_SECONDS, SOURCE_UPSTREAM_TIMEOUT_MS } from './provider-runtime.ts';
 
@@ -78,7 +78,7 @@ async function fetchScopusSearch(env: WorkerEnv, { query, start = 0, count = 1 }
   // why. The body of a failed attempt is consumed here; only a successful
   // response is handed back unread.
   const attempts = [];
-  let response = null;
+  let response: Response | undefined;
   let view = '';
   for (const candidate of scopusViewLadder(env)) {
     if (candidate) url.searchParams.set('view', candidate);
@@ -92,7 +92,9 @@ async function fetchScopusSearch(env: WorkerEnv, { query, start = 0, count = 1 }
     attempts.push(await scopusFailure(response, view));
     if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status)) break;
   }
-  return { response: response!, view, attempts };
+  // scopusViewLadder always names at least one view.
+  if (!response) throw new Error('Scopus was not asked: no view to request');
+  return { response, view, attempts };
 }
 
 function scopusQuota(response: Response) {

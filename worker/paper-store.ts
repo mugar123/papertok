@@ -1,9 +1,15 @@
-import type { Paper, PaperFollowMatch } from '../src/models/Paper.ts';
+import type { BloomFilter } from 'bloomfilter';
+import type { Paper, PaperFollowMatch } from '../src/models/paper.ts';
 import type { WorkerEnv } from './env.ts';
+import type { QuotaPart } from './request-quota-ledger.ts';
 
-import { PaperBuilder } from '../src/services/PaperBuilder.ts';
-import { isFeedPublication } from '../src/services/feedPublicationRules.ts';
-import { getAllLeafCategories } from '../src/data/categoryTaxonomy.ts';
+import { PaperBuilder } from '../src/services/paper-builder.ts';
+import { isFeedPublication } from '../src/services/feed-publication-rules.ts';
+import { hasUsableAIAbstract } from '../src/utils/ai-explanation-access.ts';
+import { isPlaceholderPaperTitle } from '../src/utils/paper-display-title.ts';
+import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
+import { hasSeenPaper, readFeedSeenFilter } from '../src/utils/seen-paper-filter.ts';
+import { ARXIV_FEED_AREAS } from '../src/services/arxiv-records.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 
 // The paper corpus: every source the feed reads, harvested once a day
@@ -29,11 +35,25 @@ export type EmbeddingEnv = {
 export const CORPUS_DAYS = 90;
 // A liked paper the feed ranks by stays this long after a reader last did.
 export const KEEP_LIKED_DAYS = 30;
-const FEED_CANDIDATE_LIMIT = 4_000;
+export const FEED_CANDIDATE_LIMIT = 4_000;
+// The feed's page of corpus cards (FeedContext's PAGE_SIZE), and a request's
+// page when it names none.
+const FEED_PAGE_SIZE = 15;
+// Broad area candidates supplement the requested categories without taking
+// their retrieval budget. This bounds work, not the composition of a page.
+const AREA_CANDIDATE_LIMIT = 800;
 const FEED_MAX_CATEGORIES = 12;
 const FEED_MAX_FOLLOWS = 20;
 const FEED_MAX_POSITIVES = 24;
+const FEED_MAX_EXCLUDED = 200;
+const DIVERSITY_POOL = 500;
+const DIVERSITY_RANKS = 150;
+const DIVERSITY_WEIGHT = 0.3;
+const NEGATIVE_SIMILARITY_THRESHOLD = 0.75;
+const NEGATIVE_WEIGHT = 0.5;
 const FEED_MAX_PAGE_SIZE = 30;
+// Notable papers a page adds: the app's largest page asks for its three places and two spares.
+const FEED_MAX_NOTABLE = 5;
 const FEED_MAX_PAGE = 100;
 const DEFAULT_FEED_USER_MINUTE_LIMIT = 60;
 const DEFAULT_FEED_GLOBAL_MINUTE_LIMIT = 2_000;
@@ -47,6 +67,20 @@ const STORED_AUTHORS = 50;
 // store inside the free allocation with room for the PDF conversions.
 const DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT = 7_500_000;
 const EMBEDDING_TOKENS_PER_UNIT = 1_000;
+// Shares of the day's limit for what readers start, so the daily run keeps the
+// rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
+// ten long papers; on the harvest's subject, a review estimated that one
+// account's lookups could spend the 60M-token day in about 143 minutes. All
+// readers together: accounts are free to make, so shares of 50,000 each add up
+// to the whole day without a cap of their own. A fixed number rather than a
+// fraction of the day keeps the daily run its share when the limit returns to
+// 7.5M. The runs new follows start, together: no reader
+// is recorded with them, and each of the 20 new lanes a reader's runs may
+// harvest a day can bring a few hundred papers; what they leave waits for the
+// daily run.
+const READER_EMBEDDING_DAILY_TOKENS = 50_000;
+const READERS_EMBEDDING_DAILY_TOKENS = 1_500_000;
+const FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS = 1_500_000;
 // Similarity orders the page; recency only separates near ties, so a reader
 // with likes still sees this week's papers ahead of last month's lookalikes.
 // Relevance order is for a reader whose views lean older: no recency at all.
@@ -87,21 +121,25 @@ export function quantize(values: number[]) {
 export function readVector(value: unknown) {
   if (value instanceof ArrayBuffer) return new Int8Array(value);
   if (ArrayBuffer.isView(value)) return new Int8Array(value.buffer, value.byteOffset, value.byteLength);
-  return Int8Array.from(value as number[], byte => (byte > 127 ? byte - 256 : byte));
+  // D1 answers a BLOB as its unsigned bytes. The constructor wraps 128-255 to
+  // -128 to -1, as a callback per byte would, at a twentieth of the CPU.
+  return new Int8Array(value as number[]);
 }
 
-// Normalized here rather than assumed: a vector cut to its leading dimensions
-// (migration 0004) is no longer a unit vector.
-function cosine(a: Int8Array, b: Int8Array) {
+// Normalize once per ranking: MMR compares each candidate many times, and a
+// vector cut by migration 0004 is no longer a unit vector.
+export function unitVector(vector: Int8Array) {
+  const norm = Math.hypot(...vector) || 1;
+  return Float64Array.from(vector, value => value / norm);
+}
+
+export function cosine(a: Float64Array, b: Float64Array) {
   let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+  const dimensions = Math.min(a.length, b.length);
+  for (let index = 0; index < dimensions; index += 1) {
     dot += a[index] * b[index];
-    normA += a[index] * a[index];
-    normB += b[index] * b[index];
   }
-  return normA && normB ? dot / Math.sqrt(normA * normB) : 0;
+  return Math.max(-1, Math.min(1, dot));
 }
 
 // ─── Identity ───
@@ -154,8 +192,49 @@ const LEAF_IDS = new Set(LEAVES.map(leaf => leaf.id));
 // the series say a paper is economics, not which branch.
 export const WORKING_PAPERS_LANE = 'series:working-papers';
 const WORKING_PAPER_AREAS = new Set(['econ', 'q-fin']);
+// The most-cited papers of a category published in each of the NOTABLE_YEARS
+// years before the current UTC year (paper-sources.ts), filed under
+// `notable:<category>`. A page that says what the reader has seen adds the
+// ones the reader has not, for the app to give one card in every
+// NOTABLE_EVERY (src/utils/feed-enrichment.ts) (Pablo, 2026-10-23).
+export const NOTABLE_LANE_PREFIX = 'notable:';
+export const NOTABLE_YEARS = 10;
+/** The first day of the notable window: the listing asks from it, and a page reads none older. */
+export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYear() - NOTABLE_YEARS}-01-01`;
+// A notable lane holds its weekly listing of 1,000, 100 of each of those ten
+// years (NOTABLE_PER_YEAR in paper-sources.ts), and, for 14 days, what dropped
+// out of the two listings before it (`work_lanes.listed_until`), whatever else
+// keeps the paper in the corpus (a like, its date, another lane). A page reads
+// NOTABLE_READ_PER_YEAR of each of the ten years of each asked lane: a slice
+// that moves on by that many rows each UTC day, taken modulo the year's own
+// count n, so every row of a year is read within ceil(n / 25) days: four
+// disjoint slices for a year of 100, overlapping ones for a year of 40 and
+// every day for a year of two. The candidates and vectors ranked per request
+// are 250 a lane at most. Numbering the years reads every row of the lane's
+// window from its index (about 1,000), and the read returns each work id with
+// whether the day's slice holds it, so that a paper of the lane outside the
+// slice is not ranked from the reader's other lanes either. How many of them
+// a reader sees is ENG-128's.
+const NOTABLE_READ_PER_YEAR = 25;
+// Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
+// to a reader of any of its leaves, for the areas whose leaves the feed fills
+// from arXiv, and for chemistry, which no other source lists: PubMed lists
+// journal articles for every leaf of medicine and biology. A paper a leaf of
+// its area holds leaves the area's lane (leaf-filing.ts), so it reaches that
+// leaf's readers and no other's. Not statistics while its label covers
+// OpenAlex's Decision Sciences (field 18): 147 of that field's 200 newest
+// articles on 2026-10-23 were operations research and information systems,
+// and most of the 44 in its statistics subfield bibliometrics and
+// meta-analyses.
+export const AREA_LANE_AREAS: readonly string[] = [...ARXIV_FEED_AREAS.filter(area => area !== 'stat'), 'chem'];
+export const areaLane = (area: string) => `area:${area}`;
+const AREA_LANES = new Set(AREA_LANE_AREAS.map(areaLane));
 const OPENALEX_ENTITY = /^https?:\/\/openalex\.org\/([AITC]\d+)$|^([AITC]\d+)$/i;
 const ENTITY_LANE_KINDS: Record<string, string> = { A: 'author', I: 'institution', T: 'topic', C: 'concept' };
+// The entities whose lanes hold papers only while a reader follows them: a
+// paper names many, readers follow few, and no page reads the rest. Their
+// unfollowed lanes held about 3.4M of the corpus's 4.2M lane rows (2026-10-24).
+const PRUNED_ENTITY_LANE_KINDS = ['author', 'concept', 'institution'] as const;
 
 function entityLane(value: unknown) {
   const match = text(value).match(OPENALEX_ENTITY);
@@ -163,18 +242,9 @@ function entityLane(value: unknown) {
   return id ? `${ENTITY_LANE_KINDS[id[0]]}:${id}` : '';
 }
 
-/**
- * The lanes a paper belongs to by its own record, whichever source listed it:
- * its arXiv categories that are categories of the app, and the OpenAlex
- * authors, institutions, topics and concepts it names (what a reader follows).
- */
-export function recordLanes(paper: Partial<Paper>) {
+// The OpenAlex authors, institutions, topics and concepts a paper names, as lanes.
+function namedEntityLanes(paper: Partial<Paper>) {
   const lanes = new Set<string>();
-  if (paper.sources?.primary === 'arxiv' || paper.arxivId) {
-    for (const category of [...(paper.allCategories || []), ...(paper.categories || [])]) {
-      if (LEAF_IDS.has(category)) lanes.add(category);
-    }
-  }
   for (const author of paper.authors || []) {
     if (typeof author === 'object') lanes.add(entityLane(author?.id));
   }
@@ -182,6 +252,46 @@ export function recordLanes(paper: Partial<Paper>) {
   for (const subject of [paper.primaryTopic, ...(paper.topics || []), ...(paper.concepts || [])]) lanes.add(entityLane(subject?.id));
   lanes.delete('');
   return [...lanes];
+}
+const isFollowOnlyLane = (lane: string) => PRUNED_ENTITY_LANE_KINDS.some(kind => lane.startsWith(`${kind}:`));
+/** The lanes a paper names that `recordLanes` files only while followed. */
+const followOnlyLanes = (paper: Partial<Paper>) => namedEntityLanes(paper).filter(isFollowOnlyLane);
+
+/**
+ * Which of `lanes` readers follow, for `recordLanes`. Each write asks only for
+ * the lanes its own papers name, not for the whole table: `followed_lanes`
+ * holds every lane written in the last 14 days, up to about 60k rows at the
+ * app's 4,000 writes a day, and every harvest page, follow run, like lookup
+ * and enrichment step files papers.
+ */
+async function followedLanesAmong(db: D1Database, lanes: Iterable<string>) {
+  const asked = [...new Set(lanes)];
+  const followed = new Set<string>();
+  for (let start = 0; start < asked.length; start += 500) {
+    const { results } = await db.prepare('SELECT lane FROM followed_lanes WHERE lane IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(asked.slice(start, start + 500))).all<{ lane: string }>();
+    results.forEach(row => followed.add(row.lane));
+  }
+  return followed;
+}
+
+/**
+ * The lanes a paper belongs to by its own record, whichever source listed it:
+ * its arXiv categories that are categories of the app, the OpenAlex topics it
+ * names, and the OpenAlex authors, institutions and concepts it names that
+ * are in `followed`. Every reader of them shares these lanes, so a paper is
+ * filed under them only inside the corpus window: an older one a reader liked,
+ * or a lane that keeps listings kept, stays in the lanes it was asked for.
+ */
+export function recordLanes(paper: Partial<Paper>, followed: ReadonlySet<string>) {
+  const lanes = new Set<string>();
+  if (paper.sources?.primary === 'arxiv' || paper.arxivId) {
+    for (const category of [...(paper.allCategories || []), ...(paper.categories || [])]) {
+      if (LEAF_IDS.has(category)) lanes.add(category);
+    }
+  }
+  for (const lane of namedEntityLanes(paper)) lanes.add(lane);
+  return [...lanes].filter(lane => followed.has(lane) || !isFollowOnlyLane(lane));
 }
 
 // ─── Writing ───
@@ -201,13 +311,20 @@ export function publishedOf(paper: Partial<Paper>, now = Date.now()) {
 }
 
 // Transient fields describe one fetch or one reader, never the paper.
+// `openAlex` is enrichment's copy of OpenAlex's answer, whose fields the app
+// reads are already merged into the paper;
+// `summary` repeats the abstract.
 function storedPaper(paper: Paper): Paper {
-  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw')) as Paper;
+  const stored = Object.fromEntries(Object.entries(paper).filter(([key]) => !key.startsWith('_') && key !== 'raw' && key !== 'openAlex' && key !== 'summary')) as Paper;
   if (stored.authors?.length > STORED_AUTHORS) stored.authors = stored.authors.slice(0, STORED_AUTHORS);
   return stored;
 }
 
-const embeddingText = (paper: Partial<Paper>) => `${text(paper.title)}\n\n${text(paper.abstract)}`.slice(0, EMBED_TEXT_CHARS);
+// Without an abstract, the title alone: the mappers' "No abstract available."
+// would make every such paper alike.
+const embeddingText = (paper: Partial<Paper>) => (hasUsableAIAbstract(paper.abstract)
+  ? `${text(paper.title)}\n\n${text(paper.abstract)}`
+  : text(paper.title)).slice(0, EMBED_TEXT_CHARS);
 
 interface WorkRow { id: number; paper: string; kept_until: string }
 interface Group { paper: Paper; lanes: Set<string>; keys: Set<string> }
@@ -249,24 +366,48 @@ async function readWorks(db: D1Database, ids: number[]) {
   return works;
 }
 
+const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
+
+// Hugging Face lists arXiv papers with the title and abstract it copied from
+// arXiv, so arXiv's listing carries a new version to a row Hugging Face
+// started, and Hugging Face's copy never replaces it.
+const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.primary === 'huggingface' && row.arxivId
+  ? listed.get(sourceRecordKey('arxiv', row.arxivId))
+  : listed.get(sourceRecordKey(row.sources?.primary, row.id)));
+
+// A row's title and abstract are those of the source it was built from, and
+// that source listing it again (a new arXiv version) replaces them, where
+// `merge` only fills a gap. A listing without an abstract keeps the stored one.
+function withOwnText(row: Paper, own: Paper | undefined): Paper {
+  if (!own) return row;
+  return hasUsableAIAbstract(own.abstract)
+    ? { ...row, title: own.title, abstract: own.abstract }
+    : { ...row, title: own.title };
+}
+
 /**
  * Files what sources returned: records of one paper merge (PaperBuilder.merge,
  * the rule the browser applied to every page) into the row any of their
  * identifiers already names, or start a new one. A record that bridges two
- * rows folds them into one (`idRank`). A merge that changes the title or
- * abstract drops the vector for the embedding pass. Returns how many rows were
- * written.
+ * rows folds them into one (`idRank`). The row's own source listing it again
+ * replaces its title and abstract (`withOwnText`). A merge that changes the
+ * title or abstract drops the vector for the embedding pass. A notable lane's
+ * row is kept until `keepUntil`, the listing's own keeping date
+ * (`listed_until`). Returns how many rows were written.
  */
 export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUntil = '', now = Date.now() } = {}) {
   const db = database(env);
   const since = daysFromNow(-CORPUS_DAYS, now);
   const groups: Group[] = [];
   const groupOfKey = new Map<string, Group>();
+  const listed = new Map<string, Paper>();
   for (const item of items) {
-    if (!item?.paper?.title || !item.paper.id || !isFeedPublication(item.paper)) continue;
+    // A mapper stands "Untitled" in for a title its source left out.
+    if (isPlaceholderPaperTitle(item?.paper?.title, item?.paper?.id) || !item.paper.id || !isFeedPublication(item.paper)) continue;
     const published = publishedOf(item.paper, now);
     if (!published || (published < since && !keepUntil)) continue;
     const paper = PaperBuilder.create(item.paper);
+    listed.set(sourceRecordKey(paper.sources?.primary, paper.id), paper);
     const keys = workKeys(paper);
     const joined = [...new Set(keys.map(key => groupOfKey.get(key)).filter(Boolean) as Group[])];
     let group = joined[0];
@@ -292,7 +433,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
   const works = await readWorks(db, [...new Set(existingByKey.values())]);
   const rows: Array<{ id: number; paper: string; published: string; keptUntil: string }> = [];
   const keyRows: Array<{ key: string; id: number }> = [];
-  const laneRows: Array<{ lane: string; id: number; published: string }> = [];
+  const filings: Array<{ id: number; paper: Paper; published: string; lanes: Set<string> }> = [];
+  const laneRows: Array<{ lane: string; id: number; published: string; listedUntil: string | null }> = [];
   const staleVectors: number[] = [];
   const folded: Array<{ from: number; into: number }> = [];
 
@@ -307,7 +449,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       id = await workIdFor(paper);
     } else {
       // The stored row is the base: its id is the one readers already hold.
-      paper = stored.slice(1).reduce((base, other) => PaperBuilder.merge(base, other.paper, other.paper.provider || other.paper.sources?.primary), stored[0].paper);
+      const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
+      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
       paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
@@ -321,14 +464,26 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     const before = ids.length === 1 ? works.get(id)! : null;
     if (!before || before.paper !== json || before.kept_until < keptUntil) rows.push({ id, paper: json, published, keptUntil });
     for (const key of new Set([...group.keys, ...workKeys(paper)])) keyRows.push({ key, id });
-    for (const lane of new Set([...group.lanes, ...recordLanes(paper)])) laneRows.push({ lane, id, published });
+    filings.push({ id, paper, published, lanes: group.lanes });
+  }
+  // Asked once the records are merged: a stored row names entities, such as
+  // the OpenAlex ids of arXiv's authors, that a new listing of it does not.
+  const followed = await followedLanesAmong(db, filings.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  for (const { id, paper, published, lanes } of filings) {
+    for (const lane of new Set([...lanes, ...(published >= since ? recordLanes(paper, followed) : [])])) {
+      laneRows.push({ lane, id, published, listedUntil: lane.startsWith(NOTABLE_LANE_PREFIX) ? keepUntil : null });
+    }
   }
 
   const statements: D1PreparedStatement[] = [];
   for (const { from, into } of folded) {
     statements.push(
       db.prepare('UPDATE work_keys SET work_id = ? WHERE work_id = ?').bind(into, from),
-      db.prepare('INSERT OR IGNORE INTO work_lanes (lane, work_id, published) SELECT lane, ?, published FROM work_lanes WHERE work_id = ?').bind(into, from),
+      // A lane both rows are in keeps the later notable listing date.
+      db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+        SELECT lane, ?, published, listed_until FROM work_lanes WHERE work_id = ?
+        ON CONFLICT (lane, work_id) DO UPDATE SET listed_until = excluded.listed_until
+          WHERE excluded.listed_until > work_lanes.listed_until`).bind(into, from),
       db.prepare('DELETE FROM work_lanes WHERE work_id = ?').bind(from),
       db.prepare('DELETE FROM work_vectors WHERE work_id IN (?, ?)').bind(from, into),
       db.prepare('DELETE FROM works WHERE id = ?').bind(from),
@@ -348,9 +503,10 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       SELECT value ->> 'key', value ->> 'id' FROM json_each(?)`).bind(JSON.stringify(keyRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < laneRows.length; start += WRITE_CHUNK * 4) {
-    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published)
-      SELECT value ->> 'lane', value ->> 'id', value ->> 'published' FROM json_each(?) WHERE true
-      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published WHERE published != excluded.published`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
+    statements.push(db.prepare(`INSERT INTO work_lanes (lane, work_id, published, listed_until)
+      SELECT value ->> 'lane', value ->> 'id', value ->> 'published', value ->> 'listedUntil' FROM json_each(?) WHERE true
+      ON CONFLICT (lane, work_id) DO UPDATE SET published = excluded.published, listed_until = excluded.listed_until
+        WHERE published != excluded.published OR listed_until IS NOT excluded.listed_until`).bind(JSON.stringify(laneRows.slice(start, start + WRITE_CHUNK * 4))));
   }
   for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   return rows.length;
@@ -361,28 +517,37 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
  * `ingestPapers` for the vector and the lanes; nothing else changes. A few
  * statements per chunk of papers: D1 counts each against the invocation.
  */
-export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>) {
+export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; before: Paper; after: Paper }>, now = Date.now()) {
   const db = database(env);
-  const changed = updates
-    .filter(update => JSON.stringify(update.before) !== JSON.stringify(update.after))
-    .map(({ id, before, after }) => {
-      const paper = storedPaper(after);
-      return {
-        id,
-        paper: JSON.stringify(paper),
-        published: publishedOf(paper) || publishedOf(before),
-        textChanged: embeddingText(paper) !== embeddingText(before),
-        // A book or book review the enrichment revealed leaves every lane.
-        offered: isFeedPublication(paper),
-        keys: workKeys(paper),
-        lanes: recordLanes(paper),
-      };
-    });
-  const statements: D1PreparedStatement[] = [];
+  const since = daysFromNow(-CORPUS_DAYS, now);
+  // Compared as stored: every OpenAlex merge adds back the payload a row drops.
+  const updated = updates
+    .map(({ id, before, after }) => ({ id, before, paper: storedPaper(after) }))
+    .filter(({ before, paper }) => JSON.stringify(before) !== JSON.stringify(paper))
+    .map(update => ({ ...update, published: publishedOf(update.paper, now) || publishedOf(update.before, now) }));
+  const followed = await followedLanesAmong(db, updated.flatMap(({ paper, published }) => (published >= since ? followOnlyLanes(paper) : [])));
+  const changed = updated.map(({ id, before, paper, published }) => ({
+    text: { id, paper: JSON.stringify(paper) },
+    filing: {
+      id,
+      published,
+      textChanged: embeddingText(paper) !== embeddingText(before),
+      // A book, an erratum or another type the feed does not show leaves
+      // every lane once the enrichment reveals it.
+      offered: isFeedPublication(paper),
+      keys: workKeys(paper),
+      lanes: published >= since ? recordLanes(paper, followed) : [],
+    },
+  }));
+  // A D1 call carries at most 32 MiB: each chunk is its own batch, and only
+  // the first statement is sent the papers' text (2026-10-23: 500 enriched
+  // papers bound five times over came to 33.6 MB).
   for (let start = 0; start < changed.length; start += WRITE_CHUNK) {
-    const chunk = JSON.stringify(changed.slice(start, start + WRITE_CHUNK));
-    statements.push(
-      db.prepare(`UPDATE works SET paper = j.value ->> 'paper' FROM json_each(?) j WHERE works.id = j.value ->> 'id'`).bind(chunk),
+    const slice = changed.slice(start, start + WRITE_CHUNK);
+    const chunk = JSON.stringify(slice.map(change => change.filing));
+    await db.batch([
+      db.prepare(`UPDATE works SET paper = j.value ->> 'paper' FROM json_each(?) j WHERE works.id = j.value ->> 'id'`)
+        .bind(JSON.stringify(slice.map(change => change.text))),
       db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE value ->> 'textChanged')`).bind(chunk),
       db.prepare(`INSERT OR IGNORE INTO work_keys (key, work_id)
         SELECT k.value, j.value ->> 'id' FROM json_each(?) j, json_each(j.value -> 'keys') k`).bind(chunk),
@@ -390,38 +555,109 @@ export async function rewriteWorks(env: StoreEnv, updates: Array<{ id: number; b
         SELECT l.value, j.value ->> 'id', j.value ->> 'published' FROM json_each(?) j, json_each(j.value -> 'lanes') l
         WHERE j.value ->> 'offered'`).bind(chunk),
       db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE NOT (value ->> 'offered'))`).bind(chunk),
-    );
+    ]);
   }
-  for (let start = 0; start < statements.length; start += 50) await db.batch(statements.slice(start, start + 50));
   return changed.length;
 }
 
 /**
  * What the corpus no longer needs leaves with its keys, lanes and vector:
  * - a lane keeps its newest FEED_CANDIDATE_LIMIT papers, the most a page can
- *   ever rank from it, so a busy category does not pile up papers no reader
- *   reaches;
- * - a paper past its keeping date, or left in no lane, goes, unless readers
- *   still rank their feed by it (`liked_until`).
+ *   ever rank from an asked lane, so a busy category does not pile up papers
+ *   no reader reaches. An area lane keeps as many though a page reads fewer:
+ *   its older articles can still be filed under a leaf (leaf-filing.ts);
+ * - a notable lane drops a paper once its `listed_until` has passed, 14 days
+ *   after the listing that last returned it: the lane holds the leaf's most
+ *   cited, whatever else keeps the paper (a like, its date, another lane);
+ * - a paper leaves the lane of an author, concept or institution nobody
+ *   follows: `recordLanes` files those for followed entities only, and the
+ *   rows filed before it did go here. A later follow of that entity starts
+ *   without those papers, until its own harvest lists them;
+ * - a paper past its keeping date, or in no category, notable, working-paper,
+ *   area or followed lane, goes, unless readers still rank their feed by it
+ *   (`liked_until`). A topic lane nobody follows keeps nothing: nearly every
+ *   enriched paper names a topic, so it would keep every paper its category
+ *   trimmed.
  */
-export async function evictExpired(env: StoreEnv, now = Date.now()) {
+// Each Workflow step scans at most 500 works, without loading their JSON.
+// The cursor is a primary key, so retries and deletions do not shift a page.
+export async function evictExpired(env: StoreEnv, now = Date.now(), after = 0): Promise<number | null> {
   const db = database(env);
   const cutoff = new Date(now).toISOString();
-  const { results: crowded } = await db.prepare('SELECT lane FROM work_lanes GROUP BY lane HAVING COUNT(*) > ?')
-    .bind(FEED_CANDIDATE_LIMIT).all<{ lane: string }>();
-  const trims = crowded.map(({ lane }) => db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
-    SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT -1 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT));
-  for (let start = 0; start < trims.length; start += 50) await db.batch(trims.slice(start, start + 50));
-  // Rows filed before publishedOf refused dates ahead leave too.
+  const notableLanes = [...LEAF_IDS].map(leaf => `${NOTABLE_LANE_PREFIX}${leaf}`);
+  if (after === 0) {
+    await db.prepare('DELETE FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)) AND listed_until < ?')
+      .bind(JSON.stringify(notableLanes), cutoff).run();
+    const { results: crowded } = await db.prepare('SELECT lane FROM work_lanes GROUP BY lane HAVING COUNT(*) > ? LIMIT 10')
+      .bind(FEED_CANDIDATE_LIMIT).all<{ lane: string }>();
+    if (crowded.length) {
+      for (const { lane } of crowded) {
+        await db.prepare(`DELETE FROM work_lanes WHERE lane = ? AND work_id IN (
+          SELECT work_id FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT 500 OFFSET ?)`).bind(lane, lane, FEED_CANDIDATE_LIMIT).run();
+      }
+      return 0;
+    }
+  }
   const ahead = new Date(now + DAY_MS).toISOString();
-  const leaving = `(SELECT id FROM works w WHERE (w.liked_until IS NULL OR w.liked_until < ?)
-    AND (w.kept_until < ? OR w.published > ? OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = w.id)))`;
-  await db.batch([
-    db.prepare(`DELETE FROM work_keys WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-    db.prepare(`DELETE FROM work_vectors WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-    db.prepare(`DELETE FROM work_lanes WHERE work_id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-    db.prepare(`DELETE FROM works WHERE id IN ${leaving}`).bind(cutoff, cutoff, ahead),
-  ]);
+  const keeping = JSON.stringify([...LEAF_IDS, ...notableLanes, WORKING_PAPERS_LANE, ...AREA_LANE_AREAS.map(areaLane)]);
+  const { results: scanned } = await db.prepare('SELECT id FROM works WHERE id > ? ORDER BY id LIMIT 500')
+    .bind(after).all<{ id: number }>();
+  if (scanned.length) {
+    const ids = JSON.stringify(scanned.map(row => row.id));
+    // Recheck retention inside the transaction: a like or harvest can arrive
+    // after the scan. Every scanned work leaves its unfollowed entity lanes;
+    // other child rows go only for works actually deleted.
+    await db.batch([
+      db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))
+        AND substr(lane, 1, instr(lane, ':') - 1) IN (SELECT value FROM json_each(?))
+        AND lane NOT IN (SELECT lane FROM followed_lanes)`).bind(ids, JSON.stringify(PRUNED_ENTITY_LANE_KINDS)),
+      db.prepare(`DELETE FROM works WHERE id IN (SELECT value FROM json_each(?))
+        AND (liked_until IS NULL OR liked_until < ?) AND (kept_until < ? OR published > ?
+          OR NOT EXISTS (SELECT 1 FROM work_lanes l WHERE l.work_id = works.id
+            AND (l.lane IN (SELECT value FROM json_each(?)) OR l.lane IN (SELECT lane FROM followed_lanes))))`)
+        .bind(ids, cutoff, cutoff, ahead, keeping),
+      db.prepare(`DELETE FROM work_keys WHERE work_id IN (SELECT value FROM json_each(?))
+        AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_keys.work_id)`).bind(ids),
+      db.prepare(`DELETE FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))
+        AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_vectors.work_id)`).bind(ids),
+      db.prepare(`DELETE FROM work_lanes WHERE work_id IN (SELECT value FROM json_each(?))
+        AND NOT EXISTS (SELECT 1 FROM works WHERE id = work_lanes.work_id)`).bind(ids),
+    ]);
+  }
+  return scanned.length === 500 ? scanned.at(-1)!.id : null;
+}
+
+// A leaf with fewer papers than this published in the last LEAF_FLOOR_DAYS is
+// to be proposed to the OpenAlex topic-lane gate
+// (scripts/README-openalex-leaf-topics.md) (Nicolás, 2026-10-24).
+const LEAF_FLOOR = 300;
+const LEAF_FLOOR_DAYS = 30;
+
+/** The leaves under LEAF_FLOOR, fewest first, for the nightly run to report. */
+export async function thinLeaves(db: D1Database, now: number): Promise<Array<{ leaf: string; recent: number }>> {
+  const { results } = await db.prepare(`SELECT lane, COUNT(*) AS recent FROM work_lanes
+    WHERE lane IN (SELECT value FROM json_each(?)) AND published >= ? GROUP BY lane`)
+    .bind(JSON.stringify([...LEAF_IDS]), daysFromNow(-LEAF_FLOOR_DAYS, now)).all<{ lane: string; recent: number }>();
+  const recent = new Map(results.map(row => [row.lane, row.recent]));
+  return [...LEAF_IDS].map(leaf => ({ leaf, recent: recent.get(leaf) ?? 0 }))
+    .filter(entry => entry.recent < LEAF_FLOOR)
+    .sort((a, b) => a.recent - b.recent || a.leaf.localeCompare(b.leaf));
+}
+
+// The Workflows API keeps a step's output cut at about 1,000 characters, ending
+// in `[truncated output]`, whatever `--truncate-output-limit` is passed to
+// `wrangler workflows instances describe` (2026-10-25: a list of 140 leaves
+// stopped at the fortieth). So the step returns the count and the thinnest
+// THIN_LEAVES_SHOWN, and the whole list goes to the Worker's log.
+const THIN_LEAVES_SHOWN = 30;
+
+/** What the `thin leaves` step logs (every leaf) and returns (what `describe` can show). */
+export function thinLeavesReport(thin: Array<{ leaf: string; recent: number }>) {
+  const entry = ({ leaf, recent }: { leaf: string; recent: number }) => `${leaf}:${recent}`;
+  return {
+    line: `${thin.length} leaves under ${LEAF_FLOOR} papers in ${LEAF_FLOOR_DAYS} days: ${thin.map(entry).join(' ')}`,
+    summary: { under: thin.length, thinnest: thin.slice(0, THIN_LEAVES_SHOWN).map(entry) },
+  };
 }
 
 // ─── Embedding ───
@@ -429,17 +665,26 @@ export async function evictExpired(env: StoreEnv, now = Date.now()) {
 const estimatedTokens = (texts: string[]) => texts.reduce((sum, value) => sum + Math.ceil(value.length / 3), 0);
 
 /**
- * Reserves the embedding tokens for today before spending them. Workers AI
- * bills past the free allocation, so a ledger that cannot answer refuses.
+ * A share of the day's embedding limit: a ledger subject, and the most it may reserve.
+ * `part` is a second subject that several shares count against together, with
+ * its limit in ledger units (1,000 tokens).
  */
-async function reserveEmbeddingTokens(env: StoreEnv, tokens: number) {
+interface EmbeddingShare { subject: string; tokens: number; part?: QuotaPart }
+
+/**
+ * Reserves the embedding tokens for today before spending them, within
+ * `share` when given and the day's limit always. Workers AI bills past the
+ * free allocation, so a ledger that cannot answer refuses.
+ */
+async function reserveEmbeddingTokens(env: StoreEnv, tokens: number, share?: EmbeddingShare) {
   const limit = Math.floor((Number(env.EMBEDDING_DAILY_TOKEN_LIMIT) || DEFAULT_EMBEDDING_DAILY_TOKEN_LIMIT) / EMBEDDING_TOKENS_PER_UNIT);
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER ?? null, {
     periodKey: `embedding:day:${new Date().toISOString().slice(0, 10)}`,
-    subject: 'embedding:all',
-    subjectLimit: limit,
+    subject: share?.subject ?? 'embedding:all',
+    subjectLimit: share ? Math.min(limit, share.tokens / EMBEDDING_TOKENS_PER_UNIT) : limit,
     globalLimit: limit,
     amount: Math.max(1, Math.ceil(tokens / EMBEDDING_TOKENS_PER_UNIT)),
+    part: share?.part,
   });
   if (reservation.code) console.error(`Embedding budget unavailable (${reservation.code}); nothing embedded`);
   return reservation.accepted === true;
@@ -471,16 +716,22 @@ async function embedTexts(env: StoreEnv, texts: string[]) {
 }
 
 /**
- * Embeds the rows' title and abstract within today's budget and stores the
- * vectors. Returns how many were embedded: 0 when the budget is spent.
+ * Embeds the rows' title and abstract within today's budget, and `share` of it
+ * when given, and stores the vectors. Returns how many were embedded: 0 when
+ * the budget is spent.
  */
-async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>) {
+async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string }>, share?: EmbeddingShare) {
   if (rows.length === 0) return 0;
-  const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
-  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts)))) return 0;
-  const vectors = await embedTexts(env, texts);
-  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index]! }] : []));
   const db = database(env);
+  const texts = rows.map(row => embeddingText(JSON.parse(row.paper) as Paper));
+  if (!(await reserveEmbeddingTokens(env, estimatedTokens(texts), share))) {
+    // Not embedded: another pass, or another reader with budget left, may.
+    await db.prepare('UPDATE works SET embedding_claimed_until = NULL WHERE id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(rows.map(row => row.id))).run();
+    return 0;
+  }
+  const vectors = await embedTexts(env, texts);
+  const embedded = rows.flatMap((row, index) => (vectors[index] ? [{ id: row.id, vector: vectors[index] }] : []));
   // Two parameters a row, under D1's hundred per statement.
   const statements = [];
   for (let start = 0; start < embedded.length; start += 50) {
@@ -492,41 +743,98 @@ async function embedRows(env: StoreEnv, rows: Array<{ id: number; paper: string 
   return embedded.length;
 }
 
-/** The newest stored papers without a vector, embedded. 0 once none are left or today's budget is spent. */
-export async function embedPending(env: StoreEnv, limit: number) {
-  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
-    WHERE NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
-    ORDER BY w.published DESC LIMIT ?`).bind(limit).all<{ id: number; paper: string }>();
-  return embedRows(env, results);
+// How long a pass holds the papers it embeds: longer than the harvest step that
+// runs it may take (5 minutes), so no other pass embeds them meanwhile. A pass
+// that failed leaves them to the next one after this.
+const EMBEDDING_CLAIM_MS = 10 * 60_000;
+
+/**
+ * Claims the newest works `scope` names (a condition on `w`, and its
+ * parameters) that have no vector and that no other pass holds, in one
+ * statement: passes that overlap, such as the daily run beside a followed
+ * lanes' run or a reader's lookup, get different works.
+ */
+async function claimUnembedded(db: D1Database, scope: string, params: unknown[], limit: number, now = Date.now()) {
+  const { results } = await db.prepare(`UPDATE works SET embedding_claimed_until = ? WHERE id IN (
+      SELECT w.id FROM works w WHERE ${scope}
+        AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)
+        AND (w.embedding_claimed_until IS NULL OR w.embedding_claimed_until < ?)
+      ORDER BY w.published DESC LIMIT ?)
+    RETURNING id, paper`)
+    .bind(new Date(now + EMBEDDING_CLAIM_MS).toISOString(), ...params, new Date(now).toISOString(), limit)
+    .all<{ id: number; paper: string }>();
+  return results;
 }
 
-/** The given works that have no vector yet, embedded within today's budget. */
-export async function embedWorks(env: StoreEnv, workIds: number[]) {
+/**
+ * The newest stored papers without a vector, embedded. 0 once none are left or
+ * today's budget is spent. With `lanes`, a run for new follows: only those
+ * lanes' papers, within the follow runs' share of the day.
+ */
+export async function embedPending(env: StoreEnv, limit: number, { lanes }: { lanes?: string[] } = {}) {
+  if (!lanes) return embedRows(env, await claimUnembedded(database(env), 'true', [], limit));
+  const rows = await claimUnembedded(database(env), 'w.id IN (SELECT work_id FROM work_lanes WHERE lane IN (SELECT value FROM json_each(?)))', [JSON.stringify(lanes)], limit);
+  return embedRows(env, rows, { subject: 'embedding:follows', tokens: FOLLOW_RUNS_EMBEDDING_DAILY_TOKENS });
+}
+
+/** Embed these works within the daily budget; a reader's lookup also uses that reader's share and the readers' combined one. */
+export async function embedWorks(env: StoreEnv, workIds: number[], uid: string | undefined) {
   if (workIds.length === 0) return 0;
-  const { results } = await database(env).prepare(`SELECT w.id, w.paper FROM works w
-    WHERE w.id IN (SELECT value FROM json_each(?)) AND NOT EXISTS (SELECT 1 FROM work_vectors v WHERE v.work_id = w.id)`)
-    .bind(JSON.stringify(workIds)).all<{ id: number; paper: string }>();
-  return embedRows(env, results);
+  const rows = await claimUnembedded(database(env), 'w.id IN (SELECT value FROM json_each(?))', [JSON.stringify(workIds)], workIds.length);
+  return embedRows(env, rows, uid === undefined ? undefined : {
+    subject: `uid:${uid}`,
+    tokens: READER_EMBEDDING_DAILY_TOKENS,
+    part: { subject: 'embedding:readers', limit: READERS_EMBEDDING_DAILY_TOKENS / EMBEDDING_TOKENS_PER_UNIT },
+  });
 }
 
 // ─── Reading ───
 
 /**
- * Closest liked paper first, recency as the tie-breaker. A paper not yet
- * embedded ranks by recency alone, below the ones that are, so a reader is
- * never left without papers while the store catches up.
+ * Semantic relevance with near-copy rejection and a bounded diversity pass.
+ * Missing vectors retain recency so the feed remains usable during embedding.
+ * Rows it cannot tell apart keep their order (`readCandidates`).
  */
-export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent' as keyof typeof RECENCY_WEIGHT } = {}) {
+export function rankBySimilarity<T extends { embedding: Int8Array | null; published: string }>(rows: T[], positives: Int8Array[], { now = Date.now(), order = 'recent', negatives = [] }: { now?: number; order?: keyof typeof RECENCY_WEIGHT; negatives?: Int8Array[] } = {}) {
   const weight = RECENCY_WEIGHT[order] ?? RECENCY_WEIGHT.recent;
+  const likedVectors = positives.map(unitVector);
+  const rejectedVectors = negatives.map(unitVector);
   const recency = (published: string) => 0.5 ** (Math.max(0, now - Date.parse(published)) / DAY_MS / RECENCY_HALF_LIFE_DAYS);
-  return rows
+  const ranked = rows
     .map(row => {
-      const similarity = positives.length && row.embedding
-        ? positives.reduce((best, positive) => Math.max(best, cosine(row.embedding as Int8Array, positive)), -1)
-        : 0;
-      return { row, score: similarity + weight * recency(row.published) };
+      const embedding = row.embedding ? unitVector(row.embedding) : null;
+      const similarity = positives.length && embedding
+        ? likedVectors.reduce((best, positive) => Math.max(best, cosine(embedding, positive)), -1) : 0;
+      const rejectedSimilarity = embedding
+        ? rejectedVectors.reduce((best, negative) => Math.max(best, cosine(embedding, negative)), 0) : 0;
+      const negative = Math.max(0, (rejectedSimilarity - NEGATIVE_SIMILARITY_THRESHOLD) / (1 - NEGATIVE_SIMILARITY_THRESHOLD));
+      // A fixed scale keeps an uninformative page from stretching its best
+      // match to 100%. The client's contribution is bounded independently.
+      const semanticScore = Math.max(0, Math.min(1, (similarity - 0.4) / 0.4)) - negative;
+      return { row, embedding, score: similarity - NEGATIVE_WEIGHT * negative + weight * recency(row.published), semanticScore };
     })
     .sort((a, b) => b.score - a.score || b.row.published.localeCompare(a.row.published));
+  if (!positives.length && !negatives.length) return ranked;
+  // Limit both the pool and selected prefix: a full 4,000 x 4,000 MMR pass
+  // would dominate Worker CPU. The untouched tail remains available.
+  const pool = ranked.slice(0, DIVERSITY_POOL).map(candidate => ({ candidate, redundancy: 0 }));
+  const selected: typeof ranked = [];
+  while (pool.length && selected.length < DIVERSITY_RANKS) {
+    let best = 0;
+    for (let index = 1; index < pool.length; index += 1) {
+      if (pool[index].candidate.score - DIVERSITY_WEIGHT * pool[index].redundancy > pool[best].candidate.score - DIVERSITY_WEIGHT * pool[best].redundancy) best = index;
+    }
+    const [{ candidate }] = pool.splice(best, 1);
+    selected.push(candidate);
+    const embedding = candidate.embedding;
+    if (embedding) {
+      for (const entry of pool) {
+        if (entry.candidate.embedding) entry.redundancy = Math.max(entry.redundancy, Math.max(0, (cosine(embedding, entry.candidate.embedding) - 0.75) / 0.25));
+      }
+    }
+  }
+  const chosen = new Set(selected);
+  return [...selected, ...ranked.filter(candidate => !chosen.has(candidate))];
 }
 
 export async function reserveFeedRequest(env: StoreEnv & Pick<WorkerEnv, 'PROVIDER_USER_MINUTE_LIMIT' | 'PROVIDER_GLOBAL_MINUTE_LIMIT'>, uid: string) {
@@ -553,40 +861,91 @@ export async function findWorks(db: D1Database, paperIds: string[]) {
   return workByPaperId;
 }
 
-interface Candidate { workId: number; published: string; lanes: string[]; embedding: Int8Array | null }
+/** Keeps these liked works for KEEP_LIKED_DAYS, past their keeping date and outside every lane (`evictExpired`). */
+export async function keepLiked(db: D1Database, workIds: number[], now = Date.now()) {
+  if (workIds.length === 0) return;
+  await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
+    AND (liked_until IS NULL OR liked_until < ?)`)
+    .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(workIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
+}
+
+interface Candidate { workId: number; published: string; lanes: string[] }
 
 // One statement per lane, in one batch: D1 refuses a compound SELECT of more
 // than a few terms ("too many terms in compound SELECT"), and a reader asks
-// for up to a dozen categories and twenty follows.
-async function readCandidates(db: D1Database, lanes: string[]) {
-  const share = Math.ceil(FEED_CANDIDATE_LIMIT / lanes.length);
+// for up to a dozen categories and twenty follows. The candidates come in
+// turns across the lanes, each lane's newest first, and the ranking keeps that
+// order among papers it cannot tell apart: one night's articles of two areas
+// share their date, and take turns between the areas instead of following the
+// order the lanes were asked in.
+async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
+  const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
+  const share = (lane: string) => (AREA_LANES.has(lane)
+    ? Math.floor(AREA_CANDIDATE_LIMIT / areaLanes)
+    : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
     'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
-  ).bind(lane, share)));
+  ).bind(lane, share(lane))));
+  return mergeLaneRows(lanes, perLane);
+}
+
+/**
+ * The notable lanes at `now`, in one statement per lane: `candidates` are, of
+ * each year of the window, the NOTABLE_READ_PER_YEAR rows of the day's slice,
+ * newest first; `inLanes` is every work the lanes hold in the window, slice
+ * or not. A notable lane keeps a paper two weeks past its last listing; from
+ * 1 January, the year that left the window is not read, and a row of the
+ * current year (a listing before the by-year one, a merge dated this year) is
+ * not read until that year is over.
+ */
+export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<{ candidates: Candidate[]; inLanes: Set<number> }> {
+  const offset = Math.floor(now / DAY_MS) * NOTABLE_READ_PER_YEAR;
+  const perLane = await db.batch<{ work_id: number; published: string; in_slice: number }>(lanes.map(lane => db.prepare(`SELECT work_id, published,
+      ((rn - 1 + ?) % n < ?) AS in_slice FROM (
+      SELECT work_id, published,
+             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC, work_id) AS rn,
+             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
+      FROM work_lanes WHERE lane = ? AND published >= ? AND published < ?
+    ) ORDER BY published DESC, work_id`).bind(offset, NOTABLE_READ_PER_YEAR, lane, notableSince(now), `${new Date(now).getUTCFullYear()}-01-01`)));
+  return {
+    candidates: mergeLaneRows(lanes, perLane.map(({ results }) => ({ results: results.filter(row => row.in_slice) }))),
+    inLanes: new Set(perLane.flatMap(({ results }) => results.map(row => row.work_id))),
+  };
+}
+
+// The lanes' rows in turns, each lane's in its own order: a work listed by
+// several lanes comes once, at its first turn, with every lane and its newest date.
+function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_id: number; published: string }> }>): Candidate[] {
   const byWork = new Map<number, { published: string; lanes: string[] }>();
-  perLane.forEach(({ results }, index) => {
-    for (const row of results) {
+  const longest = Math.max(...perLane.map(({ results }) => results.length));
+  for (let position = 0; position < longest; position += 1) {
+    perLane.forEach(({ results }, index) => {
+      const row = results[position];
+      if (!row) return;
       const candidate = byWork.get(row.work_id);
       if (!candidate) byWork.set(row.work_id, { published: row.published, lanes: [lanes[index]] });
       else {
         candidate.lanes.push(lanes[index]);
         if (row.published > candidate.published) candidate.published = row.published;
       }
-    }
-  });
+    });
+  }
+  return [...byWork].map(([workId, candidate]) => ({ workId, ...candidate }));
+}
+
+// The works' vectors, a statement for each 2,000 of them, in one round trip.
+async function readVectors(db: D1Database, workIds: number[]) {
   const vectors = new Map<number, Int8Array>();
-  const ids = [...byWork.keys()];
-  for (let start = 0; start < ids.length; start += 2_000) {
-    const { results } = await db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
-      .bind(JSON.stringify(ids.slice(start, start + 2_000))).all<{ work_id: number; embedding: unknown }>();
+  const chunks: D1PreparedStatement[] = [];
+  for (let start = 0; start < workIds.length; start += 2_000) {
+    chunks.push(db.prepare('SELECT work_id, embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))')
+      .bind(JSON.stringify(workIds.slice(start, start + 2_000))));
+  }
+  if (chunks.length === 0) return vectors;
+  for (const { results } of await db.batch<{ work_id: number; embedding: unknown }>(chunks)) {
     results.forEach(row => vectors.set(row.work_id, readVector(row.embedding)));
   }
-  return [...byWork].map(([workId, candidate]): Candidate => ({
-    workId,
-    published: candidate.published,
-    lanes: candidate.lanes,
-    embedding: vectors.get(workId) ?? null,
-  }));
+  return vectors;
 }
 
 export interface FeedFollow { type: PaperFollowMatch['type']; canonicalId: string; displayName?: string; lane: string }
@@ -595,9 +954,17 @@ export interface FeedQuery {
   categories: string[];
   follows: FeedFollow[];
   positiveIds: string[];
+  negativeIds: string[];
+  excludedIds: string[];
   page: number;
   pageSize: number;
   order: keyof typeof RECENCY_WEIGHT;
+  // The papers the reader has seen (`feedSeenFilter`); without it, no notable papers.
+  seen: BloomFilter | null;
+  // How many unseen notable papers the page adds after its own, at most.
+  notable: number;
+  // Whether the page also reads the area lanes of the asked categories' areas.
+  areaLanes: boolean;
 }
 
 /**
@@ -607,10 +974,19 @@ export interface FeedQuery {
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  */
 /** A reader's ranked candidates, kept for the pages after the first. */
-export interface RankedCandidate { workId: number; lanes: string[] }
+export interface RankedCandidate { workId: number; lanes: string[]; semanticScore?: number }
+/**
+ * The order a reader's pages were served from. `served` counts the ranks
+ * pages have covered, including the empty ones of a page the order ran out
+ * on, which `ranks` holds as null. A `final` order serves the next pages as
+ * it is; otherwise a next page keeps only the ranks served and ranks the rest
+ * again. `notable` is the asked categories' notable papers, closest first,
+ * which no rank holds: each page reads the ones its reader has not seen.
+ */
+export interface KeptRanking { ranks: Array<RankedCandidate | null>; served: number; final: boolean; notable?: RankedCandidate[] }
 export interface RankingCache {
-  get(key: string): Promise<RankedCandidate[] | null>;
-  put(key: string, ranking: RankedCandidate[]): Promise<void>;
+  get(key: string): Promise<KeptRanking | null>;
+  put(key: string, ranking: KeptRanking): Promise<void>;
 }
 
 /**
@@ -620,25 +996,47 @@ export interface RankingCache {
  * (`_fetchedFor`) and which follows (`_followedEntityMatches`).
  *
  * The first page ranks every candidate and leaves the order in `cache`; a
- * later page of the same request reads only its own papers from it, and ranks
- * again only when the order is gone.
+ * later page of the same request reads only its own papers from a final
+ * order. Otherwise it ranks again, after the ranks already served: a paper
+ * that arrived since starts on this page, and none served comes back. An
+ * order with nothing left to serve is not final: the lanes may be about to
+ * fill.
  */
 export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date.now(), cache }: { now?: number; cache?: RankingCache } = {}) {
   const db = database(env);
-  const readsEconomics = LEAVES.some(leaf => WORKING_PAPER_AREAS.has(leaf.area) && query.categories.includes(leaf.id));
-  const lanes = [...new Set([...query.categories, ...(readsEconomics ? [WORKING_PAPERS_LANE] : []), ...query.follows.map(follow => follow.lane)])];
+  const areas = new Set(LEAVES.filter(leaf => query.categories.includes(leaf.id)).map(leaf => leaf.area));
+  const readsEconomics = [...areas].some(area => WORKING_PAPER_AREAS.has(area));
+  const lanes = [...new Set([
+    ...query.categories,
+    ...(readsEconomics ? [WORKING_PAPERS_LANE] : []),
+    ...(query.areaLanes ? AREA_LANE_AREAS.filter(area => areas.has(area)).map(areaLane) : []),
+    ...query.follows.map(follow => follow.lane),
+  ])];
   if (lanes.length === 0) return [];
-  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), order: query.order });
-  let ranking = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  const cacheKey = JSON.stringify({ lanes, positives: [...query.positiveIds].sort(), negatives: [...query.negativeIds].sort(), excluded: [...query.excludedIds].sort(), order: query.order, pageSize: query.pageSize, notable: query.notable > 0 });
+  const kept = query.page > 0 && cache ? await cache.get(cacheKey).catch(() => null) : null;
+  let ranking = kept?.final ? kept.ranks : null;
+  let notable = kept?.notable ?? [];
   if (!ranking) {
-    ranking = await rankCandidates(db, lanes, query, now);
-    await cache?.put(cacheKey, ranking).catch(error => console.warn('Feed ranking not cached', error));
+    const served = Array.from({ length: Math.min(kept?.served ?? 0, query.page * query.pageSize) }, (_, index) => kept!.ranks[index] ?? null);
+    const shown = new Set(served.map(candidate => candidate?.workId));
+    const ranked = await rankCandidates(db, lanes, query, now);
+    ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
+    notable = ranked.notable;
+    const through = (query.page + 1) * query.pageSize;
+    await cache?.put(cacheKey, { ranks: ranking, served: through, final: ranking.length > through, notable })
+      .catch(error => console.warn('Feed ranking not cached', error));
   }
-  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize);
+  const ranked = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   if (ranked.length === 0) return [];
-  const works = await readWorks(db, ranked.map(candidate => candidate.workId));
+  // After the page's own papers, for the app to place: one it leaves out is
+  // still unseen, so a later page offers it again.
+  const unseen = query.seen && query.notable > 0 ? await unseenNotable(db, notable, query.seen, query.notable) : [];
+  const notableIds = new Set(unseen.map(candidate => candidate.workId));
+  const candidates = [...ranked, ...unseen];
+  const works = await readWorks(db, candidates.map(candidate => candidate.workId));
   const categories = new Set(query.categories);
-  return ranked.flatMap(candidate => {
+  return candidates.flatMap(candidate => {
     const row = works.get(candidate.workId);
     if (!row) return [];
     const paper = JSON.parse(row.paper) as Paper;
@@ -646,36 +1044,68 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     const follows = query.follows.filter(follow => candidate.lanes.includes(follow.lane));
     return [{
       ...paper,
+      _semanticScore: candidate.semanticScore,
       ...(fetchedFor.length ? { _fetchedFor: fetchedFor } : {}),
       ...(follows.length ? { _followedEntityMatches: follows.map(({ type, canonicalId, displayName }) => ({ type, canonicalId, displayName: displayName || canonicalId })) } : {}),
+      ...(notableIds.has(candidate.workId) ? { _notable: true } : {}),
     }];
   });
 }
 
-async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<RankedCandidate[]> {
-  const positiveWorks = query.positiveIds.length ? await findWorks(db, query.positiveIds) : new Map<string, number>();
-  const positiveIds = [...new Set(positiveWorks.values())];
-  const [candidates, positives] = await Promise.all([
+/**
+ * The notable papers in `ranked` the reader has not seen, in order, until
+ * `wanted` are found. The filter holds the ids the app was served, so each
+ * candidate's is read from its row.
+ */
+async function unseenNotable(db: D1Database, ranked: RankedCandidate[], seen: BloomFilter, wanted: number) {
+  const unseen: RankedCandidate[] = [];
+  for (let start = 0; start < ranked.length && unseen.length < wanted; start += 200) {
+    const chunk = ranked.slice(start, start + 200);
+    const { results } = await db.prepare("SELECT id, paper ->> '$.id' AS paper_id FROM works WHERE id IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(chunk.map(candidate => candidate.workId))).all<{ id: number; paper_id: string }>();
+    const paperIds = new Map(results.map(row => [row.id, row.paper_id]));
+    unseen.push(...chunk.filter(candidate => paperIds.has(candidate.workId) && !hasSeenPaper(seen, paperIds.get(candidate.workId))));
+  }
+  return unseen.slice(0, wanted);
+}
+
+async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery, now: number): Promise<{ ranks: RankedCandidate[]; notable: RankedCandidate[] }> {
+  const works = await findWorks(db, [...query.positiveIds, ...query.negativeIds, ...query.excludedIds]);
+  const positiveIds = [...new Set(query.positiveIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
+  const negativeIds = [...new Set(query.negativeIds.flatMap(id => works.has(id) ? [works.get(id)!] : []))];
+  const notableLanes = query.notable > 0 ? query.categories.map(category => `${NOTABLE_LANE_PREFIX}${category}`) : [];
+  const [candidates, notableRead, signals] = await Promise.all([
     // Each lane contributes its newest share of the candidates through its own
     // index range, which stops at the share: one query over the whole window
     // read every row of it (146k rows for five busy cs categories, 2026-10-22),
     // and D1 bills rows read. A quiet lane keeps its share instead of being
-    // crowded out by a busy one. Only the candidates' vectors are read. The
-    // window is the corpus's own: what is past it has been evicted.
+    // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
+    // The window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
-    positiveIds.length
-      ? db.prepare('SELECT embedding FROM work_vectors WHERE work_id IN (SELECT value FROM json_each(?))').bind(JSON.stringify(positiveIds)).all<{ embedding: unknown }>()
-      : Promise.resolve({ results: [] as Array<{ embedding: unknown }> }),
+    notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve({ candidates: [], inLanes: new Set<number>() }),
+    readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
   ]);
-  // A liked paper is not offered again, and keeps its vector in the corpus.
-  if (positiveIds.length) {
-    await db.prepare(`UPDATE works SET liked_until = ? WHERE id IN (SELECT value FROM json_each(?))
-      AND (liked_until IS NULL OR liked_until < ?)`)
-      .bind(daysFromNow(KEEP_LIKED_DAYS, now), JSON.stringify(positiveIds), daysFromNow(KEEP_LIKED_DAYS - 1, now)).run();
-  }
-  const liked = new Set(positiveIds);
-  return rankBySimilarity(candidates.filter(candidate => !liked.has(candidate.workId)), positives.results.map(row => readVector(row.embedding)), { now, order: query.order })
-    .map(({ row }) => ({ workId: row.workId, lanes: row.lanes }));
+  const likes = positiveIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  const negatives = negativeIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
+  // A liked paper is not offered again, and keeps its vector in the corpus. A
+  // liked, rejected or excluded paper comes neither as a rank nor as a notable card.
+  const excluded = new Set([...positiveIds, ...negativeIds, ...query.excludedIds.flatMap(id => works.has(id) ? [works.get(id)!] : [])]);
+  // A paper of the reader's notable lanes comes only as a notable card.
+  const offered = candidates.filter(candidate => !excluded.has(candidate.workId) && !notableRead.inLanes.has(candidate.workId));
+  const offeredNotable = notableRead.candidates.filter(candidate => !excluded.has(candidate.workId));
+  const [vectors] = await Promise.all([
+    // Without a positive or negative vector, recency needs no candidate vectors.
+    likes.length || negatives.length ? readVectors(db, [...offered, ...offeredNotable].map(candidate => candidate.workId)) : new Map<number, Int8Array>(),
+    keepLiked(db, positiveIds, now),
+  ]);
+  const withVector = (candidate: Candidate) => ({ ...candidate, embedding: vectors.get(candidate.workId) ?? null });
+  return {
+    ranks: rankBySimilarity(offered.map(withVector), likes, { now, order: query.order, negatives })
+      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes, semanticScore })),
+    // The closest notable papers first, without recency: they are years old by design.
+    notable: rankBySimilarity(offeredNotable.map(withVector), likes, { now, order: 'relevance', negatives })
+      .map(({ row, semanticScore }) => ({ workId: row.workId, lanes: row.lanes.map(lane => lane.slice(NOTABLE_LANE_PREFIX.length)), semanticScore })),
+  };
 }
 
 // ─── Requests ───
@@ -706,7 +1136,8 @@ export function followLane(follow: { type?: unknown; canonicalId?: unknown; disp
 }
 
 export interface FeedRequestBody {
-  categories?: unknown; follows?: unknown; positiveIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
+  categories?: unknown; follows?: unknown; positiveIds?: unknown; negativeIds?: unknown; excludedIds?: unknown; page?: unknown; pageSize?: unknown; order?: unknown;
+  seen?: unknown; notable?: unknown; waitForLikes?: unknown;
 }
 
 export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
@@ -724,13 +1155,25 @@ export function parseFeedRequest(body: FeedRequestBody | null): FeedQuery {
     }));
   const positiveIds = [...new Set((Array.isArray(body?.positiveIds) ? body.positiveIds : []).map(id => text(id).slice(0, 300)).filter(Boolean))]
     .slice(0, FEED_MAX_POSITIVES);
+  const negativeIds = [...new Set((Array.isArray(body?.negativeIds) ? body.negativeIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_POSITIVES);
+  const excludedIds = [...new Set((Array.isArray(body?.excludedIds) ? body.excludedIds : []).filter((id): id is string => typeof id === 'string').map(id => id.trim().slice(0, 300)).filter(Boolean))].slice(0, FEED_MAX_EXCLUDED);
+  const seen = body?.seen === undefined ? null : readFeedSeenFilter(body.seen);
+  if (body?.seen !== undefined && !seen) throw new PaperStoreError('SEEN_INVALID', 400);
   return {
     categories,
     follows,
     positiveIds,
+    negativeIds,
+    excludedIds,
     page: Math.max(0, Math.floor(Number(body?.page) || 0)),
-    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || 15)), FEED_MAX_PAGE_SIZE),
+    pageSize: Math.min(Math.max(1, Math.floor(Number(body?.pageSize) || FEED_PAGE_SIZE)), FEED_MAX_PAGE_SIZE),
     order: body?.order === 'relevance' ? 'relevance' : 'recent',
+    seen,
+    notable: seen ? Math.min(Math.max(0, Math.floor(Number(body?.notable) || 0)), FEED_MAX_NOTABLE) : 0,
+    // Not for the follows' request, even when no follow has a lane of its own
+    // (a category topic): there the categories stand for followed topics
+    // (FeedContext), matched by `_fetchedFor`, which an area-level article lacks.
+    areaLanes: !(Array.isArray(body?.follows) && body.follows.length > 0),
   };
 }
 
