@@ -3,7 +3,6 @@
    and shrinks to its content without one. */
 .not-found-page {
   position: relative;
-  position: relative;
   display: flex;
   width: 100%;
   min-height: 100dvh;
@@ -12,15 +11,6 @@
   padding: 32px 20px;
   color: var(--text-primary);
   background: var(--bg-primary);
-}
-
-/* The visitor's Privacy switch, in the corner the other public bars keep it
-   in. Over the page rather than in a bar of its own: the card is centred and
-   starts with its drawing, so nothing of it reaches this corner. */
-.not-found-bar {
-  position: absolute;
-  top: calc(var(--inset-top) + var(--space-3));
-  right: var(--space-3);
 }
 
 /* The visitor's Privacy switch, in the corner the other public bars keep it

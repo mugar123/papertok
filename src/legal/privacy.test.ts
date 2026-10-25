@@ -84,7 +84,6 @@ test("the page says the server counts a signed-in reader's requests per account,
   assert.match(html, /counts them per account, under a hashed account identifier[^.]*three days/);
 });
 
-
 test('the page names the public pages a shared link opens as places for the Privacy button', () => {
   const html = stripHtmlComments(read('privacy.html')).replace(/\s+/g, ' ');
   const where = html.match(/with the <strong>Privacy<\/strong> button ([^.]*)\./)?.[1];
