@@ -16,8 +16,6 @@ export interface RecommendationProfileSnapshot extends RecommendationContext {
 }
 export interface FeedContextValue {
   papers: Paper[]; loading: boolean; error: string | null; hasMore: boolean; isRefreshing: boolean;
-  /** Why the load behind `error` failed, as fixed labels for diagnostics. */
-  loadFailure: FeedLoadFailure | null;
   /** Shown cards whose abstract a running request may still supply. */
   loadingAbstractIds: ReadonlySet<string>;
   likedPaperIds: Set<string>; notInterestedIds: Set<string>; savedPaperIds: Set<string>; readPaperIds: Set<string>;
@@ -78,7 +76,7 @@ import {
 } from '../utils/user-scoped-storage.ts';
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { emptyFirstPageError, feedLoadFailure, type FeedLoadFailure } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedLoadFailure } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
@@ -234,9 +232,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
   const loadingAbstractIds = useMemo(() => abstractWaitIds(abstractWaits), [abstractWaits]);
   const [loading, setLoading] = useState(false);
-  // Why the last load failed (ENG-116); the reader sees one error state for all of them.
-  const [loadFailure, setLoadFailure] = useState<FeedLoadFailure | null>(null);
-  const error = loadFailure ? 'FEED_LOAD_FAILED' : null;
+  const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
@@ -1141,7 +1137,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const activeSessionId = feedSessionId.current;
 
     setLoading(true);
-    setLoadFailure(null);
+    setError(null);
     
     // A fresh load starts on the corpus's first page, the follows' included:
     // the ranking puts the reader's closest papers there.
@@ -1462,7 +1458,14 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     } catch (failure) {
       if (requestId === feedRequestId.current) {
-        setLoadFailure(feedLoadFailure(failure));
+        const cause = feedLoadFailure(failure);
+        setError('FEED_LOAD_FAILED');
+        // One event per failed attempt, sent where the load runs: a remounted
+        // feed screen showing the same error must not send it again. Only when
+        // the reader is left looking at the error, as the screen used to report it.
+        if (papersRef.current.length === 0) {
+          void trackEvent('app_error', { kind: 'feed_load_failed', reason: cause.reason, status: cause.status, error_code: cause.code });
+        }
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.
@@ -1484,7 +1487,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   }, [
     userPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady,
+    calculateAndAttachScore, followedEntities, recommendationProfileReady, trackEvent,
   ]);
 
   // The account and interests whose snapshot is on screen. Both effects below
@@ -2331,7 +2334,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
   // `user` beyond the id, which none of the current ones do.
   const value = useMemo(() => ({
-    papers, loading, error, loadFailure, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary,
@@ -2344,7 +2347,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
   }), [
-    papers, loading, error, loadFailure, hasMore, isRefreshing, loadingAbstractIds,
+    papers, loading, error, hasMore, isRefreshing, loadingAbstractIds,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary,
