@@ -175,7 +175,7 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
     const test = outcomes(heldOut, rule);
     const decided = test.correct + test.wrong;
     const precision = ratio(test.correct, decided);
-    const enabled = decided >= MIN_HELD_OUT_DECIDED && (precision ?? 0) >= REQUIRED_PRECISION;
+    const enabled = decided >= MIN_HELD_OUT_DECIDED && test.correct / decided >= REQUIRED_PRECISION;
     const lane = dataset.areaSamples.filter(paper => paper.area === area);
     const laneFiled = lane.filter(paper => ruleFiles(closestLeaf(vectorOf(paper.vector), own), rule)).length;
     return [{
@@ -192,7 +192,7 @@ export function calibrateLeafFiling(dataset: CalibrationDataset): AreaCalibratio
       areaLaneSample: { papers: lane.length, filed: laneFiled, share: ratio(laneFiled, lane.length), interval: wilson(laneFiled, lane.length) },
       enabled,
       reason: enabled ? `held-out precision ${precision} over ${decided} decided filings`
-        : decided < MIN_HELD_OUT_DECIDED ? `${decided} decided held-out filings, under ${MIN_HELD_OUT_DECIDED}` : `held-out precision ${precision}, under ${REQUIRED_PRECISION}`,
+        : decided < MIN_HELD_OUT_DECIDED ? `${decided} decided held-out filings, under ${MIN_HELD_OUT_DECIDED}` : `held-out precision ${test.correct}/${decided}, under ${REQUIRED_PRECISION}`,
     }];
   });
 }

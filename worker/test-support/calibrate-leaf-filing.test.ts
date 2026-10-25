@@ -91,3 +91,24 @@ test('a doubted label is never on target: a filing under a doubted leaf is wrong
   assert.equal(total('wrong'), 2, 'the two filed under the leaf they are doubted for');
   assert.equal(total('unknown'), 3, 'the three filed under the other leaf');
 });
+
+test('an area just under the required precision on its held-out half gets no rule, though the precision rounds to it', () => {
+  // The fixed split puts 21 of these off-target articles in the held-out half and 10 in the calibration half.
+  const offTarget = new Set([...many(23, index => index), 24, 26, 32, 34, 36, 40, 45, 46]);
+  const dataset = {
+    arxiv: [
+      ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
+      ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
+    ],
+    labelled: many(418, index => offTarget.has(index)
+      ? { id: `W${index}`, vector: vector({ 0: 1 }, 1_000 + index), labels: { 'hep-th': 'off' as const } }
+      : { id: `W${index}`, vector: vector({ [index % 2]: 1 }, 1_000 + index), labels: { [index % 2 ? 'quant-ph' : 'hep-th']: 'on' as const } }),
+    areaSamples: [],
+  };
+  const [physics] = calibrateLeafFiling(dataset);
+  assert.ok(physics.calibration && physics.heldOut);
+  assert.deepEqual([physics.calibration.correct, physics.calibration.wrong], [199, 10], 'calibration: 0.952');
+  assert.deepEqual([physics.heldOut.correct, physics.heldOut.wrong], [188, 21], 'held out: 0.8995');
+  assert.equal(physics.enabled, false);
+  assert.match(physics.reason, /188\/209, under 0\.9$/);
+});
