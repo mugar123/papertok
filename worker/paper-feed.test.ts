@@ -836,6 +836,42 @@ for (const [removed, name] of dropped) {
   });
 }
 
+// The reader has seen every paper, so a walk finds none to send and falls back
+// on the page its number names; the corpus has dropped that page's works since
+// the pages left their ids on the kept order. A follow change asks for it, with
+// the order as it was ranked or, 15 minutes on, ranked again after the walk.
+const fallbackOrders: Array<[number, string]> = [[0, 'the order as it was ranked'], [20, 'an order ranked again 20 minutes on']];
+for (const [minutes, order] of fallbackOrders) {
+  test(`a page that goes on with a walk after the corpus dropped the papers its number names sends the next ones from ${order}, though the reader has seen every paper`, async t => {
+    rankingCaches(t);
+    t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+    const { env, db, ask } = store();
+    const papers = recent(45);
+    await ingestPapers(env, papers.map(item => ({ paper: item, lanes: [] })));
+    const request = (page: number, seen: string[], extra: object = {}) => ({ categories: ['cs.CL'], page, pageSize: 15, seen: feedSeenFilter(seen), skipsSeen: true, ...extra });
+    await ask(request(0, []));
+    await ask(request(1, ids(papers.slice(0, 15))));
+    const workId = (arxivId: string) => (db.prepare('SELECT work_id FROM work_keys WHERE key = ?').get(`arxiv:${arxivId}`) as { work_id: number }).work_id;
+    const gone = new Set(papers.slice(0, 15).map(item => workId(item.id)));
+    for (const item of papers.slice(0, 15)) removeWork(db, item.id);
+    t.mock.timers.tick(minutes * 60_000);
+    const continued = request(0, ids(papers), { continues: true });
+    assert.deepEqual(ids((await ask(continued)).papers), ids(papers.slice(15, 30)));
+    assert.deepEqual(ids((await ask(request(0, ids(papers)), 'reader-2')).papers), ids(papers.slice(15, 30)), 'as without the kept order');
+    // The works whose rows the next page reads: the kept order no longer names the dropped ones.
+    const binding = env.PAPER_STORE as D1Database;
+    const prepare = binding.prepare.bind(binding);
+    const read: number[] = [];
+    t.mock.method(binding, 'prepare', (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith('SELECT id, paper, kept_until')) return statement;
+      return { bind: (list: string) => { read.push(...JSON.parse(list) as number[]); return statement.bind(list); } };
+    });
+    assert.deepEqual(ids((await ask(continued)).papers), ids(papers.slice(15, 30)), 'after another follow');
+    assert.deepEqual(read.filter(id => gone.has(id)), []);
+  });
+}
+
 // A walk past 600 seen papers leaves the ids of the first 1,400 ranks on the
 // kept order; the corpus then drops the 400 works after the ones it sent (an
 // eviction, or folds, within the order's two hours), and the next walk lands

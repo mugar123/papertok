@@ -1066,8 +1066,9 @@ async function rankingInputs(lanes: string[], query: FeedQuery) {
  * the reader has not seen. A later page walks on from the first paper the
  * last walk sent, not from the top, and so does a first page that `continues`
  * when the reader's order is kept. When the order holds none, the page is
- * the one `page` names, papers the reader has seen, rather than none; past
- * the last page it is none, as for a page asked by number there. The
+ * the one `page` names, papers the reader has seen, rather than none; it goes
+ * on past the works the corpus has dropped, as a walk does. Past the last
+ * page it is none, as for a page asked by number there. The
  * paper ids the walk reads stay in the kept order, so a later page reads only
  * the ones no page has read.
  */
@@ -1131,7 +1132,7 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
     notable = [...notablePassed.ranks, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
   }
-  const named = query.pastLastPage ? [] : ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
+  const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   const [own, unseen] = await Promise.all([
     query.skipsSeen && query.seen ? unseenRanks(db, ranking, query.seen, query.pageSize, { from: walked }) : null,
     // After the page's own papers, for the app to place: one it leaves out is
@@ -1141,29 +1142,38 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
       ? unseenRanks(db, notable, query.seen, query.notable, { from: notableWalked })
       : null,
   ]);
-  let ranked = own?.unseen.length ? own.unseen : named;
-  const works = await readWorks(db, [...ranked, ...(unseen?.unseen ?? [])].map(candidate => candidate.workId));
+  // A walk with no unseen paper to send falls back on the page `page` names,
+  // walked from its first rank as if the reader had seen nothing, so that page
+  // too goes on past the works the corpus dropped.
+  const walkNamed = () => unseenRanks(db, ranking, null, query.pageSize, { from: query.page * query.pageSize });
+  let fallback = own && !own.unseen.length && !query.pastLastPage ? await walkNamed() : null;
+  const works = await readWorks(db, [...(own ? (fallback ?? own).unseen : named), ...(unseen?.unseen ?? [])].map(candidate => candidate.workId));
   // A walk trusts the ids pages left on the kept order, and a work the corpus
   // has dropped since (merged into another, evicted) has no row: the walk
   // goes on past it, and the order loses its id.
   if (own?.unseen.length && query.seen) {
     await walkPastDropped(db, own, ranking, query.seen, query.pageSize, works);
     // Every unseen paper of the order is gone: the named page, as when it holds none.
-    if (own.unseen.length === 0) (await readWorks(db, named.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
-    ranked = own.unseen.length ? own.unseen : named;
+    if (own.unseen.length === 0 && !query.pastLastPage) {
+      fallback = await walkNamed();
+      (await readWorks(db, fallback.unseen.map(candidate => candidate.workId))).forEach((row, workId) => works.set(workId, row));
+    }
   }
+  if (fallback?.unseen.length) await walkPastDropped(db, fallback, ranking, null, query.pageSize, works);
   if (unseen?.unseen.length && query.seen) await walkPastDropped(db, unseen, notable, query.seen, query.notable, works);
+  const sent = fallback ?? own;
+  const ranked = sent ? sent.unseen : named;
   const walks = {
     walked: own ? passedFirst(ranking, walked, own) : walked,
     notableWalked: unseen ? passedFirst(notable, notableWalked, unseen) : notableWalked,
   };
-  const through = own?.unseen.length ? own.end : (query.page + 1) * query.pageSize;
+  const through = sent?.unseen.length ? sent.end : (query.page + 1) * query.pageSize;
   if (rankedAgain) {
     await cache?.put(cacheKey, { ranks: ranking, served: (query.page + 1) * query.pageSize, final: ranking.length > through, notable, ...walks, rankedAt: now, rankedBy }, keptMs)
       .catch(error => console.warn('Feed ranking not cached', error));
   } else if (kept) {
     const served = Math.max(kept.served, (query.page + 1) * query.pageSize);
-    if (own?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
+    if (own?.read || fallback?.read || unseen?.read || served !== kept.served || walks.walked !== kept.walked || walks.notableWalked !== kept.notableWalked) {
       await cache?.update?.(cacheKey, { ...kept, ranks: ranking, notable, served, ...walks }, keptMs)
         .catch(error => console.warn('Feed ranking not cached', error));
     }
@@ -1239,9 +1249,9 @@ function passedFirst(ranks: Array<RankedCandidate | null>, from: number, walk: A
  * to rank 200, then 600, 1,400, 3,000 and so on, wherever the walk starts, so
  * a reader who has seen a few thousand papers costs a few reads, a whole
  * ranking of up to 12,600 ranks at most six, and pages that each walk on from
- * the last read each id once.
+ * the last read each id once. Without `seen`, the reader has seen none.
  */
-async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, { from = 0, recheck = false } = {}) {
+async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>, seen: BloomFilter | null, wanted: number, { from = 0, recheck = false } = {}) {
   const unseen: RankedCandidate[] = [];
   let end = from;
   let read = false;
@@ -1259,7 +1269,7 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
     for (const candidate of chunk) {
       if (unseen.length === wanted) break;
       end += 1;
-      if (candidate?.paperId && !hasSeenPaper(seen, candidate.paperId)) unseen.push(candidate);
+      if (candidate?.paperId && !(seen && hasSeenPaper(seen, candidate.paperId))) unseen.push(candidate);
     }
   }
   return { unseen, end, read };
@@ -1275,7 +1285,7 @@ async function unseenRanks(db: D1Database, ranks: Array<RankedCandidate | null>,
  * corpus dropped, not one per page of them. A work dropped between that walk
  * and the read of its row leaves the page one paper short.
  */
-async function walkPastDropped(db: D1Database, walk: Awaited<ReturnType<typeof unseenRanks>>, ranks: Array<RankedCandidate | null>, seen: BloomFilter, wanted: number, works: Map<number, WorkRow>) {
+async function walkPastDropped(db: D1Database, walk: Awaited<ReturnType<typeof unseenRanks>>, ranks: Array<RankedCandidate | null>, seen: BloomFilter | null, wanted: number, works: Map<number, WorkRow>) {
   const found = walk.unseen.filter(candidate => works.has(candidate.workId));
   if (found.length === walk.unseen.length) return;
   const more = await unseenRanks(db, ranks, seen, wanted - found.length, { from: walk.end, recheck: true });
