@@ -684,6 +684,50 @@ test('a working paper the series lists after its journal article from a venue la
   assert.deepEqual(lanes.filter(lane => !lane.startsWith('author:')), ['econ.EM', 'series:working-papers']);
 });
 
+// Working papers usually come first: the series stores the NBER version a
+// night or more before the venue lane lists the journal article (ENG-133).
+test('a journal article a venue lane lists a night after its working paper makes the stored working-paper row the reviewed journal row, under the id readers hold', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-23T03:00:00Z') });
+  const nberAbstract = 'The NBER version of this paper compares the efficiency and the pricing accuracy of GMM estimators of linear factor models.';
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, nberAbstract), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const { env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(NBER.id) ? [workingPaper] : sourcesOf(filtersOf(url)).includes(JBES.id) ? [gmmArticle] : [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  const series = categoryLaneJobs().find(job => job.source === 'openalex-series')!;
+  const venue = categoryLaneJobs().find(job => job.source === 'openalex-venues' && job.lane === 'econ.EM')!;
+  const rows = () => db.prepare('SELECT id, paper, liked_until FROM works').all() as Array<{ id: number; paper: string; liked_until: string | null }>;
+
+  await harvestLane(store, series);
+  const [stored] = rows();
+  assert.equal(JSON.parse(stored.paper).workingPaper, true);
+  await keepLiked(binding, [stored.id]);
+  const likedUntil = rows()[0].liked_until;
+  assert.ok(likedUntil);
+
+  t.mock.timers.setTime(Date.parse('2026-10-24T03:00:00Z'));
+  await harvestLane(store, venue);
+  const after = rows();
+  assert.equal(after.length, 1);
+  const paper = JSON.parse(after[0].paper);
+  assert.deepEqual(
+    [after[0].id, paper.id, paper.doi, paper.landingPageUrl, paper.peerReviewed, paper.workingPaper],
+    [stored.id, 'openalex:W7220000104', '10.1080/07350015.2026.2743244', 'https://doi.org/10.1080/07350015.2026.2743244', true, undefined],
+  );
+  assert.equal(after[0].liked_until, likedUntil);
+  // The working paper's answer stays on record under its own DOI.
+  assert.equal(paper.sources.peerReviewedByDoi['10.3386/w35104'], false);
+  const found = await findWorks(binding, ['openalex:W7220000104', 'openalex:W7221756071']);
+  assert.deepEqual([...found.values()], [stored.id, stored.id]);
+
+  // The series listing the working paper again does not put its text back on
+  // the journal row.
+  t.mock.timers.setTime(Date.parse('2026-10-25T03:00:00Z'));
+  await harvestLane(store, series);
+  const again = JSON.parse(rows()[0].paper);
+  assert.deepEqual([again.doi, again.peerReviewed, again.workingPaper], ['10.1080/07350015.2026.2743244', true, undefined]);
+  assert.match(again.abstract, /^Even though a multifactor/);
+});
+
 // The cost: up to five pages of 200 on a lane's first night and three on a
 // later one, one request a page for all of a leaf's sources.
 test("a venue lane reads five pages on its first night and three at most after, and every category lane's first night fits the categories' share", async t => {

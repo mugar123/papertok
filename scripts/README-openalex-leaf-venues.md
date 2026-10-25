@@ -69,13 +69,15 @@ mathematics curator did not record the core flag of its 42 sources.
 
 The nightly run harvests the venue lanes before the working-paper series, so
 a journal article and its working paper listed the same night merge into the
-journal's reviewed row (#198, PAP-85). A working paper stored on an earlier
-night keeps its own row when its journal article arrives and merges into it
-(`PaperBuilder.merge`): the row keeps the working paper's DOI, its unreviewed
-answer and its Working paper tag, and is filed under the venue leaf too.
-Working papers usually appear first, so when both fall within the 90 days this
-is the more likely order, and the journal row stays reviewed only when both
-are listed the same night.
+journal's reviewed row (#198, PAP-85). Working papers usually appear first. A
+working paper stored on an earlier night becomes the journal's reviewed row
+when its journal article arrives (`ingestPapers`, ENG-133): the row takes the
+article's DOI, landing page and answer, drops the Working paper tag, keeps the
+working paper's `false` under its own DOI, and keeps its row and the id readers
+liked or saved it under. The series listing the working paper again does not
+put its title and abstract back on the row. A row stored before ENG-133 that
+already merged its journal article changes only when the venue lane lists
+that article again.
 
 A venue lane's article reaches its leaf's readers. When its area's lane
 (`openalex-areas`) listed it too, `fileAreaPapers` (`worker/leaf-filing.ts`)

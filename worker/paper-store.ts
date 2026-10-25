@@ -366,6 +366,10 @@ async function readWorks(db: D1Database, ids: number[]) {
   return works;
 }
 
+// A working paper says it was not reviewed; its journal article says it was.
+const isWorkingPaperRow = (paper: Partial<Paper>) => paper.workingPaper === true && paper.peerReviewed === false;
+const readsAsReviewed = (paper: Partial<Paper>) => paper.peerReviewed === true && paper.workingPaper !== true;
+
 const sourceRecordKey = (source: string | undefined, id: string) => `${source}|${id.toLowerCase()}`;
 
 // Hugging Face lists arXiv papers with the title and abstract it copied from
@@ -378,8 +382,10 @@ const ownListing = (row: Paper, listed: Map<string, Paper>) => (row.sources?.pri
 // A row's title and abstract are those of the source it was built from, and
 // that source listing it again (a new arXiv version) replaces them, where
 // `merge` only fills a gap. A listing without an abstract keeps the stored one.
+// A row that became its journal article keeps the article's text when the
+// working paper whose id it holds is listed again.
 function withOwnText(row: Paper, own: Paper | undefined): Paper {
-  if (!own) return row;
+  if (!own || (isWorkingPaperRow(own) && !isWorkingPaperRow(row))) return row;
   return hasUsableAIAbstract(own.abstract)
     ? { ...row, title: own.title, abstract: own.abstract }
     : { ...row, title: own.title };
@@ -450,8 +456,16 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
     } else {
       // The stored row is the base: its id is the one readers already hold.
       const base = withOwnText(stored[0].paper, ownListing(stored[0].paper, listed));
-      paper = stored.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other.paper, other.paper.provider || other.paper.sources?.primary), base);
-      paper = PaperBuilder.merge(paper, group.paper, group.paper.provider || group.paper.sources?.primary);
+      const records = [base, ...stored.slice(1).map(other => other.paper), group.paper];
+      // `merge` keeps a working paper's `false` against a journal article
+      // merged into it. Listed the same night, the article comes first and
+      // the row reads reviewed (README-openalex-leaf-venues.md); a working
+      // paper stored earlier gets that order too, and keeps the id readers
+      // liked or saved it under (ENG-133).
+      const journal = isWorkingPaperRow(base) ? records.find(readsAsReviewed) : undefined;
+      const ordered = journal ? [journal, ...records.filter(record => record !== journal)] : records;
+      paper = ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
+      if (journal) paper = { ...paper, id: base.id };
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }
