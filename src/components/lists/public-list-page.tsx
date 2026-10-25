@@ -12,7 +12,7 @@ import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { usePublicPageMetadata } from '../../hooks/use-public-page-metadata.ts';
 import { readPublicList } from '../../services/public-list-service.ts';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/external-url.ts';
-import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/public-navigation.ts';
+import { getPublicListPath, getPublicListUrl, getPublicPaperPath, getShareImage } from '../../utils/public-navigation.ts';
 import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/bounded-read.ts';
 import { shareOrCopyLink } from '../../utils/share-link.ts';
 import { copyText } from '../../utils/clipboard.ts';
@@ -186,9 +186,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }:
         en: 'Public reading list | PaperTok',
       },
       description: publicList?.description || fallbackDescription,
-      imageAlt: {
-        en: 'A public scientific reading list on PaperTok',
-      },
+      image: getShareImage('list'),
       noIndex: status !== 'ready',
     };
   }, [publicList, shareId, status]);
