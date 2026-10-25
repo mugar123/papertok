@@ -1208,7 +1208,8 @@ const LIKED_ARXIV_FEED = `<?xml version="1.0" encoding="UTF-8"?>
 // One anonymous script sending cache-busting queries used to hold every seat
 // a caller could wait for, and the Worker's own lookups (a reader's liked
 // papers, the harvest's arXiv lanes) were refused with it. The allowance per
-// address does not stop it: each address of one IPv6 /64 is a caller of its own.
+// address does not stop it: three misses fit within one address's ten, and a
+// script can spread more over several addresses, such as one IPv6 /64.
 test('anonymous cache-busting arXiv misses leave a seat on the beat for the Worker\'s own lookups', async t => {
   // The last millisecond of a three-second period: three seats lie within the
   // four seconds a caller may wait, the next one a millisecond away, so the
