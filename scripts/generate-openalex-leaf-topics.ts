@@ -98,6 +98,7 @@ function checkReview(leaf: string, value: unknown) {
   const required = [
     `primary_topic.id:${topicIds.join('|')}`, 'type:article',
     `from_publication_date:${firstDay}`, `to_publication_date:${lastDay}`,
+    // The labellers read the abstracts; the lane takes articles without one.
     'has_abstract:true', 'is_retracted:false', 'primary_location.source.is_core:true',
   ];
   const allowedParams = new Set(['filter', 'sort', 'page', 'per-page', 'mailto', 'select']);
