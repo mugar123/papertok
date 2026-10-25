@@ -350,6 +350,19 @@ test('the owner writes the subjects they removed, up to 150, and nobody else doe
   await assertFails(setDoc(doc(asBob(), 'users', ALICE), { deselectedPreferences: ['hep-th'] }, { merge: true }));
 });
 
+test('the owner writes the subjects they added, up to 150, and nobody else does', async () => {
+  // ENG-137: users/{uid}.addedPreferences, written with the preferences by an edit.
+  await reset();
+  await seedLegacyUserDoc();
+  const ref = doc(asAlice(), 'users', ALICE);
+  const list = (n: number) => Array.from({ length: n }, (_, i) => `cat.${i}`);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG', 'econ.EM'], deselectedPreferences: [], addedPreferences: ['econ.EM'] }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { addedPreferences: list(150) }, { merge: true }));
+  await assertFails(setDoc(ref, { addedPreferences: list(151) }, { merge: true }));
+  await assertFails(setDoc(ref, { addedPreferences: 'econ.EM' }, { merge: true }));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE), { addedPreferences: ['econ.EM'] }, { merge: true }));
+});
+
 test('a legacy field cannot be given a new value', async () => {
   // The reason the four keys are frozen rather than simply allowlisted: this
   // document is owner-only, but `email` in it reads like identity, and an

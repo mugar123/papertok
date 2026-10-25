@@ -61,6 +61,8 @@ service cloud.firestore {
         'selectedCategories',
         // Subareas the reader removed from their interests; the feed keeps them out.
         'deselectedPreferences',
+        // Subareas the reader added after onboarding; the feed gives them a head start.
+        'addedPreferences',
         'followedAuthors',
         'followingMigratedAt',
         'readingPreferences',
@@ -144,6 +146,9 @@ service cloud.firestore {
         && (!('deselectedPreferences' in request.resource.data)
           || request.resource.data.deselectedPreferences is list
             && request.resource.data.deselectedPreferences.size() <= 150)
+        && (!('addedPreferences' in request.resource.data)
+          || request.resource.data.addedPreferences is list
+            && request.resource.data.addedPreferences.size() <= 150)
         && (!('followedAuthors' in request.resource.data)
           || request.resource.data.followedAuthors is list
             && request.resource.data.followedAuthors.size() <= 100)

@@ -121,7 +121,7 @@ import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
-import { MAIN_CATEGORIES, activeCategories, interestProgress } from '../utils/interest-memory.ts';
+import { MAIN_CATEGORIES, activeCategories, coldAddedInterests, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
@@ -198,8 +198,8 @@ interface EngagementWindow { cards: number; skips: number; deepReads: number; li
 const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, deepReads: 0, likes: 0, saves: 0 });
 
 // What the scoring reads of the interest memory: the list's plan holds it.
-type ScoringMemory = Partial<Pick<FeedPlan, 'activeCategories'>> & Pick<FeedPlan, 'interestProgress'>;
-const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {} });
+type ScoringMemory = Partial<Pick<FeedPlan, 'activeCategories'>> & Pick<FeedPlan, 'interestProgress' | 'coldAdded'>;
+const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {}, coldAdded: [] });
 
 // `feedRouteActive` says whether the route that actually renders this feed is
 // on screen. The provider wraps every route so its consumers (save modal, PDF
@@ -207,7 +207,7 @@ const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {} }
 // measured in production, a signed-in visit to a public page fired the full
 // source cascade for a feed nobody was looking at.
 export function FeedProvider({ children, feedRouteActive = true }: PropsWithChildren<{ feedRouteActive?: boolean }>) {
-  const { user, userPreferences, deselectedPreferences, followedAuthors } = useAuth();
+  const { user, userPreferences, deselectedPreferences, addedPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState<Paper[]>([]);
   const [abstractWaits, setAbstractWaits] = useState<AbstractWaits>([]);
@@ -229,7 +229,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // the first page, or after a restore): derived from the state it follows,
   // and kept while that state holds so the score cache is not defeated.
   const unplannedMemory = useRef<{
-    signals: ProfileSignals; selected: string[] | null; deselected: string[]; memory: ScoringMemory;
+    signals: ProfileSignals; selected: string[] | null; deselected: string[]; added: string[]; memory: ScoringMemory;
   } | null>(null);
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set<string>());
@@ -571,21 +571,25 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     let memory: ScoringMemory | undefined = feedPlan.current ?? undefined;
     if (!memory) {
       const kept = unplannedMemory.current;
-      if (kept?.signals === signals && kept.selected === userPreferences && kept.deselected === deselectedPreferences) {
+      if (kept?.signals === signals && kept.selected === userPreferences && kept.deselected === deselectedPreferences
+        && kept.added === addedPreferences) {
         memory = kept.memory;
       } else {
+        const input = {
+          selected: userPreferences ?? [],
+          deselected: deselectedPreferences,
+          added: addedPreferences,
+          examples: signals.positiveExamples,
+          exposure: signals.categoryExposure,
+          affinities: signals.categoryAffinities,
+        };
         // With nothing picked there is no subarea to be dormant against.
         memory = !userPreferences?.length ? NO_INTEREST_MEMORY : {
           activeCategories: [...activeCategories(userPreferences, deselectedPreferences)],
-          interestProgress: interestProgress({
-            selected: userPreferences,
-            deselected: deselectedPreferences,
-            examples: signals.positiveExamples,
-            exposure: signals.categoryExposure,
-            affinities: signals.categoryAffinities,
-          }),
+          interestProgress: interestProgress(input),
+          coldAdded: coldAddedInterests(input),
         };
-        unplannedMemory.current = { signals, selected: userPreferences, deselected: deselectedPreferences, memory };
+        unplannedMemory.current = { signals, selected: userPreferences, deselected: deselectedPreferences, added: addedPreferences, memory };
       }
     }
     return applyRecommendationScore(paper, {
@@ -595,13 +599,15 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       conceptAffinities: signals.conceptAffinities,
       authorAffinities: signals.authorAffinities,
       sessionAffinities: signals.sessionAffinities,
+      interactionCount: signals.interactionCount,
       interestProgress: memory.interestProgress,
+      coldAdded: memory.coldAdded,
       activeCategories: memory.activeCategories,
       temporalPreference: temporalPreference.current,
       weights: recommendationWeights.current,
       recentPropsCount
     });
-  }, [userPreferences, deselectedPreferences, followedEntities]);
+  }, [userPreferences, deselectedPreferences, addedPreferences, followedEntities]);
 
   // The card the reader is on: as FeedContainer reports it (on the restore
   // after a reload and on every scroll), the successor markNotInterested
@@ -1173,6 +1179,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     const plan = feedPlan.current = feedPlanFor(feedPlan.current, currentPage, {
       selected: userPreferences,
       deselected: deselectedPreferences,
+      added: addedPreferences,
       examples: profileSignals.current.positiveExamples,
       exposure: profileSignals.current.categoryExposure,
       affinities: profileSignals.current.categoryAffinities,
@@ -1473,7 +1480,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }
     }
   }, [
-    userPreferences, deselectedPreferences, page, papers, loading, feedMode,
+    userPreferences, deselectedPreferences, addedPreferences, page, papers, loading, feedMode,
     profileSignals, isKnownPaper, markPaperViewed,
     calculateAndAttachScore, followedEntities, recommendationProfileReady,
   ]);
@@ -2293,6 +2300,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     conceptAffinities: { ...profileSignals.current.conceptAffinities },
     authorAffinities: { ...profileSignals.current.authorAffinities },
     sessionAffinities: { ...profileSignals.current.sessionAffinities },
+    interactionCount: profileSignals.current.interactionCount,
     temporalPreference: temporalPreference.current,
     weights: { ...recommendationWeights.current },
     notInterestedIds: Array.from(notInterestedIdsRef.current),

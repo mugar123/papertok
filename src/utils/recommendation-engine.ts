@@ -13,12 +13,12 @@ export interface RecommendationContext {
   weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[] | null; followedAuthors?: string[];
   followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>;
   conceptAffinities?: Record<string, number>; authorAffinities?: Record<string, number>;
-  sessionAffinities?: Record<string, number>;
+  sessionAffinities?: Record<string, number>; interactionCount?: number;
   // How far the app has learned each selected subarea, from 0 to 1 (see
-  // interestProgress), and the subareas the reader's picks leave active. The
-  // learned signals score only a paper of an active subarea; without the list
-  // none is dormant.
-  interestProgress?: Record<string, number>; activeCategories?: string[];
+  // interestProgress), the added picks it is still learning (coldAddedInterests)
+  // and the subareas the reader's picks leave active. The learned signals
+  // score only a paper of an active subarea; without the list none is dormant.
+  interestProgress?: Record<string, number>; coldAdded?: string[]; activeCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
@@ -35,12 +35,14 @@ interface ShuffleOptions<T> {
 // citations/classics (<=25) > personal and graph candidates, diversity,
 // recency. A card without an abstract loses missingAbstract: it reaches the
 // page when the pool has little else or a follow carries it. The
-// selected-category preference fades to minPreferenceShare of itself as the
-// app learns that subarea (interestProgress): what the reader does takes over
-// from what they picked, one interest at a time.
+// selected-category preference fades to minPreferenceShare of itself over
+// preferenceFadeInteractions interactions: what the reader does takes over
+// from what they picked at sign-up. An interest the reader added later fades
+// instead as the app learns that subarea (interestProgress).
 export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   selectedCategory: 100,
   relatedSelectedCategory: 80,
+  preferenceFadeInteractions: 300,
   minPreferenceShare: 0.3,
   followedAuthor: 50,
   followedTopic: 35,
@@ -347,6 +349,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const sessionAffinities = context.sessionAffinities || {};
   const temporalPreference = context.temporalPreference || 0;
   const interestProgress = context.interestProgress || {};
+  const coldAdded = context.coldAdded || [];
 
   const categorySignals = getPaperCategorySignals(paper);
   const primaryCategory = categorySignals[0] || '';
@@ -362,10 +365,17 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const chosenDirectly = [primaryCategory, ...leavesForOpenAlexTopic(paper.primaryTopic), ...(paper._fetchedFor || [])].filter(picked);
   const chosenAsRelated = allCategories.filter(picked);
   const matched = chosenDirectly.length > 0 ? chosenDirectly : chosenAsRelated;
-  // The share of the preference left is the progress of the most-learned
-  // subarea the card matches.
-  const progress = Math.max(0, ...matched.map(category => interestProgress[category] || 0));
-  const preferenceShare = Math.max(weights.minPreferenceShare, 1 - progress * (1 - weights.minPreferenceShare));
+  // An added pick the app is still learning keeps the share its progress
+  // leaves; any other pick fades with the reader's interactions. A card that
+  // matches several weighs by the most-learned.
+  const establishedShare = Math.max(
+    weights.minPreferenceShare,
+    1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
+  );
+  const shareOf = (category: string) => (coldAdded.includes(category)
+    ? Math.max(weights.minPreferenceShare, 1 - (interestProgress[category] || 0) * (1 - weights.minPreferenceShare))
+    : establishedShare);
+  const preferenceShare = Math.min(1, ...matched.map(shareOf));
   // What the reader learned about a subject they left, or never picked, stays
   // stored but ranks nothing here. A follow and the card's own signals still do.
   const isActive = !context.activeCategories
@@ -462,7 +472,9 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     conceptAffinities: context.conceptAffinities,
     authorAffinities: context.authorAffinities,
     sessionAffinities: context.sessionAffinities,
+    interactionCount: context.interactionCount,
     interestProgress: context.interestProgress,
+    coldAdded: context.coldAdded,
     activeCategories: context.activeCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
@@ -531,7 +543,9 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.conceptAffinities === context.conceptAffinities
     && cached.authorAffinities === context.authorAffinities
     && cached.sessionAffinities === context.sessionAffinities
+    && cached.interactionCount === context.interactionCount
     && cached.interestProgress === context.interestProgress
+    && cached.coldAdded === context.coldAdded
     && cached.activeCategories === context.activeCategories
     && cached.temporalPreference === context.temporalPreference
     && cached.explicitNow === context.now) {

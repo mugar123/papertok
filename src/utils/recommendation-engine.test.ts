@@ -4,7 +4,6 @@ import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   FEED_SHUFFLE_POOL_CAP,
-  mergeRecommendationWeights,
   nearbyExplorationCategories,
   paperAffinitySignals,
   pickExplorationCategories,
@@ -59,12 +58,25 @@ test('selected user category dominates neutral papers', () => {
   assert.match(score.explanation, /preference/);
 });
 
-// ENG-137: how much a pick weighs depends on how much the app has learned of
-// that subarea or area, not on how many cards the reader has touched in all.
-test('a selected interest weighs fully while new and gives way as the app learns it', () => {
+// ENG-137, ruling R13: an established pick (made at onboarding, or learned)
+// gives way as the reader's interactions accumulate, as it always did.
+test('an established pick gives way to learned behaviour as interactions accumulate', () => {
+  const paper = { id: 'paper-a', primaryCategory: 'cs.AI', published: '2026-07-05T00:00:00Z' };
+  const preferenceAfter = (interactionCount: number) => scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['cs.AI'], interestProgress: { 'cs.AI': 0 }, coldAdded: [], interactionCount,
+  }).preference;
+
+  assert.equal(preferenceAfter(0), 100);
+  assertClose(preferenceAfter(210), 30);
+  assert.equal(preferenceAfter(5000), 30, 'never below a third of the original weight');
+});
+
+// An interest the reader added weighs by how much the app has learned of that
+// subarea or area, not by how many cards the reader has touched in all.
+test('an added interest weighs fully while new and gives way as the app learns it', () => {
   const paper = { id: 'paper-a', primaryCategory: 'econ.EM', published: '2026-07-05T00:00:00Z' };
   const preferenceAt = (progress: number) => scorePaperForRecommendation(paper, {
-    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': progress },
+    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': progress }, coldAdded: ['econ.EM'], interactionCount: 5000,
   }).preference;
 
   assert.equal(preferenceAt(0), 100);
@@ -72,11 +84,11 @@ test('a selected interest weighs fully while new and gives way as the app learns
   assertClose(preferenceAt(1), 30, 'never below a third of the original weight');
 });
 
-test('a card weighs by the most-learned subarea it matches, however it matches', () => {
+test('a card weighs by the most-learned added subarea it matches, however it matches', () => {
   const progress = { 'econ.EM': 1, 'econ.GN': 0 };
   const preference = (paper: Parameters<typeof scorePaperForRecommendation>[0]) => scorePaperForRecommendation(
     { published: '2026-07-05T00:00:00Z', ...paper },
-    { now: NOW, userPreferences: ['econ.EM', 'econ.GN'], interestProgress: progress },
+    { now: NOW, userPreferences: ['econ.EM', 'econ.GN'], interestProgress: progress, coldAdded: ['econ.EM', 'econ.GN'] },
   ).preference;
 
   assertClose(preference({ id: 'a', primaryCategory: 'econ.EM' }), 30);
@@ -87,15 +99,14 @@ test('a card weighs by the most-learned subarea it matches, however it matches',
   assert.equal(preference({ id: 'f', primaryCategory: 'math.ST' }), 0);
 });
 
-test('a weight configuration that still names the retired fade is tolerated and changes nothing', () => {
-  const paper = { id: 'paper-a', primaryCategory: 'econ.EM', published: '2026-07-05T00:00:00Z' };
-  const stored = JSON.parse('{"preferenceFadeInteractions": 10, "selectedCategory": 50}');
-  const weights = mergeRecommendationWeights(stored);
+test('a card that matches an established pick and an added one weighs by the most-learned', () => {
+  const paper = { id: 'paper-a', primaryCategory: 'econ.EM', allCategories: ['econ.EM', 'cs.AI'], _fetchedFor: ['cs.AI'], published: '2026-07-05T00:00:00Z' };
+  const preference = (interactionCount: number) => scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['econ.EM', 'cs.AI'], interestProgress: { 'econ.EM': 0, 'cs.AI': 0 }, coldAdded: ['econ.EM'], interactionCount,
+  }).preference;
 
-  assert.equal(weights.selectedCategory, 50);
-  assert.equal(scorePaperForRecommendation(paper, {
-    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': 0 }, weights: stored,
-  }).preference, 50);
+  assert.equal(preference(0), 100);
+  assertClose(preference(150), 50);
 });
 
 // ENG-137: a subject the reader left (or an area they never picked) keeps its
@@ -177,7 +188,7 @@ test('cards that name no leaf stay active when their area, topic or request is',
 // validates it by the references it holds, so memory that changes after the
 // first pass must not be read back as the old one.
 const RERANKED_CARDS = 3;
-function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'later') => Pick<RecommendationContext, 'interestProgress' | 'activeCategories'>) {
+function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'later') => Pick<RecommendationContext, 'interestProgress' | 'activeCategories' | 'coldAdded' | 'interactionCount'>) {
   const cards = Array.from({ length: RERANKED_CARDS }, (_, index): Partial<Paper> => ({ id: `card-${index}`, primaryCategory: category, published: '2026-07-05T00:00:00Z' }));
   const userPreferences = ['econ.EM'];
   const categoryAffinities = { [category]: 50 };
@@ -195,8 +206,25 @@ function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'late
 
 test('a re-rank scores with the progress it holds now, not the one an earlier call cached', () => {
   const memory = {
-    first: { interestProgress: { 'econ.EM': 0 } },
-    later: { interestProgress: { 'econ.EM': 1 } },
+    first: { interestProgress: { 'econ.EM': 0 }, coldAdded: ['econ.EM'] },
+    later: { interestProgress: { 'econ.EM': 1 }, coldAdded: ['econ.EM'] },
+  };
+  assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
+});
+
+test('a re-rank scores with the cold-added picks it holds now, not the ones an earlier call cached', () => {
+  const progress = { 'econ.EM': 0 };
+  const memory = {
+    first: { interestProgress: progress, coldAdded: ['econ.EM'], interactionCount: 300 },
+    later: { interestProgress: progress, coldAdded: [], interactionCount: 300 },
+  };
+  assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
+});
+
+test('a re-rank scores with the interaction count it holds now, not the one an earlier call cached', () => {
+  const memory = {
+    first: { interactionCount: 0 },
+    later: { interactionCount: 300 },
   };
   assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
 });
@@ -674,6 +702,7 @@ function readerWhoLiked(liked: Array<Parameters<typeof paperAffinitySignals>[0] 
     categoryAffinities: signals.categoryAffinities,
     conceptAffinities: signals.conceptAffinities,
     authorAffinities: signals.authorAffinities,
+    interactionCount: signals.interactionCount,
   };
 }
 

@@ -8,7 +8,7 @@ import { fetchCorpusPage } from '../services/paper-store-service.ts';
 import { getFollowedTopicCategoryIds } from '../services/topic-retrieval-service.ts';
 
 const memory = (input: Partial<InterestMemoryInput>): InterestMemoryInput => ({
-  selected: [], deselected: [], examples: [], exposure: {}, affinities: {}, ...input,
+  selected: [], deselected: [], added: [], examples: [], exposure: {}, affinities: {}, ...input,
 });
 
 const examples = (category: string, count: number) =>
@@ -57,7 +57,7 @@ test('a followed topic fills only the follows request, ranked by the examples of
 });
 
 test("a list's later pages ask by the groups its first page planned", async () => {
-  const atReset = memory({ selected: ['quant-ph', 'econ.EM'], examples: examples('quant-ph', 10) });
+  const atReset = memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: examples('quant-ph', 10) });
   // Economics showed the cards that make it a learned area before page 1.
   const atPageOne = { ...atReset, exposure: shown({ 'econ.EM': 60 }) };
   const replanned = feedPlanFor(null, 0, atPageOne).groups;
@@ -76,16 +76,18 @@ test("a list's later pages ask by the groups its first page planned", async () =
   assert.deepEqual(feedPlanFor(null, 2, atPageOne).groups, replanned);
 });
 
-test('the scoring of a list reads the progress and active subareas its first page planned', () => {
-  const atReset = memory({ selected: ['quant-ph', 'econ.EM'], deselected: ['hep-th'], examples: examples('quant-ph', 10) });
+test('the scoring of a list reads the progress, active and cold-added subareas its first page planned', () => {
+  const atReset = memory({ selected: ['quant-ph', 'econ.EM'], deselected: ['hep-th'], added: ['econ.EM'], examples: examples('quant-ph', 10) });
   const plan = feedPlanFor(null, 0, atReset);
 
   assert.equal(plan.interestProgress['quant-ph'], 1);
   assert.equal(plan.interestProgress['econ.EM'], 0);
   assert.ok(plan.activeCategories.includes('quant-ph') && !plan.activeCategories.includes('hep-th'));
+  assert.deepEqual(plan.coldAdded, ['econ.EM']);
 
   // The cards the reader sees afterwards move the memory, not the list's plan.
   const later = feedPlanFor(plan, 1, { ...atReset, exposure: shown({ 'econ.EM': 60 }) });
   assert.equal(later.interestProgress, plan.interestProgress);
   assert.equal(later.activeCategories, plan.activeCategories);
+  assert.equal(later.coldAdded, plan.coldAdded);
 });

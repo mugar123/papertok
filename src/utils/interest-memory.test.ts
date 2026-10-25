@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
 import type { CategoryExposure, PositiveExample } from './interaction-profile.ts';
-import { activeCategories, interestProgress, nextDeselected, planInterestGroups, type InterestMemoryInput } from './interest-memory.ts';
+import { activeCategories, coldAddedInterests, interestProgress, nextAdded, nextDeselected, planInterestGroups, type InterestMemoryInput } from './interest-memory.ts';
 
 const leaves = (area: string) => Object.keys(CATEGORIES[area].subcategories);
 
@@ -13,7 +13,7 @@ const shown = (counts: Record<string, number>) =>
   Object.fromEntries(Object.entries(counts).map(([category, count]): [string, CategoryExposure] => [category, { shown: count, engaged: 0 }]));
 
 const memory = (input: Partial<InterestMemoryInput>): InterestMemoryInput => ({
-  selected: [], deselected: [], examples: [], exposure: {}, affinities: {}, ...input,
+  selected: [], deselected: [], added: [], examples: [], exposure: {}, affinities: {}, ...input,
 });
 
 const areaOf = (category: string) => Object.keys(CATEGORIES).find(area => category in CATEGORIES[area].subcategories);
@@ -26,41 +26,41 @@ test('an active area is every subarea of a selected area except the deselected o
   assert.deepEqual([...active].sort(), leaves('physics').filter(leaf => leaf !== 'quant-ph').sort());
 });
 
-test('a new area weighs twice a learned one', () => {
-  const input = memory({ selected: ['quant-ph', 'econ.EM'], examples: examples('quant-ph', 10) });
+test('an added area weighs twice the established interests', () => {
+  const input = memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: examples('quant-ph', 10) });
   assert.deepEqual(weightsByArea(input), { physics: 1, econ: 2 });
 });
 
-test('a learned area takes its share of the examples and the rest go unused', () => {
-  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'econ.EM'], examples: examples('quant-ph', 10) }));
+test('the established group takes its share of the examples and the rest go unused', () => {
+  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'econ.EM'], added: ['econ.EM'], examples: examples('quant-ph', 10) }));
   const physics = plan.groups.find(group => group.categories.includes('quant-ph'))!;
   // 24 × 1/3: the eight newest.
   assert.deepEqual(physics.positiveIds, examples('quant-ph', 8).map(example => example.id));
 });
 
-test("an area's weight falls from 2 to 1 with its examples or the cards it showed", () => {
-  const weight = (input: Partial<InterestMemoryInput>) => planInterestGroups(memory({ selected: ['econ.EM'], ...input })).groups[0].weight;
+test("an added area's weight falls from 2 to 1 with its examples or the cards it showed", () => {
+  const weight = (input: Partial<InterestMemoryInput>) => planInterestGroups(memory({ selected: ['econ.EM'], added: ['econ.EM'], ...input })).groups[0].weight;
   assert.equal(weight({ examples: examples('econ.EM', 4) }), 1.5);
   assert.equal(weight({ examples: examples('econ.EM', 8) }), 1);
   assert.equal(weight({ exposure: shown({ 'econ.EM': 60 }) }), 1);
 });
 
-test('a new subarea of a learned area is a group of its own until it learns', () => {
+test('a subarea added to an established area is a group of weight 1 until it learns', () => {
   const learned = examples('quant-ph', 10);
-  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'hep-th'], examples: learned }));
+  const plan = planInterestGroups(memory({ selected: ['quant-ph', 'hep-th'], added: ['hep-th'], examples: learned }));
   assert.deepEqual(plan.groups.map(group => ({ categories: group.categories, weight: group.weight })), [
     { categories: ['quant-ph'], weight: 1 },
     { categories: ['hep-th'], weight: 1 },
   ]);
   assert.deepEqual([...plan.groups[1].exampleCategories].sort(), [...leaves('physics')].sort());
 
-  const joined = planInterestGroups(memory({ selected: ['quant-ph', 'hep-th'], examples: [...examples('hep-th', 3), ...learned] }));
+  const joined = planInterestGroups(memory({ selected: ['quant-ph', 'hep-th'], added: ['hep-th'], examples: [...examples('hep-th', 3), ...learned] }));
   assert.equal(joined.groups.length, 1);
   assert.ok(joined.groups[0].categories.includes('hep-th'));
 });
 
-test("a subarea's progress is its own while it has a group, and its area's after", () => {
-  const input = memory({ selected: ['quant-ph', 'hep-th'], examples: [...examples('hep-th', 1), ...examples('quant-ph', 10)] });
+test("an added subarea's progress is its own while it has a group, and its area's after", () => {
+  const input = memory({ selected: ['quant-ph', 'hep-th'], added: ['hep-th'], examples: [...examples('hep-th', 1), ...examples('quant-ph', 10)] });
   const progress = interestProgress(input);
   assert.equal(progress['quant-ph'], 1);
   assert.ok(Math.abs(progress['hep-th'] - 1 / 3) < 1e-9);
@@ -96,44 +96,47 @@ test('an area selected again comes back with the examples it kept', () => {
 test('every group keeps a lane when the lanes run short', () => {
   const plan = planInterestGroups(memory({
     selected: [...leaves('physics'), ...leaves('econ')],
+    added: ['econ.GN', 'econ.TH'],
     examples: examples('econ.EM', 8),
   }));
-  const econ = plan.groups.filter(group => group.categories.some(category => category.startsWith('econ.')));
   const lanes = new Set(plan.groups.flatMap(group => group.categories));
-  assert.equal(econ.length, 3);
-  assert.ok(econ.every(group => group.categories.length >= 1));
+  assert.deepEqual(plan.groups.slice(1).map(group => group.categories), [['econ.GN'], ['econ.TH']]);
+  assert.equal(plan.groups[0].categories.length, 8);
   assert.equal(lanes.size, 10);
 });
 
 test('spare lanes follow the weights, largest remainder first', () => {
   const plan = planInterestGroups(memory({
     selected: [...leaves('physics'), ...leaves('math')],
+    added: leaves('physics'),
     examples: examples('math', 8),
   }));
-  // Eight spare lanes at 2:1 are 5.33 and 2.67: the larger remainder takes the last one.
+  // Eight spare lanes at 1:2 are 2.67 and 5.33: the larger remainder takes the last one.
   assert.deepEqual(plan.groups.map(group => ({ lanes: group.categories.length, weight: group.weight })), [
-    { lanes: 6, weight: 2 },
     { lanes: 4, weight: 1 },
+    { lanes: 6, weight: 2 },
   ]);
 });
 
 test('lanes a group cannot use go to the others', () => {
   const plan = planInterestGroups(memory({
     selected: ['quant-ph', 'hep-th', ...leaves('math')],
+    added: ['quant-ph', 'hep-th'],
     examples: examples('math', 8),
   }));
-  assert.deepEqual(plan.groups.map(group => group.categories.length), [2, 8]);
+  assert.deepEqual(plan.groups.map(group => group.categories.length), [8, 2]);
 });
 
 test('with more groups than lanes the heaviest stay, and ties keep the order of the selection', () => {
   const plan = planInterestGroups(memory({
     selected: ['quant-ph', 'econ.GN', 'econ.EM', 'econ.TH'],
+    added: ['quant-ph', 'econ.GN', 'econ.EM'],
     examples: examples('econ.TH', 8),
   }), { maxLanes: 2 });
   assert.deepEqual(plan.groups.map(group => group.categories), [['quant-ph'], ['econ.GN']]);
 });
 
-test('a learned area whose subareas are all new is one group of weight 1', () => {
+test('an established area whose subareas are all unread is one group of weight 1', () => {
   const four = leaves('physics').slice(0, 4);
   const plan = planInterestGroups(memory({ selected: four, exposure: shown(Object.fromEntries(four.map(leaf => [leaf, 15]))) }));
   assert.deepEqual(plan.groups.map(group => ({ categories: [...group.categories].sort(), weight: group.weight })), [
@@ -173,20 +176,21 @@ test('a retired leaf shares the group of its current area', () => {
   assert.deepEqual(plan.groups.map(group => [...group.categories].sort()), [['bio.gen', 'q-bio.NC']]);
 });
 
-test('a retired leaf stays in its area group once the area is learned', () => {
-  const plan = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen', 'bio.mol'], examples: examples('bio.gen', 8) }));
+test('a retired leaf stays in the established group beside an added subarea', () => {
+  const plan = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen', 'bio.mol'], added: ['bio.mol'], examples: examples('bio.gen', 8) }));
   assert.deepEqual(plan.groups.map(group => [...group.categories].sort()), [['bio.gen', 'q-bio.NC'], ['bio.mol']]);
 });
 
 test("a retired leaf's own exposure does not teach its area, but its examples do", () => {
-  const weight = (input: Partial<InterestMemoryInput>) => planInterestGroups(memory({ selected: ['q-bio.NC'], ...input })).groups[0].weight;
-  assert.equal(weight({ exposure: shown({ 'q-bio.NC': 60 }) }), 2);
-  assert.equal(weight({ examples: examples('q-bio.NC', 4) }), 1.5);
+  const progress = (input: Partial<InterestMemoryInput>) => interestProgress(memory({ selected: ['q-bio.NC'], ...input }))['q-bio.NC'];
+  assert.equal(progress({ exposure: shown({ 'q-bio.NC': 60 }) }), 0);
+  assert.equal(progress({ examples: examples('q-bio.NC', 4) }), 0.5);
 });
 
 test("a retired leaf's examples teach its area, never the leaf alone", () => {
-  const plan = planInterestGroups(memory({ selected: ['q-bio.NC', 'bio.gen'], examples: examples('q-bio.NC', 8) }));
-  assert.deepEqual(plan.groups.map(group => ({ categories: [...group.categories].sort(), weight: group.weight })), [
+  const input = memory({ selected: ['q-bio.NC', 'bio.gen'], examples: examples('q-bio.NC', 8) });
+  assert.deepEqual(interestProgress(input), { 'q-bio.NC': 1, 'bio.gen': 1 });
+  assert.deepEqual(planInterestGroups(input).groups.map(group => ({ categories: [...group.categories].sort(), weight: group.weight })), [
     { categories: ['bio.gen', 'q-bio.NC'], weight: 1 },
   ]);
 });
@@ -210,4 +214,106 @@ test('nextDeselected keeps earlier removals first and never repeats one', () => 
     nextDeselected(['a', 'b', 'c'], ['c'], ['z', 'b']),
     ['z', 'b', 'a'],
   );
+});
+
+// ENG-137, ruling R13: only what the reader adds by editing their interests
+// starts with priority; what they picked at onboarding is established.
+const groupsOf = (input: InterestMemoryInput) =>
+  planInterestGroups(input).groups.map(group => ({ categories: [...group.categories].sort(), weight: group.weight }));
+
+test('a learned area beside onboarding picks it rarely reads is one group of weight 1', () => {
+  const plan = planInterestGroups(memory({
+    selected: ['cs.AI', 'cs.LG', 'cs.RO', 'cs.HC'],
+    examples: examples('cs.LG', 22),
+  }));
+  assert.equal(plan.groups.length, 1);
+  assert.equal(plan.groups[0].weight, 1);
+  assert.deepEqual([...plan.groups[0].categories].sort(), ['cs.AI', 'cs.HC', 'cs.LG', 'cs.RO']);
+});
+
+test('an added area with no examples is a group of weight 2 beside the established one', () => {
+  assert.deepEqual(groupsOf(memory({
+    selected: ['quant-ph', 'hep-th', 'econ.EM', 'econ.GN'],
+    added: ['econ.EM', 'econ.GN'],
+    examples: examples('quant-ph', 10),
+  })), [
+    { categories: ['hep-th', 'quant-ph'], weight: 1 },
+    { categories: ['econ.EM', 'econ.GN'], weight: 2 },
+  ]);
+});
+
+test('an added area joins the established group once it has 8 examples', () => {
+  const econ = examples('econ.EM', 8);
+  const plan = planInterestGroups(memory({
+    selected: ['quant-ph', 'econ.EM'],
+    added: ['econ.EM'],
+    examples: [...econ, ...examples('quant-ph', 10)],
+  }));
+  assert.deepEqual(plan.groups.map(group => ({ categories: [...group.categories].sort(), weight: group.weight })), [
+    { categories: ['econ.EM', 'quant-ph'], weight: 1 },
+  ]);
+  assert.ok(econ.every(example => plan.groups[0].positiveIds.includes(example.id)));
+});
+
+test('a reader who moves from physics to economics asks for economics alone', () => {
+  assert.deepEqual(groupsOf(memory({
+    selected: ['econ.EM', 'econ.GN'],
+    added: ['econ.EM', 'econ.GN'],
+    deselected: ['quant-ph', 'hep-th'],
+    examples: [...examples('quant-ph', 12), ...examples('hep-th', 12)],
+  })), [
+    { categories: ['econ.EM', 'econ.GN'], weight: 2 },
+  ]);
+});
+
+test('physics selected again with what it learned is established, with its examples', () => {
+  const physics = [...examples('quant-ph', 12), ...examples('hep-th', 12)];
+  const input = memory({
+    selected: ['econ.EM', 'quant-ph', 'hep-th'],
+    added: ['econ.EM', 'quant-ph', 'hep-th'],
+    examples: physics,
+  });
+  const plan = planInterestGroups(input);
+  assert.deepEqual(groupsOf(input), [
+    { categories: ['hep-th', 'quant-ph'], weight: 1 },
+    { categories: ['econ.EM'], weight: 2 },
+  ]);
+  assert.ok(plan.groups[0].positiveIds.length > 0);
+  assert.ok(plan.groups[0].positiveIds.every(id => physics.some(example => example.id === id)));
+  assert.deepEqual(coldAddedInterests(input), ['econ.EM']);
+});
+
+test('the established group draws its examples from every active area', () => {
+  const plan = planInterestGroups(memory({
+    selected: ['quant-ph', 'econ.EM', 'cs.RO'],
+    added: ['cs.RO'],
+    examples: [...examples('econ.EM', 1), ...examples('quant-ph', 1)],
+  }));
+  assert.deepEqual(plan.groups[0].positiveIds, ['econ.EM-0', 'quant-ph-0']);
+  assert.deepEqual([...plan.groups[0].exampleCategories].sort(), [...activeCategories(['quant-ph', 'econ.EM', 'cs.RO'], [])].sort());
+});
+
+test('the cold-added interests are the added ones still learning', () => {
+  assert.deepEqual(coldAddedInterests(memory({
+    selected: ['quant-ph', 'hep-th', 'econ.EM'],
+    added: ['hep-th', 'econ.EM'],
+    examples: examples('quant-ph', 10),
+  })).sort(), ['econ.EM', 'hep-th']);
+  assert.deepEqual(coldAddedInterests(memory({ selected: ['quant-ph'], examples: examples('quant-ph', 1) })), []);
+});
+
+test('nextAdded keeps what the reader adds now', () => {
+  assert.deepEqual(nextAdded(['quant-ph'], ['quant-ph', 'econ.EM'], []), ['econ.EM']);
+});
+
+test('nextAdded never counts an onboarding pick the reader keeps', () => {
+  assert.deepEqual(nextAdded(['quant-ph', 'hep-th'], ['hep-th', 'quant-ph'], []), []);
+});
+
+test('nextAdded keeps earlier additions still selected, first, and drops removed ones', () => {
+  assert.deepEqual(nextAdded(['a', 'b', 'c'], ['b', 'c', 'd'], ['a', 'b']), ['b', 'd']);
+});
+
+test('nextAdded never repeats an id', () => {
+  assert.deepEqual(nextAdded(['a'], ['a', 'b', 'b'], ['a']), ['a', 'b']);
 });
