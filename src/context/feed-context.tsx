@@ -122,7 +122,7 @@ import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
-import { MAIN_CATEGORIES, activeCategories, coldAddedInterests, interestProgress } from '../utils/interest-memory.ts';
+import { MAIN_CATEGORIES, coldAddedInterests, dormantCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
@@ -199,7 +199,7 @@ interface EngagementWindow { cards: number; skips: number; deepReads: number; li
 const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, deepReads: 0, likes: 0, saves: 0 });
 
 // What the scoring reads of the interest memory: the list's plan holds it.
-type ScoringMemory = Partial<Pick<FeedPlan, 'activeCategories'>> & Pick<FeedPlan, 'interestProgress' | 'coldAdded'>;
+type ScoringMemory = Partial<Pick<FeedPlan, 'dormantCategories'>> & Pick<FeedPlan, 'interestProgress' | 'coldAdded'>;
 const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {}, coldAdded: [] });
 
 // `feedRouteActive` says whether the route that actually renders this feed is
@@ -585,9 +585,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           exposure: signals.categoryExposure,
           affinities: signals.categoryAffinities,
         };
-        // With nothing picked there is no subarea to be dormant against.
+        // With nothing picked the memory has nothing to weigh, and nothing sleeps.
         memory = !userPreferences?.length ? NO_INTEREST_MEMORY : {
-          activeCategories: [...activeCategories(userPreferences, deselectedPreferences)],
+          dormantCategories: dormantCategories(userPreferences, deselectedPreferences),
           interestProgress: interestProgress(input),
           coldAdded: coldAddedInterests(input),
         };
@@ -604,7 +604,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       interactionCount: signals.interactionCount,
       interestProgress: memory.interestProgress,
       coldAdded: memory.coldAdded,
-      activeCategories: memory.activeCategories,
+      dormantCategories: memory.dormantCategories,
       temporalPreference: temporalPreference.current,
       weights: recommendationWeights.current,
       recentPropsCount

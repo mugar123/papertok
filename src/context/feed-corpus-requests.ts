@@ -3,7 +3,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { InterestGroup, InterestMemoryInput } from '../utils/interest-memory.ts';
 
 import { corpusPositiveIds } from '../services/paper-store-service.ts';
-import { activeCategories, coldAddedInterests, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
+import { coldAddedInterests, dormantCategories, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
 
 // How many papers the followed entities add to a page.
@@ -11,8 +11,8 @@ export const FOLLOWED_PER_PAGE = 6;
 
 /**
  * What the pages of one For You list rank by (ENG-137): the reader's interest
- * groups, every example they rank by, the active subareas, how far the app
- * has learned each interest and which added ones it is still learning. The
+ * groups, every example they rank by, what the reader removed, how far the
+ * app has learned each interest and which added ones it is still learning. The
  * scoring of the list's cards reads the last three, so they hold still with
  * the groups.
  */
@@ -20,7 +20,7 @@ export interface FeedPlan {
   groups: InterestGroup[];
   unassignedPositiveIds: string[];
   positiveIds: string[];
-  activeCategories: string[];
+  dormantCategories: string[];
   interestProgress: Record<string, number>;
   coldAdded: string[];
 }
@@ -40,7 +40,7 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
     groups,
     unassignedPositiveIds,
     positiveIds: corpusPositiveIds(groups, unassignedPositiveIds),
-    activeCategories: [...activeCategories(input.selected, input.deselected)],
+    dormantCategories: dormantCategories(input.selected, input.deselected),
     interestProgress: interestProgress(input),
     coldAdded: coldAddedInterests(input),
   };

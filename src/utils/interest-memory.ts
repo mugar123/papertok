@@ -61,10 +61,10 @@ function chosenIds(selected: string[], dormant: Set<string>) {
 
 /**
  * Every subarea of an area with a selected subarea, less the deselected
- * ones, and any selected id retired from the taxonomy. A deselected subarea
- * sleeps: it keeps its examples but leaves the feed, its exploration included.
+ * ones, and any selected id retired from the taxonomy: what exploration may
+ * offer, and what an added area learns and ranks by.
  */
-export function activeCategories(selected: string[], deselected: string[]) {
+export function selectedAreaSubareas(selected: string[], deselected: string[]) {
   const dormant = dormantIds(selected, deselected);
   const chosen = chosenIds(selected, dormant);
   const areas = new Set<string | null>(chosen.map(areaKeyForCategory));
@@ -72,6 +72,27 @@ export function activeCategories(selected: string[], deselected: string[]) {
     ...getAllLeafCategories().filter(leaf => areas.has(leaf.area) && !dormant.has(leaf.id)).map(leaf => leaf.id),
     ...chosen.filter(id => !getCategoryArea(id)),
   ]);
+}
+
+/**
+ * What sleeps (ENG-137, R18): the subareas the reader removed and has not
+ * selected again, and the areas such a removal leaves with no selected
+ * subarea. Only a removal sleeps: what the reader learned of an area they
+ * never picked ranks as it always did. A sleeping subarea keeps its examples.
+ */
+export function dormantCategories(selected: string[], deselected: string[]) {
+  const dormant = dormantIds(selected, deselected);
+  const selectedAreas = new Set(chosenIds(selected, dormant).map(areaKeyForCategory));
+  const areas = [...dormant].map(areaKeyForCategory).filter((area): area is NonNullable<typeof area> => area !== null && !selectedAreas.has(area));
+  return [...new Set([...dormant, ...areas])];
+}
+
+/**
+ * Whether a category sleeps, given dormantCategories: a subarea in it, or a
+ * category with no leaf (an area key, an unlisted arXiv archive) whose area is.
+ */
+export function isDormantCategory(category: string, dormant: readonly string[]) {
+  return dormant.includes(category) || (!getCategoryArea(category) && dormant.includes(areaKeyForCategory(category) ?? ''));
 }
 
 /**
@@ -105,21 +126,24 @@ const progressOf = (examples: number, shown: number, learnedExamples: number, le
  */
 function readInterests({ selected, deselected, added, examples, exposure, affinities }: InterestMemoryInput) {
   const dormant = dormantIds(selected, deselected);
+  const sleeping = dormantCategories(selected, deselected);
   const chosen = chosenIds(selected, dormant);
-  const active = activeCategories(chosen, [...dormant]);
+  const active = selectedAreaSubareas(chosen, [...dormant]);
   const addedIds = new Set(added);
   const areaKeys = [...new Set(chosen.map(id => areaKeyForCategory(id)!))];
   const shownIn = (category: string) => exposure[category]?.shown ?? 0;
   const subareaProgress = (subarea: string) =>
     progressOf(examples.filter(example => example.category === subarea).length, shownIn(subarea), SUBAREA_LEARNED_EXAMPLES, SUBAREA_LEARNED_SHOWN);
   // An example filed under the area itself (a working paper's 'econ') or an
-  // unlisted archive counts for the area, never for one subarea.
-  const examplesOf = (areas: Set<string>) =>
-    examples.filter(example => areas.has(areaKeyForCategory(example.category) ?? '') && !dormant.has(example.category)).map(example => example.id);
+  // unlisted archive counts for the area, never for one subarea. A sleeping
+  // one counts for nothing.
+  const awake = examples.filter(example => !isDormantCategory(example.category, sleeping));
+  const examplesOf = (areas: (area: string) => boolean) =>
+    awake.filter(example => areas(areaKeyForCategory(example.category) ?? '')).map(example => example.id);
 
   const progress: Record<string, number> = {};
   const established = new Set<string>();
-  const establishedAreas = new Set<string>();
+  const coldAreas = new Set<string>();
   const cold: PlannedGroup[] = [];
   for (const area of areaKeys) {
     const retired = chosen.filter(id => areaKeyForCategory(id) === area && !getCategoryArea(id));
@@ -127,13 +151,14 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
     // A retired id has no exposure of its own; its examples count for the area.
     // A card that names no subarea (an area lane's article) is shown under the area itself.
     const shown = activeLeaves.filter(leaf => !retired.includes(leaf)).reduce((total, leaf) => total + shownIn(leaf), shownIn(area));
-    const areaProgress = progressOf(examplesOf(new Set([area])).length, shown, AREA_LEARNED_EXAMPLES, AREA_LEARNED_SHOWN);
+    const areaProgress = progressOf(examplesOf(key => key === area).length, shown, AREA_LEARNED_EXAMPLES, AREA_LEARNED_SHOWN);
     const subareas = rankPreferences(chosen.filter(id => areaKeyForCategory(id) === area), affinities);
     const coldGroup = (categories: string[], weight: number, ownSubarea: boolean): PlannedGroup =>
-      ({ categories, exampleCategories: activeLeaves, positiveIds: examplesOf(new Set([area])), weight, ownSubarea });
+      ({ categories, exampleCategories: activeLeaves, positiveIds: examplesOf(key => key === area), weight, ownSubarea });
 
     if (areaProgress < 1 && subareas.every(subarea => addedIds.has(subarea))) {
       cold.push(coldGroup(subareas, NEW_AREA_WEIGHT - (NEW_AREA_WEIGHT - 1) * areaProgress, false));
+      coldAreas.add(area);
       for (const subarea of subareas) progress[subarea] = areaProgress;
       continue;
     }
@@ -149,16 +174,18 @@ function readInterests({ selected, deselected, added, examples, exposure, affini
         progress[subarea] = own;
       } else {
         established.add(subarea);
-        establishedAreas.add(area);
         progress[subarea] = areaProgress;
       }
     }
   }
 
+  // The established group ranks by every area but the cold-added ones, as the
+  // feed did before groups: an area the reader never picked included, and
+  // nothing they removed.
   const groups: PlannedGroup[] = established.size === 0 ? cold : [{
     categories: rankPreferences(chosen.filter(id => established.has(id)), affinities),
-    exampleCategories: [...active],
-    positiveIds: examplesOf(establishedAreas),
+    exampleCategories: getAllLeafCategories().map(leaf => leaf.id).filter(leaf => !dormant.has(leaf)),
+    positiveIds: examplesOf(area => area !== '' && !coldAreas.has(area)),
     weight: 1,
     ownSubarea: false,
   }, ...cold];

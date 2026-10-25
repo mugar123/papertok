@@ -3,8 +3,8 @@ import type { FollowInput } from './following.ts';
 
 import { hasUsableAIAbstract } from './ai-explanation-access.ts';
 import { areaKeyForCategory, leavesForOpenAlexTopic } from './area-accent.ts';
-import { getAllLeafCategories, getCategoryArea } from '../data/category-taxonomy.ts';
-import { activeCategories } from './interest-memory.ts';
+import { getAllLeafCategories } from '../data/category-taxonomy.ts';
+import { isDormantCategory, selectedAreaSubareas } from './interest-memory.ts';
 import { usableOpenAlexConcepts } from './open-alex-concepts.ts';
 
 export type RecommendationWeights = { [K in keyof typeof DEFAULT_RECOMMENDATION_WEIGHTS]: number };
@@ -16,9 +16,9 @@ export interface RecommendationContext {
   sessionAffinities?: Record<string, number>; interactionCount?: number;
   // How far the app has learned each selected subarea, from 0 to 1 (see
   // interestProgress), the added picks it is still learning (coldAddedInterests)
-  // and the subareas the reader's picks leave active. The learned signals
-  // score only a paper of an active subarea; without the list none is dormant.
-  interestProgress?: Record<string, number>; coldAdded?: string[]; activeCategories?: string[];
+  // and what the reader removed (dormantCategories). The learned signals score
+  // nothing of a dormant paper; without the list none is.
+  interestProgress?: Record<string, number>; coldAdded?: string[]; dormantCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
@@ -306,39 +306,22 @@ const NEUTRAL_RECENT_PROPS = Object.freeze({
   preprint: 0, published: 0, journal: 0, conference: 0,
 });
 
-// The areas with a subarea in the list, per list: a score asks once per paper.
-const activeAreas = new WeakMap<string[], Set<string>>();
-
-function activeAreasOf(activeCategories: string[]) {
-  let areas = activeAreas.get(activeCategories);
-  if (!areas) {
-    areas = new Set(activeCategories.map(category => areaKeyForCategory(category)).filter((area): area is NonNullable<typeof area> => area !== null));
-    activeAreas.set(activeCategories, areas);
-  }
-  return areas;
-}
-
-// Whether a card belongs to one of the reader's active subareas even when it
-// names no leaf of its own: a working paper is filed under its area ('econ'),
-// an arXiv paper under a category the taxonomy has no leaf for ('math.AC',
-// active with its archive's area), an area-lane article under OpenAlex
-// concept names, and a specialist source's card carries only the leaf it was
-// fetched for. A card of the main
-// corpus request is active by construction: its lanes are the active ones.
-// Only evidence of an area makes a card dormant: one that says nothing of its
-// area (a followed author's article filed under concept names) stays active,
-// as the Worker ranks a like with no area for every group.
-function isInActiveSubarea(paper: Partial<Paper>, categories: string[], activeCategories: string[]) {
-  const areas = activeAreasOf(activeCategories);
-  const areaCategories = categories.filter(category => areaKeyForCategory(category));
-  const topicLeaves = leavesForOpenAlexTopic(paper.primaryTopic);
-  const fetchedFor = paper._fetchedFor ?? [];
-  return paper._type === 'exploit'
-    || areaCategories.some(category => activeCategories.includes(category)
-      || (!getCategoryArea(category) && areas.has(areaKeyForCategory(category)!)))
-    || topicLeaves.some(leaf => activeCategories.includes(leaf))
-    || fetchedFor.some(category => activeCategories.includes(category))
-    || (areaCategories.length === 0 && topicLeaves.length === 0 && fetchedFor.length === 0);
+// Whether a card belongs only to what the reader removed (ENG-137, R18). Its
+// evidence of an area is every category the taxonomy places (a leaf, an area
+// key such as a working paper's 'econ', an arXiv category with no leaf), the
+// leaves its OpenAlex topic stands for and the categories it was fetched for.
+// It sleeps when it has evidence and all of it sleeps. A card of the main
+// corpus request never does: its lanes are the reader's picks. One that says
+// nothing of its area (a followed author's article filed under concept names)
+// stays awake, as the Worker ranks a like with no area for every group.
+function isDormant(paper: Partial<Paper>, categories: string[], dormant: string[]) {
+  if (paper._type === 'exploit') return false;
+  const evidence = [
+    ...categories.filter(category => areaKeyForCategory(category)),
+    ...leavesForOpenAlexTopic(paper.primaryTopic),
+    ...(paper._fetchedFor ?? []),
+  ];
+  return evidence.length > 0 && evidence.every(category => isDormantCategory(category, dormant));
 }
 
 // Everything a score needs that does NOT move with the recent window: the
@@ -389,9 +372,9 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const preferenceShare = Math.min(1, ...(chosenAsPrimary.length > 0 ? chosenAsPrimary : matched).map(shareOf));
   // What the reader learned about a subject they left, or never picked, stays
   // stored but ranks nothing here. A follow and the card's own signals still do.
-  const isActive = !context.activeCategories
+  const isActive = !context.dormantCategories?.length
     || chosenDirectly.length > 0
-    || isInActiveSubarea(paper, categorySignals, context.activeCategories);
+    || !isDormant(paper, categorySignals, context.dormantCategories);
 
   const rawAffinity = categorySignals.reduce((sum, category, index) => {
     const multiplier = index === 0 ? 1 : 0.35;
@@ -486,7 +469,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     interactionCount: context.interactionCount,
     interestProgress: context.interestProgress,
     coldAdded: context.coldAdded,
-    activeCategories: context.activeCategories,
+    dormantCategories: context.dormantCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
 
@@ -557,7 +540,7 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.interactionCount === context.interactionCount
     && cached.interestProgress === context.interestProgress
     && cached.coldAdded === context.coldAdded
-    && cached.activeCategories === context.activeCategories
+    && cached.dormantCategories === context.dormantCategories
     && cached.temporalPreference === context.temporalPreference
     && cached.explicitNow === context.now) {
     return cached;
@@ -758,13 +741,14 @@ function sampleBeta(alpha: number, beta: number, random: () => number) {
  * offered; one that keeps holding the reader keeps coming back.
  */
 /**
- * The leaves exploration chooses from: the reader's active subareas
- * (activeCategories) they have not picked, less any they have turned away
- * from. A subarea they removed sleeps, and is not explored either.
+ * The leaves exploration chooses from: the subareas of the reader's areas
+ * (selectedAreaSubareas) they have not picked, less any they have turned away
+ * from. A subarea they removed sleeps, and is not explored either; an area
+ * they never picked is not explored.
  */
 export function nearbyExplorationCategories(preferences: string[], affinities: Record<string, number> = {}, deselected: string[] = []) {
   const leaves = new Set(getAllLeafCategories().map(leaf => leaf.id));
-  return [...activeCategories(preferences, deselected)]
+  return [...selectedAreaSubareas(preferences, deselected)]
     .filter(id => leaves.has(id) && !preferences.includes(id) && (affinities[id] || 0) >= -2);
 }
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES } from '../data/categories.ts';
 import type { CategoryExposure, PositiveExample } from './interaction-profile.ts';
-import { activeCategories, coldAddedInterests, interestProgress, nextAdded, nextDeselected, planInterestGroups, type InterestMemoryInput } from './interest-memory.ts';
+import { coldAddedInterests, selectedAreaSubareas, interestProgress, nextAdded, nextDeselected, planInterestGroups, type InterestMemoryInput } from './interest-memory.ts';
 
 const leaves = (area: string) => Object.keys(CATEGORIES[area].subcategories);
 
@@ -21,8 +21,8 @@ const areaOf = (category: string) => Object.keys(CATEGORIES).find(area => catego
 const weightsByArea = (input: InterestMemoryInput) =>
   Object.fromEntries(planInterestGroups(input).groups.map(group => [areaOf(group.categories[0]), group.weight]));
 
-test('an active area is every subarea of a selected area except the deselected ones', () => {
-  const active = activeCategories(['hep-th'], ['quant-ph']);
+test('the subareas of the selected areas are all of them except the deselected ones', () => {
+  const active = selectedAreaSubareas(['hep-th'], ['quant-ph']);
   assert.deepEqual([...active].sort(), leaves('physics').filter(leaf => leaf !== 'quant-ph').sort());
 });
 
@@ -159,7 +159,7 @@ test('examples with no area fill the room the groups leave', () => {
     examples: [...examples('', 2, 'article'), ...examples('quant-ph', 2), ...examples('cs.RO', 2)],
   }));
   assert.deepEqual(plan.unassignedPositiveIds, ['article-0', 'article-1']);
-  assert.deepEqual(plan.groups[0].positiveIds, ['quant-ph-0', 'quant-ph-1']);
+  assert.deepEqual(plan.groups[0].positiveIds, ['quant-ph-0', 'quant-ph-1', 'cs.RO-0', 'cs.RO-1']);
 });
 
 // q-bio.NC left the taxonomy on 2026-07-11, and accounts still hold it.
@@ -168,7 +168,7 @@ test('a selected leaf retired from the taxonomy still asks for its area', () => 
   assert.equal(plan.groups.length, 1);
   assert.ok(plan.groups[0].categories.includes('q-bio.NC'));
   assert.ok(plan.groups[0].exampleCategories.includes('bio.neuro'));
-  assert.ok(activeCategories(['q-bio.NC'], []).has('q-bio.NC'));
+  assert.ok(selectedAreaSubareas(['q-bio.NC'], []).has('q-bio.NC'));
 });
 
 test('a retired leaf shares the group of its current area', () => {
@@ -283,14 +283,14 @@ test('physics selected again with what it learned is established, with its examp
   assert.deepEqual(coldAddedInterests(input), ['econ.EM']);
 });
 
-test('the established group draws its examples from every active area', () => {
+test('the established group draws its examples from every area', () => {
   const plan = planInterestGroups(memory({
     selected: ['quant-ph', 'econ.EM', 'cs.RO'],
     added: ['cs.RO'],
     examples: [...examples('econ.EM', 1), ...examples('quant-ph', 1)],
   }));
   assert.deepEqual(plan.groups[0].positiveIds, ['econ.EM-0', 'quant-ph-0']);
-  assert.deepEqual([...plan.groups[0].exampleCategories].sort(), [...activeCategories(['quant-ph', 'econ.EM', 'cs.RO'], [])].sort());
+  assert.deepEqual([...plan.groups[0].exampleCategories].sort(), Object.keys(CATEGORIES).flatMap(leaves).sort());
 });
 
 test('the cold-added interests are the added ones still learning', () => {
@@ -323,7 +323,7 @@ test('nextAdded never repeats an id', () => {
 test('a subarea both selected and deselected stays in a group and active', () => {
   const input = memory({ selected: ['quant-ph', 'hep-th'], deselected: ['hep-th'] });
   assert.ok(planInterestGroups(input).groups.some(group => group.categories.includes('hep-th')));
-  assert.ok(activeCategories(input.selected, input.deselected).has('hep-th'));
+  assert.ok(selectedAreaSubareas(input.selected, input.deselected).has('hep-th'));
   assert.ok('hep-th' in interestProgress(input));
 });
 
@@ -387,4 +387,26 @@ test('an added area learns from the cards and examples recorded under its own ke
   const eightExamples = chemistry({ examples: [...examples('chem', 8), ...examples('cs.RO', 10)] });
   assert.deepEqual(groupsOf(eightExamples), [{ categories: ['chem.org', 'cs.RO'], weight: 1 }]);
   assert.equal(interestProgress(eightExamples)['chem.org'], 1);
+});
+
+// ENG-137, ruling R18: only what the reader deselected sleeps. The established
+// group ranks by examples from every area, as on main, but none removed.
+test('the established group ranks by every area but what the reader removed', () => {
+  const plan = planInterestGroups(memory({
+    selected: ['cs.LG'],
+    deselected: ['quant-ph', 'hep-th'],
+    examples: [...examples('chem.org', 2), ...examples('hep-th', 2), ...examples('physics', 2), ...examples('cs.LG', 2)],
+  }));
+  assert.equal(plan.groups.length, 1);
+  const [established] = plan.groups;
+  assert.ok(leaves('chem').every(leaf => established.exampleCategories.includes(leaf)), 'an area never picked');
+  assert.ok(established.exampleCategories.includes('gr-qc'), 'a subarea never picked beside removed ones');
+  assert.ok(!established.exampleCategories.includes('hep-th') && !established.exampleCategories.includes('quant-ph'));
+  assert.deepEqual(established.positiveIds, [...examples('chem.org', 2), ...examples('cs.LG', 2)].map(example => example.id));
+});
+
+test('a cold group ranks by its own area, less what the reader removed', () => {
+  const plan = planInterestGroups(memory({ selected: ['cs.LG', 'quant-ph'], deselected: ['hep-th'], added: ['quant-ph'] }));
+  const physics = plan.groups.find(group => group.categories.includes('quant-ph'))!;
+  assert.deepEqual([...physics.exampleCategories].sort(), leaves('physics').filter(leaf => leaf !== 'hep-th').sort());
 });
