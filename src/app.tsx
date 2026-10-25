@@ -203,13 +203,14 @@ function AppContent() {
   // A sign-in that went through this tab and came back without a session
   // (auth-context.tsx) finds its dialog open again, as a closed popup leaves it,
   // with the destination it carried still waiting. Once: the flag clears on
-  // the next attempt, and a session remounts this component. The dialog
-  // mounts anew, so it counts one more auth_prompt_view (reason 'default',
-  // whichever door the trip left from) in the prompt-view to auth_result funnel.
+  // the next attempt, and a session remounts this component. The restored
+  // dialog sends no auth_prompt_view: the reader's own open counted one.
   const [reopenedSignIn, setReopenedSignIn] = useState(false)
+  const [authPromptRestored, setAuthPromptRestored] = useState(false)
   if (reopenSignIn && !user && !reopenedSignIn) {
     setReopenedSignIn(true)
     setAuthPromptOpen(true)
+    setAuthPromptRestored(true)
   }
   useEffect(() => {
     if (!authArrivalKey) return
@@ -565,8 +566,10 @@ function AppContent() {
         {authPromptOpen && (
           <AuthPrompt
             reason={authPromptReason}
+            restored={authPromptRestored}
             onClose={() => {
               setAuthPromptOpen(false)
+              setAuthPromptRestored(false)
               // The next door — a bounce off a protected route opens this
               // without a reason — must not inherit this one's.
               setAuthPromptReason('default')
