@@ -64,8 +64,8 @@ test('an abstract that mentions support or thanks later on is still an abstract'
   assert.equal(isPlausibleAbstract('Acknowledging uncertainty in climate projections changes how planners weigh adaptation options.'), true);
 });
 
-// A dash joins a compound ("Funding-liquidity"); it separates a heading from
-// its text only with a space after it.
+// A hyphen joins a compound ("Funding-liquidity"), so it separates a heading
+// from its text only with a space after it; an en or em dash never joins one.
 test('an abstract that opens with a compound starting like a heading word is still an abstract', () => {
   for (const text of [
     'Funding-liquidity spirals amplify shocks to dealer balance sheets; we document this channel using repo data from 2008 to 2020.',
@@ -75,6 +75,13 @@ test('an abstract that opens with a compound starting like a heading word is sti
     assert.equal(isPlausibleAbstract(text), true, text);
   }
   assert.equal(isPlausibleAbstract('Funding - the authors gratefully thank the Swiss National Science Foundation for support.'), false);
+  for (const text of [
+    'Funding—This work was supported by the Swiss National Science Foundation under grant 1234.',
+    'Acknowledgments—We thank the editor and two anonymous referees for helpful comments.',
+    'Disclaimer–The views expressed are those of the authors and not of the IMF or its board.',
+  ]) {
+    assert.equal(isPlausibleAbstract(text), false, text);
+  }
 });
 
 // "Supported by" or "funded by" opens a funding note, whoever the funder is; a

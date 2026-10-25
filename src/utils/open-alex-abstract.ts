@@ -49,7 +49,7 @@ const MIN_ABSTRACT_LENGTH = 40;
 // from" a survey stays an abstract.
 const FOOTNOTE_MARKER = /^(?:[*†‡§]+|\d{1,2}(?=\s))\s*/;
 const FRONT_MATTER_OPENINGS = [
-  /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*(?:[:.]|[-–—](?=\s))/i,
+  /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*(?:[:.–—]|-(?=\s))/i,
   /^acknowledge?ments?\s+(?:we|i|the|this|thanks?|financial|funding|support)\b/i,
   /^(?:\S+\s+){0,12}gratefully acknowledg(?:es?|ed)\b/i,
   /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
