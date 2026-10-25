@@ -21,9 +21,10 @@ type = "CompiledWasm"
 globs = ["**/*.wasm"]
 fallthrough = false
 
+# Match source assets and the hashed filenames emitted for the no-bundle upload.
 [[rules]]
 type = "Data"
-globs = ["**/share-card-assets/*.ttf", "**/share-card-assets/*.png"]
+globs = ["**/*.ttf", "**/*.png"]
 fallthrough = false
 
 # Cloudflare provisions DNS and TLS for the custom domain in this account.
