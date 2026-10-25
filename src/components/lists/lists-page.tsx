@@ -1177,7 +1177,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }: { onOpenPdf: (pape
     apply: setLists,
     onFailed: (removeError) => {
       console.error('Error removing paper from custom list:', removeError);
-      toastError('The paper could not be removed', { description: 'Try again.' });
+      // Firestore retries transient failures itself and rejects only a write
+      // that cannot succeed (list deleted elsewhere, rule refusal), so
+      // "Try again" would fail the same way.
+      toastError('The paper could not be removed', { description: 'Reload the page to see this list as it is saved.' });
     },
   });
 
