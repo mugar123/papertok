@@ -199,6 +199,20 @@ The labelled articles come from topic-lane samples and venue reviews, not from
 the area lanes, so even after the exclusions they may be easier to place than
 an area lane's articles.
 
+One way an article leaves its area lane is mirrored only in part.
+`fileAreaPapers` removes it whenever the same work sits in a leaf lane of the
+area, and works merge on keys such as the arXiv ID. An article whose arXiv
+version the corpus holds under a leaf of the area, from the harvest of papers
+first submitted in the last 90 days, is therefore gone before similarity is
+tried, and another source's leaf lane can hold a work the same way. The
+calibration leaves such an article out only when its preprint is one of a
+centroid's 60 papers. The dataset has no preprint dates, so a check outside the
+committed command used the month in the arXiv ID: 37 of the 286 physics
+articles scored, 7 of 119 in mathematics, 2 of 191 in `cs`, 1 of 45 in `ai` and
+1 of 109 in economics have an arXiv version from July 2026 or later, which the
+harvest can hold. Leaving those out, or those from May 2026 on or from August
+2026 on, still gives no area a rule, so no decision above changes.
+
 ## Reproduce
 
 The labels are in the repository: all 2,785 (OpenAlex work, leaf) pairs of the
