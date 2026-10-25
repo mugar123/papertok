@@ -4,12 +4,15 @@ import {
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   FEED_SHUFFLE_POOL_CAP,
+  mergeRecommendationWeights,
   nearbyExplorationCategories,
   paperAffinitySignals,
   pickExplorationCategories,
   scorePaperForRecommendation,
   trimScoredCandidatePool,
 } from './recommendation-engine.ts';
+import type { Paper } from '../models/paper.ts';
+import type { RecommendationContext } from './recommendation-engine.ts';
 import {
   createEmptyInteractionProfile,
   readProfileSignals,
@@ -18,6 +21,10 @@ import {
 } from './interaction-profile.ts';
 
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
+
+// The preference share is a product of floats: 1 - 1 * 0.7 is not exactly 0.3.
+const assertClose = (actual: number, expected: number, message?: string) =>
+  assert.ok(Math.abs(actual - expected) < 1e-9, `${message ?? 'expected'} ${expected}, got ${actual}`);
 
 test('corpus semantics affect the client score independently and stay bounded', () => {
   const score = (value?: number) => scorePaperForRecommendation({ id: 'candidate', _semanticScore: value }, { now: NOW });
@@ -52,15 +59,129 @@ test('selected user category dominates neutral papers', () => {
   assert.match(score.explanation, /preference/);
 });
 
-test('the selected categories give way to learned behaviour as interactions accumulate', () => {
-  const paper = { id: 'paper-a', primaryCategory: 'cs.AI', published: '2026-07-05T00:00:00Z' };
-  const preferenceAfter = (interactionCount: number) => scorePaperForRecommendation(paper, {
-    now: NOW, userPreferences: ['cs.AI'], interactionCount,
+// ENG-137: how much a pick weighs depends on how much the app has learned of
+// that subarea or area, not on how many cards the reader has touched in all.
+test('a selected interest weighs fully while new and gives way as the app learns it', () => {
+  const paper = { id: 'paper-a', primaryCategory: 'econ.EM', published: '2026-07-05T00:00:00Z' };
+  const preferenceAt = (progress: number) => scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': progress },
   }).preference;
 
-  assert.equal(preferenceAfter(0), 100);
-  assert.equal(preferenceAfter(150), 50);
-  assert.equal(preferenceAfter(5000), 30, 'never below a third of the original weight');
+  assert.equal(preferenceAt(0), 100);
+  assertClose(preferenceAt(0.5), 65);
+  assertClose(preferenceAt(1), 30, 'never below a third of the original weight');
+});
+
+test('a card weighs by the most-learned subarea it matches, however it matches', () => {
+  const progress = { 'econ.EM': 1, 'econ.GN': 0 };
+  const preference = (paper: Parameters<typeof scorePaperForRecommendation>[0]) => scorePaperForRecommendation(
+    { published: '2026-07-05T00:00:00Z', ...paper },
+    { now: NOW, userPreferences: ['econ.EM', 'econ.GN'], interestProgress: progress },
+  ).preference;
+
+  assertClose(preference({ id: 'a', primaryCategory: 'econ.EM' }), 30);
+  assert.equal(preference({ id: 'b', primaryCategory: 'econ.GN' }), 100);
+  assertClose(preference({ id: 'c', primaryCategory: 'econ.EM', allCategories: ['econ.EM', 'econ.GN'] }), 30, 'the primary category decides when it is picked');
+  assertClose(preference({ id: 'd', primaryCategory: 'math.ST', allCategories: ['math.ST', 'econ.EM', 'econ.GN'] }), 24, 'a cross-list is related, and weighs by the most-learned subarea it names');
+  assertClose(preference({ id: 'e', primaryCategory: 'Nitrogen', _fetchedFor: ['econ.EM'] }), 30, 'a card fetched for a pick weighs as that pick');
+  assert.equal(preference({ id: 'f', primaryCategory: 'math.ST' }), 0);
+});
+
+test('a weight configuration that still names the retired fade is tolerated and changes nothing', () => {
+  const paper = { id: 'paper-a', primaryCategory: 'econ.EM', published: '2026-07-05T00:00:00Z' };
+  const stored = JSON.parse('{"preferenceFadeInteractions": 10, "selectedCategory": 50}');
+  const weights = mergeRecommendationWeights(stored);
+
+  assert.equal(weights.selectedCategory, 50);
+  assert.equal(scorePaperForRecommendation(paper, {
+    now: NOW, userPreferences: ['econ.EM'], interestProgress: { 'econ.EM': 0 }, weights: stored,
+  }).preference, 50);
+});
+
+// ENG-137: a subject the reader left (or an area they never picked) keeps its
+// examples and affinities, but they must not rank anything.
+test('learned signals score nothing outside the active subareas, follows still do', () => {
+  const hepTh = {
+    id: 'hep-th-1',
+    primaryCategory: 'hep-th',
+    published: '2026-07-05T00:00:00Z',
+    authors: [{ id: 'https://openalex.org/A1', name: 'A. Physicist' }],
+    openAlex: { concepts: [{ id: 'C42', score: 1 }] },
+    _semanticScore: 0.6,
+  };
+  const physicsFollow = { type: 'topic' as const, canonicalId: 'hep-th', displayName: 'High energy physics theory' };
+  const context = {
+    now: NOW,
+    userPreferences: ['econ.EM'],
+    interestProgress: { 'econ.EM': 0 },
+    categoryAffinities: { 'hep-th': 80 },
+    conceptAffinities: { C42: 80 },
+    authorAffinities: { A1: 40 },
+    sessionAffinities: { 'hep-th': 40, C42: 40 },
+    followedEntities: [physicsFollow],
+  };
+
+  const dormant = scorePaperForRecommendation(hepTh, { ...context, activeCategories: ['econ.EM', 'econ.GN'] });
+  assert.deepEqual(
+    [dormant.affinity, dormant.semantic, dormant.corpusSimilarity, dormant.learnedAuthor, dormant.sessionInterest],
+    [0, 0, 0, 0, 0],
+  );
+  assert.equal(dormant.followBoost, 35);
+
+  const active = scorePaperForRecommendation(hepTh, { ...context, activeCategories: ['econ.EM', 'hep-th'] });
+  assert.equal(active.affinity, 80);
+  assert.equal(active.semantic, 40);
+  assert.equal(active.corpusSimilarity, 60);
+  assert.equal(active.learnedAuthor, 30);
+  assert.equal(active.sessionInterest, 30);
+  assert.equal(active.followBoost, 35);
+
+  // Without a list of active subareas nothing is dormant: scoring as before.
+  assert.equal(scorePaperForRecommendation(hepTh, context).affinity, 80);
+});
+
+test('a card fetched for a pick is active though it names no category of its own', () => {
+  const card = { id: 'pmid:1', primaryCategory: 'Nitrogen', _fetchedFor: ['econ.EM'], published: '2026-07-05T00:00:00Z' };
+  const score = scorePaperForRecommendation(card, {
+    now: NOW, userPreferences: ['econ.EM'], activeCategories: ['econ.EM'], sessionAffinities: { Nitrogen: 40 },
+  });
+  assert.equal(score.sessionInterest, 30);
+});
+
+// The feed's context is rebuilt on every call, and one re-rank's cache
+// validates it by the references it holds, so memory that changes after the
+// first pass must not be read back as the old one.
+const RERANKED_CARDS = 3;
+function lastCardOfRerank(category: string, memoryOnPass: (pass: 'first' | 'later') => Pick<RecommendationContext, 'interestProgress' | 'activeCategories'>) {
+  const cards = Array.from({ length: RERANKED_CARDS }, (_, index): Partial<Paper> => ({ id: `card-${index}`, primaryCategory: category, published: '2026-07-05T00:00:00Z' }));
+  const userPreferences = ['econ.EM'];
+  const categoryAffinities = { [category]: 50 };
+  const first = memoryOnPass('first');
+  const later = memoryOnPass('later');
+  let scored = 0;
+  return diversifiedWeightedShuffle(cards, {
+    maxConsecutiveCategory: 10,
+    random: () => 0,
+    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, {
+      now: NOW, userPreferences, categoryAffinities, recentPropsCount, ...(scored++ < RERANKED_CARDS ? first : later),
+    }),
+  }).at(-1)!._debugScore!;
+}
+
+test('a re-rank scores with the progress it holds now, not the one an earlier call cached', () => {
+  const memory = {
+    first: { interestProgress: { 'econ.EM': 0 } },
+    later: { interestProgress: { 'econ.EM': 1 } },
+  };
+  assertClose(lastCardOfRerank('econ.EM', pass => memory[pass]).preference!, 30);
+});
+
+test('a re-rank scores with the active subareas it holds now, not the ones an earlier call cached', () => {
+  const memory = {
+    first: { activeCategories: ['hep-th'] },
+    later: { activeCategories: ['econ.EM'] },
+  };
+  assert.equal(lastCardOfRerank('hep-th', pass => memory[pass]).affinity, 0);
 });
 
 // A specialist source's card names no category of the taxonomy, only its own
@@ -528,7 +649,6 @@ function readerWhoLiked(liked: Array<Parameters<typeof paperAffinitySignals>[0] 
     categoryAffinities: signals.categoryAffinities,
     conceptAffinities: signals.conceptAffinities,
     authorAffinities: signals.authorAffinities,
-    interactionCount: signals.interactionCount,
   };
 }
 

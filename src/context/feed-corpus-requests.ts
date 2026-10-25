@@ -3,7 +3,7 @@ import type { FollowEntity } from '../utils/following.ts';
 import type { InterestGroup, InterestMemoryInput } from '../utils/interest-memory.ts';
 
 import { corpusPositiveIds } from '../services/paper-store-service.ts';
-import { activeCategories, planInterestGroups } from '../utils/interest-memory.ts';
+import { activeCategories, interestProgress, planInterestGroups } from '../utils/interest-memory.ts';
 import { PAGE_SIZE } from './feed-pagination.ts';
 
 // How many papers the followed entities add to a page.
@@ -11,13 +11,16 @@ export const FOLLOWED_PER_PAGE = 6;
 
 /**
  * What the pages of one For You list rank by (ENG-137): the reader's interest
- * groups, every example they rank by, and the active subareas.
+ * groups, every example they rank by, the active subareas and how far the app
+ * has learned each interest. The scoring of the list's cards reads the last
+ * two, so they hold still with the groups.
  */
 export interface FeedPlan {
   groups: InterestGroup[];
   unassignedPositiveIds: string[];
   positiveIds: string[];
   activeCategories: string[];
+  interestProgress: Record<string, number>;
 }
 
 type SharedRequest = Pick<CorpusPageRequest, 'page' | 'order' | 'negativeIds' | 'excludedIds'>;
@@ -36,6 +39,7 @@ export function feedPlanFor(current: FeedPlan | null, page: number, input: Inter
     unassignedPositiveIds,
     positiveIds: corpusPositiveIds(groups, unassignedPositiveIds),
     activeCategories: [...activeCategories(input.selected, input.deselected)],
+    interestProgress: interestProgress(input),
   };
 }
 

@@ -121,7 +121,7 @@ import { resolveWithin, settleWithin } from '../utils/async-timing.ts';
 import { classifyFeedPublications, dropUnreachedPublications } from '../services/feed-publication-service.ts';
 import { isFeedPublication } from '../services/feed-publication-rules.ts';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feed-interactions.ts';
-import { MAIN_CATEGORIES } from '../utils/interest-memory.ts';
+import { MAIN_CATEGORIES, activeCategories, interestProgress } from '../utils/interest-memory.ts';
 import { FOLLOWED_PER_PAGE, feedPlanFor, followedCorpusRequest, mainCorpusRequest, type FeedPlan } from './feed-corpus-requests.ts';
 import { fetchICiteMetrics } from '../services/i-cite-service.ts';
 import { mergeICiteEnrichment } from '../services/i-cite-records.ts';
@@ -197,6 +197,10 @@ const ENGAGEMENT_WINDOW_CARDS = 20;
 interface EngagementWindow { cards: number; skips: number; deepReads: number; likes: number; saves: number }
 const emptyEngagementWindow = (): EngagementWindow => ({ cards: 0, skips: 0, deepReads: 0, likes: 0, saves: 0 });
 
+// What the scoring reads of the interest memory: the list's plan holds it.
+type ScoringMemory = Partial<Pick<FeedPlan, 'activeCategories'>> & Pick<FeedPlan, 'interestProgress'>;
+const NO_INTEREST_MEMORY: ScoringMemory = Object.freeze({ interestProgress: {} });
+
 // `feedRouteActive` says whether the route that actually renders this feed is
 // on screen. The provider wraps every route so its consumers (save modal, PDF
 // viewer) exist everywhere, but the multi-source fetch fan-out must not:
@@ -221,6 +225,12 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // The list's plan, made with its first page like the exclusions above
   // (feedPlanFor): null until a page plans one.
   const feedPlan = useRef<FeedPlan | null>(null);
+  // What the scoring reads of the interest memory while no plan exists (before
+  // the first page, or after a restore): derived from the state it follows,
+  // and kept while that state holds so the score cache is not defeated.
+  const unplannedMemory = useRef<{
+    signals: ProfileSignals; selected: string[] | null; deselected: string[]; memory: ScoringMemory;
+  } | null>(null);
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set<string>());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set<string>());
@@ -556,6 +566,28 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper: Paper, recentPropsCount: Partial<RecentProperties> = {}) => {
     const signals = profileSignals.current;
+    // The list's plan holds the memory still while its pages load, and the
+    // score cache is validated by its references.
+    let memory: ScoringMemory | undefined = feedPlan.current ?? undefined;
+    if (!memory) {
+      const kept = unplannedMemory.current;
+      if (kept?.signals === signals && kept.selected === userPreferences && kept.deselected === deselectedPreferences) {
+        memory = kept.memory;
+      } else {
+        // With nothing picked there is no subarea to be dormant against.
+        memory = !userPreferences?.length ? NO_INTEREST_MEMORY : {
+          activeCategories: [...activeCategories(userPreferences, deselectedPreferences)],
+          interestProgress: interestProgress({
+            selected: userPreferences,
+            deselected: deselectedPreferences,
+            examples: signals.positiveExamples,
+            exposure: signals.categoryExposure,
+            affinities: signals.categoryAffinities,
+          }),
+        };
+        unplannedMemory.current = { signals, selected: userPreferences, deselected: deselectedPreferences, memory };
+      }
+    }
     return applyRecommendationScore(paper, {
       userPreferences,
       followedEntities,
@@ -563,12 +595,13 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       conceptAffinities: signals.conceptAffinities,
       authorAffinities: signals.authorAffinities,
       sessionAffinities: signals.sessionAffinities,
-      interactionCount: signals.interactionCount,
+      interestProgress: memory.interestProgress,
+      activeCategories: memory.activeCategories,
       temporalPreference: temporalPreference.current,
       weights: recommendationWeights.current,
       recentPropsCount
     });
-  }, [userPreferences, followedEntities]);
+  }, [userPreferences, deselectedPreferences, followedEntities]);
 
   // The card the reader is on: as FeedContainer reports it (on the restore
   // after a reload and on every scroll), the successor markNotInterested
@@ -2260,7 +2293,6 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     conceptAffinities: { ...profileSignals.current.conceptAffinities },
     authorAffinities: { ...profileSignals.current.authorAffinities },
     sessionAffinities: { ...profileSignals.current.sessionAffinities },
-    interactionCount: profileSignals.current.interactionCount,
     temporalPreference: temporalPreference.current,
     weights: { ...recommendationWeights.current },
     notInterestedIds: Array.from(notInterestedIdsRef.current),

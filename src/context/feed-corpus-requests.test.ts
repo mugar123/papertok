@@ -75,3 +75,17 @@ test("a list's later pages ask by the groups its first page planned", async () =
   assert.deepEqual(feedPlanFor(plan, 0, atPageOne).groups, replanned);
   assert.deepEqual(feedPlanFor(null, 2, atPageOne).groups, replanned);
 });
+
+test('the scoring of a list reads the progress and active subareas its first page planned', () => {
+  const atReset = memory({ selected: ['quant-ph', 'econ.EM'], deselected: ['hep-th'], examples: examples('quant-ph', 10) });
+  const plan = feedPlanFor(null, 0, atReset);
+
+  assert.equal(plan.interestProgress['quant-ph'], 1);
+  assert.equal(plan.interestProgress['econ.EM'], 0);
+  assert.ok(plan.activeCategories.includes('quant-ph') && !plan.activeCategories.includes('hep-th'));
+
+  // The cards the reader sees afterwards move the memory, not the list's plan.
+  const later = feedPlanFor(plan, 1, { ...atReset, exposure: shown({ 'econ.EM': 60 }) });
+  assert.equal(later.interestProgress, plan.interestProgress);
+  assert.equal(later.activeCategories, plan.activeCategories);
+});

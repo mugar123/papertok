@@ -13,7 +13,12 @@ export interface RecommendationContext {
   weights?: Partial<RecommendationWeights>; now?: number; userPreferences?: string[] | null; followedAuthors?: string[];
   followedEntities?: FollowInput[]; categoryAffinities?: Record<string, number>;
   conceptAffinities?: Record<string, number>; authorAffinities?: Record<string, number>;
-  sessionAffinities?: Record<string, number>; interactionCount?: number;
+  sessionAffinities?: Record<string, number>;
+  // How far the app has learned each selected subarea, from 0 to 1 (see
+  // interestProgress), and the subareas the reader's picks leave active. The
+  // learned signals score only a paper of an active subarea; without the list
+  // none is dormant.
+  interestProgress?: Record<string, number>; activeCategories?: string[];
   temporalPreference?: number; recentPropsCount?: Partial<RecentProperties>;
 }
 interface Signal { id?: unknown; openAlexId?: unknown; canonicalId?: unknown; display_name?: unknown; displayName?: unknown; name?: unknown; label?: unknown; }
@@ -30,13 +35,12 @@ interface ShuffleOptions<T> {
 // citations/classics (<=25) > personal and graph candidates, diversity,
 // recency. A card without an abstract loses missingAbstract: it reaches the
 // page when the pool has little else or a follow carries it. The
-// selected-category preference fades to minPreferenceShare of itself over
-// preferenceFadeInteractions interactions: what the reader does takes over
-// from what they picked at sign-up.
+// selected-category preference fades to minPreferenceShare of itself as the
+// app learns that subarea (interestProgress): what the reader does takes over
+// from what they picked, one interest at a time.
 export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   selectedCategory: 100,
   relatedSelectedCategory: 80,
-  preferenceFadeInteractions: 300,
   minPreferenceShare: 0.3,
   followedAuthor: 50,
   followedTopic: 35,
@@ -316,11 +320,31 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const authorAffinities = context.authorAffinities || {};
   const sessionAffinities = context.sessionAffinities || {};
   const temporalPreference = context.temporalPreference || 0;
+  const interestProgress = context.interestProgress || {};
 
   const categorySignals = getPaperCategorySignals(paper);
   const primaryCategory = categorySignals[0] || '';
   const allCategories = categorySignals;
   const isExploration = paper._debugScore?.isExploration || paper._type === 'exploration';
+
+  const picked = (category: string) => userPreferences.includes(category);
+  // OpenAlex files a work under its own topic, never under a leaf; a chosen
+  // leaf whose topic list holds that topic counts as its primary category.
+  // A specialist source's card seldom names a category of the taxonomy. When
+  // the source was asked for one of the reader's, the card earns that
+  // category's preference without claiming the category.
+  const chosenDirectly = [primaryCategory, ...leavesForOpenAlexTopic(paper.primaryTopic), ...(paper._fetchedFor || [])].filter(picked);
+  const chosenAsRelated = allCategories.filter(picked);
+  const matched = chosenDirectly.length > 0 ? chosenDirectly : chosenAsRelated;
+  // The share of the preference left is the progress of the most-learned
+  // subarea the card matches.
+  const progress = Math.max(0, ...matched.map(category => interestProgress[category] || 0));
+  const preferenceShare = Math.max(weights.minPreferenceShare, 1 - progress * (1 - weights.minPreferenceShare));
+  // What the reader learned about a subject they left, or never picked, stays
+  // stored but ranks nothing here. A follow and the card's own signals still do.
+  const isActive = !context.activeCategories
+    || chosenDirectly.length > 0
+    || categorySignals.some(category => context.activeCategories!.includes(category));
 
   const rawAffinity = categorySignals.reduce((sum, category, index) => {
     const multiplier = index === 0 ? 1 : 0.35;
@@ -328,25 +352,11 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   }, 0);
   // Secondary categories can push the sum past the per-category clamp; cap it so
   // learned affinity never outweighs an explicit preference by accumulation alone.
-  const affinity = clamp(rawAffinity, -weights.maxAffinity, weights.maxAffinity);
+  const affinity = isActive ? clamp(rawAffinity, -weights.maxAffinity, weights.maxAffinity) : 0;
 
-  const preferenceShare = Math.max(
-    weights.minPreferenceShare,
-    1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
-  );
   let preference = 0;
-  // OpenAlex files a work under its own topic, never under a leaf; a chosen
-  // leaf whose topic list holds that topic counts as its primary category.
-  // A specialist source's card seldom names a category of the taxonomy. When
-  // the source was asked for one of the reader's, the card earns that
-  // category's preference without claiming the category.
-  if ((primaryCategory && userPreferences.includes(primaryCategory))
-    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => userPreferences.includes(leaf))
-    || paper._fetchedFor?.some(category => userPreferences.includes(category))) {
-    preference = weights.selectedCategory * preferenceShare;
-  } else if (allCategories.some((cat) => userPreferences.includes(cat))) {
-    preference = weights.relatedSelectedCategory * preferenceShare;
-  }
+  if (chosenDirectly.length > 0) preference = weights.selectedCategory * preferenceShare;
+  else if (chosenAsRelated.length > 0) preference = weights.relatedSelectedCategory * preferenceShare;
 
   const authorBoost = paper.authors?.some((author) => followedAuthors.includes(((author as PaperAuthor)?.name || author) as string))
     ? weights.followedAuthor
@@ -375,19 +385,19 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     const affinityValue = conceptAffinities[concept.id] || 0;
     return sum + conceptWeight(concept.score) * (affinityValue / 100);
   }, 0);
-  const semantic = clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier;
-  const corpusSimilarity = Number.isFinite(paper._semanticScore)
+  const semantic = isActive ? clamp(semanticMatch, -1, 1) * weights.semanticConceptMultiplier : 0;
+  const corpusSimilarity = isActive && Number.isFinite(paper._semanticScore)
     ? clamp(paper._semanticScore!, -1, 1) * weights.maxCorpusSimilarity : 0;
 
   // Authors the reader keeps engaging with, learned rather than followed.
   const authorMatch = authorIds.reduce((sum, authorId) => sum + (authorAffinities[authorId] || 0), 0);
-  const learnedAuthor = clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor;
+  const learnedAuthor = isActive ? clamp(authorMatch / weights.learnedAuthorScale, -1, 1) * weights.maxLearnedAuthor : 0;
 
   // What this session has been engaging with in the last dozen cards or so:
   // the primary category and the concepts, each weighed as above.
   const sessionMatch = (primaryCategory ? sessionAffinities[primaryCategory] || 0 : 0)
     + concepts.reduce((sum, concept) => sum + conceptWeight(concept.score) * (sessionAffinities[concept.id] || 0), 0);
-  const sessionInterest = clamp(sessionMatch / weights.sessionScale, -1, 1) * weights.maxSession;
+  const sessionInterest = isActive ? clamp(sessionMatch / weights.sessionScale, -1, 1) * weights.maxSession : 0;
 
   const citations = citedBy > 0
     ? Math.min(Math.log10(citedBy + 1), weights.maxCitationLog) * weights.citationMultiplier
@@ -426,7 +436,8 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
     conceptAffinities: context.conceptAffinities,
     authorAffinities: context.authorAffinities,
     sessionAffinities: context.sessionAffinities,
-    interactionCount: context.interactionCount,
+    interestProgress: context.interestProgress,
+    activeCategories: context.activeCategories,
     temporalPreference: context.temporalPreference,
     explicitNow: context.now,
 
@@ -494,7 +505,8 @@ function stableScoreFor(paper: Partial<Paper>, context: RecommendationContext) {
     && cached.conceptAffinities === context.conceptAffinities
     && cached.authorAffinities === context.authorAffinities
     && cached.sessionAffinities === context.sessionAffinities
-    && cached.interactionCount === context.interactionCount
+    && cached.interestProgress === context.interestProgress
+    && cached.activeCategories === context.activeCategories
     && cached.temporalPreference === context.temporalPreference
     && cached.explicitNow === context.now) {
     return cached;
