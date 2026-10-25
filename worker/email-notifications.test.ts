@@ -2409,6 +2409,31 @@ test('a preview or label sync keeps held papers, while changing followed IDs cle
   assert.equal((await storedSubscriptionWithState(kv, key))!.heldDigest, null);
 });
 
+// ENG-113. A held selection is keyed by the categories a followed area has
+// now, so the ids the follow stored when the area held other leaves do not
+// decide whether it is reused.
+test('a held digest follows an area by its current leaves, not by the ids the follow stored', async () => {
+  const area = (categoryIds: string[]): Follow => ({ type: 'topic', canonicalId: 'cs', displayName: 'Computer Science', externalIds: {}, metadata: { categoryIds } });
+  const { upstream, run, kv } = digestScheduleHarness({ follows: [digestFollow(), area(['cs.AI', 'cs.LG', 'cs.RO'])] });
+  upstream.sourcesUp = true;
+  upstream.provider = () => jsonResponse(429, { name: 'daily_quota_exceeded' });
+  const key = 'notification:subscription:schedule-reader';
+  await run('2026-07-27T07:00:00Z');
+  assert.ok((await storedSubscriptionWithState(kv, key))!.heldDigest, 'the outage holds the selection');
+
+  const save = (follows: Follow[]) => saveSubscription(
+    new Request('https://example.com/notifications/preferences', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sync: true, enabled: true, follows, previewItems: [] }),
+    }),
+    { NOTIFICATION_STORE: kv },
+    { uid: 'schedule-reader', email: 'reader@example.com', displayName: 'Reader' },
+  );
+  await save([digestFollow(), area(['cs.RO', 'cs.CR'])]);
+  assert.ok((await storedSubscriptionWithState(kv, key))!.heldDigest, 'other stored ids for the same area keep it');
+});
+
 test('a held Tuesday digest retries a short Resend rate limit after 40 minutes', async () => {
   const { upstream, run, kv } = digestScheduleHarness({}, 1);
   upstream.sourcesUp = true;

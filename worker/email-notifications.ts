@@ -710,14 +710,16 @@ function isArxivCategory(value: unknown) {
 
 // A followed area reads its leaves from the taxonomy, not from the ids the
 // follow stored when the area held other leaves.
+function followCategoryIds(follow: FollowInput = {}) {
+  if (typeof follow.canonicalId === 'string' && Object.hasOwn(CATEGORIES, follow.canonicalId)) {
+    return Object.keys(CATEGORIES[follow.canonicalId].subcategories);
+  }
+  return Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : [];
+}
+
 function arxivCategoriesForFollow(follow: FollowInput = {}) {
-  const area = typeof follow.canonicalId === 'string' && Object.hasOwn(CATEGORIES, follow.canonicalId)
-    ? CATEGORIES[follow.canonicalId]
-    : null;
-  const metadataCategories = Array.isArray(follow.metadata?.categoryIds)
-    ? follow.metadata.categoryIds
-    : [];
-  const candidates = area ? Object.keys(area.subcategories) : metadataCategories.length ? metadataCategories : [follow.canonicalId];
+  const categoryIds = followCategoryIds(follow);
+  const candidates = categoryIds.length ? categoryIds : [follow.canonicalId];
   return [...new Set(candidates.map(category => cleanText(category, 80)).filter(isArxivCategory))];
 }
 
@@ -890,7 +892,7 @@ function heldDigestSelectionKey(subscription: Subscription = {}) {
     follow.canonicalId,
     follow.externalIds?.ror || '',
     follow.metadata?.query || '',
-    [...new Set(follow.metadata?.categoryIds || [])].sort(),
+    [...new Set(followCategoryIds(follow))].sort(),
   ])).sort();
   return JSON.stringify([subscription.email || '', subscription.maxPapers || 5, follows]);
 }
