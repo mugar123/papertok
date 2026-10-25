@@ -70,8 +70,6 @@ export interface OpenAlexInstitution extends EntityMetrics {
 
 export interface OpenAlexAuthor extends EntityMetrics {
   source?: string;
-  last_known_institution?: Partial<OpenAlexInstitution>;
-  localizedInstitutionName?: string;
   id: string;
   display_name: string;
   h_index?: number | null;

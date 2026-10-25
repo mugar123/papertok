@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   authorProminenceWeight,
+  authorSearchValues,
   buildSearchSectionValues,
   filterRelevantSearchResults,
   getSearchSectionOrder,
   institutionProminenceWeight,
   isOrganisationAuthorRecord,
+  normalizeSearchText,
   rankPaperSearchResults,
   resolvePreferredSearchSection,
   scorePaperSearchMatch,
@@ -558,4 +560,91 @@ test('an unfinished project name ranks its shortest completion above derivative 
   assert.equal(resolvePreferredSearchSection({ query: 'Geoffrey Hin', sectionValues: {
     authors: ['Geoffrey Hinton'], papers: ['Neural network pioneer Geoffrey Hinton'],
   } }), 'authors');
+});
+
+// --- names and titles in other scripts --------------------------------------
+
+/** The authors section as the palette and the page filter it. */
+const authorMatches = (query: string, names: string[]) => filterRelevantSearchResults(
+  query, names.map(display_name => ({ display_name })), authorSearchValues, { minimumScore: 80 },
+).map(author => author.display_name);
+
+test('a name in another script finds its own author and no stranger', () => {
+  // The first three are what OpenAlex answered for `authors?search=محبوبه سلیمانی`
+  // on 2026-10-25. The scorer used to erase every letter of them, so all three
+  // fell under the threshold together with the strangers.
+  assert.deepEqual(
+    authorMatches('محبوبه سلیمانی', ['علی رضایی', 'محبوبه سلیمانی', 'محبوبه سلیمانی حصار', 'محبوبه سلیمانی ساسانی', 'Mahboubeh Soleimani']),
+    ['محبوبه سلیمانی', 'محبوبه سلیمانی حصار', 'محبوبه سلیمانی ساسانی'],
+  );
+  assert.deepEqual(authorMatches('张伟', ['李小龙', '张伟', '张伟明', 'Wei Zhang']), ['张伟', '张伟明']);
+  // Case and the diaeresis fold as they do in Latin; swapped or half-shared
+  // names do not pass.
+  assert.deepEqual(
+    authorMatches('Пётр Иванов', ['Иван Петров', 'ПЕТР ИВАНОВ', 'Пётр Сидоров']),
+    ['ПЕТР ИВАНОВ'],
+  );
+  assert.deepEqual(authorMatches('Ayşe Arık', ['Ayşe Ak', 'AYŞE ARIK', 'Ayse Arik']), ['AYŞE ARIK', 'Ayse Arik']);
+  assert.deepEqual(
+    authorMatches('José García', ['Josefina Garza', 'Jose Garcia', 'José García Márquez']),
+    ['Jose Garcia', 'José García Márquez'],
+  );
+});
+
+test('letters that NFD leaves whole fold to the letters typed without them', () => {
+  assert.deepEqual(
+    ['Arık', 'İlker', 'Łukasz', 'Søren', 'Straße', 'Đorđević', 'Þórður', 'Ærø', 'Œuvre', 'Ħal', 'Ĳssel', 'µ-opioid'].map(normalizeSearchText),
+    ['arik', 'ilker', 'lukasz', 'soren', 'strasse', 'dordevic', 'thordur', 'aero', 'oeuvre', 'hal', 'ijssel', 'μ opioid'],
+  );
+  assert.equal(scoreSearchMatch('Lukasz Kowalski', ['Łukasz Kowalski']), 100);
+});
+
+test('modifier letters separate words like the apostrophe typed for them', () => {
+  assert.equal(scoreSearchMatch("Sa'id Ahmad", ['Saʿid Ahmad']), 100);
+  assert.equal(scoreSearchMatch("University of Hawai'i", ['University of Hawaiʻi at Mānoa']), 94);
+  assert.equal(scoreSearchMatch('محمد', ['مـحـمـد']), 100, 'tatweel only stretches the letters');
+});
+
+test('a run of Chinese or Japanese is one word, split from the Latin beside it', () => {
+  // OpenAlex stores many Japanese names with a space the reader does not type.
+  assert.equal(scoreSearchMatch('山田太郎', ['山田 太郎']), 100);
+  assert.equal(scoreSearchMatch('葛城', ['葛\ufe00城']), 100, 'a variation selector only picks the glyph');
+  assert.ok(scorePaperSearchMatch('LSTM 预测', { title: 'LSTM预测模型研究' }) >= 94);
+  assert.ok(scorePaperSearchMatch('COVID-19 疫苗', { title: 'COVID-19疫苗接种意愿调查' }) >= 94);
+  assert.ok(scorePaperSearchMatch('CNN', { title: 'CNN在图像识别中的应用' }) >= 94);
+  assert.ok(scorePaperSearchMatch('预测', { title: 'LSTM预测模型研究' }) >= 88);
+});
+
+test('a script is kept, not translated: a name matches only text in its own script', () => {
+  assert.equal(scoreSearchMatch('Wei Zhang', ['张伟']), 0);
+  assert.equal(scoreSearchMatch('张伟', ['Wei Zhang']), 0);
+});
+
+test('an exact name in another script leads with its own section', () => {
+  // With every letter erased, any value in another script was an "exact match"
+  // for the empty query, and the first section in the sweep took the lead.
+  assert.equal(resolvePreferredSearchSection({
+    query: '张伟',
+    sectionValues: { topics: ['机器学习'], authors: ['张伟'], papers: ['深度学习'] },
+  }), 'authors');
+});
+
+test('a title in a script without spaces matches inside its run of characters', () => {
+  // Titles OpenAlex answered for `深度学习` on 2026-10-25. Chinese writes no
+  // spaces, so the query is part of a longer run and has no word to complete.
+  const contains = scorePaperSearchMatch('深度学习', { title: '基于深度学习的三维重建方法综述' });
+  assert.ok(contains >= 88 && contains < 94, `a phrase-inside match, got ${contains}`);
+  assert.ok(scorePaperSearchMatch('深度学习', { title: '深度学习：推进人工智能的梦想' }) >= 94);
+  assert.ok(scorePaperSearchMatch('深度学习', { title: '基于学习的深度估计' }) < 80, 'shared characters out of order are not the phrase');
+  assert.ok(scorePaperSearchMatch('深度学习', { title: 'Attention is all you need' }) < 80);
+});
+
+test('a title in a spaced script keeps whole words and unfinished prefixes', () => {
+  // Titles OpenAlex answered for `машинное обучение` on 2026-10-25.
+  assert.ok(scorePaperSearchMatch('машинное обучение', { title: 'Машинное обучение в бизнесе' }) >= 94);
+  const contains = scorePaperSearchMatch('машинное обучение', { title: 'Глубинное машинное обучение' });
+  assert.ok(contains >= 88 && contains < 94, `a phrase-inside match, got ${contains}`);
+  assert.ok(scorePaperSearchMatch('машинное обуч', { title: 'Машинное обучение в бизнесе' }) >= 90, 'the last word is still being typed');
+  assert.ok(scorePaperSearchMatch('учение', { title: 'Глубинное машинное обучение' }) < 80, 'the end of a word is not a phrase');
+  assert.ok(scorePaperSearchMatch('машинное обучение', { title: 'Большие данные' }) < 80);
 });

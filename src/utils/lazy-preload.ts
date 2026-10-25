@@ -53,3 +53,9 @@ export function lazyWithPreload<Props extends object>(factory: () => Promise<{ d
   Preloadable.preload = load;
   return Preloadable;
 }
+
+/** Whether the reader asked to save data, or is on a 2G connection: no speculative downloads. */
+export function connectionIsFrugal() {
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return Boolean(conn && (conn.saveData || /2g/.test(conn.effectiveType || '')));
+}

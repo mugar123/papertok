@@ -17,8 +17,17 @@ const EMBED_STEP_PAPERS = 256;
 // run's ENRICH_STEPS about 3,000 units of the nightly run's 3,700 of the
 // harvest's share of the day (provider-runtime.ts). A larger backlog drains
 // over the next runs.
+//
+// The steps of a run execute in one Worker invocation until a wait longer than
+// the Workflows engine's 5-minute grace period, so every step's subrequests
+// (fetches, D1 calls, Workers AI calls, the quota ledger, the cache) count
+// against the invocation's `limits.subrequests` of wrangler.toml together: the
+// lane phases' before, and then each enrichment batch with its two embedding
+// steps, about 100 in production on 2026-10-25. The longest enrichment phase,
+// ENRICH_STEPS batches, must fit in half of that limit, leaving the other half
+// to the lanes, the backfill and the eviction (paper-harvest.test.ts).
 const ENRICH_STEP_PAPERS = 500;
-const ENRICH_STEPS = 150;
+export const ENRICH_STEPS = 150;
 // Followed lanes harvested a run, the longest due first: a lane is due from
 // its last harvest or, never harvested, from when it was first followed, and
 // the most recently written comes first among lanes due from the same time. A
