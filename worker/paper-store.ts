@@ -205,9 +205,16 @@ export const notableSince = (now = Date.now()) => `${new Date(now).getUTCFullYea
 // years (NOTABLE_PER_YEAR in paper-sources.ts), and, for 14 days, what dropped
 // out of the two listings before it (`work_lanes.listed_until`), whatever else
 // keeps the paper in the corpus (a like, its date, another lane). A page reads
-// three listings' worth of each asked lane, newest first, so the newer papers
-// that dropped out do not cut the listing's oldest, most-cited ones.
-const NOTABLE_READ_PER_LANE = 300;
+// NOTABLE_READ_PER_YEAR of each of the ten years of each asked lane: a slice
+// that moves on with the UTC day, taken modulo the year's own count, so a year
+// of 100 is read in NOTABLE_YEAR_SLICES disjoint slices, a year of 40 in
+// overlapping ones and a year of two every day. That is 250 candidates a lane
+// at most, so the candidates and vectors ranked per request stay within the 300
+// a lane the newest-first read took; numbering the years reads every row of the
+// lane's window from its index (about 1,000). How many of them a reader sees
+// is ENG-128's.
+const NOTABLE_READ_PER_YEAR = 25;
+const NOTABLE_YEAR_SLICES = 4;
 // Journal articles of a whole area (paper-sources.ts `openalex-areas`), shown
 // to a reader of any of its leaves, for the areas whose leaves the feed fills
 // from arXiv: PubMed lists journal articles for every leaf of medicine and
@@ -868,16 +875,38 @@ interface Candidate { workId: number; published: string; lanes: string[] }
 // turns across the lanes, each lane's newest first, and the ranking keeps that
 // order among papers it cannot tell apart: one night's articles of two areas
 // share their date, and take turns between the areas instead of following the
-// order the lanes were asked in. The notable read passes its own `share` and
-// `since` (NOTABLE_READ_PER_LANE, notableSince).
-async function readCandidates(db: D1Database, lanes: string[], { share: fixedShare, since = '' }: { share?: number; since?: string } = {}): Promise<Candidate[]> {
+// order the lanes were asked in.
+async function readCandidates(db: D1Database, lanes: string[]): Promise<Candidate[]> {
   const areaLanes = lanes.filter(lane => AREA_LANES.has(lane)).length;
-  const share = (lane: string) => fixedShare ?? (AREA_LANES.has(lane)
+  const share = (lane: string) => (AREA_LANES.has(lane)
     ? Math.floor(AREA_CANDIDATE_LIMIT / areaLanes)
     : Math.ceil(FEED_CANDIDATE_LIMIT / (lanes.length - areaLanes)));
   const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(
-    'SELECT work_id, published FROM work_lanes WHERE lane = ? AND published >= ? ORDER BY published DESC LIMIT ?',
-  ).bind(lane, since, share(lane))));
+    'SELECT work_id, published FROM work_lanes WHERE lane = ? ORDER BY published DESC LIMIT ?',
+  ).bind(lane, share(lane))));
+  return mergeLaneRows(lanes, perLane);
+}
+
+/**
+ * The notable lanes' candidates at `now`: of each year of the window, the
+ * NOTABLE_READ_PER_YEAR rows of the day's slice (NOTABLE_YEAR_SLICES), newest
+ * first, in one statement per lane. A notable lane keeps a paper two weeks past
+ * its last listing; from 1 January, the year that left the window is not read.
+ */
+export async function readNotableCandidates(db: D1Database, lanes: string[], now: number): Promise<Candidate[]> {
+  const offset = (Math.floor(now / DAY_MS) % NOTABLE_YEAR_SLICES) * NOTABLE_READ_PER_YEAR;
+  const perLane = await db.batch<{ work_id: number; published: string }>(lanes.map(lane => db.prepare(`SELECT work_id, published FROM (
+      SELECT work_id, published,
+             ROW_NUMBER() OVER (PARTITION BY substr(published, 1, 4) ORDER BY published DESC) AS rn,
+             COUNT(*)     OVER (PARTITION BY substr(published, 1, 4)) AS n
+      FROM work_lanes WHERE lane = ? AND published >= ?
+    ) WHERE (rn - 1 + ?) % n < ? ORDER BY published DESC`).bind(lane, notableSince(now), offset, NOTABLE_READ_PER_YEAR)));
+  return mergeLaneRows(lanes, perLane);
+}
+
+// The lanes' rows in turns, each lane's in its own order: a work listed by
+// several lanes comes once, at its first turn, with every lane and its newest date.
+function mergeLaneRows(lanes: string[], perLane: Array<{ results: Array<{ work_id: number; published: string }> }>): Candidate[] {
   const byWork = new Map<number, { published: string; lanes: string[] }>();
   const longest = Math.max(...perLane.map(({ results }) => results.length));
   for (let position = 0; position < longest; position += 1) {
@@ -1044,9 +1073,7 @@ async function rankCandidates(db: D1Database, lanes: string[], query: FeedQuery,
     // crowded out by a busy one; the area lanes share AREA_CANDIDATE_LIMIT.
     // The window is the corpus's own: what is past it has been evicted.
     readCandidates(db, lanes),
-    // A notable lane keeps a paper two weeks past its last listing; from
-    // 1 January, the year that left the window is not read.
-    notableLanes.length ? readCandidates(db, notableLanes, { share: NOTABLE_READ_PER_LANE, since: notableSince(now) }) : Promise.resolve([]),
+    notableLanes.length ? readNotableCandidates(db, notableLanes, now) : Promise.resolve([]),
     readVectors(db, [...new Set([...positiveIds, ...negativeIds])]),
   ]);
   const likes = positiveIds.flatMap(id => signals.has(id) ? [signals.get(id)!] : []);
