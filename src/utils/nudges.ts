@@ -61,6 +61,48 @@ export function rememberNudgeDismissal<T>(id: T, storage?: NudgeStorage | null) 
   return next;
 }
 
+const PRIVACY_NOTICE_KEY = 'papertok_privacyNotice';
+
+// Unlike the nudges above, kept per reader: each account that signs in on this
+// device has to be told separately. It is not swept at sign-out, so signing in
+// again does not repeat a notice already dismissed.
+function privacyNoticeKey(uid: string) {
+  return `${PRIVACY_NOTICE_KEY}:${encodeURIComponent(uid)}`;
+}
+
+/** The policy version this reader last dismissed on this device, if any. */
+export function readPrivacyNoticeAck(uid: string, storage?: NudgeStorage | null) {
+  try {
+    return resolveStorage(storage)?.getItem(privacyNoticeKey(uid)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPrivacyNotice(uid: string, version: string, storage?: NudgeStorage | null) {
+  try {
+    resolveStorage(storage)?.setItem(privacyNoticeKey(uid), version);
+  } catch {
+    // The host still closes the notice for this visit; it returns next time.
+  }
+}
+
+/**
+ * Whether a reader still has to hear about policy `version`. Only signed-in
+ * accounts are told: a guest has no creation date, so a first-time visitor
+ * could not be told apart from someone who read the old policy. An account
+ * created on or after the day of the change started under the policy as it is
+ * and has nothing to be told; one whose creation date is unknown is told. The
+ * policy date has no time zone, so the creation day is read in UTC; an account
+ * opened close to midnight may land on either side of it.
+ */
+export function privacyNoticeOwed({ version, acknowledged, accountCreated, signedIn }: { version: string; acknowledged: string | null; accountCreated?: string | null; signedIn: boolean }) {
+  if (!signedIn || acknowledged === version) return false;
+  const created = accountCreated ? new Date(accountCreated) : null;
+  if (!created || Number.isNaN(created.getTime())) return true;
+  return created.toISOString().slice(0, 10) < version.slice(0, 10);
+}
+
 /** One of the pending ones, at random, or nothing at all. */
 export function pickNudge({ eligible = [], dismissed = [], random = Math.random }: { eligible?: string[]; dismissed?: string[]; random?: () => number } = {}) {
   const pending = eligible.filter(id => !dismissed.includes(id));

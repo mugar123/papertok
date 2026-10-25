@@ -35,7 +35,7 @@ import NudgeHost from './components/nudges/nudge-host.tsx'
 import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
-import { getPublicPaperPath } from './utils/public-navigation.ts'
+import { getPublicPaperPath, isPublicRoute } from './utils/public-navigation.ts'
 import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 import './app.css'
@@ -70,15 +70,6 @@ const FollowingSettingsPage = lazyWithPreload(() => import('./components/setting
 const PublicPaperPage = lazyWithPreload(() => import('./components/public/public-paper-page.tsx'))
 const PublicListPage = lazyWithPreload(() => import('./components/lists/public-list-page.tsx'))
 const SearchCommand = lazyWithPreload(() => import('./components/search/search-command.tsx'))
-
-// The standalone routes a guest can reach without a session. A sign-in from
-// one of these doors (like, save, follow) leaves the new account right there,
-// and none of them is behind ProtectedRoute, so App itself has to take it to
-// the onboarding (the effect below).
-const PUBLIC_ROUTE_PREFIXES = ['/public/', '/explorer/']
-function isPublicRoute(path: string) {
-  return PUBLIC_ROUTE_PREFIXES.some(prefix => path.startsWith(prefix))
-}
 
 function LoginRedirect() {
   const location = useLocation()

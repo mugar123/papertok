@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { EnvelopeSimple } from '@phosphor-icons/react';
+import { EnvelopeSimple, ShieldCheck } from '@phosphor-icons/react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/auth-context.tsx';
 import { useEmailNotifications } from '../../context/email-notifications-context.tsx';
+import { PRIVACY_POLICY_CHANGE, PRIVACY_POLICY_VERSION } from '../../legal/privacyPolicy.ts';
 import {
   NUDGE_DWELL_MS,
   emailNudgeProblem,
   pickNudge,
+  privacyNoticeOwed,
   readDismissedNudges,
+  readPrivacyNoticeAck,
   rememberNudgeDismissal,
+  rememberPrivacyNotice,
 } from '../../utils/nudges.ts';
 import NudgePanel from './nudge-panel.tsx';
 
@@ -20,11 +24,23 @@ import NudgePanel from './nudge-panel.tsx';
 //   · One per visit, and never two. The corner belongs to the reader.
 //   · Not until a minute in, and only on the feed — asking somebody something
 //     before they have read a line is asking a stranger for a favour.
-// Guests are out entirely: they already have one thing being asked of them.
+//
+// A privacy policy change takes the visit's turn before any nudge. Only
+// signed-in accounts are told, and it returns on later visits until it is
+// dismissed; utils/nudges.ts decides who is owed it. A change of
+// account remounts this component, which clears what was picked for the
+// previous reader.
+const PRIVACY_NOTICE = 'privacy-change';
 
 const COPY = {
   en: {
     dismiss: 'Dismiss and do not show again',
+    privacy: {
+      title: 'Privacy policy updated',
+      policy: 'Read the policy',
+      newTab: ' (opens in a new tab)',
+      done: 'Got it',
+    },
     'email-down': {
       'not-configured': {
         title: 'Email updates are paused',
@@ -71,9 +87,15 @@ export default function NudgeHost() {
   // Picked during render rather than in an effect: this derives state from
   // state, which an effect would turn into a second render pass — and the
   // linter says so, twice. Same shape the guest interests sheet uses.
-  if (openable && !choiceMade) {
+  if (openable && user && !choiceMade) {
     setChoiceMade(true);
-    const id = pickNudge({
+    const privacyOwed = privacyNoticeOwed({
+      version: PRIVACY_POLICY_VERSION,
+      acknowledged: readPrivacyNoticeAck(user.uid),
+      accountCreated: user.metadata?.creationTime,
+      signedIn,
+    });
+    const id = privacyOwed ? PRIVACY_NOTICE : pickNudge({
       eligible: emailProblem ? ['email-down'] : [],
       dismissed,
     });
@@ -85,6 +107,31 @@ export default function NudgeHost() {
     setPicked(null);
   }, []);
 
+  const uid = user?.uid;
+  const acknowledgePrivacy = useCallback(() => {
+    if (uid) rememberPrivacyNotice(uid, PRIVACY_POLICY_VERSION);
+    setPicked(null);
+    // The button that had focus leaves with the panel.
+    document.getElementById('main-content')?.focus({ preventScroll: true });
+  }, [uid]);
+
+  const privacyShown = picked === PRIVACY_NOTICE && signedIn;
+
+  // Escape puts it away for this visit and does not count as reading it, so it
+  // returns next time. On a phone the panel covers the bottom of the card, and
+  // this is how a control focused underneath is seen again (WCAG 2.4.11).
+  useEffect(() => {
+    if (!privacyShown) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const focusWasInside = Boolean(document.querySelector('.nudge')?.contains(document.activeElement));
+      setPicked(null);
+      if (focusWasInside) document.getElementById('main-content')?.focus({ preventScroll: true });
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [privacyShown]);
+
   const handleSettings = useCallback(() => {
     close('email-down');
     void navigate('/settings/notifications');
@@ -94,8 +141,30 @@ export default function NudgeHost() {
   const emailCopy = emailProblem ? copy['email-down'][emailProblem] : null;
 
   return (
+    <>
+    {/* Always mounted, outside the panel: a live region speaks when its text
+        changes, and one that arrives already holding text is often not read. */}
+    <p className="visually-hidden" role="status">
+      {privacyShown ? `${copy.privacy.title}. ${PRIVACY_POLICY_CHANGE}` : ''}
+    </p>
     <AnimatePresence>
-      {picked === 'email-down' && emailCopy && (
+      {privacyShown ? (
+        <NudgePanel
+          key="privacy-change"
+          icon={<ShieldCheck size={19} />}
+          title={copy.privacy.title}
+          body={(
+            <>
+              {PRIVACY_POLICY_CHANGE}{' '}
+              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">
+                {copy.privacy.policy}
+                <span className="visually-hidden">{copy.privacy.newTab}</span>
+              </a>
+            </>
+          )}
+          action={{ label: copy.privacy.done, onClick: acknowledgePrivacy }}
+        />
+      ) : picked === 'email-down' && emailCopy && (
         <NudgePanel
           key="nudge-email-down"
           icon={<EnvelopeSimple size={19} />}
@@ -107,5 +176,6 @@ export default function NudgeHost() {
         />
       )}
     </AnimatePresence>
+    </>
   );
 }
