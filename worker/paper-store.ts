@@ -70,11 +70,12 @@ const EMBEDDING_TOKENS_PER_UNIT = 1_000;
 // Shares of the day's limit for what readers start, so the daily run keeps the
 // rest. One reader's lookups of liked papers (paper-feed.ts): seven lookups of
 // ten long papers; on the harvest's subject, a review estimated that one
-// account's lookups could spend the 60M-token day in about 143 minutes. All
+// account's lookups could spend a 60M-token day (the ceiling while a backlog
+// is embedded) in about 143 minutes. All
 // readers together: accounts are free to make, so shares of 50,000 each add up
 // to the whole day without a cap of their own. A fixed number rather than a
-// fraction of the day keeps the daily run its share when the limit returns to
-// 7.5M. The runs new follows start, together: no reader
+// fraction of the day keeps the daily run its share at the 7.5M the free
+// allocation gives. The runs new follows start, together: no reader
 // is recorded with them, and each of the 20 new lanes a reader's runs may
 // harvest a day can bring a few hundred papers; what they leave waits for the
 // daily run.

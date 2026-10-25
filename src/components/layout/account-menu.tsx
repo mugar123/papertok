@@ -13,6 +13,7 @@ import {
   Sun,
 } from '@phosphor-icons/react';
 import { useAuth } from '../../context/auth-context.tsx';
+import { useFeed } from '../../context/feed-context.tsx';
 import { useTheme } from '../../context/theme-context.tsx';
 import useIsPhone from '../../hooks/use-is-phone.ts';
 import { GithubMark } from '../ui/github-mark.tsx';
@@ -58,13 +59,13 @@ function Avatar({ photo, user, className = '' }: { photo: string | null; user: A
  * A sheet is a dialog, not a menu, so its entries are plain links, a radio
  * group and a button; the Drawer owns focus, Escape and swipe-to-dismiss.
  */
-function AccountSheet({ user, photo, preference, setPreference, onSignOut }: { user: AppUser; photo: string | null; onSignOut: () => void } & Pick<ThemeContextValue, 'preference' | 'setPreference'>) {
+function AccountSheet({ user, photo, preference, setPreference, onOpen, onSignOut }: { user: AppUser; photo: string | null; onOpen: () => void; onSignOut: () => void } & Pick<ThemeContextValue, 'preference' | 'setPreference'>) {
   const [open, setOpen] = useState(false);
   const firstRow = useRef<HTMLAnchorElement | null>(null);
   const close = () => setOpen(false);
 
   return (
-    <Drawer open={open} onOpenChange={setOpen}>
+    <Drawer open={open} onOpenChange={(next) => { setOpen(next); if (next) onOpen(); }}>
       <DrawerTrigger className="navbar-avatar-btn" aria-label="Account menu" title="Account">
         <Avatar photo={photo} user={user} />
       </DrawerTrigger>
@@ -136,6 +137,9 @@ export default function AccountMenu() {
   const isPhone = useIsPhone();
   const { user, signOut } = useAuth();
   const { preference, setPreference } = useTheme();
+  // My lists waits for the library before it shows its folders. Asked for
+  // when the menu that leads there opens, it is usually in hand by then.
+  const { ensurePersonalLibrary } = useFeed();
 
   const handleSignOut = async () => {
     await signOut();
@@ -151,13 +155,14 @@ export default function AccountMenu() {
         photo={photo}
         preference={preference}
         setPreference={setPreference}
+        onOpen={() => { void ensurePersonalLibrary(); }}
         onSignOut={() => { void handleSignOut(); }}
       />
     );
   }
 
   return (
-    <Menu.Root>
+    <Menu.Root onOpenChange={(open) => { if (open) void ensurePersonalLibrary(); }}>
       <Menu.Trigger className="navbar-avatar-btn" aria-label="Account menu" title="Account">
         <Avatar photo={photo} user={user!} />
       </Menu.Trigger>

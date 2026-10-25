@@ -5,9 +5,12 @@ import { serializeLibraryPaper } from '../utils/reading-library.ts';
 import { paperLegacyAdapter, type Paper } from '../models/paper.ts';
 import {
   canRewritePaper,
+  clearRewriteCache,
   createNdjsonParser,
   getRewritablePdfUrl,
+  lastKnownAIUses,
   PaperRewriteError,
+  rememberAIUses,
   rewriteCacheKey,
   rewriteKeeping,
   rewritePaper,
@@ -273,4 +276,21 @@ test('a guest, or a reader whose saved copy could not be read, is not saved over
     rewriteKeeping({ ...signedInSameAccount, keepInAccount: false, done: { sectionCount: 1 } }),
     { incomplete: false, cache: true, save: false },
   );
+});
+
+test('a remembered uses count opens only the reader of the account it belongs to', () => {
+  rememberAIUses('uid-a', { remainingUses: 997, dailyLimit: 1000 });
+  assert.deepEqual(lastKnownAIUses('uid-a'), { remainingUses: 997, dailyLimit: 1000 });
+  assert.equal(lastKnownAIUses('uid-b'), null);
+  assert.equal(lastKnownAIUses(undefined), null);
+});
+
+test('each account keeps its own remembered count, and an account change forgets them all', () => {
+  rememberAIUses('uid-c', { remainingUses: 40, dailyLimit: 50 });
+  rememberAIUses('uid-d', { remainingUses: 12, dailyLimit: 50 });
+  assert.deepEqual(lastKnownAIUses('uid-c'), { remainingUses: 40, dailyLimit: 50 });
+  assert.deepEqual(lastKnownAIUses('uid-d'), { remainingUses: 12, dailyLimit: 50 });
+  clearRewriteCache();
+  assert.equal(lastKnownAIUses('uid-c'), null);
+  assert.equal(lastKnownAIUses('uid-d'), null);
 });

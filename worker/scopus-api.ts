@@ -3,6 +3,8 @@ import type { VerifiedIdentity } from './firebase-auth.ts';
 import type { UpstreamError } from './provider-runtime.ts';
 
 interface ScopusPayload {
+  // Set by the egress for its own answers, such as PROXY_AUTH_REQUIRED. Elsevier's errors use the two fields below.
+  code?: unknown;
   'service-error'?: { status?: { statusCode?: unknown; statusText?: unknown }; statusCode?: unknown };
   'error-response'?: { 'error-code'?: unknown; 'error-message'?: unknown };
   'search-results'?: { entry?: Array<Record<string, unknown>>; 'opensearch:totalResults'?: unknown };
@@ -25,7 +27,14 @@ const SCOPUS_VIEWS = ['COMPLETE', 'STANDARD', ''];
 // requested view`, which is a statement about the view, not about the key.
 // Reading it as a dead end stops the ladder on its first rung and fails every
 // search on an account that STANDARD would have served.
-const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 401, 403, 406, 500];
+// 5xx is not here: an Elsevier outage says nothing about the view, and walking
+// the ladder through one would triple the calls made while it is struggling.
+const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 401, 403, 406];
+// Three refusals share a status with a view refusal and are not about the view,
+// so only the code tells them apart: the egress refusing this Worker's secret
+// (401) or the query itself (400), and Elsevier refusing the API key (401). No
+// other view can fix any of them.
+const SCOPUS_REFUSALS_NO_VIEW_CAN_FIX = ['PROXY_AUTH_REQUIRED', 'INVALID_QUERY', 'AUTHENTICATION_ERROR'];
 
 // Trying a view the account cannot have costs a doomed upstream call on every
 // cache miss, so once `/health/scopus` names the view that answers, pinning it
@@ -89,8 +98,9 @@ async function fetchScopusSearch(env: WorkerEnv, { query, start = 0, count = 1 }
       attempts.push({ view, status: response.status, code: '', message: '', requestId: '' });
       break;
     }
-    attempts.push(await scopusFailure(response, view));
-    if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status)) break;
+    const failure = await scopusFailure(response, view);
+    attempts.push(failure);
+    if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status) || SCOPUS_REFUSALS_NO_VIEW_CAN_FIX.includes(failure.code)) break;
   }
   // scopusViewLadder always names at least one view.
   if (!response) throw new Error('Scopus was not asked: no view to request');
@@ -109,6 +119,7 @@ function scopusErrorDetail(payload: ScopusPayload | null) {
   const code = payload?.['service-error']?.status?.statusCode
     || payload?.['error-response']?.['error-code']
     || payload?.['service-error']?.statusCode
+    || payload?.code
     || '';
   const message = payload?.['service-error']?.status?.statusText
     || payload?.['error-response']?.['error-message']
