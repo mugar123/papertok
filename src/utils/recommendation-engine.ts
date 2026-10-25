@@ -323,13 +323,20 @@ function activeAreasOf(activeCategories: string[]) {
 // an area-lane article under OpenAlex concept names, and a specialist
 // source's card carries only the leaf it was fetched for. A card of the main
 // corpus request is active by construction: its lanes are the active ones.
+// Only evidence of an area makes a card dormant: one that says nothing of its
+// area (a followed author's article filed under concept names) stays active,
+// as the Worker ranks a like with no area for every group.
 function isInActiveSubarea(paper: Partial<Paper>, categories: string[], activeCategories: string[]) {
   const areas = activeAreasOf(activeCategories);
+  const areaCategories = categories.filter(category => areaKeyForCategory(category));
+  const topicLeaves = leavesForOpenAlexTopic(paper.primaryTopic);
+  const fetchedFor = paper._fetchedFor ?? [];
   return paper._type === 'exploit'
-    || categories.some(category => activeCategories.includes(category)
+    || areaCategories.some(category => activeCategories.includes(category)
       || (areaKeyForCategory(category) === category && areas.has(category)))
-    || leavesForOpenAlexTopic(paper.primaryTopic).some(leaf => activeCategories.includes(leaf))
-    || Boolean(paper._fetchedFor?.some(category => activeCategories.includes(category)));
+    || topicLeaves.some(leaf => activeCategories.includes(leaf))
+    || fetchedFor.some(category => activeCategories.includes(category))
+    || (areaCategories.length === 0 && topicLeaves.length === 0 && fetchedFor.length === 0);
 }
 
 // Everything a score needs that does NOT move with the recent window: the

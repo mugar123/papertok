@@ -180,8 +180,38 @@ test('cards that name no leaf stay active when their area, topic or request is',
 
   // The same shapes in an area that is not active stay dormant.
   assert.equal(score({ id: 'other-wp', primaryCategory: 'physics' }).corpusSimilarity, 0);
-  assert.equal(score({ id: 'other-lane', primaryCategory: '', categories: ['Panel data'], _type: 'followed' }).corpusSimilarity, 0);
   assert.equal(score({ id: 'other-fetched', primaryCategory: 'Nitrogen', _fetchedFor: ['hep-th'] }).sessionInterest, 0);
+});
+
+// ENG-137, ruling R12 (the Worker's R5): only evidence of a dormant area makes
+// a card dormant. A card that says nothing of its area keeps its signals.
+test('a card is dormant only when every piece of area evidence it carries is inactive', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const context = {
+    now: NOW,
+    userPreferences: ['econ.EM'],
+    activeCategories: ['econ.EM', 'econ.GN'],
+  };
+  const similarity = (paper: Parameters<typeof scorePaperForRecommendation>[0], active = context.activeCategories) =>
+    scorePaperForRecommendation({ published, _semanticScore: 0.5, ...paper }, { ...context, activeCategories: active }).corpusSimilarity;
+
+  // A followed author's journal article: concept names, a topic no leaf lists, no request it was fetched for.
+  const article = {
+    id: 'followed-article',
+    primaryCategory: '',
+    categories: ['Panel data', 'Econometrics'],
+    primaryTopic: { id: 'https://openalex.org/T900003', display_name: 'Memory consolidation' },
+    _type: 'followed' as const,
+  };
+  assert.equal(similarity(article), 50);
+
+  // A primary topic that one active leaf (bio.mol) lists, though the reader picked another.
+  const rna = { id: 'rna', categories: ['Biology', 'Genetics'], primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' }, _type: 'followed' as const };
+  assert.equal(similarity(rna, ['bio.gen', 'bio.mol']), 50);
+  assert.equal(similarity(rna), 0);
+
+  // A leaf of an area the reader left, and nothing else.
+  assert.equal(similarity({ id: 'hep-th-1', primaryCategory: 'hep-th', _type: 'followed' }), 0);
 });
 
 // The feed's context is rebuilt on every call, and one re-rank's cache
