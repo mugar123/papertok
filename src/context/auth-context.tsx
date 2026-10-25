@@ -10,6 +10,8 @@ interface StoredProfile {
   onboardingComplete?: boolean;
   preferences?: string[];
   selectedCategories?: string[];
+  deselectedPreferences?: unknown;
+  addedPreferences?: unknown;
   followedAuthors?: string[];
   readingPreferences?: Parameters<typeof normalizeReadingPreferences>[0];
   emailDigestOptIn?: boolean;
@@ -21,6 +23,11 @@ export interface AuthContextValue {
   error: string | null;
   onboardingComplete: boolean;
   userPreferences: string[] | null;
+  // Subareas this account removed from its interests; always empty for a guest.
+  deselectedPreferences: string[];
+  // Subareas this account added to its interests after onboarding; always
+  // empty for a guest.
+  addedPreferences: string[];
   followedAuthors: string[];
   readingPreferences: ReadingPreferences;
   emailDigestPending: boolean;
@@ -82,6 +89,7 @@ import { confirmOnboardingWrite, profileReadOutcome } from './profile-load.ts';
 import { writeOptimistically } from './optimistic-write.ts';
 import { clearRewriteCache } from '../services/paper-rewrite-service.ts';
 import { accountLooksOnboarded } from '../utils/account-onboarding.ts';
+import { nextAdded, nextDeselected } from '../utils/interest-memory.ts';
 import { readGuestInterests } from '../utils/guest-interests.ts';
 import { toggleFollowedAuthor } from '../utils/followed-authors.ts';
 
@@ -99,6 +107,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [error, setError] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [userPreferences, setUserPreferences] = useState<string[] | null>(null);
+  const [deselectedPreferences, setDeselectedPreferences] = useState<string[]>([]);
+  const [addedPreferences, setAddedPreferences] = useState<string[]>([]);
   const [followedAuthors, setFollowedAuthors] = useState<string[]>([]);
   const [readingPreferences, setReadingPreferences] = useState<ReadingPreferences>(DEFAULT_READING_PREFERENCES);
   // A yes to the email digest given in the guest welcome, saved on the
@@ -149,6 +159,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setProfileLoadError(null);
       setUser(currentUser);
       setFollowedAuthors([]);
+      setDeselectedPreferences([]);
+      setAddedPreferences([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setEmailDigestPending(false);
       setSignInProviders(providerIdsOf(currentUser));
@@ -177,6 +189,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
           const preferences = data.preferences || data.selectedCategories || null;
           setUserPreferences(preferences);
           setFollowedAuthors(data.followedAuthors || []);
+          // Anything but a list of strings counts as none.
+          setDeselectedPreferences(Array.isArray(data.deselectedPreferences) ? data.deselectedPreferences.filter((id): id is string => typeof id === 'string') : []);
+          setAddedPreferences(Array.isArray(data.addedPreferences) ? data.addedPreferences.filter((id): id is string => typeof id === 'string') : []);
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setEmailDigestPending(data.emailDigestOptIn === true);
           setInstitution(normalizeInstitution(data.institution));
@@ -400,12 +415,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const userId = user?.uid;
     if (userId) {
+      // Set with the preferences, so a second edit before the write settles
+      // still starts from every result of the first edit. Onboarding writes
+      // no added list: its picks start established.
+      const deselected = nextDeselected(userPreferences ?? [], newPreferences, deselectedPreferences);
+      const added = nextAdded(userPreferences ?? [], newPreferences, addedPreferences, deselectedPreferences);
+      setDeselectedPreferences(deselected);
+      setAddedPreferences(added);
       await setDoc(doc(db, 'users', userId), {
-        preferences: newPreferences
+        preferences: newPreferences,
+        deselectedPreferences: deselected,
+        addedPreferences: added
       }, { merge: true });
       saveStoredOnboarding(userId, { complete: true, preferences: newPreferences });
     }
-  }, [user?.uid]);
+  }, [addedPreferences, deselectedPreferences, user?.uid, userPreferences]);
 
   // Needs the previous list itself, not just its owner's id: the new array is
   // written to Firestore in this same call,
@@ -464,6 +488,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     error,
     onboardingComplete,
     userPreferences,
+    deselectedPreferences,
+    addedPreferences,
     followedAuthors,
     readingPreferences,
     emailDigestPending,
@@ -486,7 +512,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     updateReadingPreferences,
     retryProfileLoad,
   }), [
-    completeOnboarding, completeInstitutionVerification, emailDigestPending, error, followedAuthors, institution, linkInstitution,
+    addedPreferences, completeOnboarding, completeInstitutionVerification, deselectedPreferences, emailDigestPending, error, followedAuthors, institution, linkInstitution,
     linkSignInMethod, loading, onboardingComplete, profileLoadError, readingPreferences,
     reopenSignIn, retryProfileLoad, setUserPreferences, settleEmailDigestOptIn, signInProviders, signInWithGitHub,
     signInWithGoogle, signOut, toggleFollowAuthor, unlinkInstitution, updatePreferences,

@@ -4,6 +4,14 @@ const TAB_SWIPE_MIN_PX = 60;
 const TAB_SWIPE_EDGE_PX = 24;
 
 /**
+ * The tab a feed surface is, by the key its caller passed. For you passes
+ * none: its scroll memory is keyed by account, which no tab is.
+ */
+export function feedTabPathForSurface(surfaceKey: string | undefined) {
+  return FEED_TABS.find(tab => tab.scrollKey === (surfaceKey ?? 'forYou'))?.path;
+}
+
+/**
  * A sideways swipe on the feed moves between the navbar's feed tabs, in the
  * bar's order: left to the next tab, right to the previous one.
  */

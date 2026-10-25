@@ -7,6 +7,7 @@ import { AnimatePresence } from 'framer-motion'
 import { waitForPendingWrites } from 'firebase/firestore'
 import { db } from './services/firebase.ts'
 import { flushAllInteractionProfiles } from './services/interaction-profile-store.ts'
+import { primeAIUses } from './services/paper-rewrite-service.ts'
 import PageTransition from './components/layout/page-transition.tsx'
 import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/use-page-transition-custom.ts'
 import { useOverlayHistory } from './hooks/use-overlay-history.ts'
@@ -35,7 +36,7 @@ import GuestWelcome from './components/public/guest-welcome.tsx'
 import AuthPrompt from './components/public/auth-prompt.tsx'
 import { normalizeAuthReason } from './components/public/auth-prompt-copy.ts'
 import { getPublicPaperPath } from './utils/public-navigation.ts'
-import { lazyWithPreload } from './utils/lazy-preload.ts'
+import { connectionIsFrugal, lazyWithPreload } from './utils/lazy-preload.ts'
 import { reloadIfBehindDeploy } from './utils/service-worker-updates.ts'
 import './app.css'
 
@@ -253,9 +254,7 @@ function AppContent() {
   useEffect(() => {
     if (!sessionUid) return
     const prefetch = () => {
-      const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
-      const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
-      if (frugal) return
+      if (connectionIsFrugal()) return
       // Everything goes through `preload()`, not a bare `import()`: the
       // import warms the module cache, but the first render of a `lazy`
       // component still suspends on it (see utils/lazy-preload.ts), and React
@@ -284,6 +283,12 @@ function AppContent() {
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
     return () => clearTimeout(timer)
+  }, [sessionUid])
+
+  // Not held for the idle prefetch above: a reader opened in the first seconds
+  // would still grow its uses pill late. One small request per session.
+  useEffect(() => {
+    if (sessionUid) primeAIUses(sessionUid)
   }, [sessionUid])
 
   // The href stays for assistive technology; the click is handled here rather
