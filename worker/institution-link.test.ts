@@ -1,7 +1,7 @@
 import type { FirestoreData, FirestoreWrite } from './firestore-admin.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fakeIdToken } from '../src/test-support/firebaseIdToken.ts';
+import { fakeIdToken } from '../src/test-support/firebase-id-token.ts';
 import {
   INSTITUTION_LINK_PATH,
   INSTITUTION_UNLINK_PATH,
@@ -11,7 +11,7 @@ import {
   resolveInstitution,
 } from './institution-link.ts';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.ts';
-import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/requestDeadline.ts';
+import { DEFAULT_REQUEST_TIMEOUT_MS } from '../src/utils/request-deadline.ts';
 import { InstitutionAccessError, findResolver, readAccessQuery, readInstitutionQuery } from './institution-access.ts';
 
 const UID = 'alice-uid';
@@ -265,7 +265,7 @@ function routeQueries({ domain, rorId, entityId }: { domain: string; rorId: stri
   };
 }
 
-// The first is what SeamlessAccess listed under seha.ae (PAP-68). Stored, any
+// The first is what SeamlessAccess listed under seha.ae (ENG-68). Stored, any
 // of these would make every later `/access` and `/institution/services`
 // request of the account a 400.
 const MALFORMED_ENTITY_IDS = [

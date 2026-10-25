@@ -30,7 +30,7 @@ interface InstitutionLinkOptions {
  * once the domain is known.
  */
 
-import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { institutionDomainOf } from '../src/utils/institution-domain.ts';
 import { readBoundedJson } from './bounded-body.ts';
 import { verifyFirebaseIdentity, verifyIdToken, WorkerAuthError } from './firebase-auth.ts';
 import { isEntityId } from './institution-access.ts';
@@ -233,14 +233,14 @@ async function lookupEntityId(domain: string, fetchImpl: typeof fetch, budget: A
   }
 }
 
-// The cache's fifth generation: the first could hold a record that does not
-// own its domain (neu.edu resolved to Shenyang until 2026-10-19), the second
-// one linked through a parent domain (alumni.cmu.edu to CMU), the third the
-// research unit ROR listed first for a university's domain (until
-// 2026-10-20), and the fourth an entityID the access routes refuse (until
-// 2026-10-22). A hand-checked domain's key also names what its entry asks
-// ROR, so the answer cached before an entry was added, changed or removed is
-// not served for another week.
+// The cache is on its fifth generation. Each bump dropped records the code no
+// longer accepts: the first could hold a record that does not own its domain
+// (neu.edu resolved to Shenyang until 2026-10-19), the second one linked
+// through a parent domain (alumni.cmu.edu to CMU), the third the research unit
+// ROR listed first for a university's domain (until 2026-10-20), and the
+// fourth an entityID the access routes refuse. A hand-checked domain's key
+// also names what its entry asks ROR, so the answer cached before an entry was
+// added, changed or removed is not served for another week.
 function cacheRequest(domain: string) {
   const url = new URL(`https://papertok.internal/institution/v5/${encodeURIComponent(domain)}`);
   const checked = CHECKED_MAIL_DOMAINS[domain];

@@ -216,7 +216,7 @@
   }
 
   /* No `backdrop-filter` in this base rule. Both `<dialog>`s in the app
-     (CreateListDialog.css, SaveToListModal.css) override `::backdrop`
+     (create-list-dialog.css, save-to-list-modal.css) override `::backdrop`
      entirely — background, animation, everything — so this rule is what a
      future dialog would actually render with, and every dialog that exists
      today animates its backdrop's opacity in with `fadeIn`. A blur left
@@ -242,7 +242,7 @@
 /* ============================================
    Maths
 
-   KaTeX's stylesheet is imported at runtime (`utils/katexLoader.js`), so it
+   KaTeX's stylesheet is imported at runtime (`utils/katex-loader.ts`), so it
    lands in the document after this file and wins any tie. Every rule here is
    written with a doubled class to take the specificity instead of relying on
    an order we do not control.
@@ -281,11 +281,11 @@
    Theme switch — a crossfade
 
    Pressing the toggle fades the incoming page in over the outgoing one:
-   `utils/themeTransition.js` puts `theme-switch-plain` on `<html>` for the
+   `utils/theme-transition.ts` puts `theme-switch-plain` on `<html>` for the
    length of the View Transition, and the two rules below are the whole
    animation — opacity only, which composites on any GPU. The circular ink
    sweep that used to live here ran just as smoothly but its hard edge read
-   as a cut (measured 2026-09-11, see themeTransition.js).
+   as a cut (measured 2026-09-11, see theme-transition.ts).
 
    These rules sit outside `@layer base` deliberately: they are not element
    resets, and the pseudo-elements they target have to beat the UA's own
@@ -357,9 +357,8 @@ textarea:focus-visible,
 }
 
 /* Visible only while focused: the first Tab of every page lands here.
-   The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
-   400, but the page chrome this link has to sit in front of ignores that scale
-   — the guest header and the public paper header are at 900 and the search
+   The z-index is a literal because fixed headers sit above the token scale:
+   the guest header and the public paper header are at 900 and the search
    header at 1000. At 401 the link was focused and completely painted over by
    the guest header (verified in the browser: `elementFromPoint` on the focused
    link returned `.guest-wordmark`), which is exactly the "focus is hidden by

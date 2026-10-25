@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": ["**/*.ts", "../worker-configuration.d.ts"],
+  "include": ["**/*.ts", "../worker-configuration.d.ts", "../src/types/bloomfilter.d.ts"],
   "exclude": ["**/*.test.ts", "test-support"]
 }

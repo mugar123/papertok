@@ -15,6 +15,7 @@ function storageHarness() {
   };
   return {
     values,
+    alarm: () => alarm,
     storage: {
       transaction: <T>(callback: (transaction: LedgerTransaction) => Promise<T>) => callback(transaction),
       getAlarm: async () => alarm,
@@ -53,6 +54,69 @@ test('reserves subject and global quota atomically', async () => {
   });
 });
 
+test('cached requests spend subject quota while misses reserve and release their separate global amount', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const call = (action: string, globalAmount: number) => ledger.fetch(new Request('https://internal', {
+    method: 'POST', body: JSON.stringify({
+      action, subjectKey: 'a'.repeat(64), subjectLimit: 3, globalLimit: 1, globalAmount,
+    }),
+  })).then(response => response.json<QuotaReading>());
+  assert.deepEqual(await call('reserve', 1), {
+    accepted: true, subjectUsage: 1, globalUsage: 1, remaining: 2,
+  });
+  assert.deepEqual(await call('reserve', 0), {
+    accepted: true, subjectUsage: 2, globalUsage: 1, remaining: 1,
+  });
+  assert.deepEqual(await call('release', 0), {
+    released: true, subjectUsage: 1, globalUsage: 1, remaining: 2,
+  });
+  assert.deepEqual(await call('reserve', 1), {
+    accepted: false, scope: 'global', subjectUsage: 1, globalUsage: 1,
+  });
+});
+
+test('a short retention deadline replaces the default alarm and later requests cannot extend it', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T12:00:00Z') });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const call = (expiresAt?: number) => ledger.fetch(new Request('https://internal', {
+    method: 'POST', body: JSON.stringify({
+      action: 'reserve', subjectKey: 'a'.repeat(64), subjectLimit: 30, globalLimit: 120, expiresAt,
+    }),
+  }));
+  assert.equal((await call()).status, 200);
+  assert.equal(harness.alarm(), Date.parse('2026-10-27T12:00:00Z'));
+  assert.equal((await call(Date.parse('2026-10-24T12:02:00Z'))).status, 200);
+  assert.equal(harness.alarm(), Date.parse('2026-10-24T12:02:00Z'));
+  assert.equal((await call(Date.parse('2026-10-24T12:03:00Z'))).status, 200);
+  assert.equal((await call()).status, 200);
+  assert.equal(harness.alarm(), Date.parse('2026-10-24T12:02:00Z'));
+  await ledger.alarm();
+  assert.equal(harness.values.size, 0);
+});
+
+test('invalid global amounts and expiry deadlines do not write quota state', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T12:00:00Z') });
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  for (const extra of [
+    { globalAmount: -1 }, { globalAmount: null }, { globalAmount: 0.5 },
+    { expiresAt: Date.now() }, { expiresAt: Date.now() + 4 * 24 * 60 * 60 * 1000 },
+    { expiresAt: 'tomorrow' }, { expiresAt: null },
+  ]) {
+    const response = await ledger.fetch(new Request('https://internal', {
+      method: 'POST', body: JSON.stringify({
+        action: 'reserve', subjectKey: 'a'.repeat(64), subjectLimit: 30, globalLimit: 120, ...extra,
+      }),
+    }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { code: 'INVALID_REQUEST' });
+  }
+  assert.equal(harness.values.size, 0);
+  assert.equal(harness.alarm(), null);
+});
+
 test('quota client hashes the user identity before sending it to storage', async () => {
   let body;
   const namespace: TestNamespace = {
@@ -62,8 +126,8 @@ test('quota client hashes the user identity before sending it to storage', async
         body = JSON.parse(options!.body as string);
         return new Response(JSON.stringify({ accepted: true, remaining: 3 }));
       },
-    })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    })),
+  };
 
   const result = await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'ai:2026-08-13',
@@ -138,8 +202,8 @@ test('the release client hides the identity exactly like the reserve one', async
         bodies.push(JSON.parse(options!.body as string));
         return new Response(JSON.stringify({ released: true }));
       },
-    })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    })),
+  };
   const options = {
     periodKey: 'ai:2026-08-23',
     subject: 'ai:firebase-user-id',
@@ -160,8 +224,8 @@ test('the release client hides the identity exactly like the reserve one', async
 test('an unreachable ledger is reported as unavailable, not as unconfigured', async () => {
   const namespace: TestNamespace = {
     idFromName: (value: string): unknown => value,
-    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('boom', { status: 500 }) })) as TestNamespace['get'],
-  } as Env['REQUEST_QUOTA_LEDGER'];
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('boom', { status: 500 }) })),
+  };
 
   assert.deepEqual(await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
     periodKey: 'ai:2026-08-23', subject: 'ai:uid', subjectLimit: 10, globalLimit: 1_000,
@@ -318,4 +382,163 @@ test('a peek past the ceiling reports nothing left rather than a negative', asyn
   harness.values.set(`subject:${subjectKey}`, 4);
 
   assert.equal((await (await call({ action: 'peek' })).json<{ remaining: number }>()).remaining, 0);
+});
+
+// PAP-88: one day's OpenAlex budget, shared by requests that do not matter
+// equally. A request names the share of the ceiling it may reach and the name
+// its units are counted under; OpenAlex's own remaining budget, when reported,
+// lowers the ceiling below the configured cap.
+function dayLedger() {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const call = (body: Record<string, unknown>) => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({ subjectKey: 'e'.repeat(64), subjectLimit: 1_000, globalLimit: 100, ...body }),
+  }));
+  const read = async (body: Record<string, unknown>) => (await call(body)).json<QuotaReading>();
+  return { harness, call, read };
+}
+
+test('a reservation past its percent of the ceiling is refused while percent 100 still passes', async () => {
+  const { read, harness } = dayLedger();
+
+  assert.equal((await read({ action: 'reserve', amount: 50, percent: 60 })).accepted, true);
+  const refused = await read({ action: 'reserve', amount: 11, percent: 60 });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'global');
+  assert.equal(refused.globalUsage, 50, 'a refusal spends nothing');
+  // The same eleven units fit under the whole ceiling.
+  assert.equal((await read({ action: 'reserve', amount: 11, percent: 100 })).accepted, true);
+  assert.equal((await read({ action: 'reserve', amount: 11 })).accepted, true, 'no percent is the whole ceiling');
+  assert.equal(harness.values.get('global'), 72);
+});
+
+test('a reported remaining budget lowers the ceiling, a later higher reading reopens it, and the cap still bounds it', async () => {
+  const { read } = dayLedger();
+
+  await read({ action: 'reserve', amount: 10 });
+  // Five units left upstream after the ten already counted: fifteen in all.
+  await read({ action: 'observe', remaining: 5 });
+  assert.equal((await read({ action: 'reserve', amount: 6 })).accepted, false);
+  assert.equal((await read({ action: 'reserve', amount: 5 })).accepted, true);
+  assert.equal((await read({ action: 'reserve', amount: 1 })).accepted, false);
+
+  // Credit added upstream mid-day: the next reading reopens the day.
+  await read({ action: 'observe', remaining: 20 });
+  assert.equal((await read({ action: 'reserve', amount: 20 })).accepted, true);
+
+  // A reading above the cap does not raise the ceiling past it.
+  await read({ action: 'observe', remaining: 1_000 });
+  assert.equal((await read({ action: 'reserve', amount: 65 })).accepted, true);
+  assert.equal((await read({ action: 'reserve', amount: 1 })).accepted, false);
+  assert.equal((await read({ action: 'peek' })).globalUsage, 100);
+});
+
+test('accepted and refused units are tallied by name, a release gives the used units back, and a peek reads tally and observation without spending', async () => {
+  const { read, harness } = dayLedger();
+
+  await read({ action: 'reserve', amount: 3, tally: 'feed.list' });
+  await read({ action: 'reserve', amount: 2, tally: 'feed.list' });
+  await read({ action: 'reserve', amount: 40, percent: 30, tally: 'exploration.search' });
+  await read({ action: 'reserve', amount: 10, percent: 30, tally: 'exploration.search' });
+  await read({ action: 'release', amount: 1, tally: 'feed.list' });
+  await read({ action: 'observe', remaining: 70 });
+
+  const before = new Map(harness.values);
+  const first = await read({ action: 'peek' });
+  const second = await read({ action: 'peek' });
+  assert.deepEqual(first.tally, {
+    used: { 'feed.list': 4, 'exploration.search': 10 },
+    refused: { 'exploration.search': 40 },
+  });
+  assert.equal(first.globalUsage, 14);
+  assert.equal(first.observed!.ceiling, 84);
+  assert.equal(typeof first.observed!.at, 'number');
+  assert.deepEqual(second, first);
+  assert.deepEqual(new Map(harness.values), before, 'looking spends nothing');
+});
+
+// The tally says what the day's shares refused. A subject's refusal (for
+// OpenAlex, the minute's ceiling) is a burst, not a closed tier, and counting
+// it would add a write to this object exactly when it is busiest.
+test('a refusal by the subject ceiling is not tallied and writes nothing', async () => {
+  const { read, harness } = dayLedger();
+
+  await read({ action: 'reserve', amount: 3, subjectLimit: 3, tally: 'feed.list' });
+  const before = new Map(harness.values);
+  const refused = await read({ action: 'reserve', amount: 1, subjectLimit: 3, tally: 'feed.list' });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'user');
+  assert.deepEqual(new Map(harness.values), before);
+  assert.deepEqual((await read({ action: 'peek' })).tally, { used: { 'feed.list': 3 }, refused: {} });
+});
+
+// The paper harvest's share of the day is split into parts (followed lanes,
+// category lanes): a part is a second subject, checked with the subject and
+// the day in one transaction, so neither can be spent past its limit by a
+// reservation the other accepted.
+test("a reservation naming a part of the subject's allowance stops at the part, spends nothing when refused, and gives the part back on release", async () => {
+  const { read, harness } = dayLedger();
+  const part = { partKey: 'f'.repeat(64), partLimit: 7 };
+
+  assert.equal((await read({ action: 'reserve', amount: 5, ...part })).accepted, true);
+  const before = new Map(harness.values);
+  const refused = await read({ action: 'reserve', amount: 3, ...part });
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'part');
+  assert.deepEqual(new Map(harness.values), before, 'a refused part spends nothing');
+  // The subject and the day still have room for a reservation outside the part.
+  assert.equal((await read({ action: 'reserve', amount: 3 })).accepted, true);
+  assert.equal(harness.values.get(`subject:${'f'.repeat(64)}`), 5);
+
+  await read({ action: 'release', amount: 5, ...part });
+  assert.equal(harness.values.get(`subject:${'f'.repeat(64)}`), 0);
+  assert.equal((await read({ action: 'reserve', amount: 7, ...part })).accepted, true);
+  assert.equal(harness.values.get('global'), 10);
+});
+
+test('the quota client sends a part as a hashed key and its limit', async () => {
+  let body: Record<string, unknown> = {};
+  const namespace: TestNamespace = {
+    idFromName: (value: string): unknown => value,
+    get: ((): Pick<DurableObjectStub, 'fetch'> => ({
+      fetch: async (_url, options) => {
+        body = JSON.parse(options!.body as string);
+        return new Response(JSON.stringify({ accepted: true }));
+      },
+    })),
+  };
+
+  await reserveRequestQuota(namespace as Env['REQUEST_QUOTA_LEDGER'], {
+    periodKey: 'openalex:day:2026-10-23', subject: 'openalex:harvest', subjectLimit: 4_000, globalLimit: 10_000,
+    part: { subject: 'openalex:harvest:follows', limit: 700 },
+  });
+
+  assert.match(String(body.partKey), /^[a-f0-9]{64}$/);
+  assert.notEqual(body.partKey, body.subjectKey);
+  assert.equal(body.partLimit, 700);
+});
+
+test('a malformed percent, tally, remaining or part is refused, not ignored', async () => {
+  const { call, harness } = dayLedger();
+  const malformed: Array<Record<string, unknown>> = [
+    { action: 'reserve', percent: 0 },
+    { action: 'reserve', percent: 101 },
+    { action: 'reserve', percent: 'x' },
+    { action: 'reserve', percent: 50.5 },
+    { action: 'reserve', tally: 'Feed list' },
+    { action: 'reserve', tally: 'feed' },
+    { action: 'observe', remaining: -1 },
+    { action: 'observe' },
+    { action: 'reserve', partKey: 'f'.repeat(64) },
+    { action: 'reserve', partLimit: 7 },
+    { action: 'reserve', partKey: 'not a hash', partLimit: 7 },
+    { action: 'reserve', partKey: 'f'.repeat(64), partLimit: 0 },
+  ];
+  for (const body of malformed) {
+    const response = await call(body);
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.deepEqual(await response.json(), { code: 'INVALID_REQUEST' });
+  }
+  assert.equal(harness.values.size, 0, 'nothing was written');
 });

@@ -1,6 +1,7 @@
 import type { WorkerEnv } from './env.ts';
-import type { UpstreamError } from './provider-runtime.ts';
-import type { CrossrefLicense } from '../src/utils/crossrefLicense.ts';
+import type { VerifiedIdentity } from './firebase-auth.ts';
+import type { IdentityMinuteQuota, UpstreamError } from './provider-runtime.ts';
+import type { CrossrefLicense } from '../src/utils/crossref-license.ts';
 
 export interface InstitutionQuery { domain: string; entityId?: string | null; rorId?: string | null }
 /**
@@ -43,12 +44,12 @@ export interface ResolverCitation {
  * by ISSN, so Crossref supplies those.
  *
  * The answer belongs to the institution, not to the reader, so it can be
- * cached globally; the session is required only to keep the route from being
- * a free proxy to the resolvers.
+ * cached globally. The session keeps the route from being a free proxy to the
+ * resolvers: each cache miss is charged to the reader (`ACCESS_QUOTA`).
  */
 
-import { openLicenseFromCrossref } from '../src/utils/crossrefLicense.ts';
-import { institutionDomainOf } from '../src/utils/institutionDomain.ts';
+import { openLicenseFromCrossref } from '../src/utils/crossref-license.ts';
+import { institutionDomainOf } from '../src/utils/institution-domain.ts';
 import { INSTITUTION_RESOLVERS } from './institution-resolvers.ts';
 import { unpaywallUrl } from './open-access.ts';
 import { cacheResponse } from './provider-runtime.ts';
@@ -71,12 +72,28 @@ const RESOLVER_CITATION = 'article';
 // access again, cached for seven days.
 export const RESOLVER_READING = 'balanced-tags-cdata';
 
-export async function handleInstitutionAccess(request: Request, env: WorkerEnv) {
+// How many cache misses a reader may cause each minute; each one may ask
+// GetFTR, Crossref, the library's resolver twice and Unpaywall. An allowance
+// of its own, so that a fast scroller with a linked library never spends the
+// one related papers and the specialist sources share
+// (`PROVIDER_USER_MINUTE_LIMIT`). A DOI already cached costs nothing.
+const ACCESS_QUOTA: IdentityMinuteQuota = Object.freeze({
+  namespace: 'access',
+  userVariable: 'ACCESS_USER_MINUTE_LIMIT',
+  userFallback: 120,
+  globalVariable: 'ACCESS_GLOBAL_MINUTE_LIMIT',
+  globalFallback: 1_000,
+});
+
+export async function handleInstitutionAccess(request: Request, env: WorkerEnv, identity: Pick<VerifiedIdentity, 'uid'>) {
   const url = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   const query = readAccessQuery(url.searchParams);
   const ttl = (payload: { status: string }) => (payload.status === 'unknown' ? ACCESS_UNKNOWN_CACHE_SECONDS : ACCESS_CACHE_SECONDS);
+  // Not `personal`: the key stays the institution's, and only a miss is charged.
   return cacheResponse(request, origin, env, ttl, () => lookupInstitutionAccess(query, { env }), {
+    identity,
+    identityQuota: ACCESS_QUOTA,
     canonicalParams: { ...upstreamParams(query, env), citation: RESOLVER_CITATION, reading: RESOLVER_READING },
   });
 }
@@ -161,7 +178,7 @@ function httpsUrl(value: string | null | undefined) {
  * or an HTTP(S) URI, up to 300 characters. One rule for what a query may
  * name and for what `/institution/link` may store, so a link never saves an
  * identifier that the access routes then refuse on every request
- * (SeamlessAccess listed `https.//idp.seha.ae/openathens`, PAP-68).
+ * (SeamlessAccess listed `https.//idp.seha.ae/openathens`, ENG-68).
  */
 export function isEntityId(value: string) {
   if (value.length > ENTITY_ID_MAX_LENGTH) return false;

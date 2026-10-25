@@ -19,13 +19,13 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.ts';
-import { paperLegacyAdapter, storedClassification } from '../src/models/Paper.ts';
-import { areaLabelForPaper } from '../src/utils/areaAccent.ts';
-import { serializeLibraryPaper } from '../src/utils/readingLibrary.ts';
-import { LIST_COLORS } from '../src/utils/listColors.ts';
-import { USER_PREFERENCES_MAX } from '../src/utils/accountOnboarding.ts';
-import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/savedSummaryService.ts';
+import { buildSavedPaperPayload } from '../src/utils/saved-paper-payload.ts';
+import { paperLegacyAdapter, storedClassification } from '../src/models/paper.ts';
+import { areaLabelForPaper } from '../src/utils/area-accent.ts';
+import { serializeLibraryPaper } from '../src/utils/reading-library.ts';
+import { LIST_COLORS } from '../src/utils/list-colors.ts';
+import { USER_PREFERENCES_MAX } from '../src/utils/account-onboarding.ts';
+import { buildSummaryHistoryQuery, buildSummaryWrite, SUMMARY_HISTORY_PAGE_SIZE } from '../src/services/saved-summary-service.ts';
 import {
   deleteDoc,
   deleteField,
@@ -323,7 +323,7 @@ test('an old account can make every write the app makes to its user document', a
 });
 
 test('a preference list is capped at 100, and the cap is where the client says it is', async () => {
-  // USER_PREFERENCES_MAX (src/utils/accountOnboarding.js) is what the pickers
+  // USER_PREFERENCES_MAX (src/utils/account-onboarding.ts) is what the pickers
   // enforce; this is the rules engine agreeing with them. One over is refused
   // outright, which is why the onboarding must never let a list that long
   // reach the write (audit of 2026-09-16, hallazgo 4).
@@ -334,6 +334,33 @@ test('a preference list is capped at 100, and the cap is where the client says i
   await assertSucceeds(setDoc(ref, { onboardingComplete: true, preferences: list(USER_PREFERENCES_MAX) }, { merge: true }));
   await assertFails(setDoc(ref, { onboardingComplete: true, preferences: list(USER_PREFERENCES_MAX + 1) }, { merge: true }));
   await assertFails(setDoc(ref, { preferences: list(USER_PREFERENCES_MAX + 1) }, { merge: true }));
+});
+
+test('the owner writes the subjects they removed, up to 150, and nobody else does', async () => {
+  // ENG-137: users/{uid}.deselectedPreferences. The taxonomy has 149 subareas,
+  // so 150 leaves room for one id retired from it.
+  await reset();
+  await seedLegacyUserDoc();
+  const ref = doc(asAlice(), 'users', ALICE);
+  const list = (n: number) => Array.from({ length: n }, (_, i) => `cat.${i}`);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG'], deselectedPreferences: ['hep-th'] }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { deselectedPreferences: list(150) }, { merge: true }));
+  await assertFails(setDoc(ref, { deselectedPreferences: list(151) }, { merge: true }));
+  await assertFails(setDoc(ref, { deselectedPreferences: 'hep-th' }, { merge: true }));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE), { deselectedPreferences: ['hep-th'] }, { merge: true }));
+});
+
+test('the owner writes the subjects they added, up to 150, and nobody else does', async () => {
+  // ENG-137: users/{uid}.addedPreferences, written with the preferences by an edit.
+  await reset();
+  await seedLegacyUserDoc();
+  const ref = doc(asAlice(), 'users', ALICE);
+  const list = (n: number) => Array.from({ length: n }, (_, i) => `cat.${i}`);
+  await assertSucceeds(setDoc(ref, { preferences: ['cs.LG', 'econ.EM'], deselectedPreferences: [], addedPreferences: ['econ.EM'] }, { merge: true }));
+  await assertSucceeds(setDoc(ref, { addedPreferences: list(150) }, { merge: true }));
+  await assertFails(setDoc(ref, { addedPreferences: list(151) }, { merge: true }));
+  await assertFails(setDoc(ref, { addedPreferences: 'econ.EM' }, { merge: true }));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE), { addedPreferences: ['econ.EM'] }, { merge: true }));
 });
 
 test('a legacy field cannot be given a new value', async () => {
@@ -754,7 +781,7 @@ test('F12: a private list carries the sync and attribution stamps', async () => 
 // The clause validates ten fields and shipped with no test at all, which is
 // the exact shape the suite exists to catch: an allowlist reads correct and
 // denies nothing until something writes through it. `src/services/
-// userHighlightService.js` is the only writer, so every body below is one the
+// user-highlight-service.ts` is the only writer, so every body below is one the
 // client could actually produce.
 // =========================================================================
 
@@ -1358,7 +1385,8 @@ test('another account cannot read or write the classification of a saved paper',
  * Both writers of savedPapers merge into the stored document. One saved
  * before PAP-60 kept only the category its card showed: the tester's AI
  * survey was saved as hep-th. A new save of the same card has to be accepted
- * as an update of that document and leave it reading Computer Science.
+ * as an update of that document and leave it reading Artificial Intelligence,
+ * as its card does.
  */
 test('a save over a savedPapers document from before PAP-60 replaces its category', async () => {
   await reset();
@@ -1383,7 +1411,7 @@ test('a save over a savedPapers document from before PAP-60 replaces its categor
 
   const stored = (await getDoc(ref)).data()!;
   assert.equal(stored.primaryCategory, '');
-  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Computer Science');
+  assert.equal(areaLabelForPaper(paperLegacyAdapter({ id: card.id, ...stored })), 'Artificial Intelligence');
 });
 
 /*

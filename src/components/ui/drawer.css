@@ -11,7 +11,7 @@
    spring back from a swipe that does not dismiss). The default curve speeds
    up for four frames and then brakes hard, which a short sheet hides and a
    tall one does not; a tall sheet sets its own on the popup and on the
-   backdrop (`overlayClassName`), as AbstractSheet.css does.
+   backdrop (`overlayClassName`), as abstract-sheet.css does.
    ============================================ */
 
 .ui-drawer-backdrop {
