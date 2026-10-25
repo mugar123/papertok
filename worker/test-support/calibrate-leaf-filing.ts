@@ -18,9 +18,11 @@
 // the centroid it is scored against, and in the corpus that preprint's leaf
 // already holds it, so similarity never files it. So is an article, labelled or
 // sampled from an area lane, that the venue lane of a leaf of the area takes
-// (openalex-leaf-venues.generated.ts): the harvest files it under that leaf by
-// its journal, and it leaves the area lane before similarity is tried. Each
-// area's other labelled articles are split in two with a fixed seed.
+// (openalex-leaf-venues.generated.ts), and then one its topic lane takes
+// (`openAlexTopicFilterForLeaf`): the harvest files it under that leaf by its
+// journal or its primary topic, and `fileAreaPapers` takes it out of the area
+// lane before similarity is tried. Each area's other labelled articles are
+// split in two with a fixed seed.
 // On the calibration half, the chosen rule is the one that files the most
 // articles correctly at CALIBRATION_PRECISION or more; the held-out half then
 // measures it once. An area gets a rule only when its held-out precision
@@ -36,6 +38,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getAllLeafCategories } from '../../src/data/category-taxonomy.ts';
+import { openAlexTopicFilterForLeaf } from '../../src/utils/area-accent.ts';
 import { type FilingRule, areaCentroids, closestLeaf, leafCentroids, ruleFiles } from '../leaf-filing.ts';
 import { OPENALEX_LEAF_VENUES } from '../openalex-leaf-venues.generated.ts';
 import { AREA_LANE_AREAS } from '../paper-store.ts';
@@ -110,10 +113,11 @@ function areaArticles(labelled: LabelledArticle[], area: string) {
 }
 
 type VenueLanes = typeof OPENALEX_LEAF_VENUES;
+/** A leaf's topic lane filter as the harvest sends it, or null without a lane. */
+type TopicLaneFilter = (leaf: string) => string | null;
 
-/** Whether this venue lane lists the article's source and every filter it sends matches the article. */
-function venueLaneTakes({ sources, filters }: VenueLanes[string], record: OpenAlexFields) {
-  if (!record.source || !sources.includes(record.source)) return false;
+/** Whether the article matches each of these works filters of a lane's request. */
+function matchesFilters(filters: readonly string[], record: OpenAlexFields) {
   return filters.every(filter => {
     const field = filter.slice(0, filter.indexOf(':'));
     const value = filter.slice(filter.indexOf(':') + 1);
@@ -122,22 +126,44 @@ function venueLaneTakes({ sources, filters }: VenueLanes[string], record: OpenAl
     if (field === 'authors_count' && /^[<>]\d+$/.test(value)) {
       return value.startsWith('>') ? record.authors > Number(value.slice(1)) : record.authors < Number(value.slice(1));
     }
-    throw new Error(`No reading of the venue lane filter ${filter}`);
+    throw new Error(`No reading of the lane filter ${filter}`);
   });
+}
+
+/** Whether this venue lane lists the article's source and every filter it sends matches the article. */
+function venueLaneTakes({ sources, filters }: VenueLanes[string], record: OpenAlexFields) {
+  if (!record.source || !sources.includes(record.source)) return false;
+  return matchesFilters(filters, record);
 }
 
 /** Whether a venue lane of one of the area's leaves takes the article, so it never reaches similarity filing. */
 const takenByVenueLane = (area: string, record: OpenAlexFields | undefined, venues: VenueLanes) => record !== undefined
   && Object.entries(venues).some(([leaf, lane]) => LEAF_AREA.get(leaf) === area && venueLaneTakes(lane, record));
 
+/**
+ * Whether the topic lane of one of the area's leaves takes the article: its
+ * primary topic and type match the lane's filter. The lane's other conditions
+ * (publication window, not retracted, core source) are the area lane's own.
+ */
+const takenByTopicLane = (area: string, record: OpenAlexFields | undefined, topicFilter: TopicLaneFilter) => record !== undefined
+  && [...LEAF_AREA].some(([leaf, leafArea]) => {
+    const filter = leafArea === area ? topicFilter(leaf) : null;
+    return filter !== null && matchesFilters(filter.split(','), record);
+  });
+
 /** The area's labelled articles the calibration scores, and how many each exclusion left out. */
-function calibrationArticles(dataset: CalibrationDataset, area: string, venues: VenueLanes) {
+function calibrationArticles(dataset: CalibrationDataset, area: string, venues: VenueLanes, topicFilter: TopicLaneFilter) {
   const labelled = areaArticles(dataset.labelled, area);
   const withoutPreprints = areaArticles(scoredArticles(dataset), area);
-  const articles = withoutPreprints.filter(article => !takenByVenueLane(area, article.openAlex, venues));
+  const outsideVenueLanes = withoutPreprints.filter(article => !takenByVenueLane(area, article.openAlex, venues));
+  const articles = outsideVenueLanes.filter(article => !takenByTopicLane(area, article.openAlex, topicFilter));
   return {
     articles,
-    leftOut: { centroidPreprint: labelled.length - withoutPreprints.length, venueLane: withoutPreprints.length - articles.length },
+    leftOut: {
+      centroidPreprint: labelled.length - withoutPreprints.length,
+      venueLane: withoutPreprints.length - outsideVenueLanes.length,
+      topicLane: outsideVenueLanes.length - articles.length,
+    },
   };
 }
 
@@ -173,7 +199,7 @@ interface AreaCalibration {
   area: string;
   centroids: string[];
   labelledArticles: number;
-  leftOut: { centroidPreprint: number; venueLane: number };
+  leftOut: { centroidPreprint: number; venueLane: number; topicLane: number };
   labelsPerLeaf: Record<string, Record<Label, number>>;
   split?: { calibration: number; heldOut: number };
   rule?: FilingRule;
@@ -183,16 +209,18 @@ interface AreaCalibration {
     recall: number | null; recallInterval: Interval;
     shareFiled: number | null; shareFiledInterval: Interval;
   };
-  areaLaneSample?: { papers: number; leftOutByVenueLane: number; filed: number; share: number | null; interval: Interval };
+  areaLaneSample?: { papers: number; leftOutByVenueLane: number; leftOutByTopicLane: number; filed: number; share: number | null; interval: Interval };
   enabled: boolean;
   reason: string;
 }
 
-export function calibrateLeafFiling(dataset: CalibrationDataset, venues: VenueLanes = OPENALEX_LEAF_VENUES): AreaCalibration[] {
+export function calibrateLeafFiling(
+  dataset: CalibrationDataset, venues: VenueLanes = OPENALEX_LEAF_VENUES, topicFilter: TopicLaneFilter = openAlexTopicFilterForLeaf,
+): AreaCalibration[] {
   const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
   return AREA_LANE_AREAS.flatMap((area): AreaCalibration[] => {
     const own = areaCentroids(area, centroids);
-    const { articles, leftOut } = calibrationArticles(dataset, area, venues);
+    const { articles, leftOut } = calibrationArticles(dataset, area, venues, topicFilter);
     if (articles.length === 0) return [];
     const labelsPerLeaf: Record<string, Record<Label, number>> = {};
     for (const article of articles) {
@@ -229,7 +257,8 @@ export function calibrateLeafFiling(dataset: CalibrationDataset, venues: VenueLa
     const precision = ratio(test.correct, decided);
     const enabled = decided >= MIN_HELD_OUT_DECIDED && test.correct / decided >= REQUIRED_PRECISION;
     const sampled = dataset.areaSamples.filter(paper => paper.area === area);
-    const lane = sampled.filter(paper => !takenByVenueLane(area, paper.openAlex, venues));
+    const outsideVenueLanes = sampled.filter(paper => !takenByVenueLane(area, paper.openAlex, venues));
+    const lane = outsideVenueLanes.filter(paper => !takenByTopicLane(area, paper.openAlex, topicFilter));
     const laneFiled = lane.filter(paper => ruleFiles(closestLeaf(vectorOf(paper.vector), own), rule)).length;
     return [{
       ...summary,
@@ -243,7 +272,7 @@ export function calibrateLeafFiling(dataset: CalibrationDataset, venues: VenueLa
         shareFiled: ratio(test.filed, test.papers), shareFiledInterval: wilson(test.filed, test.papers),
       },
       areaLaneSample: {
-        papers: lane.length, leftOutByVenueLane: sampled.length - lane.length,
+        papers: lane.length, leftOutByVenueLane: sampled.length - outsideVenueLanes.length, leftOutByTopicLane: outsideVenueLanes.length - lane.length,
         filed: laneFiled, share: ratio(laneFiled, lane.length), interval: wilson(laneFiled, lane.length),
       },
       enabled,
@@ -258,7 +287,7 @@ function heldOutFixture(dataset: CalibrationDataset, areas: string[]) {
   const centroids = leafCentroids(dataset.arxiv.map(paper => ({ leaf: paper.leaf, vector: vectorOf(paper.vector) })));
   const entries = areas.map(area => {
     const own = Object.fromEntries([...areaCentroids(area, centroids)].map(([leaf, vector]) => [leaf, Buffer.from(vector.buffer).toString('base64')]));
-    const [, heldOut] = calibrationSplit(calibrationArticles(dataset, area, OPENALEX_LEAF_VENUES).articles);
+    const [, heldOut] = calibrationSplit(calibrationArticles(dataset, area, OPENALEX_LEAF_VENUES, openAlexTopicFilterForLeaf).articles);
     const articles = heldOut.sort((a, b) => a.id.localeCompare(b.id)).map(({ id, labels, vector }) => JSON.stringify({ id, labels, vector }));
     return `${JSON.stringify(area)}: {\n"centroids": ${JSON.stringify(own)},\n"articles": [\n${articles.join(',\n')}\n]}`;
   });

@@ -55,7 +55,7 @@ test('calibration files clear articles, leaves those between two leaves at area 
   assert.equal(physics.heldOut.wrong, 0);
   assert.equal(physics.heldOut.precision, 1);
   assert.equal(physics.heldOut.recall, 1);
-  assert.deepEqual(physics.areaLaneSample, { papers: 20, leftOutByVenueLane: 0, filed: 10, share: 0.5, interval: [0.299, 0.701] });
+  assert.deepEqual(physics.areaLaneSample, { papers: 20, leftOutByVenueLane: 0, leftOutByTopicLane: 0, filed: 10, share: 0.5, interval: [0.299, 0.701] });
 
   assert.match(report[1].reason, /^no rule reaches 0.95 precision/);
   assert.equal(report[2].reason, 'fewer than two leaves with a centroid');
@@ -110,7 +110,7 @@ test('a labelled article whose preprint is one of the centroid papers is left ou
   };
   const [physics] = calibrateLeafFiling(dataset);
   assert.equal(physics.labelledArticles, 81);
-  assert.deepEqual(physics.leftOut, { centroidPreprint: 1, venueLane: 0 });
+  assert.deepEqual(physics.leftOut, { centroidPreprint: 1, venueLane: 0, topicLane: 0 });
   assert.deepEqual(physics.split, { calibration: 41, heldOut: 40 });
 });
 
@@ -148,10 +148,47 @@ test('an article the venue lane of a leaf of the area takes is left out, labelle
   };
   const [physics] = calibrateLeafFiling(dataset, venues);
   assert.equal(physics.labelledArticles, 84);
-  assert.deepEqual(physics.leftOut, { centroidPreprint: 0, venueLane: 3 });
+  assert.deepEqual(physics.leftOut, { centroidPreprint: 0, venueLane: 3, topicLane: 0 });
   assert.deepEqual(physics.split, { calibration: 42, heldOut: 42 });
   assert.ok(physics.areaLaneSample);
   assert.deepEqual([physics.areaLaneSample.papers, physics.areaLaneSample.leftOutByVenueLane], [5, 1]);
+});
+
+test('an article the topic lane of a leaf of the area takes is left out before the split, labelled or sampled from the area lane', () => {
+  // Each leaf's topic lane filter, in the form the harvest sends it.
+  const topicLanes: Record<string, string> = { 'hep-ph': 'primary_topic.id:T1|T2,type:article', 'math.CO': 'primary_topic.id:T3,type:article' };
+  const topicFilter = (leaf: string) => topicLanes[leaf] ?? null;
+  const venues = { 'hep-ex': { sources: ['S1'], filters: ['type:article'] } };
+  const record = (source: string, type = 'article', primaryTopic: string | null = null) => ({ source, type, primaryTopic, authors: 3 });
+  const dataset: Parameters<typeof calibrateLeafFiling>[0] = {
+    arxiv: [
+      ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
+      ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
+    ],
+    labelled: [
+      ...many(40, index => ({ id: `W1${index}`, vector: vector({ 0: 1 }, 1_000 + index), labels: { 'hep-th': 'on' as const } })),
+      ...many(40, index => ({ id: `W2${index}`, vector: vector({ 1: 1 }, 2_000 + index), labels: { 'quant-ph': 'on' as const } })),
+      // Taken by a physics topic lane: left out.
+      { id: 'W30', vector: vector({ 0: 1 }, 3_000), labels: { 'hep-th': 'on' as const }, openAlex: record('S9', 'article', 'T1') },
+      { id: 'W31', vector: vector({ 1: 1 }, 3_001), labels: { 'quant-ph': 'on' as const }, openAlex: record('S9', 'article', 'T2') },
+      // Taken by a venue lane as well: counted there once.
+      { id: 'W32', vector: vector({ 0: 1 }, 3_002), labels: { 'hep-th': 'on' as const }, openAlex: record('S1', 'article', 'T1') },
+      // A lane's topic but not its type, or another area's leaf's topic: kept.
+      { id: 'W40', vector: vector({ 0: 1 }, 4_000), labels: { 'hep-th': 'on' as const }, openAlex: record('S9', 'review', 'T1') },
+      { id: 'W41', vector: vector({ 0: 1 }, 4_001), labels: { 'hep-th': 'on' as const }, openAlex: record('S9', 'article', 'T3') },
+    ],
+    areaSamples: [
+      ...many(4, index => ({ id: `W5${index}`, area: 'physics', vector: vector({ 0: 1 }, 5_000 + index) })),
+      { id: 'W60', area: 'physics', vector: vector({ 0: 1 }, 6_000), openAlex: record('S9', 'article', 'T2') },
+      { id: 'W61', area: 'physics', vector: vector({ 0: 1 }, 6_001), openAlex: record('S9', 'article', 'T3') },
+    ],
+  };
+  const [physics] = calibrateLeafFiling(dataset, venues, topicFilter);
+  assert.equal(physics.labelledArticles, 82);
+  assert.deepEqual(physics.leftOut, { centroidPreprint: 0, venueLane: 1, topicLane: 2 });
+  assert.deepEqual(physics.split, { calibration: 41, heldOut: 41 });
+  assert.ok(physics.areaLaneSample);
+  assert.deepEqual([physics.areaLaneSample.papers, physics.areaLaneSample.leftOutByVenueLane, physics.areaLaneSample.leftOutByTopicLane], [5, 0, 1]);
 });
 
 test('an area just under the required precision on its held-out half gets no rule, though the precision rounds to it', () => {

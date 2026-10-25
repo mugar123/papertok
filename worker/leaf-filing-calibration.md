@@ -16,66 +16,72 @@ decide. A filing under a leaf the article has no label for, while no leaf of
 the area is on target for it, is reported as unknown and left out of
 precision.
 
-Since ENG-104, a leaf's venue lane files the articles of the journals a
+A leaf's topic lane files the core-source articles whose primary topic a
 labelled sample admitted for that leaf
-([venue lanes](../scripts/README-openalex-leaf-venues.md)). Such an article
-leaves its area lane before similarity is tried, so similarity only sees
-articles from other journals.
+([topic lanes](../scripts/README-openalex-leaf-topics.md)), and since ENG-104
+its venue lane files the articles of the journals a labelled sample admitted
+for it ([venue lanes](../scripts/README-openalex-leaf-venues.md)). Such an
+article leaves its area lane before similarity is tried (`fileAreaPapers`),
+whichever leaf of the area holds it, so similarity only sees articles that no
+topic or venue lane of the area takes.
 
 ## Decision
 
 No area gets a rule. Every area's journal articles that no leaf's lane holds
 stay at area level, as before.
 
-| Area | Labelled articles scored | Left out: venue lane, own preprint | Leaves with a centroid | Rule chosen on the calibration half | Held-out precision | Held-out recall | Held-out share filed | Area-lane sample filed |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| math | 166 | 177, 0 | 16 of 17 | 0.53 / 0.045 | 0.86 (24/28), 0.685–0.943 | 0.53 (24/45), 0.391–0.671 | 0.46 (38/83), 0.355–0.564 | 42/94, 0.350–0.547 |
-| physics | 314 | 371, 6 | 26 of 26 | none | | | | |
-| cs | 285 | 224, 1 | 20 of 21 | none | | | | |
-| q-fin | 107 | 34, 0 | 4 of 8 | none | | | | |
-| eess | 88 | 74, 0 | 3 of 7 | none | | | | |
-| econ | 109 | 64, 0 | 3 of 3 | none | | | | |
+| Area | Labelled articles scored | Left out: venue lane, topic lane, own preprint | Leaves with a centroid | Rule chosen on the calibration half |
+| --- | --- | --- | --- | --- |
+| physics | 286 | 371, 28, 6 | 26 of 26 | none |
+| math | 119 | 177, 47, 0 | 16 of 17 | none |
+| cs | 191 | 164, 44, 1 | 15 of 16 | none |
+| ai | 45 | 60, 15, 0 | 5 of 5 | none |
+| q-fin | 82 | 34, 25, 0 | 4 of 8 | none |
+| eess | 62 | 74, 26, 0 | 3 of 7 | none |
+| econ | 109 | 64, 0, 0 | 3 of 3 | none |
+| mech | 10 | 13, 3, 0 | 0 of 9 | none |
+| civil | 1 | 0, 0, 0 | 0 of 8 | none |
+| chemeng | 1 | 0, 0, 0 | 0 of 8 | none |
+
+The table is the run of 2026-10-25. In each area with at least two leaves with
+a centroid, no rule reached 95% precision over 20 decided filings on the
+calibration half, so nothing was measured on the held-out halves. Half the
+leaves of q-fin publish under 50 arXiv papers in 90 days, and four of the
+seven eess leaves (telecommunications, electronics, power, optics) are not
+arXiv categories: neither has a centroid, so their articles can only be filed
+wrong. Mechanical, civil and chemical engineering have no arXiv leaf, so no
+centroid. Chemistry, an area since ENG-114, has no labelled article.
+
+### Earlier runs
 
 Ranges are Wilson 95% intervals. Precision counts the filings whose outcome
-the labels decide; recall is over the held-out articles labelled on target for
-a leaf of the area. Mathematics misses the bar twice: its 28 decided held-out
-filings are under 30, and 0.86 is under 0.9. Ten more of its 38 held-out
-filings are unknown; were all ten correct, this rule would reach 34 of 38
-(0.89), still under the bar. In the other areas no rule reached 95% precision over 20
-decided filings on the calibration half, so nothing was measured on their
-held-out halves. Half the leaves of q-fin publish under 50 arXiv papers in 90
-days, and four of the seven eess leaves (telecommunications, electronics,
-power, optics) are not arXiv categories: neither has a centroid, so their
-articles can only be filed wrong. Mechanical, civil and chemical engineering
-have no arXiv leaf, so no centroid.
-
-The table is the run of 2026-10-24. Since then ENG-113 (#319) made cs.AI,
-cs.LG, cs.CV, cs.CL and cs.NE the area `ai`, so the command now splits the
-computer science row. `cs`: 235 articles scored (164 left out for a venue lane,
-1 for its own preprint), 15 leaves with a centroid; the rule chosen on the
-calibration half, 0.66 / 0.02, files 21 held-out articles, 15 correct, 3 wrong
-and 3 unknown: 0.83 precision (15/18, 0.608–0.942), over fewer decided filings
-than the 30 the bar asks for. `ai`: 60 articles scored (60 left out for a
-venue lane), 5 leaves with a centroid, and no rule reaches 95% precision over
-20 decided filings on the calibration half. No area has a rule, as in the
-table.
-
-### Before the venue lanes
+the labels decide.
 
 The first calibration, on the same dataset before ENG-104 was merged, also
-scored the articles the venue lanes now take. It chose similarity 0.58 and
-margin 0.065 for mathematics: 48 of 49 decided held-out filings were correct
-(0.893–0.996), and 10 more were unknown, so 48 of 59 filed articles were known
-to be correct. Physics reached 0.88 (22/25) and computer science 0.78 (25/32),
-both under the bar. After the seven articles whose preprint builds a centroid
-(six physics, one computer science) were left out, still before the venue
-lanes, the rules chosen reached 0.84 (37/44) and 0.76 (25/33); mathematics has
-no such article and did not change. Split by journal, in a check outside the
-committed command, that mathematics rule filed 33 of the 87 held-out articles
-from journals a mathematics venue lane now takes: 31 correct and 2 unknown. It
-filed 26 of the 84 from other journals: 17 correct, 1 wrong and 8 unknown.
-Only articles of the second kind still reach similarity, and their 18 decided
-filings are under the 30 the bar asks for.
+scored the articles the venue and topic lanes take. It chose similarity 0.58
+and margin 0.065 for mathematics: 48 of 49 decided held-out filings were
+correct (0.893–0.996), and 10 more were unknown, so 48 of 59 filed articles
+were known to be correct. Physics reached 0.88 (22/25) and computer science
+0.78 (25/32), both under the bar. After the seven articles whose preprint
+builds a centroid (six physics, one computer science) were left out, still
+before the venue lanes, the rules chosen reached 0.84 (37/44) and 0.76
+(25/33); mathematics has no such article and did not change. Split by lane,
+in a check outside the committed command, that mathematics rule filed 33 of
+the 87 held-out articles a mathematics venue lane takes: 31 correct and 2
+unknown. It filed 13 of the 27 a mathematics topic lane takes: 10 correct and
+3 unknown. Only the other 57 still reach similarity; it filed 13 of them, 7
+correct, 1 wrong and 5 unknown, so 8 decided filings against the 30 the bar
+asks for.
+
+The run of 2026-10-24 left out the venue lanes' articles but not the topic
+lanes'. It chose 0.53 / 0.045 for mathematics: 24 of 28 decided held-out
+filings were correct (0.86, 0.685–0.943), and 10 more were unknown. Rerun
+after ENG-113 made cs.AI, cs.LG, cs.CV, cs.CL and cs.NE the area `ai`, it
+chose 0.66 / 0.02 for `cs`: 15 of 18 (0.83, 0.608–0.942), and 3 unknown. Both
+missed the bar on precision and on decided filings. The topic lanes of
+math.CO, math.DS and math.RA take 47 of the 166 mathematics articles that run
+scored, and those of cs.NI, cs.SD and cs.SE 44 of the 235 `cs` articles.
+Without them no rule reaches 95% on either calibration half.
 
 ## Method
 
@@ -98,22 +104,26 @@ filings are under the 30 the bar asks for.
   (math.AP) to 14 days (math.LO). The harvest averages the newest 500, which
   cover a different time in each leaf, so production centroids point somewhat
   differently.
-- Left out before the split: an article whose OpenAlex record names one of
-  those arXiv papers as its preprint, matched by arXiv id, because that
-  preprint's leaf already holds it in the corpus and the preprint is part of
-  the centroid; and an article, labelled or in the area-lane sample, that the
-  venue lane of a leaf of the area takes (its journal listed in
-  `worker/openalex-leaf-venues.generated.ts`, and its type and any topic or
-  author-count filter matching), because that lane files it by journal.
+- Left out before the split, in this order: an article whose OpenAlex record
+  names one of those arXiv papers as its preprint, matched by arXiv id,
+  because that preprint's leaf already holds it in the corpus and the
+  preprint is part of the centroid; an article, labelled or in the area-lane
+  sample, that the venue lane of a leaf of the area takes (its journal listed
+  in `worker/openalex-leaf-venues.generated.ts`, and its type and any topic or
+  author-count filter matching), because that lane files it by journal; and
+  one that the topic lane of a leaf of the area takes (its primary topic and
+  type matching `openAlexTopicFilterForLeaf`, over
+  `src/data/open-alex-leaf-topics.generated.ts`), because that lane files it
+  by topic. Either lane takes it whatever leaves it is labelled for.
 - Split and selection, fixed before any held-out result was computed: each
   area's labelled articles, ordered by id, are shuffled with seed 107 and
   halved. The grid is similarity 0.30 to 0.95 by 0.01 and margin 0 to 0.20 by
   0.005. On the calibration half, the rule with the most correct filings at
   95% precision or more over 20 decided filings or more is chosen; the area
   gets it only when its held-out precision is 90% or more over 30 decided
-  filings or more. Both exclusions were added after the first results, the
-  preprint one in review and the venue one when ENG-104 was merged; the split
-  and selection did not change.
+  filings or more. The three exclusions were added after the first results:
+  the preprint and topic ones in review, the venue one when ENG-104 was
+  merged. The split and selection did not change.
 - A filing is correct under a leaf labelled on target, wrong under one
   labelled off target or doubted, or under an unlabelled leaf while another
   leaf of the area is on target, and unknown otherwise.
@@ -126,11 +136,11 @@ Nothing changes in production: no centroid is stored, and no article is filed
 under a leaf by similarity. An area lane loses only the articles a leaf's lane
 already holds.
 
-Mathematics is the area closest to the bar. Blind labels for articles from
-the mathematics area lane itself, from journals no venue lane takes, would
-measure the articles similarity actually sees and add decided filings. Labels
-for the leaf each unknown filing went to would turn those unknowns into
-outcomes.
+No area reaches 95% precision even on its calibration half. Blind labels for
+articles from an area lane itself, of journals no venue lane takes
+and topics no topic lane takes, would measure the articles similarity actually
+sees. Of the 100 sampled from the mathematics lane, venue lanes take 6 and
+topic lanes 12; the other 82 are such articles.
 
 A rule shipped by a later calibration would also change who gets the articles
 it files, and how far back. Only a category request reads area lanes: a
