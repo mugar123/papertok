@@ -809,7 +809,7 @@ test("a PubMed lane's backfill reads back from where the last run stopped, in a 
   for (let step = 0; step < 7; step += 1) await backfillLane(store, job);
   assert.equal(terms.length, 40);
   // Any record with an abstract, and one without unless it is an editorial, a letter or a comment; the backfill's day last.
-  const admitted = ' AND (hasabstract OR NOT (editorial[pt] OR letter[pt] OR comment[pt]))';
+  const admitted = ' NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)';
   assert.ok(terms.every(term => term.endsWith(`)${admitted} AND 1800/01/01:2026/10/24[edat]`)), terms[0]);
   assert.deepEqual({ ...backfill() }, { backfill_until: '2026-10-24', backfill_page: 41 });
 
@@ -977,7 +977,7 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
   assert.ok(Date.now() - started <= 2 * 60_000, `the lane took ${(Date.now() - started) / 1000} s`);
   assert.equal(urls.filter(url => url.pathname.endsWith('/esearch.fcgi')).length, 2);
   const firstPage = urls.find(url => url.pathname.endsWith('/esearch.fcgi'))!.searchParams.get('term')!;
-  assert.ok(firstPage.endsWith(') AND (hasabstract OR NOT (editorial[pt] OR letter[pt] OR comment[pt]))'), 'a record without an abstract is listed too, unless it is an editorial, a letter or a comment');
+  assert.ok(firstPage.endsWith(') NOT ((editorial[pt] OR letter[pt] OR comment[pt]) NOT hasabstract)'), 'a record without an abstract is listed too, unless it is an editorial, a letter or a comment');
   assert.deepEqual(db.prepare('SELECT source, lane FROM lane_state').all(), [], 'its progress is not recorded: the next run reads it again');
 });
 
