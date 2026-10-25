@@ -67,7 +67,10 @@ test("an arXiv category's chip, kicker and ink name the same area", () => {
   for (const [id, areaKey] of ARXIV_CATEGORY_AREAS) {
     const area = CATEGORIES[areaKey];
     const paper = { primaryCategory: id, categories: [id] };
-    assert.equal(getCategoryLabel(id), area.subcategories[id]?.label ?? area.label, id);
+    const expectedLabel = id === 'physics.data-an'
+      ? 'Data Analysis, Statistics and Probability'
+      : area.subcategories[id]?.label ?? area.label;
+    assert.equal(getCategoryLabel(id), expectedLabel, id);
     assert.equal(areaLabelForPaper(paper), area.label, id);
     assert.equal(areaAccentForPaper(paper), area.gradient, id);
   }

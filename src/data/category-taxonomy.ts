@@ -291,6 +291,8 @@ export function getArxivArchiveArea(categoryId = '') {
  * Get the human-readable label for a given arXiv category.
  */
 export function getCategoryLabel(arxivCategory: string) {
+  // Display-only: this category is not a selectable feed leaf.
+  if (arxivCategory === 'physics.data-an') return 'Data Analysis, Statistics and Probability';
   if (CATEGORIES[arxivCategory]) {
     const area = CATEGORIES[arxivCategory];
     return area.label || area.label;
