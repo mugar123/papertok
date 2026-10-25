@@ -371,12 +371,14 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   // A specialist source's card seldom names a category of the taxonomy. When
   // the source was asked for one of the reader's, the card earns that
   // category's preference without claiming the category.
-  const chosenDirectly = [primaryCategory, ...leavesForOpenAlexTopic(paper.primaryTopic), ...(paper._fetchedFor || [])].filter(picked);
+  const chosenAsPrimary = [primaryCategory, ...leavesForOpenAlexTopic(paper.primaryTopic)].filter(picked);
+  const chosenDirectly = [...chosenAsPrimary, ...(paper._fetchedFor || []).filter(picked)];
   const chosenAsRelated = allCategories.filter(picked);
   const matched = chosenDirectly.length > 0 ? chosenDirectly : chosenAsRelated;
   // An added pick the app is still learning keeps the share its progress
-  // leaves; any other pick fades with the reader's interactions. A card that
-  // matches several weighs by the most-learned.
+  // leaves; any other pick fades with the reader's interactions. A card
+  // weighs as the pick its primary category is; one that is none of them
+  // weighs by the most-learned it matches.
   const establishedShare = Math.max(
     weights.minPreferenceShare,
     1 - (context.interactionCount || 0) / weights.preferenceFadeInteractions,
@@ -384,7 +386,7 @@ function computeStableScore(paper: Partial<Paper>, context: RecommendationContex
   const shareOf = (category: string) => (coldAdded.includes(category)
     ? Math.max(weights.minPreferenceShare, 1 - (interestProgress[category] || 0) * (1 - weights.minPreferenceShare))
     : establishedShare);
-  const preferenceShare = Math.min(1, ...matched.map(shareOf));
+  const preferenceShare = Math.min(1, ...(chosenAsPrimary.length > 0 ? chosenAsPrimary : matched).map(shareOf));
   // What the reader learned about a subject they left, or never picked, stays
   // stored but ranks nothing here. A follow and the card's own signals still do.
   const isActive = !context.activeCategories

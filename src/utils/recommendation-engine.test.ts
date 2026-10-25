@@ -100,14 +100,34 @@ test('a card weighs by the most-learned added subarea it matches, however it mat
   assert.equal(preference({ id: 'f', primaryCategory: 'math.ST' }), 0);
 });
 
-test('a card that matches an established pick and an added one weighs by the most-learned', () => {
-  const paper = { id: 'paper-a', primaryCategory: 'econ.EM', allCategories: ['econ.EM', 'cs.AI'], _fetchedFor: ['cs.AI'], published: '2026-07-05T00:00:00Z' };
-  const preference = (interactionCount: number) => scorePaperForRecommendation(paper, {
-    now: NOW, userPreferences: ['econ.EM', 'cs.AI'], interestProgress: { 'econ.EM': 0, 'cs.AI': 0 }, coldAdded: ['econ.EM'], interactionCount,
-  }).preference;
+// ENG-137, ruling R17: a card cross-listed or fetched under an established
+// pick and an added one weighs as the pick its primary category matches.
+test('a card that matches an established pick and an added one weighs as the pick its primary category matches', () => {
+  const published = '2026-07-05T00:00:00Z';
+  const preference = (paper: Parameters<typeof scorePaperForRecommendation>[0], coldAdded: string[], interactionCount: number) =>
+    scorePaperForRecommendation({ published, ...paper }, {
+      now: NOW,
+      userPreferences: ['cs.LG', 'cs.RO', 'bio.gen', 'bio.mol'],
+      interestProgress: { 'cs.LG': 1, 'cs.RO': 0, 'bio.gen': 1, 'bio.mol': 0 },
+      coldAdded,
+      interactionCount,
+    }).preference;
+  const crossListed = { allCategories: ['cs.RO', 'cs.LG'], _fetchedFor: ['cs.LG', 'cs.RO'] };
+  const robotics = { id: 'ro', primaryCategory: 'cs.RO', ...crossListed };
+  const learning = { id: 'lg', primaryCategory: 'cs.LG', ...crossListed };
+  // OpenAlex files it under a topic bio.mol lists; it was fetched for bio.gen.
+  const rna = { id: 'rna', primaryTopic: { id: 'https://openalex.org/T10604', display_name: 'RNA Research and Splicing' }, _fetchedFor: ['bio.gen'] };
 
-  assert.equal(preference(0), 100);
-  assertClose(preference(150), 50);
+  assert.equal(preference(robotics, ['cs.RO', 'bio.mol'], 210), 100);
+  assertClose(preference(learning, ['cs.RO', 'bio.mol'], 210), 30);
+  assert.equal(preference(rna, ['cs.RO', 'bio.mol'], 210), 100);
+
+  // With no edits, every pick fades with the reader's interactions, as on main.
+  for (const paper of [robotics, learning, rna]) {
+    assert.equal(preference(paper, [], 0), 100);
+    assertClose(preference(paper, [], 150), 50);
+    assertClose(preference(paper, [], 210), 30);
+  }
 });
 
 // ENG-137: a subject the reader left (or an area they never picked) keeps its
