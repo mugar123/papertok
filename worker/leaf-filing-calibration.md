@@ -83,6 +83,18 @@ math.CO, math.DS and math.RA take 47 of the 166 mathematics articles that run
 scored, and those of cs.NI, cs.SD and cs.SE 44 of the 235 `cs` articles.
 Without them no rule reaches 95% on either calibration half.
 
+Split by lane, in a check outside the committed command, the mathematics rule
+filed 11 held-out articles that a topic lane takes (9 correct, 1 wrong, 1
+unknown) and 27 that no lane takes (15 correct, 3 wrong, 9 unknown: 15 of 18
+decided, 0.83, 0.608–0.942). Most of its decided filings were therefore on
+articles similarity does see. On the calibration half it had filed 13 topic-lane
+articles (8 correct, 1 wrong, 4 unknown) and 25 others (15 correct, none wrong,
+10 unknown), so the topic-lane articles helped choose it: without them the rule
+had 15 decided filings on that half, under the 20 the selection asks for. The
+`cs` rule filed 3 topic-lane articles on the held-out half (all correct) and 18
+others (12 correct, 3 wrong, 3 unknown), and 9 on the calibration half (8
+correct, 1 wrong) and 19 others (12 correct, none wrong, 7 unknown).
+
 ## Method
 
 - Labels: `scripts/data/openalex-topic-reviews.json` and, in
