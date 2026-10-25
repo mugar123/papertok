@@ -621,8 +621,10 @@ test('exposure counts every card shown and the ones read past the median', () =>
  */
 function chemistryLaneCard() {
   const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
-  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16')!;
-  return { ...mapOpenAlexWork(work)!, primaryCategory: '' };
+  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16');
+  const mapped = mapOpenAlexWork(work);
+  assert.ok(mapped, 'open-alex-works.fixture.json holds a Chemistry work (field 16)');
+  return { ...mapped, primaryCategory: '' };
 }
 
 test('a card filed under no leaf counts its exposure and long reads under its area', () => {

@@ -317,8 +317,10 @@ test("a removed subarea's affinity scores nothing on an awake card cross-listed 
 // learning counts under (areaKeyForPaper).
 test('a card known only by its OpenAlex field sleeps when the reader removed all of that area', () => {
   const { sample } = JSON.parse(readFileSync(new URL('./open-alex-works.fixture.json', import.meta.url), 'utf8')) as { sample: OpenAlexWork[] };
-  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16')!;
-  const card = { ...mapOpenAlexWork(work)!, primaryCategory: '', _semanticScore: 0.5, _type: 'followed' as const };
+  const work = sample.find(candidate => String(candidate.primary_topic?.field?.id).split('/').pop() === '16');
+  const mapped = mapOpenAlexWork(work);
+  assert.ok(mapped, 'open-alex-works.fixture.json holds a Chemistry work (field 16)');
+  const card = { ...mapped, primaryCategory: '', _semanticScore: 0.5, _type: 'followed' as const };
   const similarity = (selected: string[], deselected: string[]) => scorePaperForRecommendation(card, {
     now: NOW, userPreferences: selected, dormantCategories: dormantCategories(selected, deselected),
   }).corpusSimilarity;
