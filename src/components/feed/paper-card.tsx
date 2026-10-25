@@ -1668,7 +1668,7 @@ const PaperCard = memo(function PaperCard({
     </Button>
   );
   const projectLabel = project
-    && ([project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder') || 'Project');
+    && ([project.funderLevel, project.funder].find(Boolean) || 'Project');
   const openProject = (event: MouseEvent) => {
     event.stopPropagation();
     if (!project) return;

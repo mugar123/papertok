@@ -739,21 +739,7 @@ test('scheduled digest fetches and emails papers from every followed entity type
     requests.push(url.toString());
 
     if (url.hostname === 'api.openaire.eu') {
-      return jsonResponse(200, {
-        response: {
-          results: {
-            result: [{
-              metadata: {
-                'oaf:entity': {
-                  'oaf:result': {
-                    pid: [{ '@classname': 'doi', $: '10.1234/project-paper' }],
-                  },
-                },
-              },
-            }],
-          },
-        },
-      });
+      return jsonResponse(200, { header: { numFound: 1 }, results: [{ pids: [{ scheme: 'doi', value: '10.1234/project-paper' }] }] });
     }
 
     if (url.hostname === 'api.openalex.org') {
@@ -818,7 +804,10 @@ test('scheduled digest fetches and emails papers from every followed entity type
       assert.equal(resendPayload.html.includes(`${source} followed paper`), true);
     });
     assert.equal(requests.filter(url => url.startsWith('https://api.openalex.org/works')).length, 5);
-    assert.equal(requests.filter(url => url.startsWith('https://api.openaire.eu/')).length, 1);
+    const openAire = requests.filter(url => url.startsWith('https://api.openaire.eu/')).map(url => new URL(url));
+    assert.equal(openAire.length, 1);
+    assert.equal(openAire[0].pathname, '/graph/v3/research-products');
+    assert.equal(openAire[0].searchParams.get('relProjectCode'), 'project-4');
     assert.equal(requests.filter(url => url.startsWith('https://api.resend.com/emails')).length, 1);
 
     const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
@@ -1137,17 +1126,7 @@ test('readers who follow the same project share its OpenAlex lookup', async () =
   });
   const projectAnswer = (url: URL, query: string | null) => {
     if (url.hostname === 'api.openaire.eu') {
-      return jsonResponse(200, {
-        response: {
-          results: {
-            result: [{
-              metadata: {
-                'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1234/project-paper' }] } },
-              },
-            }],
-          },
-        },
-      });
+      return jsonResponse(200, { header: { numFound: 1 }, results: [{ pids: [{ scheme: 'doi', value: '10.1234/project-paper' }] }] });
     }
     if (query === 'doi:10.1234/project-paper') {
       return jsonResponse(200, { results: [recentOpenAlexWork('PROJECT')] });
@@ -1162,6 +1141,62 @@ test('readers who follow the same project share its OpenAlex lookup', async () =
     assert.equal(upstream.hosts.filter((host: string) => host === 'api.openaire.eu').length, 2);
     assert.deepEqual(upstream.openAlex.byQuery, { 'doi:10.1234/project-paper': 1, exploration: 1 });
   });
+});
+
+// A project's newest publications as Graph lists them, trimmed from its answer
+// for TAILOR on 2026-10-23: a record with a DOI, its arXiv DOI and arXiv id,
+// and a repository record with a handle only.
+const TAILOR_ID = 'corda__h2020::b9871e3e08a9db98aaa42bf321ed0f1a';
+const TAILOR_PUBLICATIONS = {
+  header: { numFound: 1428, queryTime: 99, page: 1, pageSize: 10 },
+  results: [
+    { pids: [{ scheme: 'doi', value: '10.1145/3555174' }, { scheme: 'doi', value: '10.48550/arxiv.2203.10143' }, { scheme: 'arXiv', value: '2203.10143' }] },
+    { pids: [{ scheme: 'handle', value: '11585/1031732' }] },
+  ],
+};
+
+test("a followed project's digest asks Graph for its newest publications and looks their DOIs up in OpenAlex", async () => {
+  const kv = readersKv({ 'reader-1': { follows: [scheduledFollow('project', TAILOR_ID, 'TAILOR')] } });
+  const asked: URL[] = [];
+  const respond = (url: URL, query: string | null) => {
+    if (url.hostname === 'api.openaire.eu') {
+      asked.push(url);
+      return jsonResponse(200, TAILOR_PUBLICATIONS);
+    }
+    if (query === 'doi:10.1145/3555174|10.48550/arxiv.2203.10143') return jsonResponse(200, { results: [recentOpenAlexWork('PROJECT')] });
+    return answerWithOneRecentWork(url, query);
+  };
+
+  await withDigestUpstream(respond, async (upstream) => {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+    assert.equal(summary.sent, 1);
+    assert.equal(`${asked[0].origin}${asked[0].pathname}`, 'https://api.openaire.eu/graph/v3/research-products');
+    assert.deepEqual(Object.fromEntries(asked[0].searchParams), {
+      relProjectId: TAILOR_ID, type: 'publication', sortBy: 'publicationDate DESC', page: '1', pageSize: '10',
+    });
+    assert.deepEqual(upstream.openAlex.byQuery, { 'doi:10.1145/3555174|10.48550/arxiv.2203.10143': 1, exploration: 1 });
+    assert.match(upstream.emailsTo['reader-1@example.com'].html, /Recent paper for PROJECT/);
+  });
+});
+
+test('a project answer that is not a Graph page, or a rate limit, is an OpenAIRE failure in the digest report', async () => {
+  const searchShaped = { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1145/3555174' }] } } } }] } } };
+  for (const [answer, code, attempts] of [
+    [() => jsonResponse(200, searchShaped), 'EMAIL_SOURCE_OPENAIRE_INVALID_RESPONSE', 1],
+    [() => jsonResponse(429, { message: 'Too many requests' }), 'EMAIL_SOURCE_OPENAIRE_RATE_LIMITED', 2],
+  ] as const) {
+    const kv = readersKv({ 'reader-1': { follows: [scheduledFollow('project', TAILOR_ID, 'TAILOR')] } });
+    const respond = (url: URL, query: string | null) => (url.hostname === 'api.openaire.eu' ? answer() : answerWithOneRecentWork(url, query));
+
+    await withDigestUpstream(respond, async (upstream) => {
+      const summary = await runEmailNotificationSchedule(emailEnvironment(kv), DIGEST_RUN.getTime());
+
+      assert.equal(summary.failureCodes[code], 1, code);
+      assert.equal(summary.sources.bySource.openaire.requestAttempts, attempts, 'a rate limit is retried once, a malformed answer is not');
+      assert.equal(Object.keys(upstream.openAlex.byQuery).some(query => query.startsWith('doi:')), false, 'no DOI is read from the answer');
+    });
+  }
 });
 
 test('the shared OpenAlex map stops growing at its limit and never keys on the API key', async () => {

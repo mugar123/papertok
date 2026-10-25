@@ -919,18 +919,30 @@ test('a backfill stops once its lane holds as many papers as the feed reads', as
   assert.equal((db.prepare('SELECT backfill_page FROM lane_state').get() as { backfill_page: number | null }).backfill_page, null);
 });
 
-test("a followed project's lane asks OpenAIRE by its id, with the funder only for a bare grant code, then OpenAlex by DOI", async t => {
-  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
-    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/Genetics/IYAG290' }] } } } }] } } }
-    : { results: [splicingWork] }));
+// The newest publications Graph lists for a project, as it spells their
+// identifiers (synthetic record): a DOI to look up, a handle that is not one.
+const PROJECT_PUBLICATIONS = { header: { numFound: 2 }, results: [{ pids: [{ scheme: 'doi', value: '10.1093/Genetics/IYAG290' }, { scheme: 'pmid', value: '41234567' }] }, { pids: [{ scheme: 'handle', value: '11585/952308' }] }] };
+
+test("a followed project's lane asks Graph for its newest publications by id, with the funder only for a bare grant code, then OpenAlex by DOI", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [splicingWork] }));
   await SOURCES.openaire.fetchPage(env, { lane: 'project:EC|corda__h2020::0123456789abcdef', page: 1, since: '', waits: { seconds: 0 } });
   await SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } });
   const openAire = urls.filter(url => url.hostname === 'api.openaire.eu');
-  assert.equal(openAire[0].searchParams.get('openaireProjectID'), 'corda__h2020::0123456789abcdef');
-  assert.equal(openAire[0].searchParams.has('funder'), false, 'an OpenAIRE id names its funder already');
-  assert.equal(openAire[1].searchParams.get('projectID'), '2047484');
-  assert.equal(openAire[1].searchParams.get('funder'), 'NSF');
+  assert.equal(openAire[0].pathname, '/graph/v3/research-products');
+  assert.deepEqual(Object.fromEntries(openAire[0].searchParams), {
+    relProjectId: 'corda__h2020::0123456789abcdef', type: 'publication', sortBy: 'publicationDate DESC', page: '1', pageSize: '30',
+  }, 'an OpenAIRE id names its funder already');
+  assert.equal(openAire[1].searchParams.get('relProjectCode'), '2047484');
+  assert.equal(openAire[1].searchParams.get('relProjectFundingShortName'), 'NSF');
   assert.ok(urls.some(url => url.hostname === 'api.openalex.org' && url.searchParams.get('filter') === 'doi:10.1093/genetics/iyag290'));
+});
+
+test("a project lane whose OpenAIRE answer is not a Graph page fails its turn instead of finding no papers", async t => {
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
+    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
+    : { results: [splicingWork] }));
+  await assert.rejects(SOURCES.openaire.fetchPage(env, { lane: 'project:NSF|2047484', page: 1, since: '', waits: { seconds: 0 } }), /Invalid OpenAIRE response/);
+  assert.equal(urls.filter(url => url.hostname === 'api.openalex.org').length, 0);
 });
 
 test("a lane whose source's minute is full waits for the next minute instead of failing", async t => {
@@ -985,9 +997,7 @@ test("a lane waits out one minute's ceiling, not one a page, so a ten-page lane 
 // reader who follows something new after it has finished must still have the
 // follow harvested at once, not the next night.
 test("followed searches stop at their part of the nightly run's OpenAlex share, category lanes and enrichment keep the rest of it, and new follows keep their own 300", async t => {
-  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
-    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'doi', $: '10.1093/genetics/iyag290' }] } } } }] } } }
-    : { results: [] }));
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   // The shared ledger's own ceilings, out of the way: the harvest's share is what is under test.
   Object.assign(env, { OPENALEX_GLOBAL_MINUTE_LIMIT: '100000', OPENALEX_GLOBAL_DAILY_LIMIT: '100000' });
   const followedSearch = (newFollow = false) => SOURCES['openalex-follows'].fetchPage(env, { lane: 'query:graph neural networks', page: 1, since: '', waits: { seconds: 0 }, newFollow });
@@ -1070,9 +1080,7 @@ test('a paper a reader liked, looked up by id, stays for them whatever its age, 
 // can come at any hour, so the harvest spends its own share up to 95 % and
 // leaves the rest to papers being opened.
 test("readers' closed tiers do not stop the harvest's OpenAlex lanes, and the harvest leaves the last share to an opened paper", async t => {
-  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu'
-    ? { response: { results: { result: [{ metadata: { 'oaf:entity': { 'oaf:result': { pid: [{ '@classname': 'Digital Object Identifier', $: 'https://doi.org/10.1093/genetics/iyag290' }] } } } }] } } }
-    : { results: [] }));
+  const { urls, env } = relay(t, url => (url.hostname === 'api.openaire.eu' ? PROJECT_PUBLICATIONS : { results: [] }));
   const ceiling = 1_000;
   const share = (tier: keyof typeof OPENALEX_TIER_PERCENT) => Math.floor(ceiling * OPENALEX_TIER_PERCENT[tier] / 100);
   Object.assign(env, { OPENALEX_GLOBAL_DAILY_LIMIT: String(ceiling) });

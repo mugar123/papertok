@@ -3,7 +3,7 @@ import { getProjectDisplayName } from '../../utils/entity-metadata.ts';
 
 /**
  * The funder a project's OpenAIRE lookups are asked with. A grant code alone
- * is not unique across funders (grantID=100010 answers for NHMRC, SNSF and
+ * is not unique across funders (code 100010 answers for NHMRC, SNSF and
  * UKRI alike), so the route's funder comes first, then the one the entity
  * already carries.
  */
@@ -48,7 +48,6 @@ export function projectEntityFromLookup({ routeId, name, funder, details }: {
       fundedAmount: details.fundedAmount,
       currency: details.currency,
       callIdentifier: details.callIdentifier,
-      contractType: details.contractType,
       subjects: details.subjects,
       participants: details.participants,
       measures: details.measures,

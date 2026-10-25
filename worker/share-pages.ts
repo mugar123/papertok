@@ -34,12 +34,11 @@ export interface ShareDependencies {
   admit?: (route: ShareRoute) => Promise<boolean>;
   cache?: ShareCache | null;
 }
-interface ProjectMetadata { acronym?: { $?: unknown }; title?: { $?: unknown } }
-export interface OpenAireProjects { response?: { results?: { result?: { metadata?: { 'oaf:entity'?: { 'oaf:project'?: ProjectMetadata } } }[] } } }
+interface ProjectName { acronym?: unknown; title?: unknown }
 export interface ShareProviders {
   openAlex?: (path: string, params: Record<string, string>) => Promise<(OpenAlexWork & OpenAlexEntityRecord & { results?: OpenAlexWork[] }) | null>;
   arxiv?: (id: string) => Promise<string>;
-  openAire?: (params: Record<string, string>) => Promise<OpenAireProjects | null>;
+  openAire?: (params: Record<string, string>) => Promise<unknown>;
   firestore?: { getDocument: (path: string) => Promise<{ exists: boolean; data?: { title?: unknown; description?: unknown; language?: unknown; papers?: Partial<Paper>[] } | null } | null> };
 }
 interface SharePage {
@@ -60,6 +59,7 @@ interface ArxivEntry {
 import { XMLParser } from 'fast-xml-parser';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { plainScientificText } from '../src/utils/plain-scientific-text.ts';
+import { openAireProjectParams, readOpenAirePage } from '../src/services/open-aire-records.ts';
 import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH, shareCardFor } from './share-card.ts';
 import {
   DEFAULT_PUBLIC_ORIGIN,
@@ -338,9 +338,8 @@ function cleanRouteId(value: unknown) {
  */
 function entityLookup(type: EntityType, id: string, params: { funder?: string }): EntityLookup | null {
   if (type === 'project') {
-    if (id.includes('::')) return { provider: 'openaire', params: { openaireProjectID: id } };
-    if (!/^[\w.\-/]{1,80}$/.test(id)) return null;
-    return { provider: 'openaire', params: { grantID: id, ...(params.funder ? { funder: params.funder } : {}) } };
+    if (!id.includes('::') && !/^[\w.\-/]{1,80}$/.test(id)) return null;
+    return { provider: 'openaire', params: openAireProjectParams(id, params.funder) };
   }
   const entity = OPENALEX_ENTITIES[type];
   const bare = id.replace(/^https?:\/\/(?:api\.)?openalex\.org\/(?:[a-z]+\/)?/i, '');
@@ -405,7 +404,7 @@ export function matchShareRoute(url: URL): ShareRoute | InvalidRoute | null {
       funder: cleanText(url.searchParams.get('funder'), 80),
     };
     const lookup = entityLookup(type, id, params);
-    const funderKey = lookup?.params?.funder ? `?funder=${encodeURIComponent(lookup.params.funder)}` : '';
+    const funderKey = lookup?.params?.fundingShortName ? `?funder=${encodeURIComponent(lookup.params.fundingShortName)}` : '';
     return {
       kind,
       type,
@@ -542,9 +541,9 @@ async function loadList(route: Extract<ShareRoute, { kind: 'list' }>, { firestor
   });
 }
 
-function projectName(project: ProjectMetadata | undefined) {
-  const acronym = cleanText(project?.acronym?.$, 120);
-  const title = cleanText(project?.title?.$, 400);
+function projectName(project: ProjectName | undefined) {
+  const acronym = cleanText(project?.acronym, 120);
+  const title = cleanText(project?.title, 400);
   return acronym && title ? `${acronym}: ${title}` : acronym || title;
 }
 
@@ -571,9 +570,8 @@ async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { open
     return found({ entity: { name: route.params.name || cleanText(route.id, 200), nameOnly: true } });
   }
   if (route.lookup.provider === 'openaire') {
-    const data = await openAire!(route.lookup.params);
-    const result = asArray(data?.response?.results?.result)[0];
-    const name = projectName(result?.metadata?.['oaf:entity']?.['oaf:project']);
+    const [project] = readOpenAirePage<ProjectName>(await openAire!(route.lookup.params)).results;
+    const name = projectName(project);
     return name ? found({ entity: { name } }) : notFound();
   }
   const data = await openAlex!(route.lookup.path, { select: ENTITY_SELECT[route.type] });
@@ -590,7 +588,7 @@ async function loadEntity(route: Extract<ShareRoute, { kind: 'entity' }>, { open
  * `providers`, all injected so the Worker owns the budgets:
  * - `openAlex(path, params)` → the JSON, or null for a 404;
  * - `arxiv(id)` → the Atom feed `id_list=id` answers;
- * - `openAire(params)` → the JSON of `search/projects`;
+ * - `openAire(params)` → the JSON of Graph's `projects`, asked with `params`;
  * - `firestore.getDocument(path)` → `{ exists, id, data }`, read anonymously
  *   so the rules decide exactly as they do for a visitor.
  */

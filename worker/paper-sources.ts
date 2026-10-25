@@ -4,11 +4,13 @@ import type { WorkerEnv } from './env.ts';
 import type { Harvested, StoreEnv } from './paper-store.ts';
 import type { HarvestAsk } from './openalex-api.ts';
 import type { UpstreamError } from './provider-runtime.ts';
+import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { getAllLeafCategories } from '../src/data/category-taxonomy.ts';
 import { ARXIV_FEED_AREAS, arxivPaper, isArxivCategory } from '../src/services/arxiv-records.ts';
 import { pubmedCategoryQuery, readPubmedPayload } from '../src/services/adapters/pubmed-records.ts';
+import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
 import {
   domainSourceRequests,
   getDomainSourcePlan,
@@ -456,20 +458,12 @@ async function openAireProjectDois(lane: string) {
   const rest = lane.slice('project:'.length);
   const bar = rest.indexOf('|');
   const [funder, project] = bar >= 0 ? [rest.slice(0, bar), rest.slice(bar + 1)] : ['', rest];
-  const url = new URL('https://api.openaire.eu/search/publications');
-  url.searchParams.set('format', 'json');
-  url.searchParams.set('size', '30');
-  url.searchParams.set('page', '1');
-  url.searchParams.set(project.includes('::') ? 'openaireProjectID' : 'projectID', project);
-  if (funder && !project.includes('::')) url.searchParams.set('funder', funder);
+  const url = openAireProjectPublicationsUrl(project, { funder, pageSize: 30 });
   const response = await fetchWithDeadline(url, { headers: { accept: 'application/json', 'user-agent': USER_AGENT } }, 10_000);
   if (!response.ok) throw answeredError('OpenAIRE', response.status);
-  type Pid = { '@classname'?: string; $?: unknown };
-  const payload = await response.json<{ response?: { results?: { result?: unknown } } }>();
-  const rows = [payload?.response?.results?.result || []].flat() as Array<{ metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: Pid | Pid[] } } } }>;
-  return rows.flatMap(row => [row?.metadata?.['oaf:entity']?.['oaf:result']?.pid || []].flat())
-    .filter(pid => ['doi', 'digital object identifier'].includes(text(pid?.['@classname']).toLowerCase()))
-    .map(pid => text(pid?.$).replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').toLowerCase())
+  const { results } = readOpenAirePage<OpenAireProduct>(await response.json());
+  return results.flatMap(row => openAirePids(row, 'doi'))
+    .map(doi => doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').toLowerCase())
     .filter(doi => /^10\.\d{4,9}\/[^,|]+$/.test(doi))
     .slice(0, 30);
 }

@@ -48,9 +48,6 @@ interface ArxivEntry {
 type DigestOpenAlexWork = OpenAlexWork & { keywords?: PaperSubject[]; categories?: string[] };
 interface OpenAlexPayload { results: DigestOpenAlexWork[] }
 export type OpenAlexRequests = Map<string, Promise<OpenAlexPayload>>;
-type OpenAirePid = { '@classname'?: unknown; '$'?: unknown };
-type OpenAireResult = { metadata?: { 'oaf:entity'?: { 'oaf:result'?: { pid?: OpenAirePid | OpenAirePid[] } } } };
-interface OpenAirePayload { response?: { results?: { result?: OpenAireResult | OpenAireResult[] } } }
 interface DeliveryOptions { test?: boolean; now?: number }
 interface CollectOptions extends DeliveryOptions { openAlexRequests?: OpenAlexRequests | null }
 // `editionAt` is when the papers were selected: a held edition keeps its own week.
@@ -75,12 +72,14 @@ interface ScheduleSummary {
 }
 
 import type { WorkerEnv } from './env.ts';
+import type { OpenAireProduct } from '../src/services/open-aire-records.ts';
 
 import { XMLParser } from 'fast-xml-parser';
 import { CATEGORIES } from '../src/data/category-taxonomy.ts';
 import { areaKeyForPaper } from '../src/utils/area-accent.ts';
 import { usableOpenAlexAbstract } from '../src/utils/open-alex-abstract.ts';
 import { filterRelevantQueryTopicPapers } from '../src/utils/query-topic-search.ts';
+import { openAirePids, openAireProjectPublicationsUrl, readOpenAirePage } from '../src/services/open-aire-records.ts';
 import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.ts';
 import { readBoundedJson as readBoundedRequestJson } from './bounded-body.ts';
 
@@ -1163,28 +1162,15 @@ async function fetchExplorationUpdates(env: WorkerEnv, now = Date.now(), sourceR
 }
 
 async function fetchProjectUpdates(follow: Follow, env: WorkerEnv, sourceReport?: SourceReport | null, openAlexRequests: OpenAlexRequests | null = null) {
-  const requestUrl = new URL('https://api.openaire.eu/search/publications');
-  requestUrl.searchParams.set('format', 'json');
-  requestUrl.searchParams.set('size', '10');
-  requestUrl.searchParams.set('page', '1');
-  requestUrl.searchParams.set(follow.canonicalId.includes('::') ? 'openaireProjectID' : 'projectID', follow.canonicalId);
-  const payload = await trackDigestSource(sourceReport, 'openaire', async () => {
+  const requestUrl = openAireProjectPublicationsUrl(follow.canonicalId, { pageSize: 10 });
+  const { results } = await trackDigestSource(sourceReport, 'openaire', async () => {
     const response = await fetchDigestSource(requestUrl, { headers: { accept: 'application/json' } }, {
       source: 'openaire',
       report: sourceReport,
     });
-    return response.json<OpenAirePayload>();
+    return readOpenAirePage<OpenAireProduct>(await response.json());
   });
-  let rows = payload?.response?.results?.result || [];
-  if (!Array.isArray(rows)) rows = [rows];
-  const dois = rows.flatMap((row) => {
-    let pids = row?.metadata?.['oaf:entity']?.['oaf:result']?.pid || [];
-    if (!Array.isArray(pids)) pids = [pids];
-    return pids
-      .filter(pid => ['doi', 'digital object identifier'].includes(cleanText(pid?.['@classname'], 60).toLowerCase()))
-      .map(pid => cleanText(pid?.['$'], 300))
-      .filter(Boolean);
-  }).slice(0, 10);
+  const dois = results.flatMap(row => openAirePids(row, 'doi').map(doi => cleanText(doi, 300)).filter(Boolean)).slice(0, 10);
   if (!dois.length) return [];
 
   const openAlexUrl = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
