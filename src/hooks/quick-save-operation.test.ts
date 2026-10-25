@@ -44,6 +44,7 @@ function save({ alreadySaved = false } = {}) {
     mark: async () => { calls.push('mark'); },
     unmark: async () => { calls.push('unmark'); },
     confirm: async () => { calls.push('confirm'); },
+    onSaved: () => { calls.push('saved'); },
   });
   return { calls, document, pending };
 }
@@ -53,7 +54,7 @@ test('a save fills the button before Firestore answers', async () => {
   assert.deepEqual(s.calls, ['mark']);
   s.document.resolve();
   await s.pending;
-  assert.deepEqual(s.calls, ['mark', 'confirm']);
+  assert.deepEqual(s.calls, ['mark', 'confirm', 'saved']);
 });
 
 test('a refused save puts the button back and reports the refusal', async () => {
@@ -68,4 +69,49 @@ test('a refused Undo on a paper saved again by hand leaves that save alone', asy
   s.document.reject(new Error('unavailable'));
   await assert.rejects(s.pending, /unavailable/);
   assert.deepEqual(s.calls, ['mark']);
+});
+
+test('a confirmed new save reports once after both writes, while a refused confirmation reports nothing', async () => {
+  const document = deferred();
+  const membership = deferred();
+  const events: string[] = [];
+  const pending = markThenConfirm({
+    alreadySaved: false,
+    issued: document.promise,
+    mark: async () => {},
+    unmark: async () => {},
+    confirm: () => membership.promise,
+    onSaved: () => { events.push('saved'); },
+  });
+  assert.deepEqual(events, []);
+  document.resolve();
+  await Promise.resolve();
+  assert.deepEqual(events, []);
+  membership.resolve();
+  await pending;
+  assert.deepEqual(events, ['saved']);
+
+  const refusedEvents: string[] = [];
+  await assert.rejects(markThenConfirm({
+    alreadySaved: false,
+    issued: null,
+    mark: async () => {},
+    unmark: async () => {},
+    confirm: async () => { throw new Error('permission-denied'); },
+    onSaved: () => { refusedEvents.push('saved'); },
+  }), /permission-denied/);
+  assert.deepEqual(refusedEvents, []);
+});
+
+test('restoring an already saved paper does not report another save', async () => {
+  const events: string[] = [];
+  await markThenConfirm({
+    alreadySaved: true,
+    issued: null,
+    mark: async () => {},
+    unmark: async () => {},
+    confirm: async () => {},
+    onSaved: () => { events.push('saved'); },
+  });
+  assert.deepEqual(events, []);
 });

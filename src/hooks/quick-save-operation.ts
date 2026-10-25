@@ -16,12 +16,13 @@ export function runOneAtATime(inFlight: Set<string>, id: string, operation: () =
  * operation began: an Undo can land on a paper the reader has saved again by
  * hand, and a refused Undo must not take that save back.
  */
-export async function markThenConfirm({ alreadySaved, issued, mark, unmark, confirm }: {
+export async function markThenConfirm({ alreadySaved, issued, mark, unmark, confirm, onSaved }: {
   alreadySaved: boolean;
   issued: Promise<unknown> | null;
   mark: () => Promise<void>;
   unmark: () => Promise<void>;
   confirm: () => Promise<void>;
+  onSaved: () => void;
 }) {
   void mark();
   try {
@@ -31,4 +32,5 @@ export async function markThenConfirm({ alreadySaved, issued, mark, unmark, conf
     if (!alreadySaved) void unmark();
     throw error;
   }
+  if (!alreadySaved) onSaved();
 }

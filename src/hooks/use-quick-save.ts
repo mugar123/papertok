@@ -11,6 +11,7 @@ import { useLanguage } from '../context/language-context.tsx';
 import { readListsHoldingPaper, writeListMembership } from '../services/paper-list-membership.ts';
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildSavedPaperPayload } from '../utils/saved-paper-payload.ts';
+import { auth } from '../services/firebase.ts';
 import { pickerUndoToastId } from '../components/lists/picker-undo-toast.ts';
 import { markThenConfirm, runOneAtATime } from './quick-save-operation.ts';
 
@@ -29,8 +30,8 @@ import { markThenConfirm, runOneAtATime } from './quick-save-operation.ts';
  * emulator behind a 120 ms proxy: eight taps 300 ms apart, nothing for 1.4 s,
  * then three changes and seven toasts, the last change 0.4 s after the last tap.
  */
-export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
-  const { markActivation } = useAnalyticsConsent();
+export default function useQuickSave(onSaveToList: (paper: Paper) => void, surface: string) {
+  const { markActivation, trackEvent } = useAnalyticsConsent();
   const { savedPaperIds, interactionIdFor, personalLibrary, toggleReadLater, markSaved, unmarkSaved } = useFeed();
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -60,12 +61,15 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
       confirm: async () => {
         if (user) await writeListMembership({ uid: user.uid, paper, lists, added: true, language });
       },
+      onSaved: () => {
+        if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'add', surface, paper_id: paper.id });
+      },
     });
     // Not awaited: Read later flips in the same tick and its write never
     // rejects, so waiting for its acknowledgement would only hold the paper
     // against the next tap for one more round trip.
     if (readLater && !latest.personalLibrary[id]?.readLater) void latest.toggleReadLater(paper);
-  }, [interactionIdFor, language, user]);
+  }, [interactionIdFor, language, surface, trackEvent, user]);
 
   const handleSaveToList = useCallback((paper: Paper) => {
     const id = interactionIdFor(paper)!;
@@ -103,6 +107,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
         return;
       }
       if (readLater) void toggleReadLater(paper);
+      if (auth.currentUser?.uid === user?.uid) void trackEvent('save_change', { action: 'remove', surface, paper_id: paper.id });
       const lists = held;
       toast('Removed from your saved papers', {
         action: {
@@ -111,7 +116,7 @@ export default function useQuickSave(onSaveToList: (paper: Paper) => void) {
         },
       });
     });
-  }, [interactionIdFor, language, markActivation, markSaved, onSaveToList, oneAtATime, personalLibrary, restoreSave, savedPaperIds, toggleReadLater, unmarkSaved, user]);
+  }, [interactionIdFor, language, markActivation, markSaved, onSaveToList, oneAtATime, personalLibrary, restoreSave, savedPaperIds, surface, toggleReadLater, trackEvent, unmarkSaved, user]);
 
   return handleSaveToList;
 }
