@@ -1111,9 +1111,11 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   if (rankedAgain) {
     const ranked = await rankCandidates(db, lanes, query, now);
     const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
-    // Page numbers need every rank served, empty ones included, at its place.
-    // A paper liked or rejected since leaves its rank empty: a page that finds
-    // nothing unseen falls back on these ranks, and would send it again.
+    // A page asked by number needs every rank served, empty ones included, at
+    // its place. A paper liked or rejected since leaves its rank empty: a page
+    // that finds nothing unseen falls back on these ranks, and would send it
+    // again. A walk drops empty ranks, so its fallback page names papers that
+    // many ranks further down.
     let served = Array.from({ length: passed }, (_, index) => {
       const candidate = kept!.ranks[index] ?? null;
       return candidate && !ranked.excluded.has(candidate.workId) ? candidate : null;
