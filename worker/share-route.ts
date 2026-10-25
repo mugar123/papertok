@@ -10,6 +10,7 @@ import { addOpenAlexCredentials, openAlexCostFor } from './openalex-api.ts';
 import { fetchWithDeadline, releaseHeld, reserveOpenAlexBudget } from './provider-runtime.ts';
 import { reserveRequestQuota } from './request-quota-ledger.ts';
 import { createShareLoader, createShellLoader, handleSharePage } from './share-pages.ts';
+import { createPhotoLoader, handleShareImage } from './share-image.ts';
 import { awaitUpstreamSlot } from './upstream-pace.ts';
 
 // The share pages (worker/share-pages.ts) are public and carry no Origin, so a
@@ -136,6 +137,16 @@ function shareProviders(env: WorkerEnv): ShareProviders {
 
 export async function handleShareRoute(request: Request, env: WorkerEnv) {
   try {
+    if (new URL(request.url).pathname.startsWith('/share/image/')) {
+      return await handleShareImage(request, {
+        loadRecord: createShareLoader(shareProviders(env)),
+        admit: () => admitShareLookup(env),
+        loadPhoto: createPhotoLoader(),
+        // Evaluated on the first card, so no other route starts the renderer,
+        // and a Node test, which cannot load its WebAssembly, never does.
+        renderCard: async (card, photo) => (await import('./share-card-render.ts')).renderShareCard(card, photo),
+      });
+    }
     return await handleSharePage(request, {
       loadShell: createShellLoader({
         fetchShell: shellUrl => fetchWithDeadline(shellUrl, { headers: { accept: 'text/html' } }, SHARE_UPSTREAM_TIMEOUT_MS),
