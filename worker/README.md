@@ -153,18 +153,18 @@ Resend delivers the weekly digest and university verification links. Both
 domain in Resend before deploying the Worker. After a successful Resend test
 delivery, remove the old Brevo secrets from Cloudflare.
 
-After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BASE_URL` to
-the Worker's Custom Domain:
+Before deployment, verify Vercel’s production `VITE_PAPER_API_BASE_URL` and the
+GitHub Actions repository variable use the Worker’s Custom Domain:
 
 ```text
 https://api.papertok.app
 ```
 
-The native `https://papertok-report-api.<account>.workers.dev` route still answers and is
-still accepted by `src/services/worker-api-client.ts`, so a bundle built before the variable
-was flipped keeps working.
+The native workers.dev route is disabled and the frontend accepts only the custom
+domain in production. Publish a bundle configured with that domain before deploying
+this setting; see [Production Worker hostname](#production-worker-hostname).
 
-Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
+Available routes are `/share/paper/:key`, `/share/list/:shareId`, `/share/entity/:type/:id`, `/share/image/entity/:type/:id`, `/account/delete`, `/institution/link`, `/institution/unlink`, `/institution/services`, `/access`, `/related`, `/store/papers`, `/citation-graph`, `/oa`, `/arxiv`, `/pdf`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/rewrite`, `/ai/annotate`, `/ai/quota`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, `/health/openalex/budget`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. `/oa` asks Unpaywall first; when Unpaywall has not indexed a DOI yet (a 404, which is every paper a day old), it reads the Crossref licence instead and answers in Unpaywall's shape with `source: 'crossref'` — only a Creative Commons licence on the version of record (`vor` or `unspecified`) whose `start` has passed counts, so a publisher's text-mining licence or a licence on the accepted manuscript alone does not. A DOI neither can answer for comes back as `source: 'unresolved'` and is cached for six hours; an upstream outage is a 502 and is not cached. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback. `/pdf?url=` relays a paper's PDF to the touch-screen viewer, which draws the pages itself with pdf.js because framed PDFs do not work on phones: only the hosts the AI routes already read (arXiv, Europe PMC, PMC) are accepted, redirects are checked against the same list, the body must be a PDF of at most 8 MB, the request must carry an allowed `Origin`, the edge caches a PDF for a day, and the [PDF relay limits](#pdf-relay-limits) count valid GET requests per IP and cache misses globally in one atomic reservation.
 
 `POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (delete the comments and content reports from before comments were removed, drop public lists, follows, clear `createdBy` on paper stubs, profile and handle, the private user tree, newsletter KV, then Auth last). The private user tree includes the saved plain-words summaries (`summaries`) and their history rows (`summaryHistory`); the sweep reads document names only, 80 per request, so a page of summaries is not downloaded just to be deleted. Replies other accounts wrote under a deleted comment stay. Every request also needs a recent sign-in: when the verified token's `auth_time` is missing or more than 240 s old, the route answers 401 `AUTH_RECENT_LOGIN_REQUIRED` before it deletes anything. Identity Toolkit refuses to delete the Auth account for a sign-in that is not recent (`CREDENTIAL_TOO_OLD_LOGIN_AGAIN`), and Auth is the last stage, so without this check that refusal arrived after the data was gone. Firebase does not document its window; it is commonly reported as five minutes. The settings dialog signs the user in again with a popup just before the first request. A deletion that runs past the window stops with the same 401 while `users/{uid}`, the newsletter and Auth are still there, and the next request after a new sign-in continues it. This is a **new** route: deploy the Worker before the frontend.
 
@@ -185,7 +185,7 @@ The request temporarily stores `{ uid, email, nonce, createdAt }` in browser loc
 
 Three rows of `INSTITUTION_RESOLVERS` carry `product: 'sfx'`: TUM, LMU and FAU, whose libraries run SFX instances on the Bavarian library network's server (`sfx.bib-bvb.de/sfx_tum`, `/sfx_ubm`, `/sfx_uben`; a pilot, the census's other SFX libraries are not read). For them the resolver step asks the instance an OpenURL 1.0 with the same ISSN, year, DOI, volume, issue and first page, `svc.fulltext=yes` (only full-text services: without it the instances also look up print holdings and loan options and answered in 5 to 10 s instead of 0.4 to 1.8 s on 2026-10-20) and `sfx.response_type=multi_obj_detailed_xml`. Only `getFullTxt` services of the journal asked about count: SFX resolves an ISSN to a journal of its knowledge base, sometimes another one (1234-5678 came back as a different journal), so the context object must carry the ISSN asked about; holdings, loans, document delivery and the other service types never count. SFX has no free flag, so a collection whose knowledge-base name says free, freely, open access, DOAJ or PubMed Central is open access rather than the library's and does not make the answer `entitled`; an answer that lists only such collections is `not-entitled`, like an answer without full text. A name without those words proves no subscription either: TUM listed MDPI's own platform for an Entropy article and SpringerLink for a Scientific Reports one, both open (2026-10-20). So an article whose version of record Crossref says is openly licensed, by the same rule `/oa` reads (`openLicenseFromCrossref`), is `not-entitled` without asking the instance: it is open access, not the library's. A missing licence proves nothing either way: Crossref has none for most closed articles (40 of the catalogue's 66 closed probe DOIs) and none for Entropy 19(2):87, an open MDPI article TUM's SFX also lists (2026-10-20). So when the instance lists a service it does not name free, the Worker asks Unpaywall, the `/oa` route's source, about the DOI: an article whose published version Unpaywall has behind the publisher's paywall (`closed`, or `green` with only a repository copy) is `entitled`; one open at the publisher (`gold`, `hybrid` or `bronze`) is `not-entitled`; a DOI Unpaywall has not indexed, or a record without one of those statuses, is `unknown`; an Unpaywall failure is a 502. Unpaywall is asked once per lookup, inside its deadline, and only when the answer depends on it. A closed article keeps its subscription beside any free collections. An answer about another journal or without a knowledge-base record, a related journal's service, full text of selected articles only, a licensed service linked only over plain http, or `sfx.has_full_text` without a listed service is `unknown`; an incomplete answer (its root, an object or a service left open), an HTML page or an SFX failure is a 502. SFX does not authenticate the reader, and its target URL goes straight to the publisher, usually the article's DOI link. `url` is that link through the remote-access login the library documents, the row's `proxy`, with the target encoded as `qurl`: TUM's eAccess (`https://tum-eaccess.de/login?qurl=`) and LMU's E-Medien login (`https://emedien.ub.uni-muenchen.de/login?qurl=`), both EZproxy, kept such targets whole, their own encoded parameters included, on the way to the university's sign-in (2026-10-20). A link already on the login's host, or on a host the row lists in `signsIn` because its links start the library's sign-in themselves (LMU's Gale links, on `find.gale.com` and `link.gale.com`, reach LMU's Shibboleth), is left as it is; LMU's EBSCO and Nexis Uni links end at the platform's own sign-in without E-Medien, so they go through it. FAU documents eduVPN and Shibboleth per database and no general login, so its links go to the article directly; off campus its readers sign in at the publisher or connect to the VPN. The edge cache key of these rows also carries `product=sfx`, and the login and the self-signing hosts when they have them.
 
-`GET /institution/services?domain=<domain>` checks publications and publisher platforms for the linked library. It returns `{ services: [{ id, name, publisher, url, monogram, color, collection, ownPlatform, platformId? }], partial, unchecked, remaining, checkedAt }`. Authentication, origins, institution identifiers and provider errors follow `/access`, without its DOI parameter; an `offset` parameter from older clients is ignored. Each request, after validation and before any provider is asked, reserves one unit of an hourly allowance in `RequestQuotaLedger`: `INSTITUTION_SERVICES_USER_HOURLY_LIMIT` per account (30) and `INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT` app-wide (600) per UTC hour. The request is counted rather than the probes because one request may probe the resolver dozens of times; a cold library takes the client up to ten requests. A refusal is `429 INSTITUTION_LOOKUP_LIMIT` with `retry-after` set to the seconds left in the hour. A missing ledger, or one that answers with an error, is `503 PROVIDER_QUOTA_NOT_CONFIGURED`, and a ledger that cannot be reached is `502 ACCESS_LOOKUP_UNAVAILABLE`. None of these asks a provider. The client keeps what earlier requests of the same check read as a partial list, or, with nothing read, shows its error state with Retry. The verdicts are kept in the `INSTITUTION_SERVICES_STORE` KV namespace (`wrangler.toml`; `npx wrangler kv namespace create INSTITUTION_SERVICES_STORE` prints the id of a new one): one record per library, keyed by a hash of the parameters the probes are sent with (the resolver's institution code and host, the product, the ids once GetFTR gets them, and how the answer is read), holding a verdict per catalogue entry under the entry's id, ISSN, year, probe DOI and package hint, so a renamed or recoloured entry keeps its verdict and a changed probe is a new entry. A request answers from the stored verdicts and probes only the entries without one: a catalogue that grows costs the entries added, and a reader whose library was read already gets the list at once from any location. Probes run six at a time; no probe starts more than 6 s after the first resolver probe, each request has a 12 s deadline, and the entries no probe started for are `remaining`: the client asks again (up to ten requests in 45 s) and the next request goes on from the store, so a slow library is read in a few requests the first time and once. A probe the deadline cut is `partial` and is not stored, so it is asked again next time; an entry no provider can decide on is `unchecked` and stored as such; a verdict older than 30 days is asked again, and a record nobody asks about for 90 days expires. A request whose probes all failed with nothing in the store is a 502; a missing binding is one too, logged. When every resolver probe of a request failed, that library's resolver is not probed again for 30 minutes in that Cloudflare location, whatever institution ids readers send: a marker in the edge cache, not KV, whose daily writes are few. A request whose GetFTR answer took longer than the start window leaves no marker: GetFTR shares the deadline, so the resolver's probes had less time than a quick request gives them. Until it expires, an entry the store has no verdict for counts as a failed probe without being asked, so the list is `partial`, or a 502 when the store has nothing for the library. Without the marker, every request probed a failing resolver as often as the start window allowed. Cloudflare documents Cache API operations on `*.workers.dev` as having no effect, so on the native `workers.dev` route the marker is not kept and only the hourly allowance bounds a failing library's probes. The answer is `cache-control: no-store`: the store is the cache, and the browser keeps the list in `localStorage` by institution for a day (an hour when partial), so the dialog opens on it. On 2026-10-21 USAL's 198 titles took four pages of 36 and a cold edge cache in every location; the browser kept its copy for five minutes, so every reopen after that started over.
+`GET /institution/services?domain=<domain>` checks publications and publisher platforms for the linked library. It returns `{ services: [{ id, name, publisher, url, monogram, color, collection, ownPlatform, platformId? }], partial, unchecked, remaining, checkedAt }`. Authentication, origins, institution identifiers and provider errors follow `/access`, without its DOI parameter; an `offset` parameter from older clients is ignored. Each request, after validation and before any provider is asked, reserves one unit of an hourly allowance in `RequestQuotaLedger`: `INSTITUTION_SERVICES_USER_HOURLY_LIMIT` per account (30) and `INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT` app-wide (600) per UTC hour. The request is counted rather than the probes because one request may probe the resolver dozens of times; a cold library takes the client up to ten requests. A refusal is `429 INSTITUTION_LOOKUP_LIMIT` with `retry-after` set to the seconds left in the hour. A missing ledger, or one that answers with an error, is `503 PROVIDER_QUOTA_NOT_CONFIGURED`, and a ledger that cannot be reached is `502 ACCESS_LOOKUP_UNAVAILABLE`. None of these asks a provider. The client keeps what earlier requests of the same check read as a partial list, or, with nothing read, shows its error state with Retry. The verdicts are kept in the `INSTITUTION_SERVICES_STORE` KV namespace (`wrangler.toml`; `npx wrangler kv namespace create INSTITUTION_SERVICES_STORE` prints the id of a new one): one record per library, keyed by a hash of the parameters the probes are sent with (the resolver's institution code and host, the product, the ids once GetFTR gets them, and how the answer is read), holding a verdict per catalogue entry under the entry's id, ISSN, year, probe DOI and package hint, so a renamed or recoloured entry keeps its verdict and a changed probe is a new entry. A request answers from the stored verdicts and probes only the entries without one: a catalogue that grows costs the entries added, and a reader whose library was read already gets the list at once from any location. Probes run six at a time; no probe starts more than 6 s after the first resolver probe, each request has a 12 s deadline, and the entries no probe started for are `remaining`: the client asks again (up to ten requests in 45 s) and the next request goes on from the store, so a slow library is read in a few requests the first time and once. A probe the deadline cut is `partial` and is not stored, so it is asked again next time; an entry no provider can decide on is `unchecked` and stored as such; a verdict older than 30 days is asked again, and a record nobody asks about for 90 days expires. A request whose probes all failed with nothing in the store is a 502; a missing binding is one too, logged. When every resolver probe of a request failed, that library's resolver is not probed again for 30 minutes in that Cloudflare location, whatever institution ids readers send: a marker in the edge cache, not KV, whose daily writes are few. A request whose GetFTR answer took longer than the start window leaves no marker: GetFTR shares the deadline, so the resolver's probes had less time than a quick request gives them. Until it expires, an entry the store has no verdict for counts as a failed probe without being asked, so the list is `partial`, or a 502 when the store has nothing for the library. Without the marker, every request probed a failing resolver as often as the start window allowed. The answer is `cache-control: no-store`: the store is the cache, and the browser keeps the list in `localStorage` by institution for a day (an hour when partial), so the dialog opens on it. On 2026-10-21 USAL's 198 titles took four pages of 36 and a cold edge cache in every location; the browser kept its copy for five minutes, so every reopen after that started over.
 
 `SERVICE_CATALOGUE` (`worker/institution-services.ts`) contains 210 candidates: 66 publisher platforms, eight news/business publications and 136 individual journals. `kind` distinguishes these in the catalogue; journal rows use a canonical print-ISSN ID, retain their eISSN and discovery `sources`, and reference their publisher logo through `platformId`. The optional `platformId` in the response lets journal rows reuse bundled platform logos without merging their access results. Platform probes use a flagship journal's ISSN and year and a paywalled DOI. GetFTR is asked in batches of twenty DOIs when configured; undecided or failed probes fall through to the institution's resolver. The eight press publications and 136 added journals have no probe DOI and go directly to the resolver by ISSN and year. Without a resolver they count as `unchecked`, even when GetFTR is available. An accessible sample identifies a source worth trying; it does not establish access to every article or every year. The individual DOI check and feed ordering are unchanged.
 
@@ -304,7 +304,7 @@ cache, and a **global** per-minute ceiling reserved only after a cache miss
 the Semantic Scholar ceiling with `/sources/s2` because both spend the same provider allowance;
 the browser's old per-tab limiter counted per caller, so N tabs were N times the limit.
 
-`/share/*` answers HTML, not JSON: the page a crawler reads for a shared link
+`/share/{paper,list,entity}/…` answers HTML: the page a crawler reads for a shared link
 (`worker/share-pages.ts`). `vercel.json`
 rewrites crawler user agents from `/public/{paper,list,entity}/…` here, so the routes are
 public, GET and HEAD only, and need no `Origin`: they sit ahead of every Origin gate. Each answers
@@ -326,6 +326,31 @@ Identical requests in one isolate share one lookup; a refused admission is not c
 failure never replaces a record another request found. Lists are read from Firestore
 anonymously, so the rules decide as they do for a visitor. These are **new** routes: deploy the
 Worker before the frontend, and check them with a crawler user agent.
+
+A looked-up entity previews with its own card: `/share/image/entity/:type/:id`, a 1200x630
+PNG this Worker draws (`worker/share-image.ts`, laid out in `worker/share-card.ts`, drawn with
+satori and resvg in `worker/share-card-render.ts`). It prints the name and the type, an
+institution's city and country, a journal's publisher or a topic's subfield, and the works and
+citations OpenAlex counts; a count OpenAlex did not give, or gave as zero, is left out. An
+author's last known institution is not printed, because OpenAlex infers it from the latest
+paper. The picture is an institution's logo, the Wikimedia thumbnail OpenAlex links, when it
+is a PNG, a JPEG or an SVG; an author gets initials, as in the Explorer, and every other type
+its icon. The card reads the page's record through the same cache and admission, so a crawler
+that reads the page first usually costs no second lookup (the cache is per data centre). The
+logo is fetched from Wikimedia hosts only, every redirect checked, within 4 seconds and 1 MB.
+A card is kept a day, or an hour when its logo could not be fetched. An entity the card cannot
+be drawn for (missing, failed to load, a name outside the Latin ranges in
+`worker/share-card-assets/README.md`, a renderer error) redirects to its type's static image,
+kept five minutes. An address with no looked-up entity, a name-only page among them, answers
+404. The Worker's own `robots.txt` allows `/share/image/`, because Twitterbot does not fetch
+an image that `robots.txt` disallows.
+
+The static previews and their alt text depend on the kind of page (`getShareImage` in
+`src/utils/public-navigation.ts`). Each entity type (a concept shares the topic's) and a list
+have their own; a paper, a name-only entity and every failure use the site's. The images are
+files the frontend serves from `public/og/`, and the Worker only links to them. A release that
+adds or renames one deploys the frontend before the Worker and keeps the old file until the
+Worker is out.
 
 `SEMANTIC_SCHOLAR_API_KEY` is listed above as if it were optional. It is not, in practice.
 Measured on 2026-08-24, Semantic Scholar's anonymous pool refused **10 of 10** requests from a
@@ -394,7 +419,7 @@ Both ceilings are one call to the day's `RequestQuotaLedger` object, which check
 | enrichment | 80% | `works` lists filtered only by `doi`, `openalex`, `ids.openalex` or `locations.landing_page_url` (cards already shown, followed DOIs), and the share pages' billed lookups. |
 | exploration | 60% | Graph expansions (`select=id,ids`), every search, `/citation-graph`, autocomplete, profile pages and lookups, and any shape not listed above. |
 
-`openAlexCostFor` in `openalex-api.ts` reads the tier from the rebuilt upstream URL, the same one the cache key and the bill come from. It reads no client header or parameter, so a cached bundle gets its tier from what it asks for and one URL always has one tier for a reader. The feed's topic lanes and series are exploration when a reader asks for them: the browser no longer does, and the harvest spends `feed` through `handleHarvestOpenAlex` whatever it asks. Entity lookups cost nothing, reserve nothing and are never refused; the ledger sees them only through the reading their answer files. Tiers rank organic demand; they are not an abuse control. A scripted caller can shape a URL to look essential (a `works` DOI filter with `per-page=1`), and with the minute ceiling at 3000 units one script can still spend the whole day, essential included, in about three minutes. Per-IP or per-identity limits would be the abuse control; the ceiling remains the frontier. The shares are code, not variables, because changing a variable needs a Worker deploy all the same; retune them from `/health/openalex/budget`. Edge and KV are read before any reservation, so a closed tier still serves stored answers.
+`openAlexCostFor` in `openalex-api.ts` reads the tier from the rebuilt upstream URL, the same one the cache key and the bill come from. It reads no client header or parameter, so a cached bundle gets its tier from what it asks for and one URL always has one tier for a reader. The feed's topic lanes and series are exploration when a reader asks for them: the browser no longer does, and the harvest spends `feed` through `handleHarvestOpenAlex` whatever it asks. Entity lookups cost nothing, reserve nothing and are never refused; the ledger sees them only through the reading their answer files. Tiers rank organic demand. Reader misses also reserve a per-IP allowance of 300 units per UTC minute in the same transaction as the shared minute and daily ceilings, regardless of tier. Networks behind NAT share that allowance; multiple IPs can still spend the shared ceilings. The shares are code, not variables, because changing a variable needs a Worker deploy all the same; retune them from `/health/openalex/budget`. Edge and KV are read before any reservation, so a closed tier still serves stored answers.
 
 Every refusal of the budget, at the minute ceiling, a tier's share or the full ceiling, is the Worker's own `429 { code: 'PROVIDER_RATE_LIMITED' }` with `x-papertok-budget-tier: <tier>`, exposed beside `retry-after`. The browser's OpenAlex client (`src/services/open-alex-client.ts`) fails only that request when the header is there, and closes OpenAlex for the whole tab only on a 429 without it, which is OpenAlex refusing the key. Closing the tab on a tier refusal would stop the opened paper, card enrichment and the free lookups the tiers protect. A closed tier is asked again on the next user action, which costs one Worker request and one ledger transaction, not OpenAlex units. Searches are exploration, so they pause from 60% of the day's ceiling: the search page then says OpenAlex searches are paused and that PaperTok keeps the rest of the day's budget for opening papers and the feed, and the recent-impact score says its request is paused (`isOpenAlexBudgetRefusal`). An Explorer page's publications and authors lists are exploration too; when the Worker refuses one and neither the browser's saved copy nor another source (an institution's Crossref rows) fills it, the list says PaperTok has paused it (`explorerListErrorCode`) instead of asking the reader to check their connection. None of these blames OpenAlex or counts down the refusal's `retry-after`, because a new reading can reopen the tier sooner; all give 00:00 UTC as the latest it reopens, and the search page and the Explorer lists keep Retry. This contract change runs the other way from a new route: deploy the frontend to production before the Worker. A bundle without the header check closes OpenAlex for the whole tab on any tier refusal, so once the day passes 60% a refused search would stop the opened paper, card enrichment and the free lookups in that tab for five minutes. Vercel builds production from a push to `main`; a branch push builds only a Preview.
 
@@ -506,6 +531,13 @@ variable is set. Nothing is verified here — the signature check stays with `ac
 a string that could not have been issued by Firebase no longer costs an upstream call. The screen
 runs after the identity cache, which only ever holds verified identities.
 
+Notification routes use this same verifier and its 60-second identity cache,
+including the verified display name used in digest greetings. They still require
+an email address whose ownership Firebase proves. Invalid credentials remain
+`401 EMAIL_AUTH_REQUIRED`, missing configuration is `503 EMAIL_NOT_CONFIGURED`,
+and an unreachable verifier is `503 EMAIL_UNAVAILABLE`. Recipient addresses use
+the shared verifier’s trimmed, lowercase form.
+
 The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`)
 follow the same rule: each request is validated in full before a unit of the daily publishing
 allowance (`PUBLIC_LIST_USER_DAILY_LIMIT`, `PUBLIC_LIST_GLOBAL_DAILY_LIMIT`) is reserved, so a
@@ -567,8 +599,7 @@ Nothing alerts on them. Keep the `[observability]` block in `wrangler.toml`: wit
 
 `GET /pdf?url=` allows 30 valid requests per IP in each fixed UTC minute,
 including edge-cache hits. The same `REQUEST_QUOTA_LEDGER` object handles
-`api.papertok.app`, the native `workers.dev` endpoint and any other hostname
-reaching this Worker. Concurrent requests reserve the caller allowance and the
+`api.papertok.app` and any other enabled hostname reaching this Worker. Concurrent requests reserve the caller allowance and the
 upstream allowance in one storage transaction, before fetching the PDF. A miss
 spends one unit of each; a hit spends only the caller allowance. Misses still
 share `PDF_GLOBAL_MINUTE_LIMIT` (120 by default). A failure upstream keeps its
@@ -586,8 +617,8 @@ Cloudflare-provided IP and therefore an allowance too.
 
 The ledger schedules deletion for the end of that minute plus 60 seconds (at
 most two minutes after reservation). Cloudflare alarm delays or failures can
-retain the expired counters longer; they do not apply to the next minute. Other
-ledger users retain the existing three-day cleanup policy. The privacy notice
+retain the expired counters longer; they do not apply to the next minute. The daily OpenAlex and share
+ledgers retain the existing three-day cleanup policy. The privacy notice
 in [privacy.html](../privacy.html) describes this security processing.
 
 An exhausted allowance returns JSON `PROVIDER_RATE_LIMITED`, HTTP 429,
@@ -620,14 +651,13 @@ shared ceiling stays intact.
 This implementation supersedes ENG-126's WAF proposal. Workers Paid and the
 zone's WAF plan are separate: the inspected account has Workers Standard, while
 `papertok.app` has Free Website. No WAF upgrade or rate-limit binding is required.
-The existing native endpoint stays enabled, so old bundles need no migration.
+The native endpoint is disabled; the deployed frontend must use the custom domain.
 Misses use one ledger call as before; edge-cache hits now also use one call and
 write a caller counter, which adds metered Durable Object work. Browser-cache
 hits make no Worker request and spend no quota.
 
-Run `node --test worker/pdf-proxy.test.ts worker/request-quota-ledger.test.ts`
-and the existing relay tests in `worker/index.test.ts`. The burst test must
-accept 30 of 120 concurrent requests from one IP across both hostnames, refuse
+Run `node --test worker/pdf-proxy.test.ts worker/index.test.ts worker/request-quota-ledger.test.ts`. The burst test must
+accept 30 of 120 concurrent requests from one IP, refuse
 90, and still accept an uncached PDF for another IP. Check cache hits with an
 exhausted global ceiling, IPv6 normalization, minute-boundary recovery, missing
 configuration and cleanup. These tests use mocked upstreams and no provider
@@ -635,7 +665,8 @@ quota. Run `npm run check` for the frontend build and Worker dry-run.
 
 Before publication, verify the secret exists, the privacy notice is published
 through Vercel, and both deployment paths are compatible. After Worker deployment,
-verify both public hostnames, allowed-Origin CORS and the mobile reader's load,
+verify the custom domain answers, the native host is disabled, allowed-Origin CORS
+and the mobile reader's load,
 refusal, external link and retry states. Test exhaustion only in isolated
 infrastructure with mocked upstreams. A local test or dry-run does not establish
 production deployment, Cloudflare header behavior or alarm delivery.
@@ -656,3 +687,47 @@ deletion still removes stored profile and showcase data. The rules accept a lega
 Without it, `scopus-api.ts` tries `COMPLETE`, then `STANDARD`, then the upstream
 default for the configured fallback statuses. A pinned view is not retried with
 another view. Set it only on the Worker; it does not enable Scopus discovery.
+
+
+### Production Worker hostname
+
+Production uses `https://api.papertok.app`. `workers_dev = false` disables the
+native workers.dev hostname at deployment, and the frontend’s production
+allowlist accepts only the custom domain. Local development can still use
+localhost or 127.0.0.1. Verify the deployed frontend uses the custom domain
+before publishing this setting; older bundles configured with the native host
+would lose access to the API. The production bundle inspected on 25 October
+2026 configures `https://api.papertok.app`.
+
+## Public lookup caller limits
+
+Public cache misses on `/arxiv`, `/oa`, billed `/openalex/*` requests and
+`/share/*` lookups reuse the PDF relay’s `CF-Connecting-IP` normalization and
+`PDF_RATE_LIMIT_SECRET`. The HMAC includes the route namespace and UTC minute;
+no raw address is sent to the quota ledger, analytics or logs. Configure that
+existing secret before deploying these routes. Local requests need a test
+`CF-Connecting-IP` header and a secret of at least 32 characters.
+
+| Route | Per IP, per UTC minute | Shared protection |
+| --- | --- | --- |
+| `/arxiv` | 10 cache misses | Existing one-call-per-three-seconds beat |
+| `/oa` | 120 cache misses | No shared quota; Unpaywall and Crossref deadlines still apply |
+| Billed `/openalex/*` | 300 units (30 searches or 300 lists) | Existing minute, daily and tier ceilings |
+| `/share/*` | 20 uncached lookups | Existing 60/minute and 1,000/day lookup ceilings and provider budgets |
+
+OpenAlex and share attach the caller as the existing reservation’s second
+subject, so a refused caller spends no shared quota. Their minute-specific
+identifiers expire with the daily ledger’s three-day cleanup. arXiv and OA have
+no existing shared reservation: each takes a caller-only reservation, with
+cleanup scheduled one minute after the window ends. arXiv gives that unit back
+when pacing refuses a seat. Its existing ledger-outage behavior remains
+unpaced service; OA, OpenAlex and share do not call their providers if the
+quota ledger is unavailable. Missing caller identity or secret refuses lookup
+when a caller reservation is required. A share refusal serves the generic
+page; other refusals use `429 PROVIDER_RATE_LIMITED` with `Retry-After`.
+
+Edge-cache hits, OpenAlex shared-cache hits and free entity lookups reserve no
+caller allowance. In-process paper harvesting uses its existing provider
+budgets and pacing without a visitor IP. The public router cannot select those
+harvest entry points. Test these paths with `node --test worker/index.test.ts
+worker/open-access-route.test.ts worker/paper-feed.test.ts worker/paper-sources.test.ts`.
