@@ -94,3 +94,36 @@ test('the lookup deadline covers a response whose body stalls', { timeout: 8_000
   t.mock.method(globalThis, 'fetch', dribblingFetch());
   assert.equal(await settleWithin(7_000, () => fetchInspireAbstracts(['10.5555/stalled'])), 'TimeoutError');
 });
+
+/** An INSPIRE that answers each query with its own DOI's abstract after `delayMs`, and drops the request if aborted. */
+function inspireAnsweringAfter(delayMs: number, sent: string[]): typeof fetch {
+  return (input, init) => new Promise((resolve, reject) => {
+    const signal = init?.signal;
+    const query = new URL(String(input)).searchParams.get('q')!;
+    sent.push(query);
+    const doi = query.match(/doi:"([^"]+)"/)![1];
+    const timer = setTimeout(() => resolve(response([hit(doi, `Abstract of ${doi}.`)])), delayMs);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }, { once: true });
+  });
+}
+
+test('time spent queued behind another lookup does not count against the deadline or pause INSPIRE', { timeout: 10_000 }, async t => {
+  // Each answer takes 3.5 s. The second lookup starts after 3.5 s and must still get a full 6 s.
+  t.mock.method(Date, 'now', () => 2_000_002_000_000);
+  const sent: string[] = [];
+  const fetch = t.mock.method(globalThis, 'fetch', inspireAnsweringAfter(3_500, sent));
+  const [first, second] = await Promise.all([
+    fetchInspireAbstracts(['10.5555/queued-first']),
+    fetchInspireAbstracts(['10.5555/queued-second']),
+  ]);
+  assert.deepEqual(first.map(record => record.doi), ['10.5555/queued-first']);
+  assert.deepEqual(second.map(record => record.doi), ['10.5555/queued-second']);
+  // INSPIRE is healthy, so a later lookup is sent, and answers at once here.
+  fetch.mock.mockImplementation(inspireAnsweringAfter(0, sent));
+  const third = await fetchInspireAbstracts(['10.5555/queued-third']);
+  assert.deepEqual(third.map(record => record.abstract), ['Abstract of 10.5555/queued-third.']);
+  assert.deepEqual(sent, ['doi:"10.5555/queued-first"', 'doi:"10.5555/queued-second"', 'doi:"10.5555/queued-third"']);
+});
