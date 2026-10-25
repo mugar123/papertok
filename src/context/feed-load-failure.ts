@@ -56,13 +56,21 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
 }
 
 /**
- * The `app_error` a failed load sends, or null when the reader does not see
- * the error: the feed has cards to read, or the reader is on another page,
- * where the provider keeps loading. Both are read when the load fails, not
+ * The `app_error` a failed load owes, or null when the error never reaches the
+ * reader because the feed has cards to read. Read when the load fails, not
  * when it started.
  */
-export function feedLoadFailedEvent(error: unknown, { shownPapers, feedVisible }: { shownPapers: number; feedVisible: boolean }) {
-  if (!feedVisible || shownPapers > 0) return null;
+export function feedLoadFailedEvent(error: unknown, shownPapers: number) {
+  if (shownPapers > 0) return null;
   const { reason, status, code } = feedLoadFailure(error);
   return { kind: 'feed_load_failed', reason, status, error_code: code };
+}
+
+/**
+ * Whether the reader is looking at the error now. The provider keeps loading
+ * on other pages, so a failure there is held until the reader returns to
+ * /feed and the error is still on screen.
+ */
+export function feedErrorOnScreen({ feedVisible, error, shownPapers }: { feedVisible: boolean; error: string | null; shownPapers: number }) {
+  return feedVisible && error !== null && shownPapers === 0;
 }
