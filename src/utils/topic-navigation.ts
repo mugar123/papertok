@@ -67,9 +67,9 @@ const GENERIC_TOPIC_LABELS = new Set([
  * why leaving Following took 99-106ms to start moving while leaving Research
  * took 30-40ms.
  *
- * The order below is the order the old loop visited in — an area, then that
- * area's subcategories, then the next area — and the walk still stops at the
- * first match, so which entry wins is unchanged. Only the normalising moved.
+ * A label is matched against every subcategory before any area: the AI area
+ * and its `cs.AI` leaf are both "Artificial Intelligence", and a concept of
+ * that name stands for the leaf.
  */
 let taxonomyIndex: Array<{ areaId: string; area: { label: string }; areaKeys: string[]; subcategories: Array<{ categoryId: string; category: { label: string }; keys: string[] }> }> | null = null;
 function getTaxonomyIndex() {
@@ -100,15 +100,8 @@ function findLocalTopic(value: string|undefined) {
   }
 
   const normalized = normalizeLabel(value);
-  for (const { areaId, area, areaKeys, subcategories } of getTaxonomyIndex()) {
-    if (areaKeys.some(label => label === normalized)) {
-      return {
-        id: areaId,
-        label: area.label,
-        type: 'topic',
-        reliable: true,
-      };
-    }
+  const index = getTaxonomyIndex();
+  for (const { subcategories } of index) {
     for (const { categoryId, category, keys } of subcategories) {
       if (categoryId === value || keys.some(label => label === normalized)) {
         return {
@@ -118,6 +111,16 @@ function findLocalTopic(value: string|undefined) {
           reliable: true,
         };
       }
+    }
+  }
+  for (const { areaId, area, areaKeys } of index) {
+    if (areaKeys.some(label => label === normalized)) {
+      return {
+        id: areaId,
+        label: area.label,
+        type: 'topic',
+        reliable: true,
+      };
     }
   }
   return null;
