@@ -79,7 +79,7 @@ import {
 } from '../utils/user-scoped-storage.ts';
 import { leavesLoadedAccount, recordCardView, seenPapersForAccount } from './feed-viewed-papers.ts';
 import { PAGE_SIZE, canFetchNextPage, isEmptyFirstPage, pageAfterLoad, planUnshowablePage, showsNoPaper } from './feed-pagination.ts';
-import { emptyFirstPageError, feedLoadFailure } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedLoadFailedEvent } from './feed-load-failure.ts';
 import { cardsBeforePage, joinFeedPage, notablePassedOver, notablePlaceAfterDismissal, notableRequest, reRankAfterReader, withoutDismissedCard } from './feed-notable-cards.ts';
 import { readFeedSnapshot, restoredReaderCardId, writeFeedSnapshot } from './feed-snapshot.ts';
 import { corpusOrder, leanAfterEngaging } from './feed-temporal-lean.ts';
@@ -300,6 +300,9 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
   // (measured 2026-09-11, ~200 ms of React work at each card change).
   const papersRef = useRef(papers);
   useEffect(() => { papersRef.current = papers; }, [papers]);
+  // Read when a load fails, which can be after the reader left /feed.
+  const feedRouteActiveRef = useRef(feedRouteActive);
+  useEffect(() => { feedRouteActiveRef.current = feedRouteActive; }, [feedRouteActive]);
   // What the ranking reads from the interaction profile, read out again after
   // every event. The profile is the one owner; nothing writes these maps.
   const profileSignals = useRef<ProfileSignals>(readProfileSignals(null));
@@ -1471,14 +1474,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
 
     } catch (failure) {
       if (requestId === feedRequestId.current) {
-        const cause = feedLoadFailure(failure);
         setError('FEED_LOAD_FAILED');
         // One event per failed attempt, sent where the load runs: a remounted
-        // feed screen showing the same error must not send it again. Only when
-        // the reader is left looking at the error, as the screen used to report it.
-        if (papersRef.current.length === 0) {
-          void trackEvent('app_error', { kind: 'feed_load_failed', reason: cause.reason, status: cause.status, error_code: cause.code });
-        }
+        // feed screen showing the same error must not send it again.
+        const event = feedLoadFailedEvent(failure, { shownPapers: papersRef.current.length, feedVisible: feedRouteActiveRef.current });
+        if (event) void trackEvent('app_error', event);
         // A transient multi-source failure used to require a manual reload.
         // Retry ONCE per session automatically; further failures keep the
         // error state with its manual "Reintentar" so there is no cascade.

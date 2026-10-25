@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyFirstPageError, feedLoadFailure } from './feed-load-failure.ts';
+import { emptyFirstPageError, feedLoadFailedEvent, feedLoadFailure } from './feed-load-failure.ts';
 import { WorkerApiAuthError, sourceResponseError } from '../services/worker-api-client.ts';
 
 const refused = (status: number, code?: string) => sourceResponseError('/store/papers', status, code ? { code } : null);
@@ -30,4 +30,15 @@ test('a failed Firebase token keeps its code: offline is network, throttled is r
   assert.deepEqual(feedLoadFailure(firebase('auth/network-request-failed')), { reason: 'network', code: 'auth/network-request-failed' });
   assert.deepEqual(feedLoadFailure(firebase('auth/too-many-requests')), { reason: 'rate_limited', code: 'auth/too-many-requests' });
   assert.deepEqual(feedLoadFailure(firebase('auth/user-token-expired')), { reason: 'session', code: 'auth/user-token-expired' });
+});
+
+test('a failed load is reported only when the reader is on the feed looking at the error', () => {
+  const failure = refused(503, 'AUTH_UNAVAILABLE');
+  assert.deepEqual(feedLoadFailedEvent(failure, { shownPapers: 0, feedVisible: true }), {
+    kind: 'feed_load_failed', reason: 'server', status: 503, error_code: 'AUTH_UNAVAILABLE',
+  });
+  // The reader left /feed before the load failed; the provider stays mounted.
+  assert.equal(feedLoadFailedEvent(failure, { shownPapers: 0, feedVisible: false }), null);
+  // Cards are still on screen.
+  assert.equal(feedLoadFailedEvent(failure, { shownPapers: 3, feedVisible: true }), null);
 });

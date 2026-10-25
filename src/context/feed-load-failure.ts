@@ -54,3 +54,15 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
   if (knownCode?.startsWith('auth/')) return { reason: 'session', code: knownCode };
   return { reason: 'unexpected' };
 }
+
+/**
+ * The `app_error` a failed load sends, or null when the reader does not see
+ * the error: the feed has cards to read, or the reader is on another page,
+ * where the provider keeps loading. Both are read when the load fails, not
+ * when it started.
+ */
+export function feedLoadFailedEvent(error: unknown, { shownPapers, feedVisible }: { shownPapers: number; feedVisible: boolean }) {
+  if (!feedVisible || shownPapers > 0) return null;
+  const { reason, status, code } = feedLoadFailure(error);
+  return { kind: 'feed_load_failed', reason, status, error_code: code };
+}
