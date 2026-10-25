@@ -9,8 +9,9 @@ import { openAlexPeerReviewed } from '../src/utils/publication-status.ts';
 // engineering, the proceedings) whose newest articles stand for a leaf, by
 // OpenAlex source ID (PAP-104). Each leaf's evidence is a labelled sample: its
 // sources' 15 newest articles, asked with the lane's types and topic or author
-// filter, and outside economics and finance with has_abstract:true, which the
-// lane does not ask. scripts/README-openalex-leaf-venues.md describes the inputs.
+// filter, and, for econ.GN and every leaf outside economics and finance, with
+// has_abstract:true, which the lane does not ask.
+// scripts/README-openalex-leaf-venues.md describes the inputs.
 
 interface Work { id: string; type: string; title: string; publication_date: string; source: string; primary_topic?: string }
 interface Sample {

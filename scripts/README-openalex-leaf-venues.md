@@ -129,7 +129,9 @@ the curator weighed and did not recommend, and record why those leaves have no
 lane.
 Economics and finance were sampled with and without `has_abstract:true`. The
 evidence of econ.EM, econ.TH, q-fin.GN and q-fin.MF is the sample asked as the
-lane asks. econ.GN's is the sample with `has_abstract:true`, as the other areas'
+lane asks; so are the samples of q-fin.PM, q-fin.PR, q-fin.RM and q-fin.TR,
+which asked the same filters without `has_abstract:true` and have no lane.
+econ.GN's is the sample with `has_abstract:true`, as the other areas'
 were (Pablo, 2026-10-24): asked as its lane asks, its 15 newest were 9 on
 target, three doubted (two of them Journal of Political Economy articles
 without an abstract), and the leaf failed; with `has_abstract:true` they were
