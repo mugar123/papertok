@@ -270,9 +270,10 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
       // Before the cache: the answer is the institution's and shared, but
-      // only a signed-in reader may draw on the resolvers behind it.
-      await verifyFirebaseIdentity(request, env);
-      return await handleInstitutionAccess(request, env);
+      // only a signed-in reader may draw on the resolvers behind it, and a
+      // miss is charged to that reader.
+      const identity = await verifyFirebaseIdentity(request, env);
+      return await handleInstitutionAccess(request, env, identity);
     } catch (error) {
       captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;
@@ -287,8 +288,8 @@ export async function handleRequest(request: Request, env: WorkerEnv, context?: 
     if (request.method !== 'GET') return json({ code: 'METHOD_NOT_ALLOWED' }, 405, corsHeaders(origin, env));
     if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
     try {
-      await verifyFirebaseIdentity(request, env);
-      return await handleInstitutionServices(request, env);
+      const identity = await verifyFirebaseIdentity(request, env);
+      return await handleInstitutionServices(request, env, identity);
     } catch (error) {
       captureWorkerException(error);
       const known = error instanceof InstitutionAccessError || error instanceof WorkerAuthError;

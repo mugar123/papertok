@@ -1,3 +1,5 @@
+import { emailServiceState } from './email-health.ts';
+
 type NudgeStorage = Pick<Storage, 'getItem' | 'setItem'>;
 /**
  * The small panels that ask for something once and then never again, such as
@@ -75,9 +77,10 @@ export function pickNudge({ eligible = [], dismissed = [], random = Math.random 
  * not heard back" looks like. Reading that as a fault would announce an outage
  * to everyone on every cold load, including when the health request never
  * lands. And a service that says it is available is believed, whatever else it
- * reports.
+ * reports. A check the Worker did not run leaves the status unknown
+ * (`emailServiceState`), which is not a fault either.
  */
 export function emailNudgeProblem({ loading = false, health = {} }: { loading?: boolean; health?: { code?: string | null; available?: boolean; configured?: boolean } | null } = {}) {
-  if (loading || !health?.code || health.available === true) return null;
+  if (loading || !health?.code || emailServiceState(health) !== 'down') return null;
   return health.code === 'EMAIL_NOT_CONFIGURED' ? 'not-configured' : 'unavailable';
 }

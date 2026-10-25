@@ -41,6 +41,12 @@ async function withWorkerFetchMock<Result>(fetchImplementation: typeof fetch, ca
   }
 }
 
+// A live health probe reserves its call in the quota ledger first, and does
+// not run without one.
+function healthProbeEnv<Env extends object>(env: Env) {
+  return { ...env, REQUEST_QUOTA_LEDGER: inMemoryQuotaLedger().binding };
+}
+
 test('allows the notification preferences PUT request through CORS', async () => {
   const request = new Request('https://papertok-report-api.example/notifications/preferences', {
     method: 'OPTIONS',
@@ -108,7 +114,7 @@ test('the retired /ai/hooks and /ai/explain routes answer 405 and spend nothing'
 });
 
 test('returns an unhealthy status when the email provider works but the scheduler is stale', async () => {
-  const env = {
+  const env = healthProbeEnv({
     RESEND_API_KEY: 're_test',
     RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     NOTIFICATION_STORE: {
@@ -118,7 +124,7 @@ test('returns an unhealthy status when the email provider works but the schedule
         scanned: 1,
       }),
     } as KVNamespace & { get(): Promise<object> },
-  };
+  });
   const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
     data: [{ name: 'papertok.app', status: 'verified' }],
   }), { headers: { 'content-type': 'application/json' } }), () => reportApi.fetch(new Request(
@@ -136,7 +142,7 @@ test('returns an unhealthy status when the email provider works but the schedule
 test('serves the email health probe from the edge cache', async () => {
   // Edge caching keeps repeated health requests off the provider API.
   let providerCalls = 0;
-  const env = {
+  const env = healthProbeEnv({
     RESEND_API_KEY: 're_test',
     RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     EMAIL_DELIVERY_LEDGER: { idFromName: ((): unknown => 'day') as TestNamespace['idFromName'], get: ((): Pick<DurableObjectStub, 'fetch'> => ({ fetch: async () => new Response('{}') })) as TestNamespace['get'] } as Env['REQUEST_QUOTA_LEDGER'],
@@ -147,7 +153,7 @@ test('serves the email health probe from the edge cache', async () => {
         scanned: 1,
       }),
     } as KVNamespace & { get(): Promise<object> },
-  };
+  });
   const originalFetch = globalThis.fetch;
   const originalCaches = (globalThis as TestGlobals).caches;
   const stored = new Map<string, Response>();
@@ -190,7 +196,7 @@ test('serves the email health probe from the edge cache', async () => {
 });
 
 test('reports a missing email delivery ledger binding as unhealthy', async () => {
-  const env = {
+  const env = healthProbeEnv({
     RESEND_API_KEY: 're_test',
     RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>',
     NOTIFICATION_STORE: {
@@ -200,7 +206,7 @@ test('reports a missing email delivery ledger binding as unhealthy', async () =>
         scanned: 1,
       }),
     } as KVNamespace & { get(): Promise<object> },
-  };
+  });
   const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
     data: [{ name: 'papertok.app', status: 'verified' }],
   }), { headers: { 'content-type': 'application/json' } }), () => reportApi.fetch(new Request(
@@ -491,7 +497,7 @@ test('reports the remaining OpenAlex budget as a number', async () => {
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/openalex',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { OPENALEX_API_KEY: 'worker-key' }),
+    ), healthProbeEnv({ OPENALEX_API_KEY: 'worker-key' })),
   );
 
   assert.equal(response.status, 200);
@@ -512,7 +518,7 @@ test('reports an exhausted OpenAlex budget as unhealthy, naming the shortfall', 
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/openalex',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), {}),
+    ), healthProbeEnv({})),
   );
 
   assert.equal(response.status, 503);
@@ -530,7 +536,7 @@ test('reports Scopus as unconfigured without contacting the egress', async () =>
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/health/scopus',
     { headers: { origin: 'https://mugar123.github.io' } },
-  ), {}));
+  ), healthProbeEnv({})));
 
   assert.equal(response.status, 503);
   const health = await response.json<{ configured: boolean; available: boolean; code: string }>();
@@ -548,7 +554,7 @@ test('names the Elsevier error code when the key is refused from this network', 
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), SCOPUS_EGRESS),
+    ), healthProbeEnv(SCOPUS_EGRESS)),
   );
 
   assert.equal(response.status, 503);
@@ -580,7 +586,7 @@ test('falls back to the STANDARD view and reports that the abstract is missing',
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), SCOPUS_EGRESS),
+    ), healthProbeEnv(SCOPUS_EGRESS)),
   );
 
   assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
@@ -604,7 +610,7 @@ test('records what every view answered when Scopus refuses both of them', async 
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), SCOPUS_EGRESS),
+    ), healthProbeEnv(SCOPUS_EGRESS)),
   );
 
   assert.equal(response.status, 503);
@@ -630,7 +636,7 @@ test('reports a COMPLETE view that carries the abstract', async () => {
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), SCOPUS_EGRESS),
+    ), healthProbeEnv(SCOPUS_EGRESS)),
   );
 
   assert.equal(response.status, 200);
@@ -660,7 +666,7 @@ test('falls past a view the account is not entitled to, which Scopus refuses wit
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), SCOPUS_EGRESS),
+    ), healthProbeEnv(SCOPUS_EGRESS)),
   );
 
   assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
@@ -684,7 +690,7 @@ test('spends a single upstream call when the answering view is pinned', async ()
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ...SCOPUS_EGRESS, SCOPUS_VIEW: 'STANDARD' }),
+    ), healthProbeEnv({ ...SCOPUS_EGRESS, SCOPUS_VIEW: 'STANDARD' })),
   );
 
   assert.deepEqual(requestedViews, ['STANDARD']);
@@ -705,7 +711,7 @@ test('reaches Scopus through the egress and never contacts Elsevier itself', asy
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), SCOPUS_EGRESS),
+    ), healthProbeEnv(SCOPUS_EGRESS)),
   );
 
   const target = new URL(upstreamUrl);
@@ -714,6 +720,106 @@ test('reaches Scopus through the egress and never contacts Elsevier itself', asy
   assert.equal(sentHeaders!.get('authorization'), `Bearer ${SCOPUS_EGRESS.SCOPUS_PROXY_SECRET}`);
   // The Elsevier key lives on the egress; this Worker must not carry one.
   assert.equal(sentHeaders!.get('X-ELS-APIKey'), null);
+});
+
+// The live probes and the most each may make per window, app-wide (Pablo,
+// 2026-10-24). Every probe answers what the provider would.
+const LIVE_HEALTH_PROBES = [
+  {
+    path: '/health/openalex',
+    probes: 6,
+    windowSeconds: 600,
+    env: { OPENALEX_API_KEY: 'worker-key' },
+    upstream: () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
+  },
+  {
+    path: '/health/scopus',
+    probes: 1,
+    windowSeconds: 600,
+    env: { ...SCOPUS_EGRESS, SCOPUS_VIEW: 'STANDARD' },
+    upstream: () => new Response(JSON.stringify({ 'search-results': { entry: [{ 'dc:title': 'A result' }] } })),
+  },
+  {
+    path: '/health/email',
+    probes: 6,
+    windowSeconds: 300,
+    env: { RESEND_API_KEY: 're_test', RESEND_FROM_EMAIL: 'PaperTok <hello@papertok.app>' },
+    upstream: () => new Response(JSON.stringify({ data: [{ name: 'papertok.app', status: 'verified' }] }), {
+      headers: { 'content-type': 'application/json' },
+    }),
+  },
+];
+
+// The edge cache is per data centre and nothing joins concurrent misses, so
+// every anonymous request that arrived while a probe ran made its own
+// provider call: 50 OpenAlex calls for 50 requests (DeepSec 678bed1024).
+for (const probe of LIVE_HEALTH_PROBES) {
+  test(`${probe.path}: 50 concurrent anonymous misses make no more provider calls than the window allows`, async t => {
+    // 12:02 UTC: the 10-minute window ends at 12:10, the 5-minute one at 12:05.
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-24T12:02:00.000Z') });
+    let providerCalls = 0;
+    let puts = 0;
+    const stored = new Map<string, Response>();
+    const originalFetch = globalThis.fetch;
+    const originalCaches = (globalThis as TestGlobals).caches;
+    globalThis.fetch = async () => {
+      providerCalls += 1;
+      // The answer, and so the cache put, lands after every request has missed.
+      await new Promise(resolve => setTimeout(resolve, 200));
+      return probe.upstream();
+    };
+    (globalThis as TestGlobals).caches = {
+      default: {
+        match: async (key): Promise<Response | null | undefined> => stored.get(String((key as Request).url))?.clone() || null,
+        put: async (key, response): Promise<unknown> => {
+          puts += 1;
+          return stored.set(String((key as Request).url), response.clone());
+        },
+      },
+    };
+    try {
+      const env = healthProbeEnv(probe.env);
+      const ask = () => reportApi.fetch(new Request(`https://papertok-report-api.example${probe.path}`), env);
+      const burst = await Promise.all(Array.from({ length: 50 }, ask));
+
+      assert.ok(providerCalls >= 1 && providerCalls <= probe.probes, `${providerCalls} provider calls`);
+      const refused = burst.filter(response => response.headers.get('cache-control') === 'no-store');
+      assert.equal(refused.length, 50 - providerCalls, 'every request that did not probe was refused');
+      for (const response of refused) {
+        assert.equal(response.status, 429);
+        assert.equal(response.headers.get('retry-after'), String(probe.windowSeconds - 120));
+        assert.deepEqual(await response.json(), { code: 'HEALTH_PROBE_LIMITED' });
+      }
+      assert.equal(puts, providerCalls, 'only the answers of probes are stored, never a refusal');
+
+      const later = await ask();
+      assert.equal(providerCalls, burst.length - refused.length, 'the cached probe answers the next request');
+      assert.notEqual(later.headers.get('cache-control'), 'no-store');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalCaches === undefined) delete (globalThis as TestGlobals).caches;
+      else (globalThis as TestGlobals).caches = originalCaches;
+    }
+  });
+}
+
+test('a live health probe without a quota ledger answers 503 and asks no provider', async () => {
+  for (const probe of LIVE_HEALTH_PROBES) {
+    let providerCalls = 0;
+    const response = await withWorkerFetchMock(async () => {
+      providerCalls += 1;
+      return probe.upstream();
+    }, () => reportApi.fetch(new Request(
+      `https://papertok-report-api.example${probe.path}`,
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), probe.env));
+
+    assert.equal(providerCalls, 0, probe.path);
+    assert.equal(response.status, 503, probe.path);
+    assert.equal(response.headers.get('cache-control'), 'no-store', probe.path);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io', probe.path);
+    assert.deepEqual(await response.json(), { code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, probe.path);
+  }
 });
 
 test('requires Firebase authentication before a secret-backed source can be used', async () => {
@@ -1567,6 +1673,28 @@ test('an OpenAlex answer fetched in one location is served from the shared store
   const [entry] = [...store.entries.values()];
   assert.ok(entry, 'the answer is in the shared store');
   assert.equal(entry.ttl, 24 * 60 * 60, 'kept for a day');
+});
+
+test('a trailing slash on an OpenAlex path shares the entry, reservation and call of the same upstream URL', async () => {
+  const store = fakeOpenAlexStore();
+  const ledger = recordingLedger();
+  const env = openAlexEnv({ NOTIFICATION_STORE: store, REQUEST_QUOTA_LEDGER: ledger.binding });
+  const calls = await withCountedUpstream(
+    async () => new Response(JSON.stringify({ results: [{ id: 'W1' }] }), { status: 200 }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (const path of ['/openalex/works?search=graphene', '/openalex/works/?search=graphene']) {
+          const response = await reportApi.fetch(new Request(`https://papertok-report-api.example${path}`, { headers: BROWSER }), env);
+          assert.equal(response.status, 200, path);
+        }
+      });
+    },
+  );
+
+  // Both spellings are rebuilt as https://api.openalex.org/works?search=graphene.
+  assert.equal(calls.length, 1);
+  assert.equal(ledger.reservations.length, 1);
+  assert.equal(store.entries.size, 1);
 });
 
 test('a work OpenAlex has not indexed is shared for an hour; a refusal and an outage are not shared', async () => {
@@ -3052,8 +3180,9 @@ test('serves a cached unhealthy Scopus probe as 503, not a false-positive 200, t
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin } },
     );
-    const first = await reportApi.fetch(scopusHealthRequest('https://papertok.app'), {});
-    const second = await reportApi.fetch(scopusHealthRequest('https://www.papertok.app'), {});
+    const env = healthProbeEnv({});
+    const first = await reportApi.fetch(scopusHealthRequest('https://papertok.app'), env);
+    const second = await reportApi.fetch(scopusHealthRequest('https://www.papertok.app'), env);
 
     assert.equal(first.status, 503, 'unconfigured Scopus is unhealthy on the miss');
     assert.equal(stored.size, 1, 'one entry for the one path, regardless of origin');

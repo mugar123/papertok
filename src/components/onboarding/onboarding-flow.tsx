@@ -10,6 +10,7 @@ import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import InstitutionLink from '../institution/institution-link.tsx';
 import { needsUniversityProof, sendInstitutionVerification } from '../../services/institution-service.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
+import { isInAppPath } from '../../utils/auth-return.ts';
 import { AreaPicker, SubtopicsPicker, WelcomeCopy, WelcomeShell } from '../public/welcome-shell.tsx';
 import { LibraryPreview } from '../public/guest-welcome-preferences.tsx';
 import { GUEST_SEED_PER_AREA, guestSeedCategoriesForAreas, guestSeedSizeForAreas, readGuestInterests } from '../../utils/guest-interests.ts';
@@ -92,11 +93,7 @@ export default function OnboardingFlow() {
   const navigate = useNavigate();
   const location = useLocation();
   const { trackEvent, markActivation } = useAnalyticsConsent();
-  const returnTo = typeof location.state?.returnTo === 'string'
-    && location.state.returnTo.startsWith('/')
-    && !location.state.returnTo.startsWith('//')
-    ? location.state.returnTo
-    : '/feed';
+  const returnTo = isInAppPath(location.state?.returnTo) ? location.state.returnTo : '/feed';
 
   const asksTopics = !guestSeed;
   const steps = onboardingSteps({ asksTopics });

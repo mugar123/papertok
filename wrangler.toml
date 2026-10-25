@@ -55,6 +55,16 @@ EMAIL_DAILY_SEND_LIMIT = "100"
 RESEND_FROM_EMAIL = "Nico de PaperTok <noreply@updates.papertok.app>"
 PROVIDER_USER_MINUTE_LIMIT = "60"
 PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
+# /access cache misses per account and app-wide per UTC minute, an allowance of
+# its own so a fast scroller never spends the one above. Each miss asks Crossref,
+# the library's resolver (up to two calls) and, for SFX, Unpaywall.
+ACCESS_USER_MINUTE_LIMIT = "120"
+ACCESS_GLOBAL_MINUTE_LIMIT = "1000"
+# /institution/services requests per account and app-wide per UTC hour. Each may
+# probe the library's resolver dozens of times; a cold library takes the client
+# up to ten requests, and the client keeps the list for a day.
+INSTITUTION_SERVICES_USER_HOURLY_LIMIT = "30"
+INSTITUTION_SERVICES_GLOBAL_HOURLY_LIMIT = "600"
 # OpenAlex bills per call against a daily budget ($1/day on a free key), and the
 # guest feed reads it without a session, so the ceiling here is global rather
 # than per user. It is reserved only after an edge-cache miss. Counted in list
