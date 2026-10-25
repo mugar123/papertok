@@ -467,7 +467,8 @@ export async function ingestPapers(env: StoreEnv, items: Harvested[], { keepUnti
       const journal = isWorkingPaperRow(base) ? records.find(readsAsReviewed) : undefined;
       const ordered = journal ? [journal, ...records.filter(record => record !== journal)] : records;
       paper = ordered.slice(1).reduce((merged, other) => PaperBuilder.merge(merged, other, other.provider || other.sources?.primary), ordered[0]);
-      if (journal) paper = { ...paper, id: base.id };
+      // The row keeps the id readers hold, and enrichment asks OpenAlex for the article's work, not the working paper's.
+      if (journal) paper = { ...paper, id: base.id, openAlexId: /^openalex:/.test(journal.id) ? journal.id : undefined };
       if (embeddingText(paper) !== embeddingText(stored[0].paper)) staleVectors.push(id);
       for (const other of ids.slice(1)) folded.push({ from: other, into: id });
     }

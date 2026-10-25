@@ -728,6 +728,25 @@ test('a journal article a venue lane lists a night after its working paper makes
   assert.match(again.abstract, /^Even though a multifactor/);
 });
 
+test("the enrichment of a working-paper row that became its journal article asks OpenAlex for the article's work", async t => {
+  const DAY = 86_400_000;
+  const first = Date.parse('2026-10-23T03:00:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: first });
+  const workingPaper = { ...seriesWork('W7220000104', '10.3386/w35104', 'report', NBER, null), title: gmmArticle.title, authorships: gmmArticle.authorships, publication_date: '2026-09-28' };
+  const { urls, env } = relay(t, url => ({ results: sourcesOf(filtersOf(url)).includes(NBER.id) ? [workingPaper] : sourcesOf(filtersOf(url)).includes(JBES.id) ? [gmmArticle] : [] }));
+  const { binding, db } = testD1();
+  const store = { ...env, PAPER_STORE: binding };
+  await harvestLane(store, categoryLaneJobs().find(job => job.source === 'openalex-series')!);
+  t.mock.timers.setTime(first + DAY);
+  await harvestLane(store, categoryLaneJobs().find(job => job.source === 'openalex-venues' && job.lane === 'econ.EM')!);
+  db.prepare('UPDATE works SET enriched_at = ?').run(new Date(first).toISOString());
+
+  t.mock.timers.setTime(first + 16 * DAY);
+  urls.length = 0;
+  await enrichPending(store, 50, first + 16 * DAY);
+  assert.deepEqual(urls.filter(url => url.hostname === 'api.openalex.org').map(url => url.searchParams.get('filter')), ['openalex:W7221756071']);
+});
+
 // An arXiv eprint reads reviewed on any DOI it lists, with no journal evidence
 // behind it, so it never becomes the base of a working-paper row.
 test('an arXiv eprint that lists a DOI and no journal reference leaves a stored working-paper row as it was', async t => {
