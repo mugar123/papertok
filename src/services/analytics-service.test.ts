@@ -213,7 +213,7 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
   });
   const expected: Record<string, string> = {
     // Search engines, including Google's country domains, its search properties
-    // (Scholar, Books, Images, News) and its Android search apps.
+    // (Scholar, Books, Images, News) and its Android search and News apps.
     'https://google.com/': 'organic_search',
     'https://www.google.com/': 'organic_search',
     'https://www.google.co.uk/': 'organic_search',
@@ -227,13 +227,14 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://news.google.com/': 'organic_search',
     'android-app://com.google.android.googlequicksearchbox/': 'organic_search',
     'android-app://com.google.android.apps.searchlite/': 'organic_search',
+    'android-app://com.google.android.apps.magazines/': 'organic_search',
     'https://www.bing.com/': 'organic_search',
     'https://duckduckgo.com/': 'organic_search',
     'https://search.yahoo.com/': 'organic_search',
     'https://uk.search.yahoo.com/': 'organic_search',
     'https://search.yahoo.co.jp/': 'organic_search',
     'https://search.brave.com/': 'organic_search',
-    // Social networks, short links included.
+    // Social networks, short links and the YouTube app included.
     'https://t.co/abc': 'organic_social',
     'https://x.com/': 'organic_social',
     'https://www.x.com/': 'organic_social',
@@ -241,6 +242,7 @@ test('files a referrer by its whole host, not by a fragment of its name', () => 
     'https://l.facebook.com/': 'organic_social',
     'https://old.reddit.com/': 'organic_social',
     'https://m.youtube.com/': 'organic_social',
+    'android-app://com.google.android.youtube/': 'organic_social',
     // Other Google products and sites whose name only contains a search or social host.
     'https://docs.google.com/': 'referral',
     'https://mail.google.com/': 'referral',

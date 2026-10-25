@@ -87,11 +87,13 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
 // per country, so those two are patterns. Google's search properties (web, Scholar,
 // Books, Images, News) count as search; Docs, Gmail, Gemini and the rest do not. The
-// Google apps on Android send their package name as the referrer.
+// Google apps on Android send their package name as the referrer and are filed like
+// their sites: the Google, Google Go and News apps as search, YouTube as social.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
   /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com?\.)?[a-z]{2,3}$/,
   'com.google.android.googlequicksearchbox',
   'com.google.android.apps.searchlite',
+  'com.google.android.apps.magazines',
   'bing.com',
   'duckduckgo.com',
   /(?:^|\.)search\.yahoo\.(?:com?\.)?[a-z]{2,3}$/,
@@ -100,6 +102,7 @@ const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
 ];
 const SOCIAL_HOSTS = [
   'bsky.app',
+  'com.google.android.youtube',
   'facebook.com',
   'instagram.com',
   'linkedin.com',
