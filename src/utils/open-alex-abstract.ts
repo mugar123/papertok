@@ -43,18 +43,26 @@ const MIN_ABSTRACT_LENGTH = 40;
 // an index can hold that and nothing else: NBER's w35910 (W7222919853) had
 // "Semyon Malamud gratefully acknowledges the financial" as its abstract
 // (ENG-105). Text that opens this way is front matter, not an abstract.
+// A footnote marker ahead of it (`*`, `1`) is not part of the opening. "Supported
+// by" counts only before a funder, so a study "supported by data from" a survey
+// stays an abstract.
+const FOOTNOTE_MARKER = /^(?:[*†‡§]+|\d{1,2}(?=\s))\s*/;
 const FRONT_MATTER_OPENINGS = [
   /^(?:acknowledge?ments?|funding(?: information| statement)?|disclaimer)\s*(?:[:.]|[-–—](?=\s))/i,
-  /^(?:\S+\s+){0,6}gratefully acknowledges?\b/i,
+  /^acknowledge?ments?\s+(?:we|i|the|this|thanks?|financial|funding|support)\b/i,
+  /^(?:\S+\s+){0,12}gratefully acknowledg(?:es?|ed)\b/i,
   /^(?:we|i|the authors?)\s+(?:\w+ly\s+)?acknowledges?\s+(?:the\s+)?(?:financial|funding|support|generous|grant)/i,
-  /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thank|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
-  /^(?:this|the)\s+(?:work|research|project|study|paper)\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)\s+by\b/i,
+  /^(?:we|i|the authors?)\s+(?:would like to\s+|wish to\s+)?(?:thanks?|(?:are|am|is)\s+(?:very\s+)?grateful)\b/i,
+  /^(?:this|the)\s+(?:work|research|project|study|paper)\s+(?:was|is|has been)\s+(?:\w+ly\s+)?(?:supported|funded)\s+by\s+(?=(?:\S+\s+){0,11}?(?:grants?|awards?|funds?|funding|foundation|council|agency|ministry|commission|programme?|fellowships?|contracts?)\b)/i,
+  /^this\s+material\s+is\s+based\s+(?:up)?on\s+work\s+(?:\w+ly\s+)?supported\s+by\b/i,
   /^the views expressed (?:herein|here|in this)/i,
 ];
 
 /** Whether `text` opens as front matter: a funding note, thanks or a disclaimer. */
 export function opensAsFrontMatter(text: unknown) {
-  return typeof text === 'string' && FRONT_MATTER_OPENINGS.some(opening => opening.test(text.trim()));
+  if (typeof text !== 'string') return false;
+  const opening = text.trim().replace(FOOTNOTE_MARKER, '');
+  return FRONT_MATTER_OPENINGS.some(pattern => pattern.test(opening));
 }
 
 /** Whether a work of `type` has an abstract; a work of unknown type may. */

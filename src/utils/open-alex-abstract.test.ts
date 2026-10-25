@@ -77,6 +77,38 @@ test('an abstract that opens with a compound starting like a heading word is sti
   assert.equal(isPlausibleAbstract('Funding - the authors gratefully thank the Swiss National Science Foundation for support.'), false);
 });
 
+// "Supported by" opens a funding note when a funder follows; a study supported
+// by data, or a project that the EU funded and that built a cohort, describes
+// the research.
+test('an opening that says what supported or funded the work is front matter only when a funder follows', () => {
+  for (const text of [
+    'This study is supported by data from the Health and Retirement Study and examines retirement timing across cohorts.',
+    'The project was funded by the EU and built a cohort of 10,000 children, whom we follow from birth to age 12.',
+  ]) {
+    assert.equal(isPlausibleAbstract(text), true, text);
+  }
+  for (const text of [
+    'This paper was funded by a grant from the Swiss National Science Foundation.',
+    'This work is supported by the European Research Council (ERC) under the Horizon 2020 programme.',
+  ]) {
+    assert.equal(isPlausibleAbstract(text), false, text);
+  }
+});
+
+test('a note of thanks or funding is front matter in the forms a PDF extract and a singular author give it', () => {
+  for (const text of [
+    'The author thanks seminar participants at the Federal Reserve Board for helpful comments.',
+    'Acknowledgments We thank the editor and two anonymous referees for comments on an earlier draft.',
+    '* We thank the editor and two anonymous referees for helpful comments on an earlier draft.',
+    '1 We thank the editor and two anonymous referees for helpful comments on an earlier draft.',
+    'Financial support from the Swiss National Science Foundation is gratefully acknowledged.',
+    'This material is based upon work supported by the National Science Foundation under Grant No. 1234567.',
+  ]) {
+    assert.equal(isPlausibleAbstract(text), false, text);
+  }
+  assert.equal(isPlausibleAbstract('Acknowledgement of omitted variable bias changes how we read the estimated returns to schooling.'), true);
+});
+
 test('a work with no index, or no work, has no abstract', () => {
   assert.equal(usableOpenAlexAbstract({ type: 'article' }), '');
   assert.equal(usableOpenAlexAbstract(null), '');
