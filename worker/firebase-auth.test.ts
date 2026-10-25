@@ -189,3 +189,10 @@ test('the sign-in time travels with the identity once Google has accepted the to
     error => (error as { code: string; status: number }).code === 'AUTH_REQUIRED' && (error as { code: string; status: number }).status === 401,
   );
 });
+
+
+test('carries the verified account display name for notification greetings', async () => {
+  stubUser({ localId: UID, email: EMAIL, emailVerified: true, displayName: 'Ada Reader' });
+  assert.equal((await verify(fakeIdToken({ aud: PROJECT_ID }))).displayName, 'Ada Reader');
+  assert.equal(lookups, 1);
+});

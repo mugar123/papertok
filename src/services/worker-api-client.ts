@@ -1,14 +1,8 @@
 import { auth } from './firebase.ts';
 import { withRequestDeadline } from '../utils/request-deadline.ts';
 
-// El Worker responde en los dos: `api.papertok.app` es el Custom Domain, y
-// `*.workers.dev` sigue siendo su ruta nativa. Los dos se admiten porque el
-// valor que llega aqui viene de una variable de GitHub Actions que cambia sin
-// commit: si solo se admitiera el nuevo, un despliegue hecho antes de tocar la
-// variable enviaria un bundle que no alcanza ningun backend.
 const PRODUCTION_WORKER_ORIGINS = Object.freeze([
   'https://api.papertok.app',
-  'https://papertok-report-api.papertok-mugar123.workers.dev',
 ]);
 
 function configuredWorkerOrigin() {

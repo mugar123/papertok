@@ -123,7 +123,8 @@ import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import { safeExternalUrl } from '../../utils/external-url.ts';
 import { usePublicPageMetadata } from '../../hooks/use-public-page-metadata.ts';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
-import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/public-navigation.ts';
+import { DEFAULT_SHARE_IMAGE, getPublicEntityPath, getPublicEntityUrl, getShareImage } from '../../utils/public-navigation.ts';
+import { nameInitials } from '../../utils/name-initials.ts';
 import 'katex/dist/katex.min.css';
 import './entity-explorer.css';
 import { EASE_OUT_EXPO } from '../../utils/motion-curves.ts';
@@ -482,6 +483,9 @@ export default function EntityExplorer({
     () => entity ? getPublicEntityUrl(type, id) : null,
     [entity, id, type],
   );
+  // An author page reached by a name that neither an id nor the paper could
+  // confirm (utils/entity-explorer.ts): its results may be several people's.
+  const authorIdentityUnverified = explorerAuthorIdentityUnverified({ type, routeId: id, entity });
   const metadataConfig = useMemo(() => {
     if (!entity || !entityDisplayName || !publicEntityPath) return { noIndex: true };
     const typeLabel = {
@@ -501,9 +505,12 @@ export default function EntityExplorer({
         en: `Explore scientific papers, citations, and research connected to ${entityDisplayName} on PaperTok.`,
       },
       route: publicEntityPath,
+      // An unconfirmed author has no Follow, so the author card's "Follow
+      // them" would be false: it keeps the site's preview.
+      image: authorIdentityUnverified ? DEFAULT_SHARE_IMAGE : getShareImage(type),
       ogType: 'profile',
     };
-  }, [entity, entityDisplayName, publicEntityPath, type]);
+  }, [authorIdentityUnverified, entity, entityDisplayName, publicEntityPath, type]);
   usePublicPageMetadata(metadataConfig);
 
   const analyticsEntityType = ['author', 'institution', 'project'].includes(type)
@@ -719,9 +726,6 @@ export default function EntityExplorer({
     };
   }, [measureExpandableDescriptions]);
 
-  // An author page reached by a name that neither an id nor the paper could
-  // confirm (utils/entity-explorer.ts): its results may be several people's.
-  const authorIdentityUnverified = explorerAuthorIdentityUnverified({ type, routeId: id, entity });
   const followEntity = useMemo<FollowInput | null>(() => explorerFollowEntity({
     type, routeId: id, entity, authorIdentityUnverified,
     officialName: entityOfficialName, displayName: entityDisplayName,
@@ -1776,10 +1780,7 @@ export default function EntityExplorer({
     );
   }
 
-  const authorNameWords = (entityDisplayName || '').split(/\s+/).filter(word => /^\p{L}/u.test(word));
-  const authorInitials = authorNameWords.length > 0
-    ? `${authorNameWords[0][0]}${authorNameWords.length > 1 ? authorNameWords[authorNameWords.length - 1][0] : ''}`.toUpperCase()
-    : '';
+  const authorInitials = nameInitials(entityDisplayName || '');
 
   const renderIcon = () => {
     if (type === 'institution') return <Buildings size={36} />;
