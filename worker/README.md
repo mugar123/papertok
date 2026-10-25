@@ -201,8 +201,11 @@ fewer when it is slower, none once it takes about 1.7 s) are refused with 429 wh
 else is asking, and the lane then refuses its own queued arXiv requests for the 4 s of that
 `retry-after`. This rate is accepted. The Worker's own callers (liked-paper lookups and the
 harvest's arXiv lanes, which ask the route in-process through `handleHarvestArxiv`, spending
-no address's allowance) and share pages may take any seat, so no anonymous caller can hold
-the other half. A signed-in reader can: the liked-paper lookups
+no address's allowance) and share pages may take any seat. Share pages are public, with no
+Origin check; an arXiv id OpenAlex has not indexed, real or made up, makes one ask arXiv, at
+most 120 times an hour (`SHARE_ARXIV_HOURLY_LIMIT`). So an anonymous caller can hold the
+other half only through share pages, and only that many seats an hour. A signed-in reader
+can hold every seat: the liked-paper lookups
 ask for the ids a reader sends to `POST /store/papers` (`{ ids }`, or `positiveIds` missing
 from the corpus), so one account, within its `PROVIDER_USER_MINUTE_LIMIT` requests a minute,
 can keep every seat taken. Anonymous readers still share their half with whoever else is
