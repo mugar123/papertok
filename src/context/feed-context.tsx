@@ -84,7 +84,6 @@ import { abstractExcerpt, serializeLibraryPaper } from '../utils/reading-library
 import { savedPaperDocRef } from '../services/saved-paper-store.ts';
 import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interaction-aliases.ts';
 import { isPlaceholderPaperTitle } from '../utils/paper-display-title.ts';
-import { feedSeenIds } from '../utils/seen-paper-filter.ts';
 import {
   createEmptyInteractionProfile,
   curatedIds,
@@ -1239,13 +1238,11 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
           : Promise.resolve<Paper[]>([]);
         let mainPapers: Paper[] = [];
         let mainFailed = false;
-        // The seen papers as the main page sends them: the 2,000 most recent,
-        // which is all its filter holds. A profile that arrives late
-        // (applyInteractionProfile) or More like this adds to the session's
-        // while the request runs, and a paper the Worker sent as unseen does
-        // not then say that the reader has seen their ranking. Nor does one
-        // the reader saw before the 2,000, which the Worker takes as unseen.
-        const seenSent = new Set(feedSeenIds(sessionSeenPapers.current));
+        // The seen papers as the main page sends them. A profile that arrives
+        // late (applyInteractionProfile) or More like this adds to the
+        // session's while the request runs, and a paper the Worker sent as
+        // unseen does not then say that the reader has seen their ranking.
+        const seenSent = new Set(sessionSeenPapers.current);
         try {
           let skipsSeen: boolean;
           ({ papers: mainPapers, skipsSeen } = await fetchCorpusPage({

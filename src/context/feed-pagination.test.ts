@@ -158,6 +158,14 @@ test('a page whose unseen papers the reader all knows goes one page on, and the 
   );
 });
 
+test('a page of papers the reader saw before the 2,000 most recent is not their whole ranking: the Worker was not told of them', () => {
+  const later = Array.from({ length: 2_000 }, (_, n) => ({ id: `later-${n}` }) as Paper);
+  // Oldest first, the way the session lists the papers it has seen.
+  const seen = new Set([...ids(page(0)), ...ids(later)]);
+  assert.equal(hasSeenRanking({ papers: page(0), skipsSeen: true }, seen), false, 'the request left them out, so the Worker sent them as unseen');
+  assert.equal(hasSeenRanking({ papers: later.slice(-15), skipsSeen: true }, seen), true, 'the request held these');
+});
+
 test('a seen notable card, or a Worker that pages by number, does not say the reader saw their ranking', () => {
   const seen = new Set([...ids(page(0)), 'notable-0-0']);
   assert.equal(hasSeenRanking({ papers: [...page(1), ...notableOn(0)], skipsSeen: true }, seen), false, 'the ranking has unseen papers');
