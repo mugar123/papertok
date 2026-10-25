@@ -169,6 +169,14 @@ test('the emailed link leads to the production app, or to a loopback app only fr
     assert.equal(response.status, 403, origin);
     assert.deepEqual(await response.json(), { code: 'ORIGIN_NOT_ALLOWED' });
   }
+  // A Worker reached on loopback admits a loopback app only, not every origin
+  // CORS admits.
+  for (const host of ['localhost:8787', '127.0.0.1:8787', '[::1]:8787']) {
+    const url = `http://${host}/institution/verification`;
+    const response = await worker.fetch(request(undefined, { origin: 'https://mugar123.github.io', url }), h.env);
+    assert.equal(response.status, 403, host);
+    assert.deepEqual(await response.json(), { code: 'ORIGIN_NOT_ALLOWED' });
+  }
   assert.equal(h.generated.length, 0);
   assert.equal(h.messages.length, 0);
 
