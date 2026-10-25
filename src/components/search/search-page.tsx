@@ -252,7 +252,7 @@ export default function SearchPage({ onSaveToList = () => {}, searchSlot }: { on
     likedPaperIds, savedPaperIds, readPaperIds,
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
-  const handleSaveToList = useQuickSave(onSaveToList);
+  const handleSaveToList = useQuickSave(onSaveToList, 'search');
   
   // Seeded from the URL, so a search is a place you can be sent to. The
   // palette needs this for the one paper in fifty that carries neither a DOI

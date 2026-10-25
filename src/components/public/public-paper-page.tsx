@@ -79,7 +79,7 @@ export default function PublicPaperPage({
     trackSkip,
     trackPdfOpened,
   } = useFeed();
-  const handleSaveToList = useQuickSave(onSaveToList!);
+  const handleSaveToList = useQuickSave(onSaveToList!, 'other');
   const [result, setResult] = useState<{ requestKey: string; paper: Partial<Paper> | null; status: string }>({ requestKey: '', paper: null, status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const requestIdRef = useRef(0);

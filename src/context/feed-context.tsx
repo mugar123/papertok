@@ -32,12 +32,12 @@ export interface FeedContextValue {
   toggleLike: (paper: Paper) => Promise<void>;
   markNotInterested: (paper: Paper) => Promise<void>;
   undoNotInterested: (paper: Paper, atIndex?: number | null) => Promise<void>;
-  markSaved: (paper: Paper | string) => Promise<void>;
-  unmarkSaved: (paper: Paper | string) => Promise<void>;
+  markSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
+  unmarkSaved: (paper: Paper | string, options?: { throwOnError: boolean }) => Promise<void>;
   markAsRead: (paper: Paper) => Promise<void>;
   unmarkAsRead: (id: string) => Promise<void>;
   /** Flips Read later, or sets it to `value` when one is given. */
-  toggleReadLater: (paper: Paper, value?: boolean) => Promise<boolean>;
+  toggleReadLater: (paper: Paper, value?: boolean, options?: { throwOnError: boolean }) => Promise<boolean>;
   saveReadingMetadata: (paper: Paper, metadata: { note?: string; tags?: string[] }) => Promise<void>;
   trackViewTime: (paper: Paper, seconds: number) => Promise<void>;
   trackPdfOpened: (paper: Paper) => Promise<void>;
@@ -2057,9 +2057,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrIdInput: Paper | string) => {
+  const markSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
+    if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
 
@@ -2111,6 +2112,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         await setDoc(ref, interactionData, { merge: true });
       } catch (err) {
         console.error('Error saving recommendation interaction:', err);
+        if (options?.throwOnError) throw err;
       }
       // PAP-60, D6. The Save button and the save sheet write the savedPapers
       // document, and the button writes Read later, before this mark. A late
@@ -2129,9 +2131,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
    * merges over it. The interaction keeps `saved: false` rather than losing
    * the field, the same flag a rebuild of the aggregate reads.
    */
-  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string) => {
+  const unmarkSaved = useCallback(async (paperOrIdInput: Paper | string, options?: { throwOnError: boolean }) => {
     const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
+    if (auth.currentUser?.uid !== userId) return;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || !savedPaperIdsRef.current.has(paperId)) return;
 
@@ -2158,6 +2161,7 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
         }, { merge: true });
       } catch (err) {
         console.error('Error removing the saved mark:', err);
+        if (options?.throwOnError) throw err;
       }
     }
   }, [withInteractionId, papers, reRankFeed, recordProfileEvent, user?.uid]);
@@ -2187,9 +2191,10 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
     }
   }, [recordProfileEvent, user?.uid]);
 
-  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean) => {
+  const toggleReadLater = useCallback(async (paperInput: Paper, value?: boolean, options?: { throwOnError: boolean }) => {
     const paper = withInteractionId(paperInput);
     const userId = user?.uid;
+    if (auth.currentUser?.uid !== userId) return false;
     if (!userId || !paper?.id) return false;
     const nextValue = value ?? !personalLibrary[paper.id]?.readLater;
     const updatedAt = new Date().toISOString();
@@ -2228,6 +2233,17 @@ export function FeedProvider({ children, feedRouteActive = true }: PropsWithChil
       }), { merge: true });
     } catch (err) {
       console.error('Error updating read later:', err);
+      if (options?.throwOnError) {
+        if (auth.currentUser?.uid === userId) {
+          const previousValue = Boolean(personalLibrary[paper.id]?.readLater);
+          setPersonalLibrary(current => ({
+            ...current,
+            [paper.id]: { ...current[paper.id], readLater: previousValue },
+          }));
+          recordProfileEvent({ paperId: paper.id, kind: 'readLater', value: previousValue });
+        }
+        throw err;
+      }
     }
     return nextValue;
   }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
