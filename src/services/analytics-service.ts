@@ -86,9 +86,10 @@ const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
 // one. A name that merely contains an entry is another site: chatgpt.com holds
 // `t.co` and docs.google.com holds `google.`. Google and Yahoo search have one host
 // per country, so those two are patterns. Google's search properties (web, Scholar,
-// Books, Images, News) count as search; Docs, Gmail, Gemini and the rest do not. The
+// Books, Images, News) count as search; Docs, Gmail, Gemini and the rest do not. Four
 // Google apps on Android send their package name as the referrer and are filed like
-// their sites: the Google, Google Go and News apps as search, YouTube as social.
+// their sites: the Google, Google Go and News apps as search, YouTube as social. Other
+// Google apps count as referral.
 const SEARCH_ENGINE_HOSTS: readonly (string | RegExp)[] = [
   /^(?:www\.|scholar\.|books\.|images\.|news\.)?google\.(?:com?\.)?(?:com|cat|[a-z]{2})$/,
   'com.google.android.googlequicksearchbox',
