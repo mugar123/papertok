@@ -12,10 +12,9 @@ interface ListName {
  * Takes the reader back to the index of lists the way they left it: scrolled
  * to the same place, with focus on the list they had open.
  *
- * The page swaps the index and an open list in one AnimatePresence, and the
- * swap itself puts the window at the top both ways. Closing a list therefore
- * landed at the top of the index, away from the list just left, with focus on
- * <body>.
+ * The page swaps the index and an open list in one AnimatePresence, and that
+ * swap puts the window at the top in both directions. Without this, closing a
+ * list leaves the reader at the top of the index, with focus on <body>.
  */
 export function createIndexReturn(view: IndexView) {
   let left: { top: number; listId: string } | null = null;
