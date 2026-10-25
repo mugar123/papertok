@@ -50,7 +50,6 @@ export function projectEntityFromLookup({ routeId, name, funder, details }: {
       callIdentifier: details.callIdentifier,
       subjects: details.subjects,
       participants: details.participants,
-      measures: details.measures,
       openAccess: details.openAccess,
       websiteUrl: details.websiteUrl,
     };

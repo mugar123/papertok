@@ -742,9 +742,9 @@ builds the shared requests and validates the answers for the browser and the Wor
 - Offset paging answers `400` once `page` × `pageSize` passes 10,000, so the
   Explorer's project list ends at page 333.
 - Graph project records have no measures (citations, downloads, views) and no
-  contract type. Those stay unknown: the Explorer shows a project citation stat
-  only when it has a value. A `granted.currency` of `null` also stays unknown,
-  and the project page then shows the budget without a currency.
+  contract type. Those stay unknown: the project page has no citation stat. A
+  `granted.currency` of `null` also stays unknown, and the project page then
+  shows the budget without a currency.
 - An answer that is not a Graph list (`header.numFound` and `results`) is an
   error, not an empty project. The project page keeps the name its link carried,
   the Explorer list reports a load failure, the digest records

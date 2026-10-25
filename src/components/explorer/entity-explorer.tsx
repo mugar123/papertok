@@ -1929,12 +1929,6 @@ export default function EntityExplorer({
           <span className="ehc-stat-label">{'Participants'}</span>
         </div>
       )}
-      {type === 'project' && (entity.measures?.citations as number) > 0 && (
-        <div className="ehc-stat-box">
-          <span className="ehc-stat-value">{entity.measures!.citations!.toLocaleString(locale)}</span>
-          <span className="ehc-stat-label">{'Citations'}</span>
-        </div>
-      )}
     </div>
   );
 

@@ -20,8 +20,7 @@ export interface Project {
   funder: string; fundingStream?: string; funderLevel?: string; summary?: string; startDate?: string; endDate?: string;
   budget?: number; fundedAmount?: number; currency?: string; callIdentifier?: string | null;
   websiteUrl?: string | null; subjects?: string[]; participants?: ProjectParticipant[];
-  // Graph V3 project records carry no measures (ENG-28), so nothing sets these.
-  measures?: { citations?: number; downloads?: number; views?: number; influentialResults?: number }; openAccess?: boolean;
+  openAccess?: boolean;
 }
 // `total` is null for a page that was never requested: its size is not known.
 interface ProjectPapers { arxivIds: string[]; dois: string[]; total: number | null; }
