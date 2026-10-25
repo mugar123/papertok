@@ -313,8 +313,8 @@ head, a static copy inside `#root` and, for a paper, the paper as a JSON seed; a
 is final about it is a 404 with `noindex`, a DOI or PMID OpenAlex has not indexed yet and a
 provider failure get the generic head. A path that names no page is a 404 before admission or any
 lookup; that includes a DOI key with a whole `.` or `..` path segment, which the URL parser would
-otherwise resolve into another OpenAlex record's path. The record behind a paper or an entity is kept 24 hours, a
-list's five minutes (its owner can take it back), a missing page one hour and a
+otherwise resolve into another OpenAlex record's path. The record behind a paper or an entity is
+kept 24 hours, a list's five minutes (its owner can take it back), a missing page one hour and a
 failure two minutes, and the page is composed per request, always in English (`Accept-Language` is
 not consulted, so there is no `Vary: Accept-Language`). What a miss
 may spend is bounded before any provider is asked — 60 a minute and 1000 a day in all (`share:`

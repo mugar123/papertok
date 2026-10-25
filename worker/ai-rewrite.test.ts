@@ -1287,7 +1287,8 @@ test('a rewrite the fallback wrote is stored briefly, under the name of the mode
   assert.equal(JSON.parse(entry.value).meta.model, 'gemini-3.5-flash-lite');
   // Minutes, not the thirty days a primary rewrite is kept for, and no less than
   // the sixty seconds KV accepts.
-  assert.ok(entry.ttl! >= 60 && entry.ttl! <= 120, `ttl ${entry.ttl}`);
+  const ttl = entry.ttl ?? 0;
+  assert.ok(ttl >= 60 && ttl <= 120, `ttl ${entry.ttl}`);
 
   const { events: replay } = await runRewrite({
     pdf: async () => { throw new Error('A cache hit must not download the PDF'); },

@@ -1000,11 +1000,9 @@ function streamRewrite({ env, paper, level, language, meta, cacheKey, regenerate
         // be complete. Only a complete result is worth replacing it with.
         cachedWrite = regenerate ? finish === 'complete' : finish !== null;
         if (cachedWrite) {
-          // The key names the model that was asked first. A rewrite the fallback
-          // wrote says which model wrote it and is kept only as long as an
-          // outage-driven answer, so readers get the primary model again once it
-          // recovers, and a regenerate that fell back does not hold a complete
-          // entry's place for thirty days.
+          // The key names the model that was asked first. What the fallback wrote
+          // carries its own name and is kept only as long as an outage, so readers
+          // get the primary model again once it recovers.
           const fellBack = activeModel !== model;
           await writeCachedRewrite(env, cacheKey, {
             meta: fellBack ? { ...meta, model: activeModel } : meta,
