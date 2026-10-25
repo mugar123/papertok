@@ -183,7 +183,8 @@ export async function signInWithProvider(providerId: string, overrides?: Identit
  * left: the provider and the place that asked, for analytics, and the route a
  * guest bounced off a protected page was going to (auth-return.ts), which
  * lives in memory and would not survive the reload. It stays in this tab's
- * sessionStorage from the press until completeRedirectSignIn reads it.
+ * sessionStorage from the press until completeRedirectSignIn reads it, or
+ * abandonRedirectTrip ends it.
  */
 interface RedirectTrip {
   providerId: string;
@@ -253,7 +254,7 @@ export function signInFailure(error: unknown) {
   return { result: cancelled ? 'cancelled' as const : 'error' as const, code };
 }
 
-type RedirectSignInOutcome = RedirectTrip & (
+export type RedirectSignInOutcome = RedirectTrip & (
   | { result: 'success'; isNewUser: boolean }
   | { result: 'cancelled' }
   | { result: 'error'; code: string }
@@ -288,6 +289,21 @@ export async function completeRedirectSignIn(overrides?: IdentityOperations): Pr
       : signInFailure(error).code;
     return { ...trip, result: 'error', code };
   }
+}
+
+/**
+ * Ends the trip of a page that is shown again after it left for the provider:
+ * Safari restores a page from its back/forward cache as it was left, so Back
+ * from the provider's page brings back this page, not a new load, and nothing
+ * reads the trip. It would stay in the tab's storage and the next full load,
+ * on any page, would report it and open the sign-in dialog again. Returns the
+ * trip as `cancelled` for the caller to report, or null when none was left.
+ * The page is still showing its dialog and keeps its destination, so this
+ * offers neither back.
+ */
+export function abandonRedirectTrip(overrides?: IdentityOperations): RedirectSignInOutcome | null {
+  const trip = takeRedirectTrip(operations(overrides).tripStorage);
+  return trip && { ...trip, result: 'cancelled' };
 }
 
 /**

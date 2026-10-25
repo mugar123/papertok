@@ -6,6 +6,7 @@ import {
   EmailAlreadyUsedError,
   IdentityAlreadyLinkedError,
   SIGN_IN_PROVIDERS,
+  abandonRedirectTrip,
   completeRedirectSignIn,
   hasSignInProvider,
   linkSignInProvider,
@@ -249,6 +250,30 @@ test('a reader who backs out of the provider page comes back cancelled, not fail
   const outcome = await completeRedirectSignIn(returningPage(tab, async () => null).api);
 
   assert.deepEqual(outcome, { providerId: GOOGLE, surface: 'onboarding', returnTo: null, result: 'cancelled' });
+});
+
+test('a page shown again after Back, from Safari\'s cache, abandons its trip: a later load reports nothing', async (t) => {
+  t.after(clearAuthReturn);
+  const tab = tabStorage();
+  offerAuthReturn('/lists');
+  void signInWithProvider(GITHUB, blockingBrowser(tab).api, { surface: 'auth_prompt' });
+  await settleWithin(50, () => undefined);
+
+  // The page was left for the provider and comes back as it was left, in the
+  // same tab, with its trip still in the storage.
+  const abandoned = abandonRedirectTrip({ tripStorage: tab });
+
+  assert.deepEqual(abandoned, { providerId: GITHUB, surface: 'auth_prompt', returnTo: '/lists', result: 'cancelled' });
+  assert.equal(peekAuthReturn(), '/lists', 'the page still shows its dialog and keeps its destination');
+  assert.equal(abandonRedirectTrip({ tripStorage: tab }), null, 'the trip ends once');
+  const later = returningPage(tab, async () => null);
+  assert.equal(await completeRedirectSignIn(later.api), null, 'a later load of this tab finds no sign-in to report');
+  assert.deepEqual(later.results, [], 'and does not ask Firebase for one');
+});
+
+test('a page that left for no provider has no trip to abandon', () => {
+  assert.equal(abandonRedirectTrip({ tripStorage: tabStorage() }), null);
+  assert.equal(abandonRedirectTrip({ tripStorage: null }), null);
 });
 
 test('a redirect refused for an address another door owns comes back as the collision', async (t) => {

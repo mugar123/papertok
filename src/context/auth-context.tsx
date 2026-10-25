@@ -58,8 +58,10 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts.ts';
 import { auth, db } from '../services/firebase.ts';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import type { RedirectSignInOutcome } from '../services/auth-identity-service.ts';
 import {
   SIGN_IN_PROVIDERS,
+  abandonRedirectTrip,
   completeRedirectSignIn,
   linkSignInProvider,
   providerIdsOf,
@@ -134,16 +136,29 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // stays open after a closed or failed popup.
   useEffect(() => {
     let live = true;
-    void returningSignIn.then((outcome) => {
-      if (!live || !outcome) return;
+    const report = (outcome: RedirectSignInOutcome) => {
       for (const [name, params] of signInEvents(outcome.providerId, outcome.surface, outcome)) {
         void trackProductEvent(name, params);
       }
+    };
+    void returningSignIn.then((outcome) => {
+      if (!live || !outcome) return;
+      report(outcome);
       if (outcome.result === 'error') setError(outcome.code);
       if (outcome.result !== 'success' && !auth.currentUser) setReopenSignIn(true);
     });
+    // Back from the provider, Safari can show this page again from its
+    // back/forward cache instead of loading it: no load reads the trip, and
+    // the dialog is still on screen, so the trip ends here as cancelled.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      const abandoned = abandonRedirectTrip();
+      if (abandoned) report(abandoned);
+    };
+    window.addEventListener('pageshow', onPageShow);
     return () => {
       live = false;
+      window.removeEventListener('pageshow', onPageShow);
     };
   }, []);
 
