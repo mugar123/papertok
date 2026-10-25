@@ -93,7 +93,7 @@ test('a doubted label is never on target: a filing under a doubted leaf is wrong
 });
 
 test('a labelled article whose preprint is one of the centroid papers is left out before the split', () => {
-  const dataset = {
+  const dataset: Parameters<typeof calibrateLeafFiling>[0] = {
     arxiv: [
       ...many(60, index => ({ id: `2610.1${index}`, leaf: 'hep-th', vector: vector({ 0: 1 }, index) })),
       ...many(60, index => ({ id: `2610.2${index}`, leaf: 'quant-ph', vector: vector({ 1: 1 }, 100 + index) })),
