@@ -940,7 +940,8 @@ export interface RankedCandidate { workId: number; lanes: string[]; semanticScor
  * lanes in the same order, `order`, likes and rejections (`rankedBy`, a
  * digest, so the entry holds no liked paper's id) serves the next pages as it
  * is. Otherwise a next page keeps the ranks served and the ones walked past,
- * and the notable papers walked past, and ranks the rest again. With the ids
+ * and the notable papers walked past, and ranks the rest again; a page that
+ * skips seen papers keeps of those the ones `keptPassed` keeps. With the ids
  * the walks read (`paperId`), the entry tells which ranks at the top of the
  * reader's ranking their filter held.
  */
@@ -1024,17 +1025,20 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
   const rankedAgain = !kept?.final || kept.rankedBy !== rankedBy || now - kept.rankedAt >= RANKING_KEPT_MS;
   let ranking = kept?.ranks ?? [];
   let notable = kept?.notable ?? [];
-  const walked = kept?.walked ?? 0;
-  const notableWalked = kept?.notableWalked ?? 0;
+  let walked = kept?.walked ?? 0;
+  let notableWalked = kept?.notableWalked ?? 0;
   if (rankedAgain) {
-    const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
-    const served = Array.from({ length: passed }, (_, index) => kept!.ranks[index] ?? null);
-    const shown = new Set(served.map(candidate => candidate?.workId));
-    const notablePassed = notable.slice(0, notableWalked);
-    const notableShown = new Set(notablePassed.map(candidate => candidate.workId));
     const ranked = await rankCandidates(db, lanes, query, now);
+    const passed = kept ? Math.max(Math.min(kept.served, query.page * query.pageSize), walked) : 0;
+    let served = Array.from({ length: passed }, (_, index) => kept!.ranks[index] ?? null);
+    // Page numbers need every rank served, empty ones included, at its place.
+    if (query.skipsSeen) ({ ranks: served, walked } = keptPassed(served, walked, ranked.ranks, FEED_CANDIDATE_LIMIT + AREA_CANDIDATE_LIMIT));
+    const shown = new Set(served.map(candidate => candidate?.workId));
+    const notablePassed = keptPassed(notable.slice(0, notableWalked), notableWalked, ranked.notable, NOTABLE_READ_PER_LANE * FEED_MAX_CATEGORIES);
+    notableWalked = notablePassed.walked;
+    const notableShown = new Set(notablePassed.ranks.map(candidate => candidate.workId));
     ranking = [...served, ...ranked.ranks.filter(candidate => !shown.has(candidate.workId))];
-    notable = [...notablePassed, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
+    notable = [...notablePassed.ranks, ...ranked.notable.filter(candidate => !notableShown.has(candidate.workId))];
   }
   const named = ranking.slice(query.page * query.pageSize, (query.page + 1) * query.pageSize).filter(candidate => candidate !== null);
   const [own, unseen] = await Promise.all([
@@ -1091,6 +1095,32 @@ export async function readFeedPage(env: StoreEnv, query: FeedQuery, { now = Date
       ...(notableIds.has(candidate.workId) ? { _notable: true } : {}),
     }];
   });
+}
+
+/**
+ * Of the ranks an order passed (`ranks`, walked up to `walked`), the ones a
+ * ranking again keeps ahead of its new ranks, and where its walk then starts.
+ * It keeps every paper still among the `candidates`, so none comes back once
+ * the filter no longer holds it. Of the others (a category the app no longer
+ * asks for, a work the corpus dropped), it keeps the first `others` passed,
+ * which the filter is the least likely to still hold when their category
+ * comes back. It keeps no empty rank. Without this bound, a filter that holds
+ * every paper, with another category on each page, would keep every earlier
+ * ranking whole.
+ */
+function keptPassed(ranks: Array<RankedCandidate | null>, walked: number, candidates: RankedCandidate[], others: number) {
+  const current = new Set(candidates.map(candidate => candidate.workId));
+  let room = others;
+  const keeps = ranks.map(candidate => {
+    if (candidate === null) return false;
+    if (current.has(candidate.workId)) return true;
+    room -= 1;
+    return room >= 0;
+  });
+  return {
+    ranks: ranks.filter((candidate, index): candidate is RankedCandidate => keeps[index]),
+    walked: keeps.slice(0, walked).filter(Boolean).length,
+  };
 }
 
 /**

@@ -836,6 +836,37 @@ test('a like, a new order or set of the reader\'s categories, or a lean toward o
   }));
 });
 
+// Every bit set: every paper reads as seen, so each walk passes the whole
+// ranking, and a ranking again after it keeps what the walk passed.
+test('a filter that holds every paper, with another category on each page, does not grow the order kept for the reader', async t => {
+  const entries = rankingCaches(t);
+  const { db, ask } = store();
+  const categories = Array.from({ length: 15 }, (_, index) => `zz.c${index}`);
+  const insertWork = db.prepare('INSERT INTO works (id, paper, published, kept_until) VALUES (?, ?, ?, ?)');
+  const insertLane = db.prepare('INSERT INTO work_lanes (lane, work_id, published) VALUES (?, ?, ?)');
+  let workId = 0;
+  const file = (paperId: string, lane: string, published: string) => {
+    workId += 1;
+    insertWork.run(workId, JSON.stringify({ id: paperId, title: `Paper ${paperId}`, authors: [] }), published, '2099-01-01T00:00:00.000Z');
+    insertLane.run(lane, workId, published);
+  };
+  db.exec('BEGIN');
+  categories.forEach((category, index) => {
+    for (let rank = 0; rank < 1_000; rank += 1) file(`p${index}.${rank}`, category, new Date(Date.now() - (rank + 1) * 60_000).toISOString());
+    for (let rank = 0; rank < 300; rank += 1) file(`n${index}.${rank}`, `notable:${category}`, new Date(Date.UTC(2024, 0, 1) - rank * 3_600_000).toISOString());
+  });
+  db.exec('COMMIT');
+  const everySeen = Buffer.alloc(2_400, 0xff).toString('base64');
+  const kept: Array<{ ranks: number; notable: number }> = [];
+  for (const [page, category] of categories.entries()) {
+    await ask({ categories: [category], page, pageSize: 15, seen: everySeen, skipsSeen: true, notable: 5 });
+    assert.equal(entries.size, 1, 'one order for the session, whatever its categories');
+    const entry = await [...entries.values()][0].clone().json<{ ranks: unknown[]; notable: unknown[] }>();
+    kept.push({ ranks: entry.ranks.length, notable: entry.notable.length });
+  }
+  assert.deepEqual(kept.at(-1), kept.at(-3), `the kept order stops growing: ${JSON.stringify(kept)}`);
+});
+
 const followedAuthor = { type: 'author', canonicalId: 'https://openalex.org/A77', displayName: 'Li Wei' };
 
 test("a new follow's papers start on the next page, and no paper the first page showed comes back", async t => {
