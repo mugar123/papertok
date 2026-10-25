@@ -4,6 +4,7 @@ import { deleteAccount } from '../../services/account-deletion-service.ts';
 import { reauthenticateCurrentUser } from '../../services/auth-identity-service.ts';
 import { popupReadiness } from '../../services/firebase.ts';
 import usePopupReady from '../../hooks/use-popup-ready.ts';
+import useRetryFocus from '../../hooks/use-retry-focus.ts';
 import { getUiErrorMessage } from '../../utils/error-messages.ts';
 import {
   AlertDialog,
@@ -63,8 +64,11 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
   const readiness = usePopupReady(popupReadiness);
   const held = confirmed && readiness !== 'ready';
   const confirmRef = useRef<HTMLButtonElement | null>(null);
-  // Try again leaves as the load restarts, so the focus moves first to the
-  // delete button, disabled until the load ends.
+  // Try again leaves as the load restarts, or when a slow load ends by itself,
+  // so the focus goes to the delete button, disabled until the load ends:
+  // first when Try again is pressed, and by useRetryFocus when it leaves on
+  // its own.
+  const retryFocus = useRetryFocus(held && readiness === 'failed', () => confirmRef.current);
   const retryLoad = () => {
     confirmRef.current?.focus();
     popupReadiness.retry();
@@ -162,7 +166,7 @@ export default function DeleteAccountDialog({ open: openOnMount = true, onClose,
           {error}
         </p>
         {held && readiness === 'failed' && (
-          <Button variant="outline" size="sm" onClick={retryLoad}>
+          <Button variant="outline" size="sm" onClick={retryLoad} {...retryFocus}>
             {copy.retry}
           </Button>
         )}

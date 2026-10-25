@@ -1,5 +1,6 @@
 import type { PopupReadinessState } from '../../services/popup-redirect-resolver.ts';
 import { useState } from 'react';
+import useRetryFocus from '../../hooks/use-retry-focus.ts';
 import { Button } from '../ui/button.tsx';
 import './provider-sign-in.css';
 
@@ -31,12 +32,14 @@ export function PreparingNote({ id, state, onRetry, keepLine = true }: { id: str
   // Only a note that has shown a wait has the end of one to report.
   const [waited, setWaited] = useState(state !== 'ready');
   if (state !== 'ready' && !waited) setWaited(true);
-  // Try again leaves as the load restarts, so the focus moves first to the
-  // control this note describes, disabled until the load ends.
+  const describedControl = () => [...document.querySelectorAll<HTMLElement>('[aria-describedby]')]
+    .find(element => element.getAttribute('aria-describedby')?.split(' ').includes(id)) ?? null;
+  // Try again leaves as the load restarts, or when a slow load ends by itself,
+  // so the focus goes to the control this note describes: first when the
+  // button is pressed, and by useRetryFocus when it leaves on its own.
+  const retryFocus = useRetryFocus(state === 'failed', describedControl);
   const retry = () => {
-    const described = [...document.querySelectorAll<HTMLElement>('[aria-describedby]')]
-      .find(element => element.getAttribute('aria-describedby')?.split(' ').includes(id));
-    described?.focus();
+    describedControl()?.focus();
     onRetry();
   };
   return (
@@ -47,7 +50,7 @@ export function PreparingNote({ id, state, onRetry, keepLine = true }: { id: str
         {state === 'ready' && waited && <span className="sr-only">Sign-in ready.</span>}
       </span>
       {state === 'failed' && (
-        <Button variant="outline" size="sm" onClick={retry}>Try again</Button>
+        <Button variant="outline" size="sm" onClick={retry} {...retryFocus}>Try again</Button>
       )}
     </p>
   );
