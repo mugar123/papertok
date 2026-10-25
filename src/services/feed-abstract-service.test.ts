@@ -41,13 +41,13 @@ test('scientific reviews recover by exact DOI while a failed arXiv source leaves
   t.mock.method(console, 'error', () => {});
   const fetch = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
     assert.equal(new URL(String(input)).searchParams.get('q'), `doi:"${review.doi}"`);
-    return Response.json({ hits: { total: 1, hits: [{ metadata: { dois: [{ value: review.doi }], abstracts: [{ value: 'Verified publisher text.' }] } }] } });
+    return Response.json({ hits: { total: 1, hits: [{ metadata: { dois: [{ value: review.doi }], abstracts: [{ value: 'Verified publisher text, long enough to be an abstract.' }] } }] } });
   });
   const papers = [videoPaper, review];
   const result = mergeFeedAbstracts(papers, await recoverFeedAbstracts(papers));
   assert.equal(fetch.mock.callCount(), 1);
   assert.equal(result[0], videoPaper);
-  assert.equal(result[1].abstract, 'Verified publisher text.');
+  assert.equal(result[1].abstract, 'Verified publisher text, long enough to be an abstract.');
   assert.equal(result[1].publicationType, 'review');
   assert.equal(result[1].openAccess, false);
 });
@@ -58,7 +58,7 @@ test('DOI recovery skips existing abstracts and arXiv links, and preserves unmat
   const existing = { ...unlinked, abstract: 'Existing source text.' };
   assert.deepEqual(getMissingAbstractDois([unlinked, unavailable, existing, videoPaper, { ...unlinked, doi: '10.5555/known' }]), ['10.5555/known']);
   const papers = [unlinked, unavailable, existing, videoPaper];
-  assert.equal(mergeFeedAbstracts(papers, [{ doi: '10.5555/another', abstract: 'Other text.', sources: { primary: 'inspire', enrichedBy: [] } }]), papers);
+  assert.equal(mergeFeedAbstracts(papers, [{ doi: '10.5555/another', abstract: 'The abstract INSPIRE holds for another paper entirely.', sources: { primary: 'inspire', enrichedBy: [] } }]), papers);
 });
 
 test('only asks for linked OpenAlex papers missing an abstract, deduplicating versioned IDs', () => {

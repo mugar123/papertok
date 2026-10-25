@@ -337,11 +337,11 @@ test('area counts agree with what each area filter keeps, cross-listed papers in
     { id: 'b', primaryCategory: 'cs.LG', categories: ['cs.LG', 'astro-ph.CO'] },
     { id: 'c', primaryCategory: 'math.DG', categories: ['math.DG'] },
   ] as Partial<Paper>[];
-  const counts: Record<string, number> = countPapersByArea(papers, ['physics', 'cs', 'math', 'bio']);
-  for (const key of ['physics', 'cs', 'math', 'bio']) {
+  const counts: Record<string, number> = countPapersByArea(papers, ['physics', 'ai', 'math', 'bio']);
+  for (const key of ['physics', 'ai', 'math', 'bio']) {
     assert.equal(counts[key], filterAndSortEntityPapers(papers, { filters: { category: key } }).length);
   }
-  assert.deepEqual(counts, { physics: 2, cs: 1, math: 1, bio: 0 });
+  assert.deepEqual(counts, { physics: 2, ai: 1, math: 1, bio: 0 });
 });
 
 // PAP-88: from 60 % of the day's OpenAlex budget the Worker refuses the lists

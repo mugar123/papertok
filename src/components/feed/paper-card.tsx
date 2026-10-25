@@ -74,6 +74,7 @@ import {
   Prohibit,
   Quotes,
   Sigma,
+  TestTube,
   Intersect,
   Sparkle,
   TrendUp,
@@ -165,6 +166,7 @@ import {
   safeExternalUrl,
 } from '../../utils/external-url.ts';
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paper-open-targets.ts';
+import { trackVisibleTime } from '../../utils/visible-time.ts';
 import { useAnalyticsConsent } from '../../context/analytics-context.tsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/public-navigation.ts';
 import { EASE_IN_OUT, EASE_OUT, EASE_OUT_EXPO, animateSize, pulseIcon } from '../../utils/motion-curves.ts';
@@ -205,6 +207,7 @@ const PaperReader = lazy(() => import('../reader/paper-reader.tsx'));
 const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: string; weight?: IconWeight }> = {
   physics: { Icon: Planet, ink: '8 32 240 192' },
   cs: { Icon: Cpu, ink: '16 16 224 224' },
+  ai: { Icon: Brain, ink: '12 28 232 196' },
   math: { Icon: Sigma, ink: '52 36 152 184', weight: 'bold' },
   stat: { Icon: ChartBar, ink: '24 32 208 184' },
   econ: { Icon: TrendUp, ink: '16 48 224 144' },
@@ -215,6 +218,7 @@ const AREA_WATERMARK_ICONS: Record<keyof typeof CATEGORIES, { Icon: Icon; ink: s
   chemeng: { Icon: Flask, ink: '32 24 192 200' },
   med: { Icon: Heartbeat, ink: '16 40 224 192' },
   bio: { Icon: Dna, ink: '56 16 144 224' },
+  chem: { Icon: TestTube, ink: '24 24 216 208' },
 };
 
 const RESOURCE_KIND_CONFIG = {
@@ -525,8 +529,6 @@ const PaperCard = memo(function PaperCard({
   const lastTap = useRef(0);
   const abstractRef = useRef<HTMLDivElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const viewStartTime = useRef<number | null>(null);
-  const totalViewTime = useRef(0);
   const relatedCardClosingRef = useRef(false);
   const relatedPreparationRef = useRef<{ identity: string; promise: Promise<Partial<Paper> | null> } | null>(null);
   const relatedHydrationRequestRef = useRef(0);
@@ -613,6 +615,7 @@ const PaperCard = memo(function PaperCard({
         void trackEvent('paper_dwell', { surface: analyticsSurface, position, seconds, paper_id: paper.id, paper_title: paper.title });
       }
     };
+    const visibleTime = trackVisibleTime(document, reportViewTime);
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
@@ -624,19 +627,8 @@ const PaperCard = memo(function PaperCard({
             analyticsViewedPaperRef.current = paperViewKey;
             void trackEvent('paper_view', { surface: analyticsSurface, position, paper_id: paper.id, paper_title: paper.title });
           }
-          if (!viewStartTime.current) viewStartTime.current = Date.now();
-        } else {
-          if (viewStartTime.current) {
-            totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
-            viewStartTime.current = null;
-            
-            // Paper just went out of view. Report time and trigger re-rank!
-            reportViewTime(totalViewTime.current);
-            
-            // Reset to prevent double counting if they scroll back up
-            totalViewTime.current = 0;
-          }
         }
+        visibleTime.setInView(entry.isIntersecting && entry.intersectionRatio > 0.5);
       },
       { threshold: [0, 0.15, 0.5] }
     );
@@ -644,10 +636,7 @@ const PaperCard = memo(function PaperCard({
 
     return () => {
       observer.disconnect();
-      if (viewStartTime.current) {
-        totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
-        reportViewTime(totalViewTime.current);
-      }
+      visibleTime.stop();
     };
   }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
 
