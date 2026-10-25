@@ -49,8 +49,8 @@ export function feedLoadFailure(error: unknown): FeedLoadFailure {
   // a TypeError from our own code is not one.
   if (knownCode === 'STORE_UNREACHABLE') return { reason: 'network', code: knownCode };
   // Getting the Firebase token failed before any request was made.
-  if (knownCode?.startsWith('auth/')) {
-    return { reason: knownCode === 'auth/network-request-failed' ? 'network' : 'session', code: knownCode };
-  }
+  if (knownCode === 'auth/network-request-failed') return { reason: 'network', code: knownCode };
+  if (knownCode === 'auth/too-many-requests') return { reason: 'rate_limited', code: knownCode };
+  if (knownCode?.startsWith('auth/')) return { reason: 'session', code: knownCode };
   return { reason: 'unexpected' };
 }

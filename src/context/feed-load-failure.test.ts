@@ -25,8 +25,9 @@ test('a TypeError thrown by our own code is not a network failure', () => {
   assert.deepEqual(feedLoadFailure(new TypeError("Cannot read properties of undefined (reading 'id')")), { reason: 'unexpected' });
 });
 
-test('a failed Firebase token keeps its code: offline is network, any other auth failure is session', () => {
+test('a failed Firebase token keeps its code: offline is network, throttled is rate_limited, any other auth failure is session', () => {
   const firebase = (code: string) => Object.assign(new Error(`Firebase: Error (${code}).`), { name: 'FirebaseError', code });
   assert.deepEqual(feedLoadFailure(firebase('auth/network-request-failed')), { reason: 'network', code: 'auth/network-request-failed' });
+  assert.deepEqual(feedLoadFailure(firebase('auth/too-many-requests')), { reason: 'rate_limited', code: 'auth/too-many-requests' });
   assert.deepEqual(feedLoadFailure(firebase('auth/user-token-expired')), { reason: 'session', code: 'auth/user-token-expired' });
 });
